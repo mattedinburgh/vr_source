@@ -6730,8 +6730,9 @@ BOOLEAN BuildFortification( INT32 sGridNo, UINT32 flag )
 		return FALSE;
 	}
 	
-	if( InARoom( sGridNo, NULL ) )
-		return FALSE;
+	// anv: VR - allow sandbags in rooms
+	//if( InARoom( sGridNo, NULL ) )
+	//	return FALSE;
 
 	INT8 bOverTerrainType = GetTerrainType( sGridNo );
 	if( bOverTerrainType == MED_WATER || bOverTerrainType == DEEP_WATER || bOverTerrainType == LOW_WATER )
