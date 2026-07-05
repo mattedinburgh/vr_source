@@ -6915,6 +6915,9 @@ BOOLEAN RemoveFortification( INT32 sGridNo )
 
 					// Turn off permanent changes....
 					ApplyMapChangesToMapTempFile( FALSE );
+
+
+					InvalidateWorldRedundency( );
 					SetRenderFlags( RENDER_FLAG_FULL );
 
 					return TRUE;
