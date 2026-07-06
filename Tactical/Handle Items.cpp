@@ -6903,7 +6903,7 @@ BOOLEAN RemoveFortification( INT32 sGridNo )
 					ApplyMapChangesToMapTempFile( TRUE );
 
 					RemoveStruct( sGridNo, pNode->usIndex );
-					if ( !GridNoIndoors( sGridNo ) && gTileDatabase[ usIndex ].uiFlags & HAS_SHADOW_BUDDY && gTileDatabase[ usIndex ].sBuddyNum != -1 )
+					if ( !GridNoIndoorsForShadows( sGridNo ) && gTileDatabase[ usIndex ].uiFlags & HAS_SHADOW_BUDDY && gTileDatabase[ usIndex ].sBuddyNum != -1 )
 					{
 						RemoveShadow( sGridNo, gTileDatabase[ usIndex ].sBuddyNum );
 					}

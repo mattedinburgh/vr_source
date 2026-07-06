@@ -375,6 +375,7 @@ void ReloadTileset( UINT8 ubID );
 BOOLEAN FloorAtGridNo( INT32 iMapIndex );
 BOOLEAN DoorAtGridNo( INT32 iMapIndex );
 BOOLEAN GridNoIndoors( INT32 iMapIndex );
+BOOLEAN GridNoIndoorsForShadows( INT32 iMapIndex );
 
 
 BOOLEAN OpenableAtGridNo( INT32 iMapIndex );

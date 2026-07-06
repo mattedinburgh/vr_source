@@ -249,6 +249,20 @@ BOOLEAN GridNoIndoors( INT32 iMapIndex )
 	return FALSE;
 }
 
+// anv: VR - Variant of GridNoIndoors(): is there is open sky above
+BOOLEAN GridNoIndoorsForShadows( INT32 iMapIndex )
+{
+	if( gfBasement || gfCaves )
+		return TRUE;
+
+	for ( LEVELNODE *pRoof = gpWorldLevelData[ iMapIndex ].pRoofHead; pRoof; pRoof = pRoof->pNext )
+	{
+		if ( pRoof->usIndex != NO_TILE )
+			return TRUE;
+	}
+	return FALSE;
+}
+
 void DOIT( )
 {
 //	LEVELNODE *			pLand;

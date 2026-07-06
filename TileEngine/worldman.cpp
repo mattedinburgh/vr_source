@@ -1163,7 +1163,7 @@ LEVELNODE *AddStructToTailCommon( INT32 iMapIndex, UINT16 usIndex, BOOLEAN fAddS
 	// Check flags for tiledat and set a shadow if we have a buddy
 	if ( usIndex < giNumberOfTiles )
 	{
-		if ( !GridNoIndoors( iMapIndex ) && gTileDatabase[ usIndex ].uiFlags & HAS_SHADOW_BUDDY && gTileDatabase[ usIndex ].sBuddyNum != -1 )
+		if ( !GridNoIndoorsForShadows( iMapIndex ) && gTileDatabase[ usIndex ].uiFlags & HAS_SHADOW_BUDDY && gTileDatabase[ usIndex ].sBuddyNum != -1 )
 		{
 			AddShadowToHead( iMapIndex, gTileDatabase[ usIndex ].sBuddyNum );
 			gpWorldLevelData[ iMapIndex ].pShadowHead->uiFlags |= LEVELNODE_BUDDYSHADOW;
@@ -1232,7 +1232,7 @@ BOOLEAN AddStructToHead( INT32 iMapIndex, UINT16 usIndex )
 	if ( usIndex < giNumberOfTiles )
 	{
 		// Check flags for tiledat and set a shadow if we have a buddy
-		if ( !GridNoIndoors( iMapIndex ) && gTileDatabase[ usIndex ].uiFlags & HAS_SHADOW_BUDDY && gTileDatabase[ usIndex ].sBuddyNum != -1 )
+		if ( !GridNoIndoorsForShadows( iMapIndex ) && gTileDatabase[ usIndex ].uiFlags & HAS_SHADOW_BUDDY && gTileDatabase[ usIndex ].sBuddyNum != -1 )
 		{
 			AddShadowToHead( iMapIndex, gTileDatabase[ usIndex ].sBuddyNum );
 			gpWorldLevelData[ iMapIndex ].pShadowHead->uiFlags |= LEVELNODE_BUDDYSHADOW;
@@ -1392,7 +1392,7 @@ BOOLEAN RemoveStructFromTailCommon( INT32 iMapIndex, BOOLEAN fRemoveStructDBInfo
 			if ( usIndex < giNumberOfTiles )
 			{
 				// Check flags for tiledat and set a shadow if we have a buddy
-				if ( !GridNoIndoors( iMapIndex ) && gTileDatabase[ usIndex ].uiFlags & HAS_SHADOW_BUDDY && gTileDatabase[ usIndex ].sBuddyNum != -1 )
+				if ( !GridNoIndoorsForShadows( iMapIndex ) && gTileDatabase[ usIndex ].uiFlags & HAS_SHADOW_BUDDY && gTileDatabase[ usIndex ].sBuddyNum != -1 )
 				{
 					RemoveShadow( iMapIndex, gTileDatabase[ usIndex ].sBuddyNum );
 				}
@@ -1455,7 +1455,7 @@ BOOLEAN RemoveStruct( INT32 iMapIndex, UINT16 usIndex )
 			if ( usIndex < giNumberOfTiles )
 			{
 				// Check flags for tiledat and set a shadow if we have a buddy
-				if ( !GridNoIndoors( iMapIndex ) && gTileDatabase[ usIndex ].uiFlags & HAS_SHADOW_BUDDY && gTileDatabase[ usIndex ].sBuddyNum != -1 )
+				if ( !GridNoIndoorsForShadows( iMapIndex ) && gTileDatabase[ usIndex ].uiFlags & HAS_SHADOW_BUDDY && gTileDatabase[ usIndex ].sBuddyNum != -1 )
 				{
 					RemoveShadow( iMapIndex, gTileDatabase[ usIndex ].sBuddyNum );
 				}
@@ -1516,7 +1516,7 @@ BOOLEAN RemoveStructFromLevelNode( INT32 iMapIndex, LEVELNODE *pNode )
 			if ( pNode->usIndex < giNumberOfTiles )
 			{
 				// Check flags for tiledat and set a shadow if we have a buddy
-				if ( !GridNoIndoors( iMapIndex ) && gTileDatabase[ usIndex ].uiFlags & HAS_SHADOW_BUDDY && gTileDatabase[ usIndex ].sBuddyNum != -1 )
+				if ( !GridNoIndoorsForShadows( iMapIndex ) && gTileDatabase[ usIndex ].uiFlags & HAS_SHADOW_BUDDY && gTileDatabase[ usIndex ].sBuddyNum != -1 )
 				{
 					RemoveShadow( iMapIndex, gTileDatabase[ usIndex ].sBuddyNum );
 				}
@@ -1573,7 +1573,7 @@ BOOLEAN RemoveAllStructsOfTypeRange( INT32 iMapIndex, UINT32 fStartType, UINT32 
 				{
 					RemoveStruct( iMapIndex, pOldStruct->usIndex );
 					fRetVal = TRUE;
-					if ( !GridNoIndoors( iMapIndex ) && gTileDatabase[ usIndex ].uiFlags & HAS_SHADOW_BUDDY && gTileDatabase[ usIndex ].sBuddyNum != -1 )
+					if ( !GridNoIndoorsForShadows( iMapIndex ) && gTileDatabase[ usIndex ].uiFlags & HAS_SHADOW_BUDDY && gTileDatabase[ usIndex ].sBuddyNum != -1 )
 					{
 						RemoveShadow( iMapIndex, gTileDatabase[ usIndex ].sBuddyNum );
 					}
