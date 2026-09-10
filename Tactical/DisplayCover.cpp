@@ -95,6 +95,10 @@ const UINT8 animArr[3] = {
 #define COVER_Y_CELLS WORLD_ROWS_MAX
 #define COVER_Z_CELLS 2 // roof or no roof
 
+// Softer tactical LOS/cover overlay. Higher shade values are darker.
+// Applied only to merc/enemy view overlays, not mines or trait displays.
+#define COVER_VIEW_SHADE_OFFSET 2
+
 //******	Local Variables	*********************************************
 
 INT16 gsMinCellX, gsMinCellY, gsMaxCellX, gsMaxCellY = -1;
@@ -333,6 +337,17 @@ void AddCoverObjectsToViewArea()
 
 					TileDefines tile = GetTileCoverIndex(!fInverseColor ? bCover : MAX_COVER - bCover);
 					AddCoverObjectToWorld( sGridNo, tile, (BOOLEAN) ubZ );
+
+					// Tone down the bright red/orange/yellow/green view-area tiles.
+					// AddObjectToHead/AddOnRoofToHead makes this overlay the head node.
+					LEVELNODE *pCoverNode = ubZ ? gpWorldLevelData[sGridNo].pOnRoofHead : gpWorldLevelData[sGridNo].pObjectHead;
+					if ( pCoverNode )
+					{
+						UINT8 ubSoftShade = (UINT8)__min( (INT32)MAX_SHADE_LEVEL, (INT32)DEFAULT_SHADE_LEVEL + COVER_VIEW_SHADE_OFFSET );
+						pCoverNode->ubShadeLevel = ubSoftShade;
+						pCoverNode->ubNaturalShadeLevel = ubSoftShade;
+					}
+
 					fChanged = TRUE;
 				}
 			}
