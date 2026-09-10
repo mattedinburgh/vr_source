@@ -5626,7 +5626,7 @@ if (gGameExternalOptions.fUseNewCTHCalculation)
 			fAimModifier += pSoldier->GetBackgroundValue(BG_PERC_CTH_CREATURE);
 
 		// Flugente: if we are a sniper and a spotter from our team spots the targetted location, we receive a powerful cth bonus
-		if ( gGameOptions.fNewTraitSystem && Weapon[usInHand].ubWeaponType == GUN_SN_RIFLE )
+		if ( gGameOptions.fNewTraitSystem && (Weapon[usInHand].ubWeaponType == GUN_SN_RIFLE || Weapon[usInHand].ubWeaponType == GUN_RIFLE) )
 		{
 			fAimModifier += GridNoSpotterCTHBonus( pSoldier, sGridNo, pSoldier->bTeam);
 		}
@@ -5638,7 +5638,7 @@ if (gGameExternalOptions.fUseNewCTHCalculation)
 		// invisible targets are already taken into account one step above in aimbonus from target
 		// sevenfm: this code is ok and allows to take into account obstacles between shooter and target
 		// VISIBILITY
-		if (iRange > 0 && iSightRange > iRange)
+		if (iRange > 0 && iSightRange > iRange && !fCantSeeTarget)
 		{
 			FLOAT fTempPenalty = (FLOAT)((FLOAT)iSightRange / (FLOAT)iRange);
 			fTempPenalty = (FLOAT)(100 / fTempPenalty);
