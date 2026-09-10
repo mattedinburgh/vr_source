@@ -2663,6 +2663,21 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 		bMoraleCategory = MORALE_WORRIED;
 	}
 
+	// Wounds should progressively increase self-preservation. Tactical success,
+	// aggressive orders or personality can still influence behaviour, but they
+	// should not make a badly wounded enemy fearless.
+	if (pSoldier->bTeam == ENEMY_TEAM && pSoldier->stats.bLifeMax > 0)
+	{
+		const INT32 iHealthPercent = (100 * pSoldier->stats.bLife) / pSoldier->stats.bLifeMax;
+
+		if (iHealthPercent < 15)
+			bMoraleCategory = min(bMoraleCategory, MORALE_HOPELESS);
+		else if (iHealthPercent < 25)
+			bMoraleCategory = min(bMoraleCategory, MORALE_WORRIED);
+		else if (iHealthPercent < 50)
+			bMoraleCategory = min(bMoraleCategory, MORALE_NORMAL);
+	}
+
 	// check limits
 	bMoraleCategory = max(bMoraleCategory, MORALE_HOPELESS);
 	bMoraleCategory = min(bMoraleCategory, MORALE_FEARLESS);
