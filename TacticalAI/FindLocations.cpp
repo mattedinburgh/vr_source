@@ -2672,7 +2672,7 @@ INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction )
 	INT16 sDir = GetDirectionFromGridNo ( sPos, pSoldier) ;
 	INT8 ubDesiredDir;
 	INT16 sTempDir;
-	INT16 sTempDist, sBestDist=0;
+	INT32 sTempDist, sBestDist=0;
 
 	// sevenfm:
 	switch ( bAction )
@@ -2749,8 +2749,10 @@ INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction )
 				continue;
 			}
 
-			// sevenfm: skip buildings if not in building already, because soldiers often run into buildings and stop flanking
-			if( InARoom( sGridNo, NULL ) && !InARoom(pSoldier->sGridNo, NULL) )
+			// sevenfm: skip buildings when flanking, but allow a withdrawing soldier
+			// to fall back into a building if it offers the best supported position.
+			if( bAction != AI_ACTION_WITHDRAW &&
+				InARoom( sGridNo, NULL ) && !InARoom(pSoldier->sGridNo, NULL) )
 			{
 				continue;
 			}
@@ -2793,6 +2795,51 @@ INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction )
 				// prefer desired dir x1.5
 				if( sTempDir == ubDesiredDir )
 					sTempDist = 3*sTempDist/2;
+			}
+			else if ( bAction == AI_ACTION_WITHDRAW )
+			{
+				// Withdrawal is not a blind straight-line retreat.  Allow the three
+				// backward directions so the soldier can choose cover or friendly support.
+				if ( sTempDir != ubDesiredDir &&
+					sTempDir != gOneCDirection[ubDesiredDir] &&
+					sTempDir != gOneCCDirection[ubDesiredDir] )
+				{
+					continue;
+				}
+
+				INT32 iCurrentThreatDistance = PythSpacesAway(pSoldier->sGridNo, sPos);
+				INT32 iCandidateThreatDistance = PythSpacesAway(sGridNo, sPos);
+
+				// A tactical withdrawal must actually increase separation from the threat.
+				if (iCandidateThreatDistance <= iCurrentThreatDistance)
+				{
+					continue;
+				}
+
+				// Prefer meaningful separation, but value survivability and cohesion more
+				// than simply running the maximum possible distance.
+				sTempDist += 15 * (iCandidateThreatDistance - iCurrentThreatDistance);
+
+				if (AnyCoverAtSpot(pSoldier, sGridNo))
+				{
+					sTempDist += 50;
+				}
+
+				if (SightCoverAtSpot(pSoldier, sGridNo, FALSE))
+				{
+					sTempDist += 40;
+				}
+
+				// Nearby conscious allies make a fallback position more useful: the
+				// wounded soldier is regrouping, not merely running away.
+				INT32 iNearbySupport = CountNearbyFriends(pSoldier, sGridNo, DAY_VISION_RANGE / 2);
+				sTempDist += 25 * __min(iNearbySupport, 3);
+
+				// Slightly prefer a direct withdrawal when two positions are otherwise similar.
+				if (sTempDir == ubDesiredDir)
+				{
+					sTempDist += 10;
+				}
 			}
 			else
 			{
