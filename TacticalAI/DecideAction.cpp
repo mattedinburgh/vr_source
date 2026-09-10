@@ -2938,6 +2938,29 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 	DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"decideactionred: calculate morale");
 	// calculate our morale
 	pSoldier->aiData.bAIMorale = CalcMorale(pSoldier);
+
+	// Tactical withdrawal for wounded enemies.  This uses Vengeance's existing
+	// WITHDRAW movement direction (opposite the known threat) and is deliberately
+	// limited to worried/normal morale so HOPELESS still uses full retreat.
+	if (gfTurnBasedAI &&
+		pSoldier->bTeam == ENEMY_TEAM &&
+		ubCanMove &&
+		pSoldier->aiData.bOrders != STATIONARY &&
+		pSoldier->stats.bLife >= OKLIFE &&
+		pSoldier->stats.bLife < pSoldier->stats.bLifeMax / 2 &&
+		(pSoldier->aiData.bAIMorale == MORALE_WORRIED || pSoldier->aiData.bAIMorale == MORALE_NORMAL) &&
+		(pSoldier->aiData.bUnderFire || !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo)))
+	{
+		INT32 sWithdrawalThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		if (!TileIsOutOfBounds(sWithdrawalThreat))
+		{
+			pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, sWithdrawalThreat, AI_ACTION_WITHDRAW);
+			if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
+			{
+				return(AI_ACTION_WITHDRAW);
+			}
+		}
+	}
 // WDS DEBUG - this will make all enemies run away (to test retreating into occupied sector bugs)
 //	pSoldier->aiData.bAIMorale = MORALE_HOPELESS;
 
@@ -4578,6 +4601,26 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 
 		// calculate our morale
 		pSoldier->aiData.bAIMorale = CalcMorale(pSoldier);
+
+		// Wounded enemies with reduced morale should be willing to give up ground
+		// instead of continuing to press an exposed position.  HOPELESS soldiers
+		// are left to the existing full retreat logic below.
+		if (gfTurnBasedAI &&
+			pSoldier->bTeam == ENEMY_TEAM &&
+			ubCanMove &&
+			pSoldier->aiData.bOrders != STATIONARY &&
+			pSoldier->stats.bLife >= OKLIFE &&
+			pSoldier->stats.bLife < pSoldier->stats.bLifeMax / 2 &&
+			(pSoldier->aiData.bAIMorale == MORALE_WORRIED || pSoldier->aiData.bAIMorale == MORALE_NORMAL) &&
+			(pSoldier->aiData.bUnderFire || !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo)) &&
+			!TileIsOutOfBounds(sClosestOpponent))
+		{
+			pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, sClosestOpponent, AI_ACTION_WITHDRAW);
+			if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
+			{
+				return(AI_ACTION_WITHDRAW);
+			}
+		}
 
 		////////////////////////////////////////////////////////////////////////////
 		// WHEN LEFT IN GAS, WEAR GAS MASK IF AVAILABLE AND NOT WORN
