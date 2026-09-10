@@ -2399,14 +2399,13 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 		return MORALE_FEARLESS;
 	}
 
-	// if army guy has NO weapons left then panic!
+	// An enemy with no usable weapon should prioritize self-preservation instead of
+	// becoming fearless and charging an armed opponent with hands or a knife.
 	if ( pSoldier->bTeam == ENEMY_TEAM || !pSoldier->aiData.bNeutral )
 	{
 		if ( FindAIUsableObjClass( pSoldier, IC_WEAPON ) == NO_SLOT )
 		{
-			// sevenfm: instead of leaving sector, try to attack with hands/knife
-			return( MORALE_FEARLESS );
-			//return( MORALE_HOPELESS );
+			return( MORALE_HOPELESS );
 		}
 	}
 	// sevenfm: neutrals always have low AI morale even if they have weapons (so they run from enemy)
