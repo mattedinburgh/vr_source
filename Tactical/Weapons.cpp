@@ -54,6 +54,8 @@
 	#include "Game Clock.h"		// sevenfm
 #endif
 
+#include "../TileEngine/environment.h"
+
 //forward declarations of common classes to eliminate includes
 class OBJECTTYPE;
 class SOLDIERTYPE;
