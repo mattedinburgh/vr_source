@@ -535,7 +535,7 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 
 	// Adjacent: commit to treatment. Keep the gun available until this point so a
 	// medic moving toward a casualty does not run through combat holding a medkit.
-	if (CardinalSpacesAway(pSoldier->sGridNo, sBestPatientGrid) == 1)
+	if (pSoldier->sGridNo == sBestApproachGrid)
 	{
 		// Do not select GIVE_AID when the action executor would reject it for lack
 		// of AP and immediately end this AI soldier's turn. If treatment cannot
