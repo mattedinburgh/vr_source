@@ -3797,6 +3797,17 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 									}
 								}
 
+								// If the final approach would substantially increase exposure,
+								// require a teammate who can independently cover the same known
+								// contact. Unsupported approaches can still convert into flanks
+								// or other RED actions instead of becoming a suicidal straight rush.
+								if (!fAbortSeek &&
+									!fSeekClimb &&
+									!AIAdvanceHasMutualSupport(pSoldier, pSoldier->aiData.usActionData, sClosestDisturbance))
+								{
+									fAbortSeek = TRUE;
+								}
+
 								// possibly start flanking
 								bActionReturned = DecideStartFlanking(pSoldier, sClosestDisturbance, fAbortSeek);
 								if (bActionReturned != -1)
@@ -6201,7 +6212,8 @@ L_NEWAIM:
 					!Water(pSoldier->aiData.usActionData, pSoldier->pathing.bLevel) &&
 					!InGas(pSoldier, pSoldier->aiData.usActionData) &&
 					PythSpacesAway(pSoldier->aiData.usActionData, BestAttack.sTarget) < PythSpacesAway(pSoldier->sGridNo, BestAttack.sTarget) &&
-					LocationToLocationLineOfSightTest( pSoldier->aiData.usActionData, pSoldier->pathing.bLevel, BestAttack.sTarget, BestAttack.bTargetLevel, TRUE, CALC_FROM_ALL_DIRS ) )
+					LocationToLocationLineOfSightTest( pSoldier->aiData.usActionData, pSoldier->pathing.bLevel, BestAttack.sTarget, BestAttack.bTargetLevel, TRUE, CALC_FROM_ALL_DIRS ) &&
+					AIAdvanceHasMutualSupport(pSoldier, pSoldier->aiData.usActionData, BestAttack.sTarget))
 				{
 					return( AI_ACTION_GET_CLOSER );
 				}

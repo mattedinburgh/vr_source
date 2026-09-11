@@ -4870,6 +4870,103 @@ INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	return (INT8)__max(-3, __min(3, iModifier));
 }
 
+BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT32 sTargetSpot)
+{
+	if (!AICombatTeam(pSoldier) ||
+		TileIsOutOfBounds(sAdvanceSpot) ||
+		TileIsOutOfBounds(sTargetSpot))
+	{
+		return TRUE;
+	}
+
+	if (sAdvanceSpot == pSoldier->sGridNo)
+		return TRUE;
+
+	UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+	UINT16 usAdvanceExposure = AIKnownThreatExposure(pSoldier, sAdvanceSpot, pSoldier->pathing.bLevel);
+	BOOLEAN fCurrentCover = AnyCoverAtSpot(pSoldier, pSoldier->sGridNo);
+	BOOLEAN fAdvanceCover = AnyCoverAtSpot(pSoldier, sAdvanceSpot);
+	INT32 iCurrentDist = PythSpacesAway(pSoldier->sGridNo, sTargetSpot);
+	INT32 iAdvanceDist = PythSpacesAway(sAdvanceSpot, sTargetSpot);
+
+	// Cooperation should not paralyse ordinary movement. Only a move that clearly
+	// increases exposure, or abandons cover while closing into the local fight,
+	// needs somebody else in a credible covering position.
+	BOOLEAN fExposureIncrease = (usAdvanceExposure > usCurrentExposure + 50);
+	BOOLEAN fExposedCloseApproach =
+		fCurrentCover &&
+		!fAdvanceCover &&
+		iAdvanceDist + 3 < iCurrentDist &&
+		iAdvanceDist < TACTICAL_RANGE / 2;
+
+	if (!fExposureIncrease && !fExposedCloseApproach)
+		return TRUE;
+
+	UINT8 ubSupporters = 0;
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend ||
+			pFriend == pSoldier ||
+			!pFriend->bActive ||
+			!pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE ||
+			pFriend->bCollapsed ||
+			pFriend->pathing.bLevel != pSoldier->pathing.bLevel ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			AIDisengagementActive(pFriend) ||
+			AIEscapeActive(pFriend) ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE ||
+			!AICheckHasGun(pFriend) ||
+			AIGunAmmo(pFriend) == 0)
+		{
+			continue;
+		}
+
+		// The covering soldier must independently know about essentially the same
+		// contact. This prevents a hidden-information squad hive mind.
+		INT32 sFriendThreat = ClosestKnownOpponent(pFriend, NULL, NULL);
+		if (TileIsOutOfBounds(sFriendThreat) ||
+			PythSpacesAway(sFriendThreat, sTargetSpot) > 3)
+		{
+			continue;
+		}
+
+		INT32 iFriendTargetDist = PythSpacesAway(pFriend->sGridNo, sTargetSpot);
+		INT32 iFriendGunRange = __max(1, (INT32)AIGunRange(pFriend) / CELL_X_SIZE);
+		if (iFriendTargetDist > iFriendGunRange + iFriendGunRange / 4)
+			continue;
+
+		if (!LocationToLocationLineOfSightTest(pFriend->sGridNo, pFriend->pathing.bLevel,
+			sTargetSpot, pSoldier->pathing.bLevel, TRUE, MAX_VISION_RANGE))
+		{
+			continue;
+		}
+
+		++ubSupporters;
+		if (ubSupporters >= 2)
+			break;
+	}
+
+	BOOLEAN fSeverelyExposed =
+		(usAdvanceExposure > usCurrentExposure + 150) ||
+		(!fAdvanceCover && usAdvanceExposure >= 200);
+
+	if (fSeverelyExposed)
+		return (ubSupporters >= 2);
+
+	if (ubSupporters >= 1)
+		return TRUE;
+
+	// A very bold soldier may make a modest unsupported dash, but not while
+	// stressed and never into the severe-exposure case above.
+	return ((pSoldier->aiData.bAttitude == AGGRESSIVE ||
+		pSoldier->aiData.bAttitude == BRAVESOLO) &&
+		AILocalStress(pSoldier) < 25);
+}
+
 // Range-aware movement preference. Positive values mean closing distance is useful;
 // negative values mean a scoped/long-range soldier is already too close for the
 // role his current weapon is best suited to. Weapon range is converted to tiles
