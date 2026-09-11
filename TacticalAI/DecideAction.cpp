@@ -2636,6 +2636,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		BOOLEAN fCoveringFireSupport = BestShot.ubPossible &&
 			BestShot.ubOpponent != NOBODY &&
 			(AIFriendNeedsCoveringFire(pSoldier, BestShot.ubOpponent) ||
+			 AIFriendWithdrawingNeedsCover(pSoldier, BestShot.ubOpponent) ||
 			 AIFriendAdvancingNeedsCover(pSoldier, BestShot.ubOpponent));
 
 		// WarmSteel - Because of suppression fire, we need enough ammo to even consider suppressing
@@ -9882,6 +9883,19 @@ INT8 DecideDisengagementAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	INT8 bEscapeAction = DecideEscapeAction(pSoldier, fCanMove);
 	if (bEscapeAction != AI_ACTION_NONE)
 		return bEscapeAction;
+
+	// If a nearby buddy has just broken contact, one suitable soldier remains
+	// temporarily as rear guard. He keeps the disengagement state, but skips his
+	// own withdrawal movement this turn so ordinary fire/suppression can cover
+	// the buddy. Immediate personal danger or full escape disqualifies him inside
+	// AIShouldHoldForWithdrawingFriend().
+	if (fDisengaging && !fEscaping &&
+		fCanMove &&
+		pSoldier->bActionPoints == pSoldier->bInitialActionPoints &&
+		AIShouldHoldForWithdrawingFriend(pSoldier))
+	{
+		return AI_ACTION_NONE;
+	}
 
 	// Escape remains a persistent intent even after contact is broken. If there is
 	// no movement this decision (for example AP already spent), allow normal
