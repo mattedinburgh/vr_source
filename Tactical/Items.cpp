@@ -15219,21 +15219,15 @@ INT16 GetBasicStealthBonus( SOLDIERTYPE * pSoldier, OBJECTTYPE * pObj )
 // HEADROCK HAM 4: Calculate a gun's accuracy, including bonuses from ammo and attachments.
 INT32 GetGunAccuracy(OBJECTTYPE *pObj)
 {
-	// Flugente: If overheating is allowed, an overheated gun receives a slight malus to accuracy
+	// Current 1.13 intent: normal weapon heat affects malfunction first; accuracy starts
+	// degrading only once the weapon exceeds its nominal damage/overheat threshold, and
+	// then degrades gradually rather than collapsing around the threshold.
 	FLOAT accuracyheatmultiplicator = 1.0;
 	if (gGameExternalOptions.fWeaponOverheating)
 	{
 		FLOAT overheatdamagepercentage = GetGunOverheatDamagePercentage(pObj);	// 1.0 means 100% damage percentage
-
-		//FLOAT accuracymalus = (max(1.0f, overheatdamagepercentage) - 1.0f) * 0.1f;
-		//accuracyheatmultiplicator = max(0.0f, 1.0f - accuracymalus);
-
-		// sevenfm: use square law for values < 1.0
-		if (overheatdamagepercentage < 1.0f)
-			overheatdamagepercentage = overheatdamagepercentage * overheatdamagepercentage;
-
-		// sevenfm: start lowering accuracy before hitting 100% level, so at 100% overheating we'll have 50% accuracy reduction
-		accuracyheatmultiplicator = accuracyheatmultiplicator * 1.0f / (1.0f + overheatdamagepercentage);
+		FLOAT accuracymalus = (max(1.0f, overheatdamagepercentage) - 1.0f) * 0.1f;
+		accuracyheatmultiplicator = max(0.0f, 1.0f - accuracymalus);
 	}
 
 	if (!UsingNewCTHSystem())
