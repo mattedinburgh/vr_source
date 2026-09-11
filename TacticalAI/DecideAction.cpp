@@ -2948,7 +2948,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 
 	// Emergency smoke can create the safe window needed for casualty treatment or
 	// a heavily suppressed soldier's disengagement.
-	if (pSoldier->bTeam == ENEMY_TEAM)
+	if (AICombatTeam(pSoldier))
 	{
 		INT8 bSmokeAction = DecideEmergencyProtectionSmoke(pSoldier);
 		if (bSmokeAction != AI_ACTION_NONE)
@@ -2957,7 +2957,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 
 	// If several soldiers are packed together under fire, break the cluster before
 	// ordinary withdrawal/offensive logic makes them easy grenade targets.
-	if (ubCanMove && pSoldier->bTeam == ENEMY_TEAM)
+	if (ubCanMove && AICombatTeam(pSoldier))
 	{
 		INT8 bDisperseAction = DecideCombatDispersion(pSoldier);
 		if (bDisperseAction != AI_ACTION_NONE)
@@ -2967,7 +2967,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 	// Tactical self-preservation: withdraw when this soldier's personal danger
 	// exceeds what his personality and morale are willing to tolerate.
 	if (gfTurnBasedAI &&
-		pSoldier->bTeam == ENEMY_TEAM &&
+		AICombatTeam(pSoldier) &&
 		ubCanMove &&
 		pSoldier->aiData.bOrders != STATIONARY &&
 		pSoldier->stats.bLife >= OKLIFE &&
@@ -2990,7 +2990,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 
 	// Combat medics prioritize saving viable casualties, but only when the rescue
 	// passes the medic's personal-risk and route-exposure checks.
-	if (pSoldier->bTeam == ENEMY_TEAM && AICheckIsMedic(pSoldier))
+	if (AICombatTeam(pSoldier) && AICheckIsMedic(pSoldier))
 	{
 		INT8 bMedicAction = DecideCombatMedicRescue(pSoldier);
 		if (bMedicAction != AI_ACTION_NONE)
@@ -4639,7 +4639,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 
 		// Emergency protection smoke is considered before movement/withdrawal so the
 		// team can create concealment for a casualty or pinned soldier first.
-		if (pSoldier->bTeam == ENEMY_TEAM)
+		if (AICombatTeam(pSoldier))
 		{
 			INT8 bSmokeAction = DecideEmergencyProtectionSmoke(pSoldier);
 			if (bSmokeAction != AI_ACTION_NONE)
@@ -4647,7 +4647,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		}
 
 		// Break local clusters under pressure before choosing ordinary attack/withdrawal.
-		if (ubCanMove && pSoldier->bTeam == ENEMY_TEAM)
+		if (ubCanMove && AICombatTeam(pSoldier))
 		{
 			INT8 bDisperseAction = DecideCombatDispersion(pSoldier);
 			if (bDisperseAction != AI_ACTION_NONE)
@@ -4657,7 +4657,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		// Tactical self-preservation: individual danger can override aggression even
 		// for a healthy soldier if he is badly suppressed, exposed and isolated.
 		if (gfTurnBasedAI &&
-			pSoldier->bTeam == ENEMY_TEAM &&
+			AICombatTeam(pSoldier) &&
 			ubCanMove &&
 			pSoldier->aiData.bOrders != STATIONARY &&
 			pSoldier->stats.bLife >= OKLIFE &&
@@ -4677,7 +4677,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 
 		// Combat medic rescue is considered before ordinary offensive behaviour.
 		// The rescue routine itself rejects suicidal routes and over-risked medics.
-		if (pSoldier->bTeam == ENEMY_TEAM && AICheckIsMedic(pSoldier))
+		if (AICombatTeam(pSoldier) && AICheckIsMedic(pSoldier))
 		{
 			INT8 bMedicAction = DecideCombatMedicRescue(pSoldier);
 			if (bMedicAction != AI_ACTION_NONE)
@@ -8296,7 +8296,7 @@ void PrepareMainRedAIWeights(SOLDIERTYPE *pSoldier, INT8 &bSeekPts, INT8 &bHelpP
 	// Local cooperation: advancing with nearby support is desirable; isolated
 	// advances are discouraged.  This changes preference rather than forbidding
 	// movement, so brave/aggressive soldiers can still push when circumstances justify it.
-	if (pSoldier->bTeam == ENEMY_TEAM && bSeekPts > -90)
+	if (AICombatTeam(pSoldier) && bSeekPts > -90)
 	{
 		INT8 bSupportModifier = AIAdvanceSupportModifier(pSoldier);
 		bSeekPts += bSupportModifier;
