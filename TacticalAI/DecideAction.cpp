@@ -4918,11 +4918,6 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				// Human combatants do not become fearless merely because they lost their
 				// weapon. Melee-capable soldiers can still fight through normal attack logic;
 				// truly unarmed soldiers fall through to self-preservation behavior.
-				else if( !AICombatTeam(pSoldier) && pSoldier->bTeam == ENEMY_TEAM && ubCanMove )
-				{
-					bCanAttack = TRUE;
-					fTryPunching = TRUE;
-				}
 				else
 				{
 					bCanAttack = FALSE;
@@ -4958,14 +4953,25 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		return AI_ACTION_STOP_COWERING;
 	}
 
-	// if we don't have a gun, look around for a weapon!
+	// If we don't have a gun, look around for one only when scavenging is tactically
+	// reasonable. Human combatants do not sprint into active fire just because a
+	// weapon is lying on the ground somewhere nearby.
 	if (FindAIUsableObjClass( pSoldier, IC_GUN ) == ITEM_NOT_FOUND && ubCanMove && !pSoldier->aiData.bNeutral)
 	{
-		// look around for a gun...
-		pSoldier->aiData.bAction = SearchForItems( pSoldier, SEARCH_WEAPONS, pSoldier->inv[HANDPOS].usItem );
-		if (pSoldier->aiData.bAction != AI_ACTION_NONE )
+		BOOLEAN fSafeToScavengeWeapon =
+			!AICombatTeam(pSoldier) ||
+			(!pSoldier->aiData.bUnderFire &&
+			 (AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
+			  TileIsOutOfBounds(sClosestOpponent) ||
+			  PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 2));
+
+		if (fSafeToScavengeWeapon)
 		{
-			return( pSoldier->aiData.bAction );
+			pSoldier->aiData.bAction = SearchForItems( pSoldier, SEARCH_WEAPONS, pSoldier->inv[HANDPOS].usItem );
+			if (pSoldier->aiData.bAction != AI_ACTION_NONE )
+			{
+				return( pSoldier->aiData.bAction );
+			}
 		}
 	}
 
