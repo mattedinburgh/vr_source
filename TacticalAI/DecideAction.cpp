@@ -2621,13 +2621,18 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		}
 		//RELOADING
 
+		// A nearby ally under pressure can create a specific covering-fire task.
+		BOOLEAN fCoveringFireSupport = BestShot.ubPossible &&
+			BestShot.ubOpponent != NOBODY &&
+			AIFriendNeedsCoveringFire(pSoldier, BestShot.ubOpponent);
+
 		// WarmSteel - Because of suppression fire, we need enough ammo to even consider suppressing
 		// This means we need to reload. Also reload if we're just plainly low on bullets.
 		// sevenfm: no reloads for tanks
 		if( BestShot.bWeaponIn != NO_SLOT &&
 			!TANK(pSoldier) &&
 			pSoldier->bActionPoints > APBPConstants[AP_MINIMUM] &&
-			(!pSoldier->aiData.bUnderFire && !GuySawEnemy(pSoldier, SEEN_LAST_TURN) && (TileIsOutOfBounds(sClosestOpponent) || PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 2) || AICheckIsMachinegunner(pSoldier) && Chance(25) || Chance(10)) &&
+			(fCoveringFireSupport || !pSoldier->aiData.bUnderFire && !GuySawEnemy(pSoldier, SEEN_LAST_TURN) && (TileIsOutOfBounds(sClosestOpponent) || PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 2) || AICheckIsMachinegunner(pSoldier) && Chance(25) || Chance(10)) &&
 			IsGunAutofireCapable(&pSoldier->inv[BestShot.bWeaponIn]) &&
 			Weapon[pSoldier->inv[BestShot.bWeaponIn].usItem].swapClips &&
 			pSoldier->inv[BestShot.bWeaponIn][0]->data.gun.ubGunShotsLeft < gGameExternalOptions.ubAISuppressionMinimumAmmo &&
@@ -2687,6 +2692,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			!pSoldier->IsFlanking() &&
 			// check cover
 			(AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||																				// safe position
+			fCoveringFireSupport ||																				// cover a nearby ally's withdrawal
 			NightLight() && CountFriendsFlankSameSpot(pSoldier) && Chance(50) ||
 			TANK(pSoldier) ||																		// tanks don't need cover
 			pSoldier->aiData.bUnderFire && (pSoldier->ubPreviousAttackerID == BestShot.ubOpponent || pSoldier->ubNextToPreviousAttackerID == BestShot.ubOpponent || MercPtrs[BestShot.ubOpponent]->sLastTarget == pSoldier->sGridNo) ||	// return fire
@@ -2694,6 +2700,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			SoldierToSoldierLineOfSightTest(pSoldier, MercPtrs[BestShot.ubOpponent], TRUE, CALC_FROM_ALL_DIRS)) &&		// can see target after turning
 			// reduce chance to shoot if target is beyond weapon range
 			(AICheckIsMachinegunner(pSoldier) ||
+			fCoveringFireSupport ||
 			TANK(pSoldier) ||
 			AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
 			pSoldier->aiData.bUnderFire && (pSoldier->ubPreviousAttackerID == BestShot.ubOpponent || pSoldier->ubNextToPreviousAttackerID == BestShot.ubOpponent || MercPtrs[BestShot.ubOpponent]->sLastTarget == pSoldier->sGridNo) ||	// return fire
