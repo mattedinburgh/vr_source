@@ -2793,9 +2793,21 @@ void HandleAITacticalTraversal( SOLDIERTYPE * pSoldier )
 		// not run Queen-death implications.
 		if (pSoldier->bTeam == MILITIA_TEAM)
 		{
-			if (ExecuteOneMilitiaStrategicRetreat(gWorldSectorX, gWorldSectorY,
-				iMapX, iMapY, pSoldier->ubSoldierClass))
+			// A live militia soldier already carries the sector-inventory items selected
+			// when he spawned. Suppress the strategic helper's generic equipment move,
+			// then deposit this soldier's actual militia-marked gear in the fallback sector.
+			BOOLEAN fUseMilitiaSectorInventory = gGameExternalOptions.fMilitiaUseSectorInventory;
+			gGameExternalOptions.fMilitiaUseSectorInventory = FALSE;
+			BOOLEAN fRetreated = ExecuteOneMilitiaStrategicRetreat(gWorldSectorX, gWorldSectorY,
+				iMapX, iMapY, pSoldier->ubSoldierClass);
+			gGameExternalOptions.fMilitiaUseSectorInventory = fUseMilitiaSectorInventory;
+
+			if (fRetreated)
 			{
+				pSoldier->sSectorX = iMapX;
+				pSoldier->sSectorY = iMapY;
+				pSoldier->bSectorZ = 0;
+				pSoldier->DropSectorEquipment();
 				TacticalRemoveSoldier(pSoldier->ubID);
 			}
 			else
