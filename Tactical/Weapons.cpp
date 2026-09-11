@@ -5420,9 +5420,10 @@ UINT32 CalcNewChanceToHitGun(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTi
 	}
 	if (iSightRange == 0) 
 	{	
-		// Can't see the target but we still need to know what the sight range would be if we could so we can deal with cover penalties
-		// sevenfm: disable to prevent bug when shooting at empty tile
-		//iSightRange = SoldierToSoldierLineOfSightTest( pSoldier, MercPtrs[ubTargetID], TRUE, NO_DISTANCE_LIMIT, pSoldier->bAimShotLocation, false, true );
+		// Can't see the target but we still need to know what the sight range would be if we could so we can deal with cover penalties.
+		// Keep the old empty-tile crash protection, but restore current 1.13 target-aware CTH LOS behavior for real targets.
+		if (ubTargetID != NOBODY)
+			iSightRange = SoldierToSoldierLineOfSightTest( pSoldier, MercPtrs[ubTargetID], TRUE, NO_DISTANCE_LIMIT, pSoldier->bAimShotLocation, false, true );
 		fCantSeeTarget = true;
 	}
 
