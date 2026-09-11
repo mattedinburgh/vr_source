@@ -5470,11 +5470,10 @@ UINT32 CalcNewChanceToHitGun(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTi
 //////////////////////////////////////////////////////////////////////////////////
 // START CLEANED UP VERSION OF NCTH CALCULATION
 //////////////////////////////////////////////////////////////////////////////////
-// silversurfer: This is a cleaned up version of the NCTH calculation and hopefully easier to read.
-// The if clause and the rest of the old code below its else can be removed if the new version is accepted.
-// The "if (gGameExternalOptions.fUseNewCTHCalculation)" is only there for easy switching in Ja2_Options.ini.
+// silversurfer: This is the cleaned-up NCTH calculation used by current 1.13.
+// Vengeance keeps the legacy branch below for source compatibility, but NCTH shots no longer switch back to it.
 //////////////////////////////////////////////////////////////////////////////////
-if (gGameExternalOptions.fUseNewCTHCalculation)
+if (UsingNewCTHSystem())
 {
 	FLOAT fBaseChance = 0, fBaseModifier = 0, fAimChance = 0, fAimModifier = 0, fFinalChance = 0;
 
@@ -8454,13 +8453,56 @@ UINT32 AICalcChanceToHitGun(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTim
 
 		// distance to target
 		FLOAT d2DDistance = (FLOAT) PythSpacesAway( pSoldier->sGridNo, sGridNo ) * (FLOAT) CELL_X_SIZE;
-		// basic aperture that is equal for everyone
-		FLOAT dBasicAperture = CalcBasicAperture( );
-		// aperture at target distance without magnification
-		FLOAT dAperture = dBasicAperture * (d2DDistance / gGameCTHConstants.NORMAL_SHOOTING_DISTANCE);
 
 		// magnification (1.0 or higher if scope is used)
 		FLOAT dMagFactor = CalcMagFactor( pSoldier, &(pSoldier->inv[pSoldier->ubAttackingHand]), d2DDistance, sGridNo, (UINT8)ubAimTime );
+
+		// basic aperture that is equal for everyone
+		FLOAT dBasicAperture = CalcBasicAperture( );
+
+		// Match the player's modern NCTH iron-sight aperture behavior.
+		if ( gGameCTHConstants.IRON_SIGHTS_MAX_APERTURE_USE_GRADIENT && dMagFactor <= 1.0 && !pSoldier->IsValidAlternativeFireMode( ubAimTime, sGridNo ) )
+		{
+			dBasicAperture = dBasicAperture * ( 1 / sqrt( d2DDistance / FLOAT(CELL_X_SIZE) ) / gGameCTHConstants.IRON_SIGHTS_MAX_APERTURE_MODIFIER
+						+ (gGameCTHConstants.IRON_SIGHTS_MAX_APERTURE_MODIFIER - 1) / gGameCTHConstants.IRON_SIGHTS_MAX_APERTURE_MODIFIER );
+		}
+
+		if ( dMagFactor <= 1.0 && !pSoldier->IsValidAlternativeFireMode( ubAimTime, sGridNo ) )
+		{
+			dBasicAperture = dBasicAperture * (FLOAT)( (100 - gGameCTHConstants.IRON_SIGHT_PERFORMANCE_BONUS) / 100);
+		}
+
+		// Match player laser bonuses by range, lighting and selected aiming mode.
+		INT16 sLaserRange = GetBestLaserRange( &(pSoldier->inv[pSoldier->ubAttackingHand]) );
+		if ( sLaserRange > 0
+			&& ( gGameCTHConstants.LASER_PERFORMANCE_BONUS_HIP + gGameCTHConstants.LASER_PERFORMANCE_BONUS_IRON + gGameCTHConstants.LASER_PERFORMANCE_BONUS_SCOPE != 0) )
+		{
+			INT8 bLightLevel = LightTrueLevel( sGridNo, bTargetLevel );
+			INT32 iMaxLaserRange = ( sLaserRange * ( 2*bLightLevel + 3*NORMAL_LIGHTLEVEL_NIGHT - 5*NORMAL_LIGHTLEVEL_DAY ) ) / ( 2 * ( NORMAL_LIGHTLEVEL_NIGHT - NORMAL_LIGHTLEVEL_DAY ) );
+
+			if ( iMaxLaserRange > d2DDistance )
+			{
+				FLOAT fLaserBonus = 0;
+				if ( pSoldier->IsValidAlternativeFireMode( ubAimTime, sGridNo ) )
+					fLaserBonus = gGameCTHConstants.LASER_PERFORMANCE_BONUS_HIP;
+				else if ( dMagFactor <= 1.0 )
+					fLaserBonus = gGameCTHConstants.LASER_PERFORMANCE_BONUS_IRON;
+				else
+					fLaserBonus = gGameCTHConstants.LASER_PERFORMANCE_BONUS_SCOPE;
+
+				FLOAT fBrightnessModifier = (FLOAT)(bLightLevel) / (FLOAT)(NORMAL_LIGHTLEVEL_NIGHT);
+				if ( sLaserRange > d2DDistance )
+					dBasicAperture = dBasicAperture * (FLOAT)( (100 - (fLaserBonus * fBrightnessModifier)) / 100);
+				else
+				{
+					FLOAT fEffectiveLaserRatio = (FLOAT)(iMaxLaserRange - d2DDistance) / (FLOAT)(iMaxLaserRange - sLaserRange);
+					dBasicAperture = dBasicAperture * (FLOAT)( (100 - (fLaserBonus * fBrightnessModifier * fEffectiveLaserRatio)) / 100);
+				}
+			}
+		}
+
+		// aperture at target distance without magnification
+		FLOAT dAperture = dBasicAperture * (d2DDistance / gGameCTHConstants.NORMAL_SHOOTING_DISTANCE);
 		// Get effective mag factor for this shooter. This represents his ability to use scopes.
 		FLOAT fEffectiveMagFactor = CalcEffectiveMagFactor( pSoldier, dMagFactor );
 		// modify aperture with magnification
@@ -11720,7 +11762,7 @@ void CalcMagFactorSimple( SOLDIERTYPE *pSoldier, FLOAT d2DDistance, INT16 bAimTi
 
 		// With the reworked NCTH code we don't want to use iProjectionFactor anymore. 
 		// Instead we use the performance bonus if at least one bonus is != 0. Otherwise -> continue using Projection Factor.
-		if (gGameExternalOptions.fUseNewCTHCalculation 
+		if (UsingNewCTHSystem()
 			&& ( gGameCTHConstants.LASER_PERFORMANCE_BONUS_HIP + gGameCTHConstants.LASER_PERFORMANCE_BONUS_IRON + gGameCTHConstants.LASER_PERFORMANCE_BONUS_SCOPE != 0 ))
 			iProjectionFactor = 1.0;
 		else
