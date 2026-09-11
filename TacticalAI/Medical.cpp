@@ -4,6 +4,7 @@
 	#include "types.h"
 
 	#include "Soldier Functions.h"
+	#include "Points.h"
 	#include "ai.h"
 	#include "AIInternals.h"
 	#include "Animation Control.h"
@@ -536,6 +537,12 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 	// medic moving toward a casualty does not run through combat holding a medkit.
 	if (CardinalSpacesAway(pSoldier->sGridNo, sBestPatientGrid) == 1)
 	{
+		// Do not select GIVE_AID when the action executor would reject it for lack
+		// of AP and immediately end this AI soldier's turn. If treatment cannot
+		// begin now, fall back to normal combat logic and reconsider next turn.
+		if (pSoldier->bActionPoints < GetAPsToBeginFirstAid(pSoldier))
+			return AI_ACTION_NONE;
+
 		if (bMedKitSlot != HANDPOS)
 		{
 			pSoldier->bSlotItemTakenFrom = bMedKitSlot;
