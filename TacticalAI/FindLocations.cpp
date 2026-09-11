@@ -1518,14 +1518,30 @@ INT32 FindSpotMaxDistFromOpponents(SOLDIERTYPE *pSoldier)
 			if ( InLightAtNight( sGridNo, pSoldier->pathing.bLevel ) )
 				continue;
 
-			// sevenfm: avoid bombs:
-			if (FindBombNearby(pSoldier, pSoldier->sGridNo, BOMB_DETECTION_RANGE))
+			// Do not flee into a known bomb or dangerous red-smoke tile.
+			// Check the candidate tile, not the soldier's current tile; otherwise
+			// a soldier already in danger can reject every possible escape square.
+			if (FindBombNearby(pSoldier, sGridNo, BOMB_DETECTION_RANGE))
 			{
 				continue;
 			}
 
-			// sevenfm: avoid red smoke
-			if( RedSmokeDanger(pSoldier->sGridNo, pSoldier->pathing.bLevel) )
+			if (RedSmokeDanger(sGridNo, pSoldier->pathing.bLevel))
+			{
+				continue;
+			}
+
+			// Current 1.13 validates the final run-away square again after the
+			// reachability flood. This prevents stale/occupied/illegal destinations
+			// from reaching NewDest() and aborting the AI movement.
+			if (!CheckNPCDestination(pSoldier, sGridNo))
+			{
+				continue;
+			}
+
+			// Retreating soldiers should not choose water as a new escape destination.
+			// Soldiers already in deep water are handled by AI_ACTION_LEAVE_WATER_GAS.
+			if (!LegalNPCDestination(pSoldier, sGridNo, IGNORE_PATH, NOWATER, 0))
 			{
 				continue;
 			}
