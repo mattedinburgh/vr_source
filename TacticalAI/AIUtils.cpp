@@ -5109,7 +5109,7 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 				(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 				AIDisengagementActive(pFriend) || AIEscapeActive(pFriend) ||
 				pFriend->pathing.bLevel != pSoldier->pathing.bLevel ||
-				PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE)
+				PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > TACTICAL_RANGE / 2)
 			{
 				continue;
 			}
