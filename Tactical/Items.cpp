@@ -10506,10 +10506,8 @@ INT16 GetAimBonus( SOLDIERTYPE * pSoldier, OBJECTTYPE * pObj, INT32 iRange, INT1
 
 	if (pObj->exists() == true) 
 	{
-		// bonus from item
-		bonus = BonusReduceMore(GetItemAimBonus(&Item[pObj->usItem], iRange, ubAimTime), (*pObj)[0]->data.objectStatus);
-
-		// bonus from active scope
+		// With scope modes enabled, only the active sight contributes its aim bonus.
+		// Do not keep the weapon's integrated optic bonus while using another sight or hip fire.
 		if ( gGameExternalOptions.fScopeModes && pSoldier && Item[pObj->usItem].usItemClass == IC_GUN )
 		{
 			std::map<INT8, OBJECTTYPE*> ObjList;
@@ -10518,6 +10516,10 @@ INT16 GetAimBonus( SOLDIERTYPE * pSoldier, OBJECTTYPE * pObj, INT32 iRange, INT1
 			// only use scope mode if gun is in hand, otherwise an error might occur!
 			if ( (&pSoldier->inv[HANDPOS]) == pObj && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD)
 				bonus = BonusReduceMore( GetItemAimBonus( &Item[ObjList[pSoldier->bScopeMode]->usItem], iRange, ubAimTime ), (*ObjList[pSoldier->bScopeMode])[0]->data.objectStatus );
+		}
+		else
+		{
+			bonus = BonusReduceMore(GetItemAimBonus(&Item[pObj->usItem], iRange, ubAimTime), (*pObj)[0]->data.objectStatus);
 		}
 
 		// bonus from ammo
