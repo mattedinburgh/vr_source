@@ -79,3 +79,16 @@ Chunk 1 adds information-only helpers. No action-selection call site uses them y
 - `AIBattleSituation`: classifies UNKNOWN / WINNING / EVEN / LOSING / CATASTROPHIC from perceived local strength and friendly losses.
 
 The opponent-strength helper never reads hidden AIM positions, hidden sector enemy counts, or hidden current opponent health. A stale/heard contact contributes less than a currently seen contact through JA2's existing knowledge certainty table.
+
+## Chunk 2: hopeless fights and survivor behaviour
+
+Chunk 2 turns the Chunk 1 assessment into a limited behaviour change without adding a new pathfinder.
+
+- `AISeverelyIsolated`: one/two combat-capable local soldiers facing at least equal known opposition.
+- `AILastSurvivorPressure`: one/two local soldiers plus at least 50% known friendly losses.
+- `AIHopelessOddsModifier`: soft RED-state seek penalty for losing/catastrophic situations.
+- `AIShouldAvoidAdvance`: hard gate for catastrophic fights and badly depleted isolated elements.
+- `DecideHopelessSurvivorAction`: at the start of a fresh turn, reuse `AI_ACTION_WITHDRAW`; if no acceptable withdrawal exists, seek existing nearby cover.
+- New flanks stop and new flanks/GET_CLOSER/distant melee charges are suppressed while `AIShouldAvoidAdvance` is true.
+
+This does not yet implement map-edge escape or a persistent disengagement state. Those remain later chunks. Soldiers may still shoot, throw, suppress or fight from their current position; the change is that hopeless survivors stop initiating another charge.

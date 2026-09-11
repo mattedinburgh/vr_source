@@ -2972,6 +2972,14 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		if (bDisperseAction != AI_ACTION_NONE)
 			return bDisperseAction;
 	}
+	// If the local fight has collapsed, stop initiating attacks into superior known
+	// opposition. This uses only Chunk 1 perceived knowledge and existing withdrawal/cover.
+	if (AICombatTeam(pSoldier) && AIShouldAvoidAdvance(pSoldier))
+	{
+		INT8 bSurvivorAction = DecideHopelessSurvivorAction(pSoldier, ubCanMove);
+		if (bSurvivorAction != AI_ACTION_NONE)
+			return bSurvivorAction;
+	}
 
 	// Tactical self-preservation: withdraw when this soldier's personal danger
 	// exceeds what his personality and morale are willing to tolerate.
@@ -4676,6 +4684,13 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				if (bDisperseAction != AI_ACTION_NONE)
 					return bDisperseAction;
 			}
+			// Hopeless local odds make survival/defence outrank another advance.
+			if (AICombatTeam(pSoldier) && AIShouldAvoidAdvance(pSoldier))
+			{
+				INT8 bSurvivorAction = DecideHopelessSurvivorAction(pSoldier, ubCanMove);
+				if (bSurvivorAction != AI_ACTION_NONE)
+					return bSurvivorAction;
+			}
 
 			// Tactical self-preservation: individual danger can override aggression even
 			// for a healthy soldier if he is badly suppressed, exposed and isolated.
@@ -5371,7 +5386,11 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			BestAttack.iAttackValue = 0;
 		}
 
-		if (BestStab.ubPossible && ((BestStab.iAttackValue > BestAttack.iAttackValue) || (ubBestAttackAction == AI_ACTION_NONE)))
+		if (BestStab.ubPossible &&
+			(!AIShouldAvoidAdvance(pSoldier) ||
+			 (Item[pSoldier->inv[BestStab.bWeaponIn].usItem].usItemClass & IC_THROWING_KNIFE) ||
+			 SpacesAway(pSoldier->sGridNo, BestStab.sTarget) <= 1) &&
+			((BestStab.iAttackValue > BestAttack.iAttackValue) || (ubBestAttackAction == AI_ACTION_NONE)))
 		{
 			BestAttack.iAttackValue = BestStab.iAttackValue;
 			if ( Item[ pSoldier->inv[BestStab.bWeaponIn].usItem ].usItemClass & IC_THROWING_KNIFE )
@@ -5411,7 +5430,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"best action = throw something");
 		}
 
-		if ( ( ubBestAttackAction == AI_ACTION_NONE ) && fTryPunching )
+		if ( ( ubBestAttackAction == AI_ACTION_NONE ) && fTryPunching && !AIShouldAvoidAdvance(pSoldier) )
 		{
 			// nothing (else) to attack with so let's try hand-to-hand
 			bWeaponIn = FindObj( pSoldier, NOTHING, HANDPOS, NUM_INV_SLOTS );
@@ -6117,6 +6136,7 @@ L_NEWAIM:
 				pSoldier->bActionPoints == pSoldier->bInitialActionPoints &&
 				pSoldier->bActionPoints > BestAttack.ubAPCost &&
 				AIEngagementRangeModifier(pSoldier, BestAttack.sTarget) > 0 &&
+				!AIShouldAvoidAdvance(pSoldier) &&
 				(AIAdvanceSupportModifier(pSoldier, BestAttack.sTarget) >= 0 ||
 				 ((pSoldier->aiData.bAttitude == AGGRESSIVE || pSoldier->aiData.bAttitude == BRAVESOLO) &&
 				  AILocalStress(pSoldier) < 25)) &&
@@ -8217,6 +8237,7 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		(pSoldier->aiData.bAttitude == CUNNINGAID || pSoldier->aiData.bAttitude == CUNNINGSOLO ||
 		(pSoldier->aiData.bAttitude == BRAVESOLO || pSoldier->aiData.bAttitude == BRAVEAID) && CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) > 2) &&
 		AICombatTeam(pSoldier) &&
+		!AIShouldAvoidAdvance(pSoldier) &&
 		pSoldier->ubSoldierClass != SOLDIER_CLASS_ADMINISTRATOR &&
 		!AICheckSpecialRole(pSoldier) &&		
 		gAnimControl[pSoldier->usAnimState].ubHeight != ANIM_PRONE &&
@@ -8343,6 +8364,24 @@ void PrepareMainRedAIWeights(SOLDIERTYPE *pSoldier, INT8 &bSeekPts, INT8 &bHelpP
 	case ATTACKSLAYONLY:bSeekPts += +1; bHelpPts += 0; bHidePts += -1; bWatchPts += 0; break;
 	}
 
+	// Battlefield odds affect willingness to seek contact before normal support/range
+	// preferences are applied. Hopeless survivors do not initiate another advance.
+	if (AICombatTeam(pSoldier) && bSeekPts > -90)
+	{
+		INT8 bOddsModifier = AIHopelessOddsModifier(pSoldier);
+		if (AIShouldAvoidAdvance(pSoldier))
+		{
+			bSeekPts = -99;
+			if (bHidePts > -90) bHidePts += 3;
+			if (bWatchPts > -90) bWatchPts += 2;
+		}
+		else
+		{
+			bSeekPts += bOddsModifier;
+			if (bOddsModifier < 0 && bHidePts > -90) bHidePts += 1;
+		}
+	}
+
 	// Local cooperation: advancing with nearby support is desirable; isolated
 	// advances are discouraged.  This changes preference rather than forbidding
 	// movement, so brave/aggressive soldiers can still push when circumstances justify it.
@@ -8370,6 +8409,13 @@ void PrepareMainRedAIWeights(SOLDIERTYPE *pSoldier, INT8 &bSeekPts, INT8 &bHelpP
 
 INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 {
+	if (AIShouldAvoidAdvance(pSoldier))
+	{
+		// End the manoeuvre cleanly; ordinary RED logic can now hold/fallback instead.
+		pSoldier->numFlanks = MAX_FLANKS_RED;
+		return -1;
+	}
+
 	ATTACKTYPE BestThrow;	
 	INT32 tempGridNo;
 
@@ -9233,6 +9279,54 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 // Break dangerous clusters under fire. Existing cover scoring already dislikes
 // adjacent teammates; this decision makes that preference urgent when several soldiers
 // are packed together and the local group is taking fire.
+INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
+{
+	if (!AICombatTeam(pSoldier) || !fCanMove || pSoldier->IsZombie() ||
+		!AIShouldAvoidAdvance(pSoldier) ||
+		pSoldier->bActionPoints != pSoldier->bInitialActionPoints)
+	{
+		return AI_ACTION_NONE;
+	}
+
+	INT32 sThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	if (TileIsOutOfBounds(sThreat))
+		return AI_ACTION_NONE;
+
+	// First try an existing bounded tactical withdrawal. This does not flee the
+	// sector; it simply increases separation while preferring cover and support.
+	if (pSoldier->aiData.bOrders != STATIONARY)
+	{
+		INT32 sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
+		if (!TileIsOutOfBounds(sFallback))
+		{
+			BOOLEAN fCurrentExposed = EnemyCanAttackSpot(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+			BOOLEAN fFallbackExposed = EnemyCanAttackSpot(pSoldier, sFallback, pSoldier->pathing.bLevel);
+
+			if (!fFallbackExposed || fCurrentExposed)
+			{
+				pSoldier->aiData.usActionData = sFallback;
+				return AI_ACTION_WITHDRAW;
+			}
+		}
+	}
+
+	// If withdrawal has no acceptable route (or orders forbid leaving the post),
+	// improve the defensive position instead of charging superior known opposition.
+	INT32 iCoverPercentBetter = 0;
+	INT32 sCover = FindBestNearbyCover(pSoldier, pSoldier->aiData.bAIMorale, &iCoverPercentBetter);
+	if (!TileIsOutOfBounds(sCover) && sCover != pSoldier->sGridNo)
+	{
+		BOOLEAN fCurrentExposed = EnemyCanAttackSpot(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+		BOOLEAN fCoverExposed = EnemyCanAttackSpot(pSoldier, sCover, pSoldier->pathing.bLevel);
+		if (!fCoverExposed || fCurrentExposed)
+		{
+			pSoldier->aiData.usActionData = sCover;
+			return AI_ACTION_TAKE_COVER;
+		}
+	}
+
+	return AI_ACTION_NONE;
+}
 INT8 DecideCombatDispersion(SOLDIERTYPE *pSoldier)
 {
 	if (!gfTurnBasedAI || !pSoldier || !AICombatTeam(pSoldier) ||

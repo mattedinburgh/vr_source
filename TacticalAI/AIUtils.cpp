@@ -4141,6 +4141,80 @@ INT8 AIBattleSituation(SOLDIERTYPE *pSoldier)
 	return AI_BATTLE_EVEN;
 }
 
+BOOLEAN AISeverelyIsolated(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier))
+		return FALSE;
+
+	UINT16 usFriends = AIPerceivedFriendlyStrength(pSoldier);
+	UINT16 usEnemies = AIPerceivedEnemyStrength(pSoldier);
+
+	// One or two combat-capable soldiers facing at least as much known opposition
+	// have effectively lost local mutual support.
+	return (usEnemies > 0 && usFriends <= 200 && usEnemies >= usFriends);
+}
+
+BOOLEAN AILastSurvivorPressure(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier))
+		return FALSE;
+
+	UINT16 usFriends = AIPerceivedFriendlyStrength(pSoldier);
+	UINT16 usEnemies = AIPerceivedEnemyStrength(pSoldier);
+
+	if (usEnemies == 0 || usFriends > 200)
+		return FALSE;
+
+	// This is deliberately a soft 'survivor pressure' test, not a magic rout rule.
+	// A one/two-man element only gets this flag if friendly losses are already severe.
+	return (AIFriendlyCasualtyPercent(pSoldier) >= 50);
+}
+
+INT8 AIHopelessOddsModifier(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier))
+		return 0;
+
+	INT8 bModifier = 0;
+	INT8 bSituation = AIBattleSituation(pSoldier);
+
+	if (bSituation == AI_BATTLE_LOSING)
+		bModifier -= 2;
+	else if (bSituation == AI_BATTLE_CATASTROPHIC)
+		bModifier -= 5;
+
+	if (AISeverelyIsolated(pSoldier))
+		bModifier -= 1;
+	if (AILastSurvivorPressure(pSoldier))
+		bModifier -= 2;
+
+	return __max((INT8)-8, bModifier);
+}
+
+BOOLEAN AIShouldAvoidAdvance(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier))
+		return FALSE;
+
+	INT8 bSituation = AIBattleSituation(pSoldier);
+
+	if (bSituation == AI_BATTLE_CATASTROPHIC)
+		return TRUE;
+
+	if (bSituation == AI_BATTLE_LOSING &&
+		(AISeverelyIsolated(pSoldier) || AILastSurvivorPressure(pSoldier)))
+	{
+		return TRUE;
+	}
+
+	// A heavily depleted one/two-man element should not initiate another advance
+	// merely because the exact known force ratio happens to classify as EVEN.
+	if (AILastSurvivorPressure(pSoldier) && bSituation != AI_BATTLE_WINNING)
+		return TRUE;
+
+	return FALSE;
+}
+
 // Human-like local combat stress. This deliberately affects tactical morale and
 // behaviour rather than adding another direct CTH penalty: NCTH already accounts
 // for injury, fatigue, morale and shock in the shooting calculation.
