@@ -9085,7 +9085,7 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 // casualty or a heavily suppressed soldier who is actually exposed to known enemy fire.
 INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 {
-	if (!gfTurnBasedAI || !pSoldier || pSoldier->bTeam != ENEMY_TEAM ||
+	if (!gfTurnBasedAI || !pSoldier || !AICombatTeam(pSoldier) ||
 		!SoldierAI(pSoldier) || pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
 		pSoldier->bActionPoints < APBPConstants[AP_MINIMUM] ||
 		FindThrowableGrenade(pSoldier, EXPLOSV_SMOKE) == NO_SLOT)
@@ -9185,7 +9185,7 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 // are packed together and the local group is taking fire.
 INT8 DecideCombatDispersion(SOLDIERTYPE *pSoldier)
 {
-	if (!gfTurnBasedAI || !pSoldier || pSoldier->bTeam != ENEMY_TEAM ||
+	if (!gfTurnBasedAI || !pSoldier || !AICombatTeam(pSoldier) ||
 		!SoldierAI(pSoldier) || pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed)
 	{
 		return AI_ACTION_NONE;
