@@ -2939,17 +2939,18 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 	// calculate our morale
 	pSoldier->aiData.bAIMorale = CalcMorale(pSoldier);
 
-	// Tactical withdrawal for wounded enemies.  This uses Vengeance's existing
-	// WITHDRAW movement direction (opposite the known threat) and is deliberately
-	// limited to worried/normal morale so HOPELESS still uses full retreat.
+	// Tactical self-preservation: withdraw when this soldier's personal danger
+	// exceeds what his personality and morale are willing to tolerate.
 	if (gfTurnBasedAI &&
 		pSoldier->bTeam == ENEMY_TEAM &&
 		ubCanMove &&
 		pSoldier->aiData.bOrders != STATIONARY &&
 		pSoldier->stats.bLife >= OKLIFE &&
-		pSoldier->stats.bLife < pSoldier->stats.bLifeMax / 2 &&
-		(pSoldier->aiData.bAIMorale == MORALE_WORRIED || pSoldier->aiData.bAIMorale == MORALE_NORMAL) &&
-		(pSoldier->aiData.bUnderFire || !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo)))
+		pSoldier->aiData.bAIMorale != MORALE_HOPELESS &&
+		AIPersonalRisk(pSoldier) > AIPersonalRiskTolerance(pSoldier) &&
+		(pSoldier->aiData.bUnderFire ||
+		 !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
+		 CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0))
 	{
 		INT32 sWithdrawalThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
 		if (!TileIsOutOfBounds(sWithdrawalThreat))
@@ -4602,17 +4603,18 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		// calculate our morale
 		pSoldier->aiData.bAIMorale = CalcMorale(pSoldier);
 
-		// Wounded enemies with reduced morale should be willing to give up ground
-		// instead of continuing to press an exposed position.  HOPELESS soldiers
-		// are left to the existing full retreat logic below.
+		// Tactical self-preservation: individual danger can override aggression even
+		// for a healthy soldier if he is badly suppressed, exposed and isolated.
 		if (gfTurnBasedAI &&
 			pSoldier->bTeam == ENEMY_TEAM &&
 			ubCanMove &&
 			pSoldier->aiData.bOrders != STATIONARY &&
 			pSoldier->stats.bLife >= OKLIFE &&
-			pSoldier->stats.bLife < pSoldier->stats.bLifeMax / 2 &&
-			(pSoldier->aiData.bAIMorale == MORALE_WORRIED || pSoldier->aiData.bAIMorale == MORALE_NORMAL) &&
-			(pSoldier->aiData.bUnderFire || !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo)) &&
+			pSoldier->aiData.bAIMorale != MORALE_HOPELESS &&
+			AIPersonalRisk(pSoldier) > AIPersonalRiskTolerance(pSoldier) &&
+			(pSoldier->aiData.bUnderFire ||
+			 !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
+			 CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0) &&
 			!TileIsOutOfBounds(sClosestOpponent))
 		{
 			pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, sClosestOpponent, AI_ACTION_WITHDRAW);
