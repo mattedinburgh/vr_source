@@ -4205,6 +4205,9 @@ UINT8 AILocalRoutPressure(SOLDIERTYPE *pSoldier)
 
 	INT32 iPressure = 0;
 	INT32 iRadius = __max(4, DAY_VISION_RANGE / 2);
+	UINT8 ubEstablishedBreakers = 0;
+	BOOLEAN fBreakingLeader = FALSE;
+	BOOLEAN fStableLeader = FALSE;
 
 	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
@@ -4225,6 +4228,7 @@ UINT8 AILocalRoutPressure(SOLDIERTYPE *pSoldier)
 		BOOLEAN fDisengaging = AIDisengagementEstablishedForRout(pFriend);
 		BOOLEAN fRunningAway = (pFriend->aiData.bAction == AI_ACTION_RUN_AWAY);
 		BOOLEAN fLeader = AICheckIsOfficer(pFriend) || AICheckIsCommander(pFriend);
+		BOOLEAN fEstablishedBreak = fEscaping || fDisengaging;
 
 		// Breaking friends exert social pressure only at local tactical scale.
 		// Escape is the strongest signal; deliberate disengagement is weaker.
@@ -4235,13 +4239,54 @@ UINT8 AILocalRoutPressure(SOLDIERTYPE *pSoldier)
 		else if (fRunningAway)
 			iPressure += 15;
 
+		if (fEstablishedBreak)
+			++ubEstablishedBreakers;
+
 		// A leader visibly abandoning the fight is especially destabilising.
 		if (fLeader && (fEscaping || fDisengaging || fRunningAway))
+		{
 			iPressure += 10;
+			if (fEstablishedBreak)
+				fBreakingLeader = TRUE;
+		}
 		// A nearby leader who is still holding together can slow a cascade, but
 		// cannot erase several nearby soldiers already breaking contact.
 		else if (fLeader && !pFriend->aiData.bUnderFire)
+		{
 			iPressure -= 15;
+			fStableLeader = TRUE;
+		}
+	}
+
+	// True morale collapse is deliberately nonlinear but rare. One frightened
+	// soldier cannot trigger it. It needs multiple established local breaks,
+	// meaningful losses and a fight that is already going badly. This lets a
+	// platoon sometimes unravel quickly without turning every 20-30% casualty
+	// battle into an easy automatic rout for the player.
+	if (ubEstablishedBreakers >= 2)
+	{
+		UINT8 ubCasualties = AIFriendlyCasualtyPercent(pSoldier);
+		INT8 bSituation = AIBattleSituation(pSoldier);
+		BOOLEAN fCollapseConditions =
+			(ubCasualties >= 25 &&
+			 (bSituation == AI_BATTLE_LOSING || bSituation == AI_BATTLE_CATASTROPHIC)) ||
+			(ubCasualties >= 45 && bSituation == AI_BATTLE_EVEN);
+
+		if (fCollapseConditions && AILocalStress(pSoldier) >= 20)
+		{
+			INT32 iCascade = 10;
+			iCascade += 5 * __min((INT32)2, (INT32)ubEstablishedBreakers - 1);
+			if (fBreakingLeader)
+				iCascade += 5;
+			if (fStableLeader)
+				iCascade -= 10;
+
+			// Brave, confident and professional troops already have higher risk
+			// tolerance. Reuse that resistance here instead of granting hidden
+			// difficulty or accuracy bonuses.
+			iCascade -= __max(0, (AIPersonalRiskTolerance(pSoldier) - 50) / 4);
+			iPressure += __max(0, iCascade);
+		}
 	}
 
 	return (UINT8)__max(0, __min(100, iPressure));
