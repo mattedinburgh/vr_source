@@ -8216,7 +8216,7 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		pSoldier->CheckInitialAP() &&
 		(pSoldier->aiData.bAttitude == CUNNINGAID || pSoldier->aiData.bAttitude == CUNNINGSOLO ||
 		(pSoldier->aiData.bAttitude == BRAVESOLO || pSoldier->aiData.bAttitude == BRAVEAID) && CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) > 2) &&
-		pSoldier->bTeam == ENEMY_TEAM &&
+		AICombatTeam(pSoldier) &&
 		pSoldier->ubSoldierClass != SOLDIER_CLASS_ADMINISTRATOR &&
 		!AICheckSpecialRole(pSoldier) &&		
 		gAnimControl[pSoldier->usAnimState].ubHeight != ANIM_PRONE &&
