@@ -416,7 +416,7 @@ INT8 FindBestPatient( SOLDIERTYPE * pSoldier, BOOLEAN * pfDoClimb )
 // instead of committing to a suicidal run.
 INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 {
-	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM || !AICheckIsMedic(pSoldier) ||
+	if (!pSoldier || !AICombatTeam(pSoldier) || !AICheckIsMedic(pSoldier) ||
 		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
 		pSoldier->aiData.bAIMorale == MORALE_HOPELESS)
 	{
