@@ -4218,6 +4218,115 @@ INT8 AIHopelessOddsModifier(SOLDIERTYPE *pSoldier)
 
 // Short-lived tactical disengagement state. This is deliberately kept outside
 // SOLDIERTYPE so the AI experiment does not alter savegame-compatible soldier data.
+static UINT8 gubAIEscapeIntent[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAIEscapeIdentity[MAX_NUM_SOLDIERS] = { 0 };
+
+static void AIClearEscapeState(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return;
+
+	gubAIEscapeIntent[pSoldier->ubID] = 0;
+	guiAIEscapeIdentity[pSoldier->ubID] = pSoldier->uiUniqueSoldierIdValue;
+}
+
+BOOLEAN AIEscapeActive(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return FALSE;
+
+	if (guiAIEscapeIdentity[pSoldier->ubID] != pSoldier->uiUniqueSoldierIdValue)
+		return FALSE;
+
+	return (pSoldier->aiData.bAlertStatus >= STATUS_RED &&
+		gubAIEscapeIntent[pSoldier->ubID] != 0);
+}
+
+static BOOLEAN AIShouldStartEscapeFromState(SOLDIERTYPE *pSoldier, INT8 bSituation, UINT8 ubCasualties, BOOLEAN fLastSurvivor)
+{
+	// Escape is intentionally much rarer than disengagement. A bad local position is
+	// not enough: the soldier needs evidence that the fight itself is collapsing.
+	if (fLastSurvivor)
+		return TRUE;
+
+	if (ubCasualties >= 75 && bSituation != AI_BATTLE_WINNING)
+		return TRUE;
+
+	if (bSituation == AI_BATTLE_CATASTROPHIC)
+	{
+		if (ubCasualties >= 30)
+			return TRUE;
+
+		if (AISeverelyIsolated(pSoldier) &&
+			AILocalStress(pSoldier) >= 50 &&
+			AIPersonalRisk(pSoldier) >= AIPersonalRiskTolerance(pSoldier))
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+BOOLEAN AIShouldStartEscape(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM || pSoldier->IsZombie() ||
+		pSoldier->ubProfile != NO_PROFILE ||
+		pSoldier->aiData.bAlertStatus < STATUS_RED ||
+		pSoldier->aiData.bOrders == STATIONARY ||
+		pSoldier->aiData.bAttitude == ATTACKSLAYONLY)
+	{
+		return FALSE;
+	}
+
+	INT8 bSituation = AIBattleSituation(pSoldier);
+	if (bSituation == AI_BATTLE_UNKNOWN)
+		return FALSE;
+
+	return AIShouldStartEscapeFromState(pSoldier, bSituation,
+		AIFriendlyCasualtyPercent(pSoldier), AILastSurvivorPressure(pSoldier));
+}
+
+static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituation, UINT8 ubCasualties, BOOLEAN fLastSurvivor)
+{
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return;
+
+	UINT8 ubID = pSoldier->ubID;
+	if (guiAIEscapeIdentity[ubID] != pSoldier->uiUniqueSoldierIdValue)
+	{
+		gubAIEscapeIntent[ubID] = 0;
+		guiAIEscapeIdentity[ubID] = pSoldier->uiUniqueSoldierIdValue;
+	}
+
+	if (pSoldier->bTeam != ENEMY_TEAM || pSoldier->IsZombie() ||
+		pSoldier->ubProfile != NO_PROFILE ||
+		pSoldier->aiData.bAlertStatus < STATUS_RED ||
+		pSoldier->aiData.bOrders == STATIONARY ||
+		pSoldier->aiData.bAttitude == ATTACKSLAYONLY)
+	{
+		gubAIEscapeIntent[ubID] = 0;
+		return;
+	}
+
+	// A genuine recovery can cancel escape. Merely losing contact cannot: once a
+	// soldier has decided the battle is lost, breaking LOS is part of the escape.
+	if (bSituation == AI_BATTLE_WINNING &&
+		!pSoldier->aiData.bUnderFire &&
+		AILocalStress(pSoldier) < 25)
+	{
+		gubAIEscapeIntent[ubID] = 0;
+		return;
+	}
+
+	if (gubAIEscapeIntent[ubID] == 0 &&
+		bSituation != AI_BATTLE_UNKNOWN &&
+		AIShouldStartEscapeFromState(pSoldier, bSituation, ubCasualties, fLastSurvivor))
+	{
+		gubAIEscapeIntent[ubID] = 1;
+	}
+}
+
 static UINT8 gubAIDisengageTurns[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIDisengageTurnStamp[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIDisengageIdentity[MAX_NUM_SOLDIERS] = { 0 };
@@ -4298,7 +4407,10 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 		pSoldier->aiData.bOrders == STATIONARY)
 	{
 		if (pSoldier && pSoldier->ubID < MAX_NUM_SOLDIERS)
+		{
 			gubAIDisengageTurns[pSoldier->ubID] = 0;
+			AIClearEscapeState(pSoldier);
+		}
 		return FALSE;
 	}
 
@@ -4315,6 +4427,10 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 	INT8 bSituation = AIBattleSituation(pSoldier);
 	UINT8 ubCasualties = AIFriendlyCasualtyPercent(pSoldier);
 	BOOLEAN fLastSurvivor = AILastSurvivorPressure(pSoldier);
+
+	// Reuse the same battlefield snapshot for the stricter escape decision so Chunk 5
+	// does not add another perceived-strength/casualty scan to every AI decision.
+	AIUpdateEscapeStateFromSnapshot(pSoldier, bSituation, ubCasualties, fLastSurvivor);
 
 	if (bSituation == AI_BATTLE_WINNING &&
 		!pSoldier->aiData.bUnderFire &&
@@ -4337,7 +4453,7 @@ BOOLEAN AIShouldAvoidAdvance(SOLDIERTYPE *pSoldier)
 {
 	if (!AICombatTeam(pSoldier))
 		return FALSE;
-	if (AIDisengagementActive(pSoldier))
+	if (AIEscapeActive(pSoldier) || AIDisengagementActive(pSoldier))
 		return TRUE;
 
 

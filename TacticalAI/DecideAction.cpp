@@ -37,6 +37,7 @@
 #include "Text.h"
 #include "Game Clock.h"			// sevenfm
 #include "Rotting Corpses.h"	// sevenfm
+#include "Map Edgepoints.h"	// Chunk 5 escape route planning
 
 //////////////////////////////////////////////////////////////////////////////
 // SANDRO - In this file, all APBPConstants[AP_CROUCH] and APBPConstants[AP_PRONE] were changed to GetAPsCrouch() and GetAPsProne()
@@ -9308,9 +9309,361 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 	return AI_ACTION_TOSS_PROJECTILE;
 }
 
+static BOOLEAN AIGetEscapeEdgeArray(INT8 bDirection, INT32 **ppsEdgepoints, UINT16 *pusSize)
+{
+	if (!ppsEdgepoints || !pusSize)
+		return FALSE;
+
+	switch (bDirection)
+	{
+	case NORTHWEST: // north
+		*ppsEdgepoints = gps1stNorthEdgepointArray;
+		*pusSize = gus1stNorthEdgepointArraySize;
+		break;
+	case NORTHEAST: // east
+		*ppsEdgepoints = gps1stEastEdgepointArray;
+		*pusSize = gus1stEastEdgepointArraySize;
+		break;
+	case SOUTHEAST: // south
+		*ppsEdgepoints = gps1stSouthEdgepointArray;
+		*pusSize = gus1stSouthEdgepointArraySize;
+		break;
+	case SOUTHWEST: // west
+		*ppsEdgepoints = gps1stWestEdgepointArray;
+		*pusSize = gus1stWestEdgepointArraySize;
+		break;
+	default:
+		return FALSE;
+	}
+
+	return (*ppsEdgepoints != NULL && *pusSize > 0);
+}
+
+static INT32 AIClosestKnownThreatSpotForEscape(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier)
+		return NOWHERE;
+
+	INT32 sBestSpot = NOWHERE;
+	INT32 iBestDistance = 0x7FFFFFFF;
+
+	for (UINT16 uiLoop = 0; uiLoop < MAX_NUM_SOLDIERS; ++uiLoop)
+	{
+		SOLDIERTYPE *pOpponent = MercPtrs[uiLoop];
+		if (!pOpponent || pOpponent == pSoldier)
+			continue;
+
+		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+		if (bKnowledge == NOT_HEARD_OR_SEEN)
+			continue;
+
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pSoldier->bSide == pOpponent->bSide ||
+			pOpponent->ubBodyType == CROW)
+		{
+			continue;
+		}
+
+		INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
+		if (TileIsOutOfBounds(sKnownSpot))
+			continue;
+
+		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, sKnownSpot);
+		if (iDistance < iBestDistance)
+		{
+			iBestDistance = iDistance;
+			sBestSpot = sKnownSpot;
+		}
+	}
+
+	return sBestSpot;
+}
+
+static INT32 AINearestUsableOuterEdgepoint(SOLDIERTYPE *pSoldier, INT8 bDirection)
+{
+	INT32 *psEdgepoints = NULL;
+	UINT16 usSize = 0;
+	if (!AIGetEscapeEdgeArray(bDirection, &psEdgepoints, &usSize))
+		return NOWHERE;
+
+	INT32 sBestSpot = NOWHERE;
+	INT32 iBestDistance = 0x7FFFFFFF;
+
+	for (UINT16 usIndex = 0; usIndex < usSize; ++usIndex)
+	{
+		INT32 sSpot = psEdgepoints[usIndex];
+		if (TileIsOutOfBounds(sSpot) || sSpot == pSoldier->pathing.sBlackList)
+			continue;
+
+		INT8 bActualDirection = -1;
+		if (!GridNoOnEdgeOfMap(sSpot, &bActualDirection) || bActualDirection != bDirection)
+			continue;
+
+		if (sSpot != pSoldier->sGridNo &&
+			!NewOKDestination(pSoldier, sSpot, TRUE, pSoldier->pathing.bLevel))
+		{
+			continue;
+		}
+
+		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, sSpot);
+		if (iDistance < iBestDistance)
+		{
+			iBestDistance = iDistance;
+			sBestSpot = sSpot;
+		}
+	}
+
+	return sBestSpot;
+}
+
+static BOOLEAN AIEscapeEndpointUnsafe(SOLDIERTYPE *pSoldier, INT32 sSpot)
+{
+	if (TileIsOutOfBounds(sSpot))
+		return TRUE;
+
+	if (InGas(pSoldier, sSpot) ||
+		WaterTooDeepForAttacks(sSpot, pSoldier->pathing.bLevel) ||
+		RedSmokeDanger(sSpot, pSoldier->pathing.bLevel) ||
+		FindBombNearby(pSoldier, sSpot, BOMB_DETECTION_RANGE))
+	{
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+static BOOLEAN AIEscapeTargetStillSafe(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bDirection)
+{
+	INT8 bCheckedDirection = bDirection;
+	if (!EscapeDirectionIsValid(&bCheckedDirection) ||
+		bCheckedDirection != bDirection ||
+		AIEscapeEndpointUnsafe(pSoldier, sSpot))
+	{
+		return FALSE;
+	}
+
+	if (sSpot != pSoldier->sGridNo)
+	{
+		INT32 iPathCost = PlotPath(pSoldier, sSpot, NO_COPYROUTE, NO_PLOT,
+			TEMPORARY, RUNNING, NOT_STEALTH, FORWARD, 0);
+		if (iPathCost == 0)
+			return FALSE;
+	}
+
+	UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+	UINT16 usTargetExposure = AIKnownThreatExposure(pSoldier, sSpot, pSoldier->pathing.bLevel);
+	if (usTargetExposure > usCurrentExposure + 200)
+		return FALSE;
+
+	INT32 sKnownThreat = AIClosestKnownThreatSpotForEscape(pSoldier);
+	if (!TileIsOutOfBounds(sKnownThreat))
+	{
+		INT32 iCurrentDistance = PythSpacesAway(pSoldier->sGridNo, sKnownThreat);
+		INT32 iTargetDistance = PythSpacesAway(sSpot, sKnownThreat);
+		if (iTargetDistance + 2 < iCurrentDistance &&
+			usTargetExposure >= usCurrentExposure)
+		{
+			return FALSE;
+		}
+	}
+
+	return TRUE;
+}
+
+static INT32 AISelectEscapeEdge(SOLDIERTYPE *pSoldier, INT8 *pbBestDirection)
+{
+	if (!pSoldier || !pbBestDirection)
+		return NOWHERE;
+
+	static const INT8 bDirections[4] = { NORTHWEST, NORTHEAST, SOUTHEAST, SOUTHWEST };
+	INT32 sKnownThreat = AIClosestKnownThreatSpotForEscape(pSoldier);
+	INT32 iCurrentThreatDistance = TileIsOutOfBounds(sKnownThreat) ? 0 :
+		PythSpacesAway(pSoldier->sGridNo, sKnownThreat);
+	UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+
+	INT32 sBestSpot = NOWHERE;
+	INT8 bBestDirection = -1;
+	INT32 iBestScore = -0x7FFFFFFF;
+
+	for (UINT8 ubIndex = 0; ubIndex < 4; ++ubIndex)
+	{
+		INT8 bDirection = bDirections[ubIndex];
+		INT8 bCheckedDirection = bDirection;
+		if (!EscapeDirectionIsValid(&bCheckedDirection) || bCheckedDirection != bDirection)
+			continue;
+
+		INT32 sSpot = AINearestUsableOuterEdgepoint(pSoldier, bDirection);
+		if (TileIsOutOfBounds(sSpot) || AIEscapeEndpointUnsafe(pSoldier, sSpot))
+			continue;
+
+		INT32 iPathCost = 0;
+		if (sSpot != pSoldier->sGridNo)
+		{
+			iPathCost = PlotPath(pSoldier, sSpot, NO_COPYROUTE, NO_PLOT, TEMPORARY,
+				RUNNING, NOT_STEALTH, FORWARD, 0);
+			if (iPathCost == 0)
+				continue;
+		}
+
+		UINT16 usExposure = AIKnownThreatExposure(pSoldier, sSpot, pSoldier->pathing.bLevel);
+		INT32 iThreatDistance = TileIsOutOfBounds(sKnownThreat) ? 0 :
+			PythSpacesAway(sSpot, sKnownThreat);
+
+		// Do not call a route "escape" if its endpoint is both more exposed and
+		// materially closer to the last known threat. In that case hiding is safer.
+		if (!TileIsOutOfBounds(sKnownThreat) &&
+			iThreatDistance + 2 < iCurrentThreatDistance &&
+			usExposure >= usCurrentExposure)
+		{
+			continue;
+		}
+
+		if (usExposure > usCurrentExposure + 200)
+			continue;
+
+		INT32 iScore = -(iPathCost * 2) - ((INT32)usExposure * 15);
+		if (!TileIsOutOfBounds(sKnownThreat))
+			iScore += (iThreatDistance - iCurrentThreatDistance) * 20;
+		if (InLightAtNight(sSpot, pSoldier->pathing.bLevel))
+			iScore -= 40;
+
+		if (iScore > iBestScore)
+		{
+			iBestScore = iScore;
+			sBestSpot = sSpot;
+			bBestDirection = bDirection;
+		}
+	}
+
+	*pbBestDirection = bBestDirection;
+	return sBestSpot;
+}
+
+static BOOLEAN gfAIEscapePlanInitialized[MAX_NUM_SOLDIERS] = { FALSE };
+static UINT32 guiAIEscapePlanIdentity[MAX_NUM_SOLDIERS] = { 0 };
+static INT32 gsAIEscapeTarget[MAX_NUM_SOLDIERS] = { 0 };
+static INT8 gbAIEscapeDirection[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAIEscapeNoRouteTurn[MAX_NUM_SOLDIERS] = { 0 };
+extern UINT32 guiTurnCnt;
+
+static void AIResetEscapePlan(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return;
+
+	UINT8 ubID = pSoldier->ubID;
+	gfAIEscapePlanInitialized[ubID] = TRUE;
+	guiAIEscapePlanIdentity[ubID] = pSoldier->uiUniqueSoldierIdValue;
+	gsAIEscapeTarget[ubID] = NOWHERE;
+	gbAIEscapeDirection[ubID] = -1;
+	guiAIEscapeNoRouteTurn[ubID] = 0;
+}
+
+INT8 DecideEscapeAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM || !AIEscapeActive(pSoldier))
+		return AI_ACTION_NONE;
+
+	if (pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return AI_ACTION_NONE;
+
+	UINT8 ubID = pSoldier->ubID;
+	if (!gfAIEscapePlanInitialized[ubID] ||
+		guiAIEscapePlanIdentity[ubID] != pSoldier->uiUniqueSoldierIdValue)
+	{
+		AIResetEscapePlan(pSoldier);
+	}
+
+	if (!fCanMove || pSoldier->bActionPoints != pSoldier->bInitialActionPoints)
+		return AI_ACTION_NONE;
+
+	// Tactical edge traversal is only safe for the surface strategic map. Underground
+	// battles keep the escape intent but fall back to hiding/defending.
+	if (gbWorldSectorZ != 0)
+		return DecideHopelessSurvivorAction(pSoldier, fCanMove);
+
+	// If we are already on any valid strategic edge, leave from here instead of
+	// crossing the map just to reach an older cached plan.
+	INT8 bCurrentEdge = -1;
+	if (GridNoOnEdgeOfMap(pSoldier->sGridNo, &bCurrentEdge))
+	{
+		INT8 bCheckedCurrentEdge = bCurrentEdge;
+		if (EscapeDirectionIsValid(&bCheckedCurrentEdge) &&
+			bCheckedCurrentEdge == bCurrentEdge)
+		{
+			INT8 bExitDirection = -1;
+			INT32 sExitPoint = FindNearbyPointOnEdgeOfMap(pSoldier, &bExitDirection);
+			INT8 bCheckedExitDirection = bExitDirection;
+			if (!TileIsOutOfBounds(sExitPoint) &&
+				bExitDirection == bCurrentEdge &&
+				EscapeDirectionIsValid(&bCheckedExitDirection) &&
+				bCheckedExitDirection == bExitDirection)
+			{
+				pSoldier->ubQuoteActionID = GetTraversalQuoteActionID(bExitDirection);
+				pSoldier->aiData.usActionData = sExitPoint;
+				return AI_ACTION_RUN_AWAY;
+			}
+		}
+	}
+
+	// Validate the cached route before committing another turn to it.
+	if (!TileIsOutOfBounds(gsAIEscapeTarget[ubID]) &&
+		gbAIEscapeDirection[ubID] != -1 &&
+		!AIEscapeTargetStillSafe(pSoldier, gsAIEscapeTarget[ubID], gbAIEscapeDirection[ubID]))
+	{
+		gsAIEscapeTarget[ubID] = NOWHERE;
+		gbAIEscapeDirection[ubID] = -1;
+	}
+
+	UINT32 uiTurnStamp = guiTurnCnt + 1;
+	if (TileIsOutOfBounds(gsAIEscapeTarget[ubID]))
+	{
+		if (guiAIEscapeNoRouteTurn[ubID] == uiTurnStamp)
+			return DecideHopelessSurvivorAction(pSoldier, fCanMove);
+
+		INT8 bDirection = -1;
+		INT32 sTarget = AISelectEscapeEdge(pSoldier, &bDirection);
+		if (TileIsOutOfBounds(sTarget) || bDirection == -1)
+		{
+			guiAIEscapeNoRouteTurn[ubID] = uiTurnStamp;
+			return DecideHopelessSurvivorAction(pSoldier, fCanMove);
+		}
+
+		gsAIEscapeTarget[ubID] = sTarget;
+		gbAIEscapeDirection[ubID] = bDirection;
+		guiAIEscapeNoRouteTurn[ubID] = 0;
+	}
+
+	// Quote traversal is deliberately not armed yet. A long path can exceed JA2's
+	// fixed path buffer; arming traversal early could otherwise remove a soldier
+	// before he physically reaches the map edge.
+	if (pSoldier->ubQuoteActionID >= QUOTE_ACTION_ID_TRAVERSE_EAST &&
+		pSoldier->ubQuoteActionID <= QUOTE_ACTION_ID_TRAVERSE_NORTH)
+	{
+		pSoldier->ubQuoteActionID = 0;
+	}
+
+	pSoldier->aiData.usActionData = gsAIEscapeTarget[ubID];
+	return AI_ACTION_RUN_AWAY;
+}
+
 INT8 DecideDisengagementAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 {
-	if (!AICombatTeam(pSoldier) || !AIUpdateDisengagementState(pSoldier))
+	if (!AICombatTeam(pSoldier))
+		return AI_ACTION_NONE;
+
+	BOOLEAN fDisengaging = AIUpdateDisengagementState(pSoldier);
+	if (!fDisengaging && !AIEscapeActive(pSoldier))
+		return AI_ACTION_NONE;
+
+	INT8 bEscapeAction = DecideEscapeAction(pSoldier, fCanMove);
+	if (bEscapeAction != AI_ACTION_NONE)
+		return bEscapeAction;
+
+	// Escape remains a persistent intent even after contact is broken. If there is
+	// no movement this decision (for example AP already spent), allow normal
+	// defensive fire rather than restarting ordinary seek/advance behaviour.
+	if (!fDisengaging)
 		return AI_ACTION_NONE;
 
 	if (!fCanMove || pSoldier->bActionPoints != pSoldier->bInitialActionPoints)
