@@ -38,6 +38,7 @@
 #include "Game Clock.h"			// sevenfm
 #include "Rotting Corpses.h"	// sevenfm
 #include "Map Edgepoints.h"	// Chunk 5 escape route planning
+#include "MilitiaSquads.h"	// strategic militia retreat handoff
 
 //////////////////////////////////////////////////////////////////////////////
 // SANDRO - In this file, all APBPConstants[AP_CROUCH] and APBPConstants[AP_PRONE] were changed to GetAPsCrouch() and GetAPsProne()
@@ -9729,6 +9730,121 @@ static INT32 AISelectEscapeEdge(SOLDIERTYPE *pSoldier, INT8 *pbBestDirection)
 	return sBestSpot;
 }
 
+static BOOLEAN AIMilitiaShouldStrategicallyRetreat(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != MILITIA_TEAM || gbWorldSectorZ != 0 ||
+		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		pSoldier->aiData.bAlertStatus < STATUS_RED)
+	{
+		return FALSE;
+	}
+
+	INT8 bSituation = AIBattleSituation(pSoldier);
+	UINT8 ubCasualties = AIFriendlyCasualtyPercent(pSoldier);
+	UINT8 ubRoutPressure = AILocalRoutPressure(pSoldier);
+	INT32 iStress = AILocalStress(pSoldier);
+
+	// Strategic retreat is rarer than tactical disengagement. A militia force
+	// should first give ground and consolidate; it abandons the sector only after
+	// the fight has clearly broken down.
+	if (AILastSurvivorPressure(pSoldier) && ubCasualties >= 50)
+		return TRUE;
+
+	if (bSituation == AI_BATTLE_CATASTROPHIC)
+	{
+		INT32 iCasualtyThreshold = 30 + (AIPersonalRiskTolerance(pSoldier) - 50) / 5;
+		iCasualtyThreshold = __max(27, __min(35, iCasualtyThreshold));
+
+		if (ubCasualties >= iCasualtyThreshold &&
+			(iStress >= 25 || ubRoutPressure >= 35))
+		{
+			return TRUE;
+		}
+
+		if (ubCasualties >= 50)
+			return TRUE;
+	}
+
+	if (bSituation == AI_BATTLE_LOSING &&
+		ubCasualties >= 45 &&
+		ubRoutPressure >= 50 &&
+		iStress >= 30)
+	{
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+static INT8 AIMilitiaStrategicDirection(INT16 sTargetX, INT16 sTargetY)
+{
+	if (sTargetX > gWorldSectorX)
+		return NORTHEAST;	// east edge
+	if (sTargetX < gWorldSectorX)
+		return SOUTHWEST;	// west edge
+	if (sTargetY > gWorldSectorY)
+		return SOUTHEAST;	// south edge
+	if (sTargetY < gWorldSectorY)
+		return NORTHWEST;	// north edge
+	return -1;
+}
+
+static INT8 DecideMilitiaStrategicRetreatAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
+{
+	if (!AIMilitiaShouldStrategicallyRetreat(pSoldier) ||
+		!fCanMove || pSoldier->bActionPoints != pSoldier->bInitialActionPoints)
+	{
+		return AI_ACTION_NONE;
+	}
+
+	INT16 sTargetX = 0;
+	INT16 sTargetY = 0;
+	if (!FindMilitiaStrategicRetreatSector(gWorldSectorX, gWorldSectorY, &sTargetX, &sTargetY))
+		return AI_ACTION_NONE;
+
+	INT8 bDirection = AIMilitiaStrategicDirection(sTargetX, sTargetY);
+	if (bDirection == -1)
+		return AI_ACTION_NONE;
+
+	INT8 bCheckedDirection = bDirection;
+	if (!EscapeDirectionIsValid(&bCheckedDirection) || bCheckedDirection != bDirection)
+		return AI_ACTION_NONE;
+
+	// If already on the correct edge, arm normal AI traversal. The traversal
+	// handler has a militia-specific branch that transfers one strategic militia
+	// member plus his equipment instead of processing him as a dead enemy soldier.
+	INT8 bCurrentEdge = -1;
+	if (GridNoOnEdgeOfMap(pSoldier->sGridNo, &bCurrentEdge) && bCurrentEdge == bDirection)
+	{
+		INT8 bExitDirection = -1;
+		INT32 sExitPoint = FindNearbyPointOnEdgeOfMap(pSoldier, &bExitDirection);
+		if (!TileIsOutOfBounds(sExitPoint) && bExitDirection == bDirection)
+		{
+			pSoldier->ubQuoteActionID = GetTraversalQuoteActionID(bDirection);
+			pSoldier->aiData.usActionData = sExitPoint;
+			return AI_ACTION_RUN_AWAY;
+		}
+	}
+
+	INT32 sEdgeSpot = AINearestUsableOuterEdgepoint(pSoldier, bDirection);
+	if (TileIsOutOfBounds(sEdgeSpot) || AIEscapeEndpointUnsafe(pSoldier, sEdgeSpot))
+		return AI_ACTION_NONE;
+
+	INT32 iPathSteps = 0;
+	UINT16 usPeakExposure = 0;
+	UINT16 usAverageExposure = 0;
+	if (!AIEvaluateEscapeRoute(pSoldier, sEdgeSpot, &iPathSteps,
+		&usPeakExposure, &usAverageExposure))
+	{
+		return AI_ACTION_NONE;
+	}
+
+	// Do not arm traversal while still crossing the map; the existing AI movement
+	// code may split long routes across several turns.
+	pSoldier->ubQuoteActionID = 0;
+	pSoldier->aiData.usActionData = sEdgeSpot;
+	return AI_ACTION_RUN_AWAY;
+}
 static BOOLEAN gfAIEscapePlanInitialized[MAX_NUM_SOLDIERS] = { FALSE };
 static UINT32 guiAIEscapePlanIdentity[MAX_NUM_SOLDIERS] = { 0 };
 static INT32 gsAIEscapeTarget[MAX_NUM_SOLDIERS] = { 0 };
@@ -10133,11 +10249,14 @@ INT8 DecideDisengagementAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (!fDisengaging && !fEscaping)
 		return AI_ACTION_NONE;
 
-	// Militia never traverse the sector edge. When their local fight is collapsing,
-	// first try to contract toward a defensible militia concentration instead of
-	// having each soldier independently drift backwards.
+	// Militia normally consolidate inside the sector. Only a genuinely collapsing
+	// force with a valid reinforced fallback is allowed to abandon the sector.
 	if (pSoldier->bTeam == MILITIA_TEAM && fDisengaging)
 	{
+		INT8 bStrategicRetreat = DecideMilitiaStrategicRetreatAction(pSoldier, fCanMove);
+		if (bStrategicRetreat != AI_ACTION_NONE)
+			return bStrategicRetreat;
+
 		INT8 bConsolidateAction = DecideMilitiaDefensiveConsolidation(pSoldier, fCanMove);
 		if (bConsolidateAction != AI_ACTION_NONE)
 			return bConsolidateAction;
