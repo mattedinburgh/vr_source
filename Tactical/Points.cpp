@@ -3701,8 +3701,8 @@ INT16 MinAPsToThrow( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubAddTurningCos
 	//	 This works because 'top' is 2x what it really should be throughout
 	iAPCost += ( ( ( 100 * iTop ) / iBottom) + 1) / 2;
 
-	// SANDRO - STOMP traits - reduce APs needed to throw grenades if having Demolitions skill
-	if( HAS_SKILL_TRAIT( pSoldier, DEMOLITIONS_NT ) && gGameOptions.fNewTraitSystem )
+	// 1.13 alignment: Throwing, not Demolitions, reduces grenade throw AP cost
+	if( HAS_SKILL_TRAIT( pSoldier, THROWING_NT ) && gGameOptions.fNewTraitSystem )
 	{
 		if ( Item[ usInHand ].usItemClass & IC_GRENADE ) 
 		{
