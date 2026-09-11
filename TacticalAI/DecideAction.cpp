@@ -2400,8 +2400,9 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		return AI_ACTION_STOP_COWERING;
 	}
 
-	// sevenfm: if we don't have a gun, look around for a weapon!
-	if (pSoldier->bTeam == ENEMY_TEAM &&
+	// If we don't have a gun, scavenge one only when the local situation makes
+	// that movement reasonable. Enemy and militia use the same combat judgement.
+	if (AICombatTeam(pSoldier) &&
 		ubCanMove &&
 		!pSoldier->aiData.bNeutral &&
 		gTacticalStatus.bBoxingState == NOT_BOXING &&
@@ -2410,11 +2411,19 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		!InWaterOrGas(pSoldier, pSoldier->sGridNo) &&
 		FindAIUsableObjClass( pSoldier, IC_GUN ) == ITEM_NOT_FOUND)
 	{
-		// look around for a gun...
-		pSoldier->aiData.bAction = SearchForItems( pSoldier, SEARCH_WEAPONS, pSoldier->inv[HANDPOS].usItem );
-		if(pSoldier->aiData.bAction != AI_ACTION_NONE)
+		BOOLEAN fSafeToScavengeWeapon =
+			!pSoldier->aiData.bUnderFire &&
+			(AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
+			 TileIsOutOfBounds(sClosestOpponent) ||
+			 PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 2);
+
+		if (fSafeToScavengeWeapon)
 		{
-			return( pSoldier->aiData.bAction );
+			pSoldier->aiData.bAction = SearchForItems( pSoldier, SEARCH_WEAPONS, pSoldier->inv[HANDPOS].usItem );
+			if(pSoldier->aiData.bAction != AI_ACTION_NONE)
+			{
+				return( pSoldier->aiData.bAction );
+			}
 		}
 	}
 
