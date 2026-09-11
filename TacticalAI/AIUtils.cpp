@@ -4427,6 +4427,10 @@ static UINT32 guiAIDisengageTurnStamp[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIDisengageIdentity[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIDisengageStartTurn[MAX_NUM_SOLDIERS] = { 0 };
 
+static UINT8 gubAIRecoveryStreak[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAIRecoveryTurnStamp[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAIRecoveryIdentity[MAX_NUM_SOLDIERS] = { 0 };
+
 BOOLEAN AIDisengagementActive(SOLDIERTYPE *pSoldier)
 {
 	if (!AICombatTeam(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
@@ -4437,6 +4441,78 @@ BOOLEAN AIDisengagementActive(SOLDIERTYPE *pSoldier)
 
 	return (pSoldier->aiData.bAlertStatus >= STATUS_RED &&
 		gubAIDisengageTurns[pSoldier->ubID] > 0);
+}
+
+static BOOLEAN AIHasNearbyStableLeader(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier))
+		return FALSE;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier ||
+			!pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+			pFriend->pathing.bLevel != pSoldier->pathing.bLevel ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > TACTICAL_RANGE / 2 ||
+			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend) ||
+			pFriend->aiData.bUnderFire)
+		{
+			continue;
+		}
+
+		if (AICheckIsCommander(pFriend) || AICheckIsOfficer(pFriend))
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
+static UINT8 AIUpdateRecoveryStreak(SOLDIERTYPE *pSoldier, INT8 bSituation,
+	UINT8 ubRoutPressure, BOOLEAN fLastSurvivor)
+{
+	if (!AICombatTeam(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return 0;
+
+	UINT8 ubID = pSoldier->ubID;
+	if (guiAIRecoveryIdentity[ubID] != pSoldier->uiUniqueSoldierIdValue)
+	{
+		gubAIRecoveryStreak[ubID] = 0;
+		guiAIRecoveryTurnStamp[ubID] = 0;
+		guiAIRecoveryIdentity[ubID] = pSoldier->uiUniqueSoldierIdValue;
+	}
+
+	UINT32 uiTurnStamp = guiTurnCnt + 1;
+	if (guiAIRecoveryTurnStamp[ubID] == uiTurnStamp)
+		return gubAIRecoveryStreak[ubID];
+
+	guiAIRecoveryTurnStamp[ubID] = uiTurnStamp;
+
+	BOOLEAN fStableSituation =
+		(bSituation == AI_BATTLE_WINNING || bSituation == AI_BATTLE_EVEN) &&
+		!fLastSurvivor &&
+		!pSoldier->aiData.bUnderFire &&
+		AILocalStress(pSoldier) < 35 &&
+		AIPersonalRisk(pSoldier) < AIPersonalRiskTolerance(pSoldier) &&
+		ubRoutPressure < 35;
+
+	BOOLEAN fLocalSupport =
+		CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) >= 2 ||
+		AIHasNearbyStableLeader(pSoldier) ||
+		(AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) &&
+		 (pSoldier->LastAttackHit() || pSoldier->LastTargetSuppressed()));
+
+	if (fStableSituation && fLocalSupport)
+		gubAIRecoveryStreak[ubID] = __min((UINT8)4, (UINT8)(gubAIRecoveryStreak[ubID] + 1));
+	else if (bSituation == AI_BATTLE_LOSING || bSituation == AI_BATTLE_CATASTROPHIC ||
+		fLastSurvivor || pSoldier->aiData.bUnderFire || ubRoutPressure >= 50)
+		gubAIRecoveryStreak[ubID] = 0;
+	else if (gubAIRecoveryStreak[ubID] > 0)
+		--gubAIRecoveryStreak[ubID];
+
+	return gubAIRecoveryStreak[ubID];
 }
 
 static BOOLEAN AIEscapeEstablishedForRout(SOLDIERTYPE *pSoldier)
