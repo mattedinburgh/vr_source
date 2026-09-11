@@ -4299,6 +4299,10 @@ BOOLEAN AIEscapeActive(SOLDIERTYPE *pSoldier)
 }
 
 static INT8 AIProfessionalismModifier(SOLDIERTYPE *pSoldier);
+static BOOLEAN AIHasNearbyStableLeader(SOLDIERTYPE *pSoldier);
+static UINT8 AIUpdateRecoveryStreak(SOLDIERTYPE *pSoldier, INT8 bSituation,
+	UINT8 ubRoutPressure, BOOLEAN fLastSurvivor);
+static void AIResetRecoveryStreak(SOLDIERTYPE *pSoldier);
 
 static BOOLEAN AIShouldStartEscapeFromState(SOLDIERTYPE *pSoldier, INT8 bSituation, UINT8 ubCasualties, BOOLEAN fLastSurvivor, UINT8 ubRoutPressure)
 {
@@ -4402,15 +4406,22 @@ static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituati
 		return;
 	}
 
-	// A genuine recovery can cancel escape. Merely losing contact cannot: once a
-	// soldier has decided the battle is lost, breaking LOS is part of the escape.
-	if (bSituation == AI_BATTLE_WINNING &&
-		!pSoldier->aiData.bUnderFire &&
-		AILocalStress(pSoldier) < 25)
+	// Full escape takes longer to reverse than a local disengagement. Require
+	// sustained stabilization; a nearby stable leader shortens, but does not
+	// eliminate, that recovery period.
+	if (gubAIEscapeIntent[ubID] != 0)
 	{
-		gubAIEscapeIntent[ubID] = 0;
-		guiAIEscapeStartTurn[ubID] = 0;
-		return;
+		UINT8 ubRecoveryStreak = AIUpdateRecoveryStreak(pSoldier, bSituation,
+			ubRoutPressure, fLastSurvivor);
+		UINT8 ubRequiredRecovery = AIHasNearbyStableLeader(pSoldier) ? 2 : 3;
+
+		if (ubRecoveryStreak >= ubRequiredRecovery)
+		{
+			gubAIEscapeIntent[ubID] = 0;
+			guiAIEscapeStartTurn[ubID] = 0;
+			AIResetRecoveryStreak(pSoldier);
+			return;
+		}
 	}
 
 	if (gubAIEscapeIntent[ubID] == 0 &&
@@ -4419,6 +4430,7 @@ static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituati
 	{
 		gubAIEscapeIntent[ubID] = 1;
 		guiAIEscapeStartTurn[ubID] = guiTurnCnt + 1;
+		AIResetRecoveryStreak(pSoldier);
 	}
 }
 
@@ -4468,6 +4480,17 @@ static BOOLEAN AIHasNearbyStableLeader(SOLDIERTYPE *pSoldier)
 	}
 
 	return FALSE;
+}
+
+static void AIResetRecoveryStreak(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return;
+
+	UINT8 ubID = pSoldier->ubID;
+	gubAIRecoveryStreak[ubID] = 0;
+	guiAIRecoveryTurnStamp[ubID] = 0;
+	guiAIRecoveryIdentity[ubID] = pSoldier->uiUniqueSoldierIdValue;
 }
 
 static UINT8 AIUpdateRecoveryStreak(SOLDIERTYPE *pSoldier, INT8 bSituation,
@@ -4663,13 +4686,19 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 		}
 	}
 
-	if (bSituation == AI_BATTLE_WINNING &&
-		!pSoldier->aiData.bUnderFire &&
-		AILocalStress(pSoldier) < 25)
+	if (gubAIDisengageTurns[ubID] > 0)
 	{
-		gubAIDisengageTurns[ubID] = 0;
-		guiAIDisengageStartTurn[ubID] = 0;
-		return FALSE;
+		UINT8 ubRecoveryStreak = AIUpdateRecoveryStreak(pSoldier, bSituation,
+			ubRoutPressure, fLastSurvivor);
+		UINT8 ubRequiredRecovery = AIHasNearbyStableLeader(pSoldier) ? 1 : 2;
+
+		if (ubRecoveryStreak >= ubRequiredRecovery)
+		{
+			gubAIDisengageTurns[ubID] = 0;
+			guiAIDisengageStartTurn[ubID] = 0;
+			AIResetRecoveryStreak(pSoldier);
+			return FALSE;
+		}
 	}
 
 	if (bSituation != AI_BATTLE_UNKNOWN &&
@@ -4678,7 +4707,10 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 	{
 		UINT8 ubDuration = (bSituation == AI_BATTLE_CATASTROPHIC || fLastSurvivor) ? 3 : 2;
 		if (gubAIDisengageTurns[ubID] == 0)
+		{
 			guiAIDisengageStartTurn[ubID] = uiTurnStamp;
+			AIResetRecoveryStreak(pSoldier);
+		}
 		gubAIDisengageTurns[ubID] = __max(gubAIDisengageTurns[ubID], ubDuration);
 	}
 
