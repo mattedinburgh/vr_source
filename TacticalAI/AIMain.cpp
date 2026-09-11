@@ -57,6 +57,7 @@
 #endif
 
 #include "connect.h"
+#include "MilitiaSquads.h"	// routed militia strategic traversal
 // needed to use the modularized tactical AI:
 #include "ModularizedTacticalAI/include/Plan.h"
 #include "ModularizedTacticalAI/include/PlanFactoryLibrary.h"
@@ -2786,26 +2787,48 @@ void HandleAITacticalTraversal( SOLDIERTYPE * pSoldier )
 			break;
 		}
 
-		SECTORINFO *pSectorInfo = &( SectorInfo[ SECTOR( iMapX, iMapY ) ] );
-
-		switch( pSoldier->ubSoldierClass )
+		// Militia strategic retreat uses the same physical edge traversal, but its
+		// bookkeeping is completely different from an enemy army unit. Transfer the
+		// matching militia rank and equipment to the adjacent fallback sector and do
+		// not run Queen-death implications.
+		if (pSoldier->bTeam == MILITIA_TEAM)
 		{
-		case SOLDIER_CLASS_ELITE:
-			++pSectorInfo->ubNumElites;
-			break;
-
-		case SOLDIER_CLASS_ARMY:
-			++pSectorInfo->ubNumTroops;
-			break;
-
-		case SOLDIER_CLASS_ADMINISTRATOR:
-			++pSectorInfo->ubNumAdmins;
-			break;
-
+			if (ExecuteOneMilitiaStrategicRetreat(gWorldSectorX, gWorldSectorY,
+				iMapX, iMapY, pSoldier->ubSoldierClass))
+			{
+				TacticalRemoveSoldier(pSoldier->ubID);
+			}
+			else
+			{
+				// Never reinterpret a failed militia transfer as a death. This should
+				// only occur after an unexpected strategic desync; leave the strategic
+				// headcount untouched and remove the off-map tactical instance.
+				TacticalRemoveSoldier(pSoldier->ubID);
+			}
 		}
+		else
+		{
+			SECTORINFO *pSectorInfo = &( SectorInfo[ SECTOR( iMapX, iMapY ) ] );
 
-		ProcessQueenCmdImplicationsOfDeath( pSoldier );
-		TacticalRemoveSoldier( pSoldier->ubID );
+			switch( pSoldier->ubSoldierClass )
+			{
+			case SOLDIER_CLASS_ELITE:
+				++pSectorInfo->ubNumElites;
+				break;
+
+			case SOLDIER_CLASS_ARMY:
+				++pSectorInfo->ubNumTroops;
+				break;
+
+			case SOLDIER_CLASS_ADMINISTRATOR:
+				++pSectorInfo->ubNumAdmins;
+				break;
+
+			}
+
+			ProcessQueenCmdImplicationsOfDeath( pSoldier );
+			TacticalRemoveSoldier( pSoldier->ubID );
+		}
 	}
 	CheckForEndOfBattle( TRUE );
 }
