@@ -22,6 +22,8 @@ void MilitiaHelpFromAdjacentSectors( INT16 sMapX, INT16 sMapY );
 // HEADROCK HAM 3.4: Now using different arguments for this function. All relevent instances have also been altered.
 void GenerateDirectionInfos( INT16 sMapX, INT16 sMapY, UINT8* uiDirNumber, UINT16 pMoveDir[4][3], BOOLEAN fForTraining, BOOLEAN fForBattle );
 BOOLEAN MoveOneBestMilitiaMan(INT16 sMapX, INT16 sMapY, INT16 sTMapX, INT16 sTMapY);
+BOOLEAN FindMilitiaStrategicRetreatSector(INT16 sMapX, INT16 sMapY, INT16 *psTargetX, INT16 *psTargetY);
+BOOLEAN ExecuteMilitiaStrategicRetreat(INT16 sMapX, INT16 sMapY, INT16 *psTargetX, INT16 *psTargetY);
 void MilitiaFollowPlayer( INT16 sMapX, INT16 sMapY, INT16 sDMapX, INT16 sDMapY );
 
 // HEADROCK HAM B1: Changes the allowed militia sectors
