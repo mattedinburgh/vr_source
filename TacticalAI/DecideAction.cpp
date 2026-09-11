@@ -6016,6 +6016,7 @@ L_NEWAIM:
 				!TileIsOutOfBounds(BestAttack.sTarget) &&				
 				pSoldier->bActionPoints == pSoldier->bInitialActionPoints &&
 				pSoldier->bActionPoints > BestAttack.ubAPCost &&
+				AIEngagementRangeModifier(pSoldier, BestAttack.sTarget) > 0 &&
 				pSoldier->aiData.bShock < 2 * RangeChangeDesire(pSoldier) && 
 				pSoldier->stats.bLife > pSoldier->stats.bLifeMax / 2 && 
 				// sevenfm: increased to 10-40 depending on target shock
@@ -8254,6 +8255,13 @@ void PrepareMainRedAIWeights(SOLDIERTYPE *pSoldier, INT8 &bSeekPts, INT8 &bHelpP
 			if (bWatchPts > -90)
 				bWatchPts += 1;
 		}
+
+		// Weapon/optic role now influences movement. Scoped rifles and marksmen stop
+		// treating every known opponent as a reason to close distance.
+		INT8 bRangeModifier = AIEngagementRangeModifier(pSoldier);
+		bSeekPts += bRangeModifier;
+		if (bRangeModifier < 0 && bWatchPts > -90)
+			bWatchPts += 1;
 	}
 }
 
