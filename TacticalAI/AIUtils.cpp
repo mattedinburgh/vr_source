@@ -3968,6 +3968,49 @@ INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	return (INT8)__max(-3, __min(3, iModifier));
 }
 
+// Check whether this target is directly threatening a nearby ally who needs
+// covering fire.  This uses only observed combat relationships (recent attackers
+// and actual fire lanes), so it does not grant the AI hidden information.
+BOOLEAN AIFriendNeedsCoveringFire(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID)
+{
+	if (!pSoldier || ubOpponentID == NOBODY || !MercPtrs[ubOpponentID])
+		return FALSE;
+
+	SOLDIERTYPE *pOpponent = MercPtrs[ubOpponentID];
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; iCounter++)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+
+		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE / 2)
+		{
+			continue;
+		}
+
+		BOOLEAN fFriendInTrouble =
+			pFriend->aiData.bUnderFire ||
+			ShockLevelPercent(pFriend) > 30 ||
+			pFriend->stats.bLife < pFriend->stats.bLifeMax / 2 ||
+			AIPersonalRisk(pFriend) > AIPersonalRiskTolerance(pFriend);
+
+		if (!fFriendInTrouble)
+			continue;
+
+		// Require evidence that this particular opponent is the threat to the ally.
+		if (pFriend->ubPreviousAttackerID == ubOpponentID ||
+			pFriend->ubNextToPreviousAttackerID == ubOpponentID ||
+			pOpponent->sLastTarget == pFriend->sGridNo)
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
 // sevenfm: count nearby friend soldiers
 UINT8 CountNearbyFriends( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDistance )
 {
