@@ -92,3 +92,16 @@ Chunk 2 turns the Chunk 1 assessment into a limited behaviour change without add
 - New flanks stop and new flanks/GET_CLOSER/distant melee charges are suppressed while `AIShouldAvoidAdvance` is true.
 
 This does not yet implement map-edge escape or a persistent disengagement state. Those remain later chunks. Soldiers may still shoot, throw, suppress or fight from their current position; the change is that hopeless survivors stop initiating another charge.
+
+## Chunk 3: tactical fallback / giving ground
+
+Chunk 3 makes backward movement a normal positional decision before morale collapse.
+
+- `AIShouldConsiderTacticalFallback` combines under-fire state, cover, personal risk, local stress, perceived battle situation, isolation and weapon-range preference.
+- `AIKnownThreatExposure` evaluates a position only from JA2 personal/public knowledge and last-known locations; it does not inspect hidden opponent life, current position, weapon or AP.
+- `DecideTacticalFallback` searches once at the start of a fresh turn and moves only when the fallback position is meaningfully better.
+- Existing `AI_ACTION_WITHDRAW` scoring now compares current vs candidate cover, sight cover, nearby support, crowding and long-range standoff while retaining its bounded `TACTICAL_RANGE / 4` search.
+- RED and BLACK combat AI can now concede ground before reaching hopeless morale.
+- Chunk 2 survivor-position exposure checks were switched to the same knowledge-bound exposure helper.
+
+Performance rule: no second pathfinder was added. `FindFlankingSpot(..., AI_ACTION_WITHDRAW)` remains the single bounded path search, and the more expensive known-contact exposure check is run only on the current position and the selected final fallback candidate.

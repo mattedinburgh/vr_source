@@ -4241,6 +4241,97 @@ BOOLEAN AIShouldAvoidAdvance(SOLDIERTYPE *pSoldier)
 	return FALSE;
 }
 
+// Exposure estimate for new human-tactical behaviour. Unlike EnemyCanAttackSpot(),
+// this deliberately does not inspect an opponent's actual current life, position,
+// equipment or AP. It reasons only from JA2 personal/public knowledge.
+UINT16 AIKnownThreatExposure(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
+{
+	if (!AICombatTeam(pSoldier) || TileIsOutOfBounds(sSpot))
+		return 0;
+
+	UINT32 uiExposure = 0;
+	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
+	{
+		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
+		if (!pOpponent || pOpponent == pSoldier)
+			continue;
+
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pSoldier->bSide == pOpponent->bSide ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			pOpponent->ubBodyType == CROW)
+		{
+			continue;
+		}
+
+		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+		if (bKnowledge == NOT_HEARD_OR_SEEN)
+			continue;
+
+		INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
+		if (TileIsOutOfBounds(sKnownSpot))
+			continue;
+
+		INT8 bKnownLevel = KnownLevel(pSoldier, pOpponent->ubID);
+		INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+
+		// Stale/heard contacts still influence caution, but only if their last-known
+		// line could plausibly cover the position within the engine's vision scale.
+		if (PythSpacesAway(sKnownSpot, sSpot) <= MAX_VISION_RANGE &&
+			LocationToLocationLineOfSightTest(sKnownSpot, bKnownLevel, sSpot, bLevel, TRUE, MAX_VISION_RANGE))
+		{
+			uiExposure += iCertainty;
+		}
+	}
+
+	return (UINT16)__min((UINT32)65535, uiExposure);
+}
+
+BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier) || pSoldier->IsZombie() ||
+		pSoldier->aiData.bOrders == STATIONARY || AIShouldAvoidAdvance(pSoldier))
+	{
+		return FALSE;
+	}
+
+	INT32 sThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	if (TileIsOutOfBounds(sThreat))
+		return FALSE;
+
+	// Do not shuffle a soldier who is currently succeeding from a sound position.
+	if (!pSoldier->aiData.bUnderFire &&
+		AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) &&
+		pSoldier->LastAttackHit() &&
+		AILocalStress(pSoldier) < 25 &&
+		AIEngagementRangeModifier(pSoldier, sThreat) >= 0)
+	{
+		return FALSE;
+	}
+
+	INT32 iPressure = 0;
+	INT8 bSituation = AIBattleSituation(pSoldier);
+
+	if (bSituation == AI_BATTLE_LOSING)
+		iPressure += 2;
+	if (pSoldier->aiData.bUnderFire)
+		iPressure += 2;
+	if (!AnyCoverAtSpot(pSoldier, pSoldier->sGridNo))
+		iPressure += 2;
+	if (AIPersonalRisk(pSoldier) + 10 >= AIPersonalRiskTolerance(pSoldier))
+		iPressure += 2;
+	if (AILocalStress(pSoldier) >= 35)
+		iPressure += 1;
+	if (AIEngagementRangeModifier(pSoldier, sThreat) < 0)
+		iPressure += 1;
+	if (CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0)
+		iPressure += 1;
+
+	// A winning group gives ground only under clear immediate pressure.
+	INT32 iThreshold = (bSituation == AI_BATTLE_WINNING) ? 4 : 3;
+	return (iPressure >= iThreshold);
+}
+
 // Human-like local combat stress. This deliberately affects tactical morale and
 // behaviour rather than adding another direct CTH penalty: NCTH already accounts
 // for injury, fatigue, morale and shock in the shooting calculation.

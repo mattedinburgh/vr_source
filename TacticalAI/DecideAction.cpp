@@ -2980,6 +2980,13 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		if (bSurvivorAction != AI_ACTION_NONE)
 			return bSurvivorAction;
 	}
+	// Giving ground is a normal tactical option, not only a panic response.
+	if (AICombatTeam(pSoldier) && AIShouldConsiderTacticalFallback(pSoldier))
+	{
+		INT8 bFallbackAction = DecideTacticalFallback(pSoldier, ubCanMove);
+		if (bFallbackAction != AI_ACTION_NONE)
+			return bFallbackAction;
+	}
 
 	// Tactical self-preservation: withdraw when this soldier's personal danger
 	// exceeds what his personality and morale are willing to tolerate.
@@ -4690,6 +4697,13 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				INT8 bSurvivorAction = DecideHopelessSurvivorAction(pSoldier, ubCanMove);
 				if (bSurvivorAction != AI_ACTION_NONE)
 					return bSurvivorAction;
+			}
+			// Normal tactical fallback can concede ground before the situation becomes hopeless.
+			if (AICombatTeam(pSoldier) && AIShouldConsiderTacticalFallback(pSoldier))
+			{
+				INT8 bFallbackAction = DecideTacticalFallback(pSoldier, ubCanMove);
+				if (bFallbackAction != AI_ACTION_NONE)
+					return bFallbackAction;
 			}
 
 			// Tactical self-preservation: individual danger can override aggression even
@@ -9276,6 +9290,63 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 	return AI_ACTION_TOSS_PROJECTILE;
 }
 
+INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
+{
+	if (!AICombatTeam(pSoldier) || !fCanMove || pSoldier->IsZombie() ||
+		!AIShouldConsiderTacticalFallback(pSoldier) ||
+		pSoldier->bActionPoints != pSoldier->bInitialActionPoints)
+	{
+		return AI_ACTION_NONE;
+	}
+
+	INT32 sThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	if (TileIsOutOfBounds(sThreat))
+		return AI_ACTION_NONE;
+
+	INT32 sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
+	if (TileIsOutOfBounds(sFallback))
+		return AI_ACTION_NONE;
+
+	BOOLEAN fCurrentCover = AnyCoverAtSpot(pSoldier, pSoldier->sGridNo);
+	BOOLEAN fFallbackCover = AnyCoverAtSpot(pSoldier, sFallback);
+	BOOLEAN fCurrentSightCover = SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE);
+	BOOLEAN fFallbackSightCover = SightCoverAtSpot(pSoldier, sFallback, FALSE);
+	UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+	UINT16 usFallbackExposure = AIKnownThreatExposure(pSoldier, sFallback, pSoldier->pathing.bLevel);
+	INT32 iCurrentSupport = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2);
+	INT32 iFallbackSupport = CountNearbyFriends(pSoldier, sFallback, DAY_VISION_RANGE / 2);
+	INT32 iCurrentDistance = PythSpacesAway(pSoldier->sGridNo, sThreat);
+	INT32 iFallbackDistance = PythSpacesAway(sFallback, sThreat);
+
+	INT32 iGain = 0;
+	if (fFallbackCover && !fCurrentCover) iGain += 25;
+	if (!fFallbackCover && fCurrentCover) iGain -= 25;
+	if (fFallbackSightCover && !fCurrentSightCover) iGain += 20;
+	if (!fFallbackSightCover && fCurrentSightCover) iGain -= 20;
+
+	// Lower exposure to known contacts is the strongest positional improvement.
+	if (usFallbackExposure < usCurrentExposure)
+		iGain += __min((INT32)35, (INT32)(usCurrentExposure - usFallbackExposure) / 3);
+	else if (usFallbackExposure > usCurrentExposure)
+		iGain -= __min((INT32)35, (INT32)(usFallbackExposure - usCurrentExposure) / 3);
+
+	iGain += 8 * (__min(iFallbackSupport, 3) - __min(iCurrentSupport, 3));
+
+	// Extra separation is valuable when the current weapon/optic wants more standoff.
+	if (AIEngagementRangeModifier(pSoldier, sThreat) < 0 && iFallbackDistance > iCurrentDistance)
+		iGain += __min((INT32)20, 3 * (iFallbackDistance - iCurrentDistance));
+
+	// Under direct pressure, a modest improvement is enough; otherwise require a
+	// clearly better position so the AI does not shuffle backwards every turn.
+	INT32 iRequiredGain = (pSoldier->aiData.bUnderFire || !fCurrentCover ||
+		AIBattleSituation(pSoldier) == AI_BATTLE_LOSING) ? 8 : 18;
+
+	if (iGain < iRequiredGain)
+		return AI_ACTION_NONE;
+
+	pSoldier->aiData.usActionData = sFallback;
+	return AI_ACTION_WITHDRAW;
+}
 INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 {
 	if (!AICombatTeam(pSoldier) || !fCanMove || pSoldier->IsZombie() ||
@@ -9296,10 +9367,10 @@ INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		INT32 sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
 		if (!TileIsOutOfBounds(sFallback))
 		{
-			BOOLEAN fCurrentExposed = EnemyCanAttackSpot(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
-			BOOLEAN fFallbackExposed = EnemyCanAttackSpot(pSoldier, sFallback, pSoldier->pathing.bLevel);
+			UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+			UINT16 usFallbackExposure = AIKnownThreatExposure(pSoldier, sFallback, pSoldier->pathing.bLevel);
 
-			if (!fFallbackExposed || fCurrentExposed)
+			if (usFallbackExposure <= usCurrentExposure)
 			{
 				pSoldier->aiData.usActionData = sFallback;
 				return AI_ACTION_WITHDRAW;
@@ -9313,9 +9384,9 @@ INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	INT32 sCover = FindBestNearbyCover(pSoldier, pSoldier->aiData.bAIMorale, &iCoverPercentBetter);
 	if (!TileIsOutOfBounds(sCover) && sCover != pSoldier->sGridNo)
 	{
-		BOOLEAN fCurrentExposed = EnemyCanAttackSpot(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
-		BOOLEAN fCoverExposed = EnemyCanAttackSpot(pSoldier, sCover, pSoldier->pathing.bLevel);
-		if (!fCoverExposed || fCurrentExposed)
+		UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+		UINT16 usCoverExposure = AIKnownThreatExposure(pSoldier, sCover, pSoldier->pathing.bLevel);
+		if (usCoverExposure <= usCurrentExposure)
 		{
 			pSoldier->aiData.usActionData = sCover;
 			return AI_ACTION_TAKE_COVER;
