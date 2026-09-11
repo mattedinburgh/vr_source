@@ -442,6 +442,25 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 								sAimAPCost = CalcAPCostForAiming(pSoldier, sTarget, (INT8)sAimTime);
 								iHitRate = ubChanceToHit * (pSoldier->bActionPoints - (ubMinAPcost - ubRawAPCost)) / (ubRawAPCost + sAimAPCost);
 
+								// Preserve a small tactical AP reserve when exposed or under fire.
+								// Existing hit-rate math already optimizes shots-per-AP; this adds
+								// value for AP left to crouch/reposition instead of over-aiming.
+								if (pSoldier->bTeam == ENEMY_TEAM &&
+									(pSoldier->aiData.bUnderFire || !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo)) &&
+									sAimTime > 0)
+								{
+									INT32 iReserveAP = GetAPsCrouch(pSoldier, TRUE) + APBPConstants[AP_MOVEMENT_FLAT];
+									if (AIPersonalRisk(pSoldier) >= AIPersonalRiskTolerance(pSoldier) - 10)
+										iReserveAP += APBPConstants[AP_MOVEMENT_FLAT];
+
+									INT32 iAPAfterAttack = pSoldier->bActionPoints - ubMinAPcost - sAimAPCost;
+									if (iReserveAP > 0 && iAPAfterAttack < iReserveAP)
+									{
+										INT32 iReservePercent = 50 + 50 * __max(0, iAPAfterAttack) / iReserveAP;
+										iHitRate = iHitRate * iReservePercent / 100;
+									}
+								}
+
 								// sevenfm: take into account CTGT for every stance
 								if (iHitRate * ubChanceToGetThrough > iBestHitRate * ubBestChanceToGetThrough ||
 									(Item[pSoldier->usAttackingWeapon].usItemClass & IC_THROWING_KNIFE) && ubChanceToHit > ubBestChanceToHit)// rather take best chance for throwing knives
@@ -511,6 +530,25 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 								sAimAPCost = CalcAPCostForAiming(pSoldier, sTarget, (INT8)sAimTime);
 								iHitRate = ubChanceToHit * (pSoldier->bActionPoints - (ubMinAPcost - ubRawAPCost)) / (ubRawAPCost + sAimAPCost);
 
+								// Preserve a small tactical AP reserve when exposed or under fire.
+								// Existing hit-rate math already optimizes shots-per-AP; this adds
+								// value for AP left to crouch/reposition instead of over-aiming.
+								if (pSoldier->bTeam == ENEMY_TEAM &&
+									(pSoldier->aiData.bUnderFire || !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo)) &&
+									sAimTime > 0)
+								{
+									INT32 iReserveAP = GetAPsCrouch(pSoldier, TRUE) + APBPConstants[AP_MOVEMENT_FLAT];
+									if (AIPersonalRisk(pSoldier) >= AIPersonalRiskTolerance(pSoldier) - 10)
+										iReserveAP += APBPConstants[AP_MOVEMENT_FLAT];
+
+									INT32 iAPAfterAttack = pSoldier->bActionPoints - ubMinAPcost - sAimAPCost;
+									if (iReserveAP > 0 && iAPAfterAttack < iReserveAP)
+									{
+										INT32 iReservePercent = 50 + 50 * __max(0, iAPAfterAttack) / iReserveAP;
+										iHitRate = iHitRate * iReservePercent / 100;
+									}
+								}
+
 								// sevenfm: take into account CTGT for every stance
 								if (iHitRate * ubChanceToGetThrough > iBestHitRate * ubBestChanceToGetThrough)
 								{
@@ -572,6 +610,25 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 								ubChanceToHit = AICalcChanceToHitGun(pSoldier, sTarget, sAimTime, AIM_SHOT_TORSO, bLevel, PRONE);
 								sAimAPCost = CalcAPCostForAiming(pSoldier, sTarget, (INT8)sAimTime);
 								iHitRate = ubChanceToHit * (pSoldier->bActionPoints - (ubMinAPcost - ubRawAPCost)) / (ubRawAPCost + sAimAPCost);
+
+								// Preserve a small tactical AP reserve when exposed or under fire.
+								// Existing hit-rate math already optimizes shots-per-AP; this adds
+								// value for AP left to crouch/reposition instead of over-aiming.
+								if (pSoldier->bTeam == ENEMY_TEAM &&
+									(pSoldier->aiData.bUnderFire || !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo)) &&
+									sAimTime > 0)
+								{
+									INT32 iReserveAP = GetAPsCrouch(pSoldier, TRUE) + APBPConstants[AP_MOVEMENT_FLAT];
+									if (AIPersonalRisk(pSoldier) >= AIPersonalRiskTolerance(pSoldier) - 10)
+										iReserveAP += APBPConstants[AP_MOVEMENT_FLAT];
+
+									INT32 iAPAfterAttack = pSoldier->bActionPoints - ubMinAPcost - sAimAPCost;
+									if (iReserveAP > 0 && iAPAfterAttack < iReserveAP)
+									{
+										INT32 iReservePercent = 50 + 50 * __max(0, iAPAfterAttack) / iReserveAP;
+										iHitRate = iHitRate * iReservePercent / 100;
+									}
+								}
 								// sevenfm: take into account CTGT for every stance
 								if (iHitRate * ubChanceToGetThrough > iBestHitRate * ubBestChanceToGetThrough)
 								{
