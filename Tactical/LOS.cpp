@@ -7652,54 +7652,54 @@ void AdjustTargetCenterPoint( SOLDIERTYPE *pShooter, INT32 iTargetGridNo, FLOAT 
 	// First, let's calculate the basic Aperture. This is the size of an unmodified aperture at 1x Normal Distance.
 	iBasicAperture = CalcBasicAperture( );
 
-	// when using the reworked NCTH code we do additional calculations for iron sights and lasers
-	if (gGameExternalOptions.fUseNewCTHCalculation)
+	// Modern 1.13 NCTH uses the real shot context here, not the UI display globals.
+	FLOAT iMagFactor = CalcMagFactor( pShooter, pWeapon, d2DDistance, iTargetGridNo, (UINT8)pShooter->aiData.bAimTime );
+
+	if (UsingNewCTHSystem())
 	{
-		// iron sights can get a percentage bonus to make them overall better but only when not shooting from hip
-		if ( gCTHDisplay.ScopeMagFactor <= 1.0 && !pShooter->IsValidAlternativeFireMode( pShooter->aiData.bAimTime, gCTHDisplay.iTargetGridNo ) )
+		// Keep iron sights useful over distance using the same curve as the reticle and AI.
+		if ( gGameCTHConstants.IRON_SIGHTS_MAX_APERTURE_USE_GRADIENT && iMagFactor <= 1.0 && !pShooter->IsValidAlternativeFireMode( pShooter->aiData.bAimTime, iTargetGridNo ) )
+		{
+			iBasicAperture = iBasicAperture * ( 1 / sqrt( d2DDistance / FLOAT(CELL_X_SIZE) ) / gGameCTHConstants.IRON_SIGHTS_MAX_APERTURE_MODIFIER
+						+ (gGameCTHConstants.IRON_SIGHTS_MAX_APERTURE_MODIFIER - 1) / gGameCTHConstants.IRON_SIGHTS_MAX_APERTURE_MODIFIER );
+		}
 
+		// Iron sights / 1x sights get their configured aperture bonus when not firing from the hip.
+		if ( iMagFactor <= 1.0 && !pShooter->IsValidAlternativeFireMode( pShooter->aiData.bAimTime, iTargetGridNo ) )
+		{
 			iBasicAperture = iBasicAperture * (FLOAT)( (100 - gGameCTHConstants.IRON_SIGHT_PERFORMANCE_BONUS) / 100);
+		}
 
-		// laser pointers can provide a percentage bonus to base aperture
-		if ( gCTHDisplay.iBestLaserRange > 0 
+		// Laser bonuses are evaluated from the actual weapon, target tile and light level.
+		INT16 sLaserRange = GetBestLaserRange( pWeapon );
+		if ( sLaserRange > 0
 			&& ( gGameCTHConstants.LASER_PERFORMANCE_BONUS_HIP + gGameCTHConstants.LASER_PERFORMANCE_BONUS_IRON + gGameCTHConstants.LASER_PERFORMANCE_BONUS_SCOPE != 0) )
 		{
-			INT8 bLightLevel = LightTrueLevel(gCTHDisplay.iTargetGridNo, gsInterfaceLevel );
-			INT32 iMaxLaserRange = ( gCTHDisplay.iBestLaserRange*( 2*bLightLevel + 3*NORMAL_LIGHTLEVEL_NIGHT - 5*NORMAL_LIGHTLEVEL_DAY ) ) / ( 2 * ( NORMAL_LIGHTLEVEL_NIGHT - NORMAL_LIGHTLEVEL_DAY ) );
+			INT8 bLightLevel = LightTrueLevel( iTargetGridNo, pShooter->bTargetLevel );
+			INT32 iMaxLaserRange = ( sLaserRange * ( 2*bLightLevel + 3*NORMAL_LIGHTLEVEL_NIGHT - 5*NORMAL_LIGHTLEVEL_DAY ) ) / ( 2 * ( NORMAL_LIGHTLEVEL_NIGHT - NORMAL_LIGHTLEVEL_DAY ) );
 
-			// laser only has effect when in range
 			if ( iMaxLaserRange > d2DDistance )
 			{
 				FLOAT fLaserBonus = 0;
-				// which bonus do we want to apply?
-				if ( pShooter->IsValidAlternativeFireMode( pShooter->aiData.bAimTime, gCTHDisplay.iTargetGridNo ) )
-					// shooting from hip
+				if ( pShooter->IsValidAlternativeFireMode( pShooter->aiData.bAimTime, iTargetGridNo ) )
 					fLaserBonus = gGameCTHConstants.LASER_PERFORMANCE_BONUS_HIP;
-				else if ( gCTHDisplay.ScopeMagFactor <= 1.0 )
-					// using iron sights or other 1x sights
+				else if ( iMagFactor <= 1.0 )
 					fLaserBonus = gGameCTHConstants.LASER_PERFORMANCE_BONUS_IRON;
 				else
-					// must be using a scope
 					fLaserBonus = gGameCTHConstants.LASER_PERFORMANCE_BONUS_SCOPE;
 
-				// light level influences how easy it is to spot the laser dot on the target
 				FLOAT fBrightnessModifier = (FLOAT)(bLightLevel) / (FLOAT)(NORMAL_LIGHTLEVEL_NIGHT);
 
-				// laser fully efficient
-				if ( gCTHDisplay.iBestLaserRange > d2DDistance )
-					// apply full bonus
+				if ( sLaserRange > d2DDistance )
 					iBasicAperture = iBasicAperture * (FLOAT)( (100 - (fLaserBonus * fBrightnessModifier)) / 100);
 				else
 				{
-					// beyond BestLaserRange laser bonus drops linearly to 0
-					FLOAT fEffectiveLaserRatio = (FLOAT)(iMaxLaserRange - d2DDistance) / (FLOAT)(iMaxLaserRange - gCTHDisplay.iBestLaserRange);
-					// apply partial bonus
+					FLOAT fEffectiveLaserRatio = (FLOAT)(iMaxLaserRange - d2DDistance) / (FLOAT)(iMaxLaserRange - sLaserRange);
 					iBasicAperture = iBasicAperture * (FLOAT)( (100 - (fLaserBonus * fBrightnessModifier * fEffectiveLaserRatio)) / 100);
 				}
 			}
 		}
 	}
-
 	// Next, find out how large the aperture can be around the target, given range. The further the target is, the
 	// larger the aperture can be.
 	iDistanceAperture = iBasicAperture * (d2DDistance / gGameCTHConstants.NORMAL_SHOOTING_DISTANCE);
@@ -7709,7 +7709,7 @@ void AdjustTargetCenterPoint( SOLDIERTYPE *pShooter, INT32 iTargetGridNo, FLOAT 
 	// is a divisor to the sway of the muzzle. It's about the same as multiplying CTH by a certain amount.
 	// Note that both optical magnification devices (like scopes) and dot-projection devices (like lasers and 
 	// reflex sights) provide this sort of bonus.
-	FLOAT iMagFactor = CalcMagFactor( pShooter, pWeapon, d2DDistance, iTargetGridNo, (UINT8)pShooter->aiData.bAimTime );
+	// iMagFactor was calculated above so aperture bonuses and shot magnification use identical scope state.
 
 	// Get effective mag factor for this shooter. This represents his ability to use scopes.
 	FLOAT fEffectiveMagFactor = CalcEffectiveMagFactor( pShooter, iMagFactor );
@@ -8253,7 +8253,7 @@ void CalcTargetMovementOffset( SOLDIERTYPE *pShooter, SOLDIERTYPE *pTarget, OBJE
 	// Again, if the shooter is skilled, this will occur after fewer tiles have been moved. 
 	// If the target moves *more* tiles than this, the movement penalty will begin to diminish. That's our shooter
 	// beginning to compensate for the target's speed, pointing the gun ahead of the target ("Leading the target").
-	INT16 uiTilesForMaxPenalty = (INT16)((100-uiCombinedSkill) / (100 / gGameCTHConstants.MOVEMENT_TRACKING_DIFFICULTY));
+	INT16 uiTilesForMaxPenalty = (INT16)((100 - uiCombinedSkill) * gGameCTHConstants.MOVEMENT_TRACKING_DIFFICULTY / 100);
 	
 	UINT8 stance = gAnimControl[ pShooter->usAnimState ].ubEndHeight;
 
@@ -8945,9 +8945,6 @@ void CalcPreRecoilOffset( SOLDIERTYPE *pShooter, OBJECTTYPE *pWeapon, FLOAT *dMu
 	// Calculate the Distance Ratio for later use.
 	FLOAT dDistanceRatio = (FLOAT)uiRange / (FLOAT)gGameCTHConstants.NORMAL_RECOIL_DISTANCE;
 
-	// Calculate the various counter-force related values for our shooter.
-	FLOAT dCounterForceMax = CalcCounterForceMax(pShooter, pWeapon);
-
 	UINT8 stance = gAnimControl[ pShooter->usAnimState ].ubEndHeight;
 
 	// Flugente: new feature: if the next tile in our sight direction has a height so that we could rest our weapon on it, we do that, thereby gaining the prone boni instead. This includes bipods
@@ -8956,7 +8953,7 @@ void CalcPreRecoilOffset( SOLDIERTYPE *pShooter, OBJECTTYPE *pWeapon, FLOAT *dMu
 
 	FLOAT moda = CalcCounterForceMax(pShooter, pWeapon, stance);
 	FLOAT modb = CalcCounterForceMax(pShooter, pWeapon, gAnimControl[ pShooter->usAnimState ].ubEndHeight);
-	FLOAT iCounterForceMax = ((gGameExternalOptions.ubProneModifierPercentage * moda + (100 - gGameExternalOptions.ubProneModifierPercentage) * modb)/100);
+	FLOAT dCounterForceMax = (gGameExternalOptions.ubProneModifierPercentage * moda + (100 - gGameExternalOptions.ubProneModifierPercentage) * modb) / 100;
 	
 	UINT32 uiCounterForceAccuracy = CalcCounterForceAccuracy(pShooter, pWeapon, uiRange, FALSE, true);
 
