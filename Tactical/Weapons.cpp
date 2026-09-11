@@ -8543,8 +8543,8 @@ UINT32 AICalcChanceToHitGun(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTim
 		FLOAT dMaxGunRange = dGunRange * gGameCTHConstants.MAX_EFFECTIVE_RANGE_MULTIPLIER;
 		if ( dMaxGunRange < d2DDistance)
 		{
-			// Weapon out of conceivable hit range. Reduce chance to hit to 0!
-			return (0);
+			// Current 1.13 keeps a token hit chance so AI can still choose suppression fire.
+			uiChance = 1;
 		}
 		else if ( dGunRange < d2DDistance)
 		{
@@ -8553,12 +8553,41 @@ UINT32 AICalcChanceToHitGun(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTim
 			if (gGameCTHConstants.MAX_EFFECTIVE_USE_GRADIENT)
 			{
 				// Just outside range. Reduce considerably!
-				return min(uiChance, (UINT)(dChance - (dMaxChanceReduction * ((d2DDistance - dGunRange) / (dMaxGunRange - dGunRange)))));
+				uiChance = min(uiChance, (UINT32)(dChance - (dMaxChanceReduction * ((d2DDistance - dGunRange) / (dMaxGunRange - dGunRange)))));
 			}
 			else
 			{
-				return (UINT)(dChance - dMaxChanceReduction);
+				uiChance = (UINT32)(dChance - dMaxChanceReduction);
 			}
+		}
+
+		// Current 1.13: a side-on standing/crouching target presents a smaller effective profile.
+		SOLDIERTYPE* pTarget = SimpleFindSoldier(sGridNo, bTargetLevel);
+		if (pTarget &&
+			gGameCTHConstants.SIDE_FACING_DIVISOR <= 1.0f &&
+			(IS_MERC_BODY_TYPE(pTarget) || IS_CIV_BODY_TYPE(pTarget)) &&
+			gAnimControl[pTarget->usAnimState].ubEndHeight > ANIM_PRONE &&
+			pSoldier->bAimShotLocation != AIM_SHOT_HEAD &&
+			pSoldier->ubDirection != pTarget->ubDirection &&
+			pSoldier->ubDirection != gOppositeDirection[pTarget->ubDirection])
+		{
+			FLOAT iDivisor = 1.0f;
+
+			if (pSoldier->ubDirection == gOneCDirection[pTarget->ubDirection] ||
+				pSoldier->ubDirection == gOneCCDirection[pTarget->ubDirection] ||
+				pSoldier->ubDirection == gOneCDirection[gOppositeDirection[pTarget->ubDirection]] ||
+				pSoldier->ubDirection == gOneCCDirection[gOppositeDirection[pTarget->ubDirection]] ||
+				gAnimControl[pTarget->usAnimState].ubEndHeight == ANIM_CROUCH)
+			{
+				iDivisor = 1.5f;
+			}
+			else if (pSoldier->ubDirection == gTwoCDirection[pTarget->ubDirection] ||
+				pSoldier->ubDirection == gTwoCCDirection[gOppositeDirection[pTarget->ubDirection]])
+			{
+				iDivisor = 2.0f;
+			}
+
+			uiChance = (UINT32)(uiChance / iDivisor);
 		}
 	}
 	return( uiChance );
