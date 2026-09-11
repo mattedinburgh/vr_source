@@ -2736,9 +2736,9 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 		bMoraleCategory = MORALE_WORRIED;
 	}
 
-	// Wounds should progressively increase self-preservation. Tactical success,
-	// aggressive orders or personality can still influence behaviour, but they
-	// should not make a badly wounded enemy fearless.
+	// Wounds and local combat stress progressively increase self-preservation.
+	// Tactical success, aggressive orders or personality can still matter, but they
+	// should not make a badly wounded or psychologically overwhelmed soldier fearless.
 	if (AICombatTeam(pSoldier) && pSoldier->stats.bLifeMax > 0)
 	{
 		const INT32 iHealthPercent = (100 * pSoldier->stats.bLife) / pSoldier->stats.bLifeMax;
@@ -2748,6 +2748,14 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 		else if (iHealthPercent < 25)
 			bMoraleCategory = min(bMoraleCategory, MORALE_WORRIED);
 		else if (iHealthPercent < 50)
+			bMoraleCategory = min(bMoraleCategory, MORALE_NORMAL);
+
+		INT32 iStress = AILocalStress(pSoldier);
+		if (iStress >= 80)
+			bMoraleCategory = min(bMoraleCategory, MORALE_HOPELESS);
+		else if (iStress >= 58)
+			bMoraleCategory = min(bMoraleCategory, MORALE_WORRIED);
+		else if (iStress >= 35)
 			bMoraleCategory = min(bMoraleCategory, MORALE_NORMAL);
 	}
 
@@ -3932,6 +3940,52 @@ UINT8 CountNearbyFriendsOnRoof( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDi
 BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier)
 {
 	return pSoldier && (pSoldier->bTeam == ENEMY_TEAM || pSoldier->bTeam == MILITIA_TEAM);
+}
+
+// Human-like local combat stress. This deliberately affects tactical morale and
+// behaviour rather than adding another direct CTH penalty: NCTH already accounts
+// for injury, fatigue, morale and shock in the shooting calculation.
+INT32 AILocalStress(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier) || pSoldier->stats.bLifeMax <= 0)
+		return 0;
+
+	INT32 iStress = (2 * ShockLevelPercent(pSoldier)) / 3;
+
+	if (pSoldier->aiData.bUnderFire)
+		iStress += 10;
+	if (pSoldier->bBleeding > 0)
+		iStress += __min((INT32)12, (INT32)pSoldier->bBleeding / 4);
+	if (pSoldier->bBreath < 50)
+		iStress += 5;
+	if (pSoldier->bBreath < 25)
+		iStress += 8;
+	if (!AnyCoverAtSpot(pSoldier, pSoldier->sGridNo))
+		iStress += 8;
+
+	// Visible fresh friendly bodies make morale brittle, especially in a local fight.
+	INT32 iFreshCorpses = CountCorpses(pSoldier, pSoldier->sGridNo,
+		DAY_VISION_RANGE / 2, TRUE, TRUE);
+	iStress += 12 * __min((INT32)3, iFreshCorpses);
+
+	UINT8 ubNearbyFriends = CountNearbyFriends(pSoldier, pSoldier->sGridNo,
+		DAY_VISION_RANGE / 4);
+	if (ubNearbyFriends == 0)
+		iStress += 12;
+	else if (ubNearbyFriends >= 3)
+		iStress -= 8;
+
+	// Small stabilising effects: success and effective team pressure help, but do
+	// not erase severe suppression, wounds or casualties.
+	if (pSoldier->LastAttackHit())
+		iStress -= 5;
+	if (pSoldier->LastTargetSuppressed())
+		iStress -= 5;
+
+	if (pSoldier->aiData.bAttitude == ATTACKSLAYONLY)
+		iStress -= 10;
+
+	return __max(0, __min(100, iStress));
 }
 
 // Individual danger assessment used by tactical self-preservation.
