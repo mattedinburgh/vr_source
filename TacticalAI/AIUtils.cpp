@@ -1306,7 +1306,7 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 
 		// Search uncertainty grows as contact information becomes stale. Keep exact
 		// current sightings untouched and distribute ordinary enemies around old contacts.
-		if (pSoldier->bTeam == ENEMY_TEAM && !pSoldier->IsZombie())
+		if (AICombatTeam(pSoldier) && !pSoldier->IsZombie())
 		{
 			sGridNo = AIStaleContactSearchSpot(pSoldier, pOpponent, sGridNo, bLevel, bKnowledge);
 		}
@@ -2739,7 +2739,7 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 	// Wounds should progressively increase self-preservation. Tactical success,
 	// aggressive orders or personality can still influence behaviour, but they
 	// should not make a badly wounded enemy fearless.
-	if (pSoldier->bTeam == ENEMY_TEAM && pSoldier->stats.bLifeMax > 0)
+	if (AICombatTeam(pSoldier) && pSoldier->stats.bLifeMax > 0)
 	{
 		const INT32 iHealthPercent = (100 * pSoldier->stats.bLife) / pSoldier->stats.bLifeMax;
 
@@ -3927,6 +3927,11 @@ UINT8 CountNearbyFriendsOnRoof( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDi
 	}
 
 	return ubFriendCount;
+}
+
+BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier)
+{
+	return pSoldier && (pSoldier->bTeam == ENEMY_TEAM || pSoldier->bTeam == MILITIA_TEAM);
 }
 
 // Individual danger assessment used by tactical self-preservation.
