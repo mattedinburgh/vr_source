@@ -854,9 +854,12 @@ BOOLEAN FindMilitiaStrategicRetreatSector(INT16 sMapX, INT16 sMapY, INT16 *psTar
 
 		SECTORINFO *pTarget = &(SectorInfo[SECTOR(sTargetX, sTargetY)]);
 		UINT8 ubTargetMilitia = CountMilitia(pTarget);
+		BOOLEAN fPlayerSupport = PlayerMercsInSector_MSE((UINT8)sTargetX, (UINT8)sTargetY, FALSE);
 
-		// A strategic rout goes toward an existing friendly concentration, not empty wilderness.
-		if (ubTargetMilitia == 0)
+		// A strategic rout goes toward a genuine defensive concentration. A tiny
+		// one- or two-man militia remnant is not a "reinforced position" unless
+		// player mercs are physically there to anchor it.
+		if (ubTargetMilitia < 3 && !fPlayerSupport)
 			continue;
 
 		INT32 iFreeSlots =
@@ -882,7 +885,7 @@ BOOLEAN FindMilitiaStrategicRetreatSector(INT16 sMapX, INT16 sMapY, INT16 *psTar
 			iScore += 40;
 		}
 
-		if (PlayerMercsInSector_MSE((UINT8)sTargetX, (UINT8)sTargetY, FALSE))
+		if (fPlayerSupport)
 			iScore += 20;
 
 		// Keep the strategic fallback coherent: every routed militia soldier from
@@ -905,9 +908,8 @@ BOOLEAN FindMilitiaStrategicRetreatSector(INT16 sMapX, INT16 sMapY, INT16 *psTar
 }
 
 /*
- * Transfer the full surviving strategic militia group to its selected fallback.
- * Tactical routing is deliberately wired in separately so this cannot mutate
- * strategic counts while soldiers are still attached to a live tactical battle.
+ * Transfer one militia soldier after he physically crosses the tactical map edge.
+ * The tactical actor is removed separately by HandleAITacticalTraversal().
  */
 BOOLEAN ExecuteOneMilitiaStrategicRetreat(INT16 sMapX, INT16 sMapY, INT16 sTargetX, INT16 sTargetY, UINT8 ubSoldierClass)
 {
@@ -919,12 +921,16 @@ BOOLEAN ExecuteOneMilitiaStrategicRetreat(INT16 sMapX, INT16 sMapY, INT16 sTarge
 		return FALSE;
 	}
 
-	// The tactical soldier must leave into the strategic sector selected by the
-	// retreat planner, not an arbitrary adjacent square.
-	INT16 sPlannedX = 0;
-	INT16 sPlannedY = 0;
-	if (!FindMilitiaStrategicRetreatSector(sMapX, sMapY, &sPlannedX, &sPlannedY) ||
-		sPlannedX != sTargetX || sPlannedY != sTargetY)
+	// Revalidate the exact adjacent sector used by the tactical traversal. Do not
+	// re-run destination scoring here: earlier retreaters have already changed the
+	// relative militia counts, but the originally chosen fallback remains valid.
+	if ((abs(sTargetX - sMapX) + abs(sTargetY - sMapY)) != 1)
+		return FALSE;
+
+	UINT8 ubTraversability = GetTraversability(SECTOR(sMapX, sMapY), SECTOR(sTargetX, sTargetY));
+	if (ubTraversability == GROUNDBARRIER || ubTraversability == EDGEOFWORLD ||
+		NumEnemiesInSector(sTargetX, sTargetY) > 0 ||
+		StrategicMap[SECTOR_INFO_TO_STRATEGIC_INDEX(SECTOR(sTargetX, sTargetY))].fEnemyControlled)
 	{
 		return FALSE;
 	}
@@ -953,17 +959,23 @@ BOOLEAN ExecuteOneMilitiaStrategicRetreat(INT16 sMapX, INT16 sMapY, INT16 sTarge
 		return FALSE;
 	}
 
-	// Move the matching loadout before the strategic headcount changes.
+	// Move the matching loadout before the strategic headcount changes. Preserve
+	// the pre-existing tactical-reset flag: this transfer is manually mirrored by
+	// removing exactly this tactical soldier, so it must not trigger ResetMilitia()
+	// in the middle of an AI traversal.
+	BOOLEAN fPreviousStrategicChangeFlag = gfStrategicMilitiaChangesMade;
 	MoveOneMilitiaEquipmentSet(sMapX, sMapY, sTargetX, sTargetY, ubRank);
 	StrategicAddMilitiaToSector(sTargetX, sTargetY, ubRank, 1);
 	StrategicRemoveMilitiaFromSector(sMapX, sMapY, ubRank, 1);
+	gfStrategicMilitiaChangesMade = fPreviousStrategicChangeFlag;
 
-	// Tactical traversal removes the soldier separately. Avoid ResetMilitia() here:
-	// rebuilding the live tactical militia team while one of its members is crossing
-	// the map edge would invalidate the traversal currently being processed.
 	AddToBlockMoveList(sTargetX, sTargetY);
 	return TRUE;
 }
+/*
+ * Transfer the full surviving strategic militia group outside a live tactical
+ * traversal. This helper is intentionally separate from the one-man handoff.
+ */
 BOOLEAN ExecuteMilitiaStrategicRetreat(INT16 sMapX, INT16 sMapY, INT16 *psTargetX, INT16 *psTargetY)
 {
 	INT16 sTargetX = 0;
