@@ -3706,13 +3706,13 @@ INT16 MinAPsToThrow( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubAddTurningCos
 	{
 		if ( Item[ usInHand ].usItemClass & IC_GRENADE ) 
 		{
-			iAPCost = max( 1, (INT32)(iAPCost * (100 - gSkillTraitValues.ubDEAPsNeededToThrowGrenadesReduction) / 100));
+			iAPCost = max( 1, (INT32)(iAPCost * (100 - gSkillTraitValues.ubTHAPsNeededToThrowGrenadesReduction) / 100));
 		}
 		// if we've thrown the object for real, it disapears from our hands and is converted to TempObject
 		else if ( pSoldier->pTempObject != NULL && pSoldier->pThrowParams != NULL &&
 			pSoldier->pThrowParams->ubActionCode == THROW_ARM_ITEM && (Item[ pSoldier->pTempObject->usItem ].usItemClass & IC_GRENADE) )
 		{
-			iAPCost = max( 1, (INT32)(iAPCost * (100 - gSkillTraitValues.ubDEAPsNeededToThrowGrenadesReduction) / 100));
+			iAPCost = max( 1, (INT32)(iAPCost * (100 - gSkillTraitValues.ubTHAPsNeededToThrowGrenadesReduction) / 100));
 		}
 	}
 
