@@ -3856,6 +3856,83 @@ UINT8 CountNearbyFriendsOnRoof( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDi
 	return ubFriendCount;
 }
 
+// Individual danger assessment used by tactical self-preservation.
+// This is intentionally separate from squad morale: morale says whether the fight
+// looks winnable, while this score says how dangerous the soldier's own position is.
+INT32 AIPersonalRisk(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->stats.bLifeMax <= 0)
+		return 0;
+
+	INT32 iHealthPercent = (100 * pSoldier->stats.bLife) / pSoldier->stats.bLifeMax;
+	INT32 iRisk = 0;
+
+	// Wounds matter increasingly as remaining health gets low.
+	if (iHealthPercent < 75)
+		iRisk += (75 - iHealthPercent) / 2;
+	if (iHealthPercent < 50)
+		iRisk += 10;
+	if (iHealthPercent < 25)
+		iRisk += 15;
+
+	// Suppression, bleeding and exhaustion increase the urgency to preserve oneself.
+	iRisk += ShockLevelPercent(pSoldier) / 3;
+	iRisk += __min((INT32)15, (INT32)pSoldier->bBleeding / 5);
+	if (pSoldier->bBreath < 25)
+		iRisk += 8;
+
+	// Immediate tactical danger.
+	if (pSoldier->aiData.bUnderFire)
+		iRisk += 10;
+	if (!AnyCoverAtSpot(pSoldier, pSoldier->sGridNo))
+		iRisk += 12;
+
+	// Isolation raises risk; nearby conscious allies reduce it.
+	UINT8 ubNearbyFriends = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4);
+	if (ubNearbyFriends == 0)
+		iRisk += 15;
+	else if (ubNearbyFriends == 1)
+		iRisk += 7;
+	else if (ubNearbyFriends >= 3)
+		iRisk -= 5;
+
+	return __max(0, __min(100, iRisk));
+}
+
+// Individual willingness to accept danger. Personality and current morale change
+// the threshold, but no ordinary attitude makes a soldier completely suicidal.
+INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier)
+		return 50;
+
+	INT32 iTolerance = 50;
+
+	switch (pSoldier->aiData.bAttitude)
+	{
+	case DEFENSIVE:		iTolerance -= 10; break;
+	case CUNNINGSOLO:
+	case CUNNINGAID:	iTolerance -= 5; break;
+	case BRAVESOLO:
+	case BRAVEAID:		iTolerance += 8; break;
+	case AGGRESSIVE:	iTolerance += 12; break;
+	case ATTACKSLAYONLY:iTolerance += 20; break;
+	}
+
+	switch (pSoldier->aiData.bAIMorale)
+	{
+	case MORALE_HOPELESS:	iTolerance -= 20; break;
+	case MORALE_WORRIED:	iTolerance -= 10; break;
+	case MORALE_CONFIDENT:	iTolerance += 8; break;
+	case MORALE_FEARLESS:	iTolerance += 15; break;
+	}
+
+	if (pSoldier->aiData.bOrders == SEEKENEMY)
+		iTolerance += 5;
+
+	return __max(20, __min(85, iTolerance));
+}
+
 // sevenfm: count nearby friend soldiers
 UINT8 CountNearbyFriends( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDistance )
 {
