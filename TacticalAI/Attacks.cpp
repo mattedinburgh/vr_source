@@ -3744,7 +3744,7 @@ void CheckTossAt(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow, INT32 sTargetSpo
 	//DebugShot( pSoldier, String("check toss at %d %d", sTargetSpot, bTargetLevel));
 
 	// sevenfm: safety check
-	if (TileIsOutOfBounds(sTargetSpot) || !GridNoOnVisibleWorldTile(sTargetSpot))
+	if (TileIsOutOfBounds(sTargetSpot))
 	{
 		return;
 	}
