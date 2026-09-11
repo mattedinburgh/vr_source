@@ -118,3 +118,5 @@ Chunk 4 adds a short-lived break-contact state distinct from ordinary tactical f
 - `AIShouldAvoidAdvance` treats active disengagement as a hard no-advance condition, preventing SEEK/GET_CLOSER/flank reversal until the intent expires or the battlefield clearly improves.
 
 This chunk does not yet choose a map edge or leave the sector. That remains Chunk 5.
+
+Chunk 4 review hardening: disengagement state is additionally bound to `uiUniqueSoldierIdValue` so reused soldier slots cannot inherit stale state, and named/profile NPCs are excluded from entering the new persistent disengagement mode to avoid interfering with story scripts.

@@ -4220,11 +4220,15 @@ INT8 AIHopelessOddsModifier(SOLDIERTYPE *pSoldier)
 // SOLDIERTYPE so the AI experiment does not alter savegame-compatible soldier data.
 static UINT8 gubAIDisengageTurns[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIDisengageTurnStamp[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAIDisengageIdentity[MAX_NUM_SOLDIERS] = { 0 };
 extern UINT32 guiTurnCnt;
 
 BOOLEAN AIDisengagementActive(SOLDIERTYPE *pSoldier)
 {
 	if (!AICombatTeam(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return FALSE;
+
+	if (guiAIDisengageIdentity[pSoldier->ubID] != pSoldier->uiUniqueSoldierIdValue)
 		return FALSE;
 
 	return (pSoldier->aiData.bAlertStatus >= STATUS_RED &&
@@ -4234,6 +4238,7 @@ BOOLEAN AIDisengagementActive(SOLDIERTYPE *pSoldier)
 BOOLEAN AIShouldStartDisengagement(SOLDIERTYPE *pSoldier)
 {
 	if (!AICombatTeam(pSoldier) || pSoldier->IsZombie() ||
+		pSoldier->ubProfile != NO_PROFILE ||
 		pSoldier->aiData.bAlertStatus < STATUS_RED ||
 		pSoldier->aiData.bOrders == STATIONARY ||
 		pSoldier->aiData.bAttitude == ATTACKSLAYONLY)
@@ -4274,7 +4279,19 @@ BOOLEAN AIShouldStartDisengagement(SOLDIERTYPE *pSoldier)
 
 BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 {
-	if (!AICombatTeam(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS ||
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return FALSE;
+
+	UINT8 ubID = pSoldier->ubID;
+	if (guiAIDisengageIdentity[ubID] != pSoldier->uiUniqueSoldierIdValue)
+	{
+		gubAIDisengageTurns[ubID] = 0;
+		guiAIDisengageTurnStamp[ubID] = 0;
+		guiAIDisengageIdentity[ubID] = pSoldier->uiUniqueSoldierIdValue;
+	}
+
+	if (!AICombatTeam(pSoldier) ||
+		pSoldier->ubProfile != NO_PROFILE ||
 		pSoldier->IsZombie() || pSoldier->aiData.bAlertStatus < STATUS_RED ||
 		pSoldier->aiData.bOrders == STATIONARY)
 	{
@@ -4283,7 +4300,6 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 		return FALSE;
 	}
 
-	UINT8 ubID = pSoldier->ubID;
 	UINT32 uiTurnStamp = guiTurnCnt + 1;
 
 	// Decay once per tactical turn, never once per AI sub-decision.
