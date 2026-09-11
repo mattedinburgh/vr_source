@@ -10831,7 +10831,7 @@ INT32 CalcMaxTossRange( SOLDIERTYPE * pSoldier, UINT16 usItem, BOOLEAN fArmed, O
 			else if ( (Item[ usItem ].usItemClass == IC_GRENADE) && Item[usItem].ubCursor == TOSSCURS && (HAS_SKILL_TRAIT( pSoldier, THROWING_NT )) )
 			{
 				// 1.13-aligned: Throwing controls grenade range; VR keeps the same 20% configured value.
-				iRange += ((iRange * gSkillTraitValues.ubDEMaxRangeToThrowGrenades) / 100);
+				iRange += ((iRange * gSkillTraitValues.ubTHMaxRangeToThrowGrenades) / 100);
 			}
 		}
 		else
@@ -10911,7 +10911,7 @@ UINT32 CalcThrownChanceToHit(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTi
 				iChance += gSkillTraitValues.bCtHModifierThrowingGrenades; // -10% for untrained mercs
 
 				if ( HAS_SKILL_TRAIT( pSoldier, THROWING_NT ) )
-					iChance += gSkillTraitValues.ubDECtHWhenThrowingGrenades; // 1.13-aligned: Throwing grants grenade CTH
+					iChance += gSkillTraitValues.ubTHCtHWhenThrowingGrenades; // 1.13-aligned: Throwing grants grenade CTH
 			}
 		}
 		else
