@@ -5254,6 +5254,209 @@ BOOLEAN AIFriendNeedsCoveringFire(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID)
 	return FALSE;
 }
 
+static BOOLEAN AIRecentWithdrawal(SOLDIERTYPE *pFriend)
+{
+	if (!pFriend)
+		return FALSE;
+
+	BOOLEAN fCurrentWithdrawal =
+		pFriend->aiData.bAction == AI_ACTION_WITHDRAW ||
+		pFriend->aiData.bAction == AI_ACTION_RUN_AWAY;
+
+	BOOLEAN fRecentWithdrawal =
+		pFriend->bActionPoints < pFriend->bInitialActionPoints &&
+		(pFriend->aiData.bLastAction == AI_ACTION_WITHDRAW ||
+		 pFriend->aiData.bLastAction == AI_ACTION_RUN_AWAY);
+
+	return fCurrentWithdrawal || fRecentWithdrawal;
+}
+
+static BOOLEAN AIEligibleWithdrawalCoverer(SOLDIERTYPE *pCandidate, SOLDIERTYPE *pRetreating)
+{
+	if (!pCandidate || !pRetreating ||
+		pCandidate == pRetreating ||
+		!pCandidate->bActive || !pCandidate->bInSector ||
+		pCandidate->stats.bLife < OKLIFE || pCandidate->bCollapsed ||
+		(pCandidate->usSoldierFlagMask & SOLDIER_POW) ||
+		(pCandidate->flags.uiStatusFlags & SOLDIER_COWERING) ||
+		pCandidate->pathing.bLevel != pRetreating->pathing.bLevel ||
+		PythSpacesAway(pCandidate->sGridNo, pRetreating->sGridNo) > DAY_VISION_RANGE ||
+		pCandidate->bActionPoints != pCandidate->bInitialActionPoints ||
+		AIEscapeActive(pCandidate) ||
+		!AICheckHasGun(pCandidate) || AIGunAmmo(pCandidate) == 0)
+	{
+		return FALSE;
+	}
+
+	INT32 sThreat = ClosestKnownOpponent(pCandidate, NULL, NULL);
+	if (TileIsOutOfBounds(sThreat))
+		return FALSE;
+
+	INT32 iRisk = AIPersonalRisk(pCandidate);
+	INT32 iTolerance = AIPersonalRiskTolerance(pCandidate);
+
+	// Nobody is ordered to play rear guard while his own position is already
+	// becoming untenable.
+	if (iRisk > iTolerance + 10 ||
+		(pCandidate->aiData.bUnderFire && iRisk >= iTolerance))
+	{
+		return FALSE;
+	}
+
+	if (!AnyCoverAtSpot(pCandidate, pCandidate->sGridNo) &&
+		(AILocalStress(pCandidate) >= 25 || iRisk + 10 >= iTolerance))
+	{
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static INT32 AIWithdrawalCoverScore(SOLDIERTYPE *pCandidate, SOLDIERTYPE *pRetreating)
+{
+	if (!AIEligibleWithdrawalCoverer(pCandidate, pRetreating))
+		return -10000;
+
+	INT32 iScore = 0;
+	if (AnyCoverAtSpot(pCandidate, pCandidate->sGridNo))
+		iScore += 30;
+	if (SightCoverAtSpot(pCandidate, pCandidate->sGridNo, FALSE))
+		iScore += 15;
+	if (AICheckIsMachinegunner(pCandidate))
+		iScore += 15;
+
+	iScore += __max(0, 20 - AILocalStress(pCandidate) / 3);
+	iScore += __max(0, 20 - AIPersonalRisk(pCandidate) / 4);
+	iScore -= __min((INT32)20,
+		PythSpacesAway(pCandidate->sGridNo, pRetreating->sGridNo));
+
+	return iScore;
+}
+
+BOOLEAN AIShouldHoldForWithdrawingFriend(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier) ||
+		!pSoldier->bActive || !pSoldier->bInSector ||
+		pSoldier->stats.bLife < OKLIFE ||
+		AIEscapeActive(pSoldier) ||
+		AILastSurvivorPressure(pSoldier))
+	{
+		return FALSE;
+	}
+
+	// Pick one deterministic local withdrawal to organize around. This prevents
+	// an entire squad from becoming "coverers" for several buddies at once.
+	SOLDIERTYPE *pRetreating = NULL;
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier ||
+			!pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE ||
+			pFriend->pathing.bLevel != pSoldier->pathing.bLevel ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE ||
+			!AIRecentWithdrawal(pFriend))
+		{
+			continue;
+		}
+
+		BOOLEAN fBreakingContact =
+			AIDisengagementActive(pFriend) ||
+			AIEscapeActive(pFriend) ||
+			pFriend->aiData.bUnderFire ||
+			AIPersonalRisk(pFriend) > AIPersonalRiskTolerance(pFriend);
+
+		if (!fBreakingContact)
+			continue;
+
+		if (!pRetreating || pFriend->ubID < pRetreating->ubID)
+			pRetreating = pFriend;
+	}
+
+	if (!pRetreating || !AIEligibleWithdrawalCoverer(pSoldier, pRetreating))
+		return FALSE;
+
+	INT32 iMyScore = AIWithdrawalCoverScore(pSoldier, pRetreating);
+	UINT8 ubBestID = pSoldier->ubID;
+	INT32 iBestScore = iMyScore;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pCandidate = MercPtrs[iCounter];
+		INT32 iScore = AIWithdrawalCoverScore(pCandidate, pRetreating);
+		if (iScore > iBestScore ||
+			(iScore == iBestScore && pCandidate && pCandidate->ubID < ubBestID))
+		{
+			iBestScore = iScore;
+			ubBestID = pCandidate->ubID;
+		}
+	}
+
+	return (ubBestID == pSoldier->ubID);
+}
+
+BOOLEAN AIFriendWithdrawingNeedsCover(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID)
+{
+	if (!AIShouldHoldForWithdrawingFriend(pSoldier) ||
+		ubOpponentID == NOBODY || !MercPtrs[ubOpponentID])
+	{
+		return FALSE;
+	}
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier ||
+			!pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE ||
+			pFriend->pathing.bLevel != pSoldier->pathing.bLevel ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE ||
+			!AIRecentWithdrawal(pFriend))
+		{
+			continue;
+		}
+
+		INT8 bKnowledge = PersonalKnowledge(pFriend, ubOpponentID);
+		if (bKnowledge != SEEN_CURRENTLY &&
+			bKnowledge != SEEN_THIS_TURN &&
+			bKnowledge != SEEN_LAST_TURN &&
+			bKnowledge != HEARD_THIS_TURN)
+		{
+			continue;
+		}
+
+		INT32 sThreat = KnownPersonalLocation(pFriend, ubOpponentID);
+		if (TileIsOutOfBounds(sThreat))
+			continue;
+
+		INT32 sFrom = NOWHERE;
+		INT32 sTo = NOWHERE;
+		if ((pFriend->aiData.bAction == AI_ACTION_WITHDRAW ||
+			 pFriend->aiData.bAction == AI_ACTION_RUN_AWAY) &&
+			!TileIsOutOfBounds(pFriend->aiData.usActionData))
+		{
+			sFrom = pFriend->sGridNo;
+			sTo = pFriend->aiData.usActionData;
+		}
+		else if (!TileIsOutOfBounds(pFriend->sLastTwoLocations[1]))
+		{
+			sFrom = pFriend->sLastTwoLocations[1];
+			sTo = pFriend->sGridNo;
+		}
+
+		if (!TileIsOutOfBounds(sFrom) && !TileIsOutOfBounds(sTo) &&
+			PythSpacesAway(sTo, sThreat) > PythSpacesAway(sFrom, sThreat) + 1)
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
 BOOLEAN AIFriendAdvancingNeedsCover(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID)
 {
 	if (!AICombatTeam(pSoldier) ||
