@@ -292,6 +292,8 @@ BOOLEAN AICheckWeOutnumberLocal(SOLDIERTYPE *pSoldier, INT32 sSpot);
 BOOLEAN AICheckWeOutnumber(SOLDIERTYPE *pSoldier, INT32 sSpot);
 BOOLEAN AICheckWeOutnumberSector(SOLDIERTYPE *pSoldier);
 
+INT32 AIPersonalRisk(SOLDIERTYPE *pSoldier);
+INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier);
 UINT8 CountNearbyFriends( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDistance );
 UINT8 CountNearbyNeutrals(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 sDistance);
 UINT8 CountFriendsInDirection(SOLDIERTYPE *pSoldier, UINT8 ubDirection, INT16 sDistance, BOOLEAN fCheckSight);
