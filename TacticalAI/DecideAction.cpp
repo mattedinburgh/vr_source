@@ -2946,6 +2946,15 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 	// calculate our morale
 	pSoldier->aiData.bAIMorale = CalcMorale(pSoldier);
 
+	// Emergency smoke can create the safe window needed for casualty treatment or
+	// a heavily suppressed soldier's disengagement.
+	if (pSoldier->bTeam == ENEMY_TEAM)
+	{
+		INT8 bSmokeAction = DecideEmergencyProtectionSmoke(pSoldier);
+		if (bSmokeAction != AI_ACTION_NONE)
+			return bSmokeAction;
+	}
+
 	// Tactical self-preservation: withdraw when this soldier's personal danger
 	// exceeds what his personality and morale are willing to tolerate.
 	if (gfTurnBasedAI &&
@@ -4618,6 +4627,15 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 
 		// calculate our morale
 		pSoldier->aiData.bAIMorale = CalcMorale(pSoldier);
+
+		// Emergency protection smoke is considered before movement/withdrawal so the
+		// team can create concealment for a casualty or pinned soldier first.
+		if (pSoldier->bTeam == ENEMY_TEAM)
+		{
+			INT8 bSmokeAction = DecideEmergencyProtectionSmoke(pSoldier);
+			if (bSmokeAction != AI_ACTION_NONE)
+				return bSmokeAction;
+		}
 
 		// Tactical self-preservation: individual danger can override aggression even
 		// for a healthy soldier if he is badly suppressed, exposed and isolated.
@@ -9043,6 +9061,106 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 	}
 
 	return -1;
+}
+
+// Emergency smoke for casualty protection and emergency disengagement.  This is
+// deliberately more selective than ordinary movement smoke: it requires a critical
+// casualty or a heavily suppressed soldier who is actually exposed to known enemy fire.
+INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
+{
+	if (!gfTurnBasedAI || !pSoldier || pSoldier->bTeam != ENEMY_TEAM ||
+		!SoldierAI(pSoldier) || pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		pSoldier->bActionPoints < APBPConstants[AP_MINIMUM] ||
+		FindThrowableGrenade(pSoldier, EXPLOSV_SMOKE) == NO_SLOT)
+	{
+		return AI_ACTION_NONE;
+	}
+
+	SOLDIERTYPE *pBestProtected = NULL;
+	INT32 iBestValue = 0;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; iCounter++)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || !pFriend->bActive || !pFriend->bInSector || pFriend->stats.bLife <= 0)
+			continue;
+
+		if (InSmoke(pFriend->sGridNo, pFriend->pathing.bLevel))
+			continue;
+
+		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
+		if (iDistance > DAY_VISION_RANGE / 2)
+			continue;
+
+		BOOLEAN fCriticalCasualty = pFriend->stats.bLife < OKLIFE && pFriend->bBleeding > 0;
+		BOOLEAN fSevereCasualty = pFriend->stats.bLife < pFriend->stats.bLifeMax / 2 && pFriend->bBleeding > 0;
+		BOOLEAN fPinned = pFriend->aiData.bUnderFire && ShockLevelPercent(pFriend) >= 50;
+		BOOLEAN fEmergencySelf = pFriend == pSoldier && pFriend->aiData.bUnderFire &&
+			AIPersonalRisk(pFriend) > AIPersonalRiskTolerance(pFriend);
+
+		if (!fCriticalCasualty && !fSevereCasualty && !fPinned && !fEmergencySelf)
+			continue;
+
+		// Do not spend smoke on somebody whom the acting soldier does not believe is
+		// exposed to enemy fire. This keeps the behaviour information-fair.
+		if (!EnemyCanAttackSpot(pSoldier, pFriend->sGridNo, pFriend->pathing.bLevel))
+			continue;
+
+		INT32 iValue = 0;
+		if (fCriticalCasualty)
+			iValue += 110;
+		else if (fSevereCasualty)
+			iValue += 70;
+
+		if (fPinned)
+			iValue += 55;
+		if (fEmergencySelf)
+			iValue += 35;
+		if (!AnyCoverAtSpot(pFriend, pFriend->sGridNo))
+			iValue += 20;
+		iValue += __min((INT32)20, (INT32)pFriend->bBleeding / 2);
+		iValue -= iDistance * 2;
+
+		if (iValue > iBestValue)
+		{
+			iBestValue = iValue;
+			pBestProtected = pFriend;
+		}
+	}
+
+	if (!pBestProtected || iBestValue < 45)
+		return AI_ACTION_NONE;
+
+	ATTACKTYPE BestThrow;
+	BestThrow.ubPossible = FALSE;
+	CheckTossGrenadeAt(pSoldier, &BestThrow, pBestProtected->sGridNo,
+		pBestProtected->pathing.bLevel, EXPLOSV_SMOKE);
+
+	if (!BestThrow.ubPossible)
+		return AI_ACTION_NONE;
+
+	// Commit to the smoke only after the normal throw calculation says the trajectory
+	// and AP cost are valid. Smoke is non-lethal, so protecting the casualty's own tile
+	// is intentional and creates concealment for treatment or withdrawal.
+	if (BestThrow.bWeaponIn != HANDPOS)
+		RearrangePocket(pSoldier, HANDPOS, BestThrow.bWeaponIn, FOREVER);
+
+	pSoldier->bTargetLevel = BestThrow.bTargetLevel;
+	pSoldier->aiData.bAimTime = BestThrow.ubAimTime;
+
+	if (gAnimControl[pSoldier->usAnimState].ubEndHeight < BestThrow.ubStance &&
+		pSoldier->InternalIsValidStance(AIDirection(pSoldier->sGridNo, BestThrow.sTarget), BestThrow.ubStance))
+	{
+		pSoldier->aiData.usActionData = BestThrow.ubStance;
+		pSoldier->aiData.bNextAction = AI_ACTION_TOSS_PROJECTILE;
+		pSoldier->aiData.usNextActionData = BestThrow.sTarget;
+		pSoldier->aiData.bNextTargetLevel = BestThrow.bTargetLevel;
+		return AI_ACTION_CHANGE_STANCE;
+	}
+
+	pSoldier->aiData.usActionData = BestThrow.sTarget;
+	return AI_ACTION_TOSS_PROJECTILE;
 }
 
 extern UINT32 guiTurnCnt;
