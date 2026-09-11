@@ -10755,9 +10755,9 @@ INT32 CalcMaxTossRange( SOLDIERTYPE * pSoldier, UINT16 usItem, BOOLEAN fArmed, O
 				iRange += ((iRange * gSkillTraitValues.ubTHBladesMaxRange ) / 100);
 			}
 			// sevenfm: add range only for hand grenades and not launched grenades
-			else if ( (Item[ usItem ].usItemClass == IC_GRENADE) && Item[usItem].ubCursor == TOSSCURS && (HAS_SKILL_TRAIT( pSoldier, DEMOLITIONS_NT )) )
+			else if ( (Item[ usItem ].usItemClass == IC_GRENADE) && Item[usItem].ubCursor == TOSSCURS && (HAS_SKILL_TRAIT( pSoldier, THROWING_NT )) )
 			{
-				// better max range due to expertise
+				// 1.13-aligned: Throwing controls grenade range; VR keeps the same 20% configured value.
 				iRange += ((iRange * gSkillTraitValues.ubDEMaxRangeToThrowGrenades) / 100);
 			}
 		}
@@ -10837,8 +10837,8 @@ UINT32 CalcThrownChanceToHit(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTi
 			{
 				iChance += gSkillTraitValues.bCtHModifierThrowingGrenades; // -10% for untrained mercs
 
-				if ( HAS_SKILL_TRAIT( pSoldier, DEMOLITIONS_NT ) )
-					iChance += gSkillTraitValues.ubDECtHWhenThrowingGrenades; // +30% chance
+				if ( HAS_SKILL_TRAIT( pSoldier, THROWING_NT ) )
+					iChance += gSkillTraitValues.ubDECtHWhenThrowingGrenades; // 1.13-aligned: Throwing grants grenade CTH
 			}
 		}
 		else
@@ -10852,41 +10852,37 @@ UINT32 CalcThrownChanceToHit(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTi
 	{
 
 		// MECHANICALLY FIRED arced projectile (ie. mortar), need brains & know-how
-		iChance = ( EffectiveDexterity( pSoldier, FALSE ) + EffectiveMarksmanship( pSoldier ) + EffectiveWisdom( pSoldier ) + pSoldier->stats.bExpLevel ) / 4;
+		iChance = ( EffectiveDexterity( pSoldier, FALSE ) + EffectiveMarksmanship( pSoldier ) + EffectiveWisdom( pSoldier ) + (pSoldier->stats.bExpLevel * 10) ) / 4;
 
 		////////////////////////////////////////////////////////////////////////////////////////////////
-		// SANDRO - old/new traits
-		if ( gGameOptions.fNewTraitSystem ) 
+		// 1.13 alignment: do not give traitless enemy/militia a severe artificial
+		// launcher penalty when the game is configured not to assign them traits.
+		if (pSoldier->bTeam == gbPlayerNum ||
+			(pSoldier->bTeam == ENEMY_TEAM && gGameExternalOptions.fAssignTraitsToEnemy) ||
+			(pSoldier->bTeam == MILITIA_TEAM && gGameExternalOptions.fAssignTraitsToMilitia))
 		{
-			if ( Item[ usHandItem ].mortar )
+			if ( gGameOptions.fNewTraitSystem )
 			{
-				if (HAS_SKILL_TRAIT( pSoldier, HEAVY_WEAPONS_NT ))
-					iChance += (gSkillTraitValues.sCtHModifierMortar * max( 0, ((100 - gSkillTraitValues.ubHWMortarCtHPenaltyReduction * NUM_SKILL_TRAITS( pSoldier, HEAVY_WEAPONS_NT ))/100)));
+				if ( Item[ usHandItem ].mortar )
+				{
+					if (HAS_SKILL_TRAIT( pSoldier, HEAVY_WEAPONS_NT ))
+						iChance += (gSkillTraitValues.sCtHModifierMortar * max( 0, ((100 - gSkillTraitValues.ubHWMortarCtHPenaltyReduction * NUM_SKILL_TRAITS( pSoldier, HEAVY_WEAPONS_NT ))/100)));
+					else
+						iChance += gSkillTraitValues.sCtHModifierMortar;
+				}
 				else
-					iChance += gSkillTraitValues.sCtHModifierMortar; // -60% for untrained mercs
+				{
+					iChance += gSkillTraitValues.bCtHModifierGrenadeLaunchers;
+					if (HAS_SKILL_TRAIT( pSoldier, HEAVY_WEAPONS_NT ))
+						iChance += gSkillTraitValues.ubHWBonusCtHGrenadeLaunchers * NUM_SKILL_TRAITS( pSoldier, HEAVY_WEAPONS_NT );
+				}
 			}
 			else
 			{
-				iChance += gSkillTraitValues.bCtHModifierGrenadeLaunchers; // -25% for untrained mercs
-
-				if (HAS_SKILL_TRAIT( pSoldier, HEAVY_WEAPONS_NT ))
-					iChance += gSkillTraitValues.ubHWBonusCtHGrenadeLaunchers * NUM_SKILL_TRAITS( pSoldier, HEAVY_WEAPONS_NT ); // +25% per trait - SANDRO
-			}
-		}
-		else
-		{
-			// This feature is available only if not having new traits on - SANDRO
-			// Also.. this was moved here before the Heavy Weapons bonus
-			// HEADROCK HAM 3.2: External divisor for CTH with mortars, now that they are more prevalent in the battlefield.
-			if ( Item[ usHandItem ].mortar )
-			{
-				iChance = iChance / gGameExternalOptions.ubMortarCTHDivisor;
-			}
-
-			// heavy weapons trait helps out
-			if (HAS_SKILL_TRAIT( pSoldier, HEAVY_WEAPS_OT ))
-			{
-				iChance += gbSkillTraitBonus[HEAVY_WEAPS_OT] * NUM_SKILL_TRAITS( pSoldier, HEAVY_WEAPS_OT );
+				if ( Item[ usHandItem ].mortar )
+					iChance = iChance / gGameExternalOptions.ubMortarCTHDivisor;
+				if (HAS_SKILL_TRAIT( pSoldier, HEAVY_WEAPS_OT ))
+					iChance += gbSkillTraitBonus[HEAVY_WEAPS_OT] * NUM_SKILL_TRAITS( pSoldier, HEAVY_WEAPS_OT );
 			}
 		}
 		////////////////////////////////////////////////////////////////////////////////////////////////
