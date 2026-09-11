@@ -10044,6 +10044,16 @@ INT8 DecideDisengagementAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (!fDisengaging && !fEscaping)
 		return AI_ACTION_NONE;
 
+	// Militia never traverse the sector edge. When their local fight is collapsing,
+	// first try to contract toward a defensible militia concentration instead of
+	// having each soldier independently drift backwards.
+	if (pSoldier->bTeam == MILITIA_TEAM && fDisengaging)
+	{
+		INT8 bConsolidateAction = DecideMilitiaDefensiveConsolidation(pSoldier, fCanMove);
+		if (bConsolidateAction != AI_ACTION_NONE)
+			return bConsolidateAction;
+	}
+
 	INT8 bEscapeAction = DecideEscapeAction(pSoldier, fCanMove);
 	if (bEscapeAction != AI_ACTION_NONE)
 		return bEscapeAction;
