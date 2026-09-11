@@ -5422,9 +5422,11 @@ UINT32 CalcNewChanceToHitGun(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTi
 	}
 	if (iSightRange == 0) 
 	{	
-		// Can't see the target but we still need to know what the sight range would be if we could so we can deal with cover penalties
-		// sevenfm: disable to prevent bug when shooting at empty tile
-		//iSightRange = SoldierToSoldierLineOfSightTest( pSoldier, MercPtrs[ubTargetID], TRUE, NO_DISTANCE_LIMIT, pSoldier->bAimShotLocation, false, true );
+		// Current 1.13 intent: even when the aimed body part is not directly visible, keep a
+		// CTH-only LOS estimate for a real soldier so cover/obstruction penalties scale correctly.
+		// Guard the lookup so shooting at an empty tile never dereferences NOBODY.
+		if (ubTargetID != NOBODY)
+			iSightRange = SoldierToSoldierLineOfSightTest( pSoldier, MercPtrs[ubTargetID], TRUE, NO_DISTANCE_LIMIT, pSoldier->bAimShotLocation, false, true );
 		fCantSeeTarget = true;
 	}
 
