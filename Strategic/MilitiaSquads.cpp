@@ -885,8 +885,8 @@ BOOLEAN FindMilitiaStrategicRetreatSector(INT16 sMapX, INT16 sMapY, INT16 *psTar
 		if (PlayerMercsInSector_MSE((UINT8)sTargetX, (UINT8)sTargetY, FALSE))
 			iScore += 20;
 
-		// Small bounded variation avoids identical compass choices among near-equal fallbacks.
-		iScore += (INT32)PreRandom(11);
+		// Keep the strategic fallback coherent: every routed militia soldier from
+		// this battle should resolve the same best destination.
 
 		if (iScore > iBestScore)
 		{
@@ -909,6 +909,61 @@ BOOLEAN FindMilitiaStrategicRetreatSector(INT16 sMapX, INT16 sMapY, INT16 *psTar
  * Tactical routing is deliberately wired in separately so this cannot mutate
  * strategic counts while soldiers are still attached to a live tactical battle.
  */
+BOOLEAN ExecuteOneMilitiaStrategicRetreat(INT16 sMapX, INT16 sMapY, INT16 sTargetX, INT16 sTargetY, UINT8 ubSoldierClass)
+{
+	if (sMapX < MINIMUM_VALID_X_COORDINATE || sMapX > MAXIMUM_VALID_X_COORDINATE ||
+		sMapY < MINIMUM_VALID_Y_COORDINATE || sMapY > MAXIMUM_VALID_Y_COORDINATE ||
+		sTargetX < MINIMUM_VALID_X_COORDINATE || sTargetX > MAXIMUM_VALID_X_COORDINATE ||
+		sTargetY < MINIMUM_VALID_Y_COORDINATE || sTargetY > MAXIMUM_VALID_Y_COORDINATE)
+	{
+		return FALSE;
+	}
+
+	// The tactical soldier must leave into the strategic sector selected by the
+	// retreat planner, not an arbitrary adjacent square.
+	INT16 sPlannedX = 0;
+	INT16 sPlannedY = 0;
+	if (!FindMilitiaStrategicRetreatSector(sMapX, sMapY, &sPlannedX, &sPlannedY) ||
+		sPlannedX != sTargetX || sPlannedY != sTargetY)
+	{
+		return FALSE;
+	}
+
+	UINT8 ubRank;
+	switch (ubSoldierClass)
+	{
+	case SOLDIER_CLASS_GREEN_MILITIA:
+		ubRank = GREEN_MILITIA;
+		break;
+	case SOLDIER_CLASS_REG_MILITIA:
+		ubRank = REGULAR_MILITIA;
+		break;
+	case SOLDIER_CLASS_ELITE_MILITIA:
+		ubRank = ELITE_MILITIA;
+		break;
+	default:
+		return FALSE;
+	}
+
+	SECTORINFO *pSource = &(SectorInfo[SECTOR(sMapX, sMapY)]);
+	SECTORINFO *pTarget = &(SectorInfo[SECTOR(sTargetX, sTargetY)]);
+	if (pSource->ubNumberOfCivsAtLevel[ubRank] == 0 ||
+		CountMilitia(pTarget) >= gGameExternalOptions.iMaxMilitiaPerSector)
+	{
+		return FALSE;
+	}
+
+	// Move the matching loadout before the strategic headcount changes.
+	MoveOneMilitiaEquipmentSet(sMapX, sMapY, sTargetX, sTargetY, ubRank);
+	StrategicAddMilitiaToSector(sTargetX, sTargetY, ubRank, 1);
+	StrategicRemoveMilitiaFromSector(sMapX, sMapY, ubRank, 1);
+
+	// Tactical traversal removes the soldier separately. Avoid ResetMilitia() here:
+	// rebuilding the live tactical militia team while one of its members is crossing
+	// the map edge would invalidate the traversal currently being processed.
+	AddToBlockMoveList(sTargetX, sTargetY);
+	return TRUE;
+}
 BOOLEAN ExecuteMilitiaStrategicRetreat(INT16 sMapX, INT16 sMapY, INT16 *psTargetX, INT16 *psTargetY)
 {
 	INT16 sTargetX = 0;
