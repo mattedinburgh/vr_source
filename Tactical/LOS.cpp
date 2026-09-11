@@ -8047,7 +8047,12 @@ FLOAT CalcMagFactor( SOLDIERTYPE *pShooter, OBJECTTYPE *pWeapon, FLOAT d2DDistan
 			iScopeFactor = GetBestScopeMagnificationFactor( pShooter, pWeapon, d2DDistance );
 			iScopeFactor = __min(iScopeFactor, __max(1.0f, iTargetMagFactor/rangeModifier));
 		}
-		iProjectionFactor = CalcProjectionFactor(pShooter, pWeapon, d2DDistance, ubAimTime);
+		// Modern 1.13: when the reworked NCTH laser-performance bonuses are active,
+		// do not also apply the legacy projection-factor magnification.
+		if ( (gGameCTHConstants.LASER_PERFORMANCE_BONUS_HIP + gGameCTHConstants.LASER_PERFORMANCE_BONUS_IRON + gGameCTHConstants.LASER_PERFORMANCE_BONUS_SCOPE) != 0 )
+			iProjectionFactor = 1.0;
+		else
+			iProjectionFactor = CalcProjectionFactor(pShooter, pWeapon, d2DDistance, ubAimTime);
 		iFinalMagFactor = __max(iScopeFactor, iProjectionFactor);
 	}
 
