@@ -8231,6 +8231,23 @@ void PrepareMainRedAIWeights(SOLDIERTYPE *pSoldier, INT8 &bSeekPts, INT8 &bHelpP
 	case AGGRESSIVE:    bSeekPts += +1; bHelpPts += 0; bHidePts += -1; bWatchPts += 0; break;
 	case ATTACKSLAYONLY:bSeekPts += +1; bHelpPts += 0; bHidePts += -1; bWatchPts += 0; break;
 	}
+
+	// Local cooperation: advancing with nearby support is desirable; isolated
+	// advances are discouraged.  This changes preference rather than forbidding
+	// movement, so brave/aggressive soldiers can still push when circumstances justify it.
+	if (pSoldier->bTeam == ENEMY_TEAM && bSeekPts > -90)
+	{
+		INT8 bSupportModifier = AIAdvanceSupportModifier(pSoldier);
+		bSeekPts += bSupportModifier;
+
+		if (bSupportModifier < 0)
+		{
+			if (bHidePts > -90)
+				bHidePts += 1;
+			if (bWatchPts > -90)
+				bWatchPts += 1;
+		}
+	}
 }
 
 INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
