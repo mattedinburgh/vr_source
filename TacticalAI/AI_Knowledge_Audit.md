@@ -105,3 +105,16 @@ Chunk 3 makes backward movement a normal positional decision before morale colla
 - Chunk 2 survivor-position exposure checks were switched to the same knowledge-bound exposure helper.
 
 Performance rule: no second pathfinder was added. `FindFlankingSpot(..., AI_ACTION_WITHDRAW)` remains the single bounded path search, and the more expensive known-contact exposure check is run only on the current position and the selected final fallback candidate.
+
+## Chunk 4: disengagement
+
+Chunk 4 adds a short-lived break-contact state distinct from ordinary tactical fallback.
+
+- `AIShouldStartDisengagement` triggers on catastrophic perceived odds, last-survivor pressure, or a losing fight combined with meaningful casualties / severe stress and personal risk.
+- `AIUpdateDisengagementState` keeps that intent for about 2 tactical turns (3 for catastrophic/last-survivor cases), decays it once per tactical turn, and clears it early when the situation becomes clearly winning and calm.
+- State lives in TacticalAI static arrays keyed by soldier ID, avoiding `SOLDIERTYPE` and savegame changes.
+- `DecideDisengagementAction` repeatedly uses the existing bounded withdrawal search to break contact; if no acceptable route exists it seeks safer nearby cover, then normal attack logic may return fire while renewed advance remains blocked.
+- While disengagement is active, ordinary survivor/fallback/self-preservation movement searches are skipped to avoid duplicate pathfinding.
+- `AIShouldAvoidAdvance` treats active disengagement as a hard no-advance condition, preventing SEEK/GET_CLOSER/flank reversal until the intent expires or the battlefield clearly improves.
+
+This chunk does not yet choose a map edge or leave the sector. That remains Chunk 5.

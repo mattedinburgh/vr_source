@@ -2972,16 +2972,24 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		if (bDisperseAction != AI_ACTION_NONE)
 			return bDisperseAction;
 	}
+	// Persistent break-contact intent outranks ordinary fallback.
+	if (AICombatTeam(pSoldier))
+	{
+		INT8 bDisengageAction = DecideDisengagementAction(pSoldier, ubCanMove);
+		if (bDisengageAction != AI_ACTION_NONE)
+			return bDisengageAction;
+	}
+
 	// If the local fight has collapsed, stop initiating attacks into superior known
 	// opposition. This uses only Chunk 1 perceived knowledge and existing withdrawal/cover.
-	if (AICombatTeam(pSoldier) && AIShouldAvoidAdvance(pSoldier))
+	if (AICombatTeam(pSoldier) && !AIDisengagementActive(pSoldier) && AIShouldAvoidAdvance(pSoldier))
 	{
 		INT8 bSurvivorAction = DecideHopelessSurvivorAction(pSoldier, ubCanMove);
 		if (bSurvivorAction != AI_ACTION_NONE)
 			return bSurvivorAction;
 	}
 	// Giving ground is a normal tactical option, not only a panic response.
-	if (AICombatTeam(pSoldier))
+	if (AICombatTeam(pSoldier) && !AIDisengagementActive(pSoldier))
 	{
 		INT8 bFallbackAction = DecideTacticalFallback(pSoldier, ubCanMove);
 		if (bFallbackAction != AI_ACTION_NONE)
@@ -2992,6 +3000,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 	// exceeds what his personality and morale are willing to tolerate.
 	if (gfTurnBasedAI &&
 		AICombatTeam(pSoldier) &&
+		!AIDisengagementActive(pSoldier) &&
 		ubCanMove &&
 		pSoldier->aiData.bOrders != STATIONARY &&
 		pSoldier->stats.bLife >= OKLIFE &&
@@ -4691,15 +4700,23 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				if (bDisperseAction != AI_ACTION_NONE)
 					return bDisperseAction;
 			}
+			// Persistent break-contact intent outranks ordinary fallback/attack setup.
+			if (AICombatTeam(pSoldier))
+			{
+				INT8 bDisengageAction = DecideDisengagementAction(pSoldier, ubCanMove);
+				if (bDisengageAction != AI_ACTION_NONE)
+					return bDisengageAction;
+			}
+
 			// Hopeless local odds make survival/defence outrank another advance.
-			if (AICombatTeam(pSoldier) && AIShouldAvoidAdvance(pSoldier))
+			if (AICombatTeam(pSoldier) && !AIDisengagementActive(pSoldier) && AIShouldAvoidAdvance(pSoldier))
 			{
 				INT8 bSurvivorAction = DecideHopelessSurvivorAction(pSoldier, ubCanMove);
 				if (bSurvivorAction != AI_ACTION_NONE)
 					return bSurvivorAction;
 			}
 			// Normal tactical fallback can concede ground before the situation becomes hopeless.
-			if (AICombatTeam(pSoldier))
+			if (AICombatTeam(pSoldier) && !AIDisengagementActive(pSoldier))
 			{
 				INT8 bFallbackAction = DecideTacticalFallback(pSoldier, ubCanMove);
 				if (bFallbackAction != AI_ACTION_NONE)
@@ -4710,6 +4727,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			// for a healthy soldier if he is badly suppressed, exposed and isolated.
 			if (gfTurnBasedAI &&
 				AICombatTeam(pSoldier) &&
+				!AIDisengagementActive(pSoldier) &&
 				ubCanMove &&
 				pSoldier->aiData.bOrders != STATIONARY &&
 				pSoldier->stats.bLife >= OKLIFE &&
@@ -9290,6 +9308,56 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 	return AI_ACTION_TOSS_PROJECTILE;
 }
 
+INT8 DecideDisengagementAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
+{
+	if (!AICombatTeam(pSoldier) || !AIUpdateDisengagementState(pSoldier))
+		return AI_ACTION_NONE;
+
+	if (!fCanMove || pSoldier->bActionPoints != pSoldier->bInitialActionPoints)
+		return AI_ACTION_NONE;
+
+	INT32 sThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	if (TileIsOutOfBounds(sThreat))
+	{
+		// Contact has been broken. Stay disengaged briefly instead of immediately
+		// seeking the stale contact again.
+		return AI_ACTION_NONE;
+	}
+
+	UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+	INT32 iCurrentSupport = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2);
+
+	INT32 sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
+	if (!TileIsOutOfBounds(sFallback))
+	{
+		UINT16 usFallbackExposure = AIKnownThreatExposure(pSoldier, sFallback, pSoldier->pathing.bLevel);
+		INT32 iFallbackSupport = CountNearbyFriends(pSoldier, sFallback, DAY_VISION_RANGE / 2);
+		BOOLEAN fCurrentSightCover = SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE);
+		BOOLEAN fFallbackSightCover = SightCoverAtSpot(pSoldier, sFallback, FALSE);
+
+		if (usFallbackExposure <= usCurrentExposure ||
+			(fFallbackSightCover && !fCurrentSightCover) ||
+			iFallbackSupport > iCurrentSupport)
+		{
+			pSoldier->aiData.usActionData = sFallback;
+			return AI_ACTION_WITHDRAW;
+		}
+	}
+
+	INT32 iCoverPercentBetter = 0;
+	INT32 sCover = FindBestNearbyCover(pSoldier, pSoldier->aiData.bAIMorale, &iCoverPercentBetter);
+	if (!TileIsOutOfBounds(sCover) && sCover != pSoldier->sGridNo)
+	{
+		UINT16 usCoverExposure = AIKnownThreatExposure(pSoldier, sCover, pSoldier->pathing.bLevel);
+		if (usCoverExposure <= usCurrentExposure)
+		{
+			pSoldier->aiData.usActionData = sCover;
+			return AI_ACTION_TAKE_COVER;
+		}
+	}
+
+	return AI_ACTION_NONE;
+}
 INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 {
 	if (!AICombatTeam(pSoldier) || !fCanMove || pSoldier->IsZombie() ||

@@ -4216,10 +4216,109 @@ INT8 AIHopelessOddsModifier(SOLDIERTYPE *pSoldier)
 	return __max((INT8)-8, bModifier);
 }
 
+// Short-lived tactical disengagement state. This is deliberately kept outside
+// SOLDIERTYPE so the AI experiment does not alter savegame-compatible soldier data.
+static UINT8 gubAIDisengageTurns[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAIDisengageTurnStamp[MAX_NUM_SOLDIERS] = { 0 };
+extern UINT32 guiTurnCnt;
+
+BOOLEAN AIDisengagementActive(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return FALSE;
+
+	return (pSoldier->aiData.bAlertStatus >= STATUS_RED &&
+		gubAIDisengageTurns[pSoldier->ubID] > 0);
+}
+
+BOOLEAN AIShouldStartDisengagement(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier) || pSoldier->IsZombie() ||
+		pSoldier->aiData.bAlertStatus < STATUS_RED ||
+		pSoldier->aiData.bOrders == STATIONARY ||
+		pSoldier->aiData.bAttitude == ATTACKSLAYONLY)
+	{
+		return FALSE;
+	}
+
+	if (AIPerceivedEnemyStrength(pSoldier) == 0)
+		return FALSE;
+
+	INT8 bSituation = AIBattleSituation(pSoldier);
+	UINT8 ubCasualties = AIFriendlyCasualtyPercent(pSoldier);
+
+	if (bSituation == AI_BATTLE_CATASTROPHIC || AILastSurvivorPressure(pSoldier))
+		return TRUE;
+
+	if (bSituation == AI_BATTLE_LOSING)
+	{
+		if (ubCasualties >= 30)
+			return TRUE;
+
+		if (AILocalStress(pSoldier) >= 35 &&
+			AIPersonalRisk(pSoldier) >= AIPersonalRiskTolerance(pSoldier))
+		{
+			return TRUE;
+		}
+	}
+
+	if (ubCasualties >= 50 &&
+		bSituation != AI_BATTLE_WINNING &&
+		AISeverelyIsolated(pSoldier))
+	{
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS ||
+		pSoldier->IsZombie() || pSoldier->aiData.bAlertStatus < STATUS_RED ||
+		pSoldier->aiData.bOrders == STATIONARY)
+	{
+		if (pSoldier && pSoldier->ubID < MAX_NUM_SOLDIERS)
+			gubAIDisengageTurns[pSoldier->ubID] = 0;
+		return FALSE;
+	}
+
+	UINT8 ubID = pSoldier->ubID;
+	UINT32 uiTurnStamp = guiTurnCnt + 1;
+
+	// Decay once per tactical turn, never once per AI sub-decision.
+	if (guiAIDisengageTurnStamp[ubID] != uiTurnStamp)
+	{
+		guiAIDisengageTurnStamp[ubID] = uiTurnStamp;
+		if (gubAIDisengageTurns[ubID] > 0)
+			--gubAIDisengageTurns[ubID];
+	}
+
+	INT8 bSituation = AIBattleSituation(pSoldier);
+	if (bSituation == AI_BATTLE_WINNING &&
+		!pSoldier->aiData.bUnderFire &&
+		AILocalStress(pSoldier) < 25)
+	{
+		gubAIDisengageTurns[ubID] = 0;
+		return FALSE;
+	}
+
+	if (AIShouldStartDisengagement(pSoldier))
+	{
+		UINT8 ubDuration = (bSituation == AI_BATTLE_CATASTROPHIC ||
+			AILastSurvivorPressure(pSoldier)) ? 3 : 2;
+		gubAIDisengageTurns[ubID] = __max(gubAIDisengageTurns[ubID], ubDuration);
+	}
+
+	return (gubAIDisengageTurns[ubID] > 0);
+}
 BOOLEAN AIShouldAvoidAdvance(SOLDIERTYPE *pSoldier)
 {
 	if (!AICombatTeam(pSoldier))
 		return FALSE;
+	if (AIDisengagementActive(pSoldier))
+		return TRUE;
+
 
 	INT8 bSituation = AIBattleSituation(pSoldier);
 
