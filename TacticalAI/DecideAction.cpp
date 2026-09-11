@@ -2969,6 +2969,15 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			}
 		}
 	}
+
+	// Combat medics prioritize saving viable casualties, but only when the rescue
+	// passes the medic's personal-risk and route-exposure checks.
+	if (pSoldier->bTeam == ENEMY_TEAM && AICheckIsMedic(pSoldier))
+	{
+		INT8 bMedicAction = DecideCombatMedicRescue(pSoldier);
+		if (bMedicAction != AI_ACTION_NONE)
+			return bMedicAction;
+	}
 // WDS DEBUG - this will make all enemies run away (to test retreating into occupied sector bugs)
 //	pSoldier->aiData.bAIMorale = MORALE_HOPELESS;
 
@@ -4629,6 +4638,15 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			{
 				return(AI_ACTION_WITHDRAW);
 			}
+		}
+
+		// Combat medic rescue is considered before ordinary offensive behaviour.
+		// The rescue routine itself rejects suicidal routes and over-risked medics.
+		if (pSoldier->bTeam == ENEMY_TEAM && AICheckIsMedic(pSoldier))
+		{
+			INT8 bMedicAction = DecideCombatMedicRescue(pSoldier);
+			if (bMedicAction != AI_ACTION_NONE)
+				return bMedicAction;
 		}
 
 		////////////////////////////////////////////////////////////////////////////
