@@ -2561,9 +2561,16 @@ BOOLEAN DrawCTHIndicator()
 	// Calculate the size of a "normal" aperture. This is how wide a shot can go at 1x Normal Distance.
 	FLOAT iBasicAperture = (FLOAT)((sin(ddMaxAngleRadians) * gGameCTHConstants.NORMAL_SHOOTING_DISTANCE) * 2); // The *2 compensates for the difference between CellXY and ScreenXY 
 
-	// when using the reworked NCTH code we do additional calculations for iron sights and lasers
-	if (gGameExternalOptions.fUseNewCTHCalculation)
+	// Modern 1.13 NCTH: use the same iron-sight/laser aperture rules for the reticle as for the fired shot.
+	if (UsingNewCTHSystem())
 	{
+		// Modern iron-sight curve: keeps 1x sights useful over distance without over-buffing point-blank shots.
+		if ( gGameCTHConstants.IRON_SIGHTS_MAX_APERTURE_USE_GRADIENT && gCTHDisplay.ScopeMagFactor <= 1.0 && !pSoldier->IsValidAlternativeFireMode(pSoldier->aiData.bShownAimTime, gCTHDisplay.iTargetGridNo) )
+		{
+			iBasicAperture = iBasicAperture * ( 1 / sqrt( d2DDistance / FLOAT(CELL_X_SIZE) ) / gGameCTHConstants.IRON_SIGHTS_MAX_APERTURE_MODIFIER
+						+ (gGameCTHConstants.IRON_SIGHTS_MAX_APERTURE_MODIFIER - 1) / gGameCTHConstants.IRON_SIGHTS_MAX_APERTURE_MODIFIER );
+		}
+
 		// iron sights can get a percentage bonus to make them overall better but only when not shooting from hip
 		if (gCTHDisplay.ScopeMagFactor <= 1.0 && !pSoldier->IsValidAlternativeFireMode(pSoldier->aiData.bShownAimTime, gCTHDisplay.iTargetGridNo))
 
