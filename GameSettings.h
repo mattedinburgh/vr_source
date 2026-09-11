@@ -2052,6 +2052,7 @@ typedef struct
 	FLOAT AIM_DEX;				// Importance of Dexterity for AIMING CTH
 
 	FLOAT AIM_TOO_CLOSE_SCOPE;	// Applied per tile closer than the scope's minimum range.
+	FLOAT AIM_TOO_CLOSE_THRESHOLD;	// Fraction of ideal scope range where close-range penalty begins.
 	FLOAT AIM_GUN_CONDITION;		// Applied per point of condition below 50.
 	FLOAT AIM_LOW_MORALE;			// Applied gradually when morale is below 50.
 	FLOAT AIM_HIGH_MORALE;		// Applied gradually when morale is above 50.
