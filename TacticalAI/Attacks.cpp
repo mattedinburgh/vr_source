@@ -655,6 +655,29 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			iAttackValue /= 4;
 		}
 
+		// Lightweight target allocation: when several local teammates have just fired
+		// at this target area, prefer spreading fire to another viable threat. This is
+		// deliberately a soft penalty, so a very dangerous target can still justify focus fire.
+		if (pSoldier->bTeam == ENEMY_TEAM && pSoldier->aiData.bOppCnt > 1)
+		{
+			UINT8 ubSaturation = AITargetSaturation(pSoldier, sTarget);
+			if (ubSaturation > 0)
+			{
+				INT32 iPenaltyPercent = 15 * ubSaturation;
+
+				// Do not waste several shooters finishing an already disabled opponent.
+				if (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed || pOpponent->bBreathCollapsed)
+					iPenaltyPercent = 30 * ubSaturation;
+
+				// Immediate self-defence still justifies concentrated fire.
+				if (pOpponent->sLastTarget == pSoldier->sGridNo)
+					iPenaltyPercent /= 2;
+
+				iPenaltyPercent = __min(75, iPenaltyPercent);
+				iAttackValue = iAttackValue * (100 - iPenaltyPercent) / 100;
+			}
+		}
+
 #ifdef DEBUGATTACKS
 		DebugAI( String( "CalcBestShot: best AttackValue vs %d = %d\n",uiLoop,iAttackValue ) );
 #endif
