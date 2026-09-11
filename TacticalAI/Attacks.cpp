@@ -4371,7 +4371,7 @@ void CheckTossGrenadeAt(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow, INT32 sTa
 		return;
 	}
 
-	if (TileIsOutOfBounds(sTargetSpot) || !GridNoOnVisibleWorldTile(sTargetSpot))
+	if (TileIsOutOfBounds(sTargetSpot))
 	{
 		//DebugShot( pSoldier, String("bad sTargetSpot %d", sTargetSpot));
 		return;
