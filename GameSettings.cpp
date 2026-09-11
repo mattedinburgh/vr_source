@@ -3341,7 +3341,7 @@ void LoadCTHConstants()
 	gGameCTHConstants.SCOPE_EFFECTIVENESS_MINIMUM_SNIPER = iniReader.ReadInteger("General", "SCOPE_EFFECTIVENESS_MINIMUM_SNIPER", 100, 0, 100);
 	gGameCTHConstants.SIDE_FACING_DIVISOR				= iniReader.ReadFloat("General", "SIDE_FACING_DIVISOR", 1.0f, 1.0f, 10.0f);
 	// HEADROCK HAM 5: Basic chance to lose condition point when firing
-	gGameCTHConstants.BASIC_RELIABILITY_ODDS			= iniReader.ReadInteger("General", "BASIC_RELIABILITY_ODDS", 15, 0, 10000);
+	gGameCTHConstants.BASIC_RELIABILITY_ODDS			= iniReader.ReadInteger("General", "BASIC_RELIABILITY_ODDS", 45, 0, 10000);
 
 	////////////////////////////////////////////////////////////
 	// Coefficients for factors affecting Base CTH
@@ -3454,7 +3454,7 @@ void LoadCTHConstants()
 	gGameCTHConstants.RECOIL_COUNTER_ACCURACY_WIS						= iniReader.ReadFloat("Shooting Mechanism","RECOIL_COUNTER_ACCURACY_WIS",1.0, 0.0, 100.0);
 	gGameCTHConstants.RECOIL_COUNTER_ACCURACY_AGI						= iniReader.ReadFloat("Shooting Mechanism","RECOIL_COUNTER_ACCURACY_AGI",1.0, 0.0, 100.0);
 	gGameCTHConstants.RECOIL_COUNTER_ACCURACY_EXP_LEVEL					= iniReader.ReadFloat("Shooting Mechanism","RECOIL_COUNTER_ACCURACY_EXP_LEVEL",4.0f, 0.0, 100.0);
-	gGameCTHConstants.RECOIL_COUNTER_ACCURACY_AUTO_WEAPONS_DIVISOR		= iniReader.ReadFloat("Shooting Mechanism","RECOIL_COUNTER_ACCURACY_AUTO_WEAPONS_DIVISOR",2.0, 1.0, 100.0);
+	gGameCTHConstants.RECOIL_COUNTER_ACCURACY_AUTO_WEAPONS_DIVISOR		= iniReader.ReadFloat("Shooting Mechanism","RECOIL_COUNTER_AUTO_WEAPONS_DIVISOR",4.0, 1.0, 100.0);
 	gGameCTHConstants.RECOIL_COUNTER_ACCURACY_TRACER_BONUS				= iniReader.ReadFloat("Shooting Mechanism","RECOIL_COUNTER_ACCURACY_TRACER_BONUS",10.0, -1000.0, 1000.0);
 	gGameCTHConstants.RECOIL_COUNTER_ACCURACY_ANTICIPATION				= iniReader.ReadFloat("Shooting Mechanism","RECOIL_COUNTER_ACCURACY_ANTICIPATION",25.0, -1000.0, 1000.0);
 	gGameCTHConstants.RECOIL_COUNTER_ACCURACY_COMPENSATION				= iniReader.ReadFloat("Shooting Mechanism","RECOIL_COUNTER_ACCURACY_COMPENSATION",2.0, 0.0, 5.0);
@@ -3469,7 +3469,7 @@ void LoadCTHConstants()
 	gGameCTHConstants.RANGE_EFFECTS_DEV					 				= iniReader.ReadBoolean("Shooting Mechanism","RANGE_EFFECTS_DEV",  TRUE  );
 	gGameCTHConstants.MAX_EFFECTIVE_RANGE_MULTIPLIER	 				= iniReader.ReadFloat("Shooting Mechanism","MAX_EFFECTIVE_RANGE_MULTIPLIER",1.4f, 0.5f, 10.0f);
 	gGameCTHConstants.MAX_EFFECTIVE_RANGE_REDUCTION	 					= iniReader.ReadFloat("Shooting Mechanism","MAX_EFFECTIVE_RANGE_REDUCTION",0.5f, 0.0f, 1.0f);
-	gGameCTHConstants.MAX_EFFECTIVE_USE_GRADIENT						= iniReader.ReadBoolean("Shooting Mechanism","MAX_EFFECTIVE_USE_GRADIENT",  FALSE );
+	gGameCTHConstants.MAX_EFFECTIVE_USE_GRADIENT						= iniReader.ReadBoolean("Shooting Mechanism","MAX_EFFECTIVE_USE_GRADIENT",  TRUE );
 }
 
 void LoadTauntsSettings()
