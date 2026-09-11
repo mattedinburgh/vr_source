@@ -2794,13 +2794,10 @@ void HandleAITacticalTraversal( SOLDIERTYPE * pSoldier )
 		if (pSoldier->bTeam == MILITIA_TEAM)
 		{
 			// A live militia soldier already carries the sector-inventory items selected
-			// when he spawned. Suppress the strategic helper's generic equipment move,
-			// then deposit this soldier's actual militia-marked gear in the fallback sector.
-			BOOLEAN fUseMilitiaSectorInventory = gGameExternalOptions.fMilitiaUseSectorInventory;
-			gGameExternalOptions.fMilitiaUseSectorInventory = FALSE;
+			// when he spawned. Transfer strategic headcount first, then deposit this
+			// soldier's actual militia-marked gear in the fallback sector.
 			BOOLEAN fRetreated = ExecuteOneMilitiaStrategicRetreat(gWorldSectorX, gWorldSectorY,
 				iMapX, iMapY, pSoldier->ubSoldierClass);
-			gGameExternalOptions.fMilitiaUseSectorInventory = fUseMilitiaSectorInventory;
 
 			if (fRetreated)
 			{
