@@ -12073,8 +12073,19 @@ FLOAT CalcNewChanceToHitBaseWeaponBonus(SOLDIERTYPE *pSoldier, INT32 sGridNo, IN
 			}
 			else
 			{
-				// Penalty for shooting a pistol with just one hand
-				fGunBaseDifficulty *= gGameCTHConstants.BASE_ONE_HANDED;
+				// Penalty for shooting a pistol with just one hand.
+				// Current 1.13 lets Ambidextrous reduce this penalty too.
+				FLOAT fTempPenalty = (gGameCTHConstants.BASE_ONE_HANDED * fGunBaseDifficulty) - fGunBaseDifficulty;
+				if ( gGameOptions.fNewTraitSystem && HAS_SKILL_TRAIT( pSoldier, AMBIDEXTROUS_NT ) )
+				{
+					fTempPenalty = fTempPenalty * (100 - gSkillTraitValues.ubAMPenaltyDoubleReduction) / 100;
+				}
+				else if ( !gGameOptions.fNewTraitSystem && HAS_SKILL_TRAIT( pSoldier, AMBIDEXT_OT ) )
+				{
+					fTempPenalty = 0;
+				}
+
+				fGunBaseDifficulty += fTempPenalty;
 			}
 		}
 	}
@@ -12419,8 +12430,19 @@ FLOAT CalcNewChanceToHitAimWeaponBonus(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT
 			}
 			else
 			{
-				// Penalty for shooting a pistol with just one hand
-				fGunAimDifficulty *= gGameCTHConstants.AIM_ONE_HANDED;
+				// Penalty for shooting a pistol with just one hand.
+				// Current 1.13 lets Ambidextrous reduce this penalty too.
+				FLOAT fTempPenalty = (gGameCTHConstants.AIM_ONE_HANDED * fGunAimDifficulty) - fGunAimDifficulty;
+				if ( gGameOptions.fNewTraitSystem && HAS_SKILL_TRAIT( pSoldier, AMBIDEXTROUS_NT ) )
+				{
+					fTempPenalty = fTempPenalty * (100 - gSkillTraitValues.ubAMPenaltyDoubleReduction) / 100;
+				}
+				else if ( !gGameOptions.fNewTraitSystem && HAS_SKILL_TRAIT( pSoldier, AMBIDEXT_OT ) )
+				{
+					fTempPenalty = 0;
+				}
+
+				fGunAimDifficulty += fTempPenalty;
 			}
 		}
 	}
