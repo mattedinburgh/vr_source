@@ -1139,6 +1139,69 @@ INT32 RandDestWithinRange(SOLDIERTYPE *pSoldier)
 	return(sRandDest); // defaults to NOWHERE
 }
 
+// Turn stale contact information into a small deterministic search offset.
+// Different soldiers spread around the same last-known location instead of all
+// converging on one exact grid. Current sightings remain exact.
+INT32 AIStaleContactSearchSpot(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
+	INT32 sKnownSpot, INT8 bKnownLevel, INT8 bKnowledge)
+{
+	if (!pSoldier || !pOpponent || TileIsOutOfBounds(sKnownSpot))
+		return sKnownSpot;
+
+	INT8 bSearchRadius = 0;
+	switch (bKnowledge)
+	{
+	case SEEN_CURRENTLY:
+	case SEEN_THIS_TURN:
+		bSearchRadius = 0;
+		break;
+	case SEEN_LAST_TURN:
+		bSearchRadius = 1;
+		break;
+	case HEARD_THIS_TURN:
+		bSearchRadius = 2;
+		break;
+	case HEARD_LAST_TURN:
+		bSearchRadius = 3;
+		break;
+	case HEARD_2_TURNS_AGO:
+		bSearchRadius = 4;
+		break;
+	default:
+		bSearchRadius = 3;
+		break;
+	}
+
+	if (bSearchRadius <= 0)
+		return sKnownSpot;
+
+	UINT8 ubStartDirection = (UINT8)((pSoldier->ubID + 3 * pOpponent->ubID) % NUM_WORLD_DIRECTIONS);
+	INT8 bPreferredDistance = 1 + (INT8)((pSoldier->ubID + pOpponent->ubID) % bSearchRadius);
+
+	for (UINT8 ubTry = 0; ubTry < NUM_WORLD_DIRECTIONS; ubTry++)
+	{
+		UINT8 ubDirection = (ubStartDirection + ubTry) % NUM_WORLD_DIRECTIONS;
+		INT32 sCandidate = sKnownSpot;
+
+		for (INT8 bStep = 0; bStep < bPreferredDistance; bStep++)
+		{
+			INT32 sNext = NewGridNo(sCandidate, DirectionInc(ubDirection));
+			if (sNext == sCandidate || TileIsOutOfBounds(sNext))
+				break;
+			sCandidate = sNext;
+		}
+
+		if (sCandidate != sKnownSpot &&
+			!TileIsOutOfBounds(sCandidate) &&
+			NewOKDestination(pSoldier, sCandidate, FALSE, bKnownLevel))
+		{
+			return sCandidate;
+		}
+	}
+
+	return sKnownSpot;
+}
+
 INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel)
 {
 	INT32		*psLastLoc, *pusNoiseGridNo;
@@ -1155,6 +1218,7 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 	UINT8		*pubNoiseVolume;
 	INT8		*pbNoiseLevel;
 	INT8		*pbPersOL, *pbPublOL;
+	INT8		bKnowledge = NOT_HEARD_OR_SEEN;
 	INT32		sClimbGridNo;
 	SOLDIERTYPE *pOpponent;
 	SOLDIERTYPE	*pClosestOpponent = NULL;
@@ -1218,12 +1282,14 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 			// using personal knowledge, obtain opponent's "best guess" gridno
 			sGridNo = *psLastLoc;
 			bLevel = *pbLastLevel;
+			bKnowledge = *pbPersOL;
 		}
 		else
 		{
 			// using public knowledge, obtain opponent's "best guess" gridno
 			sGridNo = gsPublicLastKnownOppLoc[pSoldier->bTeam][pOpponent->ubID];
 			bLevel = gbPublicLastKnownOppLevel[pSoldier->bTeam][pOpponent->ubID];
+			bKnowledge = *pbPublOL;
 		}
 
 		// if we are standing at that gridno (!, obviously our info is old...)
@@ -1236,6 +1302,13 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 		{
 			// huh?
 			continue;
+		}
+
+		// Search uncertainty grows as contact information becomes stale. Keep exact
+		// current sightings untouched and distribute ordinary enemies around old contacts.
+		if (pSoldier->bTeam == ENEMY_TEAM && !pSoldier->IsZombie())
+		{
+			sGridNo = AIStaleContactSearchSpot(pSoldier, pOpponent, sGridNo, bLevel, bKnowledge);
 		}
 
 		// sevenfm: if soldier is zombie and he cannot climb, skip location
