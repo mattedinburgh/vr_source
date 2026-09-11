@@ -4637,54 +4637,70 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		// calculate our morale
 		pSoldier->aiData.bAIMorale = CalcMorale(pSoldier);
 
-		// Emergency protection smoke is considered before movement/withdrawal so the
-		// team can create concealment for a casualty or pinned soldier first.
-		if (AICombatTeam(pSoldier))
-		{
-			INT8 bSmokeAction = DecideEmergencyProtectionSmoke(pSoldier);
-			if (bSmokeAction != AI_ACTION_NONE)
-				return bSmokeAction;
-		}
+		// Immediate environmental survival outranks higher-level tactical behaviour.
+		// Do not throw rescue smoke, disperse, withdraw for formation reasons or start
+		// a medic run while gassed, in deep water, collapsing from exhaustion, beside
+		// a known bomb, or inside dangerous red smoke. The legacy emergency handling
+		// immediately below already knows how to escape those hazards safely.
+		BOOLEAN fImmediateEnvironmentalDanger =
+			bInGas ||
+			bInDeepWater ||
+			pSoldier->bBreath < 5 ||
+			FindBombNearby(pSoldier, pSoldier->sGridNo, BOMB_DETECTION_RANGE) ||
+			RedSmokeDanger(pSoldier->sGridNo, pSoldier->pathing.bLevel);
 
-		// Break local clusters under pressure before choosing ordinary attack/withdrawal.
-		if (ubCanMove && AICombatTeam(pSoldier))
+		if (!fImmediateEnvironmentalDanger)
 		{
-			INT8 bDisperseAction = DecideCombatDispersion(pSoldier);
-			if (bDisperseAction != AI_ACTION_NONE)
-				return bDisperseAction;
-		}
-
-		// Tactical self-preservation: individual danger can override aggression even
-		// for a healthy soldier if he is badly suppressed, exposed and isolated.
-		if (gfTurnBasedAI &&
-			AICombatTeam(pSoldier) &&
-			ubCanMove &&
-			pSoldier->aiData.bOrders != STATIONARY &&
-			pSoldier->stats.bLife >= OKLIFE &&
-			pSoldier->aiData.bAIMorale != MORALE_HOPELESS &&
-			AIPersonalRisk(pSoldier) > AIPersonalRiskTolerance(pSoldier) &&
-			(pSoldier->aiData.bUnderFire ||
-			 !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
-			 CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0) &&
-			!TileIsOutOfBounds(sClosestOpponent))
-		{
-			pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, sClosestOpponent, AI_ACTION_WITHDRAW);
-			if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
+			// Emergency protection smoke is considered before movement/withdrawal so the
+			// team can create concealment for a casualty or pinned soldier first.
+			if (AICombatTeam(pSoldier))
 			{
-				return(AI_ACTION_WITHDRAW);
+				INT8 bSmokeAction = DecideEmergencyProtectionSmoke(pSoldier);
+				if (bSmokeAction != AI_ACTION_NONE)
+					return bSmokeAction;
 			}
+
+			// Break local clusters under pressure before choosing ordinary attack/withdrawal.
+			if (ubCanMove && AICombatTeam(pSoldier))
+			{
+				INT8 bDisperseAction = DecideCombatDispersion(pSoldier);
+				if (bDisperseAction != AI_ACTION_NONE)
+					return bDisperseAction;
+			}
+
+			// Tactical self-preservation: individual danger can override aggression even
+			// for a healthy soldier if he is badly suppressed, exposed and isolated.
+			if (gfTurnBasedAI &&
+				AICombatTeam(pSoldier) &&
+				ubCanMove &&
+				pSoldier->aiData.bOrders != STATIONARY &&
+				pSoldier->stats.bLife >= OKLIFE &&
+				pSoldier->aiData.bAIMorale != MORALE_HOPELESS &&
+				AIPersonalRisk(pSoldier) > AIPersonalRiskTolerance(pSoldier) &&
+				(pSoldier->aiData.bUnderFire ||
+				 !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
+				 CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0) &&
+				!TileIsOutOfBounds(sClosestOpponent))
+			{
+				pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, sClosestOpponent, AI_ACTION_WITHDRAW);
+				if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
+				{
+					return(AI_ACTION_WITHDRAW);
+				}
+			}
+
+			// Combat medic rescue is considered before ordinary offensive behaviour.
+			// The rescue routine itself rejects suicidal routes and over-risked medics.
+			if (AICombatTeam(pSoldier) && AICheckIsMedic(pSoldier))
+			{
+				INT8 bMedicAction = DecideCombatMedicRescue(pSoldier);
+				if (bMedicAction != AI_ACTION_NONE)
+					return bMedicAction;
+			}
+
+			////////////////////////////////////////////////////////////////////////////
 		}
 
-		// Combat medic rescue is considered before ordinary offensive behaviour.
-		// The rescue routine itself rejects suicidal routes and over-risked medics.
-		if (AICombatTeam(pSoldier) && AICheckIsMedic(pSoldier))
-		{
-			INT8 bMedicAction = DecideCombatMedicRescue(pSoldier);
-			if (bMedicAction != AI_ACTION_NONE)
-				return bMedicAction;
-		}
-
-		////////////////////////////////////////////////////////////////////////////
 		// WHEN LEFT IN GAS, WEAR GAS MASK IF AVAILABLE AND NOT WORN
 		////////////////////////////////////////////////////////////////////////////
 
