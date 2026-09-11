@@ -4079,8 +4079,19 @@ UINT16 AIPerceivedEnemyStrength(SOLDIERTYPE *pSoldier)
 	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
 	{
 		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
-		if (!pOpponent || !ValidOpponent(pSoldier, pOpponent))
+		if (!pOpponent || pOpponent == pSoldier)
 			continue;
+
+		// Do not use ValidOpponent() here: it checks the opponent's actual current
+		// life/sector state and would leak an unseen death or departure into our
+		// perceived force estimate. Relation filters are safe; existence is not.
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pSoldier->bSide == pOpponent->bSide ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			pOpponent->ubBodyType == CROW)
+		{
+			continue;
+		}
 
 		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
 		if (bKnowledge == NOT_HEARD_OR_SEEN)
