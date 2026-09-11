@@ -9432,6 +9432,78 @@ static BOOLEAN AIEscapeEndpointUnsafe(SOLDIERTYPE *pSoldier, INT32 sSpot)
 	return FALSE;
 }
 
+static BOOLEAN AIEvaluateEscapeRoute(SOLDIERTYPE *pSoldier, INT32 sTarget,
+	INT32 *piPathSteps, UINT16 *pusPeakExposure, UINT16 *pusAverageExposure)
+{
+	if (!pSoldier || TileIsOutOfBounds(sTarget))
+		return FALSE;
+
+	INT32 iPathSteps = 0;
+	if (sTarget != pSoldier->sGridNo)
+	{
+		iPathSteps = FindBestPath(pSoldier, sTarget, pSoldier->pathing.bLevel,
+			RUNNING, NO_COPYROUTE, 0);
+		if (iPathSteps == 0)
+			return FALSE;
+	}
+
+	UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier,
+		pSoldier->sGridNo, pSoldier->pathing.bLevel);
+	UINT16 usPeakExposure = usCurrentExposure;
+	UINT32 uiExposureTotal = 0;
+	UINT8 ubSamples = 0;
+	INT32 sRouteSpot = pSoldier->sGridNo;
+
+	// NO_COPYROUTE leaves the first MAX_PATH_LIST_SIZE path directions in
+	// guiPathingData without replacing the soldier's active route. Sample four
+	// points at most; escape is rare, so this gives useful route awareness without
+	// turning every AI decision into dozens of LOS checks.
+	for (INT32 iStep = 0; iStep < iPathSteps && iStep < MAX_PATH_LIST_SIZE; ++iStep)
+	{
+		INT32 sNextSpot = NewGridNo(sRouteSpot,
+			DirectionInc((UINT8)guiPathingData[iStep]));
+		if (sNextSpot == sRouteSpot || TileIsOutOfBounds(sNextSpot))
+			return FALSE;
+
+		sRouteSpot = sNextSpot;
+
+		INT32 iStepNumber = iStep + 1;
+		BOOLEAN fSample =
+			(iStepNumber == __max(1, iPathSteps / 4)) ||
+			(iStepNumber == __max(1, iPathSteps / 2)) ||
+			(iStepNumber == __max(1, (iPathSteps * 3) / 4)) ||
+			(iStepNumber == iPathSteps) ||
+			(iStepNumber == MAX_PATH_LIST_SIZE);
+
+		if (!fSample)
+			continue;
+
+		if (AIEscapeEndpointUnsafe(pSoldier, sRouteSpot))
+			return FALSE;
+
+		UINT16 usExposure = AIKnownThreatExposure(pSoldier,
+			sRouteSpot, pSoldier->pathing.bLevel);
+		usPeakExposure = __max(usPeakExposure, usExposure);
+		uiExposureTotal += usExposure;
+		++ubSamples;
+
+		// A route that temporarily exposes the soldier to several more known
+		// threats than his current position is not a sensible break-contact route.
+		if (usExposure > usCurrentExposure + 200)
+			return FALSE;
+	}
+
+	if (piPathSteps)
+		*piPathSteps = iPathSteps;
+	if (pusPeakExposure)
+		*pusPeakExposure = usPeakExposure;
+	if (pusAverageExposure)
+		*pusAverageExposure = ubSamples ?
+			(UINT16)(uiExposureTotal / ubSamples) : usCurrentExposure;
+
+	return TRUE;
+}
+
 static BOOLEAN AIEscapeTargetStillSafe(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bDirection)
 {
 	INT8 bCheckedDirection = bDirection;
@@ -9496,13 +9568,13 @@ static INT32 AISelectEscapeEdge(SOLDIERTYPE *pSoldier, INT8 *pbBestDirection)
 		if (TileIsOutOfBounds(sSpot) || AIEscapeEndpointUnsafe(pSoldier, sSpot))
 			continue;
 
-		INT32 iPathCost = 0;
-		if (sSpot != pSoldier->sGridNo)
+		INT32 iPathSteps = 0;
+		UINT16 usPeakRouteExposure = 0;
+		UINT16 usAverageRouteExposure = 0;
+		if (!AIEvaluateEscapeRoute(pSoldier, sSpot, &iPathSteps,
+			&usPeakRouteExposure, &usAverageRouteExposure))
 		{
-			iPathCost = PlotPath(pSoldier, sSpot, NO_COPYROUTE, NO_PLOT, TEMPORARY,
-				RUNNING, NOT_STEALTH, FORWARD, 0);
-			if (iPathCost == 0)
-				continue;
+			continue;
 		}
 
 		UINT16 usExposure = AIKnownThreatExposure(pSoldier, sSpot, pSoldier->pathing.bLevel);
@@ -9521,7 +9593,10 @@ static INT32 AISelectEscapeEdge(SOLDIERTYPE *pSoldier, INT8 *pbBestDirection)
 		if (usExposure > usCurrentExposure + 200)
 			continue;
 
-		INT32 iScore = -(iPathCost * 2) - ((INT32)usExposure * 15);
+		INT32 iScore = -(iPathSteps * 20) -
+			((INT32)usExposure * 8) -
+			((INT32)usAverageRouteExposure * 7) -
+			((INT32)usPeakRouteExposure * 5);
 		if (!TileIsOutOfBounds(sKnownThreat))
 			iScore += (iThreatDistance - iCurrentThreatDistance) * 20;
 		if (InLightAtNight(sSpot, pSoldier->pathing.bLevel))
