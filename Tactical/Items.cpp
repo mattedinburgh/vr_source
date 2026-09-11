@@ -10662,114 +10662,55 @@ INT16 GetRangeBonus( OBJECTTYPE * pObj )
 
 INT16 LaserBonus(const INVTYPE * pItem, INT32 iRange, UINT8 bLightLevel, UINT8 ubAimTime, BOOLEAN fLaserActive)
 {
-	// Snap: Reduce laser scope bonus at long ranges and high light levels
-	INT16 bonus = 0;
-	INT32 iMaxLaserRange;
+	// Match current 1.13 laser behaviour. Vengeance keeps the extended signature
+	// for compatibility, but aiming time and manual laser-state filtering do not
+	// modify the bonus in the current 1.13 model.
+	(void)ubAimTime;
+	(void)fLaserActive;
 
-	// not laser - just plain bonus
-	if (pItem->bestlaserrange == 0)
+	if ( pItem->bestlaserrange == 0 || iRange <= pItem->bestlaserrange )
 	{
 		return pItem->tohitbonus;
 	}
-	// disable when using scope or reflex sight
-	else if (!fLaserActive)
-	{
-		return 0;
-	}
 	else
 	{
-		// Figure out max. visible distance for the laser dot:
-		// day: 1.5*bestlaserrange, night: 2.5*bestlaserrange
-		iMaxLaserRange = (pItem->bestlaserrange * (2 * bLightLevel + 3 * NORMAL_LIGHTLEVEL_NIGHT - 5 * NORMAL_LIGHTLEVEL_DAY)) / (2 * (NORMAL_LIGHTLEVEL_NIGHT - NORMAL_LIGHTLEVEL_DAY));
+		INT32 iMaxLaserRange = ( pItem->bestlaserrange * ( 2 * bLightLevel + 3 * NORMAL_LIGHTLEVEL_NIGHT - 5 * NORMAL_LIGHTLEVEL_DAY ) )
+			/ ( 2 * ( NORMAL_LIGHTLEVEL_NIGHT - NORMAL_LIGHTLEVEL_DAY ) );
 
-		if (iRange > iMaxLaserRange)
-		{
-			return 0;
-		}
+		INT16 bonus = ( pItem->tohitbonus * ( iMaxLaserRange - iRange ) )
+			/ ( iMaxLaserRange - pItem->bestlaserrange );
 
-		if (iRange < pItem->bestlaserrange)
-		{
-			bonus = pItem->tohitbonus;
-		}
-		else
-		{
-			// laser bonus drops linearly to 0
-			bonus = pItem->tohitbonus * (iMaxLaserRange - iRange) / (iMaxLaserRange - pItem->bestlaserrange);
-		}
-
-		// reduce bonus if not in the dark
-		if (bLightLevel < NORMAL_LIGHTLEVEL_NIGHT)
-		{
-			bonus = bonus * (NORMAL_LIGHTLEVEL_NIGHT + 3 * bLightLevel) / (4 * NORMAL_LIGHTLEVEL_NIGHT);
-		}
-
-		// reduce laser bonus when aiming
-		bonus = 2 * bonus / (2 + ubAimTime);
-
-		return max(bonus, 0);
+		return ( bonus > 0 ? bonus : 0 );
 	}
 }
 
 INT16 GetToHitBonus( SOLDIERTYPE *pSoldier, OBJECTTYPE *pObj, INT32 iRange, UINT8 bLightLevel, BOOLEAN fProneStance, UINT8 ubAimTime )
 {
-	///////////////////////////////////////////////////////////////////////////
-	// sevenfm: added scope mode support
-	///////////////////////////////////////////////////////////////////////////
+	// Preserve Vengeance's call signature, but use current 1.13 aggregation semantics.
+	(void)pSoldier;
 	INT16 bonus = 0;
 
-	if (pObj->exists() == true)
+	if ( pObj->exists() == true )
 	{
-		BOOLEAN fLaserActive = TRUE;
-
-		if (pSoldier)
-		{
-			fLaserActive = pSoldier->LaserActive();
-		}
-
-		// don't reduce with aiming when firing from hip
-		if (gGameExternalOptions.fScopeModes && pSoldier && pSoldier->bScopeMode == USE_ALT_WEAPON_HOLD)
-		{
-			ubAimTime = 0;
-		}
-
-		if (fProneStance)
+		if ( fProneStance )
 			bonus += Item[pObj->usItem].bipod;
 
-		// add bonus for item
-		bonus += BonusReduceMore(LaserBonus(&Item[pObj->usItem], iRange, bLightLevel, ubAimTime, fLaserActive), (*pObj)[0]->data.objectStatus);
-
-		// if item is a gun and scope mode enabled, add bonus from scope used
-		if (gGameExternalOptions.fScopeModes && pSoldier && Item[pObj->usItem].usItemClass == IC_GUN)
-		{
-			std::map<INT8, OBJECTTYPE*> ObjList;
-			GetScopeLists(pSoldier, pObj, ObjList);
-
-			// only use scope mode if gun is in hand, otherwise an error might occur!
-			if ((&pSoldier->inv[HANDPOS]) == pObj && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD)
-			{
-				// always use laser for active scope (for example, reflex+laser)
-				bonus += BonusReduceMore(LaserBonus(&Item[ObjList[pSoldier->bScopeMode]->usItem], iRange, bLightLevel, ubAimTime, fLaserActive), (*ObjList[pSoldier->bScopeMode])[0]->data.objectStatus);
-			}
-		}
-
+		bonus += BonusReduceMore( LaserBonus( &Item[pObj->usItem], iRange, bLightLevel, ubAimTime, TRUE ), (*pObj)[0]->data.objectStatus );
 		bonus += Item[(*pObj)[0]->data.gun.usGunAmmoItem].tohitbonus;
 
-		for (attachmentList::iterator iter = (*pObj)[0]->attachments.begin(); iter != (*pObj)[0]->attachments.end(); ++iter) {
-			if (iter->exists())
+		for ( attachmentList::iterator iter = (*pObj)[0]->attachments.begin(); iter != (*pObj)[0]->attachments.end(); ++iter )
+		{
+			if ( iter->exists() )
 			{
-				if (fProneStance)
+				if ( fProneStance )
 					bonus += Item[iter->usItem].bipod;
 
-				// exclude possible scopes from search as activated scope is already used before
-				if (!gGameExternalOptions.fScopeModes || !IsAttachmentClass(iter->usItem, AC_SCOPE_MODE))
-				{
-					bonus += BonusReduceMore(LaserBonus(&Item[iter->usItem], iRange, bLightLevel, ubAimTime, fLaserActive), (*iter)[0]->data.objectStatus);
-				}
+				bonus += BonusReduceMore( LaserBonus( &Item[iter->usItem], iRange, bLightLevel, ubAimTime, TRUE ), (*iter)[0]->data.objectStatus );
 			}
 		}
 	}
 
-	return(bonus);
+	return bonus;
 }
 
 // HEADROCK HAM 4: The following functions return the value of new NCTH-related modifiers from an item and all its
@@ -10913,26 +10854,23 @@ INT32 GetAimLevelsTraitModifier( SOLDIERTYPE *pSoldier, OBJECTTYPE *pObj )
 
 INT16 GetBurstToHitBonus( SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj, BOOLEAN fProneStance )
 {
-	/*INT16 bonus=0;
+	// Preserve Vengeance's call signature, but use current 1.13 aggregation semantics.
+	(void)pSoldier;
+	INT16 bonus = 0;
 
-	// Snap: bipod is effective only in the prone stance
-	// CHRISL: We don't want to count both bipod AND bursttohitbonus as some items get both bonuses
-
-	if (pObj->exists() == true) 
+	if ( pObj->exists() == true )
 	{
 		if ( fProneStance )
 			bonus += BonusReduceMore( Item[pObj->usItem].bipod, (*pObj)[0]->data.objectStatus );
 		else
 			bonus += BonusReduceMore( Item[pObj->usItem].bursttohitbonus, (*pObj)[0]->data.objectStatus );
 
-		// HEADROCK HAM B2.5: A certain setting in the New Tracer System can turn auto/burst penalties off
-		// entirely, to make up for "Tracer Bump".
 		if ( gGameExternalOptions.ubRealisticTracers != 1 )
-			bonus += Item[(*pObj)[0]->data.gun.usGunAmmoItem].bursttohitbonus ;
+			bonus += Item[(*pObj)[0]->data.gun.usGunAmmoItem].bursttohitbonus;
 
-		for (attachmentList::iterator iter = (*pObj)[0]->attachments.begin(); iter != (*pObj)[0]->attachments.end(); ++iter) 
+		for ( attachmentList::iterator iter = (*pObj)[0]->attachments.begin(); iter != (*pObj)[0]->attachments.end(); ++iter )
 		{
-			if(iter->exists())
+			if ( iter->exists() )
 			{
 				if ( fProneStance )
 					bonus += BonusReduceMore( Item[iter->usItem].bipod, (*iter)[0]->data.objectStatus );
@@ -10942,51 +10880,7 @@ INT16 GetBurstToHitBonus( SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj, BOOLEAN fPro
 		}
 	}
 
-	return( bonus );*/
-
-	///////////////////////////////////////////////////////////////////
-	// sevenfm: added scope mode support
-	///////////////////////////////////////////////////////////////////
-	INT16 bonus = 0;
-
-	if (pObj->exists() == true) 
-	{
-		if( fProneStance )
-			bonus += BonusReduceMore( Item[pObj->usItem].bipod, (*pObj)[0]->data.objectStatus );
-		else
-			bonus += BonusReduceMore( Item[pObj->usItem].bursttohitbonus, (*pObj)[0]->data.objectStatus );
-
-		// HEADROCK HAM B2.5: A certain setting in the New Tracer System can turn auto/burst penalties off
-		// entirely, to make up for "Tracer Bump".
-		if ( gGameExternalOptions.ubRealisticTracers != 1 )
-			bonus += Item[(*pObj)[0]->data.gun.usGunAmmoItem].bursttohitbonus ;
-
-		// Flugente: check for scope mode
-		if ( gGameExternalOptions.fScopeModes && pSoldier && Item[pObj->usItem].usItemClass == IC_GUN )
-		{
-			std::map<INT8, OBJECTTYPE*> ObjList;
-			GetScopeLists(pSoldier, pObj, ObjList);
-
-			// only use scope mode if gun is in hand, otherwise an error might occur!
-			if ( (&pSoldier->inv[HANDPOS]) == pObj && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD)
-			{
-				bonus += BonusReduceMore( Item[ObjList[pSoldier->bScopeMode]->usItem].bursttohitbonus, (*pObj)[0]->data.objectStatus );
-			}
-		}
-
-		for (attachmentList::iterator iter = (*pObj)[0]->attachments.begin(); iter != (*pObj)[0]->attachments.end(); ++iter) 
-		{
-			if(iter->exists() && ( !gGameExternalOptions.fScopeModes || !IsAttachmentClass(iter->usItem, AC_SCOPE|AC_SIGHT|AC_IRONSIGHT ) ) )
-			{
-				if ( fProneStance )
-					bonus += BonusReduceMore( Item[iter->usItem].bipod, (*iter)[0]->data.objectStatus );
-				else
-					bonus += BonusReduceMore( Item[iter->usItem].bursttohitbonus, (*iter)[0]->data.objectStatus );
-			}
-		}
-	}
-
-	return( bonus );
+	return bonus;
 }
 
 void GetRecoil( SOLDIERTYPE *pSoldier, OBJECTTYPE *pObj, FLOAT *bRecoilX, FLOAT *bRecoilY, UINT8 ubNumBullet )
@@ -11342,68 +11236,23 @@ INT16 GetRateOfFireBonus( OBJECTTYPE * pObj )
 
 INT16 GetAutoToHitBonus( SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj, BOOLEAN fProneStance )
 {
-	/*INT16 bonus=0;
+	// Preserve Vengeance's call signature, but use current 1.13 aggregation semantics.
+	(void)pSoldier;
+	INT16 bonus = 0;
 
-	// Snap: bipod is effective only in the prone stance
-	// CHRISL: We don't want to count both bipod AND bursttohitbonus as some items get both bonuses
-
-	if (pObj->exists() == true) {
+	if ( pObj->exists() == true )
+	{
 		if ( fProneStance )
 			bonus += BonusReduceMore( Item[pObj->usItem].bipod, (*pObj)[0]->data.objectStatus );
 		else
 			bonus += BonusReduceMore( Item[pObj->usItem].autofiretohitbonus, (*pObj)[0]->data.objectStatus );
 
-		// HEADROCK HAM B2.5: This external setting determines whether autofire penalty is affected by
-		// tracer ammo. At setting "1", it is disabled. This goes hand in hand with a new tracer effect that
-		// "bumps" CTH up after firing a tracer bullet.
-		if ( gGameExternalOptions.ubRealisticTracers != 1 ) 
-			bonus += Item[(*pObj)[0]->data.gun.usGunAmmoItem].autofiretohitbonus ;
-
-		for (attachmentList::iterator iter = (*pObj)[0]->attachments.begin(); iter != (*pObj)[0]->attachments.end(); ++iter) {
-			if(iter->exists()){
-				if ( fProneStance )
-					bonus += BonusReduceMore( Item[iter->usItem].bipod, (*iter)[0]->data.objectStatus );
-				else
-					bonus += BonusReduceMore( Item[iter->usItem].autofiretohitbonus, (*iter)[0]->data.objectStatus );
-			}
-		}
-	}
-
-	return( bonus );*/
-
-	///////////////////////////////////////////////////////////////////
-	// sevenfm: added scope mode support
-	///////////////////////////////////////////////////////////////////
-	INT16 bonus = 0;
-
-	if (pObj->exists() == true) 
-	{
-		if( fProneStance )
-			bonus += BonusReduceMore( Item[pObj->usItem].bipod, (*pObj)[0]->data.objectStatus );
-		else
-			bonus += BonusReduceMore( Item[pObj->usItem].autofiretohitbonus, (*pObj)[0]->data.objectStatus );
-
-		// HEADROCK HAM B2.5: A certain setting in the New Tracer System can turn auto/burst penalties off
-		// entirely, to make up for "Tracer Bump".
 		if ( gGameExternalOptions.ubRealisticTracers != 1 )
 			bonus += Item[(*pObj)[0]->data.gun.usGunAmmoItem].autofiretohitbonus;
 
-		// Flugente: check for scope mode
-		if ( gGameExternalOptions.fScopeModes && pSoldier && Item[pObj->usItem].usItemClass == IC_GUN )
+		for ( attachmentList::iterator iter = (*pObj)[0]->attachments.begin(); iter != (*pObj)[0]->attachments.end(); ++iter )
 		{
-			std::map<INT8, OBJECTTYPE*> ObjList;
-			GetScopeLists(pSoldier, pObj, ObjList);
-
-			// only use scope mode if gun is in hand, otherwise an error might occur!
-			if ( (&pSoldier->inv[HANDPOS]) == pObj && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD)
-			{
-				bonus += BonusReduceMore( Item[ObjList[pSoldier->bScopeMode]->usItem].autofiretohitbonus, (*pObj)[0]->data.objectStatus );
-			}
-		}
-
-		for (attachmentList::iterator iter = (*pObj)[0]->attachments.begin(); iter != (*pObj)[0]->attachments.end(); ++iter) 
-		{
-			if(iter->exists() && ( !gGameExternalOptions.fScopeModes || !IsAttachmentClass(iter->usItem, AC_SCOPE|AC_SIGHT|AC_IRONSIGHT ) ) )
+			if ( iter->exists() )
 			{
 				if ( fProneStance )
 					bonus += BonusReduceMore( Item[iter->usItem].bipod, (*iter)[0]->data.objectStatus );
@@ -11413,7 +11262,7 @@ INT16 GetAutoToHitBonus( SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj, BOOLEAN fPron
 		}
 	}
 
-	return( bonus );
+	return bonus;
 }
 
 INT16 GetPercentReadyTimeAPReduction( OBJECTTYPE * pObj )
