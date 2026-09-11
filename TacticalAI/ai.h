@@ -295,6 +295,7 @@ BOOLEAN AICheckWeOutnumberSector(SOLDIERTYPE *pSoldier);
 INT32 AIPersonalRisk(SOLDIERTYPE *pSoldier);
 INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier);
 INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
+INT8 AIEngagementRangeModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 BOOLEAN AIFriendNeedsCoveringFire(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID);
 UINT8 CountNearbyFriends( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDistance );
 UINT8 CountNearbyNeutrals(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 sDistance);
