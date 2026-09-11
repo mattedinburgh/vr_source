@@ -2631,10 +2631,12 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		}
 		//RELOADING
 
-		// A nearby ally under pressure can create a specific covering-fire task.
+		// A nearby ally under pressure, withdrawing, or making an exposed bound
+		// toward this exact opponent can create a specific covering-fire task.
 		BOOLEAN fCoveringFireSupport = BestShot.ubPossible &&
 			BestShot.ubOpponent != NOBODY &&
-			AIFriendNeedsCoveringFire(pSoldier, BestShot.ubOpponent);
+			(AIFriendNeedsCoveringFire(pSoldier, BestShot.ubOpponent) ||
+			 AIFriendAdvancingNeedsCover(pSoldier, BestShot.ubOpponent));
 
 		// WarmSteel - Because of suppression fire, we need enough ammo to even consider suppressing
 		// This means we need to reload. Also reload if we're just plainly low on bullets.
@@ -2702,7 +2704,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			!pSoldier->IsFlanking() &&
 			// check cover
 			(AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||																				// safe position
-			fCoveringFireSupport ||																				// cover a nearby ally's withdrawal
+			fCoveringFireSupport ||																				// cover a nearby ally's movement/withdrawal
 			NightLight() && CountFriendsFlankSameSpot(pSoldier) && Chance(50) ||
 			TANK(pSoldier) ||																		// tanks don't need cover
 			pSoldier->aiData.bUnderFire && (pSoldier->ubPreviousAttackerID == BestShot.ubOpponent || pSoldier->ubNextToPreviousAttackerID == BestShot.ubOpponent || MercPtrs[BestShot.ubOpponent]->sLastTarget == pSoldier->sGridNo) ||	// return fire

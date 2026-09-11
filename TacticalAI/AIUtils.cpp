@@ -5101,6 +5101,113 @@ BOOLEAN AIFriendNeedsCoveringFire(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID)
 	return FALSE;
 }
 
+BOOLEAN AIFriendAdvancingNeedsCover(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID)
+{
+	if (!AICombatTeam(pSoldier) ||
+		ubOpponentID == NOBODY ||
+		!MercPtrs[ubOpponentID] ||
+		AIDisengagementActive(pSoldier) ||
+		AIEscapeActive(pSoldier))
+	{
+		return FALSE;
+	}
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend ||
+			pFriend == pSoldier ||
+			!pFriend->bActive ||
+			!pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE ||
+			pFriend->bCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			AIDisengagementActive(pFriend) ||
+			AIEscapeActive(pFriend) ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE)
+		{
+			continue;
+		}
+
+		// Require recent personal knowledge of this exact opponent. The covering
+		// soldier can react to what his teammate is visibly doing, but the mover
+		// must have his own recent contact rather than borrowing omniscient sector data.
+		INT8 bKnowledge = PersonalKnowledge(pFriend, ubOpponentID);
+		if (bKnowledge != SEEN_CURRENTLY &&
+			bKnowledge != SEEN_THIS_TURN &&
+			bKnowledge != SEEN_LAST_TURN &&
+			bKnowledge != HEARD_THIS_TURN)
+		{
+			continue;
+		}
+
+		INT32 sKnownThreat = KnownPersonalLocation(pFriend, ubOpponentID);
+		if (TileIsOutOfBounds(sKnownThreat))
+			continue;
+
+		BOOLEAN fCurrentAdvance =
+			pFriend->aiData.bAction == AI_ACTION_SEEK_OPPONENT ||
+			pFriend->aiData.bAction == AI_ACTION_GET_CLOSER ||
+			pFriend->aiData.bAction == AI_ACTION_FLANK_LEFT ||
+			pFriend->aiData.bAction == AI_ACTION_FLANK_RIGHT;
+
+		BOOLEAN fRecentAdvance =
+			pFriend->aiData.bLastAction == AI_ACTION_SEEK_OPPONENT ||
+			pFriend->aiData.bLastAction == AI_ACTION_GET_CLOSER ||
+			pFriend->aiData.bLastAction == AI_ACTION_FLANK_LEFT ||
+			pFriend->aiData.bLastAction == AI_ACTION_FLANK_RIGHT;
+
+		INT32 sFrom = NOWHERE;
+		INT32 sTo = NOWHERE;
+
+		if (fCurrentAdvance &&
+			!TileIsOutOfBounds(pFriend->aiData.usActionData) &&
+			pFriend->aiData.usActionData != pFriend->sGridNo)
+		{
+			sFrom = pFriend->sGridNo;
+			sTo = pFriend->aiData.usActionData;
+		}
+		else if (fRecentAdvance &&
+			!TileIsOutOfBounds(pFriend->sLastTwoLocations[1]) &&
+			pFriend->sLastTwoLocations[1] != pFriend->sGridNo)
+		{
+			// JA2 retains the last movement locations until this soldier receives
+			// control again, which lets later teammates in the sequential turn
+			// recognise a bound that just finished.
+			sFrom = pFriend->sLastTwoLocations[1];
+			sTo = pFriend->sGridNo;
+		}
+
+		if (TileIsOutOfBounds(sFrom) || TileIsOutOfBounds(sTo))
+			continue;
+
+		INT32 iFromDist = PythSpacesAway(sFrom, sKnownThreat);
+		INT32 iToDist = PythSpacesAway(sTo, sKnownThreat);
+		if (iToDist + 1 >= iFromDist)
+			continue;
+
+		UINT16 usFromExposure = AIKnownThreatExposure(pFriend, sFrom, pFriend->pathing.bLevel);
+		UINT16 usToExposure = AIKnownThreatExposure(pFriend, sTo, pFriend->pathing.bLevel);
+		BOOLEAN fFlanking =
+			pFriend->aiData.bAction == AI_ACTION_FLANK_LEFT ||
+			pFriend->aiData.bAction == AI_ACTION_FLANK_RIGHT ||
+			pFriend->aiData.bLastAction == AI_ACTION_FLANK_LEFT ||
+			pFriend->aiData.bLastAction == AI_ACTION_FLANK_RIGHT;
+
+		BOOLEAN fNeedsCover =
+			usToExposure > usFromExposure + 25 ||
+			(!AnyCoverAtSpot(pFriend, sTo) && iToDist < TACTICAL_RANGE / 2) ||
+			(fFlanking && iToDist < TACTICAL_RANGE);
+
+		if (fNeedsCover)
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
 // sevenfm: count nearby friend soldiers
 UINT8 CountNearbyFriends( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDistance )
 {
