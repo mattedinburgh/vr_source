@@ -4273,8 +4273,10 @@ BOOLEAN AIShouldStartEscape(SOLDIERTYPE *pSoldier)
 	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM || pSoldier->IsZombie() ||
 		pSoldier->ubProfile != NO_PROFILE ||
 		pSoldier->aiData.bAlertStatus < STATUS_RED ||
-		pSoldier->aiData.bOrders == STATIONARY ||
-		pSoldier->aiData.bAttitude == ATTACKSLAYONLY)
+		pSoldier->aiData.bAttitude == ATTACKSLAYONLY ||
+		TANK(pSoldier) ||
+		(pSoldier->flags.uiStatusFlags & SOLDIER_VEHICLE) ||
+		AM_A_ROBOT(pSoldier))
 	{
 		return FALSE;
 	}
@@ -4302,8 +4304,10 @@ static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituati
 	if (pSoldier->bTeam != ENEMY_TEAM || pSoldier->IsZombie() ||
 		pSoldier->ubProfile != NO_PROFILE ||
 		pSoldier->aiData.bAlertStatus < STATUS_RED ||
-		pSoldier->aiData.bOrders == STATIONARY ||
-		pSoldier->aiData.bAttitude == ATTACKSLAYONLY)
+		pSoldier->aiData.bAttitude == ATTACKSLAYONLY ||
+		TANK(pSoldier) ||
+		(pSoldier->flags.uiStatusFlags & SOLDIER_VEHICLE) ||
+		AM_A_ROBOT(pSoldier))
 	{
 		gubAIEscapeIntent[ubID] = 0;
 		return;
@@ -4403,14 +4407,25 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 
 	if (!AICombatTeam(pSoldier) ||
 		pSoldier->ubProfile != NO_PROFILE ||
-		pSoldier->IsZombie() || pSoldier->aiData.bAlertStatus < STATUS_RED ||
-		pSoldier->aiData.bOrders == STATIONARY)
+		pSoldier->IsZombie() || pSoldier->aiData.bAlertStatus < STATUS_RED)
 	{
-		if (pSoldier && pSoldier->ubID < MAX_NUM_SOLDIERS)
-		{
-			gubAIDisengageTurns[pSoldier->ubID] = 0;
-			AIClearEscapeState(pSoldier);
-		}
+		gubAIDisengageTurns[ubID] = 0;
+		AIClearEscapeState(pSoldier);
+		return FALSE;
+	}
+
+	INT8 bSituation = AIBattleSituation(pSoldier);
+	UINT8 ubCasualties = AIFriendlyCasualtyPercent(pSoldier);
+	BOOLEAN fLastSurvivor = AILastSurvivorPressure(pSoldier);
+
+	// Escape is a higher survival state than disengagement. Update it before
+	// checking ordinary tactical orders so a catastrophic last survivor can
+	// abandon even a STATIONARY mission when survival has fully taken priority.
+	AIUpdateEscapeStateFromSnapshot(pSoldier, bSituation, ubCasualties, fLastSurvivor);
+
+	if (pSoldier->aiData.bOrders == STATIONARY)
+	{
+		gubAIDisengageTurns[ubID] = 0;
 		return FALSE;
 	}
 
@@ -4423,14 +4438,6 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 		if (gubAIDisengageTurns[ubID] > 0)
 			--gubAIDisengageTurns[ubID];
 	}
-
-	INT8 bSituation = AIBattleSituation(pSoldier);
-	UINT8 ubCasualties = AIFriendlyCasualtyPercent(pSoldier);
-	BOOLEAN fLastSurvivor = AILastSurvivorPressure(pSoldier);
-
-	// Reuse the same battlefield snapshot for the stricter escape decision so Chunk 5
-	// does not add another perceived-strength/casualty scan to every AI decision.
-	AIUpdateEscapeStateFromSnapshot(pSoldier, bSituation, ubCasualties, fLastSurvivor);
 
 	if (bSituation == AI_BATTLE_WINNING &&
 		!pSoldier->aiData.bUnderFire &&

@@ -9392,8 +9392,12 @@ static INT32 AINearestUsableOuterEdgepoint(SOLDIERTYPE *pSoldier, INT8 bDirectio
 	for (UINT16 usIndex = 0; usIndex < usSize; ++usIndex)
 	{
 		INT32 sSpot = psEdgepoints[usIndex];
-		if (TileIsOutOfBounds(sSpot) || sSpot == pSoldier->pathing.sBlackList)
+		if (TileIsOutOfBounds(sSpot) ||
+			sSpot == pSoldier->sGridNo ||
+			sSpot == pSoldier->pathing.sBlackList)
+		{
 			continue;
+		}
 
 		INT8 bActualDirection = -1;
 		if (!GridNoOnEdgeOfMap(sSpot, &bActualDirection) || bActualDirection != bDirection)
@@ -9728,7 +9732,14 @@ INT8 DecideDisengagementAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		return AI_ACTION_NONE;
 
 	BOOLEAN fDisengaging = AIUpdateDisengagementState(pSoldier);
-	if (!fDisengaging && !AIEscapeActive(pSoldier))
+	BOOLEAN fEscaping = AIEscapeActive(pSoldier);
+
+	// Do not reuse an old edge plan if this soldier recovered and only later
+	// entered a new escape episode.
+	if (pSoldier->bTeam == ENEMY_TEAM && !fEscaping)
+		AIResetEscapePlan(pSoldier);
+
+	if (!fDisengaging && !fEscaping)
 		return AI_ACTION_NONE;
 
 	INT8 bEscapeAction = DecideEscapeAction(pSoldier, fCanMove);
