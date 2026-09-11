@@ -44,6 +44,8 @@
 #include "items.h"
 #include "Item Types.h"
 #endif
+// NCTH laser display uses NORMAL_LIGHTLEVEL_DAY/NIGHT; keep these visible in both PCH and non-PCH builds.
+#include "environment.h"
 #include "fresh_header.h"
 #include "WorldDat.h"
 // HEADROCK HAM 3.6: This must be included, for testing whether Bloodcats and Enemies can see one another.
