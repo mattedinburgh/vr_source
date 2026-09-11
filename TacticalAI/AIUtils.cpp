@@ -4870,7 +4870,7 @@ INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	return (INT8)__max(-3, __min(3, iModifier));
 }
 
-BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT32 sTargetSpot)
+BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT32 sTargetSpot, INT8 bTargetLevel)
 {
 	if (!AICombatTeam(pSoldier) ||
 		TileIsOutOfBounds(sAdvanceSpot) ||
@@ -4913,7 +4913,6 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 			!pFriend->bInSector ||
 			pFriend->stats.bLife < OKLIFE ||
 			pFriend->bCollapsed ||
-			pFriend->pathing.bLevel != pSoldier->pathing.bLevel ||
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
 			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 			AIDisengagementActive(pFriend) ||
@@ -4940,7 +4939,7 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 			continue;
 
 		if (!LocationToLocationLineOfSightTest(pFriend->sGridNo, pFriend->pathing.bLevel,
-			sTargetSpot, pSoldier->pathing.bLevel, TRUE, MAX_VISION_RANGE))
+			sTargetSpot, bTargetLevel, TRUE, MAX_VISION_RANGE))
 		{
 			continue;
 		}
@@ -4955,7 +4954,7 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 		(!fAdvanceCover && usAdvanceExposure >= 200);
 
 	if (fSeverelyExposed)
-		return (ubSupporters >= 2);
+		return fAdvanceCover ? (ubSupporters >= 1) : (ubSupporters >= 2);
 
 	if (ubSupporters >= 1)
 		return TRUE;

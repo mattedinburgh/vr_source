@@ -3803,7 +3803,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 								// or other RED actions instead of becoming a suicidal straight rush.
 								if (!fAbortSeek &&
 									!fSeekClimb &&
-									!AIAdvanceHasMutualSupport(pSoldier, pSoldier->aiData.usActionData, sClosestDisturbance))
+									!AIAdvanceHasMutualSupport(pSoldier, pSoldier->aiData.usActionData, sClosestDisturbance, bClosestDisturbanceLevel))
 								{
 									fAbortSeek = TRUE;
 								}
@@ -6213,7 +6213,7 @@ L_NEWAIM:
 					!InGas(pSoldier, pSoldier->aiData.usActionData) &&
 					PythSpacesAway(pSoldier->aiData.usActionData, BestAttack.sTarget) < PythSpacesAway(pSoldier->sGridNo, BestAttack.sTarget) &&
 					LocationToLocationLineOfSightTest( pSoldier->aiData.usActionData, pSoldier->pathing.bLevel, BestAttack.sTarget, BestAttack.bTargetLevel, TRUE, CALC_FROM_ALL_DIRS ) &&
-					AIAdvanceHasMutualSupport(pSoldier, pSoldier->aiData.usActionData, BestAttack.sTarget))
+					AIAdvanceHasMutualSupport(pSoldier, pSoldier->aiData.usActionData, BestAttack.sTarget, BestAttack.bTargetLevel))
 				{
 					return( AI_ACTION_GET_CLOSER );
 				}
