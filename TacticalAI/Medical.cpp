@@ -410,6 +410,146 @@ INT8 FindBestPatient( SOLDIERTYPE * pSoldier, BOOLEAN * pfDoClimb )
 	}
 }
 
+// Combat medic behaviour for enemy AI.  Unlike autobandage, this runs during a
+// firefight and therefore refuses rescues that would expose the medic to excessive risk.
+// The decision is re-evaluated every turn, so a medic can wait for suppression/smoke
+// instead of committing to a suicidal run.
+INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM || !AICheckIsMedic(pSoldier) ||
+		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		pSoldier->aiData.bAIMorale == MORALE_HOPELESS)
+	{
+		return AI_ACTION_NONE;
+	}
+
+	INT8 bMedKitSlot = FindObjClass(pSoldier, IC_MEDKIT);
+	if (bMedKitSlot == NO_SLOT)
+		return AI_ACTION_NONE;
+
+	// Hard anti-suicide gate: a medic already beyond his own accepted risk level
+	// preserves himself instead of attempting a rescue.
+	INT32 iMedicRisk = AIPersonalRisk(pSoldier);
+	INT32 iMedicTolerance = AIPersonalRiskTolerance(pSoldier);
+	if (iMedicRisk > iMedicTolerance)
+		return AI_ACTION_NONE;
+
+	SOLDIERTYPE *pBestPatient = NULL;
+	INT32 sBestPatientGrid = NOWHERE;
+	INT32 sBestApproachGrid = NOWHERE;
+	INT32 iBestRescueValue = 0;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; iCounter++)
+	{
+		SOLDIERTYPE *pPatient = MercPtrs[iCounter];
+		if (!pPatient || pPatient == pSoldier || !pPatient->bActive || !pPatient->bInSector ||
+			pPatient->stats.bLife <= 0 || pPatient->bBleeding <= 0 || pPatient->ubServiceCount > 0)
+		{
+			continue;
+		}
+
+		INT32 iUrgency = 30;
+		if (pPatient->stats.bLife < OKLIFE)
+			iUrgency = 100;
+		else if (pPatient->stats.bLife < OKLIFE * 2)
+			iUrgency = 75;
+		else if (pPatient->stats.bLife < pPatient->stats.bLifeMax / 2)
+			iUrgency = 55;
+
+		iUrgency += __min((INT32)20, (INT32)pPatient->bBleeding / 2);
+		if (pPatient->aiData.bUnderFire)
+			iUrgency += 10;
+
+		UINT8 ubDirection = 0;
+		INT32 sAdjustedGrid = NOWHERE;
+		INT32 sApproachGrid = FindAdjacentGridEx(pSoldier, pPatient->sGridNo,
+			&ubDirection, &sAdjustedGrid, FALSE, FALSE);
+		if (TileIsOutOfBounds(sApproachGrid))
+			continue;
+
+		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, sApproachGrid);
+		if (iDistance > DAY_VISION_RANGE / 2)
+			continue;
+
+		gubNPCAPBudget = 0;
+		gubNPCDistLimit = 0;
+		if (!FindBestPath(pSoldier, sApproachGrid, pSoldier->pathing.bLevel,
+			RUNNING, COPYROUTE, PATH_THROUGH_PEOPLE))
+		{
+			continue;
+		}
+
+		// Inspect the actual route. Exposed tiles that known enemies can attack are
+		// heavily penalized; a long open sprint is therefore rejected even for a dying ally.
+		INT32 iPathExposure = 0;
+		INT32 sCheckGrid = pSoldier->sGridNo;
+		for (INT16 sLoop = pSoldier->pathing.usPathIndex;
+			sLoop < pSoldier->pathing.usPathDataSize; sLoop++)
+		{
+			sCheckGrid = NewGridNo(sCheckGrid,
+				DirectionInc((UINT8)pSoldier->pathing.usPathingData[sLoop]));
+			if (TileIsOutOfBounds(sCheckGrid))
+				break;
+
+			if (EnemyCanAttackSpot(pSoldier, sCheckGrid, pSoldier->pathing.bLevel))
+			{
+				iPathExposure += AnyCoverAtSpot(pSoldier, sCheckGrid) ? 3 : 7;
+			}
+		}
+
+		UINT8 ubSupport = CountNearbyFriends(pSoldier, pPatient->sGridNo, DAY_VISION_RANGE / 4);
+		BOOLEAN fDestinationAttackable = EnemyCanAttackSpot(pSoldier, sApproachGrid, pSoldier->pathing.bLevel);
+		BOOLEAN fDestinationCovered = AnyCoverAtSpot(pSoldier, sApproachGrid);
+
+		// Absolute veto: do not cross a long exposed fire lane or enter an exposed,
+		// attackable casualty position without somebody nearby to support the rescue.
+		if (iPathExposure >= 28 ||
+			(fDestinationAttackable && !fDestinationCovered && ubSupport == 0))
+		{
+			continue;
+		}
+
+		INT32 iRescueRisk = iMedicRisk + iDistance * 2 + iPathExposure;
+		if (fDestinationAttackable)
+			iRescueRisk += 12;
+		if (!fDestinationCovered)
+			iRescueRisk += 10;
+		if (pPatient->aiData.bUnderFire)
+			iRescueRisk += 8;
+		iRescueRisk -= 5 * __min((INT32)ubSupport, 3);
+
+		INT32 iRescueValue = iUrgency - iRescueRisk;
+		if (iRescueValue < 15 || iRescueValue <= iBestRescueValue)
+			continue;
+
+		pBestPatient = pPatient;
+		sBestPatientGrid = sAdjustedGrid;
+		sBestApproachGrid = sApproachGrid;
+		iBestRescueValue = iRescueValue;
+	}
+
+	if (!pBestPatient)
+		return AI_ACTION_NONE;
+
+	// Adjacent: commit to treatment. Keep the gun available until this point so a
+	// medic moving toward a casualty does not run through combat holding a medkit.
+	if (CardinalSpacesAway(pSoldier->sGridNo, sBestPatientGrid) == 1)
+	{
+		if (bMedKitSlot != HANDPOS)
+		{
+			pSoldier->bSlotItemTakenFrom = bMedKitSlot;
+			SwapObjs(pSoldier, HANDPOS, bMedKitSlot, TRUE);
+		}
+		pSoldier->aiData.usActionData = sBestPatientGrid;
+		return AI_ACTION_GIVE_AID;
+	}
+
+	pSoldier->usUIMovementMode = RUNNING;
+	pSoldier->aiData.usActionData = sBestApproachGrid;
+	return AI_ACTION_GET_CLOSER;
+}
+
 INT8 DecideAutoBandage( SOLDIERTYPE * pSoldier )
 {
 	INT8					bSlot;
