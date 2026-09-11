@@ -794,6 +794,162 @@ void MoveMilitiaSquad(INT16 sMapX, INT16 sMapY, INT16 sTMapX, INT16 sTMapY, BOOL
 	}
 }
 
+/*
+ * Select a safe strategic fallback sector for militia that have broken contact.
+ *
+ * This deliberately does not use ordinary mobile-militia roaming logic: a retreat
+ * is not a patrol move. It may leave a town/SAM sector, but it still requires an
+ * adjacent traversable, player-controlled sector with no enemy presence.
+ *
+ * To avoid deleting/stranding survivors through sector-capacity bookkeeping, the
+ * destination must have room for the entire surviving strategic militia group.
+ * We also require militia already at the destination: without a defensible friendly
+ * concentration nearby, routed militia remain in-sector and consolidate tactically.
+ */
+BOOLEAN FindMilitiaStrategicRetreatSector(INT16 sMapX, INT16 sMapY, INT16 *psTargetX, INT16 *psTargetY)
+{
+	if (!psTargetX || !psTargetY ||
+		sMapX < MINIMUM_VALID_X_COORDINATE || sMapX > MAXIMUM_VALID_X_COORDINATE ||
+		sMapY < MINIMUM_VALID_Y_COORDINATE || sMapY > MAXIMUM_VALID_Y_COORDINATE)
+	{
+		return FALSE;
+	}
+
+	SECTORINFO *pSource = &(SectorInfo[SECTOR(sMapX, sMapY)]);
+	UINT8 ubSourceMilitia = CountMilitia(pSource);
+	if (ubSourceMilitia == 0)
+		return FALSE;
+
+	static const INT8 sbDx[4] = { 0, 1, 0, -1 };
+	static const INT8 sbDy[4] = { -1, 0, 1, 0 };
+
+	INT32 iBestScore = -100000;
+	INT16 sBestX = 0;
+	INT16 sBestY = 0;
+
+	for (UINT8 ubDir = 0; ubDir < 4; ++ubDir)
+	{
+		INT16 sTargetX = sMapX + sbDx[ubDir];
+		INT16 sTargetY = sMapY + sbDy[ubDir];
+
+		if (sTargetX < MINIMUM_VALID_X_COORDINATE || sTargetX > MAXIMUM_VALID_X_COORDINATE ||
+			sTargetY < MINIMUM_VALID_Y_COORDINATE || sTargetY > MAXIMUM_VALID_Y_COORDINATE)
+		{
+			continue;
+		}
+
+		UINT8 ubTraversability = GetTraversability(
+			SECTOR(sMapX, sMapY), SECTOR(sTargetX, sTargetY));
+		if (ubTraversability == GROUNDBARRIER || ubTraversability == EDGEOFWORLD)
+			continue;
+
+		// Never retreat into a live enemy sector or one that is strategically enemy-held.
+		if (NumEnemiesInSector(sTargetX, sTargetY) > 0)
+			continue;
+
+		UINT16 usStrategicIndex =
+			SECTOR_INFO_TO_STRATEGIC_INDEX(SECTOR(sTargetX, sTargetY));
+		if (StrategicMap[usStrategicIndex].fEnemyControlled)
+			continue;
+
+		SECTORINFO *pTarget = &(SectorInfo[SECTOR(sTargetX, sTargetY)]);
+		UINT8 ubTargetMilitia = CountMilitia(pTarget);
+
+		// A strategic rout goes toward an existing friendly concentration, not empty wilderness.
+		if (ubTargetMilitia == 0)
+			continue;
+
+		INT32 iFreeSlots =
+			(INT32)gGameExternalOptions.iMaxMilitiaPerSector - (INT32)ubTargetMilitia;
+		if (iFreeSlots < (INT32)ubSourceMilitia)
+			continue;
+
+		INT32 iNearbyMilitia = (INT32)CountAllMilitiaInFiveSectors(sTargetX, sTargetY);
+		// The source is adjacent and will be vacated, so do not count it as future support.
+		iNearbyMilitia = __max(0, iNearbyMilitia - (INT32)ubSourceMilitia);
+
+		INT32 iNearbyEnemies = (INT32)NumEnemiesInFiveSectors(sTargetX, sTargetY);
+
+		INT32 iScore =
+			8 * (INT32)ubTargetMilitia +
+			2 * iNearbyMilitia -
+			6 * iNearbyEnemies;
+
+		if (IsThisSectorASAMSector(sTargetX, sTargetY, 0) ||
+			(GetTownIdForSector(sTargetX, sTargetY) != BLANK_SECTOR &&
+			 gfMilitiaAllowedInTown[GetTownIdForSector(sTargetX, sTargetY)]))
+		{
+			iScore += 40;
+		}
+
+		if (PlayerMercsInSector_MSE((UINT8)sTargetX, (UINT8)sTargetY, FALSE))
+			iScore += 20;
+
+		// Small bounded variation avoids identical compass choices among near-equal fallbacks.
+		iScore += (INT32)PreRandom(11);
+
+		if (iScore > iBestScore)
+		{
+			iBestScore = iScore;
+			sBestX = sTargetX;
+			sBestY = sTargetY;
+		}
+	}
+
+	if (iBestScore <= -100000)
+		return FALSE;
+
+	*psTargetX = sBestX;
+	*psTargetY = sBestY;
+	return TRUE;
+}
+
+/*
+ * Transfer the full surviving strategic militia group to its selected fallback.
+ * Tactical routing is deliberately wired in separately so this cannot mutate
+ * strategic counts while soldiers are still attached to a live tactical battle.
+ */
+BOOLEAN ExecuteMilitiaStrategicRetreat(INT16 sMapX, INT16 sMapY, INT16 *psTargetX, INT16 *psTargetY)
+{
+	INT16 sTargetX = 0;
+	INT16 sTargetY = 0;
+	if (!FindMilitiaStrategicRetreatSector(sMapX, sMapY, &sTargetX, &sTargetY))
+		return FALSE;
+
+	SECTORINFO *pSource = &(SectorInfo[SECTOR(sMapX, sMapY)]);
+	UINT8 ubGreens = pSource->ubNumberOfCivsAtLevel[GREEN_MILITIA];
+	UINT8 ubRegulars = pSource->ubNumberOfCivsAtLevel[REGULAR_MILITIA];
+	UINT8 ubElites = pSource->ubNumberOfCivsAtLevel[ELITE_MILITIA];
+
+	if ((UINT16)ubGreens + ubRegulars + ubElites == 0)
+		return FALSE;
+
+	// Keep militia equipment with the retreating survivors.
+	MoveMilitiaEquipment(sMapX, sMapY, sTargetX, sTargetY,
+		ubElites, ubRegulars, ubGreens);
+
+	StrategicAddMilitiaToSector(sTargetX, sTargetY, GREEN_MILITIA, ubGreens);
+	StrategicAddMilitiaToSector(sTargetX, sTargetY, REGULAR_MILITIA, ubRegulars);
+	StrategicAddMilitiaToSector(sTargetX, sTargetY, ELITE_MILITIA, ubElites);
+
+	StrategicRemoveMilitiaFromSector(sMapX, sMapY, GREEN_MILITIA, ubGreens);
+	StrategicRemoveMilitiaFromSector(sMapX, sMapY, REGULAR_MILITIA, ubRegulars);
+	StrategicRemoveMilitiaFromSector(sMapX, sMapY, ELITE_MILITIA, ubElites);
+
+	// Prevent an immediate second strategic move in the same militia update pass.
+	AddToBlockMoveList(sTargetX, sTargetY);
+
+	if (gfStrategicMilitiaChangesMade)
+		ResetMilitia();
+
+	if (psTargetX)
+		*psTargetX = sTargetX;
+	if (psTargetY)
+		*psTargetY = sTargetY;
+
+	return TRUE;
+}
+
 BOOLEAN MoveOneBestMilitiaMan(INT16 sMapX, INT16 sMapY, INT16 sTMapX, INT16 sTMapY)
 {
 	SECTORINFO *pSectorInfo = &( SectorInfo[ SECTOR( sMapX, sMapY ) ] );
