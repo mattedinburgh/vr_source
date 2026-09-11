@@ -2674,6 +2674,20 @@ INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction )
 	INT16 sTempDir;
 	INT32 sTempDist, sBestDist=0;
 
+	// Values that do not change while candidate tiles are scored. Hoisting them
+	// avoids repeating cover/support/range work for every reachable tile.
+	BOOLEAN fCurrentWithdrawCover = FALSE;
+	BOOLEAN fCurrentWithdrawSightCover = FALSE;
+	INT32 iCurrentWithdrawSupport = 0;
+	INT8 bCurrentWithdrawRangePreference = 0;
+	if (bAction == AI_ACTION_WITHDRAW)
+	{
+		fCurrentWithdrawCover = AnyCoverAtSpot(pSoldier, pSoldier->sGridNo);
+		fCurrentWithdrawSightCover = SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE);
+		iCurrentWithdrawSupport = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2);
+		bCurrentWithdrawRangePreference = AIEngagementRangeModifier(pSoldier, sPos);
+	}
+
 	// sevenfm:
 	switch ( bAction )
 	{
@@ -2821,41 +2835,32 @@ INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction )
 				INT32 iSeparationGain = iCandidateThreatDistance - iCurrentThreatDistance;
 				sTempDist += 15 * iSeparationGain;
 
-				BOOLEAN fCurrentCover = AnyCoverAtSpot(pSoldier, pSoldier->sGridNo);
 				BOOLEAN fCandidateCover = AnyCoverAtSpot(pSoldier, sGridNo);
-				BOOLEAN fCurrentSightCover = SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE);
 				BOOLEAN fCandidateSightCover = SightCoverAtSpot(pSoldier, sGridNo, FALSE);
 
 				if (fCandidateCover)
 					sTempDist += 30;
-				if (fCandidateCover && !fCurrentCover)
+				if (fCandidateCover && !fCurrentWithdrawCover)
 					sTempDist += 35;
-				if (!fCandidateCover && fCurrentCover)
+				if (!fCandidateCover && fCurrentWithdrawCover)
 					sTempDist -= 35;
 
 				if (fCandidateSightCover)
 					sTempDist += 25;
-				if (fCandidateSightCover && !fCurrentSightCover)
+				if (fCandidateSightCover && !fCurrentWithdrawSightCover)
 					sTempDist += 30;
-				if (!fCandidateSightCover && fCurrentSightCover)
+				if (!fCandidateSightCover && fCurrentWithdrawSightCover)
 					sTempDist -= 30;
 
 				// Nearby conscious allies make a fallback position more useful: the
 				// soldier is regrouping, not merely running away.
-				INT32 iCurrentSupport = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2);
 				INT32 iNearbySupport = CountNearbyFriends(pSoldier, sGridNo, DAY_VISION_RANGE / 2);
 				sTempDist += 20 * __min(iNearbySupport, 3);
-				sTempDist += 12 * (__min(iNearbySupport, 3) - __min(iCurrentSupport, 3));
-
-				// Avoid solving one problem by creating a grenade cluster.
-				INT32 iCurrentAdjacent = NumberOfTeamMatesAdjacent(pSoldier, pSoldier->sGridNo);
-				INT32 iCandidateAdjacent = NumberOfTeamMatesAdjacent(pSoldier, sGridNo);
-				if (iCandidateAdjacent > iCurrentAdjacent)
-					sTempDist -= 15 * (iCandidateAdjacent - iCurrentAdjacent);
+				sTempDist += 12 * (__min(iNearbySupport, 3) - __min(iCurrentWithdrawSupport, 3));
 
 				// A scoped/long-range soldier already too close to the threat gets extra
 				// value from restoring standoff, but ordinary soldiers do not blindly maximize range.
-				if (AIEngagementRangeModifier(pSoldier, sPos) < 0)
+				if (bCurrentWithdrawRangePreference < 0)
 					sTempDist += 8 * __min(iSeparationGain, 6);
 
 				// Slightly prefer a direct withdrawal when two positions are otherwise similar.

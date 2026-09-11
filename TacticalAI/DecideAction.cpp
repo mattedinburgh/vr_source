@@ -2981,7 +2981,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			return bSurvivorAction;
 	}
 	// Giving ground is a normal tactical option, not only a panic response.
-	if (AICombatTeam(pSoldier) && AIShouldConsiderTacticalFallback(pSoldier))
+	if (AICombatTeam(pSoldier))
 	{
 		INT8 bFallbackAction = DecideTacticalFallback(pSoldier, ubCanMove);
 		if (bFallbackAction != AI_ACTION_NONE)
@@ -4699,7 +4699,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 					return bSurvivorAction;
 			}
 			// Normal tactical fallback can concede ground before the situation becomes hopeless.
-			if (AICombatTeam(pSoldier) && AIShouldConsiderTacticalFallback(pSoldier))
+			if (AICombatTeam(pSoldier))
 			{
 				INT8 bFallbackAction = DecideTacticalFallback(pSoldier, ubCanMove);
 				if (bFallbackAction != AI_ACTION_NONE)
@@ -9339,7 +9339,7 @@ INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	// Under direct pressure, a modest improvement is enough; otherwise require a
 	// clearly better position so the AI does not shuffle backwards every turn.
 	INT32 iRequiredGain = (pSoldier->aiData.bUnderFire || !fCurrentCover ||
-		AIBattleSituation(pSoldier) == AI_BATTLE_LOSING) ? 8 : 18;
+		AILocalStress(pSoldier) >= 35) ? 8 : 18;
 
 	if (iGain < iRequiredGain)
 		return AI_ACTION_NONE;

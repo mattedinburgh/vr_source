@@ -4076,15 +4076,18 @@ UINT16 AIPerceivedEnemyStrength(SOLDIERTYPE *pSoldier)
 
 	UINT32 uiStrength = 0;
 
-	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
+	for (UINT16 uiLoop = 0; uiLoop < MAX_NUM_SOLDIERS; ++uiLoop)
 	{
-		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
+		SOLDIERTYPE *pOpponent = MercPtrs[uiLoop];
 		if (!pOpponent || pOpponent == pSoldier)
 			continue;
 
-		// Do not use ValidOpponent() here: it checks the opponent's actual current
-		// life/sector state and would leak an unseen death or departure into our
-		// perceived force estimate. Relation filters are safe; existence is not.
+		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+		if (bKnowledge == NOT_HEARD_OR_SEEN)
+			continue;
+
+		// Do not use ValidOpponent() here: it checks actual current life/sector state.
+		// Once a contact is known, relation filters are safe; hidden existence is not.
 		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
 			pSoldier->bSide == pOpponent->bSide ||
 			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
@@ -4092,10 +4095,6 @@ UINT16 AIPerceivedEnemyStrength(SOLDIERTYPE *pSoldier)
 		{
 			continue;
 		}
-
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
 
 		INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
 		if (TileIsOutOfBounds(sKnownSpot) ||
@@ -4250,10 +4249,14 @@ UINT16 AIKnownThreatExposure(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		return 0;
 
 	UINT32 uiExposure = 0;
-	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
+	for (UINT16 uiLoop = 0; uiLoop < MAX_NUM_SOLDIERS; ++uiLoop)
 	{
-		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
+		SOLDIERTYPE *pOpponent = MercPtrs[uiLoop];
 		if (!pOpponent || pOpponent == pSoldier)
+			continue;
+
+		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+		if (bKnowledge == NOT_HEARD_OR_SEEN)
 			continue;
 
 		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
@@ -4263,10 +4266,6 @@ UINT16 AIKnownThreatExposure(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		{
 			continue;
 		}
-
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
 
 		INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
 		if (TileIsOutOfBounds(sKnownSpot))
