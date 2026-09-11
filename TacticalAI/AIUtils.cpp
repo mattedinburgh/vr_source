@@ -5154,10 +5154,11 @@ BOOLEAN AIFriendAdvancingNeedsCover(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID)
 			pFriend->aiData.bAction == AI_ACTION_FLANK_RIGHT;
 
 		BOOLEAN fRecentAdvance =
-			pFriend->aiData.bLastAction == AI_ACTION_SEEK_OPPONENT ||
-			pFriend->aiData.bLastAction == AI_ACTION_GET_CLOSER ||
-			pFriend->aiData.bLastAction == AI_ACTION_FLANK_LEFT ||
-			pFriend->aiData.bLastAction == AI_ACTION_FLANK_RIGHT;
+			pFriend->bActionPoints < pFriend->bInitialActionPoints &&
+			(pFriend->aiData.bLastAction == AI_ACTION_SEEK_OPPONENT ||
+			 pFriend->aiData.bLastAction == AI_ACTION_GET_CLOSER ||
+			 pFriend->aiData.bLastAction == AI_ACTION_FLANK_LEFT ||
+			 pFriend->aiData.bLastAction == AI_ACTION_FLANK_RIGHT);
 
 		INT32 sFrom = NOWHERE;
 		INT32 sTo = NOWHERE;

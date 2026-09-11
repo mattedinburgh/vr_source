@@ -2758,6 +2758,13 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 				ubMinAuto *= 2;
 			}
 
+			// Deliberate movement-support fire should be controlled, not a full
+			// magazine dump just because the shooter happens to be behind cover.
+			if (fCoveringFireSupport)
+			{
+				ubMinAuto = AICheckIsMachinegunner(pSoldier) ? 7 : 5;
+			}
+
 			sActualAimAP = CalcAPCostForAiming(pSoldier, BestShot.sTarget, (INT8)pSoldier->aiData.bAimTime);
 
 			if (UsingNewCTHSystem() == true)
