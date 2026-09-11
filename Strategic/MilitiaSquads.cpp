@@ -964,7 +964,7 @@ BOOLEAN ExecuteOneMilitiaStrategicRetreat(INT16 sMapX, INT16 sMapY, INT16 sTarge
 	// removing exactly this tactical soldier, so it must not trigger ResetMilitia()
 	// in the middle of an AI traversal.
 	BOOLEAN fPreviousStrategicChangeFlag = gfStrategicMilitiaChangesMade;
-	MoveOneMilitiaEquipmentSet(sMapX, sMapY, sTargetX, sTargetY, ubRank);
+	MoveOneMilitiaEquipmentSet(sMapX, sMapY, sTargetX, sTargetY, ubSoldierClass);
 	StrategicAddMilitiaToSector(sTargetX, sTargetY, ubRank, 1);
 	StrategicRemoveMilitiaFromSector(sMapX, sMapY, ubRank, 1);
 	gfStrategicMilitiaChangesMade = fPreviousStrategicChangeFlag;
