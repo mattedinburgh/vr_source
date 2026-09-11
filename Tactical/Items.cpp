@@ -10867,7 +10867,7 @@ INT32 GetObjectModifier( SOLDIERTYPE* pSoldier, OBJECTTYPE *pObj, UINT8 ubStance
 			if ( pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD )
 			{
 				std::map<INT8, OBJECTTYPE*> ObjList;
-				GetScopeLists(pObj, ObjList);
+				GetScopeLists(pSoldier, pObj, ObjList);
 
 				// only use scope mode if gun is in hand, otherwise an error might occur!
 				if ( (&pSoldier->inv[HANDPOS]) == pObj && ObjList[pSoldier->bScopeMode] != NULL )
@@ -14087,14 +14087,20 @@ FLOAT GetBestScopeMagnificationFactor( SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj,
 	INT32 iCurrentTotalPenalty = 0;
 	INT32 iBestTotalPenalty = 0;
 	FLOAT rangeModifier = GetScopeRangeMultiplier(pSoldier, pObjUsed, uiRange);
-	FLOAT iProjectionFactor = CalcProjectionFactor(pSoldier, pObjUsed, uiRange, 1);
+	FLOAT iProjectionFactor = 0;
+
+	// Modern NCTH laser bonuses replace the old projection-factor shortcut when configured.
+	if ( (gGameCTHConstants.LASER_PERFORMANCE_BONUS_HIP + gGameCTHConstants.LASER_PERFORMANCE_BONUS_IRON + gGameCTHConstants.LASER_PERFORMANCE_BONUS_SCOPE) != 0 )
+		iProjectionFactor = 1.0f;
+	else
+		iProjectionFactor = CalcProjectionFactor(pSoldier, pObjUsed, uiRange, 1);
 
 	// Flugente: if scope modes are allowed, use them
 	if ( gGameExternalOptions.fScopeModes && pSoldier && pObjUsed->exists() == true && Item[pObjUsed->usItem].usItemClass == IC_GUN )
 	{
 		// Flugente: check for scope mode
 		std::map<INT8, OBJECTTYPE*> ObjList;
-		GetScopeLists(pObjUsed, ObjList);
+		GetScopeLists(pSoldier, pObjUsed, ObjList);
 		
 		// only use scope mode if gun is in hand, otherwise an error might occur!
 		if ( (&pSoldier->inv[HANDPOS]) == pObjUsed  && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD )
@@ -14125,7 +14131,7 @@ FLOAT GetBestScopeMagnificationFactor( SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj,
 				// Actual Scope Mag Factor is what we get at the distance the target's at.
 				ActualCurrentFactor = __min(CurrentFactor, (TargetMagFactor/rangeModifier));
 
-				if (ActualCurrentFactor >= CurrentFactor)
+				if (ActualCurrentFactor >= CurrentFactor * gGameCTHConstants.AIM_TOO_CLOSE_THRESHOLD)
 				{
 					// This scope gives no penalty. Record this as the best factor found so far.
 					BestFactor = CurrentFactor;
@@ -14134,7 +14140,7 @@ FLOAT GetBestScopeMagnificationFactor( SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj,
 				else
 				{
 					// This scopes gives a penalty for shooting under its range.
-					FLOAT dScopePenaltyRatio = (CurrentFactor * rangeModifier / TargetMagFactor);
+					FLOAT dScopePenaltyRatio = (CurrentFactor * gGameCTHConstants.AIM_TOO_CLOSE_THRESHOLD * rangeModifier / TargetMagFactor);
 					INT32 iScopePenalty = (INT32)((dScopePenaltyRatio * gGameCTHConstants.AIM_TOO_CLOSE_SCOPE) * (CurrentFactor / 2));
 
 					// There's no previous scope to compare with so record this as the best factor for now.
@@ -14155,7 +14161,7 @@ FLOAT GetBestScopeMagnificationFactor( SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj,
 					// Actual Scope Mag Factor is what we get at the distance the target's at.
 					ActualCurrentFactor = __min(CurrentFactor, (TargetMagFactor/rangeModifier));
 
-					if (ActualCurrentFactor >= CurrentFactor)
+					if (ActualCurrentFactor >= CurrentFactor * gGameCTHConstants.AIM_TOO_CLOSE_THRESHOLD)
 					{
 						// This scope gives no penalty. Is it any better than the ones we've already processed?
 						if (iBestTotalPenalty <= 0 && CurrentFactor > BestFactor)
@@ -14168,7 +14174,7 @@ FLOAT GetBestScopeMagnificationFactor( SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj,
 					else
 					{
 						// This scope will give a penalty if used. Is it worth using compared to other scopes found?
-						FLOAT dScopePenaltyRatio = (CurrentFactor * rangeModifier / TargetMagFactor);
+						FLOAT dScopePenaltyRatio = (CurrentFactor * gGameCTHConstants.AIM_TOO_CLOSE_THRESHOLD * rangeModifier / TargetMagFactor);
 						INT32 iScopePenalty = (INT32)((dScopePenaltyRatio * gGameCTHConstants.AIM_TOO_CLOSE_SCOPE) * (CurrentFactor / 2));
 
 						// Is this scope any better than the ones we've already processed?
@@ -14223,7 +14229,7 @@ FLOAT GetScopeModeProjectionFactor( SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj )
 
 	// Flugente: check for scope mode
 	std::map<INT8, OBJECTTYPE*> ObjList;
-	GetScopeLists(pObj, ObjList);
+	GetScopeLists(pSoldier, pObj, ObjList);
 
 	FLOAT BestFactor = 1.0;
 		
@@ -15843,6 +15849,46 @@ void  GetScopeLists( OBJECTTYPE * pObj, std::map<INT8, OBJECTTYPE*>& arScopeMap 
 			}
 		}
 	}
+}
+
+// Modern 1.13 scope-list variant that can account for the shooter's current weapon context.
+// Keep the legacy overload above for Vengeance-specific callers that do not have a soldier pointer.
+void  GetScopeLists( SOLDIERTYPE * pSoldier, OBJECTTYPE * pObj, std::map<INT8, OBJECTTYPE*>& arScopeMap )
+{
+	GetScopeLists( pObj, arScopeMap );
+
+	if ( !pSoldier || !pObj || !pObj->exists() )
+		return;
+
+	// Dual wielding cannot make practical use of magnifying scope attachments.
+	BOOLEAN bDualWielding = FALSE;
+	if ( (Item[pSoldier->inv[HANDPOS].usItem].usItemClass & IC_GUN && !Item[pSoldier->inv[HANDPOS].usItem].twohanded)
+		&& (Item[pSoldier->inv[SECONDHANDPOS].usItem].usItemClass & IC_GUN && !Item[pSoldier->inv[SECONDHANDPOS].usItem].twohanded) )
+	{
+		bDualWielding = TRUE;
+	}
+
+	if ( !bDualWielding )
+		return;
+
+	for ( INT8 i = USE_BEST_SCOPE; i < NUM_SCOPE_MODES; ++i )
+	{
+		if ( arScopeMap[i] && arScopeMap[i] != pObj && IsAttachmentClass(arScopeMap[i]->usItem, AC_SCOPE) )
+			arScopeMap[i] = NULL;
+	}
+
+	// Compact the list so scope-mode cycling cannot land on an empty entry.
+	INT8 writeIndex = USE_BEST_SCOPE;
+	for ( INT8 readIndex = USE_BEST_SCOPE; readIndex < NUM_SCOPE_MODES; ++readIndex )
+	{
+		if ( arScopeMap[readIndex] )
+		{
+			OBJECTTYPE *pEntry = arScopeMap[readIndex];
+			arScopeMap[writeIndex++] = pEntry;
+		}
+	}
+	while ( writeIndex < NUM_SCOPE_MODES )
+		arScopeMap[writeIndex++] = NULL;
 }
 
 BOOLEAN IsAttachmentClass( UINT16 usItem, UINT32 aFlag )
