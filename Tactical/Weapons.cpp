@@ -5472,7 +5472,7 @@ UINT32 CalcNewChanceToHitGun(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTi
 //////////////////////////////////////////////////////////////////////////////////
 // silversurfer: This is a cleaned up version of the NCTH calculation and hopefully easier to read.
 // The if clause and the rest of the old code below its else can be removed if the new version is accepted.
-// The "if (gGameExternalOptions.fUseNewCTHCalculation)" is only there for easy switching in Ja2_Options.ini.
+// The "if (UsingNewCTHSystem())" is only there for easy switching in Ja2_Options.ini.
 //////////////////////////////////////////////////////////////////////////////////
 if (gGameExternalOptions.fUseNewCTHCalculation)
 {
