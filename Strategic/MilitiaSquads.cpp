@@ -964,10 +964,10 @@ BOOLEAN ExecuteOneMilitiaStrategicRetreat(INT16 sMapX, INT16 sMapY, INT16 sTarge
 		return FALSE;
 	}
 
-	// Move the matching loadout before the strategic headcount changes. Preserve
-	// the pre-existing tactical-reset flag: this transfer is manually mirrored by
-	// removing exactly this tactical soldier, so it must not trigger ResetMilitia()
-	// in the middle of an AI traversal.
+	// Update strategic headcount only. The traversal handler separately returns
+	// this live soldier's carried militia equipment to the destination. Preserve
+	// the pre-existing tactical-reset flag so this one-man transfer does not
+	// rebuild the militia team in the middle of traversal.
 	BOOLEAN fPreviousStrategicChangeFlag = gfStrategicMilitiaChangesMade;
 	StrategicAddMilitiaToSector(sTargetX, sTargetY, ubRank, 1);
 	StrategicRemoveMilitiaFromSector(sMapX, sMapY, ubRank, 1);
