@@ -70,14 +70,7 @@
 	#include "Drugs And Alcohol.h"
 #endif
 
-// Build fallback: Vengeance PCH can hide the canonical environment light macros.
-// Values mirror TileEngine/environment.h and only apply if that header did not expose them.
-#ifndef NORMAL_LIGHTLEVEL_NIGHT
-#define NORMAL_LIGHTLEVEL_NIGHT 12
-#endif
-#ifndef NORMAL_LIGHTLEVEL_DAY
-#define NORMAL_LIGHTLEVEL_DAY 3
-#endif
+#include "../TileEngine/environment.h"
 
 #include "InterfaceItemImages.h"
 #ifdef JA2UB
