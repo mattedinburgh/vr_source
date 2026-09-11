@@ -3933,6 +3933,41 @@ INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier)
 	return __max(20, __min(85, iTolerance));
 }
 
+// Local cooperation modifier for offensive movement.  Soldiers are more willing
+// to advance when nearby teammates or teammates already engaging the same threat
+// can support them, and less willing to push forward alone.
+INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
+{
+	if (!pSoldier)
+		return 0;
+
+	if (TileIsOutOfBounds(sTargetSpot))
+		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+
+	UINT8 ubNearbyFriends = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4);
+	INT32 iModifier = 0;
+
+	if (ubNearbyFriends == 0)
+		iModifier -= 2;
+	else if (ubNearbyFriends == 2)
+		iModifier += 1;
+	else if (ubNearbyFriends >= 3)
+		iModifier += 2;
+
+	if (!TileIsOutOfBounds(sTargetSpot))
+	{
+		// A teammate already in contact with this threat provides useful covering
+		// pressure and makes a coordinated move less likely to become an isolated rush.
+		if (CountFriendsBlack(pSoldier, sTargetSpot) > 0)
+			iModifier += 1;
+
+		if (AICheckWeOutnumberLocal(pSoldier, sTargetSpot))
+			iModifier += 1;
+	}
+
+	return (INT8)__max(-3, __min(3, iModifier));
+}
+
 // sevenfm: count nearby friend soldiers
 UINT8 CountNearbyFriends( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDistance )
 {
