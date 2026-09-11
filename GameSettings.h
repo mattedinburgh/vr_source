@@ -1827,6 +1827,9 @@ typedef struct
 	UINT8 ubTHBladesSilentCriticalHitChance;
 	UINT8 ubTHBladesCriticalHitMultiplierBonus;
 	UINT8 ubTHBladesAimClicksAdded;
+	UINT8 ubTHAPsNeededToThrowGrenadesReduction;
+	UINT8 ubTHMaxRangeToThrowGrenades;
+	UINT8 ubTHCtHWhenThrowingGrenades;
 
 	// NIGHT OPS
 	UINT8 ubNOeSightRangeBonusInDark;
