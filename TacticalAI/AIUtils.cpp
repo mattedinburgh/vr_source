@@ -4195,6 +4195,55 @@ BOOLEAN AILastSurvivorPressure(SOLDIERTYPE *pSoldier)
 	return FALSE;
 }
 
+UINT8 AILocalRoutPressure(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier))
+		return 0;
+
+	INT32 iPressure = 0;
+	INT32 iRadius = __max(4, DAY_VISION_RANGE / 2);
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend ||
+			pFriend == pSoldier ||
+			!pFriend->bActive ||
+			!pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE ||
+			pFriend->pathing.bLevel != pSoldier->pathing.bLevel ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > iRadius)
+		{
+			continue;
+		}
+
+		BOOLEAN fEscaping = AIEscapeActive(pFriend);
+		BOOLEAN fDisengaging = AIDisengagementActive(pFriend);
+		BOOLEAN fRunningAway = (pFriend->aiData.bAction == AI_ACTION_RUN_AWAY);
+		BOOLEAN fLeader = AICheckIsOfficer(pFriend) || AICheckIsCommander(pFriend);
+
+		// Breaking friends exert social pressure only at local tactical scale.
+		// Escape is the strongest signal; deliberate disengagement is weaker.
+		if (fEscaping)
+			iPressure += 35;
+		else if (fDisengaging)
+			iPressure += 20;
+		else if (fRunningAway)
+			iPressure += 15;
+
+		// A leader visibly abandoning the fight is especially destabilising.
+		if (fLeader && (fEscaping || fDisengaging || fRunningAway))
+			iPressure += 10;
+		// A nearby leader who is still holding together can slow a cascade, but
+		// cannot erase several nearby soldiers already breaking contact.
+		else if (fLeader && !pFriend->aiData.bUnderFire)
+			iPressure -= 15;
+	}
+
+	return (UINT8)__max(0, __min(100, iPressure));
+}
+
 INT8 AIHopelessOddsModifier(SOLDIERTYPE *pSoldier)
 {
 	if (!AICombatTeam(pSoldier))
@@ -4242,7 +4291,7 @@ BOOLEAN AIEscapeActive(SOLDIERTYPE *pSoldier)
 		gubAIEscapeIntent[pSoldier->ubID] != 0);
 }
 
-static BOOLEAN AIShouldStartEscapeFromState(SOLDIERTYPE *pSoldier, INT8 bSituation, UINT8 ubCasualties, BOOLEAN fLastSurvivor)
+static BOOLEAN AIShouldStartEscapeFromState(SOLDIERTYPE *pSoldier, INT8 bSituation, UINT8 ubCasualties, BOOLEAN fLastSurvivor, UINT8 ubRoutPressure)
 {
 	// Escape is intentionally much rarer than disengagement. A bad local position is
 	// not enough: the soldier needs evidence that the fight itself is collapsing.
@@ -4251,6 +4300,10 @@ static BOOLEAN AIShouldStartEscapeFromState(SOLDIERTYPE *pSoldier, INT8 bSituati
 
 	if (ubCasualties >= 75 && bSituation != AI_BATTLE_WINNING)
 		return TRUE;
+
+	INT32 iRoutThreshold = 60 +
+		(AIPersonalRiskTolerance(pSoldier) - 50) / 2;
+	iRoutThreshold = __max(45, __min(75, iRoutThreshold));
 
 	if (bSituation == AI_BATTLE_CATASTROPHIC)
 	{
@@ -4263,6 +4316,24 @@ static BOOLEAN AIShouldStartEscapeFromState(SOLDIERTYPE *pSoldier, INT8 bSituati
 		{
 			return TRUE;
 		}
+
+		// A catastrophic fight can become a rout even before the raw casualty
+		// threshold if several nearby comrades are already breaking contact.
+		if (ubRoutPressure >= __max(40, iRoutThreshold - 10) &&
+			AILocalStress(pSoldier) >= 25)
+		{
+			return TRUE;
+		}
+	}
+
+	// In a merely losing fight, social collapse can push a soldier from
+	// disengagement into full escape, but only after substantial losses.
+	if (bSituation == AI_BATTLE_LOSING &&
+		ubCasualties >= 40 &&
+		ubRoutPressure >= iRoutThreshold &&
+		AILocalStress(pSoldier) >= 30)
+	{
+		return TRUE;
 	}
 
 	return FALSE;
@@ -4286,10 +4357,11 @@ BOOLEAN AIShouldStartEscape(SOLDIERTYPE *pSoldier)
 		return FALSE;
 
 	return AIShouldStartEscapeFromState(pSoldier, bSituation,
-		AIFriendlyCasualtyPercent(pSoldier), AILastSurvivorPressure(pSoldier));
+		AIFriendlyCasualtyPercent(pSoldier), AILastSurvivorPressure(pSoldier),
+		AILocalRoutPressure(pSoldier));
 }
 
-static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituation, UINT8 ubCasualties, BOOLEAN fLastSurvivor)
+static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituation, UINT8 ubCasualties, BOOLEAN fLastSurvivor, UINT8 ubRoutPressure)
 {
 	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
 		return;
@@ -4325,7 +4397,7 @@ static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituati
 
 	if (gubAIEscapeIntent[ubID] == 0 &&
 		bSituation != AI_BATTLE_UNKNOWN &&
-		AIShouldStartEscapeFromState(pSoldier, bSituation, ubCasualties, fLastSurvivor))
+		AIShouldStartEscapeFromState(pSoldier, bSituation, ubCasualties, fLastSurvivor, ubRoutPressure))
 	{
 		gubAIEscapeIntent[ubID] = 1;
 	}
@@ -4348,10 +4420,14 @@ BOOLEAN AIDisengagementActive(SOLDIERTYPE *pSoldier)
 		gubAIDisengageTurns[pSoldier->ubID] > 0);
 }
 
-static BOOLEAN AIShouldStartDisengagementFromState(SOLDIERTYPE *pSoldier, INT8 bSituation, UINT8 ubCasualties, BOOLEAN fLastSurvivor)
+static BOOLEAN AIShouldStartDisengagementFromState(SOLDIERTYPE *pSoldier, INT8 bSituation, UINT8 ubCasualties, BOOLEAN fLastSurvivor, UINT8 ubRoutPressure)
 {
 	if (bSituation == AI_BATTLE_CATASTROPHIC || fLastSurvivor)
 		return TRUE;
+
+	INT32 iRoutThreshold = 40 +
+		(AIPersonalRiskTolerance(pSoldier) - 50) / 2;
+	iRoutThreshold = __max(25, __min(60, iRoutThreshold));
 
 	if (bSituation == AI_BATTLE_LOSING)
 	{
@@ -4363,6 +4439,22 @@ static BOOLEAN AIShouldStartDisengagementFromState(SOLDIERTYPE *pSoldier, INT8 b
 		{
 			return TRUE;
 		}
+
+		if (ubRoutPressure >= iRoutThreshold &&
+			(ubCasualties >= 20 || AILocalStress(pSoldier) >= 25))
+		{
+			return TRUE;
+		}
+	}
+
+	// Even a nominally even fight can locally unravel when casualties are already
+	// meaningful and multiple nearby comrades are visibly breaking contact.
+	if (bSituation == AI_BATTLE_EVEN &&
+		ubCasualties >= 30 &&
+		ubRoutPressure >= __min(70, iRoutThreshold + 15) &&
+		AILocalStress(pSoldier) >= 25)
+	{
+		return TRUE;
 	}
 
 	if (ubCasualties >= 50 &&
@@ -4390,7 +4482,8 @@ BOOLEAN AIShouldStartDisengagement(SOLDIERTYPE *pSoldier)
 	INT8 bSituation = AIBattleSituation(pSoldier);
 	UINT8 ubCasualties = AIFriendlyCasualtyPercent(pSoldier);
 	BOOLEAN fLastSurvivor = AILastSurvivorPressure(pSoldier);
-	return AIShouldStartDisengagementFromState(pSoldier, bSituation, ubCasualties, fLastSurvivor);
+	return AIShouldStartDisengagementFromState(pSoldier, bSituation, ubCasualties,
+		fLastSurvivor, AILocalRoutPressure(pSoldier));
 }
 BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 {
@@ -4417,11 +4510,13 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 	INT8 bSituation = AIBattleSituation(pSoldier);
 	UINT8 ubCasualties = AIFriendlyCasualtyPercent(pSoldier);
 	BOOLEAN fLastSurvivor = AILastSurvivorPressure(pSoldier);
+	UINT8 ubRoutPressure = AILocalRoutPressure(pSoldier);
 
 	// Escape is a higher survival state than disengagement. Update it before
 	// checking ordinary tactical orders so a catastrophic last survivor can
 	// abandon even a STATIONARY mission when survival has fully taken priority.
-	AIUpdateEscapeStateFromSnapshot(pSoldier, bSituation, ubCasualties, fLastSurvivor);
+	AIUpdateEscapeStateFromSnapshot(pSoldier, bSituation, ubCasualties,
+		fLastSurvivor, ubRoutPressure);
 
 	if (pSoldier->aiData.bOrders == STATIONARY)
 	{
@@ -4448,7 +4543,8 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 	}
 
 	if (bSituation != AI_BATTLE_UNKNOWN &&
-		AIShouldStartDisengagementFromState(pSoldier, bSituation, ubCasualties, fLastSurvivor))
+		AIShouldStartDisengagementFromState(pSoldier, bSituation, ubCasualties,
+			fLastSurvivor, ubRoutPressure))
 	{
 		UINT8 ubDuration = (bSituation == AI_BATTLE_CATASTROPHIC || fLastSurvivor) ? 3 : 2;
 		gubAIDisengageTurns[ubID] = __max(gubAIDisengageTurns[ubID], ubDuration);

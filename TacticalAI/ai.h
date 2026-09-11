@@ -310,6 +310,7 @@ UINT16 AIPerceivedEnemyStrength(SOLDIERTYPE *pSoldier);
 INT8 AIBattleSituation(SOLDIERTYPE *pSoldier);
 BOOLEAN AISeverelyIsolated(SOLDIERTYPE *pSoldier);
 BOOLEAN AILastSurvivorPressure(SOLDIERTYPE *pSoldier);
+UINT8 AILocalRoutPressure(SOLDIERTYPE *pSoldier);
 INT8 AIHopelessOddsModifier(SOLDIERTYPE *pSoldier);
 BOOLEAN AIDisengagementActive(SOLDIERTYPE *pSoldier);
 BOOLEAN AIEscapeActive(SOLDIERTYPE *pSoldier);
