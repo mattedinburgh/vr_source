@@ -2955,6 +2955,15 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			return bSmokeAction;
 	}
 
+	// If several soldiers are packed together under fire, break the cluster before
+	// ordinary withdrawal/offensive logic makes them easy grenade targets.
+	if (ubCanMove && pSoldier->bTeam == ENEMY_TEAM)
+	{
+		INT8 bDisperseAction = DecideCombatDispersion(pSoldier);
+		if (bDisperseAction != AI_ACTION_NONE)
+			return bDisperseAction;
+	}
+
 	// Tactical self-preservation: withdraw when this soldier's personal danger
 	// exceeds what his personality and morale are willing to tolerate.
 	if (gfTurnBasedAI &&
@@ -4635,6 +4644,14 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			INT8 bSmokeAction = DecideEmergencyProtectionSmoke(pSoldier);
 			if (bSmokeAction != AI_ACTION_NONE)
 				return bSmokeAction;
+		}
+
+		// Break local clusters under pressure before choosing ordinary attack/withdrawal.
+		if (ubCanMove && pSoldier->bTeam == ENEMY_TEAM)
+		{
+			INT8 bDisperseAction = DecideCombatDispersion(pSoldier);
+			if (bDisperseAction != AI_ACTION_NONE)
+				return bDisperseAction;
 		}
 
 		// Tactical self-preservation: individual danger can override aggression even
@@ -9161,6 +9178,63 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 
 	pSoldier->aiData.usActionData = BestThrow.sTarget;
 	return AI_ACTION_TOSS_PROJECTILE;
+}
+
+// Break dangerous clusters under fire. Existing cover scoring already dislikes
+// adjacent teammates; this decision makes that preference urgent when several soldiers
+// are packed together and the local group is taking fire.
+INT8 DecideCombatDispersion(SOLDIERTYPE *pSoldier)
+{
+	if (!gfTurnBasedAI || !pSoldier || pSoldier->bTeam != ENEMY_TEAM ||
+		!SoldierAI(pSoldier) || pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed)
+	{
+		return AI_ACTION_NONE;
+	}
+
+	UINT8 ubAdjacent = NumberOfTeamMatesAdjacent(pSoldier, pSoldier->sGridNo);
+	if (ubAdjacent < 2)
+		return AI_ACTION_NONE;
+
+	BOOLEAN fLocalPressure = pSoldier->aiData.bUnderFire;
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID && !fLocalPressure; iCounter++)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE)
+		{
+			continue;
+		}
+
+		if (PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) <= 2 &&
+			(pFriend->aiData.bUnderFire || ShockLevelPercent(pFriend) >= 30))
+		{
+			fLocalPressure = TRUE;
+		}
+	}
+
+	if (!fLocalPressure)
+		return AI_ACTION_NONE;
+
+	INT32 iCoverPercentBetter = 0;
+	INT32 sDisperseSpot = FindBestNearbyCover(pSoldier, pSoldier->aiData.bAIMorale, &iCoverPercentBetter);
+	if (TileIsOutOfBounds(sDisperseSpot))
+		return AI_ACTION_NONE;
+
+	UINT8 ubNewAdjacent = NumberOfTeamMatesAdjacent(pSoldier, sDisperseSpot);
+	if (ubNewAdjacent >= ubAdjacent)
+		return AI_ACTION_NONE;
+
+	// Do not break a cluster by moving from a protected tile into a position the
+	// known enemy can attack. Dispersion is useful only if it is not tactically worse.
+	if (EnemyCanAttackSpot(pSoldier, sDisperseSpot, pSoldier->pathing.bLevel) &&
+		!EnemyCanAttackSpot(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel))
+	{
+		return AI_ACTION_NONE;
+	}
+
+	pSoldier->aiData.usActionData = sDisperseSpot;
+	return AI_ACTION_TAKE_COVER;
 }
 
 extern UINT32 guiTurnCnt;
