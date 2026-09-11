@@ -3436,7 +3436,7 @@ void LoadCTHConstants()
 	gGameCTHConstants.MOVEMENT_WIS										= iniReader.ReadFloat("Shooting Mechanism","MOVEMENT_WIS",2.0, 0.0, 100.0);
 	gGameCTHConstants.MOVEMENT_DEX										= iniReader.ReadFloat("Shooting Mechanism","MOVEMENT_DEX",1.0, 0.0, 100.0);
 	gGameCTHConstants.MOVEMENT_EXP_LEVEL								= iniReader.ReadFloat("Shooting Mechanism","MOVEMENT_EXP_LEVEL",2.0, 0.0, 100.0);
-	gGameCTHConstants.MOVEMENT_TRACKING_DIFFICULTY						= iniReader.ReadInteger("Shooting Mechanism","MOVEMENT_TRACKING_DIFFICULTY",40.0f, 0, 1000);
+	gGameCTHConstants.MOVEMENT_TRACKING_DIFFICULTY						= iniReader.ReadInteger("Shooting Mechanism","MOVEMENT_TRACKING_DIFFICULTY",40, 0, 1000);
 	gGameCTHConstants.MOVEMENT_PENALTY_PER_TILE							= iniReader.ReadFloat("Shooting Mechanism","MOVEMENT_PENALTY_PER_TILE",1.0, 0.0, 10.0);
 
 	gGameCTHConstants.PRE_RECOIL_WIS									= iniReader.ReadFloat("Shooting Mechanism","PRE_RECOIL_WIS",2.0, 0.0, 100.0);
@@ -3462,7 +3462,7 @@ void LoadCTHConstants()
 	gGameCTHConstants.RECOIL_COUNTER_FREQUENCY_EXP_LEVEL				= iniReader.ReadFloat("Shooting Mechanism","RECOIL_COUNTER_FREQUENCY_EXP_LEVEL",2.0, 0.0, 100.0);
 	gGameCTHConstants.RECOIL_COUNTER_FREQUENCY_AUTO_WEAPONS_DIVISOR		= iniReader.ReadFloat("Shooting Mechanism","RECOIL_COUNTER_FREQUENCY_AUTO_WEAPONS_DIVISOR",4.0f, -1000.0, 1000.0);
 
-	gGameCTHConstants.RECOIL_COUNTER_INCREMENT							= iniReader.ReadInteger("Shooting Mechanism","RECOIL_COUNTER_INCREMENT",1.0f, 0, 100);
+	gGameCTHConstants.RECOIL_COUNTER_INCREMENT							= iniReader.ReadInteger("Shooting Mechanism","RECOIL_COUNTER_INCREMENT",1, 0, 100);
 	gGameCTHConstants.RECOIL_COUNTER_INCREMENT_TRACER					= iniReader.ReadInteger("Shooting Mechanism","RECOIL_COUNTER_INCREMENT_TRACER",25, 0, 100);
 	gGameCTHConstants.NORMAL_RECOIL_DISTANCE							= iniReader.ReadInteger("Shooting Mechanism","NORMAL_RECOIL_DISTANCE",70, 10, 10000);
 	gGameCTHConstants.MAX_BULLET_DEV					 				= iniReader.ReadFloat("Shooting Mechanism","MAX_BULLET_DEV",5.0f, -1000.0, 1000.0);
