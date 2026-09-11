@@ -924,8 +924,13 @@ BOOLEAN ExecuteOneMilitiaStrategicRetreat(INT16 sMapX, INT16 sMapY, INT16 sTarge
 	// Revalidate the exact adjacent sector used by the tactical traversal. Do not
 	// re-run destination scoring here: earlier retreaters have already changed the
 	// relative militia counts, but the originally chosen fallback remains valid.
-	if ((abs(sTargetX - sMapX) + abs(sTargetY - sMapY)) != 1)
+	INT16 sDeltaX = sTargetX - sMapX;
+	INT16 sDeltaY = sTargetY - sMapY;
+	if (!((sDeltaX == 1 || sDeltaX == -1) && sDeltaY == 0) &&
+		!((sDeltaY == 1 || sDeltaY == -1) && sDeltaX == 0))
+	{
 		return FALSE;
+	}
 
 	UINT8 ubTraversability = GetTraversability(SECTOR(sMapX, sMapY), SECTOR(sTargetX, sTargetY));
 	if (ubTraversability == GROUNDBARRIER || ubTraversability == EDGEOFWORLD ||
