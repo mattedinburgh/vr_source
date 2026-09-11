@@ -4268,8 +4268,10 @@ INT8 AIHopelessOddsModifier(SOLDIERTYPE *pSoldier)
 	return __max((INT8)-8, bModifier);
 }
 
-// Short-lived tactical disengagement state. This is deliberately kept outside
-// SOLDIERTYPE so the AI experiment does not alter savegame-compatible soldier data.
+// Short-lived tactical disengagement/escape state. This is deliberately kept
+// outside SOLDIERTYPE so the AI experiment does not alter savegame-compatible
+// soldier data.
+extern UINT32 guiTurnCnt;
 static UINT8 gubAIEscapeIntent[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIEscapeIdentity[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIEscapeStartTurn[MAX_NUM_SOLDIERS] = { 0 };
@@ -4416,7 +4418,6 @@ static UINT8 gubAIDisengageTurns[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIDisengageTurnStamp[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIDisengageIdentity[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIDisengageStartTurn[MAX_NUM_SOLDIERS] = { 0 };
-extern UINT32 guiTurnCnt;
 
 BOOLEAN AIDisengagementActive(SOLDIERTYPE *pSoldier)
 {
