@@ -23,6 +23,7 @@ void MilitiaHelpFromAdjacentSectors( INT16 sMapX, INT16 sMapY );
 void GenerateDirectionInfos( INT16 sMapX, INT16 sMapY, UINT8* uiDirNumber, UINT16 pMoveDir[4][3], BOOLEAN fForTraining, BOOLEAN fForBattle );
 BOOLEAN MoveOneBestMilitiaMan(INT16 sMapX, INT16 sMapY, INT16 sTMapX, INT16 sTMapY);
 BOOLEAN FindMilitiaStrategicRetreatSector(INT16 sMapX, INT16 sMapY, INT16 *psTargetX, INT16 *psTargetY);
+BOOLEAN ExecuteOneMilitiaStrategicRetreat(INT16 sMapX, INT16 sMapY, INT16 sTargetX, INT16 sTargetY, UINT8 ubSoldierClass);
 BOOLEAN ExecuteMilitiaStrategicRetreat(INT16 sMapX, INT16 sMapY, INT16 *psTargetX, INT16 *psTargetY);
 void MilitiaFollowPlayer( INT16 sMapX, INT16 sMapY, INT16 sDMapX, INT16 sDMapY );
 
