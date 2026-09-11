@@ -5470,11 +5470,10 @@ UINT32 CalcNewChanceToHitGun(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTi
 //////////////////////////////////////////////////////////////////////////////////
 // START CLEANED UP VERSION OF NCTH CALCULATION
 //////////////////////////////////////////////////////////////////////////////////
-// silversurfer: This is a cleaned up version of the NCTH calculation and hopefully easier to read.
-// The if clause and the rest of the old code below its else can be removed if the new version is accepted.
-// The "if (UsingNewCTHSystem())" is only there for easy switching in Ja2_Options.ini.
+// silversurfer: This is the cleaned-up NCTH calculation used by current 1.13.
+// Vengeance keeps the legacy branch below for source compatibility, but NCTH shots no longer switch back to it.
 //////////////////////////////////////////////////////////////////////////////////
-if (gGameExternalOptions.fUseNewCTHCalculation)
+if (UsingNewCTHSystem())
 {
 	FLOAT fBaseChance = 0, fBaseModifier = 0, fAimChance = 0, fAimModifier = 0, fFinalChance = 0;
 
@@ -11767,7 +11766,7 @@ void CalcMagFactorSimple( SOLDIERTYPE *pSoldier, FLOAT d2DDistance, INT16 bAimTi
 
 		// With the reworked NCTH code we don't want to use iProjectionFactor anymore. 
 		// Instead we use the performance bonus if at least one bonus is != 0. Otherwise -> continue using Projection Factor.
-		if (gGameExternalOptions.fUseNewCTHCalculation 
+		if (UsingNewCTHSystem()
 			&& ( gGameCTHConstants.LASER_PERFORMANCE_BONUS_HIP + gGameCTHConstants.LASER_PERFORMANCE_BONUS_IRON + gGameCTHConstants.LASER_PERFORMANCE_BONUS_SCOPE != 0 ))
 			iProjectionFactor = 1.0;
 		else
