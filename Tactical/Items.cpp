@@ -10652,7 +10652,7 @@ INT16 GetRangeBonus( OBJECTTYPE * pObj )
 			bonus += Item[(*pObj)[0]->data.gun.usGunAmmoItem].rangebonus;
 
 		for (attachmentList::iterator iter = (*pObj)[0]->attachments.begin(); iter != (*pObj)[0]->attachments.end(); ++iter) {
-			if ( !Item[iter->usItem].duckbill || ( Item[iter->usItem].duckbill && (*pObj)[0]->data.gun.ubGunAmmoType == AMMO_BUCKSHOT ) && iter->exists())
+			if ( iter->exists() && ( !Item[iter->usItem].duckbill || ( Item[iter->usItem].duckbill && (*pObj)[0]->data.gun.ubGunAmmoType == AMMO_BUCKSHOT ) ) )
 				bonus += BonusReduce( Item[iter->usItem].rangebonus, (*iter)[0]->data.objectStatus );
 		}
 	}
@@ -15044,13 +15044,13 @@ INT16 GetBestLaserRange( OBJECTTYPE * pObj )
 	}
 	for (attachmentList::iterator iter = (*pObj)[0]->attachments.begin(); iter != (*pObj)[0]->attachments.end(); ++iter)
 	{
-		if (Item[iter->usItem].bestlaserrange > range && iter->exists())
+		if ( iter->exists() && Item[iter->usItem].bestlaserrange > range )
 		{
 			range = Item[iter->usItem].bestlaserrange;
 		}
 	}
 
-	return( range * gItemSettings.fBestLaserRangeModifier );
+	return (INT16) ((FLOAT)range * gItemSettings.fBestLaserRangeModifier);
 }
 
 // HEADROCK: This function determines the bipod bonii of the gun or its attachments
@@ -16840,7 +16840,7 @@ INT32 GetPercentRangeBonus( OBJECTTYPE * pObj )
 			bonus = ( bonus * ( 100 +  Item[(*pObj)[0]->data.gun.usGunAmmoItem].percentrangebonus ) ) / 100;
 
 		for (attachmentList::iterator iter = (*pObj)[0]->attachments.begin(); iter != (*pObj)[0]->attachments.end(); ++iter) {
-			if ( !Item[iter->usItem].duckbill || ( Item[iter->usItem].duckbill && (*pObj)[0]->data.gun.ubGunAmmoType == AMMO_BUCKSHOT ))
+			if ( iter->exists() && ( !Item[iter->usItem].duckbill || ( Item[iter->usItem].duckbill && (*pObj)[0]->data.gun.ubGunAmmoType == AMMO_BUCKSHOT ) ) )
 				bonus = ( bonus * ( 100 +  BonusReduce( Item[iter->usItem].percentrangebonus, (*iter)[0]->data.objectStatus ) ) ) / 100;
 		}
 	}
