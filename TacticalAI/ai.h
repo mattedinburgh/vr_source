@@ -296,6 +296,7 @@ INT32 AIPersonalRisk(SOLDIERTYPE *pSoldier);
 INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier);
 INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT8 AIEngagementRangeModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
+UINT8 AITargetSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot);
 BOOLEAN AIFriendNeedsCoveringFire(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID);
 INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier);
 UINT8 CountNearbyFriends( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDistance );
