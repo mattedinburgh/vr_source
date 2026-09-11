@@ -1827,6 +1827,9 @@ typedef struct
 	UINT8 ubTHBladesSilentCriticalHitChance;
 	UINT8 ubTHBladesCriticalHitMultiplierBonus;
 	UINT8 ubTHBladesAimClicksAdded;
+	UINT8 ubTHAPsNeededToThrowGrenadesReduction;
+	UINT8 ubTHMaxRangeToThrowGrenades;
+	UINT8 ubTHCtHWhenThrowingGrenades;
 
 	// NIGHT OPS
 	UINT8 ubNOeSightRangeBonusInDark;
@@ -2371,6 +2374,7 @@ typedef struct
 	FLOAT fShotsPer4TurnsModifierPunch;
 	FLOAT fShotsPer4TurnsModifierTentacle;
 	FLOAT fShotsPer4TurnsModifierThrowKnife;
+	FLOAT fShotsPer10TurnsModifierThrowGrenade;
 	// Burst AP modifiers
 	FLOAT fBurstAPModifierGun[9];
 	// AP modifiers for Auto Fire Shots per 5 AP (bAutofireShotsPerFiveAP)
