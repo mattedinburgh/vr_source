@@ -69,6 +69,15 @@ namespace AI
                 }
             }
             get_npc()->aiData.fAIFlags &= (~AI_CAUTIOUS); // turn off cautious flag
+
+            // Disengagement is combat-only. Clear its transient state immediately
+            // when this soldier has dropped below RED so an old retreat intent cannot
+            // leak into a later contact or a reused tactical situation.
+            if (AICombatTeam(get_npc()) && get_npc()->aiData.bAlertStatus < STATUS_RED)
+            {
+                AIUpdateDisengagementState(get_npc());
+            }
+
             // if status override is set, bypass RED/YELLOW and go directly to GREEN!
             if ((get_npc()->aiData.bBypassToGreen) && (get_npc()->aiData.bAlertStatus < STATUS_BLACK))
             {

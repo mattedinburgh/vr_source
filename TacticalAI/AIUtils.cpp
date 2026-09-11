@@ -4235,24 +4235,9 @@ BOOLEAN AIDisengagementActive(SOLDIERTYPE *pSoldier)
 		gubAIDisengageTurns[pSoldier->ubID] > 0);
 }
 
-BOOLEAN AIShouldStartDisengagement(SOLDIERTYPE *pSoldier)
+static BOOLEAN AIShouldStartDisengagementFromState(SOLDIERTYPE *pSoldier, INT8 bSituation, UINT8 ubCasualties, BOOLEAN fLastSurvivor)
 {
-	if (!AICombatTeam(pSoldier) || pSoldier->IsZombie() ||
-		pSoldier->ubProfile != NO_PROFILE ||
-		pSoldier->aiData.bAlertStatus < STATUS_RED ||
-		pSoldier->aiData.bOrders == STATIONARY ||
-		pSoldier->aiData.bAttitude == ATTACKSLAYONLY)
-	{
-		return FALSE;
-	}
-
-	if (AIPerceivedEnemyStrength(pSoldier) == 0)
-		return FALSE;
-
-	INT8 bSituation = AIBattleSituation(pSoldier);
-	UINT8 ubCasualties = AIFriendlyCasualtyPercent(pSoldier);
-
-	if (bSituation == AI_BATTLE_CATASTROPHIC || AILastSurvivorPressure(pSoldier))
+	if (bSituation == AI_BATTLE_CATASTROPHIC || fLastSurvivor)
 		return TRUE;
 
 	if (bSituation == AI_BATTLE_LOSING)
@@ -4277,6 +4262,23 @@ BOOLEAN AIShouldStartDisengagement(SOLDIERTYPE *pSoldier)
 	return FALSE;
 }
 
+BOOLEAN AIShouldStartDisengagement(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier) || pSoldier->IsZombie() ||
+		pSoldier->ubProfile != NO_PROFILE ||
+		pSoldier->aiData.bAlertStatus < STATUS_RED ||
+		pSoldier->aiData.bOrders == STATIONARY ||
+		pSoldier->aiData.bAttitude == ATTACKSLAYONLY ||
+		AIPerceivedEnemyStrength(pSoldier) == 0)
+	{
+		return FALSE;
+	}
+
+	INT8 bSituation = AIBattleSituation(pSoldier);
+	UINT8 ubCasualties = AIFriendlyCasualtyPercent(pSoldier);
+	BOOLEAN fLastSurvivor = AILastSurvivorPressure(pSoldier);
+	return AIShouldStartDisengagementFromState(pSoldier, bSituation, ubCasualties, fLastSurvivor);
+}
 BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 {
 	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
@@ -4311,6 +4313,9 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 	}
 
 	INT8 bSituation = AIBattleSituation(pSoldier);
+	UINT8 ubCasualties = AIFriendlyCasualtyPercent(pSoldier);
+	BOOLEAN fLastSurvivor = AILastSurvivorPressure(pSoldier);
+
 	if (bSituation == AI_BATTLE_WINNING &&
 		!pSoldier->aiData.bUnderFire &&
 		AILocalStress(pSoldier) < 25)
@@ -4319,10 +4324,10 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 		return FALSE;
 	}
 
-	if (AIShouldStartDisengagement(pSoldier))
+	if (AIPerceivedEnemyStrength(pSoldier) > 0 &&
+		AIShouldStartDisengagementFromState(pSoldier, bSituation, ubCasualties, fLastSurvivor))
 	{
-		UINT8 ubDuration = (bSituation == AI_BATTLE_CATASTROPHIC ||
-			AILastSurvivorPressure(pSoldier)) ? 3 : 2;
+		UINT8 ubDuration = (bSituation == AI_BATTLE_CATASTROPHIC || fLastSurvivor) ? 3 : 2;
 		gubAIDisengageTurns[ubID] = __max(gubAIDisengageTurns[ubID], ubDuration);
 	}
 

@@ -120,3 +120,5 @@ Chunk 4 adds a short-lived break-contact state distinct from ordinary tactical f
 This chunk does not yet choose a map edge or leave the sector. That remains Chunk 5.
 
 Chunk 4 review hardening: disengagement state is additionally bound to `uiUniqueSoldierIdValue` so reused soldier slots cannot inherit stale state, and named/profile NPCs are excluded from entering the new persistent disengagement mode to avoid interfering with story scripts.
+
+Chunk 4 final audit: GREEN/YELLOW decisions now clear transient disengagement state through the common legacy dispatcher, and disengagement entry/update shares precomputed battle-state inputs to avoid a duplicated full assessment.
