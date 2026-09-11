@@ -9223,19 +9223,17 @@ void CalcRecoilOffset( SOLDIERTYPE *pShooter, FLOAT *dMuzzleOffsetX, FLOAT *dMuz
 	// maximum counter-force that can be applied. By default, it is based primarily on the strength of the shooter,
 	// although agility is also helpful.
 
-	FLOAT dCounterForceMax = CalcCounterForceMax(pShooter, pWeapon);
-
 	UINT8 stance = gAnimControl[ pShooter->usAnimState ].ubEndHeight;
 
-	// Flugente: new feature: if the next tile in our sight direction has a height so that we could rest our weapon on it, we do that, thereby gaining the prone boni instead. This includes bipods
+	// Rested/mounted weapons receive the same prone-weighted counter-force treatment as current 1.13.
 	if ( gGameExternalOptions.fWeaponResting && pShooter->IsWeaponMounted() )
 		stance = ANIM_PRONE;
 
 	FLOAT moda = CalcCounterForceMax(pShooter, pWeapon, stance);
 	FLOAT modb = CalcCounterForceMax(pShooter, pWeapon, gAnimControl[ pShooter->usAnimState ].ubEndHeight);
-	FLOAT iCounterForceMax = ((gGameExternalOptions.ubProneModifierPercentage * moda + (100 - gGameExternalOptions.ubProneModifierPercentage) * modb)/100);
+	FLOAT dCounterForceMax = ((gGameExternalOptions.ubProneModifierPercentage * moda + (100 - gGameExternalOptions.ubProneModifierPercentage) * modb)/100);
 		
-	// iCounterForceMax is now the absolute limit.
+	// dCounterForceMax is now the absolute limit actually used by recoil compensation.
 
 	// STEP 2: Now we need to determine how accurate the shooter is when applying counter-force. He won't always apply
 	// as much as necessary, and may sometimes apply too much. The ability to apply exactly (or close to exactly) the
