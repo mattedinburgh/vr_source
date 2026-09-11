@@ -10511,7 +10511,7 @@ INT16 GetAimBonus( SOLDIERTYPE * pSoldier, OBJECTTYPE * pObj, INT32 iRange, INT1
 		if ( gGameExternalOptions.fScopeModes && pSoldier && Item[pObj->usItem].usItemClass == IC_GUN )
 		{
 			std::map<INT8, OBJECTTYPE*> ObjList;
-			GetScopeLists(pObj, ObjList);
+			GetScopeLists(pSoldier, pObj, ObjList);
 		
 			// only use scope mode if gun is in hand, otherwise an error might occur!
 			if ( (&pSoldier->inv[HANDPOS]) == pObj && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD)
@@ -10742,7 +10742,7 @@ INT16 GetToHitBonus( SOLDIERTYPE *pSoldier, OBJECTTYPE *pObj, INT32 iRange, UINT
 		if (gGameExternalOptions.fScopeModes && pSoldier && Item[pObj->usItem].usItemClass == IC_GUN)
 		{
 			std::map<INT8, OBJECTTYPE*> ObjList;
-			GetScopeLists(pObj, ObjList);
+			GetScopeLists(pSoldier, pObj, ObjList);
 
 			// only use scope mode if gun is in hand, otherwise an error might occur!
 			if ((&pSoldier->inv[HANDPOS]) == pObj && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD)
@@ -10869,7 +10869,7 @@ INT32 GetObjectModifier( SOLDIERTYPE* pSoldier, OBJECTTYPE *pObj, UINT8 ubStance
 			if ( pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD )
 			{
 				std::map<INT8, OBJECTTYPE*> ObjList;
-				GetScopeLists(pObj, ObjList);
+				GetScopeLists(pSoldier, pObj, ObjList);
 
 				// only use scope mode if gun is in hand, otherwise an error might occur!
 				if ( (&pSoldier->inv[HANDPOS]) == pObj && ObjList[pSoldier->bScopeMode] != NULL )
@@ -10965,7 +10965,7 @@ INT16 GetBurstToHitBonus( SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj, BOOLEAN fPro
 		if ( gGameExternalOptions.fScopeModes && pSoldier && Item[pObj->usItem].usItemClass == IC_GUN )
 		{
 			std::map<INT8, OBJECTTYPE*> ObjList;
-			GetScopeLists(pObj, ObjList);
+			GetScopeLists(pSoldier, pObj, ObjList);
 
 			// only use scope mode if gun is in hand, otherwise an error might occur!
 			if ( (&pSoldier->inv[HANDPOS]) == pObj && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD)
@@ -11259,7 +11259,7 @@ INT16 GetPercentAPReduction( SOLDIERTYPE * pSoldier, OBJECTTYPE * pObj )
 			if ( Item[pObj->usItem].usItemClass == IC_GUN )
 			{
 				std::map<INT8, OBJECTTYPE*> ObjList;
-				GetScopeLists(pObj, ObjList);
+				GetScopeLists(pSoldier, pObj, ObjList);
 
 				// only use scope mode if gun is in hand, otherwise an error might occur!
 				if ( (&pSoldier->inv[HANDPOS]) == pObj  && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD )
@@ -11392,7 +11392,7 @@ INT16 GetAutoToHitBonus( SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj, BOOLEAN fPron
 		if ( gGameExternalOptions.fScopeModes && pSoldier && Item[pObj->usItem].usItemClass == IC_GUN )
 		{
 			std::map<INT8, OBJECTTYPE*> ObjList;
-			GetScopeLists(pObj, ObjList);
+			GetScopeLists(pSoldier, pObj, ObjList);
 
 			// only use scope mode if gun is in hand, otherwise an error might occur!
 			if ( (&pSoldier->inv[HANDPOS]) == pObj && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD)
@@ -11536,7 +11536,7 @@ INT16 GetVisionRangeBonus(SOLDIERTYPE * pSoldier, INT32 sSpot, INT8 bLevel)
 				if (Item[pObj->usItem].usItemClass == IC_GUN)
 				{
 					std::map<INT8, OBJECTTYPE*> ObjList;
-					GetScopeLists(pObj, ObjList);
+					GetScopeLists(pSoldier, pObj, ObjList);
 
 					// only use scope mode if gun is in hand, otherwise an error might occur!
 					if ((&pSoldier->inv[HANDPOS]) == pObj  && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD)
@@ -11694,7 +11694,7 @@ INT16 GetNightVisionRangeBonus(SOLDIERTYPE * pSoldier, UINT8 bLightLevel, INT32 
 				if (Item[pObj->usItem].usItemClass == IC_GUN)
 				{
 					std::map<INT8, OBJECTTYPE*> ObjList;
-					GetScopeLists(pObj, ObjList);
+					GetScopeLists(pSoldier, pObj, ObjList);
 
 					// only use scope mode if gun is in hand, otherwise an error might occur!
 					if ((&pSoldier->inv[HANDPOS]) == pObj  && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD)
@@ -11842,7 +11842,7 @@ INT16 GetCaveVisionRangeBonus(SOLDIERTYPE * pSoldier, UINT8 bLightLevel, INT32 s
 				if (Item[pObj->usItem].usItemClass == IC_GUN)
 				{
 					std::map<INT8, OBJECTTYPE*> ObjList;
-					GetScopeLists(pObj, ObjList);
+					GetScopeLists(pSoldier, pObj, ObjList);
 
 					// only use scope mode if gun is in hand, otherwise an error might occur!
 					if ((&pSoldier->inv[HANDPOS]) == pObj  && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD)
@@ -12005,7 +12005,7 @@ INT16 GetDayVisionRangeBonus(SOLDIERTYPE * pSoldier, UINT8 bLightLevel, INT32 sS
 				if (Item[pObj->usItem].usItemClass == IC_GUN)
 				{
 					std::map<INT8, OBJECTTYPE*> ObjList;
-					GetScopeLists(pObj, ObjList);
+					GetScopeLists(pSoldier, pObj, ObjList);
 
 					// only use scope mode if gun is in hand, otherwise an error might occur!
 					if ((&pSoldier->inv[HANDPOS]) == pObj  && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD)
@@ -12165,7 +12165,7 @@ INT16 GetBrightLightVisionRangeBonus(SOLDIERTYPE * pSoldier, UINT8 bLightLevel, 
 				if (Item[pObj->usItem].usItemClass == IC_GUN)
 				{
 					std::map<INT8, OBJECTTYPE*> ObjList;
-					GetScopeLists(pObj, ObjList);
+					GetScopeLists(pSoldier, pObj, ObjList);
 
 					// only use scope mode if gun is in hand, otherwise an error might occur!
 					if ((&pSoldier->inv[HANDPOS]) == pObj  && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD)
@@ -12398,7 +12398,7 @@ UINT8 GetPercentTunnelVision( SOLDIERTYPE * pSoldier )
 				if ( Item[pObj->usItem].usItemClass == IC_GUN )
 				{
 					std::map<INT8, OBJECTTYPE*> ObjList;
-					GetScopeLists(pObj, ObjList);
+					GetScopeLists(pSoldier, pObj, ObjList);
 
 					// only use scope mode if gun is in hand, otherwise an error might occur!
 					if ( (&pSoldier->inv[HANDPOS]) == pObj  && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD )
@@ -12529,7 +12529,7 @@ BOOLEAN HasThermalOptics( SOLDIERTYPE * pSoldier )
 			if ( gGameExternalOptions.fScopeModes && pSoldier && Item[pObj->usItem].usItemClass == IC_GUN )
 			{
 				std::map<INT8, OBJECTTYPE*> ObjList;
-				GetScopeLists(pObj, ObjList);
+				GetScopeLists(pSoldier, pObj, ObjList);
 
 				// only use scope mode if gun is in hand, otherwise an error might occur!
 				if ( (&pSoldier->inv[HANDPOS]) == pObj && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD)
@@ -14007,7 +14007,7 @@ INT16 GetMinRangeForAimBonus( SOLDIERTYPE* pSoldier, OBJECTTYPE * pObj )
 		if ( gGameExternalOptions.fScopeModes && pSoldier && pSoldier->bTeam == gbPlayerNum && Item[pObj->usItem].usItemClass == IC_GUN )
 		{
 			std::map<INT8, OBJECTTYPE*> ObjList;
-			GetScopeLists(pObj, ObjList);
+			GetScopeLists(pSoldier, pObj, ObjList);
 		
 			// only use scope mode if gun is in hand, otherwise an error might occur!
 			if ( (&pSoldier->inv[HANDPOS]) == pObj  && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD )
@@ -14043,7 +14043,7 @@ FLOAT GetScopeMagnificationFactor( SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj, FLO
 	{
 		// Flugente: check for scope mode
 		std::map<INT8, OBJECTTYPE*> ObjList;
-		GetScopeLists(pObj, ObjList);
+		GetScopeLists(pSoldier, pObj, ObjList);
 		
 		// only use scope mode if gun is in hand, otherwise an error might occur!
 		if ( (&pSoldier->inv[HANDPOS]) == pObj  && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD )
@@ -14104,7 +14104,7 @@ FLOAT GetBestScopeMagnificationFactor( SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj,
 	{
 		// Flugente: check for scope mode
 		std::map<INT8, OBJECTTYPE*> ObjList;
-		GetScopeLists(pObjUsed, ObjList);
+		GetScopeLists(pSoldier, pObjUsed, ObjList);
 		
 		// only use scope mode if gun is in hand, otherwise an error might occur!
 		if ( (&pSoldier->inv[HANDPOS]) == pObjUsed  && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD )
@@ -14233,7 +14233,7 @@ FLOAT GetScopeModeProjectionFactor( SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj )
 
 	// Flugente: check for scope mode
 	std::map<INT8, OBJECTTYPE*> ObjList;
-	GetScopeLists(pObj, ObjList);
+	GetScopeLists(pSoldier, pObj, ObjList);
 
 	FLOAT BestFactor = 1.0;
 		
@@ -14536,7 +14536,7 @@ UINT8 AllowedAimingLevelsNCTH( SOLDIERTYPE *pSoldier, INT32 sGridNo )
 				 {
 					 // Flugente: check for scope mode
 					 std::map<INT8, OBJECTTYPE*> ObjList;
-					 GetScopeLists(&pSoldier->inv[pSoldier->ubAttackingHand], ObjList);
+					 GetScopeLists(pSoldier, &pSoldier->inv[pSoldier->ubAttackingHand], ObjList);
 
 					 // only use scope mode if gun is in hand, otherwise an error might occur!
 					 if( (&pSoldier->inv[HANDPOS]) == &pSoldier->inv[pSoldier->ubAttackingHand] &&
@@ -14781,7 +14781,7 @@ UINT8 AllowedAimingLevels(SOLDIERTYPE * pSoldier, INT32 sGridNo)
 					{
 						// Flugente: check for scope mode
 						std::map<INT8, OBJECTTYPE*> ObjList;
-						GetScopeLists(&pSoldier->inv[pSoldier->ubAttackingHand], ObjList);
+						GetScopeLists(pSoldier, &pSoldier->inv[pSoldier->ubAttackingHand], ObjList);
 			
 						// only use scope mode if gun is in hand, otherwise an error might occur!
 						if ( (&pSoldier->inv[HANDPOS]) == &pSoldier->inv[pSoldier->ubAttackingHand] && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD )
@@ -14856,7 +14856,7 @@ UINT8 AllowedAimingLevels(SOLDIERTYPE * pSoldier, INT32 sGridNo)
 					{
 						// Flugente: check for scope mode
 						std::map<INT8, OBJECTTYPE*> ObjList;
-						GetScopeLists(pAttackingWeapon, ObjList);
+						GetScopeLists(pSoldier, pAttackingWeapon, ObjList);
 			
 						// only use scope mode if gun is in hand, otherwise an error might occur!
 						if ( (&pSoldier->inv[HANDPOS]) == pAttackingWeapon  && ObjList[pSoldier->bScopeMode] != NULL && pSoldier->bScopeMode != USE_ALT_WEAPON_HOLD )
@@ -15854,6 +15854,97 @@ void  GetScopeLists( OBJECTTYPE * pObj, std::map<INT8, OBJECTTYPE*>& arScopeMap 
 		}
 	}
 }
+
+void  GetScopeLists( SOLDIERTYPE * pSoldier, OBJECTTYPE * pObj, std::map<INT8, OBJECTTYPE*>& arScopeMap )
+{
+	// Current 1.13 behaviour: scope availability depends on the shooter.
+	// Keep the legacy overload for UI/older callers, but use this one for combat calculations.
+	arScopeMap[USE_BEST_SCOPE] = pObj;
+
+	for (INT8 i = USE_SCOPE_2; i < NUM_SCOPE_MODES; ++i)
+	{
+		arScopeMap[i] = NULL;
+	}
+
+	BOOLEAN bDualWielding = FALSE;
+	if ( pSoldier &&
+		 pSoldier->inv[HANDPOS].exists() &&
+		 pSoldier->inv[SECONDHANDPOS].exists() &&
+		 (Item[pSoldier->inv[HANDPOS].usItem].usItemClass & IC_GUN) &&
+		 !(Item[pSoldier->inv[HANDPOS].usItem].twohanded) &&
+		 (Item[pSoldier->inv[SECONDHANDPOS].usItem].usItemClass & IC_GUN) &&
+		 !(Item[pSoldier->inv[SECONDHANDPOS].usItem].twohanded) )
+	{
+		bDualWielding = TRUE;
+	}
+
+	BOOLEAN noironsight = ( Item[pObj->usItem].blockironsight == TRUE );
+
+	attachmentList::iterator iterend = (*pObj)[0]->attachments.end();
+	for (attachmentList::iterator iter = (*pObj)[0]->attachments.begin(); iter != iterend; ++iter)
+	{
+		if ( iter->exists() )
+		{
+			if ( Item[iter->usItem].blockironsight == TRUE )
+				noironsight = TRUE;
+
+			if ( IsAttachmentClass(iter->usItem, AC_SCOPE|AC_SIGHT|AC_IRONSIGHT ) )
+			{
+				// Match current 1.13: dual wielding only allows iron sights / non-scope sights.
+				if ( bDualWielding && IsAttachmentClass(iter->usItem, AC_SCOPE) )
+					continue;
+
+				FLOAT magfactor = Item[iter->usItem].scopemagfactor;
+				if ( magfactor < 0.1f )
+					magfactor = 1.0f;
+
+				BOOLEAN isplaced = false;
+				for (INT8 i = USE_BEST_SCOPE; i < NUM_SCOPE_MODES; ++i)
+				{
+					if ( arScopeMap[i] && magfactor > Item[arScopeMap[i]->usItem].scopemagfactor )
+					{
+						for (INT8 j = NUM_SCOPE_MODES; j > i; --j)
+							arScopeMap[j] = arScopeMap[j-1];
+
+						arScopeMap[i] = &(*iter);
+						isplaced = true;
+						break;
+					}
+				}
+
+				if ( !isplaced )
+				{
+					for (INT8 i = USE_BEST_SCOPE; i < NUM_SCOPE_MODES; ++i)
+					{
+						if ( !arScopeMap[i] )
+						{
+							arScopeMap[i] = &(*iter);
+							break;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if ( noironsight )
+	{
+		if ( arScopeMap[USE_BEST_SCOPE] != NULL && arScopeMap[USE_SCOPE_2] != NULL )
+		{
+			for (INT8 i = USE_BEST_SCOPE; i < NUM_SCOPE_MODES; ++i)
+			{
+				if ( arScopeMap[i] == pObj )
+				{
+					arScopeMap.erase(i);
+					for (INT8 j = NUM_SCOPE_MODES; j > i; --j)
+						arScopeMap[j] = arScopeMap[j-1];
+					break;
+				}
+			}
+		}
+	}
+}
+
 
 BOOLEAN IsAttachmentClass( UINT16 usItem, UINT32 aFlag )
 {
