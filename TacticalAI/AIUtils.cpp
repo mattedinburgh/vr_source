@@ -4159,15 +4159,41 @@ BOOLEAN AILastSurvivorPressure(SOLDIERTYPE *pSoldier)
 	if (!AICombatTeam(pSoldier))
 		return FALSE;
 
-	UINT16 usFriends = AIPerceivedFriendlyStrength(pSoldier);
+	UINT16 usLocalFriends = AIPerceivedFriendlyStrength(pSoldier);
 	UINT16 usEnemies = AIPerceivedEnemyStrength(pSoldier);
-
-	if (usEnemies == 0 || usFriends > 200)
+	if (usEnemies == 0)
 		return FALSE;
 
-	// This is deliberately a soft 'survivor pressure' test, not a magic rout rule.
-	// A one/two-man element only gets this flag if friendly losses are already severe.
-	return (AIFriendlyCasualtyPercent(pSoldier) >= 50);
+	UINT8 ubTeamReady = 0;
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (pFriend && pFriend->bActive && pFriend->bInSector && pFriend->stats.bLife >= OKLIFE)
+			++ubTeamReady;
+	}
+
+	UINT8 ubLocalCasualties = AILocalCasualtyPercent(pSoldier);
+	UINT8 ubKnownFriendlyLosses = ubLocalCasualties;
+	if (pSoldier->bTeam == ENEMY_TEAM)
+		ubKnownFriendlyLosses = __max(ubKnownFriendlyLosses, TeamPercentKilled(ENEMY_TEAM));
+
+	// True last survivors: only one/two combat-capable soldiers remain on the team,
+	// and meaningful friendly losses have actually occurred.
+	if (ubTeamReady <= 2 && ubKnownFriendlyLosses >= 50)
+		return TRUE;
+
+	// Local remnant: one/two soldiers in this tactical element, with direct local
+	// casualty evidence and at least equal known opposition. A separated two-man
+	// patrol is therefore not mistaken for the last two men in the whole sector.
+	if (usLocalFriends <= 200 &&
+		usEnemies >= usLocalFriends &&
+		ubLocalCasualties >= 50)
+	{
+		return TRUE;
+	}
+
+	return FALSE;
 }
 
 INT8 AIHopelessOddsModifier(SOLDIERTYPE *pSoldier)

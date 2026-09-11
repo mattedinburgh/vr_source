@@ -85,7 +85,7 @@ The opponent-strength helper never reads hidden AIM positions, hidden sector ene
 Chunk 2 turns the Chunk 1 assessment into a limited behaviour change without adding a new pathfinder.
 
 - `AISeverelyIsolated`: one/two combat-capable local soldiers facing at least equal known opposition.
-- `AILastSurvivorPressure`: one/two local soldiers plus at least 50% known friendly losses.
+- `AILastSurvivorPressure`: true last one/two combat-capable team survivors after heavy losses, or a one/two-man local remnant with direct local casualty evidence.
 - `AIHopelessOddsModifier`: soft RED-state seek penalty for losing/catastrophic situations.
 - `AIShouldAvoidAdvance`: hard gate for catastrophic fights and badly depleted isolated elements.
 - `DecideHopelessSurvivorAction`: at the start of a fresh turn, reuse `AI_ACTION_WITHDRAW`; if no acceptable withdrawal exists, seek existing nearby cover.

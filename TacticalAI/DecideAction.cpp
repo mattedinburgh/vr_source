@@ -9276,9 +9276,6 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 	return AI_ACTION_TOSS_PROJECTILE;
 }
 
-// Break dangerous clusters under fire. Existing cover scoring already dislikes
-// adjacent teammates; this decision makes that preference urgent when several soldiers
-// are packed together and the local group is taking fire.
 INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 {
 	if (!AICombatTeam(pSoldier) || !fCanMove || pSoldier->IsZombie() ||
@@ -9327,6 +9324,9 @@ INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 
 	return AI_ACTION_NONE;
 }
+// Break dangerous clusters under fire. Existing cover scoring already dislikes
+// adjacent teammates; this decision makes that preference urgent when several soldiers
+// are packed together and the local group is taking fire.
 INT8 DecideCombatDispersion(SOLDIERTYPE *pSoldier)
 {
 	if (!gfTurnBasedAI || !pSoldier || !AICombatTeam(pSoldier) ||
