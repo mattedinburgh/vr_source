@@ -467,5 +467,6 @@ INT8 DecideUseWirecutters(SOLDIERTYPE *pSoldier);
 INT8 DecideUseGrenadeSpecial(SOLDIERTYPE *pSoldier);
 INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance);
 INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier);
+INT8 DecideCombatDispersion(SOLDIERTYPE *pSoldier);
 
 #endif
