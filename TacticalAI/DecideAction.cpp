@@ -4865,8 +4865,21 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 					else
 						handPOS = HANDPOS;
 
-					// try to find more ammo
-					pSoldier->aiData.bAction = SearchForItems( pSoldier, SEARCH_AMMO, pSoldier->inv[handPOS].usItem );
+					// Scavenge ammunition only when doing so is tactically reasonable. Under
+					// direct pressure a human soldier first tries another carried weapon/sidearm
+					// instead of running across the battlefield for loose ammunition.
+					if (!AICombatTeam(pSoldier) ||
+						(!pSoldier->aiData.bUnderFire &&
+						 (AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
+						  TileIsOutOfBounds(sClosestOpponent) ||
+						  PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 2)))
+					{
+						pSoldier->aiData.bAction = SearchForItems( pSoldier, SEARCH_AMMO, pSoldier->inv[handPOS].usItem );
+					}
+					else
+					{
+						pSoldier->aiData.bAction = AI_ACTION_NONE;
+					}
 
 					if (pSoldier->aiData.bAction == AI_ACTION_NONE)
 					{
@@ -4886,10 +4899,11 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 						return( pSoldier->aiData.bAction );
 					}
 				}
-				// sevenfm: allow enemy team to attack with hands
-				else if( pSoldier->bTeam == ENEMY_TEAM && ubCanMove )
+				// Human combatants do not become fearless merely because they lost their
+				// weapon. Melee-capable soldiers can still fight through normal attack logic;
+				// truly unarmed soldiers fall through to self-preservation behavior.
+				else if( !AICombatTeam(pSoldier) && pSoldier->bTeam == ENEMY_TEAM && ubCanMove )
 				{
-					pSoldier->aiData.bAIMorale = MORALE_FEARLESS;
 					bCanAttack = TRUE;
 					fTryPunching = TRUE;
 				}
@@ -4904,9 +4918,11 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		{
 			pSoldier->aiData.bAIMorale = __min(pSoldier->aiData.bAIMorale, MORALE_WORRIED);
 
-			if (!fCivilian)
+			if (!fCivilian &&
+				(!AICombatTeam(pSoldier) || FindAIUsableObjClass(pSoldier, IC_WEAPON) != NO_SLOT))
 			{
-				// can always attack with HTH as a last resort
+				// A carried melee weapon can still be a valid last resort. Truly unarmed
+				// enemy/militia soldiers preserve themselves instead of suicidal punching.
 				bCanAttack = TRUE;
 				fTryPunching = TRUE;
 			}
