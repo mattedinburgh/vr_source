@@ -4324,7 +4324,7 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 		return FALSE;
 	}
 
-	if (AIPerceivedEnemyStrength(pSoldier) > 0 &&
+	if (bSituation != AI_BATTLE_UNKNOWN &&
 		AIShouldStartDisengagementFromState(pSoldier, bSituation, ubCasualties, fLastSurvivor))
 	{
 		UINT8 ubDuration = (bSituation == AI_BATTLE_CATASTROPHIC || fLastSurvivor) ? 3 : 2;
