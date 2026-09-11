@@ -4298,6 +4298,8 @@ BOOLEAN AIEscapeActive(SOLDIERTYPE *pSoldier)
 		gubAIEscapeIntent[pSoldier->ubID] != 0);
 }
 
+static INT8 AIProfessionalismModifier(SOLDIERTYPE *pSoldier);
+
 static BOOLEAN AIShouldStartEscapeFromState(SOLDIERTYPE *pSoldier, INT8 bSituation, UINT8 ubCasualties, BOOLEAN fLastSurvivor, UINT8 ubRoutPressure)
 {
 	// Escape is intentionally much rarer than disengagement. A bad local position is
@@ -4314,7 +4316,10 @@ static BOOLEAN AIShouldStartEscapeFromState(SOLDIERTYPE *pSoldier, INT8 bSituati
 
 	if (bSituation == AI_BATTLE_CATASTROPHIC)
 	{
-		if (ubCasualties >= 30)
+		INT32 iCasualtyThreshold = 30 + AIProfessionalismModifier(pSoldier) / 2;
+		iCasualtyThreshold = __max(25, __min(38, iCasualtyThreshold));
+
+		if (ubCasualties >= iCasualtyThreshold)
 			return TRUE;
 
 		if (AISeverelyIsolated(pSoldier) &&
@@ -4335,8 +4340,11 @@ static BOOLEAN AIShouldStartEscapeFromState(SOLDIERTYPE *pSoldier, INT8 bSituati
 
 	// In a merely losing fight, social collapse can push a soldier from
 	// disengagement into full escape, but only after substantial losses.
+	INT32 iLosingEscapeThreshold = 40 + AIProfessionalismModifier(pSoldier) / 2;
+	iLosingEscapeThreshold = __max(35, __min(48, iLosingEscapeThreshold));
+
 	if (bSituation == AI_BATTLE_LOSING &&
-		ubCasualties >= 40 &&
+		ubCasualties >= iLosingEscapeThreshold &&
 		ubRoutPressure >= iRoutThreshold &&
 		AILocalStress(pSoldier) >= 30)
 	{
@@ -4463,7 +4471,10 @@ static BOOLEAN AIShouldStartDisengagementFromState(SOLDIERTYPE *pSoldier, INT8 b
 
 	if (bSituation == AI_BATTLE_LOSING)
 	{
-		if (ubCasualties >= 30)
+		INT32 iDisengageThreshold = 30 + AIProfessionalismModifier(pSoldier) / 2;
+		iDisengageThreshold = __max(25, __min(38, iDisengageThreshold));
+
+		if (ubCasualties >= iDisengageThreshold)
 			return TRUE;
 
 		if (AILocalStress(pSoldier) >= 35 &&
@@ -4481,8 +4492,11 @@ static BOOLEAN AIShouldStartDisengagementFromState(SOLDIERTYPE *pSoldier, INT8 b
 
 	// Even a nominally even fight can locally unravel when casualties are already
 	// meaningful and multiple nearby comrades are visibly breaking contact.
+	INT32 iEvenBreakThreshold = 30 + AIProfessionalismModifier(pSoldier) / 2;
+	iEvenBreakThreshold = __max(25, __min(38, iEvenBreakThreshold));
+
 	if (bSituation == AI_BATTLE_EVEN &&
-		ubCasualties >= 30 &&
+		ubCasualties >= iEvenBreakThreshold &&
 		ubRoutPressure >= __min(70, iRoutThreshold + 15) &&
 		AILocalStress(pSoldier) >= 25)
 	{
@@ -4754,6 +4768,9 @@ INT32 AILocalStress(SOLDIERTYPE *pSoldier)
 
 	if (pSoldier->aiData.bAttitude == ATTACKSLAYONLY)
 		iStress -= 10;
+
+	// Training changes composure only modestly; shock, wounds and isolation remain dominant.
+	iStress -= AIProfessionalismModifier(pSoldier) / 2;
 
 	return __max(0, __min(100, iStress));
 }
