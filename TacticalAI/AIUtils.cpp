@@ -5096,6 +5096,18 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 		AIPersonalRisk(pSoldier) <= AIPersonalRiskTolerance(pSoldier))
 	{
 		UINT8 ubActiveMovers = 0;
+		UINT8 ubMoverLimit = 2;
+		INT32 iMoverJitter = AIBoundedDecisionJitter(pSoldier,
+			(UINT32)(sTargetSpot + 101), 6);
+
+		// Most fireteams use two movers. Sometimes a cautious element sends one;
+		// occasionally a locally superior, low-stress element pushes three.
+		if (iMoverJitter <= -4)
+			ubMoverLimit = 1;
+		else if (iMoverJitter >= 5 &&
+			AILocalStress(pSoldier) < 20 &&
+			AICheckWeOutnumberLocal(pSoldier, sTargetSpot))
+			ubMoverLimit = 3;
 
 		for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 			iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
@@ -5159,7 +5171,7 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 				PythSpacesAway(sFrom, sFriendThreat))
 			{
 				++ubActiveMovers;
-				if (ubActiveMovers >= 2)
+				if (ubActiveMovers >= ubMoverLimit)
 					return FALSE;
 			}
 		}
@@ -5435,6 +5447,22 @@ static BOOLEAN AIEligibleWithdrawalCoverer(SOLDIERTYPE *pCandidate, SOLDIERTYPE 
 	return TRUE;
 }
 
+static INT32 AIBoundedDecisionJitter(SOLDIERTYPE *pSoldier, UINT32 uiSalt, INT32 iAmplitude)
+{
+	if (!pSoldier || iAmplitude <= 0)
+		return 0;
+
+	UINT32 uiValue = pSoldier->uiUniqueSoldierIdValue;
+	uiValue ^= (guiTurnCnt + 1) * 2654435761u;
+	uiValue ^= uiSalt * 2246822519u;
+	uiValue ^= uiValue >> 13;
+	uiValue *= 3266489917u;
+	uiValue ^= uiValue >> 16;
+
+	UINT32 uiSpan = (UINT32)(2 * iAmplitude + 1);
+	return (INT32)(uiValue % uiSpan) - iAmplitude;
+}
+
 static INT32 AIWithdrawalCoverScore(SOLDIERTYPE *pCandidate, SOLDIERTYPE *pRetreating)
 {
 	if (!AIEligibleWithdrawalCoverer(pCandidate, pRetreating))
@@ -5452,6 +5480,11 @@ static INT32 AIWithdrawalCoverScore(SOLDIERTYPE *pCandidate, SOLDIERTYPE *pRetre
 	iScore += __max(0, 20 - AIPersonalRisk(pCandidate) / 4);
 	iScore -= __min((INT32)20,
 		PythSpacesAway(pCandidate->sGridNo, pRetreating->sGridNo));
+
+	// Close candidates should not always resolve to the same rear guard. The
+	// jitter is stable for this tactical turn, so repeated AI checks do not thrash.
+	iScore += AIBoundedDecisionJitter(pCandidate,
+		pRetreating->uiUniqueSoldierIdValue + 17u, 6);
 
 	return iScore;
 }
