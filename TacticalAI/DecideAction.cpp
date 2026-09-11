@@ -9222,7 +9222,7 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 	// try to use smoke to cover movement
 	if (gfTurnBasedAI &&
 		SoldierAI(pSoldier) &&
-		FindThrowableGrenade(pSoldier, EXPLOSV_SMOKE) != EXPLOSV_SMOKE &&
+		FindThrowableGrenade(pSoldier, EXPLOSV_SMOKE) != NO_SLOT &&
 		pSoldier->bActionPoints >= APBPConstants[AP_MINIMUM] &&
 		pSoldier->bActionPoints == pSoldier->bInitialActionPoints &&
 		!TileIsOutOfBounds(sClosestDisturbance) &&
@@ -9345,6 +9345,11 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 			continue;
 
 		if (InSmoke(pFriend->sGridNo, pFriend->pathing.bLevel))
+			continue;
+
+		// Current 1.13 smoke-targeting logic avoids water. Do the same here so
+		// emergency protection smoke is not wasted on a water tile.
+		if (Water(pFriend->sGridNo, pFriend->pathing.bLevel))
 			continue;
 
 		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
