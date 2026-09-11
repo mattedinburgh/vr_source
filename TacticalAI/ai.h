@@ -293,6 +293,7 @@ BOOLEAN AICheckWeOutnumber(SOLDIERTYPE *pSoldier, INT32 sSpot);
 BOOLEAN AICheckWeOutnumberSector(SOLDIERTYPE *pSoldier);
 
 BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier);
+INT32 AILocalStress(SOLDIERTYPE *pSoldier);
 INT32 AIPersonalRisk(SOLDIERTYPE *pSoldier);
 INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier);
 INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
