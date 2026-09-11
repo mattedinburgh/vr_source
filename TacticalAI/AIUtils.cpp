@@ -2714,7 +2714,7 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 		bMoraleCategory = min(bMoraleCategory, MORALE_NORMAL);
 
 	// limit AI morale if can attack enemy from spot
-	if (pSoldier->bTeam == ENEMY_TEAM &&
+	if (AICombatTeam(pSoldier) &&
 		!TileIsOutOfBounds(sClosestOpponent) &&
 		AICheckHasGun(pSoldier) &&
 		!AICheckShortWeaponRange(pSoldier) &&
@@ -7299,7 +7299,7 @@ BOOLEAN FindShadowAtSpot(INT32 sSpot, INT8 bLevel)
 BOOLEAN AllowDeepWaterFlanking(SOLDIERTYPE *pSoldier)
 {
 	if (SoldierAI(pSoldier) &&
-		pSoldier->bTeam == ENEMY_TEAM &&
+		AICombatTeam(pSoldier) &&
 		pSoldier->aiData.bOrders == SEEKENEMY &&
 		(pSoldier->aiData.bAttitude == CUNNINGSOLO || gGameOptions.fNewTraitSystem && HAS_SKILL_TRAIT(pSoldier, ATHLETICS_NT)) &&
 		pSoldier->aiData.bAlertStatus >= STATUS_RED &&
