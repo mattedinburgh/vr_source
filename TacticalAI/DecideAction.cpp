@@ -6086,6 +6086,9 @@ L_NEWAIM:
 				pSoldier->bActionPoints == pSoldier->bInitialActionPoints &&
 				pSoldier->bActionPoints > BestAttack.ubAPCost &&
 				AIEngagementRangeModifier(pSoldier, BestAttack.sTarget) > 0 &&
+				(AIAdvanceSupportModifier(pSoldier, BestAttack.sTarget) >= 0 ||
+				 ((pSoldier->aiData.bAttitude == AGGRESSIVE || pSoldier->aiData.bAttitude == BRAVESOLO) &&
+				  AILocalStress(pSoldier) < 25)) &&
 				pSoldier->aiData.bShock < 2 * RangeChangeDesire(pSoldier) && 
 				pSoldier->stats.bLife > pSoldier->stats.bLifeMax / 2 && 
 				// sevenfm: increased to 10-40 depending on target shock
