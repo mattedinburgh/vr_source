@@ -2294,6 +2294,14 @@ INT8 ExecuteAction(SOLDIERTYPE *pSoldier)
             // make sure action data is set right
             if ( pSoldier->flags.uiStatusFlags & SOLDIER_COWERING )
             {
+                // A newly capitulated soldier can already be in the cower
+                // animation. The POW state still needs an immediate battle-end
+                // check even though there is no stance change left to execute.
+                if ( pSoldier->usSoldierFlagMask & SOLDIER_POW )
+                {
+                    CheckForEndOfBattle( FALSE );
+                }
+
                 // nothing to do!
                 ActionDone( pSoldier );
                 return( FALSE );
