@@ -3961,6 +3961,175 @@ BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier)
 	return pSoldier && (pSoldier->bTeam == ENEMY_TEAM || pSoldier->bTeam == MILITIA_TEAM);
 }
 
+// Chunk 1: battlefield-situation awareness. These helpers expose information to
+// later AI decisions but deliberately do not change actions on their own.
+// Local calculations use TACTICAL_RANGE so they scale with JA2's existing AI
+// distance model rather than inventing a real-world metre conversion.
+UINT8 AIObservedRecentCasualties(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier))
+		return 0;
+
+	INT32 iLosses = CountCorpses(pSoldier, pSoldier->sGridNo, TACTICAL_RANGE, TRUE, TRUE);
+
+	// A downed friendly is an immediate local casualty too. Friendly locations and
+	// status are information the legacy AI already assumes to be available.
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (pFriend &&
+			pFriend != pSoldier &&
+			pFriend->bActive &&
+			pFriend->bInSector &&
+			pFriend->stats.bLife > 0 &&
+			pFriend->stats.bLife < OKLIFE &&
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) <= TACTICAL_RANGE)
+		{
+			++iLosses;
+		}
+	}
+
+	return (UINT8)__min((INT32)255, iLosses);
+}
+
+UINT8 AILocalCasualtyPercent(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier))
+		return 0;
+
+	INT32 iLosses = CountCorpses(pSoldier, pSoldier->sGridNo, TACTICAL_RANGE, TRUE, TRUE);
+	INT32 iPresent = 0;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend ||
+			!pFriend->bActive ||
+			!pFriend->bInSector ||
+			pFriend->stats.bLife <= 0 ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > TACTICAL_RANGE)
+		{
+			continue;
+		}
+
+		if (pFriend->stats.bLife < OKLIFE)
+			++iLosses;
+		else
+			++iPresent;
+	}
+
+	if (iLosses + iPresent == 0)
+		return 0;
+
+	return (UINT8)__min((INT32)100, (100 * iLosses) / (iLosses + iPresent));
+}
+
+UINT8 AIFriendlyCasualtyPercent(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier))
+		return 0;
+
+	UINT8 ubLocal = AILocalCasualtyPercent(pSoldier);
+
+	// Enemy-team battle losses are already tracked by JA2. They represent friendly
+	// force status, not hidden opponent information. Militia currently has no
+	// equivalent reliable sector-loss counter, so militia uses the local signal.
+	if (pSoldier->bTeam == ENEMY_TEAM)
+		return __max(ubLocal, TeamPercentKilled(ENEMY_TEAM));
+
+	return ubLocal;
+}
+
+// Strength is expressed in certainty points: 100 is one fully known combatant.
+// Friendly status is known to the team; opponent strength is derived only from
+// personal/public JA2 knowledge and never from hidden sector totals.
+UINT16 AIPerceivedFriendlyStrength(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier))
+		return 0;
+
+	UINT32 uiStrength = 0;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (pFriend &&
+			pFriend->bActive &&
+			pFriend->bInSector &&
+			pFriend->stats.bLife >= OKLIFE &&
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) <= TACTICAL_RANGE)
+		{
+			uiStrength += 100;
+		}
+	}
+
+	return (UINT16)__min((UINT32)65535, uiStrength);
+}
+
+UINT16 AIPerceivedEnemyStrength(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier))
+		return 0;
+
+	UINT32 uiStrength = 0;
+
+	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
+	{
+		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
+		if (!pOpponent || !ValidOpponent(pSoldier, pOpponent))
+			continue;
+
+		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+		if (bKnowledge == NOT_HEARD_OR_SEEN)
+			continue;
+
+		INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
+		if (TileIsOutOfBounds(sKnownSpot) ||
+			PythSpacesAway(pSoldier->sGridNo, sKnownSpot) > TACTICAL_RANGE)
+		{
+			continue;
+		}
+
+		// ThreatPercent already encodes JA2's confidence in seen/heard information:
+		// current sight is strongest; stale contacts count progressively less.
+		uiStrength += ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+	}
+
+	return (UINT16)__min((UINT32)65535, uiStrength);
+}
+
+INT8 AIBattleSituation(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier))
+		return AI_BATTLE_UNKNOWN;
+
+	UINT32 uiFriends = AIPerceivedFriendlyStrength(pSoldier);
+	UINT32 uiEnemies = AIPerceivedEnemyStrength(pSoldier);
+
+	// With no legitimate opponent knowledge there is no force-ratio assessment.
+	if (uiEnemies == 0)
+		return AI_BATTLE_UNKNOWN;
+
+	UINT8 ubCasualties = AIFriendlyCasualtyPercent(pSoldier);
+
+	if (uiFriends * 2 <= uiEnemies ||
+		(ubCasualties >= 75 && uiFriends <= uiEnemies))
+	{
+		return AI_BATTLE_CATASTROPHIC;
+	}
+
+	if (uiFriends * 5 < uiEnemies * 4 || ubCasualties >= 50)
+		return AI_BATTLE_LOSING;
+
+	if (uiFriends * 4 >= uiEnemies * 5 && ubCasualties < 40)
+		return AI_BATTLE_WINNING;
+
+	return AI_BATTLE_EVEN;
+}
+
 // Human-like local combat stress. This deliberately affects tactical morale and
 // behaviour rather than adding another direct CTH penalty: NCTH already accounts
 // for injury, fatigue, morale and shock in the shooting calculation.

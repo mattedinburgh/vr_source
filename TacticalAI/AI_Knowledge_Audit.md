@@ -65,3 +65,17 @@ A perceived force ratio is not actual sector force ratio.
 Example: if one surviving soldier knows of four AIM contacts, the tactical AI reasons from those four known contacts plus its loss of friendly support. It must not know that five additional AIM mercs are hidden elsewhere in the sector.
 
 This contract applies to enemy and militia tactical AI changes.
+
+
+## Chunk 1: battlefield situation awareness
+
+Chunk 1 adds information-only helpers. No action-selection call site uses them yet.
+
+- `AIObservedRecentCasualties`: visible fresh friendly corpses plus nearby incapacitated teammates, using `TACTICAL_RANGE`.
+- `AILocalCasualtyPercent`: local observed/down casualty share relative to nearby combat-capable teammates.
+- `AIFriendlyCasualtyPercent`: local casualty share, plus the engine's existing army battle-loss percentage for enemy troops.
+- `AIPerceivedFriendlyStrength`: combat-capable teammates within `TACTICAL_RANGE`; 100 points per soldier.
+- `AIPerceivedEnemyStrength`: only opponents present in personal/public JA2 knowledge, at their known location, weighted by the existing `ThreatPercent` certainty table.
+- `AIBattleSituation`: classifies UNKNOWN / WINNING / EVEN / LOSING / CATASTROPHIC from perceived local strength and friendly losses.
+
+The opponent-strength helper never reads hidden AIM positions, hidden sector enemy counts, or hidden current opponent health. A stale/heard contact contributes less than a currently seen contact through JA2's existing knowledge certainty table.

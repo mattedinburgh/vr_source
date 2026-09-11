@@ -292,7 +292,22 @@ BOOLEAN AICheckWeOutnumberLocal(SOLDIERTYPE *pSoldier, INT32 sSpot);
 BOOLEAN AICheckWeOutnumber(SOLDIERTYPE *pSoldier, INT32 sSpot);
 BOOLEAN AICheckWeOutnumberSector(SOLDIERTYPE *pSoldier);
 
+enum
+{
+	AI_BATTLE_UNKNOWN = 0,
+	AI_BATTLE_WINNING,
+	AI_BATTLE_EVEN,
+	AI_BATTLE_LOSING,
+	AI_BATTLE_CATASTROPHIC
+};
+
 BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier);
+UINT8 AIObservedRecentCasualties(SOLDIERTYPE *pSoldier);
+UINT8 AILocalCasualtyPercent(SOLDIERTYPE *pSoldier);
+UINT8 AIFriendlyCasualtyPercent(SOLDIERTYPE *pSoldier);
+UINT16 AIPerceivedFriendlyStrength(SOLDIERTYPE *pSoldier);
+UINT16 AIPerceivedEnemyStrength(SOLDIERTYPE *pSoldier);
+INT8 AIBattleSituation(SOLDIERTYPE *pSoldier);
 INT32 AILocalStress(SOLDIERTYPE *pSoldier);
 INT32 AIPersonalRisk(SOLDIERTYPE *pSoldier);
 INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier);
