@@ -2302,6 +2302,15 @@ INT8 ExecuteAction(SOLDIERTYPE *pSoldier)
             {
                 pSoldier->aiData.usActionData = ANIM_CROUCH;
                 pSoldier->SetSoldierCowerState( TRUE );
+
+                // A combatant who entered cower because he capitulated is already
+                // a POW and therefore no longer a valid enemy. Check immediately
+                // whether this surrender ended the battle; ordinary civilian
+                // cowering is unaffected.
+                if ( pSoldier->usSoldierFlagMask & SOLDIER_POW )
+                {
+                    CheckForEndOfBattle( FALSE );
+                }
             }
             break;
 

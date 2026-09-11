@@ -9623,6 +9623,8 @@ static UINT32 guiAIEscapePlanIdentity[MAX_NUM_SOLDIERS] = { 0 };
 static INT32 gsAIEscapeTarget[MAX_NUM_SOLDIERS] = { 0 };
 static INT8 gbAIEscapeDirection[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIEscapeNoRouteTurn[MAX_NUM_SOLDIERS] = { 0 };
+static UINT8 gubAIEscapeBlockedTurns[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAIEscapeBlockedTurnStamp[MAX_NUM_SOLDIERS] = { 0 };
 extern UINT32 guiTurnCnt;
 
 static void AIResetEscapePlan(SOLDIERTYPE *pSoldier)
@@ -9636,6 +9638,116 @@ static void AIResetEscapePlan(SOLDIERTYPE *pSoldier)
 	gsAIEscapeTarget[ubID] = NOWHERE;
 	gbAIEscapeDirection[ubID] = -1;
 	guiAIEscapeNoRouteTurn[ubID] = 0;
+	gubAIEscapeBlockedTurns[ubID] = 0;
+	guiAIEscapeBlockedTurnStamp[ubID] = 0;
+}
+
+static void AIResetEscapeBlockedTurns(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return;
+
+	gubAIEscapeBlockedTurns[pSoldier->ubID] = 0;
+	guiAIEscapeBlockedTurnStamp[pSoldier->ubID] = 0;
+}
+
+static UINT8 AIRegisterEscapeBlockedTurn(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return 0;
+
+	UINT8 ubID = pSoldier->ubID;
+	UINT32 uiTurnStamp = guiTurnCnt + 1;
+	if (guiAIEscapeBlockedTurnStamp[ubID] != uiTurnStamp)
+	{
+		guiAIEscapeBlockedTurnStamp[ubID] = uiTurnStamp;
+		if (gubAIEscapeBlockedTurns[ubID] < 255)
+			++gubAIEscapeBlockedTurns[ubID];
+	}
+
+	return gubAIEscapeBlockedTurns[ubID];
+}
+
+static BOOLEAN AIShouldCapitulate(SOLDIERTYPE *pSoldier, UINT8 ubBlockedTurns)
+{
+	if (!pSoldier ||
+		pSoldier->bTeam != ENEMY_TEAM ||
+		!AIEscapeActive(pSoldier) ||
+		pSoldier->stats.bLife < OKLIFE ||
+		pSoldier->bCollapsed ||
+		(pSoldier->usSoldierFlagMask & SOLDIER_POW) ||
+		pSoldier->aiData.bOppCnt <= 0 ||
+		!gGameExternalOptions.fAllowPrisonerSystem ||
+		!gGameExternalOptions.fEnemyCanSurrender)
+	{
+		return FALSE;
+	}
+
+	INT32 iTolerance = AIPersonalRiskTolerance(pSoldier);
+	UINT8 ubRequiredBlockedTurns = (iTolerance >= 65) ? 3 : 2;
+	if (ubBlockedTurns < ubRequiredBlockedTurns)
+		return FALSE;
+
+	INT8 bSituation = AIBattleSituation(pSoldier);
+	UINT8 ubCasualties = AIFriendlyCasualtyPercent(pSoldier);
+	UINT8 ubRoutPressure = AILocalRoutPressure(pSoldier);
+	INT32 iStress = AILocalStress(pSoldier);
+
+	if (AILastSurvivorPressure(pSoldier))
+		return TRUE;
+
+	if (ubCasualties >= 75 && bSituation != AI_BATTLE_WINNING)
+		return TRUE;
+
+	if (bSituation == AI_BATTLE_CATASTROPHIC && iStress >= 25)
+		return TRUE;
+
+	if (bSituation == AI_BATTLE_LOSING &&
+		ubCasualties >= 50 &&
+		ubRoutPressure >= 50 &&
+		iStress >= 40)
+	{
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+static INT8 AITryCapitulation(SOLDIERTYPE *pSoldier, UINT8 ubBlockedTurns)
+{
+	if (!AIShouldCapitulate(pSoldier, ubBlockedTurns))
+		return AI_ACTION_NONE;
+
+	// Reuse 1.13's existing enemy-prisoner state rather than inventing a second
+	// surrender system. POWs stop acting, stop counting as active enemies and are
+	// processed by the normal post-battle prisoner/equipment pipeline.
+	pSoldier->usSoldierFlagMask |= SOLDIER_POW;
+	RemoveManAsTarget(pSoldier);
+
+	pSoldier->ubQuoteActionID = 0;
+	pSoldier->aiData.bNextAction = AI_ACTION_NONE;
+	pSoldier->aiData.usNextActionData = NOWHERE;
+	pSoldier->aiData.usActionData = ANIM_CROUCH;
+	AIResetEscapePlan(pSoldier);
+
+	return AI_ACTION_COWER;
+}
+
+static INT8 AIHandleBlockedEscape(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
+{
+	INT8 bSurvivalAction = DecideHopelessSurvivorAction(pSoldier, fCanMove);
+	if (bSurvivalAction != AI_ACTION_NONE)
+	{
+		AIResetEscapeBlockedTurns(pSoldier);
+		return bSurvivalAction;
+	}
+
+	UINT8 ubBlockedTurns = AIRegisterEscapeBlockedTurn(pSoldier);
+	INT8 bCapitulation = AITryCapitulation(pSoldier, ubBlockedTurns);
+	if (bCapitulation != AI_ACTION_NONE)
+		return bCapitulation;
+
+	return AI_ACTION_NONE;
 }
 
 INT8 DecideEscapeAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
@@ -9657,9 +9769,10 @@ INT8 DecideEscapeAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		return AI_ACTION_NONE;
 
 	// Tactical edge traversal is only safe for the surface strategic map. Underground
-	// battles keep the escape intent but fall back to hiding/defending.
+	// battles keep the escape intent; if local withdrawal/cover also fails for
+	// repeated turns, a catastrophically beaten soldier may capitulate.
 	if (gbWorldSectorZ != 0)
-		return DecideHopelessSurvivorAction(pSoldier, fCanMove);
+		return AIHandleBlockedEscape(pSoldier, fCanMove);
 
 	// If we are already on any valid strategic edge, leave from here instead of
 	// crossing the map just to reach an older cached plan.
@@ -9678,6 +9791,7 @@ INT8 DecideEscapeAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 				EscapeDirectionIsValid(&bCheckedExitDirection) &&
 				bCheckedExitDirection == bExitDirection)
 			{
+				AIResetEscapeBlockedTurns(pSoldier);
 				pSoldier->ubQuoteActionID = GetTraversalQuoteActionID(bExitDirection);
 				pSoldier->aiData.usActionData = sExitPoint;
 				return AI_ACTION_RUN_AWAY;
@@ -9698,19 +9812,20 @@ INT8 DecideEscapeAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (TileIsOutOfBounds(gsAIEscapeTarget[ubID]))
 	{
 		if (guiAIEscapeNoRouteTurn[ubID] == uiTurnStamp)
-			return DecideHopelessSurvivorAction(pSoldier, fCanMove);
+			return AIHandleBlockedEscape(pSoldier, fCanMove);
 
 		INT8 bDirection = -1;
 		INT32 sTarget = AISelectEscapeEdge(pSoldier, &bDirection);
 		if (TileIsOutOfBounds(sTarget) || bDirection == -1)
 		{
 			guiAIEscapeNoRouteTurn[ubID] = uiTurnStamp;
-			return DecideHopelessSurvivorAction(pSoldier, fCanMove);
+			return AIHandleBlockedEscape(pSoldier, fCanMove);
 		}
 
 		gsAIEscapeTarget[ubID] = sTarget;
 		gbAIEscapeDirection[ubID] = bDirection;
 		guiAIEscapeNoRouteTurn[ubID] = 0;
+		AIResetEscapeBlockedTurns(pSoldier);
 	}
 
 	// Quote traversal is deliberately not armed yet. A long path can exceed JA2's
@@ -9722,6 +9837,7 @@ INT8 DecideEscapeAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		pSoldier->ubQuoteActionID = 0;
 	}
 
+	AIResetEscapeBlockedTurns(pSoldier);
 	pSoldier->aiData.usActionData = gsAIEscapeTarget[ubID];
 	return AI_ACTION_RUN_AWAY;
 }
