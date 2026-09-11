@@ -8831,7 +8831,7 @@ UINT32 CalcCounterForceAccuracy(SOLDIERTYPE *pShooter, OBJECTTYPE *pWeapon, UINT
 	// If we can't see the target, but buddies can see it, CF-Accuracy drops by 50%
 	// If we can't see the target and neither can buddies, CF-Accuracy drops by 75%
 
-	SoldierID ubTargetID = WhoIsThere2( pShooter->sTargetGridNo, pShooter->bTargetLevel ); // Target ubID
+	UINT8 ubTargetID = WhoIsThere2( pShooter->sTargetGridNo, pShooter->bTargetLevel ); // Target ubID
 	INT16 sDistVis = pShooter->GetMaxDistanceVisible(pShooter->sTargetGridNo, pShooter->bTargetLevel, CALC_FROM_ALL_DIRS ) * CELL_X_SIZE;
 	gbForceWeaponNotReady = true;
 	INT16 sDistVisNoScope = pShooter->GetMaxDistanceVisible(pShooter->sTargetGridNo, pShooter->bTargetLevel, CALC_FROM_ALL_DIRS ) * CELL_X_SIZE;
@@ -8840,12 +8840,12 @@ UINT32 CalcCounterForceAccuracy(SOLDIERTYPE *pShooter, OBJECTTYPE *pWeapon, UINT
 
 	INT32 iSightRange = 0;
 	if (ubTargetID != NOBODY)
-		iSightRange = SoldierToSoldierLineOfSightTest( pShooter, ubTargetID, TRUE, NO_DISTANCE_LIMIT, pShooter->bAimShotLocation, false );
+		iSightRange = SoldierToSoldierLineOfSightTest( pShooter, MercPtrs[ubTargetID], TRUE, NO_DISTANCE_LIMIT, pShooter->bAimShotLocation, false );
 	if (iSightRange == 0) {	// didn't do a bodypart-based test or can't see specific body part aimed at
 		iSightRange = SoldierTo3DLocationLineOfSightTest( pShooter, pShooter->sTargetGridNo, pShooter->bTargetLevel, pShooter->bTargetCubeLevel, TRUE, NO_DISTANCE_LIMIT, false );
 	}
 	if (iSightRange == 0) {	// Can't see the target but we still need to know what the sight range would be if we could so we can deal with cover penalties
-		iSightRange = SoldierToSoldierLineOfSightTest( pShooter, ubTargetID, TRUE, NO_DISTANCE_LIMIT, pShooter->bAimShotLocation, false, true );
+		iSightRange = SoldierToSoldierLineOfSightTest( pShooter, MercPtrs[ubTargetID], TRUE, NO_DISTANCE_LIMIT, pShooter->bAimShotLocation, false, true );
 	}
 
 	// Modify iSightRange for scope use
