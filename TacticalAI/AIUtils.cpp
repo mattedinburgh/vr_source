@@ -3968,6 +3968,58 @@ INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	return (INT8)__max(-3, __min(3, iModifier));
 }
 
+// Range-aware movement preference. Positive values mean closing distance is useful;
+// negative values mean a scoped/long-range soldier is already too close for the
+// role his current weapon is best suited to. Weapon range is converted to tiles
+// to match the rest of the tactical AI distance calculations.
+INT8 AIEngagementRangeModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
+{
+	if (!pSoldier || !AICheckHasGun(pSoldier))
+		return 0;
+
+	if (TileIsOutOfBounds(sTargetSpot))
+		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+
+	if (TileIsOutOfBounds(sTargetSpot))
+		return 0;
+
+	INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, sTargetSpot);
+	INT32 iGunRange = __max(1, (INT32)AIGunRange(pSoldier) / CELL_X_SIZE);
+	FLOAT dScope = AIGunScopeMagFactor(pSoldier);
+	INT32 iPreferredMinRange = 0;
+
+	// Dedicated long-range roles should preserve substantially more standoff.
+	if (AICheckIsSniper(pSoldier))
+		iPreferredMinRange = __max(12, iGunRange / 3);
+	else if (AICheckIsMarksman(pSoldier))
+		iPreferredMinRange = __max(10, iGunRange / 4);
+	else if (dScope >= 4.0f)
+		iPreferredMinRange = __max(8, (INT32)(dScope * 2.0f));
+	else if (dScope >= 2.0f)
+		iPreferredMinRange = 6;
+
+	// Never demand a minimum range that consumes most of the weapon's usable range.
+	if (iPreferredMinRange > 0)
+		iPreferredMinRange = __min(iPreferredMinRange, __max(6, iGunRange / 2));
+
+	if (iPreferredMinRange > 0)
+	{
+		if (iDistance < __max(4, iPreferredMinRange / 2))
+			return -3;
+		if (iDistance < iPreferredMinRange)
+			return -2;
+	}
+
+	// Closing distance is useful only when the target is genuinely outside the
+	// current gun's effective range. Being inside range is not a reason to rush.
+	if (iDistance > iGunRange + iGunRange / 4)
+		return 2;
+	if (iDistance > iGunRange)
+		return 1;
+
+	return 0;
+}
+
 // Check whether this target is directly threatening a nearby ally who needs
 // covering fire.  This uses only observed combat relationships (recent attackers
 // and actual fire lanes), so it does not grant the AI hidden information.
