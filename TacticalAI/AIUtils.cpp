@@ -5087,6 +5087,84 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 	INT32 iCurrentDist = PythSpacesAway(pSoldier->sGridNo, sTargetSpot);
 	INT32 iAdvanceDist = PythSpacesAway(sAdvanceSpot, sTargetSpot);
 
+	// Fire-and-manoeuvre role separation. Two nearby soldiers may actively bound
+	// toward essentially the same known contact. A third healthy soldier normally
+	// stays in the firing line instead of joining a mass rush. This counts only
+	// moves that materially close distance and only recent/current movement.
+	if (iAdvanceDist + 2 < iCurrentDist &&
+		!pSoldier->aiData.bUnderFire &&
+		AIPersonalRisk(pSoldier) <= AIPersonalRiskTolerance(pSoldier))
+	{
+		UINT8 ubActiveMovers = 0;
+
+		for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+			iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+		{
+			SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+			if (!pFriend ||
+				pFriend == pSoldier ||
+				!pFriend->bActive || !pFriend->bInSector ||
+				pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+				(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+				(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
+				AIDisengagementActive(pFriend) || AIEscapeActive(pFriend) ||
+				pFriend->pathing.bLevel != pSoldier->pathing.bLevel ||
+				PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE)
+			{
+				continue;
+			}
+
+			INT32 sFriendThreat = ClosestKnownOpponent(pFriend, NULL, NULL);
+			if (TileIsOutOfBounds(sFriendThreat) ||
+				PythSpacesAway(sFriendThreat, sTargetSpot) > 3)
+			{
+				continue;
+			}
+
+			BOOLEAN fCurrentAdvance =
+				pFriend->aiData.bAction == AI_ACTION_SEEK_OPPONENT ||
+				pFriend->aiData.bAction == AI_ACTION_GET_CLOSER ||
+				pFriend->aiData.bAction == AI_ACTION_FLANK_LEFT ||
+				pFriend->aiData.bAction == AI_ACTION_FLANK_RIGHT;
+
+			BOOLEAN fRecentAdvance =
+				pFriend->bActionPoints < pFriend->bInitialActionPoints &&
+				(pFriend->aiData.bLastAction == AI_ACTION_SEEK_OPPONENT ||
+				 pFriend->aiData.bLastAction == AI_ACTION_GET_CLOSER ||
+				 pFriend->aiData.bLastAction == AI_ACTION_FLANK_LEFT ||
+				 pFriend->aiData.bLastAction == AI_ACTION_FLANK_RIGHT);
+
+			INT32 sFrom = NOWHERE;
+			INT32 sTo = NOWHERE;
+
+			if (fCurrentAdvance &&
+				!TileIsOutOfBounds(pFriend->aiData.usActionData) &&
+				pFriend->aiData.usActionData != pFriend->sGridNo)
+			{
+				sFrom = pFriend->sGridNo;
+				sTo = pFriend->aiData.usActionData;
+			}
+			else if (fRecentAdvance &&
+				!TileIsOutOfBounds(pFriend->sLastTwoLocations[1]) &&
+				pFriend->sLastTwoLocations[1] != pFriend->sGridNo)
+			{
+				sFrom = pFriend->sLastTwoLocations[1];
+				sTo = pFriend->sGridNo;
+			}
+
+			if (TileIsOutOfBounds(sFrom) || TileIsOutOfBounds(sTo))
+				continue;
+
+			if (PythSpacesAway(sTo, sFriendThreat) + 1 <
+				PythSpacesAway(sFrom, sFriendThreat))
+			{
+				++ubActiveMovers;
+				if (ubActiveMovers >= 2)
+					return FALSE;
+			}
+		}
+	}
+
 	// Cooperation should not paralyse ordinary movement. Only a move that clearly
 	// increases exposure, or abandons cover while closing into the local fight,
 	// needs somebody else in a credible covering position.
