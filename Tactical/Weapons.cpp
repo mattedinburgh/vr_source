@@ -12171,8 +12171,11 @@ FLOAT CalcNewChanceToHitBaseSpecialBonus(SOLDIERTYPE *pSoldier)
 		}
 	}
 
-	// GAME DIFFICULTY
-	if ( !(pSoldier->flags.uiStatusFlags & SOLDIER_PC ) && (pSoldier->bSide != gbPlayerNum) )
+	// Human tactical AI should become harder through decisions, equipment and numbers,
+	// not hidden accuracy multipliers. Keep legacy difficulty modifiers only for
+	// non-human/other AI actors outside the enemy/militia combat brain.
+	if ( !(pSoldier->flags.uiStatusFlags & SOLDIER_PC ) &&
+		(pSoldier->bSide != gbPlayerNum) && !AICombatTeam(pSoldier) )
 	{
 		fBaseModifier += gGameCTHConstants.BASE_DIFFICULTY[gGameOptions.ubDifficultyLevel];
 	}
@@ -12470,8 +12473,9 @@ FLOAT CalcNewChanceToHitAimSpecialBonus(SOLDIERTYPE *pSoldier)
 {
 	FLOAT fAimModifier = 0;
 
-	// GAME DIFFICULTY
-	if ( !(pSoldier->flags.uiStatusFlags & SOLDIER_PC ) && (pSoldier->bSide != gbPlayerNum) )
+	// Do not grant hidden difficulty-based aiming bonuses to human enemy/militia AI.
+	if ( !(pSoldier->flags.uiStatusFlags & SOLDIER_PC ) &&
+		(pSoldier->bSide != gbPlayerNum) && !AICombatTeam(pSoldier) )
 	{
 		fAimModifier += gGameCTHConstants.AIM_DIFFICULTY[gGameOptions.ubDifficultyLevel];
 	}
