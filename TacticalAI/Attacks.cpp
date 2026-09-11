@@ -445,7 +445,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 								// Preserve a small tactical AP reserve when exposed or under fire.
 								// Existing hit-rate math already optimizes shots-per-AP; this adds
 								// value for AP left to crouch/reposition instead of over-aiming.
-								if (pSoldier->bTeam == ENEMY_TEAM &&
+								if (AICombatTeam(pSoldier) &&
 									(pSoldier->aiData.bUnderFire || !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo)) &&
 									sAimTime > 0)
 								{
@@ -533,7 +533,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 								// Preserve a small tactical AP reserve when exposed or under fire.
 								// Existing hit-rate math already optimizes shots-per-AP; this adds
 								// value for AP left to crouch/reposition instead of over-aiming.
-								if (pSoldier->bTeam == ENEMY_TEAM &&
+								if (AICombatTeam(pSoldier) &&
 									(pSoldier->aiData.bUnderFire || !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo)) &&
 									sAimTime > 0)
 								{
@@ -614,7 +614,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 								// Preserve a small tactical AP reserve when exposed or under fire.
 								// Existing hit-rate math already optimizes shots-per-AP; this adds
 								// value for AP left to crouch/reposition instead of over-aiming.
-								if (pSoldier->bTeam == ENEMY_TEAM &&
+								if (AICombatTeam(pSoldier) &&
 									(pSoldier->aiData.bUnderFire || !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo)) &&
 									sAimTime > 0)
 								{
@@ -715,7 +715,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		// Lightweight target allocation: when several local teammates have just fired
 		// at this target area, prefer spreading fire to another viable threat. This is
 		// deliberately a soft penalty, so a very dangerous target can still justify focus fire.
-		if (pSoldier->bTeam == ENEMY_TEAM && pSoldier->aiData.bOppCnt > 1)
+		if (AICombatTeam(pSoldier) && pSoldier->aiData.bOppCnt > 1)
 		{
 			UINT8 ubSaturation = AITargetSaturation(pSoldier, sTarget);
 			if (ubSaturation > 0)
