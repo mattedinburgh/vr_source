@@ -1088,7 +1088,14 @@ BOOLEAN	PhysicsCheckForCollisions( REAL_OBJECT *pObject, INT32 *piCollisionID )
 					AniParams.uiFlags							= ANITILE_FORWARD;
 
 
-					if ( pObject->ubActionCode == THROW_ARM_ITEM )
+					// Match current 1.13 water behavior: only explosive blast/stun/flashbang grenades
+					// chain a delayed underwater detonation. Smoke/gas-type armed items should not create
+					// a nonsensical underwater smoke/explosion effect.
+					if ( pObject->ubActionCode == THROW_ARM_ITEM &&
+						(Item[pObject->Obj.usItem].usItemClass & IC_EXPLOSV) &&
+						(Explosive[Item[pObject->Obj.usItem].ubClassIndex].ubType == EXPLOSV_NORMAL ||
+						 Explosive[Item[pObject->Obj.usItem].ubClassIndex].ubType == EXPLOSV_STUN ||
+						 Explosive[Item[pObject->Obj.usItem].ubClassIndex].ubType == EXPLOSV_FLASHBANG) )
 					{
 						gTacticalStatus.ubAttackBusyCount++;
 						DebugAttackBusy( String( "Incrementing attack busy because of delayed water explosion. Now %d\n", gTacticalStatus.ubAttackBusyCount ) );
