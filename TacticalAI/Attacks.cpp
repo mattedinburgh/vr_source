@@ -2332,6 +2332,13 @@ INT32 EstimateThrowDamage( SOLDIERTYPE *pSoldier, UINT8 ubItemPos, SOLDIERTYPE *
 	}
 
 
+	// Match explosion resolution: burnable gas does not spread/effect water tiles.
+	if (Water(sGridNo, pOpponent->pathing.bLevel) &&
+		Explosive[ubExplosiveIndex].ubType == EXPLOSV_BURNABLEGAS)
+	{
+		return 0;
+	}
+
 	iExplosDamage = ( ( (INT32) GetModifiedExplosiveDamage( Explosive[ ubExplosiveIndex ].ubDamage, 0 ) ) * 3) / 2;
 	iBreathDamage = ( ( (INT32) GetModifiedExplosiveDamage( Explosive[ ubExplosiveIndex ].ubStunDamage, 1 ) ) * 5) / 4;
 
@@ -2343,7 +2350,8 @@ INT32 EstimateThrowDamage( SOLDIERTYPE *pSoldier, UINT8 ubItemPos, SOLDIERTYPE *
 
 	// sevenfm: add damage from fragments
 	if ( Explosive[ ubExplosiveIndex ].ubType == EXPLOSV_NORMAL &&
-		Explosive[ ubExplosiveIndex ].usNumFragments > 0)
+		Explosive[ ubExplosiveIndex ].usNumFragments > 0 &&
+		!Water(sGridNo, pOpponent->pathing.bLevel))
 	{
 		// sevenfm: use NumFragments/10, but no more than 20 fragments
 		iExplosDamage += __min( 20, Explosive[ ubExplosiveIndex ].usNumFragments / 10 ) * Explosive[ ubExplosiveIndex ].ubFragDamage;
