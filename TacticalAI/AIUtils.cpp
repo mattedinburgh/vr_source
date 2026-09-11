@@ -4020,6 +4020,45 @@ INT8 AIEngagementRangeModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	return 0;
 }
 
+// Count nearby teammates who have just been engaging the same target area.
+// This gives sequential JA2 AI a lightweight target reservation system without
+// persistent squad state or hidden information.
+UINT8 AITargetSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
+{
+	if (!pSoldier || TileIsOutOfBounds(sTargetSpot))
+		return 0;
+
+	UINT8 ubSaturation = 0;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; iCounter++)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE)
+		{
+			continue;
+		}
+
+		// Restrict coordination to the local fight. Distant teammates do not create
+		// a sector-wide hive-mind reservation.
+		if (PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE)
+			continue;
+
+		// sLastTarget records where this teammate actually aimed. Requiring a recent
+		// fire action prevents stale target locations from reserving someone forever.
+		if (!TileIsOutOfBounds(pFriend->sLastTarget) &&
+			PythSpacesAway(pFriend->sLastTarget, sTargetSpot) <= 1 &&
+			(pFriend->aiData.bAction == AI_ACTION_FIRE_GUN ||
+			 pFriend->aiData.bLastAction == AI_ACTION_FIRE_GUN))
+		{
+			ubSaturation++;
+		}
+	}
+
+	return __min((UINT8)3, ubSaturation);
+}
+
 // Check whether this target is directly threatening a nearby ally who needs
 // covering fire.  This uses only observed combat relationships (recent attackers
 // and actual fire lanes), so it does not grant the AI hidden information.
