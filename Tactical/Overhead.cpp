@@ -1963,7 +1963,6 @@ void HandleLocateToGuyAsHeWalks( SOLDIERTYPE *pSoldier )
 }
 
 #pragma optimize("gpt",on)
-    __forceinline
 BOOLEAN HandleGotoNewGridNo( SOLDIERTYPE *pSoldier, BOOLEAN *pfKeepMoving, BOOLEAN fInitialMove, UINT16 usAnimState )
 {
     INT16                           sAPCost;
