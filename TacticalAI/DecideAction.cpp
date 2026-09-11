@@ -9864,6 +9864,170 @@ INT8 DecideEscapeAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	return AI_ACTION_RUN_AWAY;
 }
 
+static UINT8 gubMilitiaConsolidationAnchor[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiMilitiaConsolidationIdentity[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiMilitiaConsolidationUntilTurn[MAX_NUM_SOLDIERS] = { 0 };
+
+static BOOLEAN AIValidMilitiaConsolidationAnchor(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend)
+{
+	if (!pSoldier || !pFriend ||
+		pSoldier->bTeam != MILITIA_TEAM ||
+		pFriend->bTeam != MILITIA_TEAM ||
+		pFriend == pSoldier ||
+		!pFriend->bActive || !pFriend->bInSector ||
+		pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+		(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
+		pFriend->pathing.bLevel != pSoldier->pathing.bLevel ||
+		pFriend->aiData.bUnderFire ||
+		AIDisengagementActive(pFriend) ||
+		PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > TACTICAL_RANGE)
+	{
+		return FALSE;
+	}
+
+	// Strongpoints need actual local mass, not a lone survivor in good cover.
+	if (CountNearbyFriends(pFriend, pFriend->sGridNo, DAY_VISION_RANGE / 4) < 2)
+		return FALSE;
+
+	return TRUE;
+}
+
+static SOLDIERTYPE *AISelectMilitiaConsolidationAnchor(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != MILITIA_TEAM || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return NULL;
+
+	UINT8 ubID = pSoldier->ubID;
+	UINT32 uiTurnStamp = guiTurnCnt + 1;
+
+	if (guiMilitiaConsolidationIdentity[ubID] != pSoldier->uiUniqueSoldierIdValue)
+	{
+		gubMilitiaConsolidationAnchor[ubID] = NOBODY;
+		guiMilitiaConsolidationUntilTurn[ubID] = 0;
+		guiMilitiaConsolidationIdentity[ubID] = pSoldier->uiUniqueSoldierIdValue;
+	}
+
+	if (guiMilitiaConsolidationUntilTurn[ubID] >= uiTurnStamp &&
+		gubMilitiaConsolidationAnchor[ubID] != NOBODY &&
+		MercPtrs[gubMilitiaConsolidationAnchor[ubID]] &&
+		AIValidMilitiaConsolidationAnchor(pSoldier, MercPtrs[gubMilitiaConsolidationAnchor[ubID]]))
+	{
+		return MercPtrs[gubMilitiaConsolidationAnchor[ubID]];
+	}
+
+	SOLDIERTYPE *pBest = NULL;
+	INT32 iBestScore = -10000;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[MILITIA_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[MILITIA_TEAM].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!AIValidMilitiaConsolidationAnchor(pSoldier, pFriend))
+			continue;
+
+		UINT8 ubSupport = CountNearbyFriends(pFriend, pFriend->sGridNo, DAY_VISION_RANGE / 4);
+		UINT16 usExposure = AIKnownThreatExposure(pSoldier, pFriend->sGridNo, pFriend->pathing.bLevel);
+		UINT8 ubAdjacent = NumberOfTeamMatesAdjacent(pFriend, pFriend->sGridNo);
+		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
+
+		INT32 iScore = 22 * __min((INT32)4, (INT32)ubSupport);
+		if (AnyCoverAtSpot(pFriend, pFriend->sGridNo))
+			iScore += 25;
+		if (SightCoverAtSpot(pFriend, pFriend->sGridNo, FALSE))
+			iScore += 15;
+		if (AICheckIsOfficer(pFriend) || AICheckIsCommander(pFriend))
+			iScore += 12;
+
+		iScore -= __min((INT32)40, (INT32)usExposure / 8);
+		iScore -= __min((INT32)20, iDistance / 2);
+
+		// Avoid turning a strongpoint into an obvious grenade cluster.
+		if (ubAdjacent >= 3)
+			iScore -= 18;
+
+		// Bounded variability: close alternatives can win, obviously bad positions cannot.
+		iScore += (INT32)PreRandom(21) - 10;
+
+		if (iScore > iBestScore)
+		{
+			iBestScore = iScore;
+			pBest = pFriend;
+		}
+	}
+
+	if (pBest)
+	{
+		gubMilitiaConsolidationAnchor[ubID] = pBest->ubID;
+		// Hold the choice briefly so repeated AI sub-decisions do not thrash.
+		guiMilitiaConsolidationUntilTurn[ubID] = uiTurnStamp + 1;
+	}
+	else
+	{
+		gubMilitiaConsolidationAnchor[ubID] = NOBODY;
+		guiMilitiaConsolidationUntilTurn[ubID] = 0;
+	}
+
+	return pBest;
+}
+
+static INT8 DecideMilitiaDefensiveConsolidation(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
+{
+	if (!pSoldier || pSoldier->bTeam != MILITIA_TEAM ||
+		!fCanMove || pSoldier->bActionPoints != pSoldier->bInitialActionPoints ||
+		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed)
+	{
+		return AI_ACTION_NONE;
+	}
+
+	INT8 bSituation = AIBattleSituation(pSoldier);
+	UINT8 ubCasualties = AIFriendlyCasualtyPercent(pSoldier);
+	UINT8 ubRoutPressure = AILocalRoutPressure(pSoldier);
+
+	BOOLEAN fBadlyLosing =
+		bSituation == AI_BATTLE_CATASTROPHIC ||
+		(bSituation == AI_BATTLE_LOSING &&
+		 (ubCasualties >= 25 || AILocalStress(pSoldier) >= 35 || ubRoutPressure >= 40));
+
+	if (!fBadlyLosing)
+		return AI_ACTION_NONE;
+
+	UINT8 ubCurrentSupport = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4);
+	UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+	BOOLEAN fCurrentDefensible =
+		ubCurrentSupport >= 2 &&
+		AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) &&
+		(usCurrentExposure < 120 || SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE));
+
+	// Once the militia reaches a defensible local concentration, hold the line.
+	// Do not keep bouncing around the map just because the global fight is bad.
+	if (fCurrentDefensible)
+		return AI_ACTION_NONE;
+
+	SOLDIERTYPE *pAnchor = AISelectMilitiaConsolidationAnchor(pSoldier);
+	if (!pAnchor)
+		return AI_ACTION_NONE;
+
+	INT32 sMove = InternalGoAsFarAsPossibleTowards(
+		pSoldier, pAnchor->sGridNo, 0, AI_ACTION_SEEK_FRIEND, 0);
+
+	if (TileIsOutOfBounds(sMove) || sMove == pSoldier->sGridNo)
+		return AI_ACTION_NONE;
+
+	UINT16 usMoveExposure = AIKnownThreatExposure(pSoldier, sMove, pSoldier->pathing.bLevel);
+	UINT8 ubMoveSupport = CountNearbyFriends(pSoldier, sMove, DAY_VISION_RANGE / 4);
+
+	// Consolidation may accept a small temporary exposure increase if it clearly
+	// buys local support, but never a dramatic run into a known kill zone.
+	if (usMoveExposure > usCurrentExposure + 80 &&
+		ubMoveSupport <= ubCurrentSupport)
+	{
+		return AI_ACTION_NONE;
+	}
+
+	pSoldier->aiData.usActionData = sMove;
+	return AI_ACTION_SEEK_FRIEND;
+}
+
 INT8 DecideDisengagementAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 {
 	if (!AICombatTeam(pSoldier))
