@@ -8396,6 +8396,17 @@ static void AIApplyTacticalPreferenceVariation(SOLDIERTYPE *pSoldier,
 	if (!AICombatTeam(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
 		return;
 
+	// Once a soldier is genuinely breaking contact or personally overwhelmed,
+	// keep survival behaviour deterministic. Variability is only for choosing
+	// among tactically reasonable options while the unit is still functioning.
+	if (AIEscapeActive(pSoldier) ||
+		AIDisengagementActive(pSoldier) ||
+		AILocalStress(pSoldier) >= 70 ||
+		AIPersonalRisk(pSoldier) > AIPersonalRiskTolerance(pSoldier) + 15)
+	{
+		return;
+	}
+
 	UINT8 ubID = pSoldier->ubID;
 	UINT32 uiTurnStamp = guiTurnCnt + 1;
 
