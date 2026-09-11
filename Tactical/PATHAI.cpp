@@ -465,7 +465,7 @@ UINT32 guiUnsuccessfulPathChecks = 0;
 //ADB the extra cover feature is supposed to pick a path of the same distance as one calculated with the feature off,
 //but a safer path, usually farther away from an enemy or following behind some cover.
 //however it has not been tested and it may need some work, I haven't touched it in a while
-//#define ASTAR_USING_EXTRACOVER
+#define ASTAR_USING_EXTRACOVER
 
 using namespace std;
 using namespace ASTAR;
@@ -1191,7 +1191,7 @@ void AStarPathfinder::ExecuteAStarLogic()
 #ifdef ASTAR_USING_EXTRACOVER
 		//check if we will run out of AP while entering this node or before
 		//if we run out, the merc will stop at the parent node for a turn and be vulnerable
-		if (mercsMaxAPs && APCost > mercsMaxAPs)
+		if (gfTurnBasedAI && mercsMaxAPs && AStarG > mercsMaxAPs)
 		{
 
 			extraGCoverCost = GetExtraGCover(ParentNode);
@@ -1201,7 +1201,7 @@ void AStarPathfinder::ExecuteAStarLogic()
 				//use the stance and cover to see how much we really want to stop at the parent node
 				//as opposed to an equal path with different cover
 				//because other nodes further on the path will stop here too, add this value to the F cost
-				extraGCoverCost = CalcGCover(ParentNodeIndex, APCost);
+				extraGCoverCost = CalcGCover(ParentNode, AStarG);
 
 				//remember, we have run out of points to *enter* this node, so we are stuck at the *parent* node
 				//cache the cost to stay at the parent node
