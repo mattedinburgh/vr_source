@@ -4801,6 +4801,32 @@ INT32 AIPersonalRisk(SOLDIERTYPE *pSoldier)
 	return __max(0, __min(100, iRisk));
 }
 
+// Unit quality changes cohesion, not accuracy or action points.
+static INT8 AIProfessionalismModifier(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier)
+		return 0;
+
+	INT32 iModifier = 0;
+
+	switch (pSoldier->ubSoldierClass)
+	{
+	case SOLDIER_CLASS_ADMINISTRATOR: iModifier -= 8; break;
+	case SOLDIER_CLASS_ARMY: iModifier += 2; break;
+	case SOLDIER_CLASS_ELITE: iModifier += 10; break;
+	case SOLDIER_CLASS_GREEN_MILITIA: iModifier -= 6; break;
+	case SOLDIER_CLASS_REG_MILITIA: break;
+	case SOLDIER_CLASS_ELITE_MILITIA: iModifier += 7; break;
+	}
+
+	if (AICheckIsCommander(pSoldier))
+		iModifier += 5;
+	else if (AICheckIsOfficer(pSoldier))
+		iModifier += 3;
+
+	return (INT8)__max(-10, __min(15, iModifier));
+}
+
 // Individual willingness to accept danger. Personality and current morale change
 // the threshold, but no ordinary attitude makes a soldier completely suicidal.
 INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier)
@@ -4831,6 +4857,8 @@ INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier)
 
 	if (pSoldier->aiData.bOrders == SEEKENEMY)
 		iTolerance += 5;
+
+	iTolerance += AIProfessionalismModifier(pSoldier);
 
 	return __max(20, __min(85, iTolerance));
 }
