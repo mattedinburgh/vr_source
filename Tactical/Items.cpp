@@ -14087,7 +14087,15 @@ FLOAT GetBestScopeMagnificationFactor( SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj,
 	INT32 iCurrentTotalPenalty = 0;
 	INT32 iBestTotalPenalty = 0;
 	FLOAT rangeModifier = GetScopeRangeMultiplier(pSoldier, pObjUsed, uiRange);
-	FLOAT iProjectionFactor = CalcProjectionFactor(pSoldier, pObjUsed, uiRange, 1);
+	FLOAT iProjectionFactor = 0;
+
+	// Modern 1.13: reworked NCTH laser-performance bonuses replace the legacy
+	// projection-factor bonus. Keeping both here can make the automatic scope
+	// selector incorrectly fall back to 1x/laser whenever a scope has a range penalty.
+	if ( (gGameCTHConstants.LASER_PERFORMANCE_BONUS_HIP + gGameCTHConstants.LASER_PERFORMANCE_BONUS_IRON + gGameCTHConstants.LASER_PERFORMANCE_BONUS_SCOPE) != 0 )
+		iProjectionFactor = 1.0;
+	else
+		iProjectionFactor = CalcProjectionFactor(pSoldier, pObjUsed, uiRange, 1);
 
 	// Flugente: if scope modes are allowed, use them
 	if ( gGameExternalOptions.fScopeModes && pSoldier && pObjUsed->exists() == true && Item[pObjUsed->usItem].usItemClass == IC_GUN )
