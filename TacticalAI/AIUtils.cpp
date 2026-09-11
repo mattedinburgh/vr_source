@@ -4195,6 +4195,9 @@ BOOLEAN AILastSurvivorPressure(SOLDIERTYPE *pSoldier)
 	return FALSE;
 }
 
+static BOOLEAN AIEscapeEstablishedForRout(SOLDIERTYPE *pSoldier);
+static BOOLEAN AIDisengagementEstablishedForRout(SOLDIERTYPE *pSoldier);
+
 UINT8 AILocalRoutPressure(SOLDIERTYPE *pSoldier)
 {
 	if (!AICombatTeam(pSoldier))
@@ -4218,8 +4221,8 @@ UINT8 AILocalRoutPressure(SOLDIERTYPE *pSoldier)
 			continue;
 		}
 
-		BOOLEAN fEscaping = AIEscapeActive(pFriend);
-		BOOLEAN fDisengaging = AIDisengagementActive(pFriend);
+		BOOLEAN fEscaping = AIEscapeEstablishedForRout(pFriend);
+		BOOLEAN fDisengaging = AIDisengagementEstablishedForRout(pFriend);
 		BOOLEAN fRunningAway = (pFriend->aiData.bAction == AI_ACTION_RUN_AWAY);
 		BOOLEAN fLeader = AICheckIsOfficer(pFriend) || AICheckIsCommander(pFriend);
 
@@ -4269,6 +4272,7 @@ INT8 AIHopelessOddsModifier(SOLDIERTYPE *pSoldier)
 // SOLDIERTYPE so the AI experiment does not alter savegame-compatible soldier data.
 static UINT8 gubAIEscapeIntent[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIEscapeIdentity[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAIEscapeStartTurn[MAX_NUM_SOLDIERS] = { 0 };
 
 static void AIClearEscapeState(SOLDIERTYPE *pSoldier)
 {
@@ -4277,6 +4281,7 @@ static void AIClearEscapeState(SOLDIERTYPE *pSoldier)
 
 	gubAIEscapeIntent[pSoldier->ubID] = 0;
 	guiAIEscapeIdentity[pSoldier->ubID] = pSoldier->uiUniqueSoldierIdValue;
+	guiAIEscapeStartTurn[pSoldier->ubID] = 0;
 }
 
 BOOLEAN AIEscapeActive(SOLDIERTYPE *pSoldier)
@@ -4371,6 +4376,7 @@ static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituati
 	{
 		gubAIEscapeIntent[ubID] = 0;
 		guiAIEscapeIdentity[ubID] = pSoldier->uiUniqueSoldierIdValue;
+		guiAIEscapeStartTurn[ubID] = 0;
 	}
 
 	if (pSoldier->bTeam != ENEMY_TEAM || pSoldier->IsZombie() ||
@@ -4382,6 +4388,7 @@ static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituati
 		AM_A_ROBOT(pSoldier))
 	{
 		gubAIEscapeIntent[ubID] = 0;
+		guiAIEscapeStartTurn[ubID] = 0;
 		return;
 	}
 
@@ -4392,6 +4399,7 @@ static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituati
 		AILocalStress(pSoldier) < 25)
 	{
 		gubAIEscapeIntent[ubID] = 0;
+		guiAIEscapeStartTurn[ubID] = 0;
 		return;
 	}
 
@@ -4400,12 +4408,14 @@ static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituati
 		AIShouldStartEscapeFromState(pSoldier, bSituation, ubCasualties, fLastSurvivor, ubRoutPressure))
 	{
 		gubAIEscapeIntent[ubID] = 1;
+		guiAIEscapeStartTurn[ubID] = guiTurnCnt + 1;
 	}
 }
 
 static UINT8 gubAIDisengageTurns[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIDisengageTurnStamp[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIDisengageIdentity[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAIDisengageStartTurn[MAX_NUM_SOLDIERS] = { 0 };
 extern UINT32 guiTurnCnt;
 
 BOOLEAN AIDisengagementActive(SOLDIERTYPE *pSoldier)
@@ -4419,6 +4429,27 @@ BOOLEAN AIDisengagementActive(SOLDIERTYPE *pSoldier)
 	return (pSoldier->aiData.bAlertStatus >= STATUS_RED &&
 		gubAIDisengageTurns[pSoldier->ubID] > 0);
 }
+
+static BOOLEAN AIEscapeEstablishedForRout(SOLDIERTYPE *pSoldier)
+{
+	if (!AIEscapeActive(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return FALSE;
+
+	UINT32 uiTurnStamp = guiTurnCnt + 1;
+	return (guiAIEscapeStartTurn[pSoldier->ubID] != 0 &&
+		guiAIEscapeStartTurn[pSoldier->ubID] < uiTurnStamp);
+}
+
+static BOOLEAN AIDisengagementEstablishedForRout(SOLDIERTYPE *pSoldier)
+{
+	if (!AIDisengagementActive(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return FALSE;
+
+	UINT32 uiTurnStamp = guiTurnCnt + 1;
+	return (guiAIDisengageStartTurn[pSoldier->ubID] != 0 &&
+		guiAIDisengageStartTurn[pSoldier->ubID] < uiTurnStamp);
+}
+
 
 static BOOLEAN AIShouldStartDisengagementFromState(SOLDIERTYPE *pSoldier, INT8 bSituation, UINT8 ubCasualties, BOOLEAN fLastSurvivor, UINT8 ubRoutPressure)
 {
@@ -4496,6 +4527,7 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 		gubAIDisengageTurns[ubID] = 0;
 		guiAIDisengageTurnStamp[ubID] = 0;
 		guiAIDisengageIdentity[ubID] = pSoldier->uiUniqueSoldierIdValue;
+		guiAIDisengageStartTurn[ubID] = 0;
 	}
 
 	if (!AICombatTeam(pSoldier) ||
@@ -4503,6 +4535,7 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 		pSoldier->IsZombie() || pSoldier->aiData.bAlertStatus < STATUS_RED)
 	{
 		gubAIDisengageTurns[ubID] = 0;
+		guiAIDisengageStartTurn[ubID] = 0;
 		AIClearEscapeState(pSoldier);
 		return FALSE;
 	}
@@ -4521,6 +4554,7 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 	if (pSoldier->aiData.bOrders == STATIONARY)
 	{
 		gubAIDisengageTurns[ubID] = 0;
+		guiAIDisengageStartTurn[ubID] = 0;
 		return FALSE;
 	}
 
@@ -4531,7 +4565,11 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 	{
 		guiAIDisengageTurnStamp[ubID] = uiTurnStamp;
 		if (gubAIDisengageTurns[ubID] > 0)
+		{
 			--gubAIDisengageTurns[ubID];
+			if (gubAIDisengageTurns[ubID] == 0)
+				guiAIDisengageStartTurn[ubID] = 0;
+		}
 	}
 
 	if (bSituation == AI_BATTLE_WINNING &&
@@ -4539,6 +4577,7 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 		AILocalStress(pSoldier) < 25)
 	{
 		gubAIDisengageTurns[ubID] = 0;
+		guiAIDisengageStartTurn[ubID] = 0;
 		return FALSE;
 	}
 
@@ -4547,6 +4586,8 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 			fLastSurvivor, ubRoutPressure))
 	{
 		UINT8 ubDuration = (bSituation == AI_BATTLE_CATASTROPHIC || fLastSurvivor) ? 3 : 2;
+		if (gubAIDisengageTurns[ubID] == 0)
+			guiAIDisengageStartTurn[ubID] = uiTurnStamp;
 		gubAIDisengageTurns[ubID] = __max(gubAIDisengageTurns[ubID], ubDuration);
 	}
 
