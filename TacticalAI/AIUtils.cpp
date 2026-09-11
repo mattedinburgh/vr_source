@@ -3367,13 +3367,32 @@ INT32 RangeChangeDesire( SOLDIERTYPE * pSoldier )
 {
 	INT32 iRangeFactorMultiplier;
 
-	iRangeFactorMultiplier = pSoldier->aiData.bAIMorale - 1;
+	// Morale controls willingness to accept risk, not desired engagement range.
+	// For human AI, confidence above NORMAL no longer creates an automatic urge
+	// to move closer; fragile morale can still reduce willingness to advance.
+	if (AICombatTeam(pSoldier))
+	{
+		switch (pSoldier->aiData.bAIMorale)
+		{
+		case MORALE_HOPELESS: iRangeFactorMultiplier = -1; break;
+		case MORALE_WORRIED:  iRangeFactorMultiplier = 0; break;
+		default:              iRangeFactorMultiplier = 1; break;
+		}
+	}
+	else
+	{
+		iRangeFactorMultiplier = pSoldier->aiData.bAIMorale - 1;
+	}
 
 	INT8 bBonus = 0;
-	// sevenfm: if we have no weapons, try to get closer to enemy
 	if ( !AICheckHasGun(pSoldier) )
 	{
-		bBonus = 2;
+		// Truly unarmed soldiers should preserve themselves. A knife/melee specialist
+		// still needs to close distance, so distinguish that case from no weapon at all.
+		if (AICombatTeam(pSoldier) && FindAIUsableObjClass(pSoldier, IC_WEAPON) == NO_SLOT)
+			bBonus = -2;
+		else
+			bBonus = 2;
 	}
 	// bonus if weapon range is short
 	else if( GuySawEnemy(pSoldier, SEEN_LAST_TURN) && AICheckShortWeaponRange(pSoldier) )
@@ -3393,7 +3412,7 @@ INT32 RangeChangeDesire( SOLDIERTYPE * pSoldier )
 	case AGGRESSIVE:	iRangeFactorMultiplier +=	__max(1, bBonus); break;
 	}
 
-	if ( (pSoldier->aiData.bOrders == SEEKENEMY || pSoldier->bTeam != ENEMY_TEAM) &&
+	if ( (pSoldier->aiData.bOrders == SEEKENEMY || !AICombatTeam(pSoldier)) &&
 		gTacticalStatus.bConsNumTurnsWeHaventSeenButEnemyDoes > 0 )
 	{
 		iRangeFactorMultiplier += gTacticalStatus.bConsNumTurnsWeHaventSeenButEnemyDoes;
