@@ -8381,6 +8381,79 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 	return -1;
 }
 
+extern UINT32 guiTurnCnt;
+
+static UINT32 guiAITacticalVariationTurn[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAITacticalVariationIdentity[MAX_NUM_SOLDIERS] = { 0 };
+static INT8 gbAITacticalSeekBias[MAX_NUM_SOLDIERS] = { 0 };
+static INT8 gbAITacticalHelpBias[MAX_NUM_SOLDIERS] = { 0 };
+static INT8 gbAITacticalHideBias[MAX_NUM_SOLDIERS] = { 0 };
+static INT8 gbAITacticalWatchBias[MAX_NUM_SOLDIERS] = { 0 };
+
+static void AIApplyTacticalPreferenceVariation(SOLDIERTYPE *pSoldier,
+	INT8 &bSeekPts, INT8 &bHelpPts, INT8 &bHidePts, INT8 &bWatchPts)
+{
+	if (!AICombatTeam(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return;
+
+	UINT8 ubID = pSoldier->ubID;
+	UINT32 uiTurnStamp = guiTurnCnt + 1;
+
+	if (guiAITacticalVariationIdentity[ubID] != pSoldier->uiUniqueSoldierIdValue ||
+		guiAITacticalVariationTurn[ubID] != uiTurnStamp)
+	{
+		guiAITacticalVariationIdentity[ubID] = pSoldier->uiUniqueSoldierIdValue;
+		guiAITacticalVariationTurn[ubID] = uiTurnStamp;
+
+		gbAITacticalSeekBias[ubID] = 0;
+		gbAITacticalHelpBias[ubID] = 0;
+		gbAITacticalHideBias[ubID] = 0;
+		gbAITacticalWatchBias[ubID] = 0;
+
+		// One bounded tactical inclination per turn. Existing morale, orders,
+		// personality, danger and hard safety checks remain more important.
+		switch (PreRandom(7))
+		{
+		case 0: // push
+			gbAITacticalSeekBias[ubID] = 2;
+			gbAITacticalHideBias[ubID] = -1;
+			break;
+		case 1: // cautious hold
+			gbAITacticalSeekBias[ubID] = -1;
+			gbAITacticalHideBias[ubID] = 2;
+			break;
+		case 2: // overwatch
+			gbAITacticalSeekBias[ubID] = -1;
+			gbAITacticalWatchBias[ubID] = 2;
+			break;
+		case 3: // support
+			gbAITacticalHelpBias[ubID] = 2;
+			gbAITacticalSeekBias[ubID] = -1;
+			break;
+		case 4: // active defence
+			gbAITacticalHideBias[ubID] = 1;
+			gbAITacticalWatchBias[ubID] = 1;
+			break;
+		case 5: // manoeuvre
+			gbAITacticalSeekBias[ubID] = 1;
+			gbAITacticalWatchBias[ubID] = 1;
+			break;
+		default: // balanced
+			break;
+		}
+
+		// Under direct fire the random layer must never manufacture reckless
+		// aggression; safety logic still decides whether movement is acceptable.
+		if (pSoldier->aiData.bUnderFire && gbAITacticalSeekBias[ubID] > 0)
+			gbAITacticalSeekBias[ubID] = 0;
+	}
+
+	if (bSeekPts > -90) bSeekPts += gbAITacticalSeekBias[ubID];
+	if (bHelpPts > -90) bHelpPts += gbAITacticalHelpBias[ubID];
+	if (bHidePts > -90) bHidePts += gbAITacticalHideBias[ubID];
+	if (bWatchPts > -90) bWatchPts += gbAITacticalWatchBias[ubID];
+}
+
 void PrepareMainRedAIWeights(SOLDIERTYPE *pSoldier, INT8 &bSeekPts, INT8 &bHelpPts, INT8 &bHidePts, INT8 &bWatchPts)
 {
 	// modify RED movement tendencies according to morale
@@ -8460,6 +8533,11 @@ void PrepareMainRedAIWeights(SOLDIERTYPE *pSoldier, INT8 &bSeekPts, INT8 &bHelpP
 		if (bRangeModifier < 0 && bWatchPts > -90)
 			bWatchPts += 1;
 	}
+
+	// Break ties and near-ties between otherwise sensible RED choices. This is
+	// deliberately applied after deterministic tactical modifiers so randomness
+	// cannot resurrect actions that safety/morale/order logic disabled.
+	AIApplyTacticalPreferenceVariation(pSoldier, bSeekPts, bHelpPts, bHidePts, bWatchPts);
 }
 
 INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
