@@ -2740,6 +2740,7 @@ void SetNewSituation( SOLDIERTYPE * pSoldier )
 void HandleAITacticalTraversal( SOLDIERTYPE * pSoldier )
 {
 	UINT8 ubQuoteActionID = pSoldier->ubQuoteActionID;
+	BOOLEAN fEnemyRetreated = (pSoldier->bTeam == ENEMY_TEAM);
 
 	HandleNPCChangesForTacticalTraversal( pSoldier );
 
@@ -2839,7 +2840,7 @@ void HandleAITacticalTraversal( SOLDIERTYPE * pSoldier )
 			TacticalRemoveSoldier( pSoldier->ubID );
 		}
 	}
-	CheckForEndOfBattle( TRUE );
+	CheckForEndOfBattle( fEnemyRetreated );
 }
 
 extern FACETYPE	*gpCurrentTalkingFace;
