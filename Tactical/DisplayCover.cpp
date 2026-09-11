@@ -259,10 +259,20 @@ void AddCoverObjectToWorld( const INT32& sGridNo, const UINT16& usGraphic, const
 
 	pNode->uiFlags |= LEVELNODE_REVEAL;
 
-	if( NightTime() )
+	// Keep the visibility / cover overlay readable without the very bright,
+	// saturated look of the stock SPECIAL tiles. This is display-only:
+	// cover/LOS calculations are unchanged. Mine and trait-range overlays
+	// still use their original rendering because they run with cover draw off.
+	if( gubDrawMode != COVER_DRAW_OFF )
 	{
-		pNode->ubShadeLevel=DEFAULT_SHADE_LEVEL;
-		pNode->ubNaturalShadeLevel=DEFAULT_SHADE_LEVEL;
+		const UINT8 ubSoftOverlayShade = DEFAULT_SHADE_LEVEL + 2;
+		pNode->ubShadeLevel = ubSoftOverlayShade;
+		pNode->ubNaturalShadeLevel = ubSoftOverlayShade;
+	}
+	else if( NightTime() )
+	{
+		pNode->ubShadeLevel = DEFAULT_SHADE_LEVEL;
+		pNode->ubNaturalShadeLevel = DEFAULT_SHADE_LEVEL;
 	}
 }
 
