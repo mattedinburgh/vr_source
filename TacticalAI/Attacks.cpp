@@ -1240,21 +1240,17 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 			}
 			else if (bPersOL == SEEN_LAST_TURN)
 			{
-				if ( !CloseEnoughForGrenadeToss( pOpponent->sGridNo, gsLastKnownOppLoc[ pSoldier->ubID ][ pOpponent->ubID ] ) )
-				{
-					continue;
-				}
-
+				// Commit to the last-known position without checking the opponent's
+				// hidden live grid. The target may have moved; that uncertainty is part
+				// of using a grenade against stale information.
 				sOpponentTile[ubOpponentCnt] = gsLastKnownOppLoc[ pSoldier->ubID ][ pOpponent->ubID ];
 				bOpponentLevel[ubOpponentCnt] = gbLastKnownOppLevel[ pSoldier->ubID ][ pOpponent->ubID ];
 			}
 			else if (bPersOL == HEARD_LAST_TURN)
 			{
-				if ( !CloseEnoughForGrenadeToss( pOpponent->sGridNo, gsLastKnownOppLoc[ pSoldier->ubID ][ pOpponent->ubID ] ) )
-				{
-					continue;
-				}
-				
+				// Hearing gives an estimated location, not permission to inspect the
+				// opponent's real current tile to see whether the estimate is still good.
+				// Existing restrictions below keep blind throws conservative.
 				// sevenfm: allow using of non-lethal grenades to attack heard opponents
 				BOOLEAN fSkipGrenade = TRUE;
 				if( Item[usGrenade].flare )
