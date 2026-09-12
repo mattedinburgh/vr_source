@@ -211,6 +211,11 @@ static BOOLEAN AIShouldAvoidFinishingDownedTarget(
 	if (!pSoldier || !pOpponent || !fCurrentContact || !AICombatTeam(pSoldier))
 		return FALSE;
 
+	// Exact incapacitation state is legitimate only when this shooter personally
+	// sees the target, not merely because another teammate has a current sighting.
+	if (PersonalKnowledge(pSoldier, pOpponent->ubID) != SEEN_CURRENTLY)
+		return FALSE;
+
 	// Preserve explicitly scripted killer behaviour and non-human threats.
 	if (pSoldier->aiData.bAttitude == ATTACKSLAYONLY ||
 		pOpponent->IsZombie() ||
@@ -230,6 +235,10 @@ static BOOLEAN AIObservedActiveMedicalTreatment(
 	SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent, BOOLEAN fCurrentContact)
 {
 	if (!pSoldier || !pOpponent || !fCurrentContact || !AICombatTeam(pSoldier))
+		return FALSE;
+
+	// Medical activity has to be directly observable by this shooter.
+	if (PersonalKnowledge(pSoldier, pOpponent->ubID) != SEEN_CURRENTLY)
 		return FALSE;
 
 	if (pSoldier->aiData.bAttitude == ATTACKSLAYONLY ||
