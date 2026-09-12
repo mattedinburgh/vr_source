@@ -5055,10 +5055,10 @@ void UpdateGear()
 	UINT32 uiImproved = 0;
 	UINT32 uiMagazinesPicked = 0;
 
-	for ( SoldierID bMercID = gTacticalStatus.Team[gbPlayerNum].bFirstID;
+	for ( UINT8 bMercID = gTacticalStatus.Team[gbPlayerNum].bFirstID;
 		  bMercID <= gTacticalStatus.Team[gbPlayerNum].bLastID; ++bMercID )
 	{
-		SOLDIERTYPE *pSoldier = bMercID;
+		SOLDIERTYPE *pSoldier = MercPtrs[bMercID];
 		if ( !pSoldier || !pSoldier->bActive || !pSoldier->bInSector ||
 			 pSoldier->sSectorX != gWorldSectorX || pSoldier->sSectorY != gWorldSectorY ||
 			 pSoldier->bSectorZ != gbWorldSectorZ )
