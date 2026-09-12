@@ -1087,6 +1087,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 	INT32	iHitRate, iThreatValue, iTotalThreatValue,iOppThreatValue[MAXMERCS];
 	INT32	sGridNo, sEndGridNo, sFriendTile[MAXMERCS], sOpponentTile[MAXMERCS];
 	INT8	bFriendLevel[MAXMERCS], bOpponentLevel[MAXMERCS];
+	BOOLEAN fFriendCritical[MAXMERCS];
 	INT32	iEstDamage;
 	UINT8	ubFriendCnt = 0,ubOpponentCnt = 0, ubOpponentID[MAXMERCS];
 	UINT8	ubOpponentCertainty[MAXMERCS];
@@ -1279,6 +1280,9 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 		// this includes US, since we don't want to blow OURSELVES up either
 		sFriendTile[ubFriendCnt] = pFriend->sGridNo;
 		bFriendLevel[ubFriendCnt] = pFriend->pathing.bLevel;
+		fFriendCritical[ubFriendCnt] =
+			pFriend->stats.bLife < OKLIFE ||
+			(pFriend->bCollapsed && pFriend->bBreath < OKBREATH);
 		ubFriendCnt++;
 	}
 
@@ -1706,7 +1710,18 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 
 				for (ubLoop2 = 0; ubLoop2 < ubFriendCnt; ubLoop2++)
 				{
-					if ( (bFriendLevel[ubLoop2] == bOpponentLevel[ubLoop]) && ( PythSpacesAway(sFriendTile[ubLoop2],sGridNo) <= ubSafetyMargin ) )
+					UINT8 ubFriendSafetyMargin = ubSafetyMargin;
+					if (fFriendCritical[ubLoop2] &&
+						usGrenade != NOTHING &&
+						!Item[usGrenade].flare &&
+						Explosive[Item[usGrenade].ubClassIndex].ubType != EXPLOSV_SMOKE)
+					{
+						ubFriendSafetyMargin = __min((UINT8)(TACTICAL_RANGE / 2),
+							(UINT8)(ubSafetyMargin + 1));
+					}
+
+					if ((bFriendLevel[ubLoop2] == bOpponentLevel[ubLoop]) &&
+						(PythSpacesAway(sFriendTile[ubLoop2], sGridNo) <= ubFriendSafetyMargin))
 					{
 						//NumMessage("Friend too close: at gridno",sFriendTile[ubLoop2]);
 						fFriendsNearby = TRUE;
