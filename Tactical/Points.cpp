@@ -3592,6 +3592,15 @@ INT16 GetAPsToBeginFirstAid( SOLDIERTYPE *pSoldier )
 	return(	GetAPsToChangeStance( pSoldier, ANIM_CROUCH ) + APBPConstants[AP_START_FIRST_AID] );
 }
 
+// 1.13-style window breaking uses the normal close-combat swing cost.
+INT16 GetAPsToBreakWindow( SOLDIERTYPE *pSoldier, BOOLEAN fStance )
+{
+	if ( fStance )
+		return MinAPsToPunch( pSoldier, pSoldier->sGridNo );
+
+	return MinAPsToPunch( pSoldier, NOWHERE );
+}
+
 INT16 GetAPsToBeginRepair( SOLDIERTYPE *pSoldier )
 {
 	// OK, it's normally just cost, but add some if different stance...
