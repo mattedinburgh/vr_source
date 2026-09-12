@@ -2896,6 +2896,22 @@ UINT16 GetLauncherFromLaunchable( UINT16 usLaunchable )
 	return( Launchable[iLoop][1] );
 }
 
+// Return a launchable compatible with the given launcher and explosion type.
+// Ported from current 1.13 so support weapons do not depend on hard-coded item IDs.
+UINT16 GetLaunchableOfExplosionType( UINT16 launcher, UINT8 explosionType )
+{
+	for ( INT32 i = 0; i < MAXITEMS; ++i )
+	{
+		UINT16 launchable = Launchable[i][0];
+		if ( launchable == 0 )
+			break;
+
+		if ( Launchable[i][1] == launcher && Explosive[Item[launchable].ubClassIndex].ubType == explosionType )
+			return launchable;
+	}
+
+	return NOTHING;
+}
 
 
 BOOLEAN EvaluateValidMerge( UINT16 usMerge, UINT16 usItem, UINT16 * pusResult, UINT16 * pusResult2, UINT8 * pubType, UINT8 * pubAPCost )
