@@ -2224,7 +2224,25 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 
 			if ((INT16)PreRandom(100) < iChance)
 			{
-				pSoldier->aiData.usActionData = GoAsFarAsPossibleTowards(pSoldier,sClosestFriend,AI_ACTION_SEEK_FRIEND);
+				BOOLEAN fCautiousHelp =
+					!fClimb &&
+					!GuySawEnemy(pSoldier, SEEN_LAST_TURN) &&
+					!pSoldier->aiData.bUnderFire &&
+					PreRandom(100) < __max(0, __min(80, iSneaky));
+
+				if (fCautiousHelp)
+				{
+					INT8 bHelpReserve = GetAPsCrouch(pSoldier, TRUE) + GetAPsToLook(pSoldier);
+					pSoldier->aiData.usActionData = InternalGoAsFarAsPossibleTowards(
+						pSoldier, sClosestFriend, bHelpReserve, AI_ACTION_SEEK_FRIEND, FLAG_CAUTIOUS);
+					if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
+						pSoldier->aiData.fAIFlags |= AI_CAUTIOUS;
+				}
+				else
+				{
+					pSoldier->aiData.usActionData = GoAsFarAsPossibleTowards(
+						pSoldier, sClosestFriend, AI_ACTION_SEEK_FRIEND);
+				}
 				
 				if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
 				{
