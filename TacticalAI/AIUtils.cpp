@@ -8955,6 +8955,25 @@ BOOLEAN FindFenceAroundSpot(INT32 sSpot)
 	return FALSE;
 }
 
+// How far around the contact a soldier should work before ending a flank.
+// Cunning soldiers deliberately seek a deeper angle; ordinary troops settle for
+// a quarter-turn.  Morale, fireteam role and danger can still abort the manoeuvre
+// earlier through the higher-level flank logic.
+UINT8 MinFlankDirections(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier)
+		return 2;
+
+	switch (pSoldier->aiData.bAttitude)
+	{
+	case CUNNINGAID:
+	case CUNNINGSOLO:
+		return 4;
+	default:
+		return 2;
+	}
+}
+
 UINT8 FlankingDirection(SOLDIERTYPE *pSoldier)
 {
 	if (!pSoldier)
