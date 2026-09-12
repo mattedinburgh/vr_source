@@ -453,6 +453,7 @@ BOOLEAN AICheckNVG( SOLDIERTYPE *pSoldier );
 INT8 AIEstimateInterruptLevel( SOLDIERTYPE *pSoldier );
 INT8 FindMaxEnemyInterruptLevel( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 blevel, UINT8 ubDistance );
 UINT8 AIDirection(INT32 sSpot1, INT32 sSpot2);
+UINT8 MinFlankDirections(SOLDIERTYPE *pSoldier);
 UINT8 FlankingDirection(SOLDIERTYPE *pSoldier);
 BOOLEAN WeAttack(INT8 bTeam);
 UINT8 CountKnownEnemiesInDirection(SOLDIERTYPE *pSoldier, UINT8 ubDirection, INT16 sDistance, BOOLEAN fAdjacent);
