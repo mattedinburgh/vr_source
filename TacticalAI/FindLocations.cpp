@@ -2888,6 +2888,13 @@ INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction )
 					continue;
 			}
 
+			// Prefer flank steps that create a materially different firing angle from
+			// teammates already able to engage this same known contact. This is a soft
+			// geometry bonus only: cover, hazards and reachability remain hard constraints.
+			if (bAction == AI_ACTION_FLANK_LEFT || bAction == AI_ACTION_FLANK_RIGHT)
+			{
+				sTempDist += AICrossfirePositionScore(pSoldier, sGridNo, sPos);
+			}
 			// if this is better than the best place found so far
 			if ( sTempDist > sBestDist )
 			{
