@@ -247,11 +247,12 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			continue;	// next opponent
 		}
 
-		// sevenfm: determine if we shoot on unseen target for suppression		
+		// Exact fire requires current knowledge. Do not test line of sight against
+		// the hidden live opponent object: that leaks the opponent's real position
+		// after he has moved from a stale/heard contact. Unseen contacts are engaged
+		// at their known location as suppression instead.
 		if (bPersonalKnowledge != SEEN_CURRENTLY &&
-			bPublicKnowledge != SEEN_CURRENTLY &&
-			//!SoldierToSoldierLineOfSightTest(pSoldier, pOpponent, TRUE, CALC_FROM_ALL_DIRS))
-			!LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS))
+			bPublicKnowledge != SEEN_CURRENTLY)
 		{
 			fSuppression = TRUE;
 		}
