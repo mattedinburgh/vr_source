@@ -180,6 +180,7 @@ static UINT8 AIKnownShotChanceToGetThrough(SOLDIERTYPE *pSoldier, SOLDIERTYPE *p
 	INT32 sRealGridNo = pOpponent->sGridNo;
 	INT8 bRealLevel = pOpponent->pathing.bLevel;
 	UINT16 usRealAnimState = pOpponent->usAnimState;
+	UINT8 ubRealDirection = pOpponent->ubDirection;
 	FLOAT dRealX = pOpponent->dXPos;
 	FLOAT dRealY = pOpponent->dYPos;
 
@@ -187,6 +188,9 @@ static UINT8 AIKnownShotChanceToGetThrough(SOLDIERTYPE *pSoldier, SOLDIERTYPE *p
 	pOpponent->sGridNo = sTarget;
 	pOpponent->pathing.bLevel = bTargetLevel;
 	pOpponent->usAnimState = STANDING;
+	// Do not let the hidden target's live facing alter suppression geometry.
+	// Use a deterministic facing derived only from the reported tile and shooter.
+	pOpponent->ubDirection = AIDirection(sTarget, pSoldier->sGridNo);
 	ConvertGridNoToCenterCellXY(sTarget, &sTempX, &sTempY);
 	pOpponent->dXPos = (FLOAT)sTempX;
 	pOpponent->dYPos = (FLOAT)sTempY;
@@ -196,6 +200,7 @@ static UINT8 AIKnownShotChanceToGetThrough(SOLDIERTYPE *pSoldier, SOLDIERTYPE *p
 	pOpponent->sGridNo = sRealGridNo;
 	pOpponent->pathing.bLevel = bRealLevel;
 	pOpponent->usAnimState = usRealAnimState;
+	pOpponent->ubDirection = ubRealDirection;
 	pOpponent->dXPos = dRealX;
 	pOpponent->dYPos = dRealY;
 
