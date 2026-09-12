@@ -9467,7 +9467,7 @@ BOOLEAN SafeSpot(SOLDIERTYPE *pSoldier, INT32 sSpot)
 	if ((fUnlimitedSightCover || fProneSightCover && fAnyCover || InARoom(sSpot, NULL) && bLevel == 0 && (fAnyCover || fProneSightCover)) &&
 		!InLightAtNight(sSpot, pSoldier->pathing.bLevel) &&
 		!pSoldier->aiData.bUnderFire &&
-		GetNearestRottingCorpseAIWarning(sSpot) == 0)
+		AICorpseWarningKnown(pSoldier, sSpot, bLevel) == 0)
 	{
 		return TRUE;
 	}
@@ -9537,7 +9537,7 @@ BOOLEAN AbortFinalSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bAction, INT32 s
 	if (InLightAtNight(sSpot, bLevel) &&
 		!InLightAtNight(pSoldier->sGridNo, pSoldier->pathing.bLevel) &&
 		!InSmoke(sSpot, bLevel) &&
-		(pSoldier->aiData.bUnderFire || !fSeekEnemy || !fSightCover || GetNearestRottingCorpseAIWarning(pSoldier->sGridNo) > 0) &&
+		(pSoldier->aiData.bUnderFire || !fSeekEnemy || !fSightCover || AICorpseWarningKnown(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel) > 0) &&
 		(fFlankingFriends || !fSuccessfulAttack || !fSeekEnemy) &&
 		!fFriendsBlack)
 	{
@@ -9646,7 +9646,7 @@ BOOLEAN AbortPath(SOLDIERTYPE *pSoldier, INT8 bAction, INT32 sClosestDisturbance
 		if (InLightAtNight(sCheckGridNo, bLevel) &&
 			!InLightAtNight(pSoldier->sGridNo, pSoldier->pathing.bLevel) &&
 			!InSmoke(sCheckGridNo, bLevel) &&
-			(pSoldier->aiData.bUnderFire || !fSeekEnemy || !SightCoverAtSpot(pSoldier, sCheckGridNo, FALSE) || GetNearestRottingCorpseAIWarning(sCheckGridNo) > 0) &&
+			(pSoldier->aiData.bUnderFire || !fSeekEnemy || !SightCoverAtSpot(pSoldier, sCheckGridNo, FALSE) || AICorpseWarningKnown(pSoldier, sCheckGridNo, bLevel) > 0) &&
 			(fFlankingFriends || !fSuccessfulAttack || !fSeekEnemy) &&
 			!fFriendsBlack)
 		{
