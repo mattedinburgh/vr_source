@@ -5764,6 +5764,7 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 			pFriend == pSoldier ||
 			!pFriend->bActive ||
 			!pFriend->bInSector ||
+			!AISameFireteam(pSoldier, pFriend) ||
 			pFriend->stats.bLife < OKLIFE ||
 			pFriend->bCollapsed ||
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
