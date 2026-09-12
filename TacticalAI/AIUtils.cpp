@@ -3961,6 +3961,314 @@ BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier)
 	return pSoldier && (pSoldier->bTeam == ENEMY_TEAM || pSoldier->bTeam == MILITIA_TEAM);
 }
 
+// Enemy fireteam coordination. This state is sector-local and intentionally lives
+// outside SOLDIERTYPE so it does not change the savegame structure.
+#define AI_FIRETEAM_NONE 0
+#define AI_FIRETEAM_TARGET 8
+#define AI_FIRETEAM_MAX_NORMAL 9
+#define AI_FIRETEAM_MAX_MERGED 11
+
+static UINT8 gubAIFireteam[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAIFireteamIdentity[MAX_NUM_SOLDIERS] = { 0 };
+static UINT8 gubAINextFireteam = 1;
+static INT16 gsAIFireteamSectorX = -1;
+static INT16 gsAIFireteamSectorY = -1;
+static INT8 gbAIFireteamSectorZ = -1;
+static BOOLEAN gfAIFireteamsSeeded = FALSE;
+
+static BOOLEAN AIEnemyFireteamEligible(SOLDIERTYPE *pSoldier)
+{
+	return pSoldier && pSoldier->bTeam == ENEMY_TEAM && pSoldier->bActive &&
+		pSoldier->bInSector && pSoldier->stats.bLife > 0 &&
+		!(pSoldier->usSoldierFlagMask & SOLDIER_POW);
+}
+
+static void AIResetFireteamsForSector(void)
+{
+	if (gsAIFireteamSectorX == gWorldSectorX && gsAIFireteamSectorY == gWorldSectorY &&
+		gbAIFireteamSectorZ == gbWorldSectorZ)
+		return;
+
+	gsAIFireteamSectorX = gWorldSectorX;
+	gsAIFireteamSectorY = gWorldSectorY;
+	gbAIFireteamSectorZ = gbWorldSectorZ;
+	gubAINextFireteam = 1;
+	gfAIFireteamsSeeded = FALSE;
+	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
+	{
+		gubAIFireteam[i] = AI_FIRETEAM_NONE;
+		guiAIFireteamIdentity[i] = 0;
+	}
+}
+
+static UINT8 AIFireteamCountById(UINT8 ubFireteam, BOOLEAN fReadyOnly)
+{
+	if (ubFireteam == AI_FIRETEAM_NONE)
+		return 0;
+
+	UINT8 ubCount = 0;
+	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!AIEnemyFireteamEligible(pFriend) || pFriend->ubID >= MAX_NUM_SOLDIERS ||
+			guiAIFireteamIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
+			gubAIFireteam[pFriend->ubID] != ubFireteam)
+			continue;
+		if (fReadyOnly && (pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed))
+			continue;
+		++ubCount;
+	}
+	return ubCount;
+}
+
+static INT32 AIFireteamDistanceToSpot(UINT8 ubFireteam, INT32 sSpot)
+{
+	INT32 iBest = 10000;
+	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!AIEnemyFireteamEligible(pFriend) || pFriend->ubID >= MAX_NUM_SOLDIERS ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+			guiAIFireteamIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
+			gubAIFireteam[pFriend->ubID] != ubFireteam)
+			continue;
+		iBest = __min(iBest, PythSpacesAway(pFriend->sGridNo, sSpot));
+	}
+	return iBest;
+}
+
+static void AISeedEnemyFireteams(void)
+{
+	AIResetFireteamsForSector();
+	if (gfAIFireteamsSeeded)
+		return;
+
+	UINT8 ubMembers[MAX_NUM_SOLDIERS];
+	BOOLEAN fAssigned[MAX_NUM_SOLDIERS] = { FALSE };
+	UINT16 usCount = 0;
+	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID && usCount < MAX_NUM_SOLDIERS; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (AIEnemyFireteamEligible(pFriend))
+			ubMembers[usCount++] = pFriend->ubID;
+	}
+
+	if (usCount == 0)
+	{
+		gfAIFireteamsSeeded = TRUE;
+		return;
+	}
+
+	UINT16 usGroups = (usCount <= 10) ? 1 : (usCount + AI_FIRETEAM_TARGET - 1) / AI_FIRETEAM_TARGET;
+	UINT16 usRemaining = usCount;
+	for (UINT16 usGroup = 0; usGroup < usGroups && usRemaining > 0; ++usGroup)
+	{
+		UINT16 usGroupsLeft = usGroups - usGroup;
+		UINT16 usTarget = (usRemaining + usGroupsLeft - 1) / usGroupsLeft;
+		usTarget = __min((UINT16)AI_FIRETEAM_MAX_NORMAL, usTarget);
+
+		INT16 sSeedIndex = -1;
+		for (UINT16 i = 0; i < usCount; ++i)
+			if (!fAssigned[i]) { sSeedIndex = (INT16)i; break; }
+		if (sSeedIndex < 0)
+			break;
+
+		UINT8 ubFireteam = gubAINextFireteam++;
+		UINT8 ubSeedId = ubMembers[sSeedIndex];
+		SOLDIERTYPE *pSeed = MercPtrs[ubSeedId];
+		fAssigned[sSeedIndex] = TRUE;
+		gubAIFireteam[ubSeedId] = ubFireteam;
+		guiAIFireteamIdentity[ubSeedId] = pSeed->uiUniqueSoldierIdValue;
+		--usRemaining;
+
+		for (UINT16 usAdded = 1; usAdded < usTarget && usRemaining > 0; ++usAdded)
+		{
+			INT16 sBestIndex = -1;
+			INT32 iBestDistance = 10000;
+			for (UINT16 i = 0; i < usCount; ++i)
+			{
+				if (fAssigned[i])
+					continue;
+				SOLDIERTYPE *pCandidate = MercPtrs[ubMembers[i]];
+				INT32 iDistance = PythSpacesAway(pSeed->sGridNo, pCandidate->sGridNo);
+				if (iDistance < iBestDistance)
+				{
+					iBestDistance = iDistance;
+					sBestIndex = (INT16)i;
+				}
+			}
+			if (sBestIndex < 0)
+				break;
+			UINT8 ubId = ubMembers[sBestIndex];
+			fAssigned[sBestIndex] = TRUE;
+			gubAIFireteam[ubId] = ubFireteam;
+			guiAIFireteamIdentity[ubId] = MercPtrs[ubId]->uiUniqueSoldierIdValue;
+			--usRemaining;
+		}
+	}
+	gfAIFireteamsSeeded = TRUE;
+}
+
+static void AIEnsureEnemyFireteams(void)
+{
+	AISeedEnemyFireteams();
+	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pSoldier = MercPtrs[iCounter];
+		if (!AIEnemyFireteamEligible(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+			continue;
+		if (guiAIFireteamIdentity[pSoldier->ubID] == pSoldier->uiUniqueSoldierIdValue &&
+			gubAIFireteam[pSoldier->ubID] != AI_FIRETEAM_NONE)
+			continue;
+
+		UINT8 ubBest = AI_FIRETEAM_NONE;
+		INT32 iBest = 10000;
+		for (UINT8 ubTeam = 1; ubTeam < gubAINextFireteam; ++ubTeam)
+		{
+			if (AIFireteamCountById(ubTeam, FALSE) >= AI_FIRETEAM_MAX_NORMAL)
+				continue;
+			INT32 iDistance = AIFireteamDistanceToSpot(ubTeam, pSoldier->sGridNo);
+			if (iDistance < iBest) { iBest = iDistance; ubBest = ubTeam; }
+		}
+		if (ubBest == AI_FIRETEAM_NONE)
+			ubBest = gubAINextFireteam++;
+		gubAIFireteam[pSoldier->ubID] = ubBest;
+		guiAIFireteamIdentity[pSoldier->ubID] = pSoldier->uiUniqueSoldierIdValue;
+	}
+}
+
+static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
+{
+	if (!AIEnemyFireteamEligible(pSoldier))
+		return FALSE;
+	AIEnsureEnemyFireteams();
+	UINT8 ubOld = gubAIFireteam[pSoldier->ubID];
+	UINT8 ubReady = AIFireteamCountById(ubOld, TRUE);
+	if (ubReady == 0 || ubReady > 2)
+		return FALSE;
+
+	UINT8 ubOldTotal = AIFireteamCountById(ubOld, FALSE);
+	UINT8 ubBest = AI_FIRETEAM_NONE;
+	INT32 iBest = 10000;
+	for (UINT8 ubTeam = 1; ubTeam < gubAINextFireteam; ++ubTeam)
+	{
+		if (ubTeam == ubOld || AIFireteamCountById(ubTeam, TRUE) < 3)
+			continue;
+		if (AIFireteamCountById(ubTeam, FALSE) + ubOldTotal > AI_FIRETEAM_MAX_MERGED)
+			continue;
+		INT32 iDistance = AIFireteamDistanceToSpot(ubTeam, pSoldier->sGridNo);
+		if (iDistance < iBest) { iBest = iDistance; ubBest = ubTeam; }
+	}
+	if (ubBest == AI_FIRETEAM_NONE)
+		return FALSE;
+
+	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (AIEnemyFireteamEligible(pFriend) && pFriend->ubID < MAX_NUM_SOLDIERS &&
+			guiAIFireteamIdentity[pFriend->ubID] == pFriend->uiUniqueSoldierIdValue &&
+			gubAIFireteam[pFriend->ubID] == ubOld)
+			gubAIFireteam[pFriend->ubID] = ubBest;
+	}
+	return TRUE;
+}
+
+UINT8 AIFireteamId(SOLDIERTYPE *pSoldier)
+{
+	if (!AIEnemyFireteamEligible(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return AI_FIRETEAM_NONE;
+	AIEnsureEnemyFireteams();
+	return gubAIFireteam[pSoldier->ubID];
+}
+
+UINT8 AIFireteamAliveCount(SOLDIERTYPE *pSoldier)
+{
+	return AIFireteamCountById(AIFireteamId(pSoldier), TRUE);
+}
+
+BOOLEAN AISameFireteam(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend)
+{
+	if (!pSoldier || !pFriend || pSoldier->bTeam != pFriend->bTeam)
+		return FALSE;
+	if (pSoldier->bTeam != ENEMY_TEAM)
+		return TRUE;
+	UINT8 ubMine = AIFireteamId(pSoldier);
+	return ubMine != AI_FIRETEAM_NONE && ubMine == AIFireteamId(pFriend);
+}
+
+BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, UINT8 ubResponseLimit)
+{
+	if (!AIEnemyFireteamEligible(pSoldier) || TileIsOutOfBounds(sContactSpot))
+		return FALSE;
+	AIAbsorbFireteamRemnant(pSoldier);
+	UINT8 ubMine = AIFireteamId(pSoldier);
+	INT32 iMine = AIFireteamDistanceToSpot(ubMine, sContactSpot);
+	UINT16 usCloserReady = 0;
+	for (UINT8 ubTeam = 1; ubTeam < gubAINextFireteam; ++ubTeam)
+	{
+		if (ubTeam == ubMine)
+			continue;
+		UINT8 ubReady = AIFireteamCountById(ubTeam, TRUE);
+		if (ubReady == 0)
+			continue;
+		INT32 iDistance = AIFireteamDistanceToSpot(ubTeam, sContactSpot);
+		if (iDistance < iMine || (iDistance == iMine && ubTeam < ubMine))
+			usCloserReady += ubReady;
+	}
+	return usCloserReady >= ubResponseLimit;
+}
+
+INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
+{
+	if (!fCanMove || !gfTurnBasedAI || !AIEnemyFireteamEligible(pSoldier) ||
+		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		pSoldier->aiData.bUnderFire || pSoldier->aiData.bOppCnt > 0 ||
+		GuySawEnemy(pSoldier, SEEN_LAST_TURN) || pSoldier->aiData.bOrders == STATIONARY ||
+		pSoldier->aiData.bOrders == SNIPER)
+		return AI_ACTION_NONE;
+
+	UINT8 ubBefore = AIFireteamAliveCount(pSoldier);
+	BOOLEAN fWasRemnant = (ubBefore > 0 && ubBefore <= 2);
+	AIAbsorbFireteamRemnant(pSoldier);
+
+	SOLDIERTYPE *pAnchor = NULL;
+	INT32 iBest = 10000;
+	BOOLEAN fEngagedAnchor = FALSE;
+	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier || !AIEnemyFireteamEligible(pFriend) ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || !AISameFireteam(pSoldier, pFriend))
+			continue;
+		BOOLEAN fEngaged = pFriend->aiData.bUnderFire || pFriend->aiData.bOppCnt > 0 || GuySawEnemy(pFriend, SEEN_LAST_TURN);
+		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
+		if (fEngaged && (!fEngagedAnchor || iDistance < iBest))
+		{
+			fEngagedAnchor = TRUE; pAnchor = pFriend; iBest = iDistance;
+		}
+		else if (!fEngagedAnchor && iDistance < iBest)
+		{
+			pAnchor = pFriend; iBest = iDistance;
+		}
+	}
+
+	if (!pAnchor || (!fWasRemnant && !fEngagedAnchor))
+		return AI_ACTION_NONE;
+	if (iBest <= __max(8, DAY_VISION_RANGE / 2))
+		return AI_ACTION_NONE;
+
+	pSoldier->aiData.usActionData = GoAsFarAsPossibleTowards(pSoldier, pAnchor->sGridNo, AI_ACTION_SEEK_FRIEND);
+	if (TileIsOutOfBounds(pSoldier->aiData.usActionData))
+		return AI_ACTION_NONE;
+	return AI_ACTION_SEEK_FRIEND;
+}
+
 // Chunk 1: battlefield-situation awareness. These helpers expose information to
 // later AI decisions but deliberately do not change actions on their own.
 // Local calculations use TACTICAL_RANGE so they scale with JA2's existing AI
