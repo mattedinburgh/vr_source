@@ -143,6 +143,7 @@ void StartBombMessageBox( SOLDIERTYPE * pSoldier, INT32 sGridNo );
 // added by Flugente
 void StartTacticalFunctionSelectionMessageBox( SOLDIERTYPE * pSoldier, INT32 sGridNo,  INT8 bLevel );
 void CleanWeapons( BOOLEAN fEntireTeam );
+void UpdateGear();
 void StartCorpseMessageBox( SOLDIERTYPE * pSoldier, INT32 sGridNo,  INT8 bLevel );
 
 BOOLEAN	HandleCheckForBadChangeToGetThrough( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pTargetSoldier, INT32 sTargetGridNo , INT8 bLevel ) 
@@ -4948,6 +4949,164 @@ void StartBombMessageBox( SOLDIERTYPE * pSoldier, INT32 sGridNo )
 	}
 }
 
+// 1.13-style Improve Gear: find the best-condition identical object in the loaded sector.
+static BOOLEAN HasInseparableAttachmentForUpdate( OBJECTTYPE *pObj, UINT8 ubIndex )
+{
+	if ( !pObj || ubIndex >= pObj->ubNumberOfObjects )
+		return FALSE;
+
+	for ( attachmentList::iterator iter = (*pObj)[ubIndex]->attachments.begin();
+		  iter != (*pObj)[ubIndex]->attachments.end(); ++iter )
+	{
+		if ( iter->exists() && Item[iter->usItem].inseparable )
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
+static OBJECTTYPE *GetBetterSectorObjectForUpdate( UINT16 usItem, INT16 sStatus, UINT8 &rubIndex )
+{
+	OBJECTTYPE *pBestObj = NULL;
+	INT16 sBestStatus = sStatus;
+
+	for ( UINT32 uiCount = 0; uiCount < guiNumWorldItems; ++uiCount )
+	{
+		if ( !gWorldItems[uiCount].fExists ||
+			 !(gWorldItems[uiCount].usFlags & WORLD_ITEM_REACHABLE) ||
+			 (gWorldItems[uiCount].usFlags & WORLD_ITEM_ARMED_BOMB) ||
+			 gWorldItems[uiCount].bVisible != VISIBLE ||
+			 gWorldItems[uiCount].object.usItem != usItem )
+		{
+			continue;
+		}
+
+		OBJECTTYPE *pObj = &(gWorldItems[uiCount].object);
+		if ( !pObj || !pObj->exists() )
+			continue;
+
+		for ( UINT8 i = 0; i < pObj->ubNumberOfObjects; ++i )
+		{
+			if ( (*pObj)[i]->data.objectStatus > sBestStatus && !HasInseparableAttachmentForUpdate( pObj, i ) )
+			{
+				sBestStatus = (*pObj)[i]->data.objectStatus;
+				pBestObj = pObj;
+				rubIndex = i;
+			}
+		}
+	}
+
+	return pBestObj;
+}
+
+static void SwapUpdateGearObjectState( StackedObjectData *pEquipped, StackedObjectData *pSector )
+{
+	if ( !pEquipped || !pSector )
+		return;
+
+	ObjectData temp = pEquipped->data;
+	pEquipped->data = pSector->data;
+	pSector->data = temp;
+}
+
+void UpdateGear()
+{
+	// This is a convenience replacement for manual sector-stash swapping, never a combat action.
+	if ( (gTacticalStatus.uiFlags & INCOMBAT) || gTacticalStatus.fEnemyInSector )
+	{
+		ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, L"Improve gear is unavailable during combat." );
+		return;
+	}
+
+	if ( guiCurrentScreen != GAME_SCREEN && guiCurrentScreen != MSG_BOX_SCREEN )
+		return;
+
+	UINT32 uiImproved = 0;
+	UINT32 uiMagazinesPicked = 0;
+
+	for ( SoldierID bMercID = gTacticalStatus.Team[gbPlayerNum].bFirstID;
+		  bMercID <= gTacticalStatus.Team[gbPlayerNum].bLastID; ++bMercID )
+	{
+		SOLDIERTYPE *pSoldier = bMercID;
+		if ( !pSoldier || !pSoldier->bActive || !pSoldier->bInSector ||
+			 pSoldier->sSectorX != gWorldSectorX || pSoldier->sSectorY != gWorldSectorY ||
+			 pSoldier->bSectorZ != gbWorldSectorZ )
+		{
+			continue;
+		}
+
+		INT8 bInvSize = (INT8)pSoldier->inv.size();
+		for ( INT8 bLoop = 0; bLoop < bInvSize; ++bLoop )
+		{
+			OBJECTTYPE *pObj = &(pSoldier->inv[bLoop]);
+			if ( !pObj || !pObj->exists() )
+				continue;
+
+			// Compact partial magazines before searching the ground for more of the same magazine.
+			if ( (Item[pObj->usItem].usItemClass & IC_AMMO) && pObj->ubNumberOfObjects > 1 )
+			{
+				UINT16 usMagIndex = Item[pObj->usItem].ubClassIndex;
+				UINT16 usMagSize = Magazine[usMagIndex].ubMagSize;
+				if ( usMagSize )
+				{
+					UINT32 uiAmmoCount = 0;
+					for ( INT16 i = 0; i < pObj->ubNumberOfObjects; ++i )
+						uiAmmoCount += (*pObj)[i]->data.ubShotsLeft;
+
+					UINT8 ubFullMags = (UINT8)(uiAmmoCount / usMagSize);
+					UINT16 usLeftover = (UINT16)(uiAmmoCount - ubFullMags * usMagSize);
+					UINT8 ubTotalMags = ubFullMags + (usLeftover > 0 ? 1 : 0);
+					if ( ubTotalMags < pObj->ubNumberOfObjects )
+						pObj->RemoveObjectsFromStack( pObj->ubNumberOfObjects - ubTotalMags );
+					for ( INT16 i = 0; i < ubTotalMags; ++i )
+						(*pObj)[i]->data.ubShotsLeft = usMagSize;
+					if ( usLeftover > 0 )
+						(*pObj)[0]->data.ubShotsLeft = usLeftover;
+				}
+			}
+
+			// Exchange each damaged object with the best identical, reachable object on the ground.
+			for ( INT16 i = 0; i < pObj->ubNumberOfObjects; ++i )
+			{
+				if ( (*pObj)[i]->data.objectStatus >= 100 || HasInseparableAttachmentForUpdate( pObj, (UINT8)i ) )
+					continue;
+
+				UINT8 ubIndex = 0;
+				OBJECTTYPE *pBetter = GetBetterSectorObjectForUpdate( pObj->usItem, (*pObj)[i]->data.objectStatus, ubIndex );
+				if ( pBetter )
+				{
+					SwapUpdateGearObjectState( (*pObj)[i], (*pBetter)[ubIndex] );
+					++uiImproved;
+				}
+			}
+
+			// Match current 1.13 convenience behavior by filling free slots in ammo stacks.
+			if ( Item[pObj->usItem].usItemClass & IC_AMMO )
+			{
+				UINT8 ubSlotLimit = ItemSlotLimit( pObj, bLoop, pSoldier, FALSE );
+				while ( pObj->ubNumberOfObjects < ubSlotLimit )
+				{
+					UINT8 ubIndex = 0;
+					OBJECTTYPE *pBetter = GetBetterSectorObjectForUpdate( pObj->usItem, 0, ubIndex );
+					if ( !pBetter )
+						break;
+
+					INT32 iBefore = pObj->ubNumberOfObjects;
+					pObj->AddObjectsToStack( *pBetter, ubSlotLimit - pObj->ubNumberOfObjects );
+					if ( pObj->ubNumberOfObjects <= iBefore )
+						break;
+					uiMagazinesPicked += pObj->ubNumberOfObjects - iBefore;
+				}
+			}
+		}
+	}
+
+	ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
+		L"Improve gear: %d item(s) upgraded, %d magazine(s) restocked.", uiImproved, uiMagazinesPicked );
+	fInterfacePanelDirty = DIRTYLEVEL2;
+}
+
+
 // Flugente
 void StartTacticalFunctionSelectionMessageBox( SOLDIERTYPE * pSoldier, INT32 sGridNo,  INT8 bLevel )
 {
@@ -4991,7 +5150,7 @@ void StartTacticalFunctionSelectionMessageBox( SOLDIERTYPE * pSoldier, INT32 sGr
 	else
 		wcscpy( gzUserDefinedButton[6], TacticalStr[ UNUSED_STR ] );
 
-	wcscpy( gzUserDefinedButton[7], TacticalStr[ UNUSED_STR ] );
+	wcscpy( gzUserDefinedButton[7], L"Improve gear" );
 	DoMessageBox( MSG_BOX_BASIC_MEDIUM_BUTTONS, TacticalStr[ FUNCTION_SELECTION_STR ], GAME_SCREEN, MSG_BOX_FLAG_GENERIC_EIGHT_BUTTONS, TacticalFunctionSelectionMessageBoxCallBack, NULL );
 }
 
@@ -5223,6 +5382,9 @@ void TacticalFunctionSelectionMessageBoxCallBack( UINT8 ubExitValue )
 			// test our disguise
 			if ( gpTempSoldier->usSoldierFlagMask & (SOLDIER_COVERT_CIV|SOLDIER_COVERT_SOLDIER) )
 				gpTempSoldier->SpySelfTest();
+			break;
+		case 8:
+			UpdateGear();
 			break;
 		default:
 			break;
