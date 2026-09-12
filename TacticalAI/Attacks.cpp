@@ -1532,6 +1532,16 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 					}
 				}
 
+				// Do not waste smoke by stacking it on an already screened position.
+				// Adjacent reachable smoke counts because the cloud already blocks the local lane.
+				if (usGrenade &&
+					Explosive[Item[usGrenade].ubClassIndex].ubType == EXPLOSV_SMOKE &&
+					InSmokeNearby(sGridNo, bOpponentLevel[ubLoop]))
+				{
+					// smoke grenade, found smoke nearby - skip
+					continue;
+				}
+
 				// sevenfm: skip tile if target is in a room and we throw grenade outside
 				if( gpWorldLevelData[sOpponentTile[ubLoop]].ubTerrainID == FLAT_FLOOR &&
 					gpWorldLevelData[sGridNo].ubTerrainID != FLAT_FLOOR )
