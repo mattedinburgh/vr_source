@@ -8893,7 +8893,11 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		pSoldier->ubSoldierClass != SOLDIER_CLASS_ADMINISTRATOR &&
 		!AICheckSpecialRole(pSoldier) &&		
 		gAnimControl[pSoldier->usAnimState].ubHeight != ANIM_PRONE &&
-		!pSoldier->aiData.bUnderFire &&
+		(!pSoldier->aiData.bUnderFire ||
+		 (fAbortSeek &&
+		  ubNearbyFireteamSupport >= 2 &&
+		  (InSmokeNearby(pSoldier->sGridNo, pSoldier->pathing.bLevel) ||
+		   SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE)))) &&
 		pSoldier->pathing.bLevel == 0 &&
 		!Water(pSoldier->sGridNo, pSoldier->pathing.bLevel) &&
 		(pSoldier->aiData.bOrders == SEEKENEMY || pSoldier->aiData.bOrders == FARPATROL || pSoldier->aiData.bOrders == CLOSEPATROL && NightTime()) &&
