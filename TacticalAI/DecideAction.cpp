@@ -3318,6 +3318,15 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		if (bMedicAction != AI_ACTION_NONE)
 			return bMedicAction;
 	}
+
+	// Ordinary soldiers only perform immediate adjacent stabilization; they never
+	// abandon their tactical role to run across the battlefield as improvised medics.
+	if (AICombatTeam(pSoldier) && !AICheckIsMedic(pSoldier))
+	{
+		INT8 bBuddyAidAction = DecideEmergencyBuddyAid(pSoldier);
+		if (bBuddyAidAction != AI_ACTION_NONE)
+			return bBuddyAidAction;
+	}
 // WDS DEBUG - this will make all enemies run away (to test retreating into occupied sector bugs)
 //	pSoldier->aiData.bAIMorale = MORALE_HOPELESS;
 
@@ -5068,6 +5077,15 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				if (bMedicAction != AI_ACTION_NONE)
 					return bMedicAction;
 			}
+
+	// Ordinary soldiers only perform immediate adjacent stabilization; they never
+	// abandon their tactical role to run across the battlefield as improvised medics.
+	if (AICombatTeam(pSoldier) && !AICheckIsMedic(pSoldier))
+	{
+		INT8 bBuddyAidAction = DecideEmergencyBuddyAid(pSoldier);
+		if (bBuddyAidAction != AI_ACTION_NONE)
+			return bBuddyAidAction;
+	}
 
 			////////////////////////////////////////////////////////////////////////////
 		}
