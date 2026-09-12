@@ -4311,8 +4311,9 @@ BOOLEAN UseLauncher( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo )
 	}
 	else
 	{
-		// Throw....
-		sAPCost = MinAPsToThrow( pSoldier, sTargetGridNo, FALSE );
+		// Throw. Use the same aim-aware AP calculation shown by the UI so extra
+		// grenade aiming costs AP instead of granting free accuracy.
+		sAPCost = CalcTotalAPsToAttack( pSoldier, sTargetGridNo, FALSE, pSoldier->aiData.bShownAimTime );
 		// SANDRO: get BP cost for weapon manipulating
 		if ( gGameExternalOptions.ubEnergyCostForWeaponWeight )
 			iBPCost = sAPCost * GetBPCostPer10APsForGunHolding( pSoldier ) / 10;
