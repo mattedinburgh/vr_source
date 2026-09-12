@@ -2103,6 +2103,10 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 			if ((INT16) PreRandom(100) < iChance  )
 			{
 				INT32 sNoiseApproachSpot = sNoiseGridNo;
+				BOOLEAN fUnconfirmedInvestigation =
+					!fClimb &&
+					!GuySawEnemy(pSoldier, SEEN_LAST_TURN) &&
+					!pSoldier->aiData.bUnderFire;
 
 				// Investigation is not an assault. A soldier responding to a reported
 				// contact that he has not personally confirmed should establish a covered
@@ -2122,7 +2126,21 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 					}
 				}
 
-				pSoldier->aiData.usActionData = GoAsFarAsPossibleTowards(pSoldier,sNoiseApproachSpot,AI_ACTION_SEEK_NOISE);
+				if (fUnconfirmedInvestigation)
+				{
+					INT8 bInvestigationReserve =
+						GetAPsCrouch(pSoldier, TRUE) + GetAPsToLook(pSoldier);
+					pSoldier->aiData.usActionData = InternalGoAsFarAsPossibleTowards(
+						pSoldier, sNoiseApproachSpot, bInvestigationReserve,
+						AI_ACTION_SEEK_NOISE, FLAG_CAUTIOUS);
+					if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
+						pSoldier->aiData.fAIFlags |= AI_CAUTIOUS;
+				}
+				else
+				{
+					pSoldier->aiData.usActionData = GoAsFarAsPossibleTowards(
+						pSoldier, sNoiseApproachSpot, AI_ACTION_SEEK_NOISE);
+				}
 				
 				if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
 				{
