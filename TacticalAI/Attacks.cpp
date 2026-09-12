@@ -705,6 +705,37 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			iAttackValue /= 4;
 		}
 
+		// Fire-and-manoeuvre target priority. If a teammate is currently bounding
+		// toward this opponent or breaking contact from him, a viable shooter values
+		// fire on that threat more highly. Better support weapons get the strongest
+		// preference, but this remains a soft utility bonus rather than a forced shot.
+		BOOLEAN fCoveringAdvance = FALSE;
+		BOOLEAN fCoveringWithdrawal = FALSE;
+		if (AICombatTeam(pSoldier) && pOpponent && pOpponent->ubID != NOBODY)
+		{
+			fCoveringWithdrawal = AIFriendWithdrawingNeedsCover(pSoldier, pOpponent->ubID);
+			fCoveringAdvance = AIFriendAdvancingNeedsCover(pSoldier, pOpponent->ubID);
+
+			if (fCoveringWithdrawal || fCoveringAdvance)
+			{
+				INT32 iSupportScore = AISupportRoleScore(pSoldier, sTarget);
+				INT32 iCoverBonus = fCoveringWithdrawal ? 30 : 20;
+
+				if (iSupportScore >= 80)
+					iCoverBonus += 15;
+				else if (iSupportScore >= 55)
+					iCoverBonus += 8;
+				else if (iSupportScore < 30)
+					iCoverBonus -= 8;
+
+				// Suppression is particularly useful while somebody else is moving.
+				if (fSuppression)
+					iCoverBonus += 10;
+
+				iCoverBonus = __max(5, __min(55, iCoverBonus));
+				iAttackValue = iAttackValue * (100 + iCoverBonus) / 100;
+			}
+		}
 		// Lightweight target allocation: when several local teammates have just fired
 		// at this target area, prefer spreading fire to another viable threat. This is
 		// deliberately a soft penalty, so a very dangerous target can still justify focus fire.
@@ -723,6 +754,10 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 				if (pOpponent->sLastTarget == pSoldier->sGridNo)
 					iPenaltyPercent /= 2;
 
+				// Concentrated fire is less wasteful when it is deliberately covering
+				// a teammate's movement or withdrawal.
+				if (fCoveringAdvance || fCoveringWithdrawal)
+					iPenaltyPercent /= 2;
 				iPenaltyPercent = __min(75, iPenaltyPercent);
 				iAttackValue = iAttackValue * (100 - iPenaltyPercent) / 100;
 			}
