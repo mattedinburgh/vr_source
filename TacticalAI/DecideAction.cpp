@@ -2022,6 +2022,22 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 							__min(7, (INT32)ubPerceivedEnemies));
 						UINT8 ubWaveCap = (UINT8)__min((INT32)ubDesiredResponse,
 							(INT32)ubInitialWave + 2 * (INT32)uiElapsedTurns);
+
+						// Confirmed contact can release successive line/QRF elements, but fixed
+						// security and elite guards remain tied to their mission unless the fight
+						// reaches them. They should not empty a facility merely because another
+						// element reported AIM elsewhere in the sector.
+						UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+						if (ubDoctrine == AI_DOCTRINE_SECURITY &&
+							pSoldier->aiData.bOrders != ONCALL && pSoldier->aiData.bOrders != SEEKENEMY)
+						{
+							ubWaveCap = __min((UINT8)3, ubWaveCap);
+						}
+						else if (ubDoctrine == AI_DOCTRINE_ELITE_GUARD)
+						{
+							ubWaveCap = __min((UINT8)5, ubWaveCap);
+						}
+
 						ubResponseLimit = __max(ubResponseLimit, ubWaveCap);
 					}
 
