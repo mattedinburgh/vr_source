@@ -7149,8 +7149,10 @@ static BOOLEAN AIKnownThreatHasSightToSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, B
 		const BOOLEAN fCurrentContact =
 			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY ||
 			 PublicKnowledge(pSoldier->bTeam, pOpponent->ubID) == SEEN_CURRENTLY);
+		const BOOLEAN fThreatStateKnown =
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY);
 
-		if (fCurrentContact && !ValidOpponent(pSoldier, pOpponent))
+		if (fThreatStateKnown && !ValidOpponent(pSoldier, pOpponent))
 			continue;
 
 		INT32 sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
@@ -7159,9 +7161,9 @@ static BOOLEAN AIKnownThreatHasSightToSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, B
 			continue;
 
 		UINT16 usAdjustedSight;
-		if (fCurrentContact)
+		if (fThreatStateKnown)
 		{
-			// Current sight can legitimately use the observer's actual vision state.
+			// Personal sight can legitimately use the observer's actual vision state.
 			INT16 sSightAdjustment =
 				GetSightAdjustment(pOpponent, pSoldier, sSpot, pSoldier->pathing.bLevel, ubTargetStance);
 
@@ -7194,7 +7196,7 @@ static BOOLEAN AIKnownThreatHasSightToSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, B
 
 		// Predict a one-tile reposition only for a currently observed opponent. Doing
 		// this for stale contacts lets hidden current movement/body state leak into cover.
-		if (fCurrentContact && gfTurnBasedAI)
+		if (fThreatStateKnown && gfTurnBasedAI)
 		{
 			for (UINT8 ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ++ubDirection)
 			{
@@ -7342,8 +7344,10 @@ BOOLEAN CheckDangerousDirection(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		const BOOLEAN fCurrentContact =
 			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY ||
 			 PublicKnowledge(pSoldier->bTeam, pOpponent->ubID) == SEEN_CURRENTLY);
+		const BOOLEAN fThreatStateKnown =
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY);
 
-		if (fCurrentContact &&
+		if (fThreatStateKnown &&
 			(!ValidOpponent(pSoldier, pOpponent) || pOpponent->IsUnconscious() || pOpponent->IsEmptyVehicle()))
 		{
 			continue;
@@ -7355,7 +7359,7 @@ BOOLEAN CheckDangerousDirection(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 			continue;
 
 		UINT16 usAdjustedSight;
-		if (fCurrentContact)
+		if (fThreatStateKnown)
 		{
 			INT16 sSightAdjustment =
 				GetSightAdjustment(pOpponent, pSoldier, sSpot, pSoldier->pathing.bLevel, ANIM_STAND);
@@ -8859,7 +8863,9 @@ BOOLEAN AnyCoverAtSpot( SOLDIERTYPE *pSoldier, INT32 sSpot )
 		const BOOLEAN fCurrentContact =
 			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY ||
 			 PublicKnowledge(pSoldier->bTeam, pOpponent->ubID) == SEEN_CURRENTLY);
-		if (fCurrentContact && !ValidOpponent(pSoldier, pOpponent))
+		const BOOLEAN fThreatStateKnown =
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY);
+		if (fThreatStateKnown && !ValidOpponent(pSoldier, pOpponent))
 			continue;
 
 		INT32 sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
@@ -8868,7 +8874,7 @@ BOOLEAN AnyCoverAtSpot( SOLDIERTYPE *pSoldier, INT32 sSpot )
 			continue;
 
 		INT32 iVisibilityRange;
-		if (fCurrentContact)
+		if (fThreatStateKnown)
 		{
 			iVisibilityRange = pOpponent->GetMaxDistanceVisible(sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
 		}
@@ -8887,7 +8893,7 @@ BOOLEAN AnyCoverAtSpot( SOLDIERTYPE *pSoldier, INT32 sSpot )
 		}
 
 		// Only an actually observed opponent gets one-tile movement prediction.
-		if (fCurrentContact && gfTurnBasedAI)
+		if (fThreatStateKnown && gfTurnBasedAI)
 		{
 			for (UINT8 ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ++ubDirection)
 			{
@@ -10591,9 +10597,11 @@ BOOLEAN EnemyCanAttackSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		const BOOLEAN fCurrentContact =
 			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY ||
 			 PublicKnowledge(pSoldier->bTeam, pOpponent->ubID) == SEEN_CURRENTLY);
+		const BOOLEAN fThreatStateKnown =
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY);
 
 		INT32 iAttackRange;
-		if (fCurrentContact)
+		if (fThreatStateKnown)
 		{
 			if (!ValidOpponent(pSoldier, pOpponent) || pOpponent->IsUnconscious() || pOpponent->IsEmptyVehicle())
 				continue;
