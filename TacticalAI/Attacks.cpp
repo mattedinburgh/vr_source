@@ -891,6 +891,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 	UINT8	ubFriendCnt = 0,ubOpponentCnt = 0, ubOpponentID[MAXMERCS];
 	UINT8	ubMaxPossibleAimTime;
 	INT16	ubRawAPCost, ubMinAPcost;
+	INT16	sSelectedAimAPCost = 0;
 	UINT8	ubChanceToHit, ubChanceToGetThrough, ubChanceToReallyHit;
 	UINT32	uiPenalty;
 	UINT8	ubSearchRange;
@@ -1614,31 +1615,65 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 					continue;				// next gridno
 				}
 
-				// calculate the maximum possible aiming time
-				// HEADROCK HAM 4: Required for new Aiming Level Limits function
-				ubMaxPossibleAimTime = CalcAimingLevelsAvailableWithAP(pSoldier, sGridNo, pSoldier->bActionPoints-ubMinAPcost);//dnl ch63 250813
-				DebugMsg(TOPIC_JA2 , DBG_LEVEL_3 , String("Max Possible Aim Time = %d",ubMaxPossibleAimTime ));
-
-				// calc next attack's minimum AP cost (excludes readying & turning)
-
-				// since grenades & shells are far too valuable to waste, ALWAYS
-				// aim for the longest time possible!
-
+				// Select aim time. Direct-fire explosive weapons keep their existing gun-aim
+				// logic. Hand-thrown grenades instead compare 0..4 deliberate aim levels using
+				// the same AP cost and diminishing-return CTH model as the player.
+				sSelectedAimAPCost = 0;
 				DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"calcbestthrow: checking chance to hit");
 				if ( EXPLOSIVE_GUN( usInHand ) )
 				{
+					ubMaxPossibleAimTime = CalcAimingLevelsAvailableWithAP(pSoldier, sGridNo, pSoldier->bActionPoints-ubMinAPcost);//dnl ch63 250813
+					DebugMsg(TOPIC_JA2 , DBG_LEVEL_3 , String("Max Possible Aim Time = %d",ubMaxPossibleAimTime ));
 					ubRawAPCost = MinAPsToShootOrStab( pSoldier, sGridNo,ubMaxPossibleAimTime,FALSE);
 					ubChanceToHit = (UINT8) AICalcChanceToHitGun(pSoldier, sGridNo, ubMaxPossibleAimTime, AIM_SHOT_TORSO, pOpponent->pathing.bLevel, STANDING);//dnl ch59 130813
+					sSelectedAimAPCost = (INT16)CalcAPCostForAiming(pSoldier, sGridNo, ubMaxPossibleAimTime);
 //SendFmtMsg("CalcBestThrow=%d APs=%d mat=%d gno=%d  EXPGUN!!!", ubChanceToHit, ubRawAPCost, ubMaxPossibleAimTime, sGridNo);
 				}
 				else
 				{
-					ubMaxPossibleAimTime = (UINT8)APBPConstants[AP_MIN_AIM_ATTACK];//dnl ch63 240813
-					// NB grenade launcher is NOT a direct fire weapon!
+					UINT8 ubAffordableAim = 0;
+					UINT8 ubTryAim;
+					UINT8 ubTryChance;
+					INT16 sTryAimAP;
+					INT32 iTryEfficiency;
+					INT32 iBestEfficiency = -1;
+
 					ubRawAPCost = (UINT8) MinAPsToThrow( pSoldier, sGridNo, FALSE );
-					DebugMsg(TOPIC_JA2 , DBG_LEVEL_3 , String("Raw AP Cost = %d",ubRawAPCost ));
-					ubChanceToHit = (UINT8) CalcThrownChanceToHit( pSoldier, sGridNo, ubMaxPossibleAimTime, AIM_SHOT_TORSO );
-					DebugMsg(TOPIC_JA2 , DBG_LEVEL_3 , String("Chance to hit = %d",ubChanceToHit ));
+
+					// Find the highest deliberate-aim level that fits after the base throw,
+					// including turning/stance costs already represented by ubMinAPcost.
+					for ( ubTryAim = 1; ubTryAim <= 4; ++ubTryAim )
+					{
+						if ( ubMinAPcost + CalcAPCostForThrowAiming( ubTryAim ) <= pSoldier->bActionPoints )
+							ubAffordableAim = ubTryAim;
+						else
+							break;
+					}
+
+					ubMaxPossibleAimTime = 0;
+					ubChanceToHit = (UINT8) CalcThrownChanceToHit( pSoldier, sGridNo, 0, AIM_SHOT_TORSO );
+
+					// The final grenade attack value is proportional to CTH twice (hit rate and
+					// real-hit chance), so choose the aim level that maximizes CTH^2 per AP.
+					// This naturally produces snap throws when time is tight and careful throws
+					// when the added accuracy is worth the AP, rather than always max-aiming.
+					for ( ubTryAim = 0; ubTryAim <= ubAffordableAim; ++ubTryAim )
+					{
+						sTryAimAP = CalcAPCostForThrowAiming( ubTryAim );
+						ubTryChance = (UINT8) CalcThrownChanceToHit( pSoldier, sGridNo, ubTryAim, AIM_SHOT_TORSO );
+						iTryEfficiency = ( (INT32)ubTryChance * (INT32)ubTryChance * 100 ) /
+							__max( 1, (INT32)ubRawAPCost + (INT32)sTryAimAP );
+
+						if ( iTryEfficiency > iBestEfficiency )
+						{
+							iBestEfficiency = iTryEfficiency;
+							ubMaxPossibleAimTime = ubTryAim;
+							ubChanceToHit = ubTryChance;
+							sSelectedAimAPCost = sTryAimAP;
+						}
+					}
+
+					DebugMsg(TOPIC_JA2 , DBG_LEVEL_3 , String("Grenade aim = %d, aim AP = %d, CTH = %d", ubMaxPossibleAimTime, sSelectedAimAPCost, ubChanceToHit ));
 //SendFmtMsg("CalcBestThrow=%d APs=%d mat=%d gno=%d", ubChanceToHit, ubRawAPCost, ubMaxPossibleAimTime, sGridNo);
 				}
 
@@ -1661,7 +1696,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 					ubRawAPCost = ubMinAPcost;
 
 				DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("calcbestthrow: checking hit rate: ubRawAPCost %d, ubMaxPossibleAimTime %d", ubRawAPCost, ubMaxPossibleAimTime ));
-				iHitRate = (pSoldier->bActionPoints * ubChanceToHit) / (ubRawAPCost + ubMaxPossibleAimTime);
+				iHitRate = (pSoldier->bActionPoints * ubChanceToHit) / __max( 1, (INT32)ubRawAPCost + (INT32)sSelectedAimAPCost );
 				DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"calcbestthrow: checked hit rate");
 				//NumMessage("iHitRate = ",iHitRate);
 
@@ -1693,7 +1728,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 					pBestThrow->ubChanceToReallyHit = ubChanceToReallyHit;
 					pBestThrow->sTarget				= sGridNo;
 					pBestThrow->iAttackValue		= iAttackValue;
-					pBestThrow->ubAPCost			= ubMinAPcost + CalcAPCostForAiming(pSoldier, sGridNo, ubMaxPossibleAimTime);//dnl ch64 310813
+					pBestThrow->ubAPCost			= ubMinAPcost + sSelectedAimAPCost;
 					pBestThrow->bTargetLevel		= bOpponentLevel[ubLoop];
 
 					//sprintf(tempstr,"new best THROW AttackValue = %d at grid #%d",iAttackValue/100000,gridno);
