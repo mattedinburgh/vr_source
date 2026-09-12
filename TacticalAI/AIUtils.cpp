@@ -9621,6 +9621,9 @@ BOOLEAN SafeSpot(SOLDIERTYPE *pSoldier, INT32 sSpot)
 	if (Water(sSpot, bLevel) || SpotDangerLevel(pSoldier, sSpot) > 0)
 		return FALSE;
 
+	if (AICorpseWarningKnown(pSoldier, sSpot, bLevel) > 0)
+		return FALSE;
+
 	return TRUE;
 }
 
