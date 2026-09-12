@@ -2800,7 +2800,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 
 			if ((BestThrow.bWeaponIn != NO_SLOT) &&
 				(CalcMaxTossRange(pSoldier, pSoldier->inv[BestThrow.bWeaponIn].usItem, TRUE) > MaxNormalDistanceVisible()) &&
-				(gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
+				(pSoldier->bTeam == ENEMY_TEAM ? AIFireteamAliveCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
 				(gTacticalStatus.ubSpottersCalledForBy == NOBODY))
 			{
 				// then call for spotters!  Uses up the rest of his turn (whatever
@@ -2820,7 +2820,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		// sevenfm: set bAimShotLocation
 		pSoldier->bAimShotLocation = AIM_SHOT_RANDOM;
 		CheckIfShotPossible(pSoldier, &BestShot);
-		DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible? = %d, CTH = %d",BestShot.ubPossible,BestShot.ubChanceToReallyHit));
+DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible? = %d, CTH = %d",BestShot.ubPossible,BestShot.ubChanceToReallyHit));
 
 		// sevenfm: changed sniper shot min CTH to 25%
 		if (BestShot.ubPossible && BestShot.ubChanceToReallyHit > 25 )
@@ -2858,7 +2858,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 
 				if (GunRange(gun, pSoldier) > MaxNormalDistanceVisible() &&
 					(IsScoped(gun) || pSoldier->aiData.bOrders == SNIPER) &&
-					(gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
+					(pSoldier->bTeam == ENEMY_TEAM ? AIFireteamAliveCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
 					(gTacticalStatus.ubSpottersCalledForBy == NOBODY))
 				{
 					// then call for spotters!  Uses up the rest of his turn (whatever
@@ -3294,6 +3294,15 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		if (bFallbackAction != AI_ACTION_NONE)
 			return bFallbackAction;
 	}
+	// A badly bleeding soldier stabilizes himself first if contact has broken and
+	// his current position is protected enough to spend AP on first aid.
+	if (AICombatTeam(pSoldier))
+	{
+		INT8 bSelfAidAction = DecideEmergencySelfAid(pSoldier);
+		if (bSelfAidAction != AI_ACTION_NONE)
+			return bSelfAidAction;
+	}
+
 
 	// Tactical self-preservation: withdraw when this soldier's personal danger
 	// exceeds what his personality and morale are willing to tolerate.
@@ -3329,6 +3338,15 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		INT8 bMedicAction = DecideCombatMedicRescue(pSoldier);
 		if (bMedicAction != AI_ACTION_NONE)
 			return bMedicAction;
+	}
+
+	// Ordinary soldiers only perform immediate adjacent stabilization; they never
+	// abandon their tactical role to run across the battlefield as improvised medics.
+	if (AICombatTeam(pSoldier) && !AICheckIsMedic(pSoldier))
+	{
+		INT8 bBuddyAidAction = DecideEmergencyBuddyAid(pSoldier);
+		if (bBuddyAidAction != AI_ACTION_NONE)
+			return bBuddyAidAction;
 	}
 // WDS DEBUG - this will make all enemies run away (to test retreating into occupied sector bugs)
 //	pSoldier->aiData.bAIMorale = MORALE_HOPELESS;
@@ -5047,6 +5065,14 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				if (bFallbackAction != AI_ACTION_NONE)
 					return bFallbackAction;
 			}
+			// A badly bleeding soldier stabilizes himself first during a protected lull.
+			if (AICombatTeam(pSoldier))
+			{
+				INT8 bSelfAidAction = DecideEmergencySelfAid(pSoldier);
+				if (bSelfAidAction != AI_ACTION_NONE)
+					return bSelfAidAction;
+			}
+
 
 			// Tactical self-preservation: individual danger can override aggression even
 			// for a healthy soldier if he is badly suppressed, exposed and isolated.
@@ -5071,6 +5097,15 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 					return(AI_ACTION_WITHDRAW);
 				}
 			}
+
+	// Ordinary soldiers only perform immediate adjacent stabilization; they never
+	// abandon their tactical role to run across the battlefield as improvised medics.
+	if (AICombatTeam(pSoldier) && !AICheckIsMedic(pSoldier))
+	{
+		INT8 bBuddyAidAction = DecideEmergencyBuddyAid(pSoldier);
+		if (bBuddyAidAction != AI_ACTION_NONE)
+			return bBuddyAidAction;
+	}
 
 			// Combat medic rescue is considered before ordinary offensive behaviour.
 			// The rescue routine itself rejects suicidal routes and over-risked medics.
@@ -5438,6 +5473,12 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 
 		CheckIfShotPossible(pSoldier, &BestShot);
 
+		BOOLEAN fBestShotTargetStateKnown =
+			BestShot.ubPossible &&
+			BestShot.ubOpponent != NOBODY &&
+			MercPtrs[BestShot.ubOpponent] &&
+			PersonalKnowledge(pSoldier, BestShot.ubOpponent) == SEEN_CURRENTLY;
+
 		if (BestShot.ubFriendlyFireChance)	//dnl ch61 180813
 		{
 			// determine chance to shoot
@@ -5457,7 +5498,8 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			// if the selected opponent is not a threat (unconscious & !serviced)
 			// (usually, this means all the guys we see are unconscious, but, on
 			//  rare occasions, we may not be able to shoot a healthy guy, too)
-			if ((Menptr[BestShot.ubOpponent].stats.bLife < OKLIFE) &&
+			if (fBestShotTargetStateKnown &&
+				(Menptr[BestShot.ubOpponent].stats.bLife < OKLIFE) &&
 				!Menptr[BestShot.ubOpponent].bService &&
 				(pSoldier->aiData.bAttitude != AGGRESSIVE || Chance((100 - BestShot.ubChanceToReallyHit) / 2)))
 			{
@@ -5697,6 +5739,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 
 		// sevenfm: special code to attack zombies, disable shooting since we cannot kill lying zombie with bullets
 		if (BestShot.ubPossible &&
+			fBestShotTargetStateKnown &&
 			BestShot.ubOpponent != NOBODY &&
 			MercPtrs[BestShot.ubOpponent] &&
 			MercPtrs[BestShot.ubOpponent]->IsZombie() &&
@@ -5852,6 +5895,12 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 
 	// NB a desire of 4 or more is only achievable by brave/aggressive guys with high morale
 	UINT16 usRange = BestAttack.bWeaponIn==NO_SLOT ? 0 : GetModifiedGunRange(pSoldier->inv[BestAttack.bWeaponIn].usItem);//dnl ch69 150913
+
+	BOOLEAN fBestAttackTargetStateKnown =
+		ubBestAttackAction != AI_ACTION_NONE &&
+		BestAttack.ubOpponent != NOBODY &&
+		MercPtrs[BestAttack.ubOpponent] &&
+		PersonalKnowledge(pSoldier, BestAttack.ubOpponent) == SEEN_CURRENTLY;
 
 	// sevenfm: black climb
 	// don't climb if there are enemies close (count all enemies, not only the current target)
@@ -6114,7 +6163,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			if(!TANK(pSoldier))
 			{
 				// sevenfm: dynamically decide shot location
-				if (BestAttack.ubOpponent != NOBODY)
+				if (fBestAttackTargetStateKnown && BestAttack.ubOpponent != NOBODY)
 				{
 					UINT32	uiRoll;
 					UINT8	ubChanceLegs = 0;
@@ -6219,7 +6268,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			//////////////////////////////////////////////////////////////////////////
 
 			if (IsGunBurstCapable( &pSoldier->inv[BestAttack.bWeaponIn], FALSE, pSoldier ) &&
-				!(Menptr[BestShot.ubOpponent].stats.bLife < OKLIFE) && // don't burst at downed targets
+				(!fBestAttackTargetStateKnown || !(Menptr[BestShot.ubOpponent].stats.bLife < OKLIFE)) && // only suppress visible downed targets
 				pSoldier->inv[BestAttack.bWeaponIn][0]->data.gun.ubGunShotsLeft > 1 &&
 				(pSoldier->bTeam != gbPlayerNum || pSoldier->aiData.bRTPCombat == RTP_COMBAT_AGGRESSIVE) )
 			{
@@ -6301,7 +6350,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			}
 
 			if (IsGunAutofireCapable( &pSoldier->inv[BestAttack.bWeaponIn] ) &&
-				!(Menptr[BestShot.ubOpponent].stats.bLife < OKLIFE) && // don't burst at downed targets
+				(!fBestAttackTargetStateKnown || !(Menptr[BestShot.ubOpponent].stats.bLife < OKLIFE)) && // only suppress visible downed targets
 				(( pSoldier->inv[BestAttack.bWeaponIn][0]->data.gun.ubGunShotsLeft > 1 &&
 				!pSoldier->bDoBurst ) || Weapon[pSoldier->inv[BestAttack.bWeaponIn].usItem].NoSemiAuto) )
 			{
@@ -6327,7 +6376,7 @@ L_NEWAIM:
 						pSoldier->inv[ BestAttack.bWeaponIn ][0]->data.gun.ubGunShotsLeft >= pSoldier->bDoAutofire &&
 						//dnl ch64 130913 pSoldier->ubAttackingHand is wrong because decision is to use BestAttack.bWeaponIn, also missing sActualAimTime
 						// sevenfm limit max auto penalty if target has shock (suppressed)
-						GetAutoPenalty(pSoldier, &pSoldier->inv[ BestAttack.bWeaponIn ], gAnimControl[ pSoldier->usAnimState ].ubEndHeight == ANIM_PRONE)*pSoldier->bDoAutofire <= __max(BestAttack.ubChanceToReallyHit, 40 + 80 / (2+MercPtrs[BestAttack.ubOpponent]->aiData.bShock)) ); 
+						GetAutoPenalty(pSoldier, &pSoldier->inv[ BestAttack.bWeaponIn ], gAnimControl[ pSoldier->usAnimState ].ubEndHeight == ANIM_PRONE)*pSoldier->bDoAutofire <= __max(BestAttack.ubChanceToReallyHit, 40 + 80 / (2 + (fBestAttackTargetStateKnown ? MercPtrs[BestAttack.ubOpponent]->aiData.bShock : 0))) ); 
 						//GetAutoPenalty(&pSoldier->inv[ BestAttack.bWeaponIn ], gAnimControl[ pSoldier->usAnimState ].ubEndHeight == ANIM_PRONE)*pSoldier->bDoAutofire <= 80);//dnl ch64 130913 pSoldier->ubAttackingHand is wrong because decision is to use BestAttack.bWeaponIn, also missing sActualAimTime
 				}
 
@@ -6339,7 +6388,7 @@ L_NEWAIM:
 					fExtraClip &&
 					pSoldier->aiData.bOrders != SNIPER &&
 					BestAttack.ubChanceToReallyHit < 5 &&
-					!CoweringShockLevel(MercPtrs[BestAttack.ubOpponent]) &&
+					(!fBestAttackTargetStateKnown || !CoweringShockLevel(MercPtrs[BestAttack.ubOpponent])) &&
 					(pSoldier->aiData.bUnderFire || pSoldier->aiData.bAttitude == AGGRESSIVE) &&
 					pSoldier->inv[BestAttack.bWeaponIn][0]->data.gun.ubGunShotsLeft >= 3)//dnl ch69 130913 let try increase autofire rate for aim cost
 				{
@@ -6464,10 +6513,11 @@ L_NEWAIM:
 				pSoldier->aiData.bShock < 2 * RangeChangeDesire(pSoldier) && 
 				pSoldier->stats.bLife > pSoldier->stats.bLifeMax / 2 && 
 				// sevenfm: increased to 10-40 depending on target shock
-				(BestAttack.ubChanceToReallyHit < 10 + MercPtrs[BestAttack.ubOpponent]->aiData.bShock) &&
+				(BestAttack.ubChanceToReallyHit < 10 +
+				 (fBestAttackTargetStateKnown ? MercPtrs[BestAttack.ubOpponent]->aiData.bShock : 0)) &&
 				// sevenfm: advance when too far or target is cowering or hit
 				(	PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) > usRange / (CELL_X_SIZE) ||
-					CoweringShockLevel(MercPtrs[BestAttack.ubOpponent]) ||
+					(fBestAttackTargetStateKnown && CoweringShockLevel(MercPtrs[BestAttack.ubOpponent])) ||
 					pSoldier->aiData.bLastAttackHit ) &&
 				pSoldier->aiData.bOrders > ONGUARD &&
 				pSoldier->aiData.bOrders != SNIPER &&
@@ -6599,7 +6649,7 @@ L_NEWAIM:
 			pSoldier->aiData.bAimTime = BestAttack.ubAimTime;
 
 			// sevenfm: dynamically decide stab location
-			if( BestAttack.ubOpponent != NOBODY )
+			if( fBestAttackTargetStateKnown && BestAttack.ubOpponent != NOBODY )
 			{
 				UINT32	uiRoll;
 				UINT8	ubChanceHead = 0;
@@ -6863,9 +6913,12 @@ L_NEWAIM:
 	// (we never want NPCs to choose to radio if they would have to wait a turn)
 	// and we're not swimming in deep water, and somebody has called for spotters
 	// and we see the location of at least 2 opponents
-	if ( !(pSoldier->usSoldierFlagMask & SOLDIER_RAISED_REDALERT) && (gTacticalStatus.ubSpottersCalledForBy != NOBODY) && (pSoldier->bActionPoints >= APBPConstants[AP_RADIO]) &&
+	if ( !(pSoldier->usSoldierFlagMask & SOLDIER_RAISED_REDALERT) && (gTacticalStatus.ubSpottersCalledForBy != NOBODY) &&
+		MercPtrs[gTacticalStatus.ubSpottersCalledForBy] &&
+		AISameFireteam(pSoldier, MercPtrs[gTacticalStatus.ubSpottersCalledForBy]) &&
+		(pSoldier->bActionPoints >= APBPConstants[AP_RADIO]) &&
 		(pSoldier->aiData.bOppCnt > 1) && !fCivilian &&
-		(gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) && !bInDeepWater)
+		(pSoldier->bTeam == ENEMY_TEAM ? AIFireteamAliveCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) && !bInDeepWater)
 	{
 		// base chance depends on how much new info we have to radio to the others
 		iChance = 25 * WhatIKnowThatPublicDont(pSoldier,TRUE);	// just count them
