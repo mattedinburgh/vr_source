@@ -957,6 +957,52 @@ BOOLEAN CloseEnoughForGrenadeToss( INT32 sGridNo, INT32 sGridNo2 )
 	return( TRUE );
 }
 
+static UINT8 AIRecentTossSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bTargetLevel)
+{
+	if (!pSoldier || TileIsOutOfBounds(sTargetSpot))
+		return 0;
+
+	UINT8 ubCount = 0;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier ||
+			!pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE ||
+			pFriend->pathing.bLevel != bTargetLevel ||
+			!AISameFireteam(pSoldier, pFriend))
+		{
+			continue;
+		}
+
+		INT32 sRecentTarget = NOWHERE;
+
+		if (pFriend->aiData.bAction == AI_ACTION_TOSS_PROJECTILE &&
+			!TileIsOutOfBounds(pFriend->aiData.usActionData))
+		{
+			sRecentTarget = pFriend->aiData.usActionData;
+		}
+		else if (pFriend->aiData.bLastAction == AI_ACTION_TOSS_PROJECTILE &&
+			pFriend->bActionPoints < pFriend->bInitialActionPoints &&
+			!TileIsOutOfBounds(pFriend->sLastTarget))
+		{
+			sRecentTarget = pFriend->sLastTarget;
+		}
+
+		if (!TileIsOutOfBounds(sRecentTarget) &&
+			PythSpacesAway(sRecentTarget, sTargetSpot) <= 2)
+		{
+			++ubCount;
+			if (ubCount >= 3)
+				break;
+		}
+	}
+
+	return ubCount;
+}
+
 void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 {
 	DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"calcbestthrow");
@@ -1806,6 +1852,31 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 				// typical attack value here should be about 500 thousand
 				DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"calcbestthrow: checking attack value");
 				iAttackValue = (iHitRate * ubChanceToReallyHit * iTotalThreatValue) / 1000;
+
+				// Sequential AI grenade deconfliction. A recent same-fireteam toss
+				// into essentially the same area reduces utility, but dense clusters
+				// and emergency pressure can still justify a follow-up grenade.
+				if (AICombatTeam(pSoldier) &&
+					usGrenade != NOTHING &&
+					!Item[usGrenade].flare &&
+					Explosive[Item[usGrenade].ubClassIndex].ubType != EXPLOSV_SMOKE)
+				{
+					UINT8 ubRecentTosses = AIRecentTossSaturation(
+						pSoldier, sGridNo, bOpponentLevel[ubLoop]);
+
+					if (ubRecentTosses > 0)
+					{
+						INT32 iPenalty = 20 * ubRecentTosses;
+
+						if (ubOppsInRange >= 3)
+							iPenalty /= 2;
+						if (pSoldier->aiData.bUnderFire)
+							iPenalty /= 2;
+
+						iPenalty = __min(60, iPenalty);
+						iAttackValue = iAttackValue * (100 - iPenalty) / 100;
+					}
+				}
 				//NumMessage("THROW AttackValue = ",iAttackValue / 1000);
 
 				// unlike SHOOTing and STABbing, find strictly the highest attackValue
