@@ -2277,6 +2277,12 @@ void CalcBestStab(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestStab, BOOLEAN fBladeAt
 		//iThreatValue = CalcManThreatValue(pOpponent,pSoldier->sGridNo,FALSE,pSoldier);
 		iThreatValue = CalcManThreatValue(pOpponent,pSoldier->sGridNo,TRUE,pSoldier);
 
+		// A visibly active caregiver is a lower-priority deliberate melee target.
+		if (AIObservedActiveMedicalTreatment(pSoldier, pOpponent, TRUE))
+		{
+			iThreatValue = iThreatValue * 55 / 100;
+		}
+
 		// estimate the damage this stab would do to this opponent
 		iEstDamage = EstimateStabDamage(pSoldier,pOpponent,ubBestChanceToHit, fBladeAttack );
 		//NumMessage("STAB EstDamage = ", iEstDamage);
