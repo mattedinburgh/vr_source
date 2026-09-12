@@ -8215,6 +8215,12 @@ UINT8 RedSmokeDanger(INT32 sGridNo, INT8 bLevel)
 		return 0;
 	}
 
+	// Dense local terrain can provide credible overhead/fragmentation protection.
+	if (bLevel == 0 && TerrainDensity(sGridNo, bLevel, 2, FALSE) >= 20)
+	{
+		return 0;
+	}
+
 	//loop through all red smoke effects and find closest
 	for (uiCnt = 0; uiCnt < guiNumSmokeEffects; uiCnt++)
 	{
@@ -9306,6 +9312,60 @@ BOOLEAN NorthSpot(INT32 sSpot, INT8 bLevel)
 	}
 
 	return FALSE;
+}
+
+UINT8 TerrainDensity(INT32 sSpot, INT8 bLevel, UINT8 ubDistance, BOOLEAN fGrass)
+{
+	if (TileIsOutOfBounds(sSpot))
+		return 0;
+
+	INT16 sMaxLeft = min(ubDistance, (sSpot % MAXCOL));
+	INT16 sMaxRight = min(ubDistance, MAXCOL - ((sSpot % MAXCOL) + 1));
+	INT16 sMaxUp = min(ubDistance, (sSpot / MAXROW));
+	INT16 sMaxDown = min(ubDistance, MAXROW - ((sSpot / MAXROW) + 1));
+	INT32 sCountSpots = 0;
+	INT32 sCountObstacles = 0;
+
+	for (INT16 sYOffset = -sMaxUp; sYOffset <= sMaxDown; ++sYOffset)
+	{
+		for (INT16 sXOffset = -sMaxLeft; sXOffset <= sMaxRight; ++sXOffset)
+		{
+			INT32 sCheckSpot = sSpot + sXOffset + MAXCOL * sYOffset;
+			if (TileIsOutOfBounds(sCheckSpot))
+				continue;
+
+			UINT16 usRoom1 = 0;
+			UINT16 usRoom2 = 0;
+			if (InARoom(sSpot, &usRoom1) != InARoom(sCheckSpot, &usRoom2) ||
+				usRoom1 != usRoom2)
+			{
+				continue;
+			}
+
+			++sCountSpots;
+
+			if (!IsLocationSittableExcludingPeople(sCheckSpot, bLevel))
+			{
+				++sCountObstacles;
+				continue;
+			}
+
+			if (fGrass)
+			{
+				STRUCTURE *pCurrent = gpWorldLevelData[sCheckSpot].pStructureHead;
+				INT16 sDesiredLevel = (bLevel > 0) ? STRUCTURE_ON_ROOF : STRUCTURE_ON_GROUND;
+
+				if (pCurrent != NULL &&
+					pCurrent->sCubeOffset == sDesiredLevel &&
+					pCurrent->pDBStructureRef->pDBStructure->ubArmour == 4)
+				{
+					++sCountObstacles;
+				}
+			}
+		}
+	}
+
+	return (sCountSpots > 0) ? (UINT8)(100 * sCountObstacles / sCountSpots) : 0;
 }
 
 UINT8 CountObstaclesNearSpot(INT32 sSpot, INT8 bLevel)
