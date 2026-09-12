@@ -2742,15 +2742,6 @@ void GetKeyboardInput( UINT32 *puiNewEvent )
 
 				break;
 
-			case '\\':
-				// 1.13-style rescue drag: face an adjacent downed ally and press backslash.
-				// Press again to release. Starting the drag stabilizes the casualty.
-				if ( gusSelectedSoldier != NOBODY )
-				{
-					ToggleDownedDragInFront( MercPtrs[gusSelectedSoldier] );
-				}
-				break;
-
 			case '/':
 				// Center to guy....
 				if ( gusSelectedSoldier != NOBODY )
