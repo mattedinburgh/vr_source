@@ -1035,6 +1035,11 @@ SOLDIERTYPE& SOLDIERTYPE::operator=(const OLDSOLDIERTYPE_101& src)
 		for (UINT8 i = 0; i < SOLDIER_COUNTER_MAX; ++i)		this->usSkillCounter[i]  = 0;
 		for (UINT8 i = 0; i < SOLDIER_COOLDOWN_MAX; ++i)	this->usSkillCooldown[i] = 0;
 
+		this->ubBleedoutTurns = 0;
+		this->ubBleedoutState = BLEEDOUT_NONE;
+		this->ubDraggedCasualtyID = NOBODY;
+		this->ubDraggedByID = NOBODY;
+
 		this->ubLastShock = 0;
 		this->ubLastSuppression = 0;
 		this->ubLastAP = 0;
@@ -1127,6 +1132,11 @@ void SOLDIERTYPE::initialize()
 	this->usQuickItemId = 0;
 	this->ubQuickItemSlot = 0;
 	this->usGrenadeItem = 0;
+
+	this->ubBleedoutTurns = 0;
+	this->ubBleedoutState = BLEEDOUT_NONE;
+	this->ubDraggedCasualtyID = NOBODY;
+	this->ubDraggedByID = NOBODY;
 }
 
 bool SOLDIERTYPE::exists()
@@ -4981,6 +4991,12 @@ void SOLDIERTYPE::SetSoldierGridNo( INT32 sNewGridNo, BOOLEAN fForceRemove )
 				}
 			}
 		}
+
+		// A rescuer pulls the living casualty into the tile just vacated.  This is
+		// deliberately after the rescuer's own placement/terrain processing so the
+		// old tile is genuinely free and collision-safe.
+		if ( this->IsDraggingBleedoutCasualty() )
+			this->UpdateDraggedBleedoutCasualty( this->sOldGridNo );
 
 		// Adjust speed based on terrain, etc
 		SetSoldierAniSpeed( this );
@@ -9728,6 +9744,197 @@ BOOLEAN IsBleedoutCasualty( SOLDIERTYPE *pSoldier )
 }
 
 
+// 1.13-style window breaking.  The crowbar animation already exists in Vengeance;
+// this adds the missing contextual action and intact-window validation.
+BOOLEAN SOLDIERTYPE::CanBreakWindow( void )
+{
+	if ( !this->bActive || !this->bInSector || this->stats.bLife < OKLIFE ||
+		this->bCollapsed || !IS_MERC_BODY_TYPE( this ) || !this->inv[ HANDPOS ].exists() ||
+		this->inv[ HANDPOS ][0]->data.objectStatus < USABLE )
+	{
+		return FALSE;
+	}
+
+	UINT16 usItem = this->inv[ HANDPOS ].usItem;
+	BOOLEAN fSuitableTool = Item[ usItem ].crowbar ||
+		( (Item[ usItem ].usItemClass & IC_GUN) && Item[ usItem ].twohanded && Item[ usItem ].metal );
+	if ( !fSuitableTool )
+		return FALSE;
+
+	INT32 sWindowGridNo = this->sGridNo;
+	if ( this->ubDirection == NORTH || this->ubDirection == WEST )
+		sWindowGridNo = NewGridNo( this->sGridNo, (UINT16)DirectionInc( (UINT8)this->ubDirection ) );
+
+	if ( TileIsOutOfBounds( sWindowGridNo ) )
+		return FALSE;
+
+	if ( IsJumpableWindowPresentAtGridNo( sWindowGridNo, this->ubDirection, TRUE ) &&
+		!IsJumpableWindowPresentAtGridNo( sWindowGridNo, this->ubDirection, FALSE ) )
+	{
+		STRUCTURE *pStructure = FindStructure( sWindowGridNo, STRUCTURE_WALLNWINDOW );
+		if ( pStructure && !(pStructure->fFlags & STRUCTURE_OPEN) )
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
+void SOLDIERTYPE::BreakWindow( void )
+{
+	if ( !CanBreakWindow() )
+		return;
+
+	this->usAttackingWeapon = this->inv[ HANDPOS ].usItem;
+	this->aiData.bAction = AI_ACTION_KNIFE_STAB;
+	this->aiData.usActionData = this->sGridNo;
+	this->aiData.ubPendingAction = NO_PENDING_ACTION;
+	this->sTargetGridNo = this->sGridNo;
+	this->bTargetLevel = this->pathing.bLevel;
+	this->ubTargetID = NOBODY;
+	this->EVENT_InitNewSoldierAnim( CROWBAR_ATTACK, 0, FALSE );
+	SetUIBusy( this->ubID );
+
+	DeductPoints( this, GetAPsToBreakWindow( this, FALSE ), BP_USE_CROWBAR );
+}
+
+BOOLEAN SOLDIERTYPE::IsDraggingBleedoutCasualty( void )
+{
+	if ( this->ubDraggedCasualtyID == NOBODY )
+		return FALSE;
+
+	SOLDIERTYPE *pCasualty = MercPtrs[ this->ubDraggedCasualtyID ];
+	if ( !pCasualty || !pCasualty->bActive || !pCasualty->bInSector ||
+		pCasualty->ubDraggedByID != this->ubID || pCasualty->bTeam != this->bTeam ||
+		pCasualty->pathing.bLevel != this->pathing.bLevel || !IsBleedoutCasualty( pCasualty ) )
+	{
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+BOOLEAN SOLDIERTYPE::CanDragBleedoutCasualty( SOLDIERTYPE *pCasualty )
+{
+	if ( !pCasualty || pCasualty == this || !this->bActive || !this->bInSector ||
+		this->stats.bLife < OKLIFE || this->bCollapsed || IsBleedoutCasualty( this ) ||
+		!IS_MERC_BODY_TYPE( this ) || (this->flags.uiStatusFlags & (SOLDIER_VEHICLE | SOLDIER_ROBOT)) )
+	{
+		return FALSE;
+	}
+
+	if ( !pCasualty->bActive || !pCasualty->bInSector || pCasualty->bTeam != this->bTeam ||
+		pCasualty->pathing.bLevel != this->pathing.bLevel || !IsBleedoutCasualty( pCasualty ) ||
+		pCasualty->ubServiceCount > 0 || SpacesAway( this->sGridNo, pCasualty->sGridNo ) != 1 )
+	{
+		return FALSE;
+	}
+
+	// Do not pull people through deep water.  Shallow water remains legal.
+	if ( this->MercInHighWater() || pCasualty->MercInHighWater() )
+		return FALSE;
+
+	if ( this->ubDraggedCasualtyID != NOBODY )
+	{
+		if ( IsDraggingBleedoutCasualty() )
+			return FALSE;
+		this->ubDraggedCasualtyID = NOBODY;
+	}
+
+	if ( pCasualty->ubDraggedByID != NOBODY )
+	{
+		SOLDIERTYPE *pOtherRescuer = MercPtrs[ pCasualty->ubDraggedByID ];
+		if ( pOtherRescuer && pOtherRescuer->ubDraggedCasualtyID == pCasualty->ubID )
+			return FALSE;
+
+		// Defensive cleanup for old saves / interrupted links.
+		pCasualty->ubDraggedByID = NOBODY;
+	}
+
+	return TRUE;
+}
+
+BOOLEAN SOLDIERTYPE::StartDraggingBleedoutCasualty( SOLDIERTYPE *pCasualty, BOOLEAN fDeductAP )
+{
+	if ( !CanDragBleedoutCasualty( pCasualty ) )
+		return FALSE;
+
+	// Grabbing and securing a casualty is deliberately non-free.  Per-tile movement
+	// becomes more expensive separately in PATHAI.cpp.
+	INT16 sAPCost = GetBasicAPsToPickupItem( this ) + APBPConstants[ AP_CROUCH ];
+	if ( fDeductAP )
+	{
+		if ( !EnoughPoints( this, sAPCost, 0, (this->bTeam == gbPlayerNum) ) )
+			return FALSE;
+		DeductPoints( this, sAPCost, 0 );
+	}
+
+	this->ubDraggedCasualtyID = pCasualty->ubID;
+	pCasualty->ubDraggedByID = this->ubID;
+
+	// Walking gives the extraction a readable tactical cost; a player can still
+	// deliberately change movement mode afterwards and pays the drag multiplier.
+	this->usUIMovementMode = WALKING;
+	return TRUE;
+}
+
+void SOLDIERTYPE::StopDraggingBleedoutCasualty( void )
+{
+	if ( this->ubDraggedCasualtyID != NOBODY )
+	{
+		SOLDIERTYPE *pCasualty = MercPtrs[ this->ubDraggedCasualtyID ];
+		if ( pCasualty && pCasualty->ubDraggedByID == this->ubID )
+			pCasualty->ubDraggedByID = NOBODY;
+	}
+
+	this->ubDraggedCasualtyID = NOBODY;
+}
+
+void SOLDIERTYPE::ClearBleedoutDragLinks( void )
+{
+	StopDraggingBleedoutCasualty();
+
+	if ( this->ubDraggedByID != NOBODY )
+	{
+		SOLDIERTYPE *pRescuer = MercPtrs[ this->ubDraggedByID ];
+		if ( pRescuer && pRescuer->ubDraggedCasualtyID == this->ubID )
+			pRescuer->ubDraggedCasualtyID = NOBODY;
+	}
+
+	this->ubDraggedByID = NOBODY;
+}
+
+void SOLDIERTYPE::UpdateDraggedBleedoutCasualty( INT32 sOldGridNo )
+{
+	if ( !IsDraggingBleedoutCasualty() )
+	{
+		StopDraggingBleedoutCasualty();
+		return;
+	}
+
+	SOLDIERTYPE *pCasualty = MercPtrs[ this->ubDraggedCasualtyID ];
+	if ( !pCasualty || TileIsOutOfBounds( sOldGridNo ) ||
+		pCasualty->pathing.bLevel != this->pathing.bLevel || this->MercInHighWater() )
+	{
+		StopDraggingBleedoutCasualty();
+		return;
+	}
+
+	UINT8 ubOccupant = WhoIsThere2( sOldGridNo, this->pathing.bLevel );
+	if ( ubOccupant != NOBODY && ubOccupant != pCasualty->ubID )
+	{
+		StopDraggingBleedoutCasualty();
+		return;
+	}
+
+	INT16 sWorldX = 0;
+	INT16 sWorldY = 0;
+	ConvertGridNoToCenterCellXY( sOldGridNo, &sWorldX, &sWorldY );
+	pCasualty->EVENT_SetSoldierPositionForceDelete( (FLOAT)sWorldX, (FLOAT)sWorldY );
+	pCasualty->pathing.sDestination = sOldGridNo;
+	pCasualty->pathing.sFinalDestination = sOldGridNo;
+	pCasualty->sAbsoluteFinalDestination = sOldGridNo;
+}
+
 static UINT8 BleedoutRescueTurns( INT16 sLifeDeduct, INT8 bOldLife )
 {
 	INT16 sOverkill = __max( 0, sLifeDeduct - (INT16)bOldLife );
@@ -9749,6 +9956,16 @@ void ProcessBleedoutCasualties( )
 	{
 		SOLDIERTYPE *pSoldier = Menptr + cnt;
 
+		// Clean interrupted/stale rescue links before evaluating the casualty state.
+		if ( pSoldier->ubDraggedCasualtyID != NOBODY && !pSoldier->IsDraggingBleedoutCasualty() )
+			pSoldier->StopDraggingBleedoutCasualty();
+		if ( pSoldier->ubDraggedByID != NOBODY )
+		{
+			SOLDIERTYPE *pRescuer = MercPtrs[ pSoldier->ubDraggedByID ];
+			if ( !pRescuer || pRescuer->ubDraggedCasualtyID != pSoldier->ubID )
+				pSoldier->ubDraggedByID = NOBODY;
+		}
+
 		if ( !pSoldier->bActive || !pSoldier->bInSector || pSoldier->ubBleedoutState == BLEEDOUT_NONE )
 			continue;
 
@@ -9757,6 +9974,7 @@ void ProcessBleedoutCasualties( )
 		if ( pSoldier->ubBleedoutState != BLEEDOUT_ACTIVE &&
 			pSoldier->ubBleedoutState != BLEEDOUT_STABILIZED )
 		{
+			pSoldier->ClearBleedoutDragLinks();
 			pSoldier->ubBleedoutState = BLEEDOUT_NONE;
 			pSoldier->ubBleedoutTurns = 0;
 			continue;
@@ -9764,6 +9982,7 @@ void ProcessBleedoutCasualties( )
 
 		if ( (pSoldier->flags.uiStatusFlags & SOLDIER_DEAD) || pSoldier->stats.bLife <= 0 )
 		{
+			pSoldier->ClearBleedoutDragLinks();
 			pSoldier->ubBleedoutState = BLEEDOUT_NONE;
 			pSoldier->ubBleedoutTurns = 0;
 			continue;
@@ -9784,6 +10003,7 @@ void ProcessBleedoutCasualties( )
 			}
 			else if ( pSoldier->stats.bLife >= OKLIFE )
 			{
+				pSoldier->ClearBleedoutDragLinks();
 				pSoldier->ubBleedoutState = BLEEDOUT_NONE;
 			}
 
@@ -9794,6 +10014,7 @@ void ProcessBleedoutCasualties( )
 		// effect no longer needs the special bleed-out protection.
 		if ( pSoldier->stats.bLife >= OKLIFE )
 		{
+			pSoldier->ClearBleedoutDragLinks();
 			pSoldier->ubBleedoutState = BLEEDOUT_NONE;
 			pSoldier->ubBleedoutTurns = 0;
 			continue;
@@ -9801,6 +10022,7 @@ void ProcessBleedoutCasualties( )
 
 		if ( pSoldier->ubBleedoutTurns == 0 || pSoldier->ubBleedoutTurns > 6 )
 		{
+			pSoldier->ClearBleedoutDragLinks();
 			pSoldier->ubBleedoutState = BLEEDOUT_NONE;
 			pSoldier->ubBleedoutTurns = 0;
 			continue;
@@ -9822,6 +10044,7 @@ void ProcessBleedoutCasualties( )
 		{
 			// Drop the special protection before applying the final blood loss so the
 			// normal JA2 death pipeline, sounds, corpses and strategic handling run.
+			pSoldier->ClearBleedoutDragLinks();
 			pSoldier->ubBleedoutState = BLEEDOUT_NONE;
 			pSoldier->SoldierTakeDamage( ANIM_CROUCH, pSoldier->stats.bLife, 0, 100,
 				TAKE_DAMAGE_BLOODLOSS, pSoldier->ubAttackerID, NOWHERE, 0, TRUE );
