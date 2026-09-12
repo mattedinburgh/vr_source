@@ -4457,6 +4457,130 @@ BOOLEAN AISameFireteam(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend)
 	return ubMine != AI_FIRETEAM_NONE && ubMine == AIFireteamId(pFriend);
 }
 
+BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridNo)
+{
+	if (!pSoldier || !psTargetGridNo || !AICombatTeam(pSoldier) || gbWorldSectorZ > 0)
+		return FALSE;
+
+	*psTargetGridNo = NOWHERE;
+
+	INT32 iStrikeRadius = __max(2, (INT32)gSkillTraitValues.usVOMortarRadius - 2);
+	iStrikeRadius = __min(iStrikeRadius, TACTICAL_RANGE / 2);
+	INT32 iFriendlySafetyRadius = __max(4, (INT32)gSkillTraitValues.usVOMortarRadius);
+	iFriendlySafetyRadius = __min(iFriendlySafetyRadius, TACTICAL_RANGE / 2);
+
+	INT32 iBestScore = 0;
+
+	for (UINT16 uiCandidate = 0; uiCandidate < MAX_NUM_SOLDIERS; ++uiCandidate)
+	{
+		SOLDIERTYPE *pCandidate = MercPtrs[uiCandidate];
+		if (!pCandidate || pCandidate == pSoldier)
+			continue;
+
+		INT8 bCandidateKnowledge = Knowledge(pSoldier, pCandidate->ubID);
+		if (bCandidateKnowledge != SEEN_CURRENTLY &&
+			bCandidateKnowledge != SEEN_THIS_TURN &&
+			bCandidateKnowledge != SEEN_LAST_TURN &&
+			bCandidateKnowledge != SEEN_2_TURNS_AGO &&
+			bCandidateKnowledge != HEARD_THIS_TURN &&
+			bCandidateKnowledge != HEARD_LAST_TURN &&
+			bCandidateKnowledge != HEARD_2_TURNS_AGO)
+		{
+			continue;
+		}
+
+		if (CONSIDERED_NEUTRAL(pSoldier, pCandidate) ||
+			pSoldier->bSide == pCandidate->bSide ||
+			pCandidate->ubBodyType == CROW)
+		{
+			continue;
+		}
+
+		INT32 sCandidateSpot = KnownLocation(pSoldier, pCandidate->ubID);
+		if (TileIsOutOfBounds(sCandidateSpot))
+			continue;
+
+		BOOLEAN fFriendlyDanger = FALSE;
+		for (UINT16 uiFriend = 0; uiFriend < MAX_NUM_SOLDIERS; ++uiFriend)
+		{
+			SOLDIERTYPE *pFriend = MercPtrs[uiFriend];
+			if (!pFriend || !pFriend->bActive || !pFriend->bInSector ||
+				pFriend->stats.bLife <= 0 ||
+				pFriend->aiData.bNeutral ||
+				pFriend->bSide != pSoldier->bSide)
+			{
+				continue;
+			}
+
+			if (PythSpacesAway(pFriend->sGridNo, sCandidateSpot) <= iFriendlySafetyRadius)
+			{
+				fFriendlyDanger = TRUE;
+				break;
+			}
+		}
+
+		if (fFriendlyDanger)
+			continue;
+
+		INT32 iScore = 0;
+		UINT8 ubCredibleContacts = 0;
+
+		for (UINT16 uiOpponent = 0; uiOpponent < MAX_NUM_SOLDIERS; ++uiOpponent)
+		{
+			SOLDIERTYPE *pOpponent = MercPtrs[uiOpponent];
+			if (!pOpponent || pOpponent == pSoldier)
+				continue;
+
+			INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+			if (bKnowledge != SEEN_CURRENTLY &&
+				bKnowledge != SEEN_THIS_TURN &&
+				bKnowledge != SEEN_LAST_TURN &&
+				bKnowledge != SEEN_2_TURNS_AGO &&
+				bKnowledge != HEARD_THIS_TURN &&
+				bKnowledge != HEARD_LAST_TURN &&
+				bKnowledge != HEARD_2_TURNS_AGO)
+			{
+				continue;
+			}
+
+			if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+				pSoldier->bSide == pOpponent->bSide ||
+				pOpponent->ubBodyType == CROW)
+			{
+				continue;
+			}
+
+			INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
+			if (TileIsOutOfBounds(sKnownSpot) ||
+				PythSpacesAway(sKnownSpot, sCandidateSpot) > iStrikeRadius)
+			{
+				continue;
+			}
+
+			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+			iScore += iCertainty;
+			if (iCertainty >= 50)
+				++ubCredibleContacts;
+		}
+
+		// Artillery is a scarce area weapon: require at least two credible reported
+		// contacts, not one speculative/stale enemy location.
+		if (ubCredibleContacts < 2)
+			continue;
+
+		// Dense local terrain reduces expected effect, consistent with RedSmokeDanger().
+		iScore -= TerrainDensity(sCandidateSpot, 0, 2, FALSE);
+
+		if (iScore > iBestScore)
+		{
+			iBestScore = iScore;
+			*psTargetGridNo = sCandidateSpot;
+		}
+	}
+
+	return !TileIsOutOfBounds(*psTargetGridNo);
+}
+
 BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, UINT8 ubResponseLimit)
 {
 	if (!AIEnemyFireteamEligible(pSoldier) || TileIsOutOfBounds(sContactSpot))
