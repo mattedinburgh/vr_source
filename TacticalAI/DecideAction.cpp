@@ -8610,6 +8610,21 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 			else
 				++ubActiveRightFlankers;
 		}
+		UINT8 ubActiveFlankers = ubActiveLeftFlankers + ubActiveRightFlankers;
+		UINT8 ubFlankLimit = 2;
+
+		if (AIFireteamAliveCount(pSoldier) >= 7 &&
+			AICheckWeOutnumberLocal(pSoldier, sClosestDisturbance) &&
+			AILocalStress(pSoldier) < 25)
+		{
+			ubFlankLimit = 3;
+		}
+
+		// Keep a genuine support base. Most elements commit only two flankers;
+		// a large, locally superior and composed element may commit a third.
+		if (ubActiveFlankers >= ubFlankLimit)
+			return -1;
+
 		BOOLEAN fLeftFlankPossible = FALSE;
 		BOOLEAN fRightFlankPossible = FALSE;
 
