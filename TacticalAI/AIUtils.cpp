@@ -4944,7 +4944,10 @@ BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, U
 INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 {
 	if (!fCanMove || !gfTurnBasedAI || !AIEnemyFireteamEligible(pSoldier) ||
-		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		pSoldier->stats.bLife < OKLIFE ||
+		pSoldier->bCollapsed ||
+		pSoldier->bBreathCollapsed ||
+		(pSoldier->flags.uiStatusFlags & SOLDIER_COWERING) ||
 		pSoldier->aiData.bUnderFire || pSoldier->aiData.bOppCnt > 0 ||
 		pSoldier->IsFlanking() ||
 		AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier) ||
@@ -4965,7 +4968,9 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (!pFriend || pFriend == pSoldier || !AIEnemyFireteamEligible(pFriend) ||
 			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
-			(pFriend->usSoldierFlagMask & SOLDIER_POW) || !AISameFireteam(pSoldier, pFriend))
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			!AISameFireteam(pSoldier, pFriend))
 			continue;
 		BOOLEAN fEngaged = pFriend->aiData.bUnderFire || pFriend->aiData.bOppCnt > 0 || GuySawEnemy(pFriend, SEEN_LAST_TURN);
 		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
