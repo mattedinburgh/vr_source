@@ -164,6 +164,44 @@ void ResetWeaponMode( SOLDIERTYPE * pSoldier )
 }
 //</SB>
 
+// Evaluate shot geometry against what the shooter actually knows.
+// Current contacts use the real target. Stale contacts temporarily virtualize
+// the target at the remembered grid/level in a neutral standing posture, so
+// CTGT cannot leak the opponent object's hidden current location or stance.
+static UINT8 AIKnownShotChanceToGetThrough(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
+	INT32 sTarget, INT8 bTargetLevel, BOOLEAN fCurrentContact)
+{
+	if (!pSoldier || !pOpponent || TileIsOutOfBounds(sTarget))
+		return 0;
+
+	if (fCurrentContact)
+		return AISoldierToSoldierChanceToGetThrough(pSoldier, pOpponent);
+
+	INT32 sRealGridNo = pOpponent->sGridNo;
+	INT8 bRealLevel = pOpponent->pathing.bLevel;
+	UINT16 usRealAnimState = pOpponent->usAnimState;
+	FLOAT dRealX = pOpponent->dXPos;
+	FLOAT dRealY = pOpponent->dYPos;
+
+	INT16 sTempX, sTempY;
+	pOpponent->sGridNo = sTarget;
+	pOpponent->pathing.bLevel = bTargetLevel;
+	pOpponent->usAnimState = STANDING;
+	ConvertGridNoToCenterCellXY(sTarget, &sTempX, &sTempY);
+	pOpponent->dXPos = (FLOAT)sTempX;
+	pOpponent->dYPos = (FLOAT)sTempY;
+
+	UINT8 ubChance = AISoldierToSoldierChanceToGetThrough(pSoldier, pOpponent);
+
+	pOpponent->sGridNo = sRealGridNo;
+	pOpponent->pathing.bLevel = bRealLevel;
+	pOpponent->usAnimState = usRealAnimState;
+	pOpponent->dXPos = dRealX;
+	pOpponent->dYPos = dRealY;
+
+	return ubChance;
+}
+
 void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 {
 	UINT32 uiLoop;
@@ -172,6 +210,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 	INT16 sAimTime, ubMinAPcost, ubRawAPCost, sBestAPcost, ubChanceToHit, ubBestAimTime, ubChanceToGetThrough, ubBestChanceToGetThrough, ubFriendlyFireChance, ubBestFriendlyFireChance, ubBestChanceToHit, sStanceAPcost;
 	INT16 sAimAPCost;
 	BOOLEAN fAddingTurningCost, fAddingRaiseGunCost;
+	BOOLEAN fBestTargetStateKnown = FALSE;
 	UINT8 ubMaxPossibleAimTime, ubStance, ubBestStance, ubChanceToReallyHit;
 	INT8 bScopeMode;
 	SOLDIERTYPE *pOpponent;
@@ -216,17 +255,27 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		pOpponent = MercSlots[ uiLoop ];
 		fSuppression = FALSE;
 
-		// if this merc is inactive, at base, on assignment, or dead
-		if (!pOpponent || !pOpponent->stats.bLife)
-			continue;			// next merc
-
-		// if this man is neutral / on the same side, he's not an opponent
-		if (!ValidOpponent(pSoldier, pOpponent))
+		if (!pOpponent)
 			continue;
 
 		bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
 		bPersonalKnowledge = PersonalKnowledge(pSoldier, pOpponent->ubID);
 		bPublicKnowledge = PublicKnowledge(pSoldier->bTeam, pOpponent->ubID);
+
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pSoldier->bSide == pOpponent->bSide ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			(gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
+			pOpponent->ubBodyType == CROW)
+		{
+			continue;
+		}
+
+		const BOOLEAN fCurrentContact =
+			(bPersonalKnowledge == SEEN_CURRENTLY || bPublicKnowledge == SEEN_CURRENTLY);
+		if (fCurrentContact && !ValidOpponent(pSoldier, pOpponent))
+			continue;
+
 		// check knowledge
 		if (bKnowledge != SEEN_CURRENTLY &&
 			bKnowledge != SEEN_THIS_TURN &&
@@ -247,15 +296,9 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			continue;	// next opponent
 		}
 
-		// Exact fire requires current knowledge. Do not test line of sight against
-		// the hidden live opponent object: that leaks the opponent's real position
-		// after he has moved from a stale/heard contact. Unseen contacts are engaged
-		// at their known location as suppression instead.
-		if (bPersonalKnowledge != SEEN_CURRENTLY &&
-			bPublicKnowledge != SEEN_CURRENTLY)
-		{
-			fSuppression = TRUE;
-		}
+		// Exact fire requires a current personal/public contact. Everything else is
+		// suppression against the believed location.
+		fSuppression = !fCurrentContact;
 
 		// determine enemy location
 		if (fSuppression)
@@ -295,23 +338,15 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			continue;
 		}
 
-		// no fire on unseen opponents with throwing knives
-		if ((Item[pSoldier->usAttackingWeapon].usItemClass & IC_THROWING_KNIFE) &&
-			bPersonalKnowledge != SEEN_CURRENTLY &&
-			!SoldierToSoldierLineOfSightTest(pSoldier, pOpponent, TRUE, CALC_FROM_ALL_DIRS))
-		{
+		// Throwing knives require exact current contact; they are not suppression tools.
+		if (fSuppression && (Item[pSoldier->usAttackingWeapon].usItemClass & IC_THROWING_KNIFE))
 			continue;
-		}
 
-
-		// sevenfm: only try to suppress alive and conscious human targets
+		// Static target type is legitimate knowledge. Dynamic wounds/cower/collapse
+		// are deliberately not inspected for a stale suppression contact.
 		if (fSuppression &&
 			Weapon[pSoldier->usAttackingWeapon].ubWeaponType != GUN_LMG &&
-			(pOpponent->stats.bLife < OKLIFE ||
-			pOpponent->bCollapsed && pOpponent->bBreath == 0 ||
-			pOpponent->IsCowering() ||
-			pOpponent->IsZombie() ||
-			!IS_MERC_BODY_TYPE(pOpponent)))
+			(pOpponent->IsZombie() || !IS_MERC_BODY_TYPE(pOpponent)))
 		{
 			continue;
 		}
@@ -325,7 +360,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		if (ubMinAPcost > pSoldier->bActionPoints)
 			continue;			// next opponent
 
-		ubChanceToGetThrough = AISoldierToSoldierChanceToGetThrough(pSoldier, pOpponent);
+		ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fCurrentContact);
 
 		// if we can't possibly get through all the cover
 		if (ubChanceToGetThrough == 0)
@@ -345,7 +380,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 				INT8			bDir;
 
 				// must make sure that structure data can be added in the direction of the target
-				bDir = (INT8) GetDirectionToGridNoFromGridNo( pSoldier->sGridNo, pOpponent->sGridNo );
+				bDir = (INT8) GetDirectionToGridNoFromGridNo( pSoldier->sGridNo, sTarget );
 
 				// ATE: Only if we have a levelnode...
 				if ( pSoldier->pLevelNode != NULL && pSoldier->pLevelNode->pStructureData != NULL )
@@ -423,7 +458,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 						// sevenfm: check CTGT and friendly fire chance for every stance
 						gUnderFire.Clear();
 						gUnderFire.Enable();
-						ubChanceToGetThrough = AISoldierToSoldierChanceToGetThrough(pSoldier, pOpponent);
+						ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fCurrentContact);
 						ubFriendlyFireChance = gUnderFire.Chance(pSoldier->bTeam, pSoldier->bSide, TRUE);
 						gUnderFire.Disable();
 
@@ -511,7 +546,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 						// sevenfm: check CTGT and friendly fire chance for every stance
 						gUnderFire.Clear();
 						gUnderFire.Enable();
-						ubChanceToGetThrough = AISoldierToSoldierChanceToGetThrough(pSoldier, pOpponent);
+						ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fCurrentContact);
 						ubFriendlyFireChance = gUnderFire.Chance(pSoldier->bTeam, pSoldier->bSide, TRUE);
 						gUnderFire.Disable();
 
@@ -592,7 +627,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 						// sevenfm: check CTGT and friendly fire chance for every stance
 						gUnderFire.Clear();
 						gUnderFire.Enable();
-						ubChanceToGetThrough = AISoldierToSoldierChanceToGetThrough(pSoldier, pOpponent);
+						ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fCurrentContact);
 						ubFriendlyFireChance = gUnderFire.Chance(pSoldier->bTeam, pSoldier->bSide, TRUE);
 						gUnderFire.Disable();
 
@@ -660,17 +695,26 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			(ubChanceToReallyHit < 25 || (PythSpacesAway(pSoldier->sGridNo, sTarget) > CalcMaxTossRange(pSoldier, pSoldier->usAttackingWeapon, FALSE))))// Madd / 2 ) ) ) //dnl ch69 160913 was ubChanceToReallyHit < 30
 			continue; // don't bother... next opponent
 
-		// calculate this opponent's threat value (factor in my cover from him)
-		iThreatValue = CalcManThreatValue(pOpponent,pSoldier->sGridNo,TRUE,pSoldier);
+		if (fCurrentContact)
+		{
+			// Exact current contact: detailed armour/wounds/weapon threat are observable.
+			iThreatValue = CalcManThreatValue(pOpponent,pSoldier->sGridNo,TRUE,pSoldier);
+			iEstDamage = EstimateShotDamage(pSoldier,pOpponent,ubBestChanceToHit);
+		}
+		else
+		{
+			// Suppression is valued from shooter/weapon geometry and contact certainty,
+			// not hidden current armour, wounds, AP or equipment of the remembered target.
+			iThreatValue = 100;
+			iEstDamage = __max(1, (INT32)GetDamage(&pSoldier->inv[pSoldier->ubAttackingHand]));
+		}
 
-		// estimate the damage this shot would do to this opponent
-		iEstDamage = EstimateShotDamage(pSoldier,pOpponent,ubBestChanceToHit);
-		//NumMessage("SHOT EstDamage = ",iEstDamage);
-
-		// calculate the combined "attack value" for this opponent
-		// highest possible value before division should be about 1.8 billion...
-		// normal value before division should be about 5 million...
 		iAttackValue = (iEstDamage * iBestHitRate * ubChanceToReallyHit * iThreatValue) / 1000;
+		if (fSuppression)
+		{
+			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+			iAttackValue = iAttackValue * iCertainty / 100;
+		}
 		//NumMessage("SHOT AttackValue = ",iAttackValue / 1000);
 
 		// Take the actual residual friendly-fire probability into account. Candidate
@@ -697,13 +741,13 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		}
 
 		// sevenfm: empty vehicles have very low priority
-		if ( pOpponent->ubWhatKindOfMercAmI == MERC_TYPE__VEHICLE && GetNumberInVehicle( pOpponent->bVehicleID ) == 0 )
+		if (fCurrentContact && pOpponent->ubWhatKindOfMercAmI == MERC_TYPE__VEHICLE && GetNumberInVehicle( pOpponent->bVehicleID ) == 0 )
 		{
 			iAttackValue /= 4;
 		}
 
 		// sevenfm: dying, cowering or unconscious soldiers have very low priority
-		if (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed && pSoldier->bBreath == 0)
+		if (fCurrentContact && (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed && pOpponent->bBreath == 0))
 		{
 			iAttackValue /= 4;
 		}
@@ -750,11 +794,11 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 				INT32 iPenaltyPercent = 15 * ubSaturation;
 
 				// Do not waste several shooters finishing an already disabled opponent.
-				if (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed || pOpponent->bBreathCollapsed)
+				if (fCurrentContact && (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed || pOpponent->bBreathCollapsed))
 					iPenaltyPercent = 30 * ubSaturation;
 
 				// Immediate self-defence still justifies concentrated fire.
-				if (pOpponent->sLastTarget == pSoldier->sGridNo)
+				if (fCurrentContact && pOpponent->sLastTarget == pSoldier->sGridNo)
 					iPenaltyPercent /= 2;
 
 				// Concentrated fire is less wasteful when it is deliberately covering
@@ -782,16 +826,16 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 
 				//dnl ch62 180813 ignore firing into breathless targets if there are targets in better condition
 				// sevenfm: check that best opponent exists
-				if (pBestShot->ubOpponent != NOBODY &&
+				if (fBestTargetStateKnown && fCurrentContact && pBestShot->ubOpponent != NOBODY &&
 					(Menptr[pBestShot->ubOpponent].bCollapsed || Menptr[pBestShot->ubOpponent].bBreathCollapsed) &&
-					Menptr[pBestShot->ubOpponent].bBreath < OKBREATH
-					&& Menptr[pBestShot->ubOpponent].bBreath < pOpponent->bBreath)
+					Menptr[pBestShot->ubOpponent].bBreath < OKBREATH &&
+					Menptr[pBestShot->ubOpponent].bBreath < pOpponent->bBreath)
 				{
 					iPercentBetter = PERCENT_TO_IGNORE_THREAT;
 				}
 
 				// sevenfm: if best opponent is dying and new opponent is ok, use new opponent
-				if (pBestShot->ubOpponent != NOBODY &&
+				if (fBestTargetStateKnown && fCurrentContact && pBestShot->ubOpponent != NOBODY &&
 					Menptr[pBestShot->ubOpponent].stats.bLife < OKLIFE &&
 					pOpponent->stats.bLife >= OKLIFE)
 				{
@@ -801,8 +845,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 				// if this chance to really hit is more than 50% worse, and the other
 				// guy is conscious at all
 				if (iPercentBetter < -PERCENT_TO_IGNORE_THREAT &&
-					pBestShot->ubOpponent != NOBODY &&
-					Menptr[pBestShot->ubOpponent].stats.bLife >= OKLIFE)
+					(!fBestTargetStateKnown || pBestShot->ubOpponent == NOBODY || Menptr[pBestShot->ubOpponent].stats.bLife >= OKLIFE))
 				{
 					// then stick with the older guy as the better target
 					continue;
@@ -819,7 +862,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			}
 
 			// sevenfm: if new opponent is dying and best opponent is ok, ignore new opponent
-			if (pBestShot->ubOpponent != NOBODY &&
+			if (fBestTargetStateKnown && fCurrentContact && pBestShot->ubOpponent != NOBODY &&
 				Menptr[pBestShot->ubOpponent].stats.bLife >= OKLIFE &&
 				pOpponent->stats.bLife < OKLIFE)
 			{
@@ -839,6 +882,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			pBestShot->ubStance				= ubBestStance;
 			pBestShot->bScopeMode			= bScopeMode;
 			pBestShot->ubFriendlyFireChance = (UINT8)ubBestFriendlyFireChance;
+			fBestTargetStateKnown = fCurrentContact;
 		}
 	}
 //if(pBestShot->ubPossible)SendFmtMsg("CalcBestShot;\r\n  ID=%d Loc=%d APs=%d Ac=%d AcData=%d Al=%d, SM=%d, LAc=%d, NAc=%d AT=%d\r\n  AP?=%d,%d,%d/%d BS=%d", pSoldier->ubID, pSoldier->sGridNo, pSoldier->bActionPoints, pSoldier->aiData.bAction, pSoldier->aiData.usActionData, pSoldier->aiData.bAlertStatus, pBestShot->bScopeMode, pSoldier->aiData.bLastAction, pSoldier->aiData.bNextAction, pBestShot->ubAimTime, pBestShot->ubAPCost, CalcAPCostForAiming(pSoldier, pBestShot->sTarget, (INT8)pBestShot->ubAimTime), CalcTotalAPsToAttack(pSoldier, pBestShot->sTarget, TRUE, pBestShot->ubAimTime), CalcTotalAPsToAttack(pSoldier, pBestShot->sTarget, FALSE, pBestShot->ubAimTime), pBestShot->ubStance);
