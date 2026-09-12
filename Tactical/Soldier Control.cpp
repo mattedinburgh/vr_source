@@ -9871,7 +9871,7 @@ BOOLEAN ToggleDownedDragInFront( SOLDIERTYPE *pSoldier )
 	}
 
 	INT32 sTargetGridNo = NewGridNo( pSoldier->sGridNo, DirectionInc( pSoldier->ubDirection ) );
-	SoldierID ubTargetID = WhoIsThere2( sTargetGridNo, pSoldier->pathing.bLevel );
+	UINT8 ubTargetID = WhoIsThere2( sTargetGridNo, pSoldier->pathing.bLevel );
 	if ( ubTargetID == NOBODY )
 		return FALSE;
 
@@ -9900,7 +9900,7 @@ void UpdateDraggedDownedPersonPosition( SOLDIERTYPE *pSoldier, INT32 sOldGridNo 
 		return;
 	}
 
-	SoldierID ubOccupant = WhoIsThere2( sOldGridNo, pSoldier->pathing.bLevel );
+	UINT8 ubOccupant = WhoIsThere2( sOldGridNo, pSoldier->pathing.bLevel );
 	if ( ubOccupant != NOBODY && ubOccupant != pTarget->ubID )
 	{
 		StopDraggingDownedPerson( pSoldier );
