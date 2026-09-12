@@ -9606,51 +9606,44 @@ UINT8 CountPublicKnownEnemies( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDis
 {
 	CHECKF(pSoldier);
 
-	UINT32		uiLoop;
-	SOLDIERTYPE *pOpponent;
-
-	INT32		sThreatLoc;
-	INT8		iThreatLevel;
-
 	UINT8 ubNum = 0;
 
-	// loop through all the enemies
-	for (uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
+	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
 	{
-		pOpponent = MercSlots[ uiLoop ];
+		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
+		if (!pOpponent)
+			continue;
 
-		// if this merc is inactive, at base, on assignment, dead, unconscious
-		if (!pOpponent || pOpponent->stats.bLife < OKLIFE)
+		// Public enemy counts must be driven by public knowledge, not by the hidden
+		// current HP/capture/sector state of an opponent whose contact is stale.
+		INT8 bPublicKnowledge = gbPublicOpplist[pSoldier->bTeam][pOpponent->ubID];
+		if (bPublicKnowledge == NOT_HEARD_OR_SEEN)
+			continue;
+
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pSoldier->bSide == pOpponent->bSide)
 		{
 			continue;
 		}
 
-		// if this man is neutral / on the same side, he's not an opponent
-		if( CONSIDERED_NEUTRAL( pSoldier, pOpponent ) || (pSoldier->bSide == pOpponent->bSide))
+		// If this soldier personally sees the target right now, live state is known
+		// and may invalidate the threat. Team-only knowledge does not grant that.
+		if (PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			(!ValidOpponent(pSoldier, pOpponent) ||
+			 pOpponent->IsUnconscious() ||
+			 (pOpponent->usSoldierFlagMask & SOLDIER_POW)))
 		{
 			continue;
 		}
 
-		// check if he is captured
-		if(pOpponent->usSoldierFlagMask & SOLDIER_POW)
-		{
+		INT32 sThreatLoc = gsPublicLastKnownOppLoc[pSoldier->bTeam][pOpponent->ubID];
+		if (TileIsOutOfBounds(sThreatLoc))
 			continue;
-		}
 
-		sThreatLoc = gsPublicLastKnownOppLoc[pSoldier->bTeam][pOpponent->ubID];
-		iThreatLevel = gbPublicLastKnownOppLevel[pSoldier->bTeam][pOpponent->ubID];
-
-		// check distance
-		if( PythSpacesAway(sThreatLoc, sGridNo ) > ubDistance )
-		{
+		if (PythSpacesAway(sThreatLoc, sGridNo) > ubDistance)
 			continue;
-		}
 
-		// check public knowledge
-		if( gbPublicOpplist[pSoldier->bTeam][pOpponent->ubID] != NOT_HEARD_OR_SEEN )
-		{
-			ubNum ++;
-		}
+		++ubNum;
 	}
 
 	return ubNum;
