@@ -60,12 +60,278 @@ STR8 gStr8Knowledge[] = { "HEARD_3_TURNS_AGO", "HEARD_2_TURNS_AGO", "HEARD_LAST_
 
 extern UINT32 guiTurnCnt;
 
-// Sector-local reinforcement pacing.  Kept outside SOLDIERTYPE/savegames.
-static UINT32 guiAIEnemyResponseStartTurn = 0;
-static INT32 gsAIEnemyResponseSpot = NOWHERE;
-static INT16 gsAIEnemyResponseSectorX = -1;
-static INT16 gsAIEnemyResponseSectorY = -1;
-static INT8 gbAIEnemyResponseSectorZ = -1;
+// Contact-local reinforcement pacing. Kept outside SOLDIERTYPE/savegames.
+#define AI_RESPONSE_EPISODES 3
+#define AI_RESPONSE_QUIET_TURNS 2
+
+typedef struct
+{
+	INT32 sSpot;
+	UINT32 uiStartTurn;
+	UINT32 uiLastEvidenceTurn;
+	INT16 sSectorX;
+	INT16 sSectorY;
+	INT8 bSectorZ;
+} AI_RESPONSE_EPISODE;
+
+static AI_RESPONSE_EPISODE gAIEnemyResponse[AI_RESPONSE_EPISODES];
+static BOOLEAN gfAIEnemyResponseInitialized = FALSE;
+static UINT32 guiAIEnemyResponseLastTurnStamp = 0;
+
+static void AIResetEnemyResponseEpisodes(void)
+{
+	for (UINT8 i = 0; i < AI_RESPONSE_EPISODES; ++i)
+	{
+		gAIEnemyResponse[i].sSpot = NOWHERE;
+		gAIEnemyResponse[i].uiStartTurn = 0;
+		gAIEnemyResponse[i].uiLastEvidenceTurn = 0;
+		gAIEnemyResponse[i].sSectorX = -1;
+		gAIEnemyResponse[i].sSectorY = -1;
+		gAIEnemyResponse[i].bSectorZ = -1;
+	}
+	gfAIEnemyResponseInitialized = TRUE;
+}
+
+static void AIMaintainEnemyResponseEpisodes(void)
+{
+	UINT32 uiTurnStamp = guiTurnCnt + 1;
+	if (!gfAIEnemyResponseInitialized ||
+		(guiAIEnemyResponseLastTurnStamp != 0 && uiTurnStamp < guiAIEnemyResponseLastTurnStamp))
+		AIResetEnemyResponseEpisodes();
+
+	guiAIEnemyResponseLastTurnStamp = uiTurnStamp;
+
+	for (UINT8 i = 0; i < AI_RESPONSE_EPISODES; ++i)
+	{
+		AI_RESPONSE_EPISODE *pEpisode = &gAIEnemyResponse[i];
+		if (TileIsOutOfBounds(pEpisode->sSpot))
+			continue;
+
+		BOOLEAN fWrongSector =
+			pEpisode->sSectorX != gWorldSectorX ||
+			pEpisode->sSectorY != gWorldSectorY ||
+			pEpisode->bSectorZ != gbWorldSectorZ;
+		BOOLEAN fQuietExpired =
+			pEpisode->uiLastEvidenceTurn != 0 &&
+			uiTurnStamp > pEpisode->uiLastEvidenceTurn + AI_RESPONSE_QUIET_TURNS;
+
+		if (fWrongSector || fQuietExpired)
+		{
+			pEpisode->sSpot = NOWHERE;
+			pEpisode->uiStartTurn = 0;
+			pEpisode->uiLastEvidenceTurn = 0;
+			pEpisode->sSectorX = -1;
+			pEpisode->sSectorY = -1;
+			pEpisode->bSectorZ = -1;
+		}
+	}
+}
+
+static INT8 AIGetEnemyResponseEpisode(INT32 sContactSpot, BOOLEAN fRefreshEvidence)
+{
+	if (TileIsOutOfBounds(sContactSpot))
+		return -1;
+
+	AIMaintainEnemyResponseEpisodes();
+
+	INT8 bBest = -1;
+	INT32 iBestDistance = 10000;
+	for (UINT8 i = 0; i < AI_RESPONSE_EPISODES; ++i)
+	{
+		AI_RESPONSE_EPISODE *pEpisode = &gAIEnemyResponse[i];
+		if (TileIsOutOfBounds(pEpisode->sSpot) ||
+			pEpisode->sSectorX != gWorldSectorX ||
+			pEpisode->sSectorY != gWorldSectorY ||
+			pEpisode->bSectorZ != gbWorldSectorZ)
+			continue;
+
+		INT32 iDistance = PythSpacesAway(pEpisode->sSpot, sContactSpot);
+		if (iDistance <= TACTICAL_RANGE / 2 && iDistance < iBestDistance)
+		{
+			iBestDistance = iDistance;
+			bBest = (INT8)i;
+		}
+	}
+
+	if (bBest < 0 && fRefreshEvidence)
+	{
+		UINT32 uiOldest = 0xFFFFFFFF;
+		for (UINT8 i = 0; i < AI_RESPONSE_EPISODES; ++i)
+		{
+			AI_RESPONSE_EPISODE *pEpisode = &gAIEnemyResponse[i];
+			if (TileIsOutOfBounds(pEpisode->sSpot))
+			{
+				bBest = (INT8)i;
+				break;
+			}
+			if (pEpisode->uiLastEvidenceTurn < uiOldest)
+			{
+				uiOldest = pEpisode->uiLastEvidenceTurn;
+				bBest = (INT8)i;
+			}
+		}
+
+		if (bBest >= 0)
+		{
+			UINT32 uiTurnStamp = guiTurnCnt + 1;
+			AI_RESPONSE_EPISODE *pEpisode = &gAIEnemyResponse[bBest];
+			pEpisode->sSpot = sContactSpot;
+			pEpisode->uiStartTurn = uiTurnStamp;
+			pEpisode->uiLastEvidenceTurn = uiTurnStamp;
+			pEpisode->sSectorX = gWorldSectorX;
+			pEpisode->sSectorY = gWorldSectorY;
+			pEpisode->bSectorZ = gbWorldSectorZ;
+		}
+	}
+	else if (bBest >= 0 && fRefreshEvidence)
+	{
+		AI_RESPONSE_EPISODE *pEpisode = &gAIEnemyResponse[bBest];
+		pEpisode->uiLastEvidenceTurn = guiTurnCnt + 1;
+		if (PythSpacesAway(pEpisode->sSpot, sContactSpot) > DAY_VISION_RANGE / 4)
+			pEpisode->sSpot = sContactSpot;
+	}
+
+	return bBest;
+}
+
+static UINT8 AIEnemyResponseLimitForContact(
+	SOLDIERTYPE *pSoldier, INT32 sContactSpot, INT32 *piReinforcementUrgency)
+{
+	UINT8 ubResponseLimit = AIDoctrineResponseLimit(pSoldier);
+	if (piReinforcementUrgency)
+		*piReinforcementUrgency = 0;
+
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM ||
+		TileIsOutOfBounds(sContactSpot) ||
+		!gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition)
+		return ubResponseLimit;
+
+	INT8 bEngagedSituation = AI_BATTLE_UNKNOWN;
+	UINT8 ubEngagedCasualties = 0;
+	UINT8 ubEngagedRoutPressure = 0;
+	UINT16 usPerceivedEnemyStrength = 0;
+	INT32 iBestEngagedDistance = 10000;
+	BOOLEAN fLocalEngagement = FALSE;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pEngaged = MercPtrs[iCounter];
+		if (!pEngaged || !pEngaged->bActive || !pEngaged->bInSector ||
+			pEngaged->stats.bLife < OKLIFE || pEngaged->bCollapsed)
+			continue;
+
+		if (!pEngaged->aiData.bUnderFire &&
+			pEngaged->aiData.bOppCnt == 0 &&
+			!GuySawEnemy(pEngaged, SEEN_LAST_TURN))
+			continue;
+
+		INT32 iEngagedDistance = PythSpacesAway(pEngaged->sGridNo, sContactSpot);
+		if (iEngagedDistance > TACTICAL_RANGE)
+			continue;
+
+		fLocalEngagement = TRUE;
+		UINT16 usEngagedEnemyStrength = AIPerceivedEnemyStrength(pEngaged);
+		if (usEngagedEnemyStrength > usPerceivedEnemyStrength)
+			usPerceivedEnemyStrength = usEngagedEnemyStrength;
+
+		if (iEngagedDistance < iBestEngagedDistance)
+		{
+			iBestEngagedDistance = iEngagedDistance;
+			bEngagedSituation = AIBattleSituation(pEngaged);
+			ubEngagedCasualties = AILocalCasualtyPercent(pEngaged);
+			ubEngagedRoutPressure = AILocalRoutPressure(pEngaged);
+		}
+	}
+
+	if (!fLocalEngagement)
+		return ubResponseLimit;
+
+	UINT8 ubPerceivedEnemies = (UINT8)__max(1, __min(12,
+		(INT32)(usPerceivedEnemyStrength + 99) / 100));
+	UINT8 ubDesiredResponse = (UINT8)__min(14, __max(4,
+		(INT32)ubPerceivedEnemies + 2));
+
+	INT32 iUrgency = 0;
+	if (bEngagedSituation == AI_BATTLE_CATASTROPHIC)
+	{
+		ubDesiredResponse = (UINT8)__min(14,
+			__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 6));
+		iUrgency = 40;
+	}
+	else if (bEngagedSituation == AI_BATTLE_LOSING)
+	{
+		ubDesiredResponse = (UINT8)__min(12,
+			__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 4));
+		iUrgency = 25;
+	}
+	else if (ubEngagedCasualties >= 25 || ubEngagedRoutPressure >= 45)
+	{
+		ubDesiredResponse = (UINT8)__min(11,
+			__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 3));
+		iUrgency = 15;
+	}
+	if (piReinforcementUrgency)
+		*piReinforcementUrgency = iUrgency;
+
+	INT8 bEpisode = AIGetEnemyResponseEpisode(sContactSpot, TRUE);
+	UINT32 uiElapsedTurns = 0;
+	if (bEpisode >= 0)
+	{
+		AI_RESPONSE_EPISODE *pEpisode = &gAIEnemyResponse[bEpisode];
+		UINT32 uiTurnStamp = guiTurnCnt + 1;
+		uiElapsedTurns = (uiTurnStamp > pEpisode->uiStartTurn) ?
+			(uiTurnStamp - pEpisode->uiStartTurn) : 0;
+	}
+
+	UINT8 ubInitialWave = (UINT8)__max(4, __min(7, (INT32)ubPerceivedEnemies));
+	UINT8 ubWaveCap = (UINT8)__min((INT32)ubDesiredResponse,
+		(INT32)ubInitialWave + 2 * (INT32)uiElapsedTurns);
+
+	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+	if (ubDoctrine == AI_DOCTRINE_SECURITY &&
+		pSoldier->aiData.bOrders != ONCALL && pSoldier->aiData.bOrders != SEEKENEMY)
+		ubWaveCap = __min((UINT8)3, ubWaveCap);
+	else if (ubDoctrine == AI_DOCTRINE_ELITE_GUARD)
+		ubWaveCap = __min((UINT8)5, ubWaveCap);
+
+	return __max(ubResponseLimit, ubWaveCap);
+}
+
+static INT8 DecideYellowRemoteRadioSupport(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || !gGameExternalOptions.bNewTacticalAIBehavior ||
+		pSoldier->bTeam != ENEMY_TEAM || !SoldierAI(pSoldier) ||
+		!gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition ||
+		HAS_SKILL_TRAIT(pSoldier, RADIO_OPERATOR_NT) == 0 ||
+		!pSoldier->CanUseSkill(SKILLS_RADIO_ARTILLERY, TRUE))
+		return AI_ACTION_NONE;
+
+	UINT32 uiSector = 0;
+	INT32 sTarget = NOWHERE;
+	if (!pSoldier->CanAnyArtilleryStrikeBeOrdered(&uiSector))
+		return AI_ACTION_NONE;
+
+	if (SectorJammed())
+	{
+		if (pSoldier->IsJamming())
+		{
+			pSoldier->usAISkillUse = SKILLS_RADIO_TURNOFF;
+			pSoldier->aiData.usActionData = NOWHERE;
+			return AI_ACTION_USE_SKILL;
+		}
+		return AI_ACTION_NONE;
+	}
+
+	if (AISelectKnownArtilleryTarget(pSoldier, &sTarget))
+	{
+		pSoldier->usAISkillUse = SKILLS_RADIO_ARTILLERY;
+		pSoldier->aiData.usActionData = sTarget;
+		return AI_ACTION_USE_SKILL;
+	}
+
+	return AI_ACTION_NONE;
+}
 
 // global status time counters to determine what takes the most time
 
@@ -1483,6 +1749,13 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 	bInWater = DeepWater( pSoldier->sGridNo, pSoldier->pathing.bLevel );
 	bInGas = InGas( pSoldier, pSoldier->sGridNo );
 
+	if (!bInWater && !bInGas)
+	{
+		INT8 bRemoteSupport = DecideYellowRemoteRadioSupport(pSoldier);
+		if (bRemoteSupport != AI_ACTION_NONE)
+			return bRemoteSupport;
+	}
+
 	if (fCivilian || (gGameExternalOptions.fAllNamedNpcsDecideAction && pSoldier->ubProfile != NO_PROFILE))
 	{
 		if (pSoldier->flags.uiStatusFlags & SOLDIER_COWERING)
@@ -1928,121 +2201,9 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 
 				if (iResponseDistance > iImmediateResponseRange)
 				{
-					// Doctrine defines the initial contact element: security reacts locally,
-					// while ONCALL/mobile elite troops form larger QRFs.
-					UINT8 ubResponseLimit = AIDoctrineResponseLimit(pSoldier);
-
-					// Reinforce in waves. The nearest actually engaged friendly element
-					// determines both perceived enemy strength and whether more troops
-					// should be released from reserve. The AI never counts unseen mercs.
-					INT8 bEngagedSituation = AI_BATTLE_UNKNOWN;
-					UINT8 ubEngagedCasualties = 0;
-					UINT8 ubEngagedRoutPressure = 0;
-					UINT16 usPerceivedEnemyStrength = 0;
-					INT32 iBestEngagedDistance = 10000;
-
-					for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
-						iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
-					{
-						SOLDIERTYPE *pEngaged = MercPtrs[iCounter];
-						if (!pEngaged || !pEngaged->bActive || !pEngaged->bInSector ||
-							pEngaged->stats.bLife < OKLIFE || pEngaged->bCollapsed)
-						{
-							continue;
-						}
-
-						if (!pEngaged->aiData.bUnderFire &&
-							pEngaged->aiData.bOppCnt == 0 &&
-							!GuySawEnemy(pEngaged, SEEN_LAST_TURN))
-						{
-							continue;
-						}
-
-						UINT16 usEngagedEnemyStrength = AIPerceivedEnemyStrength(pEngaged);
-						if (usEngagedEnemyStrength > usPerceivedEnemyStrength)
-							usPerceivedEnemyStrength = usEngagedEnemyStrength;
-
-						INT32 iEngagedDistance = PythSpacesAway(pEngaged->sGridNo, sNoiseGridNo);
-						if (iEngagedDistance < iBestEngagedDistance)
-						{
-							iBestEngagedDistance = iEngagedDistance;
-							bEngagedSituation = AIBattleSituation(pEngaged);
-							ubEngagedCasualties = AILocalCasualtyPercent(pEngaged);
-							ubEngagedRoutPressure = AILocalRoutPressure(pEngaged);
-						}
-					}
-
 					INT32 iReinforcementUrgency = 0;
-					if (pSoldier->bTeam == ENEMY_TEAM &&
-						gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition)
-					{
-						// Convert certainty-points into an approximate known enemy count.
-						// 100 points is one fully known opponent; partial/stale knowledge
-						// contributes proportionally instead of becoming omniscient headcount.
-						UINT8 ubPerceivedEnemies = (UINT8)__max(1, __min(12,
-							(INT32)(usPerceivedEnemyStrength + 99) / 100));
-
-						// Aim for meaningful local superiority once contact has been confirmed.
-						// Six/seven known mercs therefore imply an eventual normal response
-						// of roughly eight/nine soldiers rather than only four.
-						UINT8 ubDesiredResponse = (UINT8)__min(14, __max(4,
-							(INT32)ubPerceivedEnemies + 2));
-
-						if (bEngagedSituation == AI_BATTLE_CATASTROPHIC)
-						{
-							ubDesiredResponse = (UINT8)__min(14,
-								__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 6));
-							iReinforcementUrgency = 40;
-						}
-						else if (bEngagedSituation == AI_BATTLE_LOSING)
-						{
-							ubDesiredResponse = (UINT8)__min(12,
-								__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 4));
-							iReinforcementUrgency = 25;
-						}
-						else if (ubEngagedCasualties >= 25 || ubEngagedRoutPressure >= 45)
-						{
-							ubDesiredResponse = (UINT8)__min(11,
-								__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 3));
-							iReinforcementUrgency = 15;
-						}
-
-						// New contact/new sector starts a fresh reinforcement clock.
-						if (gsAIEnemyResponseSectorX != gWorldSectorX ||
-							gsAIEnemyResponseSectorY != gWorldSectorY ||
-							gbAIEnemyResponseSectorZ != gbWorldSectorZ ||
-							TileIsOutOfBounds(gsAIEnemyResponseSpot) ||
-							PythSpacesAway(gsAIEnemyResponseSpot, sNoiseGridNo) > TACTICAL_RANGE)
-						{
-							gsAIEnemyResponseSectorX = gWorldSectorX;
-							gsAIEnemyResponseSectorY = gWorldSectorY;
-							gbAIEnemyResponseSectorZ = gbWorldSectorZ;
-							gsAIEnemyResponseSpot = sNoiseGridNo;
-							guiAIEnemyResponseStartTurn = guiTurnCnt + 1;
-						}
-
-						UINT32 uiTurnStamp = guiTurnCnt + 1;
-						UINT32 uiElapsedTurns = (uiTurnStamp > guiAIEnemyResponseStartTurn) ?
-							(uiTurnStamp - guiAIEnemyResponseStartTurn) : 0;
-
-						// First confirmed wave aims for local parity, bounded so a large player squad
-						// still does not summon the whole sector at once; later waves add two per turn.
-						UINT8 ubInitialWave = (UINT8)__max(4,
-							__min(7, (INT32)ubPerceivedEnemies));
-						UINT8 ubWaveCap = (UINT8)__min((INT32)ubDesiredResponse,
-							(INT32)ubInitialWave + 2 * (INT32)uiElapsedTurns);
-
-						// Doctrine caps anchored security/elite guards while allowing mobile QRF elements.
-						UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
-						if (ubDoctrine == AI_DOCTRINE_SECURITY &&
-							pSoldier->aiData.bOrders != ONCALL && pSoldier->aiData.bOrders != SEEKENEMY)
-							ubWaveCap = __min((UINT8)3, ubWaveCap);
-						else if (ubDoctrine == AI_DOCTRINE_ELITE_GUARD)
-							ubWaveCap = __min((UINT8)5, ubWaveCap);
-
-						ubResponseLimit = __max(ubResponseLimit, ubWaveCap);
-					}
-
+					UINT8 ubResponseLimit = AIEnemyResponseLimitForContact(
+						pSoldier, sNoiseGridNo, &iReinforcementUrgency);
 
 					// Enemy reinforcements are released as coherent fireteams.  Once the
 					// nearer element fills the current response budget, the next element
@@ -2184,8 +2345,21 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 		// if there is a friend alive & reachable who last radioed in		
 		if (!TileIsOutOfBounds(sClosestFriend))
 		{
+			INT32 iFriendResponseUrgency = 0;
+			if (pSoldier->bTeam == ENEMY_TEAM &&
+				!GuySawEnemy(pSoldier, SEEN_LAST_TURN) &&
+				!pSoldier->aiData.bUnderFire)
+			{
+				UINT8 ubFriendResponseLimit = AIEnemyResponseLimitForContact(
+					pSoldier, sClosestFriend, &iFriendResponseUrgency);
+				if (AIFireteamShouldHoldReserve(
+					pSoldier, sClosestFriend, ubFriendResponseLimit))
+					fHoldRemoteReserve = TRUE;
+			}
+
 			// there a chance enemy soldier choose to go "help" his friend
 			iChance = 50 - SpacesAway(pSoldier->sGridNo,sClosestFriend);
+			iChance += iFriendResponseUrgency;
 			iSneaky = 10;
 
 			// set base chance according to orders
@@ -8807,10 +8981,27 @@ static INT8 gbAITacticalSeekBias[MAX_NUM_SOLDIERS] = { 0 };
 static INT8 gbAITacticalHelpBias[MAX_NUM_SOLDIERS] = { 0 };
 static INT8 gbAITacticalHideBias[MAX_NUM_SOLDIERS] = { 0 };
 static INT8 gbAITacticalWatchBias[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAITacticalVariationLastTurnStamp = 0;
 
 static void AIApplyTacticalPreferenceVariation(SOLDIERTYPE *pSoldier,
 	INT8 &bSeekPts, INT8 &bHelpPts, INT8 &bHidePts, INT8 &bWatchPts)
 {
+	UINT32 uiCurrentTurnStamp = guiTurnCnt + 1;
+	if (guiAITacticalVariationLastTurnStamp != 0 &&
+		uiCurrentTurnStamp < guiAITacticalVariationLastTurnStamp)
+	{
+		for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
+		{
+			guiAITacticalVariationTurn[i] = 0;
+			guiAITacticalVariationIdentity[i] = 0;
+			gbAITacticalSeekBias[i] = 0;
+			gbAITacticalHelpBias[i] = 0;
+			gbAITacticalHideBias[i] = 0;
+			gbAITacticalWatchBias[i] = 0;
+		}
+	}
+	guiAITacticalVariationLastTurnStamp = uiCurrentTurnStamp;
+
 	if (!AICombatTeam(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
 		return;
 
@@ -10434,10 +10625,33 @@ static INT8 gbAIEscapeDirection[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIEscapeNoRouteTurn[MAX_NUM_SOLDIERS] = { 0 };
 static UINT8 gubAIEscapeBlockedTurns[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIEscapeBlockedTurnStamp[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAIEscapePlanLastTurnStamp = 0;
 extern UINT32 guiTurnCnt;
+
+static void AIMaintainEscapePlanTimeline(void)
+{
+	UINT32 uiTurnStamp = guiTurnCnt + 1;
+	if (guiAIEscapePlanLastTurnStamp != 0 &&
+		uiTurnStamp < guiAIEscapePlanLastTurnStamp)
+	{
+		for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
+		{
+			gfAIEscapePlanInitialized[i] = FALSE;
+			guiAIEscapePlanIdentity[i] = 0;
+			gsAIEscapeTarget[i] = NOWHERE;
+			gbAIEscapeDirection[i] = -1;
+			guiAIEscapeNoRouteTurn[i] = 0;
+			gubAIEscapeBlockedTurns[i] = 0;
+			guiAIEscapeBlockedTurnStamp[i] = 0;
+		}
+	}
+	guiAIEscapePlanLastTurnStamp = uiTurnStamp;
+}
 
 static void AIResetEscapePlan(SOLDIERTYPE *pSoldier)
 {
+	AIMaintainEscapePlanTimeline();
+
 	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
 		return;
 
@@ -10561,6 +10775,8 @@ static INT8 AIHandleBlockedEscape(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 
 INT8 DecideEscapeAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 {
+	AIMaintainEscapePlanTimeline();
+
 	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM || !AIEscapeActive(pSoldier))
 		return AI_ACTION_NONE;
 
@@ -10654,6 +10870,7 @@ INT8 DecideEscapeAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 static UINT8 gubMilitiaConsolidationAnchor[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiMilitiaConsolidationIdentity[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiMilitiaConsolidationUntilTurn[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiMilitiaConsolidationLastTurnStamp = 0;
 
 static BOOLEAN AIValidMilitiaConsolidationAnchor(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend)
 {
@@ -10681,11 +10898,23 @@ static BOOLEAN AIValidMilitiaConsolidationAnchor(SOLDIERTYPE *pSoldier, SOLDIERT
 
 static SOLDIERTYPE *AISelectMilitiaConsolidationAnchor(SOLDIERTYPE *pSoldier)
 {
+	UINT32 uiTurnStamp = guiTurnCnt + 1;
+	if (guiMilitiaConsolidationLastTurnStamp != 0 &&
+		uiTurnStamp < guiMilitiaConsolidationLastTurnStamp)
+	{
+		for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
+		{
+			gubMilitiaConsolidationAnchor[i] = NOBODY;
+			guiMilitiaConsolidationIdentity[i] = 0;
+			guiMilitiaConsolidationUntilTurn[i] = 0;
+		}
+	}
+	guiMilitiaConsolidationLastTurnStamp = uiTurnStamp;
+
 	if (!pSoldier || pSoldier->bTeam != MILITIA_TEAM || pSoldier->ubID >= MAX_NUM_SOLDIERS)
 		return NULL;
 
 	UINT8 ubID = pSoldier->ubID;
-	UINT32 uiTurnStamp = guiTurnCnt + 1;
 
 	if (guiMilitiaConsolidationIdentity[ubID] != pSoldier->uiUniqueSoldierIdValue)
 	{
