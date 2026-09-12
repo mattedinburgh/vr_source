@@ -680,7 +680,9 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 	BOOLEAN fProneCover;
 	BOOLEAN fSightCover;
 	UINT8 ubDiff = SoldierDifficultyLevel( pSoldier );
-	INT32 iTileSightLimit;
+	// Keep the believed level alongside each Threat entry. The legacy Threat
+	// structure stores the believed grid but not the corresponding known level.
+	INT8 bThreatLevel[MAXMERCS];
 
 	INT32 iMinPercentbetter = MIN_PERCENT_BETTER;
 	iMinPercentbetter += iMinPercentbetter * pSoldier->usSkillCounter[SOLDIER_COUNTER_COVER];
@@ -809,6 +811,7 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 			(*pbPersOL == SEEN_CURRENTLY || *pbPublOL == SEEN_CURRENTLY))
 		{
 			sThreatLoc = pOpponent->sGridNo;
+			bThreatLevel[uiThreatCnt] = pOpponent->pathing.bLevel;
 			iThreatCertainty = ThreatPercent[SEEN_CURRENTLY - OLDEST_HEARD_VALUE];
 		}
 		else
@@ -823,14 +826,16 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 			if ((gubKnowledgeValue[*pbPublOL - OLDEST_HEARD_VALUE][*pbPersOL - OLDEST_HEARD_VALUE] > 0) ||
 				(*pbPersOL == *pbPublOL))
 			{
-				// using personal knowledge, obtain opponent's "best guess" gridno
+				// using personal knowledge, obtain opponent's "best guess" gridno/level
 				sThreatLoc = *pusLastLoc;
+				bThreatLevel[uiThreatCnt] = gbLastKnownOppLevel[pSoldier->ubID][pOpponent->ubID];
 				iThreatCertainty = ThreatPercent[*pbPersOL - OLDEST_HEARD_VALUE];
 			}
 			else
 			{
-				// using public knowledge, obtain opponent's "best guess" gridno
+				// using public knowledge, obtain opponent's "best guess" gridno/level
 				sThreatLoc = gsPublicLastKnownOppLoc[pSoldier->bTeam][pOpponent->ubID];
+				bThreatLevel[uiThreatCnt] = gbPublicLastKnownOppLevel[pSoldier->bTeam][pOpponent->ubID];
 				iThreatCertainty = ThreatPercent[*pbPublOL - OLDEST_HEARD_VALUE];
 			}
 		}
@@ -912,13 +917,15 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 			// add this opponent's cover value to our current total cover value
 			iCurrentCoverValue += CalcCoverValue(pSoldier,pSoldier->sGridNo,iMyThreatValue,pSoldier->bActionPoints,uiLoop,Threat[uiLoop].iOrigRange,morale,&iCurrentScale);
 		}
-		iTileSightLimit = Threat[uiLoop].pOpponent->GetMaxDistanceVisible( pSoldier->sGridNo, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS );
-		if( LocationToLocationLineOfSightTest( Threat[uiLoop].sGridNo, Threat[uiLoop].pOpponent->pathing.bLevel, pSoldier->sGridNo, pSoldier->pathing.bLevel, TRUE, iTileSightLimit, STANDING_LOS_POS, PRONE_LOS_POS) )
+		// Evaluate cover from the believed threat location/level. Using the hidden
+		// opponent object's current level (and current visibility range) leaked roof
+		// changes and other unseen state into cover selection.
+		if( LocationToLocationLineOfSightTest( Threat[uiLoop].sGridNo, bThreatLevel[uiLoop], pSoldier->sGridNo, pSoldier->pathing.bLevel, TRUE, MAX_VISION_RANGE, STANDING_LOS_POS, PRONE_LOS_POS) )
 		//if ( SoldierToVirtualSoldierLineOfSightTest( Threat[uiLoop].pOpponent, pSoldier->sGridNo, pSoldier->pathing.bLevel, ANIM_PRONE, TRUE, -1 ) != 0 )
 		{
 			fProneCover = FALSE;
 		}
-		if( LocationToLocationLineOfSightTest( Threat[uiLoop].sGridNo, Threat[uiLoop].pOpponent->pathing.bLevel, pSoldier->sGridNo, pSoldier->pathing.bLevel, TRUE, iTileSightLimit, STANDING_LOS_POS, STANDING_LOS_POS) )
+		if( LocationToLocationLineOfSightTest( Threat[uiLoop].sGridNo, bThreatLevel[uiLoop], pSoldier->sGridNo, pSoldier->pathing.bLevel, TRUE, MAX_VISION_RANGE, STANDING_LOS_POS, STANDING_LOS_POS) )
 			//if ( SoldierToVirtualSoldierLineOfSightTest( Threat[uiLoop].pOpponent, pSoldier->sGridNo, pSoldier->pathing.bLevel, ANIM_PRONE, TRUE, -1 ) != 0 )
 		{
 			fSightCover = FALSE;
@@ -1130,13 +1137,12 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 						(pSoldier->bActionPoints - iPathCost),
 						uiLoop,iThreatRange,morale,&iCoverScale);
 				}
-				iTileSightLimit = Threat[uiLoop].pOpponent->GetMaxDistanceVisible( sGridNo, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS );
-				if( LocationToLocationLineOfSightTest( Threat[uiLoop].sGridNo, Threat[uiLoop].pOpponent->pathing.bLevel, sGridNo, pSoldier->pathing.bLevel, TRUE, iTileSightLimit, STANDING_LOS_POS, PRONE_LOS_POS) )
+				if( LocationToLocationLineOfSightTest( Threat[uiLoop].sGridNo, bThreatLevel[uiLoop], sGridNo, pSoldier->pathing.bLevel, TRUE, MAX_VISION_RANGE, STANDING_LOS_POS, PRONE_LOS_POS) )
 				//if ( SoldierToVirtualSoldierLineOfSightTest( Threat[uiLoop].pOpponent, sGridNo, pSoldier->pathing.bLevel, ANIM_PRONE, TRUE, -1 ) != 0 )
 				{
 					fProneCover = FALSE;
 				}
-				if( LocationToLocationLineOfSightTest( Threat[uiLoop].sGridNo, Threat[uiLoop].pOpponent->pathing.bLevel, sGridNo, pSoldier->pathing.bLevel, TRUE, iTileSightLimit, STANDING_LOS_POS, STANDING_LOS_POS) )
+				if( LocationToLocationLineOfSightTest( Threat[uiLoop].sGridNo, bThreatLevel[uiLoop], sGridNo, pSoldier->pathing.bLevel, TRUE, MAX_VISION_RANGE, STANDING_LOS_POS, STANDING_LOS_POS) )
 					//if ( SoldierToVirtualSoldierLineOfSightTest( Threat[uiLoop].pOpponent, sGridNo, pSoldier->pathing.bLevel, ANIM_PRONE, TRUE, -1 ) != 0 )
 				{
 					fSightCover = FALSE;
