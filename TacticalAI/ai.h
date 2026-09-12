@@ -302,7 +302,24 @@ enum
 	AI_BATTLE_CATASTROPHIC
 };
 
+// Enemy doctrine describes training/initiative, not hidden combat bonuses.
+enum
+{
+	AI_DOCTRINE_SECURITY = 0,
+	AI_DOCTRINE_LINE,
+	AI_DOCTRINE_VETERAN,
+	AI_DOCTRINE_ELITE_MOBILE,
+	AI_DOCTRINE_ELITE_GUARD
+};
+
 BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier);
+UINT8 AIGetDoctrineProfile(SOLDIERTYPE *pSoldier);
+BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier);
+BOOLEAN AIAllowsComplexManeuver(SOLDIERTYPE *pSoldier);
+BOOLEAN AIAllowsIndependentFlank(SOLDIERTYPE *pSoldier);
+BOOLEAN AIAllowsProactiveSupport(SOLDIERTYPE *pSoldier);
+UINT8 AIDoctrineResponseLimit(SOLDIERTYPE *pSoldier);
+INT8 AIDoctrineAnchorModifier(SOLDIERTYPE *pSoldier);
 // Enemy fireteam coordination.  Fireteams are transient sector-local AI state and
 // deliberately do not alter SOLDIERTYPE/savegame layout.
 UINT8 AIFireteamId(SOLDIERTYPE *pSoldier);
