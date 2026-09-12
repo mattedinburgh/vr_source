@@ -4148,8 +4148,14 @@ static UINT8 AIFireteamCountById(UINT8 ubFireteam, BOOLEAN fReadyOnly)
 			guiAIFireteamIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
 			gubAIFireteam[pFriend->ubID] != ubFireteam)
 			continue;
-		if (fReadyOnly && (pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed))
+		if (fReadyOnly &&
+			(pFriend->stats.bLife < OKLIFE ||
+			 pFriend->bCollapsed ||
+			 pFriend->bBreathCollapsed ||
+			 (pFriend->usSoldierFlagMask & SOLDIER_POW)))
+		{
 			continue;
+		}
 		++ubCount;
 	}
 	return ubCount;
@@ -4163,7 +4169,7 @@ static INT32 AIFireteamDistanceToSpot(UINT8 ubFireteam, INT32 sSpot)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (!AIEnemyFireteamEligible(pFriend) || pFriend->ubID >= MAX_NUM_SOLDIERS ||
-			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
 			guiAIFireteamIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
 			gubAIFireteam[pFriend->ubID] != ubFireteam)
 			continue;
@@ -4625,7 +4631,10 @@ BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridN
 static BOOLEAN AIEnemyResponderEligible(SOLDIERTYPE *pSoldier)
 {
 	return AIEnemyFireteamEligible(pSoldier) &&
-		pSoldier->stats.bLife >= OKLIFE && !pSoldier->bCollapsed &&
+		pSoldier->stats.bLife >= OKLIFE &&
+		!pSoldier->bCollapsed &&
+		!pSoldier->bBreathCollapsed &&
+		!(pSoldier->usSoldierFlagMask & SOLDIER_POW) &&
 		pSoldier->aiData.bOrders != STATIONARY &&
 		pSoldier->aiData.bOrders != SNIPER;
 }
@@ -4827,7 +4836,9 @@ UINT8 AIObservedRecentCasualties(SOLDIERTYPE *pSoldier)
 			pFriend->bActive &&
 			pFriend->bInSector &&
 			pFriend->stats.bLife > 0 &&
-			pFriend->stats.bLife < OKLIFE &&
+			(pFriend->stats.bLife < OKLIFE ||
+			 pFriend->bCollapsed ||
+			 pFriend->bBreathCollapsed) &&
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) <= TACTICAL_RANGE)
 		{
 			++iLosses;
@@ -5027,8 +5038,16 @@ BOOLEAN AILastSurvivorPressure(SOLDIERTYPE *pSoldier)
 		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
-		if (pFriend && pFriend->bActive && pFriend->bInSector && pFriend->stats.bLife >= OKLIFE)
+		if (pFriend &&
+			pFriend->bActive &&
+			pFriend->bInSector &&
+			pFriend->stats.bLife >= OKLIFE &&
+			!pFriend->bCollapsed &&
+			!pFriend->bBreathCollapsed &&
+			!(pFriend->usSoldierFlagMask & SOLDIER_POW))
+		{
 			++ubTeamReady;
+		}
 	}
 
 	UINT8 ubLocalCasualties = AILocalCasualtyPercent(pSoldier);
