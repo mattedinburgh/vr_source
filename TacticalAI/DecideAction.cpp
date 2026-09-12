@@ -6223,11 +6223,18 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 							}
 						}
 
-						// HEADROCK HAM 3.6: due to the "else", this part of the formula is NEVER hit. Removing.
-						//else if (PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) < 10 && gGameOptions.ubDifficultyLevel > DIF_LEVEL_EASY )
-						if (PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) < 10 && gGameOptions.ubDifficultyLevel > DIF_LEVEL_EASY )
+						// Close range favours a controlled burst, but difficulty no longer
+						// forces one with a +100 override. Better troops get a bounded bonus
+						// and still respect aim quality, ammo state and the normal fire-mode roll.
+						if (PythSpacesAway(pSoldier->sGridNo, BestAttack.sTarget) < 10 &&
+							gGameOptions.ubDifficultyLevel > DIF_LEVEL_EASY)
 						{
-							iChance += 100;
+							iChance += 15 + 5 * SoldierDifficultyLevel(pSoldier);
+							if (BestAttack.ubChanceToReallyHit >= 25)
+								iChance += 15;
+							if (pSoldier->inv[BestAttack.bWeaponIn][0]->data.gun.ubGunShotsLeft >=
+								gGameExternalOptions.ubAISuppressionMinimumAmmo)
+								iChance += 10;
 						}
 					}
 
@@ -6341,10 +6348,17 @@ L_NEWAIM:
 									iChance += 5 * ( 15 - PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) );
 								}
 							}
-							// HEADROCK HAM 3.6: Forcing enemies to autofire at close range if possible, similar to forced burst (see above)
-							if (PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) < 10 && gGameOptions.ubDifficultyLevel > DIF_LEVEL_EASY )
+							// Close-range autofire is attractive, not mandatory. This keeps Elite
+							// troops aggressive without making difficulty synonymous with ammo waste.
+							if (PythSpacesAway(pSoldier->sGridNo, BestAttack.sTarget) < 10 &&
+								gGameOptions.ubDifficultyLevel > DIF_LEVEL_EASY)
 							{
-								iChance += 100;
+								iChance += 15 + 5 * SoldierDifficultyLevel(pSoldier);
+								if (BestAttack.ubChanceToReallyHit >= 25)
+									iChance += 15;
+								if (pSoldier->inv[BestAttack.bWeaponIn][0]->data.gun.ubGunShotsLeft >=
+									gGameExternalOptions.ubAISuppressionMinimumAmmo)
+									iChance += 10;
 							}
 						}
 
