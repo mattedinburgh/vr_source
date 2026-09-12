@@ -7178,6 +7178,7 @@ BOOLEAN AIFriendAdvancingNeedsCover(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID)
 			!AISameFireteam(pSoldier, pFriend) ||
 			pFriend->stats.bLife < OKLIFE ||
 			pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed ||
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
 			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 			AIDisengagementActive(pFriend) ||
