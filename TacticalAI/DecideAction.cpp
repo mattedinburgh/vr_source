@@ -8605,6 +8605,40 @@ void PrepareMainRedAIWeights(SOLDIERTYPE *pSoldier, INT8 &bSeekPts, INT8 &bHelpP
 	case SNIPER:		bSeekPts += -1; bHelpPts += 0; bHidePts += +1; bWatchPts += +1; break;
 	}
 
+	// Defensive mission persistence: reported/public contact is not enough reason
+	// for guards and snipers to abandon assigned tactical positions. They become
+	// alert, face the threat and improve cover, but only direct/recent contact or
+	// incoming fire grants freedom to actively seek the enemy.
+	if (pSoldier->bTeam == ENEMY_TEAM &&
+		!pSoldier->aiData.bUnderFire &&
+		pSoldier->aiData.bOppCnt == 0 &&
+		!GuySawEnemy(pSoldier, SEEN_LAST_TURN))
+	{
+		switch (pSoldier->aiData.bOrders)
+		{
+		case STATIONARY:
+		case SNIPER:
+			bSeekPts = -99;
+			bHelpPts = -99;
+			if (bHidePts > -90) bHidePts += 3;
+			if (bWatchPts > -90) bWatchPts += 4;
+			break;
+		case ONGUARD:
+			if (bSeekPts > -90) bSeekPts -= 5;
+			if (bHelpPts > -90) bHelpPts -= 3;
+			if (bHidePts > -90) bHidePts += 2;
+			if (bWatchPts > -90) bWatchPts += 3;
+			break;
+		case CLOSEPATROL:
+			if (bSeekPts > -90) bSeekPts -= 3;
+			if (bHelpPts > -90) bHelpPts -= 1;
+			if (bWatchPts > -90) bWatchPts += 2;
+			break;
+		default:
+			break;
+		}
+	}
+
 	// modify tendencies according to attitude
 	switch (pSoldier->aiData.bAttitude)
 	{
