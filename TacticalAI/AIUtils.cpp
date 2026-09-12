@@ -6021,6 +6021,7 @@ UINT8 AITargetSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			!AISameFireteam(pSoldier, pFriend) ||
 			pFriend->stats.bLife < OKLIFE)
 		{
 			continue;
