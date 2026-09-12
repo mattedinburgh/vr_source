@@ -476,21 +476,22 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 
 		gubNPCAPBudget = 0;
 		gubNPCDistLimit = 0;
-		if (!FindBestPath(pSoldier, sApproachGrid, pSoldier->pathing.bLevel,
-			RUNNING, COPYROUTE, PATH_THROUGH_PEOPLE))
+		INT32 iPathSteps = FindBestPath(pSoldier, sApproachGrid, pSoldier->pathing.bLevel,
+			RUNNING, NO_COPYROUTE, PATH_THROUGH_PEOPLE);
+		if (iPathSteps == 0)
 		{
 			continue;
 		}
 
-		// Inspect the actual route. Exposed tiles that known enemies can attack are
-		// heavily penalized; a long open sprint is therefore rejected even for a dying ally.
+		// Inspect the candidate route without replacing the soldier's active route.
+		// Exposed tiles that known enemies can attack are heavily penalized; a long
+		// open sprint is therefore rejected even for a dying ally.
 		INT32 iPathExposure = 0;
 		INT32 sCheckGrid = pSoldier->sGridNo;
-		for (INT16 sLoop = pSoldier->pathing.usPathIndex;
-			sLoop < pSoldier->pathing.usPathDataSize; sLoop++)
+		for (INT32 iStep = 0; iStep < iPathSteps && iStep < MAX_PATH_LIST_SIZE; ++iStep)
 		{
 			sCheckGrid = NewGridNo(sCheckGrid,
-				DirectionInc((UINT8)pSoldier->pathing.usPathingData[sLoop]));
+				DirectionInc((UINT8)guiPathingData[iStep]));
 			if (TileIsOutOfBounds(sCheckGrid))
 				break;
 
