@@ -9614,7 +9614,7 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 		CountCorpses(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE, TRUE, TRUE) > CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE)) &&
 		(InSmoke(pSoldier->sGridNo, pSoldier->pathing.bLevel) ||
 		Chance(SoldierDifficultyLevel(pSoldier) * 10) ||
-		Chance(TeamPercentKilled(pSoldier->bTeam)) ||
+		Chance(AIFriendlyCasualtyPercent(pSoldier)) ||
 		Chance(10 * CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE)) ||
 		Chance(10 * CountCorpses(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE, TRUE, TRUE))))
 	{
