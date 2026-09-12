@@ -4525,6 +4525,7 @@ UINT8 AILocalRoutPressure(SOLDIERTYPE *pSoldier)
 			pFriend == pSoldier ||
 			!pFriend->bActive ||
 			!pFriend->bInSector ||
+			!AISameFireteam(pSoldier, pFriend) ||
 			pFriend->stats.bLife < OKLIFE ||
 			pFriend->pathing.bLevel != pSoldier->pathing.bLevel ||
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > iRadius)
@@ -5498,6 +5499,7 @@ INT32 AICrossfirePositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT3
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			!AISameFireteam(pSoldier, pFriend) ||
 			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
 			!AICheckHasGun(pFriend) || AIGunAmmo(pFriend) == 0 ||
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE)
@@ -5550,7 +5552,19 @@ INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	if (TileIsOutOfBounds(sTargetSpot))
 		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
 
-	UINT8 ubNearbyFriends = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4);
+	UINT8 ubNearbyFriends = 0;
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (pFriend && pFriend != pSoldier && pFriend->bActive && pFriend->bInSector &&
+			pFriend->stats.bLife >= OKLIFE && !pFriend->bCollapsed &&
+			AISameFireteam(pSoldier, pFriend) &&
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) <= DAY_VISION_RANGE / 4)
+		{
+			++ubNearbyFriends;
+		}
+	}
 	INT32 iModifier = 0;
 
 	if (ubNearbyFriends == 0)
@@ -5628,6 +5642,7 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 			SOLDIERTYPE *pCandidate = MercPtrs[iCounter];
 			if (!pCandidate || pCandidate == pSoldier ||
 				!pCandidate->bActive || !pCandidate->bInSector ||
+				!AISameFireteam(pSoldier, pCandidate) ||
 				pCandidate->stats.bLife < OKLIFE || pCandidate->bCollapsed ||
 				pCandidate->pathing.bLevel != pSoldier->pathing.bLevel ||
 				pCandidate->bActionPoints <= 0 ||
@@ -5660,6 +5675,7 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 			if (!pFriend ||
 				pFriend == pSoldier ||
 				!pFriend->bActive || !pFriend->bInSector ||
+				!AISameFireteam(pSoldier, pFriend) ||
 				pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
 				(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
 				(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
