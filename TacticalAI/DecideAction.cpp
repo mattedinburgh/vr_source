@@ -2777,21 +2777,12 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		bInGas = InGasOrSmoke(pSoldier, pSoldier->sGridNo);
 
 	////////////////////////////////////////////////////////////////////////////
-	// WHEN IN GAS, GO TO NEAREST REACHABLE SPOT OF UNGASSED LAND
+	// WHEN IN GAS/DEEP WATER/AREA DANGER, MOVE TO SAFE LAND
 	////////////////////////////////////////////////////////////////////////////
 
-	// when in deep water, move to closest opponent
-	if (ubCanMove && bInDeepWater && !pSoldier->aiData.bNeutral && pSoldier->aiData.bOrders == SEEKENEMY)
-	{
-		// find closest reachable opponent, excluding opponents in deep water
-		pSoldier->aiData.usActionData = ClosestReachableDisturbance(pSoldier, &fSeekClimb);
-
-		if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
-		{
-			return(AI_ACTION_LEAVE_WATER_GAS);
-		}
-	}
-
+	// Offensive orders never override environmental self-preservation. The old
+	// SEEKENEMY exception sent soldiers deeper toward contact while they were in
+	// deep water; use the common safe-land search for every order instead.
 	if (ubCanMove && (bInGas || bInDeepWater || FindBombNearby(pSoldier, pSoldier->sGridNo, BOMB_DETECTION_RANGE) || RedSmokeDanger(pSoldier->sGridNo, pSoldier->pathing.bLevel)))
 	{
 		pSoldier->aiData.usActionData = FindNearestUngassedLand(pSoldier);
