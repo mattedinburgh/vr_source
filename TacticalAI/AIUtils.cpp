@@ -6873,6 +6873,24 @@ BOOLEAN SightCoverAtSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, BOOLEAN fUnlimited)
 // Grade environmental/tactical destination hazards using only information the AI
 // can legitimately know.  This is deliberately coarse: movement callers need a
 // stable "worse / not worse" signal, not another expensive cover calculation.
+BOOLEAN FindNearbyExplosiveStructure(INT32 sSpot, INT8 bLevel)
+{
+	if (TileIsOutOfBounds(sSpot))
+		return FALSE;
+
+	for (UINT8 ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ++ubDirection)
+	{
+		INT32 sTempGridNo = NewGridNo(sSpot, DirectionInc(ubDirection));
+		if (sTempGridNo != sSpot &&
+			FindStructFlag(sTempGridNo, bLevel, STRUCTURE_EXPLOSIVE))
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
 UINT8 SpotDangerLevel(SOLDIERTYPE *pSoldier, INT32 sGridNo)
 {
 	if (!pSoldier || TileIsOutOfBounds(sGridNo))
@@ -6890,7 +6908,8 @@ UINT8 SpotDangerLevel(SOLDIERTYPE *pSoldier, INT32 sGridNo)
 	// Once alerted, stepping into illumination at night is a meaningful exposure cost.
 	if ((pSoldier->aiData.bAlertStatus >= STATUS_RED ||
 		 pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE) &&
-		InLightAtNight(sGridNo, pSoldier->pathing.bLevel))
+		(InLightAtNight(sGridNo, pSoldier->pathing.bLevel) ||
+		 FindNearbyExplosiveStructure(sGridNo, pSoldier->pathing.bLevel)))
 	{
 		ubLevel = __max((UINT8)2, ubLevel);
 	}
