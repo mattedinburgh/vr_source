@@ -1747,7 +1747,12 @@ void UpdateAnimatedCursorFrames( UINT32 uiCursorIndex )
 			pCurImage = &( pCurData->Composites[ cnt ] );
 			// Flugente: now using enums instead of hardcoded values
 			//CHRISL: NCTH uses a completely different cursor so if we're in NCTH mode, we want to use different graphics
-			if(UsingNewCTHSystem() == true)
+			// Current 1.13 fix: melee/knife cursors still use the classic aiming rings.
+			// Converting these cursor entries to the firearm NCTH graphics removes their
+			// aiming circles entirely.
+			if ( UsingNewCTHSystem() == true &&
+				 uiCursorIndex != 25 && uiCursorIndex != 26 && uiCursorIndex != 28 &&
+				 uiCursorIndex != 39 && uiCursorIndex != 40 && uiCursorIndex != 42 )
 			{
 				switch(pCurImage->uiFileIndex)
 				{
