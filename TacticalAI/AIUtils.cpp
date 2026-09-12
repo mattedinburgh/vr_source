@@ -1373,13 +1373,29 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 		// if we are there (at the noise gridno)
 		if (sGridNo == pSoldier->sGridNo)
 		{
-			for (uiLoop = 0; uiLoop<guiNumMercSlots; uiLoop++)//dnl ch58 160813
+			for (uiLoop = 0; uiLoop < guiNumMercSlots; uiLoop++)
 			{
 				pOpponent = MercSlots[uiLoop];
-				if (pOpponent && pSoldier->bSide == pOpponent->bSide && pSoldier->ubID != pOpponent->ubID&& pSoldier->aiData.sNoiseGridno == pOpponent->aiData.sNoiseGridno)
+				if (pOpponent &&
+					pSoldier->bSide == pOpponent->bSide &&
+					pSoldier->ubID != pOpponent->ubID &&
+					pSoldier->aiData.sNoiseGridno == pOpponent->aiData.sNoiseGridno)
 				{
-					pOpponent->aiData.sNoiseGridno = NOWHERE;// Erase for all from the same team as it not useful anymore, this will avoid others to check already tested location
-					pOpponent->aiData.ubNoiseVolume = 0;
+					// Reaching a personal noise location confirms it only for the local
+					// tactical element. Legacy code cleared the same noise instantly for
+					// every friendly in the sector, making separated groups share results
+					// without radio or proximity.
+					BOOLEAN fShareClear = TRUE;
+					if (pSoldier->bTeam == ENEMY_TEAM && pOpponent->bTeam == ENEMY_TEAM)
+					{
+						fShareClear = AISameFireteam(pSoldier, pOpponent) ||
+							PythSpacesAway(pSoldier->sGridNo, pOpponent->sGridNo) <= TACTICAL_RANGE / 3;
+					}
+					if (fShareClear)
+					{
+						pOpponent->aiData.sNoiseGridno = NOWHERE;
+						pOpponent->aiData.ubNoiseVolume = 0;
+					}
 				}
 			}
 			pSoldier->aiData.sNoiseGridno = NOWHERE;		// wipe it out, not useful anymore
