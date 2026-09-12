@@ -500,7 +500,8 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 		}
 
 		UINT8 ubSupport = CountNearbyFriends(pSoldier, pPatient->sGridNo, DAY_VISION_RANGE / 4);
-		BOOLEAN fDestinationAttackable = EnemyCanAttackSpot(pSoldier, sApproachGrid, pSoldier->pathing.bLevel);
+		BOOLEAN fDestinationAttackable =
+			(AIKnownThreatExposure(pSoldier, sApproachGrid, pSoldier->pathing.bLevel) > 0);
 		BOOLEAN fDestinationCovered = AnyCoverAtSpot(pSoldier, sApproachGrid);
 
 		// Absolute veto: do not cross a long exposed fire lane or enter an exposed,
