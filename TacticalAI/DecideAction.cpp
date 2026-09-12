@@ -5426,6 +5426,12 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 
 		CheckIfShotPossible(pSoldier, &BestShot);
 
+		BOOLEAN fBestShotTargetStateKnown =
+			BestShot.ubPossible &&
+			BestShot.ubOpponent != NOBODY &&
+			MercPtrs[BestShot.ubOpponent] &&
+			PersonalKnowledge(pSoldier, BestShot.ubOpponent) == SEEN_CURRENTLY;
+
 		if (BestShot.ubFriendlyFireChance)	//dnl ch61 180813
 		{
 			// determine chance to shoot
@@ -5445,7 +5451,8 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			// if the selected opponent is not a threat (unconscious & !serviced)
 			// (usually, this means all the guys we see are unconscious, but, on
 			//  rare occasions, we may not be able to shoot a healthy guy, too)
-			if ((Menptr[BestShot.ubOpponent].stats.bLife < OKLIFE) &&
+			if (fBestShotTargetStateKnown &&
+				(Menptr[BestShot.ubOpponent].stats.bLife < OKLIFE) &&
 				!Menptr[BestShot.ubOpponent].bService &&
 				(pSoldier->aiData.bAttitude != AGGRESSIVE || Chance((100 - BestShot.ubChanceToReallyHit) / 2)))
 			{
@@ -5685,6 +5692,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 
 		// sevenfm: special code to attack zombies, disable shooting since we cannot kill lying zombie with bullets
 		if (BestShot.ubPossible &&
+			fBestShotTargetStateKnown &&
 			BestShot.ubOpponent != NOBODY &&
 			MercPtrs[BestShot.ubOpponent] &&
 			MercPtrs[BestShot.ubOpponent]->IsZombie() &&
@@ -6108,7 +6116,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			if(!TANK(pSoldier))
 			{
 				// sevenfm: dynamically decide shot location
-				if (BestAttack.ubOpponent != NOBODY)
+				if (fBestAttackTargetStateKnown && BestAttack.ubOpponent != NOBODY)
 				{
 					UINT32	uiRoll;
 					UINT8	ubChanceLegs = 0;
@@ -6213,7 +6221,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			//////////////////////////////////////////////////////////////////////////
 
 			if (IsGunBurstCapable( &pSoldier->inv[BestAttack.bWeaponIn], FALSE, pSoldier ) &&
-				!(Menptr[BestShot.ubOpponent].stats.bLife < OKLIFE) && // don't burst at downed targets
+				(!fBestAttackTargetStateKnown || !(Menptr[BestShot.ubOpponent].stats.bLife < OKLIFE)) && // only suppress visible downed targets
 				pSoldier->inv[BestAttack.bWeaponIn][0]->data.gun.ubGunShotsLeft > 1 &&
 				(pSoldier->bTeam != gbPlayerNum || pSoldier->aiData.bRTPCombat == RTP_COMBAT_AGGRESSIVE) )
 			{
@@ -6295,7 +6303,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			}
 
 			if (IsGunAutofireCapable( &pSoldier->inv[BestAttack.bWeaponIn] ) &&
-				!(Menptr[BestShot.ubOpponent].stats.bLife < OKLIFE) && // don't burst at downed targets
+				(!fBestAttackTargetStateKnown || !(Menptr[BestShot.ubOpponent].stats.bLife < OKLIFE)) && // only suppress visible downed targets
 				(( pSoldier->inv[BestAttack.bWeaponIn][0]->data.gun.ubGunShotsLeft > 1 &&
 				!pSoldier->bDoBurst ) || Weapon[pSoldier->inv[BestAttack.bWeaponIn].usItem].NoSemiAuto) )
 			{
@@ -6462,7 +6470,7 @@ L_NEWAIM:
 				 (fBestAttackTargetStateKnown ? MercPtrs[BestAttack.ubOpponent]->aiData.bShock : 0)) &&
 				// sevenfm: advance when too far or target is cowering or hit
 				(	PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) > usRange / (CELL_X_SIZE) ||
-					CoweringShockLevel(MercPtrs[BestAttack.ubOpponent]) ||
+					(fBestAttackTargetStateKnown && CoweringShockLevel(MercPtrs[BestAttack.ubOpponent])) ||
 					pSoldier->aiData.bLastAttackHit ) &&
 				pSoldier->aiData.bOrders > ONGUARD &&
 				pSoldier->aiData.bOrders != SNIPER &&
@@ -6594,7 +6602,7 @@ L_NEWAIM:
 			pSoldier->aiData.bAimTime = BestAttack.ubAimTime;
 
 			// sevenfm: dynamically decide stab location
-			if( BestAttack.ubOpponent != NOBODY )
+			if( fBestAttackTargetStateKnown && BestAttack.ubOpponent != NOBODY )
 			{
 				UINT32	uiRoll;
 				UINT8	ubChanceHead = 0;
