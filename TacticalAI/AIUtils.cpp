@@ -6107,6 +6107,7 @@ static BOOLEAN AIEligibleWithdrawalCoverer(SOLDIERTYPE *pCandidate, SOLDIERTYPE 
 {
 	if (!pCandidate || !pRetreating ||
 		pCandidate == pRetreating ||
+		!AISameFireteam(pCandidate, pRetreating) ||
 		!pCandidate->bActive || !pCandidate->bInSector ||
 		pCandidate->stats.bLife < OKLIFE || pCandidate->bCollapsed ||
 		(pCandidate->usSoldierFlagMask & SOLDIER_POW) ||
@@ -6206,6 +6207,7 @@ BOOLEAN AIShouldHoldForWithdrawingFriend(SOLDIERTYPE *pSoldier)
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (!pFriend || pFriend == pSoldier ||
 			!pFriend->bActive || !pFriend->bInSector ||
+			!AISameFireteam(pSoldier, pFriend) ||
 			pFriend->stats.bLife < OKLIFE ||
 			pFriend->pathing.bLevel != pSoldier->pathing.bLevel ||
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE ||
