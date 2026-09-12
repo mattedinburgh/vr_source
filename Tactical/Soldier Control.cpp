@@ -9751,10 +9751,31 @@ BOOLEAN IsBleedoutCasualty( SOLDIERTYPE *pSoldier )
 
 // Transient rescue-drag state. 0 means no target; otherwise target soldier ID + 1.
 // Keeping this outside SOLDIERTYPE avoids any additional savegame-layout changes.
+extern UINT32 guiTurnCnt;
 static UINT16 gusDownedDragTarget[TOTAL_SOLDIERS] = { 0 };
+static UINT32 guiDownedDragDraggerIdentity[TOTAL_SOLDIERS] = { 0 };
+static UINT32 guiDownedDragTargetIdentity[TOTAL_SOLDIERS] = { 0 };
+static UINT32 guiDownedDragLastTurnStamp = 0;
+
+static void MaintainDownedDragTimeline( )
+{
+	UINT32 uiTurnStamp = guiTurnCnt + 1;
+	if ( guiDownedDragLastTurnStamp != 0 && uiTurnStamp < guiDownedDragLastTurnStamp )
+	{
+		for ( UINT16 i = 0; i < TOTAL_SOLDIERS; ++i )
+		{
+			gusDownedDragTarget[i] = 0;
+			guiDownedDragDraggerIdentity[i] = 0;
+			guiDownedDragTargetIdentity[i] = 0;
+		}
+	}
+	guiDownedDragLastTurnStamp = uiTurnStamp;
+}
 
 static SOLDIERTYPE *GetDraggedDownedPerson( SOLDIERTYPE *pSoldier )
 {
+	MaintainDownedDragTimeline( );
+
 	if ( !pSoldier )
 		return NULL;
 
@@ -9771,6 +9792,16 @@ static SOLDIERTYPE *GetDraggedDownedPerson( SOLDIERTYPE *pSoldier )
 
 	SOLDIERTYPE *pTarget = MercPtrs[usTargetID];
 
+	if ( guiDownedDragDraggerIdentity[usDraggerID] != pSoldier->uiUniqueSoldierIdValue ||
+		!pTarget ||
+		guiDownedDragTargetIdentity[usDraggerID] != pTarget->uiUniqueSoldierIdValue )
+	{
+		gusDownedDragTarget[usDraggerID] = 0;
+		guiDownedDragDraggerIdentity[usDraggerID] = 0;
+		guiDownedDragTargetIdentity[usDraggerID] = 0;
+		return NULL;
+	}
+
 	// The free-hand requirement remains active for the whole drag, not only pickup.
 	if ( (pSoldier->inv[HANDPOS].exists() && pSoldier->inv[SECONDHANDPOS].exists()) ||
 		 (pSoldier->inv[HANDPOS].exists() && Item[pSoldier->inv[HANDPOS].usItem].twohanded) )
@@ -9779,15 +9810,19 @@ static SOLDIERTYPE *GetDraggedDownedPerson( SOLDIERTYPE *pSoldier )
 		return NULL;
 	}
 
-	if ( !pTarget || !pTarget->bActive || !pTarget->bInSector ||
+	if ( !pTarget->bActive || !pTarget->bInSector ||
 		 pTarget->stats.bLife <= 0 || !IsBleedoutCasualty( pTarget ) ||
 		 pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
 		 pTarget->pathing.bLevel != pSoldier->pathing.bLevel ||
-		 PythSpacesAway( pSoldier->sGridNo, pTarget->sGridNo ) > 2 )
+		 PythSpacesAway( pSoldier->sGridNo, pTarget->sGridNo ) > 2 ||
+		 TERRAIN_IS_HIGH_WATER( pSoldier->sGridNo ) ||
+		 TERRAIN_IS_HIGH_WATER( pTarget->sGridNo ) )
 	{
 		// During a legal drag step the rescuer can briefly be two tiles from the casualty
 		// before UpdateDraggedDownedPersonPosition() pulls them into the vacated tile.
 		gusDownedDragTarget[usDraggerID] = 0;
+		guiDownedDragDraggerIdentity[usDraggerID] = 0;
+		guiDownedDragTargetIdentity[usDraggerID] = 0;
 		return NULL;
 	}
 
@@ -9801,23 +9836,33 @@ BOOLEAN IsDraggingDownedPerson( SOLDIERTYPE *pSoldier )
 
 void StopDraggingDownedPerson( SOLDIERTYPE *pSoldier )
 {
+	MaintainDownedDragTimeline( );
+
 	if ( !pSoldier )
 		return;
 
 	UINT16 usDraggerID = (UINT16)pSoldier->ubID;
 	if ( usDraggerID < TOTAL_SOLDIERS )
+	{
 		gusDownedDragTarget[usDraggerID] = 0;
+		guiDownedDragDraggerIdentity[usDraggerID] = 0;
+		guiDownedDragTargetIdentity[usDraggerID] = 0;
+	}
 }
 
 BOOLEAN StartDraggingDownedPerson( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pTarget )
 {
+	MaintainDownedDragTimeline( );
+
 	if ( !pSoldier || !pTarget || pSoldier == pTarget ||
 		 !pSoldier->bActive || !pSoldier->bInSector ||
 		 pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
 		 !IsBleedoutCasualty( pTarget ) || pTarget->stats.bLife <= 0 ||
 		 pTarget->pathing.bLevel != pSoldier->pathing.bLevel ||
 		 PythSpacesAway( pSoldier->sGridNo, pTarget->sGridNo ) > 1 ||
-		 pTarget->bSide != pSoldier->bSide )
+		 pTarget->bSide != pSoldier->bSide ||
+		 TERRAIN_IS_HIGH_WATER( pSoldier->sGridNo ) ||
+		 TERRAIN_IS_HIGH_WATER( pTarget->sGridNo ) )
 	{
 		return FALSE;
 	}
@@ -9836,8 +9881,20 @@ BOOLEAN StartDraggingDownedPerson( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pTarget )
 	// A casualty may only be dragged by one rescuer at a time.
 	for ( UINT16 i = 0; i < TOTAL_SOLDIERS; ++i )
 	{
-		if ( i != usDraggerID && gusDownedDragTarget[i] == usTargetID + 1 )
+		if ( i == usDraggerID || gusDownedDragTarget[i] != usTargetID + 1 )
+			continue;
+
+		SOLDIERTYPE *pOtherDragger = MercPtrs[i];
+		if ( pOtherDragger && pOtherDragger->bActive && pOtherDragger->bInSector &&
+			 guiDownedDragDraggerIdentity[i] == pOtherDragger->uiUniqueSoldierIdValue &&
+			 guiDownedDragTargetIdentity[i] == pTarget->uiUniqueSoldierIdValue )
+		{
 			return FALSE;
+		}
+
+		gusDownedDragTarget[i] = 0;
+		guiDownedDragDraggerIdentity[i] = 0;
+		guiDownedDragTargetIdentity[i] = 0;
 	}
 
 	INT16 sAPCost = APBPConstants[AP_PICKUP_ITEM];
@@ -9854,6 +9911,8 @@ BOOLEAN StartDraggingDownedPerson( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pTarget )
 	pTarget->bCollapsed = TRUE;
 
 	gusDownedDragTarget[usDraggerID] = usTargetID + 1;
+	guiDownedDragDraggerIdentity[usDraggerID] = pSoldier->uiUniqueSoldierIdValue;
+	guiDownedDragTargetIdentity[usDraggerID] = pTarget->uiUniqueSoldierIdValue;
 	pSoldier->usUIMovementMode = WALKING;
 	return TRUE;
 }
@@ -9894,7 +9953,10 @@ void UpdateDraggedDownedPersonPosition( SOLDIERTYPE *pSoldier, INT32 sOldGridNo 
 	// The casualty must still be adjacent to the tile the rescuer just vacated.
 	// This prevents teleporting through climbs, traversal or unusual scripted movement.
 	if ( pTarget->pathing.bLevel != pSoldier->pathing.bLevel ||
-		 PythSpacesAway( sOldGridNo, pTarget->sGridNo ) > 1 )
+		 PythSpacesAway( sOldGridNo, pTarget->sGridNo ) > 1 ||
+		 TERRAIN_IS_HIGH_WATER( pSoldier->sGridNo ) ||
+		 TERRAIN_IS_HIGH_WATER( sOldGridNo ) ||
+		 TERRAIN_IS_HIGH_WATER( pTarget->sGridNo ) )
 	{
 		StopDraggingDownedPerson( pSoldier );
 		return;
