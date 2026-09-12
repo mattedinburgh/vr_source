@@ -1112,6 +1112,13 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 				continue;
 			}
 
+
+			// Do not improve geometric cover by moving into a worse environmental hazard.
+			if (!CheckNPCDestination(pSoldier, sGridNo))
+			{
+				continue;
+			}
+
 			iPathCost = gubAIPathCosts[AI_PATHCOST_RADIUS + sXOffset][AI_PATHCOST_RADIUS + sYOffset];
 
 			// OK, this place shows potential.	How useful is it as cover?
@@ -3321,10 +3328,10 @@ INT32 FindAdvanceSpot(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bAction, UI
 				continue;		// skip on to the next potential grid
 			}
 
-			/*if (!CheckNPCDestination(pSoldier, sGridNo))
+			if (!CheckNPCDestination(pSoldier, sGridNo))
 			{
 				continue;
-			}*/
+			}
 
 			// sevenfm: avoid rooms for mortar operators
 			if (!AICheckUnderground() &&
