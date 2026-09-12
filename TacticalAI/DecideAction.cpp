@@ -1907,6 +1907,36 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 			iChance -= (100 - pSoldier->bBreath);
 
 
+			// A radioed sector contact should not make every distant patrol abandon its post.
+			// Soldiers with no recent personal sighting respond strongly when close, but
+			// reinforcement probability falls with distance. ONCALL/SEEKENEMY remain the
+			// units most willing to reinforce a remote firefight.
+			if (gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition &&
+				!GuySawEnemy(pSoldier, SEEN_LAST_TURN) &&
+				!pSoldier->aiData.bUnderFire)
+			{
+				INT32 iResponseDistance = PythSpacesAway(pSoldier->sGridNo, sNoiseGridNo);
+				INT32 iLocalResponseRange = __max(8, TACTICAL_RANGE / 2);
+
+				if (iResponseDistance > iLocalResponseRange)
+				{
+					INT32 iDistancePenalty = 10 + 2 * (iResponseDistance - iLocalResponseRange);
+					iChance -= __min(65, iDistancePenalty);
+
+					switch (pSoldier->aiData.bOrders)
+					{
+					case ONGUARD:       iChance -= 20; break;
+					case CLOSEPATROL:   iChance -= 12; break;
+					case RNDPTPATROL:
+					case POINTPATROL:   iChance -= 8;  break;
+					case FARPATROL:     iChance -= 5;  break;
+					case ONCALL:        iChance += 10; break;
+					case SEEKENEMY:     iChance += 15; break;
+					default: break;
+					}
+				}
+			}
+
 			// sevenfm: stationary/snipers should not seek
 			if ( pSoldier->aiData.bOrders == SNIPER || pSoldier->aiData.bOrders == STATIONARY )
 			{
