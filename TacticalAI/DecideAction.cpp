@@ -8529,11 +8529,33 @@ void ZombieDecideAlertStatus( SOLDIERTYPE *pSoldier )
 
 INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLEAN fAbortSeek)
 {
+	UINT8 ubNearbyFireteamClose = 0;
+	UINT8 ubNearbyFireteamSupport = 0;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier ||
+			!pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+			!AISameFireteam(pSoldier, pFriend))
+		{
+			continue;
+		}
+
+		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
+		if (iDistance <= DAY_VISION_RANGE / 4)
+			++ubNearbyFireteamClose;
+		if (iDistance <= DAY_VISION_RANGE / 2)
+			++ubNearbyFireteamSupport;
+	}
+
 	if (pSoldier->numFlanks == 0 &&
 		pSoldier->bActionPoints >= APBPConstants[AP_MINIMUM] &&
 		pSoldier->CheckInitialAP() &&
 		(pSoldier->aiData.bAttitude == CUNNINGAID || pSoldier->aiData.bAttitude == CUNNINGSOLO ||
-		(pSoldier->aiData.bAttitude == BRAVESOLO || pSoldier->aiData.bAttitude == BRAVEAID) && CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) > 2) &&
+		(pSoldier->aiData.bAttitude == BRAVESOLO || pSoldier->aiData.bAttitude == BRAVEAID) && ubNearbyFireteamClose > 2) &&
 		AICombatTeam(pSoldier) &&
 		!AIShouldAvoidAdvance(pSoldier) &&
 		pSoldier->ubSoldierClass != SOLDIER_CLASS_ADMINISTRATOR &&
@@ -8546,13 +8568,13 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		pSoldier->bActionPoints >= APBPConstants[AP_MINIMUM] &&
 		PythSpacesAway(pSoldier->sGridNo, sClosestDisturbance) > MIN_FLANK_DIST &&
 		(PythSpacesAway(pSoldier->sGridNo, sClosestDisturbance) < MAX_FLANK_DIST || fAbortSeek) &&
-		(!GuySawEnemy(pSoldier) || CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) > 2 || fAbortSeek) &&
-		(fAbortSeek || CountFriendsBetweenMeAndSpotFromSpot(pSoldier, sClosestDisturbance) > 0 || NightTime() || CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) > 2))
+		(!GuySawEnemy(pSoldier) || ubNearbyFireteamClose > 2 || fAbortSeek) &&
+		(fAbortSeek || CountFriendsBetweenMeAndSpotFromSpot(pSoldier, sClosestDisturbance) > 0 || NightTime() || ubNearbyFireteamClose > 2))
 	{
 		// Dynamic role deconfliction: a rifleman/marksman in a strong support posture
 		// should not abandon the fire base merely because flanking is otherwise legal.
 		// Require a clear support advantage and nearby teammates before suppressing the flank.
-		if (CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2) >= 2 &&
+		if (ubNearbyFireteamSupport >= 2 &&
 			AISupportRoleScore(pSoldier, sClosestDisturbance) >
 			AIManeuverRoleScore(pSoldier, sClosestDisturbance) + 15)
 		{
