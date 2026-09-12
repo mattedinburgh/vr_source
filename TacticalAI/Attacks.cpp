@@ -1479,7 +1479,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 			}
 			else if ((bKnowledge == SEEN_THIS_TURN || bKnowledge == SEEN_LAST_TURN ||
 				bKnowledge == HEARD_THIS_TURN || bKnowledge == HEARD_LAST_TURN) &&
-				InARoom(sKnownTarget, NULL))
+				(IsWallPresentAtGridNo(sKnownTarget) != NULL || IsRoofPresentAtGridNo(sKnownTarget) || IsDoorPresentAtGridNo(sKnownTarget)))
 			{
 				// A stale rocket shot is only sensible against a persistent structure/
 				// room position, not an arbitrary open-ground memory.
