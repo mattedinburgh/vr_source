@@ -1,3 +1,4 @@
+#include <time.h>
 #ifdef PRECOMPILEDHEADERS
 	#include "Tactical All.h"
 #else
@@ -884,6 +885,7 @@ void DisplayHiddenTurnbased( SOLDIERTYPE * pActingSoldier )
 	DebugAI( String( "Giving AI control to %d", pActingSoldier->ubID ) );
 	pActingSoldier->flags.fTurnInProgress = TRUE;
 	gTacticalStatus.uiTimeSinceMercAIStart = GetJA2Clock();
+	gtTimeSinceMercAIStart = time(0);
 
 	if ( gTacticalStatus.ubTopMessageType != COMPUTER_TURN_MESSAGE)
 	{
