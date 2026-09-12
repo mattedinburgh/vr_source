@@ -1547,7 +1547,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 						iThreatValue = iOppThreatValue[ubLoop2];
 
 						// estimate how much damage this tossed item would do to him
-						iEstDamage = EstimateThrowDamage(pSoldier,bPayloadPocket,MercPtrs[ubOpponentID[ubLoop2]],sGridNo);
+						iEstDamage = EstimateThrowDamage(pSoldier,bPayloadPocket,MercPtrs[ubOpponentID[ubLoop2]],sGridNo,bOpponentLevel[ubLoop2]);
 						//NumMessage("THROW EstDamage = ",iEstDamage);
 
 						if (usOppDist)
@@ -2348,7 +2348,7 @@ INT32 EstimateShotDamage(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent, INT16 ub
 	return( iDamage );
 }
 
-INT32 EstimateThrowDamage( SOLDIERTYPE *pSoldier, UINT8 ubItemPos, SOLDIERTYPE *pOpponent, INT32 sGridNo )
+INT32 EstimateThrowDamage( SOLDIERTYPE *pSoldier, UINT8 ubItemPos, SOLDIERTYPE *pOpponent, INT32 sGridNo, INT8 bTargetLevel )
 {
 	UINT16	ubExplosiveIndex;
 	INT32	iExplosDamage, iBreathDamage, iArmourAmount, iDamage = 0;
@@ -2389,12 +2389,12 @@ INT32 EstimateThrowDamage( SOLDIERTYPE *pSoldier, UINT8 ubItemPos, SOLDIERTYPE *
 	// JA2Gold: added
 	if ( Item[pSoldier->inv[ubItemPos].usItem].flare )
 	{
-		return( 5 * ( LightTrueLevel( pOpponent->sGridNo, pOpponent->pathing.bLevel ) - NORMAL_LIGHTLEVEL_DAY ) );
+		return( 5 * ( LightTrueLevel( sGridNo, bTargetLevel ) - NORMAL_LIGHTLEVEL_DAY ) );
 	}
 
 
 	// Match explosion resolution: burnable gas does not spread/effect water tiles.
-	if (Water(sGridNo, pOpponent->pathing.bLevel) &&
+	if (Water(sGridNo, bTargetLevel) &&
 		Explosive[ubExplosiveIndex].ubType == EXPLOSV_BURNABLEGAS)
 	{
 		return 0;
@@ -2412,7 +2412,7 @@ INT32 EstimateThrowDamage( SOLDIERTYPE *pSoldier, UINT8 ubItemPos, SOLDIERTYPE *
 	// sevenfm: add damage from fragments
 	if ( Explosive[ ubExplosiveIndex ].ubType == EXPLOSV_NORMAL &&
 		Explosive[ ubExplosiveIndex ].usNumFragments > 0 &&
-		!Water(sGridNo, pOpponent->pathing.bLevel))
+		!Water(sGridNo, bTargetLevel))
 	{
 		// sevenfm: use NumFragments/10, but no more than 20 fragments
 		iExplosDamage += __min( 20, Explosive[ ubExplosiveIndex ].usNumFragments / 10 ) * Explosive[ ubExplosiveIndex ].ubFragDamage;
@@ -2425,7 +2425,7 @@ INT32 EstimateThrowDamage( SOLDIERTYPE *pSoldier, UINT8 ubItemPos, SOLDIERTYPE *
 			iBreathDamage /= 2;		// reduce effective breath damage by 1/2
 
 		bSlot = FindGasMask(pOpponent); //FindObj( pOpponent, GASMASK );
-		if ((bSlot == HEAD1POS || bSlot == HEAD2POS || bSlot == HELMETPOS) && pSoldier->inv[bSlot][0]->data.objectStatus >= 70)
+		if ((bSlot == HEAD1POS || bSlot == HEAD2POS || bSlot == HELMETPOS) && pOpponent->inv[bSlot][0]->data.objectStatus >= 70)
 		{
 			// take condition of the gas mask into account - it could be leaking
 			iBreathDamage = (iBreathDamage * (100 - pOpponent->inv[bSlot][0]->data.objectStatus)) / 100;
@@ -2442,7 +2442,7 @@ INT32 EstimateThrowDamage( SOLDIERTYPE *pSoldier, UINT8 ubItemPos, SOLDIERTYPE *
 	else if (iExplosDamage)
 	{
 		// EXPLOSION DAMAGE is spread amongst locations
-		iArmourAmount = ArmourVersusExplosivesPercent( pSoldier );
+		iArmourAmount = ArmourVersusExplosivesPercent( pOpponent );
 		iExplosDamage -= iExplosDamage * iArmourAmount / 100;
 
 		if (iExplosDamage < 1)
@@ -2450,7 +2450,7 @@ INT32 EstimateThrowDamage( SOLDIERTYPE *pSoldier, UINT8 ubItemPos, SOLDIERTYPE *
 	}
 
 	// if this opponent is standing
-	if (gAnimControl[ pSoldier->usAnimState ].ubEndHeight == ANIM_STAND)
+	if (gAnimControl[ pOpponent->usAnimState ].ubEndHeight == ANIM_STAND)
 	{
 		// 15 pt. flat bonus for knocking him down (for ANY type of explosion)
 		iDamage += 15;
