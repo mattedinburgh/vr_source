@@ -194,24 +194,77 @@ static INT8 AIGetEnemyResponseEpisode(INT32 sContactSpot, BOOLEAN fRefreshEviden
 	return bBest;
 }
 
+static void AIEvaluateLocalResponseNeed(
+	SOLDIERTYPE *pEngaged, UINT8 *pubPerceivedEnemies,
+	UINT8 *pubDesiredResponse, INT32 *piUrgency)
+{
+	if (pubPerceivedEnemies)
+		*pubPerceivedEnemies = 0;
+	if (pubDesiredResponse)
+		*pubDesiredResponse = 0;
+	if (piUrgency)
+		*piUrgency = 0;
+
+	if (!pEngaged)
+		return;
+
+	UINT16 usPerceivedEnemyStrength = AIPerceivedEnemyStrength(pEngaged);
+	UINT8 ubPerceivedEnemies = (UINT8)__max(1, __min(12,
+		(INT32)(usPerceivedEnemyStrength + 99) / 100));
+	UINT8 ubDesiredResponse = (UINT8)__min(14, __max(4,
+		(INT32)ubPerceivedEnemies + 2));
+	INT32 iUrgency = 0;
+
+	INT8 bSituation = AIBattleSituation(pEngaged);
+	UINT8 ubCasualties = AILocalCasualtyPercent(pEngaged);
+	UINT8 ubRoutPressure = AILocalRoutPressure(pEngaged);
+
+	if (bSituation == AI_BATTLE_CATASTROPHIC)
+	{
+		ubDesiredResponse = (UINT8)__min(14,
+			__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 6));
+		iUrgency = 40;
+	}
+	else if (bSituation == AI_BATTLE_LOSING)
+	{
+		ubDesiredResponse = (UINT8)__min(12,
+			__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 4));
+		iUrgency = 25;
+	}
+	else if (ubCasualties >= 25 || ubRoutPressure >= 45)
+	{
+		ubDesiredResponse = (UINT8)__min(11,
+			__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 3));
+		iUrgency = 15;
+	}
+
+	if (pubPerceivedEnemies)
+		*pubPerceivedEnemies = ubPerceivedEnemies;
+	if (pubDesiredResponse)
+		*pubDesiredResponse = ubDesiredResponse;
+	if (piUrgency)
+		*piUrgency = iUrgency;
+}
+
 static UINT8 AIEnemyResponseLimitForContact(
 	SOLDIERTYPE *pSoldier, INT32 sContactSpot, INT32 *piReinforcementUrgency)
 {
-	UINT8 ubResponseLimit = AIDoctrineResponseLimit(pSoldier);
+	// Doctrine is the baseline amount of mobile force this type of unit is willing
+	// to commit.  Contact-local evidence may raise that budget in later waves.
+	UINT8 ubDoctrineBaseline = AIDoctrineResponseLimit(pSoldier);
 	if (piReinforcementUrgency)
 		*piReinforcementUrgency = 0;
 
 	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM ||
 		TileIsOutOfBounds(sContactSpot) ||
 		!gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition)
-		return ubResponseLimit;
+		return ubDoctrineBaseline;
 
-	INT8 bEngagedSituation = AI_BATTLE_UNKNOWN;
-	UINT8 ubEngagedCasualties = 0;
-	UINT8 ubEngagedRoutPressure = 0;
-	UINT16 usPerceivedEnemyStrength = 0;
-	INT32 iBestEngagedDistance = 10000;
 	BOOLEAN fLocalEngagement = FALSE;
+	UINT8 ubPerceivedEnemies = 0;
+	UINT8 ubDesiredResponse = 0;
+	INT32 iUrgency = 0;
+	INT32 iBestDistance = 10000;
 
 	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
@@ -230,47 +283,32 @@ static UINT8 AIEnemyResponseLimitForContact(
 		if (iEngagedDistance > TACTICAL_RANGE)
 			continue;
 
-		fLocalEngagement = TRUE;
-		UINT16 usEngagedEnemyStrength = AIPerceivedEnemyStrength(pEngaged);
-		if (usEngagedEnemyStrength > usPerceivedEnemyStrength)
-			usPerceivedEnemyStrength = usEngagedEnemyStrength;
+		UINT8 ubElementEnemies = 0;
+		UINT8 ubElementDesired = 0;
+		INT32 iElementUrgency = 0;
+		AIEvaluateLocalResponseNeed(
+			pEngaged, &ubElementEnemies, &ubElementDesired, &iElementUrgency);
 
-		if (iEngagedDistance < iBestEngagedDistance)
+		// Keep force ratio, casualty state and rout state from the same local element.
+		// The old aggregation could combine the strongest contact seen by one group
+		// with the losing/casualty state of another, producing distorted QRF sizes.
+		if (!fLocalEngagement ||
+			ubElementDesired > ubDesiredResponse ||
+			(ubElementDesired == ubDesiredResponse && iElementUrgency > iUrgency) ||
+			(ubElementDesired == ubDesiredResponse && iElementUrgency == iUrgency &&
+			 iEngagedDistance < iBestDistance))
 		{
-			iBestEngagedDistance = iEngagedDistance;
-			bEngagedSituation = AIBattleSituation(pEngaged);
-			ubEngagedCasualties = AILocalCasualtyPercent(pEngaged);
-			ubEngagedRoutPressure = AILocalRoutPressure(pEngaged);
+			fLocalEngagement = TRUE;
+			ubPerceivedEnemies = ubElementEnemies;
+			ubDesiredResponse = ubElementDesired;
+			iUrgency = iElementUrgency;
+			iBestDistance = iEngagedDistance;
 		}
 	}
 
 	if (!fLocalEngagement)
-		return ubResponseLimit;
+		return ubDoctrineBaseline;
 
-	UINT8 ubPerceivedEnemies = (UINT8)__max(1, __min(12,
-		(INT32)(usPerceivedEnemyStrength + 99) / 100));
-	UINT8 ubDesiredResponse = (UINT8)__min(14, __max(4,
-		(INT32)ubPerceivedEnemies + 2));
-
-	INT32 iUrgency = 0;
-	if (bEngagedSituation == AI_BATTLE_CATASTROPHIC)
-	{
-		ubDesiredResponse = (UINT8)__min(14,
-			__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 6));
-		iUrgency = 40;
-	}
-	else if (bEngagedSituation == AI_BATTLE_LOSING)
-	{
-		ubDesiredResponse = (UINT8)__min(12,
-			__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 4));
-		iUrgency = 25;
-	}
-	else if (ubEngagedCasualties >= 25 || ubEngagedRoutPressure >= 45)
-	{
-		ubDesiredResponse = (UINT8)__min(11,
-			__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 3));
-		iUrgency = 15;
-	}
 	if (piReinforcementUrgency)
 		*piReinforcementUrgency = iUrgency;
 
@@ -295,7 +333,7 @@ static UINT8 AIEnemyResponseLimitForContact(
 	else if (ubDoctrine == AI_DOCTRINE_ELITE_GUARD)
 		ubWaveCap = __min((UINT8)5, ubWaveCap);
 
-	return __max(ubResponseLimit, ubWaveCap);
+	return __max(ubDoctrineBaseline, ubWaveCap);
 }
 
 static INT8 DecideYellowRemoteRadioSupport(SOLDIERTYPE *pSoldier)
