@@ -10144,7 +10144,10 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 {
 	if (!gfTurnBasedAI || !pSoldier || !AICombatTeam(pSoldier) ||
-		!SoldierAI(pSoldier) || pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		!SoldierAI(pSoldier) || pSoldier->stats.bLife < OKLIFE ||
+		pSoldier->bCollapsed || pSoldier->bBreathCollapsed ||
+		(pSoldier->usSoldierFlagMask & SOLDIER_POW) ||
+		(pSoldier->flags.uiStatusFlags & SOLDIER_COWERING) ||
 		AIEscapeActive(pSoldier) || AIShouldStartEscape(pSoldier) ||
 		pSoldier->bActionPoints < APBPConstants[AP_MINIMUM] ||
 		FindThrowableGrenade(pSoldier, EXPLOSV_SMOKE) == NO_SLOT)
@@ -10188,8 +10191,34 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 		BOOLEAN fEmergencySelf = pFriend == pSoldier && pFriend->aiData.bUnderFire &&
 			AIPersonalRisk(pFriend) > AIPersonalRiskTolerance(pFriend);
 
-		if (!fCriticalCasualty && !fSevereCasualty && !fPinned && !fEmergencySelf)
+		// A long-range shooter can pin an exposed element before shock reaches the
+		// generic emergency threshold. If this actor knows where the recent attacker
+		// was reported and the lane is genuinely long, smoke may be used proactively
+		// to break LOS. No hidden position/weapon information is consulted.
+		BOOLEAN fLongRangeFireLane = FALSE;
+		if (pFriend->aiData.bUnderFire && !AnyCoverAtSpot(pFriend, pFriend->sGridNo))
+		{
+			UINT8 ubAttacker = pFriend->ubPreviousAttackerID;
+			if (ubAttacker == NOBODY)
+				ubAttacker = pFriend->ubNextToPreviousAttackerID;
+
+			if (ubAttacker != NOBODY && MercPtrs[ubAttacker] &&
+				Knowledge(pSoldier, ubAttacker) != NOT_HEARD_OR_SEEN)
+			{
+				INT32 sAttackerSpot = KnownLocation(pSoldier, ubAttacker);
+				if (!TileIsOutOfBounds(sAttackerSpot) &&
+					PythSpacesAway(pFriend->sGridNo, sAttackerSpot) >= DAY_VISION_RANGE)
+				{
+					fLongRangeFireLane = TRUE;
+				}
+			}
+		}
+
+		if (!fCriticalCasualty && !fSevereCasualty && !fPinned &&
+			!fEmergencySelf && !fLongRangeFireLane)
+		{
 			continue;
+		}
 
 		// Do not spend smoke on somebody whom the acting soldier does not believe is
 		// exposed to enemy fire. This keeps the behaviour information-fair.
@@ -10208,6 +10237,8 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 			iValue += 55;
 		if (fEmergencySelf)
 			iValue += 35;
+		if (fLongRangeFireLane)
+			iValue += 45;
 		if (!AnyCoverAtSpot(pFriend, pFriend->sGridNo))
 			iValue += 20;
 		iValue += __min((INT32)20, (INT32)pFriend->bBleeding / 2);
