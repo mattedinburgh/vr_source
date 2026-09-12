@@ -9759,8 +9759,10 @@ static SOLDIERTYPE *GetDraggedDownedPerson( SOLDIERTYPE *pSoldier )
 		 pTarget->stats.bLife <= 0 || !IsBleedoutCasualty( pTarget ) ||
 		 pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
 		 pTarget->pathing.bLevel != pSoldier->pathing.bLevel ||
-		 PythSpacesAway( pSoldier->sGridNo, pTarget->sGridNo ) > 1 )
+		 PythSpacesAway( pSoldier->sGridNo, pTarget->sGridNo ) > 2 )
 	{
+		// During a legal drag step the rescuer can briefly be two tiles from the casualty
+		// before UpdateDraggedDownedPersonPosition() pulls them into the vacated tile.
 		gusDownedDragTarget[usDraggerID] = 0;
 		return NULL;
 	}
