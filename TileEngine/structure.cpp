@@ -1839,8 +1839,17 @@ BOOLEAN DamageStructure(STRUCTURE * pStructure, UINT8 ubDamage, UINT8 ubReason, 
 				BOOLEAN recompile = FALSE;
 				ExplosiveDamageGridNo(sGridNo, sStructureDamage, 10, &recompile, FALSE, -1, FALSE, ubOwner, 0);
 
-				//Since the structure is being damaged, set the map element that a structure is damaged
+				// Since the structure is being damaged, set the map element that a structure is damaged.
 				gpWorldLevelData[sGridNo].uiFlags |= MAPELEMENT_STRUCTURE_DAMAGED;
+
+				// Modern 1.13 fix: if gunfire destruction changed passability, refresh the
+				// local movement grid immediately. Otherwise player and AI pathfinding can
+				// continue treating the destroyed structure as an obstacle until another
+				// unrelated world update recompiles movement costs.
+				if (recompile)
+				{
+					RecompileLocalMovementCostsFromRadius(sGridNo, 2);
+				}
 			}
 		}
 
