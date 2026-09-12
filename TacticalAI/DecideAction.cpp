@@ -8852,7 +8852,7 @@ INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 				origDir -= 8;
 
 			// stop flanking condition
-			if (currDir - origDir >= 2 && (currDir - origDir > 3 || pSoldier->aiData.bAttitude != CUNNINGSOLO || CountFriendsBetweenMeAndSpotFromSpot(pSoldier, pSoldier->lastFlankSpot) == 0))
+			if ((currDir - origDir) >= MinFlankDirections(pSoldier))
 			{
 				pSoldier->numFlanks = MAX_FLANKS_RED;
 			}
@@ -9046,7 +9046,7 @@ INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 				origDir += 8;
 
 			// stop flanking condition
-			if (origDir - currDir >= 2 && (origDir - currDir > 3 || pSoldier->aiData.bAttitude != CUNNINGSOLO || CountFriendsBetweenMeAndSpotFromSpot(pSoldier, pSoldier->lastFlankSpot) == 0))
+			if ((origDir - currDir) >= MinFlankDirections(pSoldier))
 			{
 				pSoldier->numFlanks = MAX_FLANKS_RED;
 			}
