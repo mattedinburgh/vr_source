@@ -9289,7 +9289,7 @@ INT8 DecideFinishFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, INT8
 	}
 
 	// We have reached a useful flank angle/position. Hand control back to normal RED AI.
-	if (PythSpacesAway(pSoldier->sGridNo, sObjective) <= MIN_FLANK_DIST_RED &&
+	if (PythSpacesAway(pSoldier->sGridNo, sObjective) <= MIN_FLANK_DIST &&
 		LocationToLocationLineOfSightTest(
 			pSoldier->sGridNo, pSoldier->pathing.bLevel,
 			sObjective, bDisturbanceLevel, TRUE, MAX_VISION_RANGE))
