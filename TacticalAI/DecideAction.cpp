@@ -1078,10 +1078,6 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 		}
 
 
-		//hide those suicidal militia on the roofs for better defensive positions
-		// 0verhaul:  If they are allowed at all to move
-		if ( pSoldier->bTeam == MILITIA_TEAM && iChance != 0)
-			iChance += 20;
 
 		// reduce chance for any injury, less likely to hop up if hurt
 		iChance -= (pSoldier->stats.bLifeMax - pSoldier->stats.bLife);
@@ -1910,9 +1906,6 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 			// reduce chance if breath is down, less likely to wander around when tired
 			iChance -= (100 - pSoldier->bBreath);
 
-			//Madd: make militia less likely to go running headlong into trouble
-			if ( pSoldier->bTeam == MILITIA_TEAM )
-				iChance -= 30;
 
 			// sevenfm: stationary/snipers should not seek
 			if ( pSoldier->aiData.bOrders == SNIPER || pSoldier->aiData.bOrders == STATIONARY )
@@ -2066,9 +2059,6 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 			}
 
 
-			//Madd: make militia more likely to take cover
-			if ( pSoldier->bTeam == MILITIA_TEAM )
-				iChance += 20;
 
 			// reduce chance if breath is down, less likely to wander around when tired
 			iChance -= (100 - pSoldier->bBreath);
@@ -3500,11 +3490,6 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 
 			PrepareMainRedAIWeights(pSoldier, bSeekPts, bHelpPts, bHidePts, bWatchPts);
 
-			//Madd: make militia less likely to go running headlong into trouble
-			if (pSoldier->bTeam == MILITIA_TEAM)
-			{
-				bSeekPts += -1; bHelpPts += 0; bHidePts += +1; bWatchPts += +0;
-			}
 
 			// sevenfm: snipers and soldiers with scoped guns should decide watch more often
 			if (AIGunScoped(pSoldier))
