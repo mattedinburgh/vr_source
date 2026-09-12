@@ -1982,9 +1982,9 @@ UINT8 HandleNonActivatedTossCursor( SOLDIERTYPE *pSoldier, INT32 sGridNo, BOOLEA
 	// Add APs....
 	if ( gTacticalStatus.uiFlags & TURNBASED && ( gTacticalStatus.uiFlags & INCOMBAT ) )
 	{
-		if ( ubItemCursor == TRAJECTORYCURS )
+		if ( ubItemCursor == TRAJECTORYCURS || ubItemCursor == TOSSCURS )
 		{
-		gsCurrentActionPoints = CalcTotalAPsToAttack( pSoldier, sGridNo, TRUE, (INT8)(pSoldier->aiData.bShownAimTime ) );
+			gsCurrentActionPoints = CalcTotalAPsToAttack( pSoldier, sGridNo, TRUE, (INT8)(pSoldier->aiData.bShownAimTime ) );
 		}
 		else
 		{
@@ -2791,8 +2791,23 @@ void HandleRightClickAdjustCursor( SOLDIERTYPE *pSoldier, INT32 usMapPos )
 			break;
 
 		case TOSSCURS:
+			// Deliberate hand-grenade aiming. Right click cycles through four aim
+			// levels and back to a snap throw, subject to available AP.
+			bFutureAim = (INT8)( pSoldier->aiData.bShownAimTime + 1 );
+			if ( bFutureAim > maxAimLevels )
+				bFutureAim = 0;
 
-			//IncrementAimCubeUI( );
+			sAPCosts = CalcTotalAPsToAttack( pSoldier, usMapPos, TRUE, bFutureAim );
+			if ( bFutureAim == 0 || EnoughPoints( pSoldier, sAPCosts, 0, FALSE ) )
+			{
+				pSoldier->aiData.bShownAimTime = bFutureAim;
+				gfDisplayFullCountRing = FALSE;
+				gfUIForceReExamineCursorData = TRUE;
+			}
+			else
+			{
+				gfDisplayFullCountRing = TRUE;
+			}
 			break;
 
 		default:
