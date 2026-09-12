@@ -127,6 +127,7 @@
 #include "Campaign.h"
 #include "WCheck.h"
 #include "Handle Items.h"
+#include "Soldier Control.h"
 
 #include "NPC.h"						// anv: VR
 
