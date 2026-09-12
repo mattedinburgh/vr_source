@@ -7856,7 +7856,8 @@ UINT8 CountTeamSeeSoldier( INT8 bTeam, SOLDIERTYPE *pSoldier )
 			pFriend->bInSector &&
 			pFriend->stats.bLife >= OKLIFE &&
 			!pFriend->bCollapsed &&
-			!pFriend->bBreathCollapsed )
+			!pFriend->bBreathCollapsed &&
+			!(pFriend->usSoldierFlagMask & SOLDIER_POW) )
 		{
 			if (pFriend->aiData.bOppList[ pSoldier->ubID ] == SEEN_CURRENTLY ||
 				pFriend->aiData.bOppList[ pSoldier->ubID ] == SEEN_THIS_TURN )
@@ -8336,7 +8337,8 @@ UINT8 CountTeamCombat( SOLDIERTYPE *pSoldier )
 			pFriend->bInSector &&
 			pFriend->stats.bLife >= OKLIFE &&
 			!pFriend->bCollapsed &&
-			!pFriend->bBreathCollapsed )
+			!pFriend->bBreathCollapsed &&
+			!(pFriend->usSoldierFlagMask & SOLDIER_POW) )
 		{
 			if(	pFriend->aiData.bAlertStatus == STATUS_BLACK ||
 				pFriend->aiData.bUnderFire )
@@ -8363,8 +8365,12 @@ UINT8 CountFriendsNeedHelp( SOLDIERTYPE *pSoldier )
 
 		// Make sure that character is alive, not too shocked, and conscious
 		if (pFriend != pSoldier && 
-			pFriend->bActive && 
-			pFriend->stats.bLife >= OKLIFE)
+			pFriend->bActive &&
+			pFriend->bInSector &&
+			pFriend->stats.bLife >= OKLIFE &&
+			!pFriend->bCollapsed &&
+			!pFriend->bBreathCollapsed &&
+			!(pFriend->usSoldierFlagMask & SOLDIER_POW))
 		{
 			//if( pFriend->aiData.bUnderFire || CountSeenEnemiesLastTurn(pFriend) > CountNearbyFriends(pFriend, pFriend->sGridNo, DAY_VISION_RANGE/4) )
 			if( CountSeenEnemiesLastTurn(pFriend) > CountNearbyFriends(pFriend, pFriend->sGridNo, DAY_VISION_RANGE/4) )
@@ -9093,6 +9099,9 @@ UINT8 CountFriendsLastAttackHit(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 sDis
 			pFriend->bInSector &&
 			AISameFireteam(pSoldier, pFriend) &&
 			pFriend->stats.bLife >= OKLIFE &&
+			!pFriend->bCollapsed &&
+			!pFriend->bBreathCollapsed &&
+			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
 			pFriend->aiData.bOrders > ONGUARD &&
 			PythSpacesAway(sGridNo, pFriend->sGridNo) <= sDistance &&
 			(pFriend->LastAttackHit() != NOWHERE || pFriend->usSoldierFlagMask2 & SOLDIER_SUCCESSFUL_ATTACK || pFriend->LastTargetSuppressed()))
