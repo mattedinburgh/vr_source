@@ -631,6 +631,38 @@ INT8 DecideCombatCasualtyEvacuation( SOLDIERTYPE *pSoldier )
 // Non-medics do not become roaming battlefield doctors. A soldier with basic
 // medical skill and a medkit may, however, stabilize himself during a real lull or
 // a critically downed fireteam mate who is already adjacent.
+INT8 DecideCombatCasualtyResponse(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
+{
+	if (!pSoldier || !AICombatTeam(pSoldier))
+		return AI_ACTION_NONE;
+
+	// Extraction comes first: if a non-medic can safely pull an exposed casualty
+	// into cover, do that before asking the medic to cross the same fire lane.
+	if (fCanMove)
+	{
+		INT8 bEvacAction = DecideCombatCasualtyEvacuation(pSoldier);
+		if (bEvacAction != AI_ACTION_NONE)
+			return bEvacAction;
+	}
+
+	// Medics own deliberate battlefield rescue. Ordinary soldiers are limited to
+	// immediate adjacent stabilization and never become roaming improvised medics.
+	if (AICheckIsMedic(pSoldier))
+	{
+		INT8 bMedicAction = DecideCombatMedicRescue(pSoldier);
+		if (bMedicAction != AI_ACTION_NONE)
+			return bMedicAction;
+	}
+	else
+	{
+		INT8 bBuddyAidAction = DecideEmergencyBuddyAid(pSoldier);
+		if (bBuddyAidAction != AI_ACTION_NONE)
+			return bBuddyAidAction;
+	}
+
+	return AI_ACTION_NONE;
+}
+
 INT8 DecideEmergencySelfAid(SOLDIERTYPE *pSoldier)
 {
 	if (!AICombatTeam(pSoldier) || !AIMedicalResponderReady(pSoldier) ||
