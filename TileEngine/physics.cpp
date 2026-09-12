@@ -36,12 +36,28 @@
 
 #include "Campaign.h"
 #include "SkillCheck.h"
+#include "Map Information.h"
+#include "Meanwhile.h"
+#include "strategicmap.h"
 
 #include "connect.h"
 
 //forward declarations of common classes to eliminate includes
 class OBJECTTYPE;
 class SOLDIERTYPE;
+
+// Throw/launcher force uses a synthetic reference grid. On unusual maps that grid can
+// sit at a different elevation; fall back to the map center so range remains stable.
+static BOOLEAN PhysicsReferenceGridMatchesMapHeight( INT32 sGridNo )
+{
+	if ( AreInMeanwhile() || gbWorldSectorZ != 0 )
+		return TRUE;
+
+	if ( TileIsOutOfBounds( sGridNo ) || TileIsOutOfBounds( gMapInformation.sCenterGridNo ) )
+		return FALSE;
+
+	return ( gpWorldLevelData[sGridNo].sHeight == gpWorldLevelData[gMapInformation.sCenterGridNo].sHeight );
+}
 
 
 #define NO_TEST_OBJECT												0
@@ -2094,6 +2110,14 @@ FLOAT CalculateForceFromRange(UINT16 usItem, INT16 sRange, FLOAT dDegrees )
 	// OK, use a fake gridno, find the new gridno based on range, use height of merc, end height of ground,
 	// 45 degrees
 	sSrcGridNo	= INT32(WORLD_COLS/2+double(WORLD_COLS)*WORLD_ROWS/5.914);
+
+	// Some maps place the synthetic source grid on a different elevation, which
+	// corrupts calculated throw/launcher range. Prefer the validated map center.
+	if ( !PhysicsReferenceGridMatchesMapHeight( sSrcGridNo ) &&
+		 !TileIsOutOfBounds( gMapInformation.sCenterGridNo ) )
+	{
+		sSrcGridNo = gMapInformation.sCenterGridNo;
+	}
 	sDestGridNo = sSrcGridNo + ( sRange * WORLD_COLS );
 
 //	sSrcGridNo	= 4408;
