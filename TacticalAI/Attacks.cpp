@@ -432,7 +432,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		if (ubMinAPcost > pSoldier->bActionPoints)
 			continue;			// next opponent
 
-		ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fCurrentContact);
+		ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fPersonalStateKnown);
 
 		// if we can't possibly get through all the cover
 		if (ubChanceToGetThrough == 0)
@@ -530,7 +530,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 						// sevenfm: check CTGT and friendly fire chance for every stance
 						gUnderFire.Clear();
 						gUnderFire.Enable();
-						ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fCurrentContact);
+						ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fPersonalStateKnown);
 						ubFriendlyFireChance = gUnderFire.Chance(pSoldier->bTeam, pSoldier->bSide, TRUE);
 						gUnderFire.Disable();
 
@@ -618,7 +618,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 						// sevenfm: check CTGT and friendly fire chance for every stance
 						gUnderFire.Clear();
 						gUnderFire.Enable();
-						ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fCurrentContact);
+						ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fPersonalStateKnown);
 						ubFriendlyFireChance = gUnderFire.Chance(pSoldier->bTeam, pSoldier->bSide, TRUE);
 						gUnderFire.Disable();
 
@@ -699,7 +699,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 						// sevenfm: check CTGT and friendly fire chance for every stance
 						gUnderFire.Clear();
 						gUnderFire.Enable();
-						ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fCurrentContact);
+						ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fPersonalStateKnown);
 						ubFriendlyFireChance = gUnderFire.Chance(pSoldier->bTeam, pSoldier->bSide, TRUE);
 						gUnderFire.Disable();
 
