@@ -1337,11 +1337,13 @@ INT32 FindSpotMaxDistFromOpponents(SOLDIERTYPE *pSoldier)
 			continue;
 		}
 
-		const BOOLEAN fCurrentContact =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY ||
-			 PublicKnowledge(pSoldier->bTeam, pOpponent->ubID) == SEEN_CURRENTLY);
-		if (fCurrentContact && !ValidOpponent(pSoldier, pOpponent))
+		const BOOLEAN fPersonalStateKnown =
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY);
+		if (fPersonalStateKnown &&
+			(!ValidOpponent(pSoldier, pOpponent) || pOpponent->IsUnconscious()))
+		{
 			continue;
+		}
 
 		sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
 		if (TileIsOutOfBounds(sThreatLoc))
