@@ -3411,6 +3411,15 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			pSoldier->numFlanks++;
 		}
 
+		// A completed flank can now be exploited as a cautious bound onto the flank
+		// objective, subject to fireteam support and exposure checks.
+		if (pSoldier->numFlanks == MAX_FLANKS_RED)
+		{
+			bActionReturned = DecideFinishFlanking(pSoldier, sClosestDisturbance, bClosestDisturbanceLevel);
+			if (bActionReturned != -1)
+				return bActionReturned;
+		}
+
 		// sevenfm: when we finished flanking, try to reach lastFlankSpot position
 		// seek until we are close (DistanceVisible/2) and have line of sight to lastFlankSpot position
 		// don't seek if we have seen enemy recently or under fire or have shock
