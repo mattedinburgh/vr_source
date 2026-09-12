@@ -2151,6 +2151,19 @@ INT32 ClosestReachableFriendInTrouble(SOLDIERTYPE *pSoldier, BOOLEAN * pfClimbin
 			continue;			// next merc
 		}
 
+		// Legacy Vengeance searched the entire side for a friend in trouble. That
+		// let a distant firefight pull otherwise coherent enemy elements across the
+		// sector. Healthy fireteams now help their own element first; cross-element
+		// help is allowed only locally, while one/two-man remnants remain free to
+		// merge through the fireteam cohesion logic.
+		if (pSoldier->bTeam == ENEMY_TEAM && pFriend->bTeam == ENEMY_TEAM &&
+			!AISameFireteam(pSoldier, pFriend) &&
+			AIFireteamAliveCount(pSoldier) > 2 &&
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > __max(6, DAY_VISION_RANGE / 3))
+		{
+			continue;
+		}
+
 		// CJC: restrict "last one to radio" to only if that guy saw us this turn or last turn
 
 		// if this friend is not under fire, and isn't the last one to radio
