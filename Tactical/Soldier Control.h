@@ -1487,7 +1487,7 @@ public:
 	
 	// Downed/bleed-out system. A lethal but survivable combat wound leaves the soldier
 	// incapacitated at 1 life for a limited number of full tactical rounds.
-	UINT8	ubBleedoutTurns;		// internal countdown; active casualties use 3-6 to guarantee 2-5 rescue turns
+	UINT8	ubBleedoutTurns;		// internal countdown; active casualties use 5-7 to guarantee 4-6 rescue turns
 	UINT8	ubBleedoutState;		// BLEEDOUT_NONE / BLEEDOUT_ACTIVE / BLEEDOUT_STABILIZED
 	UINT8	ubDraggedCasualtyID;	// rescuer -> downed casualty, NOBODY when inactive
 	UINT8	ubDraggedByID;			// casualty -> rescuer, NOBODY when inactive
