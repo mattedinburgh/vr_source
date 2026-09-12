@@ -1829,6 +1829,16 @@ UINT32 UIHandleMChangeToAction( UI_EVENT *pUIEvent )
 
 	EndPhysicsTrajectoryUI( );
 
+	// A hand grenade starts as a snap throw every time action mode is entered.
+	// This prevents aim time left over from a previously selected firearm from
+	// silently making a grenade cost more AP or receive an unintended accuracy bonus.
+	SOLDIERTYPE *pSoldier = NULL;
+	if ( GetSoldier( &pSoldier, gusSelectedSoldier ) && GetActionModeCursor( pSoldier ) == TOSSCURS )
+	{
+		pSoldier->aiData.bShownAimTime = 0;
+		pSoldier->aiData.bAimTime = 0;
+	}
+
 	//guiNewUICursor = CONFIRM_MOVE_UICURSOR;
 
 	// sevenfm: this flag means that we'll need to initialize number of bullets for autofire
