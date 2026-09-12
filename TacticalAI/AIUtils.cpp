@@ -4199,6 +4199,30 @@ static void AISeedEnemyFireteams(void)
 			INT16 sBestIndex = -1;
 			INT32 iBestDistance = 10000;
 
+			BOOLEAN fHasLeader = FALSE;
+			BOOLEAN fHasMedic = FALSE;
+			BOOLEAN fHasMachinegunner = FALSE;
+			BOOLEAN fHasRadio = FALSE;
+
+			for (UINT16 j = 0; j < usCount; ++j)
+			{
+				if (!fAssigned[j])
+					continue;
+
+				UINT8 ubAssignedId = ubMembers[j];
+				if (gubAIFireteam[ubAssignedId] != ubFireteam)
+					continue;
+
+				SOLDIERTYPE *pMember = MercPtrs[ubAssignedId];
+				if (!pMember)
+					continue;
+
+				fHasLeader = fHasLeader || AICheckIsOfficer(pMember) || AICheckIsCommander(pMember);
+				fHasMedic = fHasMedic || AICheckIsMedic(pMember);
+				fHasMachinegunner = fHasMachinegunner || AICheckIsMachinegunner(pMember);
+				fHasRadio = fHasRadio || AICheckIsRadioOperator(pMember);
+			}
+
 			for (UINT16 i = 0; i < usCount; ++i)
 			{
 				if (fAssigned[i])
@@ -4236,6 +4260,21 @@ static void AISeedEnemyFireteams(void)
 
 					iCandidateDistance = __min(iCandidateDistance, iDistance);
 				}
+
+				// Soft role balancing: if two candidates are similarly close, prefer
+				// the one that adds a missing support capability. The penalty is
+				// intentionally small so geography remains the primary grouping rule.
+				INT32 iRolePenalty = 0;
+				if (fHasLeader && (AICheckIsOfficer(pCandidate) || AICheckIsCommander(pCandidate)))
+					iRolePenalty += 4;
+				if (fHasMedic && AICheckIsMedic(pCandidate))
+					iRolePenalty += 4;
+				if (fHasMachinegunner && AICheckIsMachinegunner(pCandidate))
+					iRolePenalty += 4;
+				if (fHasRadio && AICheckIsRadioOperator(pCandidate))
+					iRolePenalty += 4;
+
+				iCandidateDistance += __min(12, iRolePenalty);
 
 				if (iCandidateDistance < iBestDistance)
 				{
