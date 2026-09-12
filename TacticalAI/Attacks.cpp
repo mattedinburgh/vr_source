@@ -932,7 +932,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 	BOOLEAN fSkipLocation;
 	INT8	bPayloadPocket;
 	INT8	bMaxLeft,bMaxRight,bMaxUp,bMaxDown,bXOffset,bYOffset;
-	INT8	bPersOL, bPublOL;
+	INT8	bPersOL, bPublOL, bKnowledge;
 	SOLDIERTYPE *pOpponent, *pFriend;
 	static INT16	sExcludeTile[100]; // This array is for storing tiles that we have
 	UINT8	ubNumExcludedTiles = 0;		// already considered, to prevent duplication of effort
@@ -1117,27 +1117,31 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 			continue;			// next soldier
 		}
 
-		if (!pOpponent->stats.bLife)
-		{
-			continue;			// next soldier
-		}
-
-		/*
-		// if this soldier is inactive, at base, on assignment, or dead
-		if (!pOpponent->bActive || !pOpponent->bInSector || !pOpponent->stats.bLife)
-		continue;			// next soldier
-		*/
-
 		bPersOL = pSoldier->aiData.bOppList[pOpponent->ubID];
 		bPublOL = gbPublicOpplist[pSoldier->bTeam][pOpponent->ubID];
+		bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
 
-		// we know nothing about this opponent
-		if (bPersOL == NOT_HEARD_OR_SEEN && bPublOL == NOT_HEARD_OR_SEEN)
+		// We know nothing about this opponent.
+		if (bKnowledge == NOT_HEARD_OR_SEEN)
 		{
 			continue;
 		}
 
-		if (!ValidOpponent(pSoldier, pOpponent))
+		const BOOLEAN fCurrentContact = (bPersOL == SEEN_CURRENTLY || bPublOL == SEEN_CURRENTLY);
+
+		// Relation/identity filters are safe for remembered contacts. Mutable hidden
+		// state (death, leaving the sector, empty vehicle) is only trusted when the
+		// contact is current; otherwise the AI may waste ordnance on stale information.
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pSoldier->bSide == pOpponent->bSide ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			(gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
+			pOpponent->ubBodyType == CROW)
+		{
+			continue;
+		}
+		if (fCurrentContact &&
+			(!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
 		{
 			continue;
 		}
@@ -1164,8 +1168,11 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 			continue;
 		}
 
-		// limit smoke grenade use
-		if (usGrenade != NOTHING &&
+		// Dynamic target-state filters are valid only for a contact we can currently
+		// observe. For stale contacts, do not inspect hidden shock, weapon or spotting
+		// state to decide whether smoke is worthwhile.
+		if (fCurrentContact &&
+			usGrenade != NOTHING &&
 			Explosive[Item[usGrenade].ubClassIndex].ubType == EXPLOSV_SMOKE &&
 			(!AICheckHasGun(pOpponent) ||
 			(pSoldier->usAnimState == COWERING || pSoldier->usAnimState == COWERING_PRONE) ||
@@ -1186,14 +1193,15 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 			continue;
 		}
 
-		// don't use grenades against dying enemies
-		if (pOpponent->stats.bLife < OKLIFE && !pOpponent->IsZombie())
+		// Do not infer hidden health changes from stale contacts.
+		if (fCurrentContact && pOpponent->stats.bLife < OKLIFE && !pOpponent->IsZombie())
 		{
 			continue;
 		}
 
 		// don't use stun/gas grenades against collapsed enemies
-		if (usGrenade != NOTHING &&
+		if (fCurrentContact &&
+			usGrenade != NOTHING &&
 			!Item[usGrenade].flare &&
 			!pOpponent->IsZombie() &&
 			//Explosive[Item[usGrenade].ubClassIndex].ubType != EXPLOSV_NORMAL &&
@@ -1220,70 +1228,90 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 			}
 		}
 
-		if ((Item[usInHand].mortar ) || (Item[usInHand].grenadelauncher ) )
+		INT32 sKnownTarget = KnownLocation(pSoldier, pOpponent->ubID);
+		INT8 bKnownTargetLevel = KnownLevel(pSoldier, pOpponent->ubID);
+
+		if (TileIsOutOfBounds(sKnownTarget))
 		{
-			// allow long range firing, where target doesn't PERSONALLY see opponent
-			if ((bPersOL != SEEN_CURRENTLY) && (bPublOL != SEEN_CURRENTLY))
-			{
-				continue;			// next soldier
-			}
-			// active KNOWN opponent, remember where he is so that we DO blow him up!
-			sOpponentTile[ubOpponentCnt] = pOpponent->sGridNo;
-			bOpponentLevel[ubOpponentCnt] = pOpponent->pathing.bLevel;
+			continue;
 		}
-		else
+
+		if (Item[usInHand].mortar || Item[usInHand].grenadelauncher)
 		{
-			if (bPersOL == SEEN_CURRENTLY)
+			// Indirect/explosive launchers can exploit recent team reports. Current
+			// sight is exact; progressively older seen/heard contacts use the stored
+			// believed position and may therefore miss if the target moved.
+			if (bKnowledge == SEEN_CURRENTLY ||
+				bKnowledge == SEEN_THIS_TURN ||
+				bKnowledge == SEEN_LAST_TURN ||
+				bKnowledge == HEARD_THIS_TURN ||
+				bKnowledge == HEARD_LAST_TURN ||
+				bKnowledge == HEARD_2_TURNS_AGO)
 			{
-				// active KNOWN opponent, remember where he is so that we DO blow him up!
-				sOpponentTile[ubOpponentCnt] = pOpponent->sGridNo;
-				bOpponentLevel[ubOpponentCnt] = pOpponent->pathing.bLevel;
-			}
-			else if (bPersOL == SEEN_LAST_TURN)
-			{
-				// Commit to the last-known position without checking the opponent's
-				// hidden live grid. The target may have moved; that uncertainty is part
-				// of using a grenade against stale information.
-				sOpponentTile[ubOpponentCnt] = gsLastKnownOppLoc[ pSoldier->ubID ][ pOpponent->ubID ];
-				bOpponentLevel[ubOpponentCnt] = gbLastKnownOppLevel[ pSoldier->ubID ][ pOpponent->ubID ];
-			}
-			else if (bPersOL == HEARD_LAST_TURN)
-			{
-				// Hearing gives an estimated location, not permission to inspect the
-				// opponent's real current tile to see whether the estimate is still good.
-				// Existing restrictions below keep blind throws conservative.
-				// sevenfm: allow using of non-lethal grenades to attack heard opponents
-				BOOLEAN fSkipGrenade = TRUE;
-				if( Item[usGrenade].flare )
-				{
-					fSkipGrenade = FALSE;
-				}
-				if( usGrenade != NOTHING &&
-					pSoldier->aiData.bAlertStatus >= STATUS_RED &&
-					( Explosive[Item[usGrenade].ubClassIndex].ubType == EXPLOSV_STUN ||
-					Explosive[Item[usGrenade].ubClassIndex].ubType == EXPLOSV_TEARGAS ||
-					Explosive[Item[usGrenade].ubClassIndex].ubType == EXPLOSV_FLASHBANG && NightTime() ) )
-				{
-					fSkipGrenade = FALSE;
-				}
-				if( fSkipGrenade && !pSoldier->aiData.bUnderFire )
-				{
-					continue;
-				}
-				/*if ( !Item[usGrenade].flare && !pSoldier->aiData.bUnderFire && pSoldier->aiData.bShock == 0 )
-				{
-					continue;
-				}*/
-				sOpponentTile[ubOpponentCnt] = gsLastKnownOppLoc[ pSoldier->ubID ][ pOpponent->ubID ];
-				bOpponentLevel[ubOpponentCnt] = gbLastKnownOppLevel[ pSoldier->ubID ][ pOpponent->ubID ];
+				sOpponentTile[ubOpponentCnt] = sKnownTarget;
+				bOpponentLevel[ubOpponentCnt] = bKnownTargetLevel;
 			}
 			else
 			{
 				continue;
 			}
-
 		}
+		else if (Item[usInHand].rocketlauncher)
+		{
+			if (bKnowledge == SEEN_CURRENTLY)
+			{
+				sOpponentTile[ubOpponentCnt] = sKnownTarget;
+				bOpponentLevel[ubOpponentCnt] = bKnownTargetLevel;
+			}
+			else if ((bKnowledge == SEEN_THIS_TURN || bKnowledge == SEEN_LAST_TURN ||
+				bKnowledge == HEARD_THIS_TURN || bKnowledge == HEARD_LAST_TURN) &&
+				InARoom(sKnownTarget, NULL))
+			{
+				// A stale rocket shot is only sensible against a persistent structure/
+				// room position, not an arbitrary open-ground memory.
+				sOpponentTile[ubOpponentCnt] = sKnownTarget;
+				bOpponentLevel[ubOpponentCnt] = bKnownTargetLevel;
+			}
+			else
+			{
+				continue;
+			}
+		}
+		else
+		{
+			// Hand grenades require fresher information. Visual memory is sufficient;
+			// heard contacts are used only under pressure or for lower-risk utility
+			// grenades. No check against the opponent's hidden current grid is made.
+			if (bKnowledge == SEEN_CURRENTLY || bKnowledge == SEEN_THIS_TURN || bKnowledge == SEEN_LAST_TURN)
+			{
+				sOpponentTile[ubOpponentCnt] = sKnownTarget;
+				bOpponentLevel[ubOpponentCnt] = bKnownTargetLevel;
+			}
+			else if (bKnowledge == HEARD_THIS_TURN || bKnowledge == HEARD_LAST_TURN)
+			{
+				BOOLEAN fUseHeardContact = pSoldier->aiData.bUnderFire || pSoldier->aiData.bShock > 0;
+				if (usGrenade != NOTHING)
+				{
+					if (Item[usGrenade].flare ||
+						Explosive[Item[usGrenade].ubClassIndex].ubType == EXPLOSV_STUN ||
+						Explosive[Item[usGrenade].ubClassIndex].ubType == EXPLOSV_TEARGAS ||
+						(Explosive[Item[usGrenade].ubClassIndex].ubType == EXPLOSV_FLASHBANG && NightTime()))
+					{
+						fUseHeardContact = TRUE;
+					}
+				}
 
+				if (!fUseHeardContact)
+					continue;
+
+				sOpponentTile[ubOpponentCnt] = sKnownTarget;
+				bOpponentLevel[ubOpponentCnt] = bKnownTargetLevel;
+			}
+			else
+			{
+				continue;
+			}
+		}
 		// also remember who he is (which soldier #)
 		ubOpponentID[ubOpponentCnt] = pOpponent->ubID;
 
