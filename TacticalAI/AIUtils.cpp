@@ -5168,6 +5168,69 @@ INT32 AIManeuverRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 	return __max(-100, __min(150, iScore));
 }
+// Score how much a candidate position creates a useful crossfire around a known contact.
+// Positive scores favor roughly perpendicular/oblique angles; standing on the same axis
+// as the rest of the fireteam is mildly discouraged. Only teammates with their own
+// knowledge of essentially the same contact are considered.
+INT32 AICrossfirePositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT32 sTargetSpot)
+{
+	if (!AICombatTeam(pSoldier) || TileIsOutOfBounds(sCandidateSpot) || TileIsOutOfBounds(sTargetSpot))
+		return 0;
+
+	UINT8 ubCandidateDir = AIDirection(sTargetSpot, sCandidateSpot);
+	if (ubCandidateDir == DIRECTION_IRRELEVANT)
+		return 0;
+
+	INT32 iBestAngleScore = -12;
+	UINT8 ubRelevantFriends = 0;
+	UINT8 ubSameAxisFriends = 0;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+			!AICheckHasGun(pFriend) || AIGunAmmo(pFriend) == 0 ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE)
+		{
+			continue;
+		}
+
+		INT32 sFriendThreat = ClosestKnownOpponent(pFriend, NULL, NULL);
+		if (TileIsOutOfBounds(sFriendThreat) || PythSpacesAway(sFriendThreat, sTargetSpot) > 3)
+			continue;
+
+		INT32 iFriendRange = __max(1, (INT32)AIGunRange(pFriend) / CELL_X_SIZE);
+		if (PythSpacesAway(pFriend->sGridNo, sTargetSpot) > iFriendRange + iFriendRange / 4)
+			continue;
+
+		UINT8 ubFriendDir = AIDirection(sTargetSpot, pFriend->sGridNo);
+		if (ubFriendDir == DIRECTION_IRRELEVANT)
+			continue;
+
+		INT32 iDelta = abs((INT32)ubCandidateDir - (INT32)ubFriendDir);
+		iDelta = __min(iDelta, 8 - iDelta);
+		INT32 iAngleScore = 0;
+		switch (iDelta)
+		{
+		case 0: iAngleScore = -12; ++ubSameAxisFriends; break;
+		case 1: iAngleScore = 4; break;
+		case 2: iAngleScore = 18; break;
+		case 3: iAngleScore = 28; break;
+		default: iAngleScore = 12; break; // opposite sides: useful, but less ideal for friendly-fire geometry
+		}
+
+		++ubRelevantFriends;
+		iBestAngleScore = __max(iBestAngleScore, iAngleScore);
+	}
+
+	if (ubRelevantFriends == 0)
+		return 0;
+
+	INT32 iScore = iBestAngleScore - 5 * __min((UINT8)2, ubSameAxisFriends);
+	return __max(-20, __min(30, iScore));
+}
 // Local cooperation modifier for offensive movement.  Soldiers are more willing
 // to advance when nearby teammates or teammates already engaging the same threat
 // can support them, and less willing to push forward alone.
