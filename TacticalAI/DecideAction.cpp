@@ -5033,14 +5033,9 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				}
 			}
 
-			// REALLY tired, can't get away, force soldier's morale to hopeless state
-			if ( gGameOptions.ubDifficultyLevel == DIF_LEVEL_INSANE )
-			{
-				pSoldier->bBreath = pSoldier->bBreathMax;  //Madd: backed into a corner, so go crazy like a wild animal...
-				pSoldier->aiData.bAIMorale = MORALE_FEARLESS;
-			}
-			else
-				pSoldier->aiData.bAIMorale = MORALE_HOPELESS;
+			// REALLY tired and unable to escape: morale collapses. Difficulty should
+			// improve decision quality, not magically refill breath or remove fear.
+			pSoldier->aiData.bAIMorale = MORALE_HOPELESS;
 		}
 
 	}
@@ -5049,17 +5044,9 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 	// STUCK IN WATER OR GAS, NO COVER, GO TO NEAREST SPOT OF UNGASSED LAND
 	////////////////////////////////////////////////////////////////////////////
 
-	// when in deep water, move to closest opponent
-	if (ubCanMove && bInDeepWater && !pSoldier->aiData.bNeutral && pSoldier->aiData.bOrders == SEEKENEMY)
-	{
-		// find closest reachable opponent, excluding opponents in deep water
-		pSoldier->aiData.usActionData = ClosestReachableDisturbance(pSoldier, &fClimb);
-
-		if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
-		{
-			return(AI_ACTION_LEAVE_WATER_GAS);
-		}
-	}
+	// Deep water is a mobility and combat liability. SEEKENEMY orders no longer
+	// override self-preservation here; the common safe-land search below handles
+	// all soldiers before they resume offensive movement.
 
 	// if soldier in water/gas has enough APs left to move at least 1 square
 	if ((bInDeepWater || bInGas || FindBombNearby(pSoldier, pSoldier->sGridNo, BOMB_DETECTION_RANGE) || RedSmokeDanger(pSoldier->sGridNo, pSoldier->pathing.bLevel)) && ubCanMove)
