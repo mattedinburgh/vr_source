@@ -748,8 +748,10 @@ void	QueryTBLeftButton( UINT32 *puiNewEvent )
 													{
 														if ( !HandleUIReloading( pSoldier ) )
 														{
-															// ATE: Reset refine aim..
-															pSoldier->aiData.bShownAimTime = 0;
+															// Normal attacks begin confirmation from zero aim. Hand grenades can
+															// already have deliberate aim selected in ACTION_MODE, so preserve it.
+															if ( GetActionModeCursor( pSoldier ) != TOSSCURS )
+																pSoldier->aiData.bShownAimTime = 0;
 
 															if ( gsCurrentActionPoints == 0 )
 															{
@@ -1046,8 +1048,18 @@ void	QueryTBRightButton( UINT32 *puiNewEvent )
 
 								case ACTION_MODE:
 
-									// We have here a change to action mode
-									*puiNewEvent = A_CHANGE_TO_MOVE;
+									// Hand grenades use RMB as the normal aim-click control while staying
+									// in action mode. Other actions keep the classic RMB-to-move behaviour.
+									if ( GetSoldier( &pSoldier, gusSelectedSoldier ) &&
+										 GetActionModeCursor( pSoldier ) == TOSSCURS &&
+										 ( gTacticalStatus.uiFlags & INCOMBAT ) )
+									{
+										HandleRightClickAdjustCursor( pSoldier, usMapPos );
+									}
+									else
+									{
+										*puiNewEvent = A_CHANGE_TO_MOVE;
+									}
 									fClickIntercepted = TRUE;
 									break;
 
