@@ -4667,38 +4667,6 @@ static INT32 AIFireteamDeployableDistanceToSpot(UINT8 ubFireteam, INT32 sSpot)
 	return iBest;
 }
 
-static UINT8 AIFireteamResponderRank(SOLDIERTYPE *pSoldier, INT32 sContactSpot)
-{
-	if (!AIEnemyResponderEligible(pSoldier))
-		return 255;
-
-	UINT8 ubMine = AIFireteamId(pSoldier);
-	INT32 iMineDistance = PythSpacesAway(pSoldier->sGridNo, sContactSpot);
-	UINT8 ubRank = 1;
-
-	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
-	{
-		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
-		if (!AIEnemyResponderEligible(pFriend) || pFriend == pSoldier ||
-			pFriend->ubID >= MAX_NUM_SOLDIERS ||
-			guiAIFireteamIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
-			gubAIFireteam[pFriend->ubID] != ubMine)
-		{
-			continue;
-		}
-
-		INT32 iDistance = PythSpacesAway(pFriend->sGridNo, sContactSpot);
-		if (iDistance < iMineDistance ||
-			(iDistance == iMineDistance && pFriend->ubID < pSoldier->ubID))
-		{
-			++ubRank;
-		}
-	}
-
-	return ubRank;
-}
-
 BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, UINT8 ubResponseLimit)
 {
 	if (!AIEnemyFireteamEligible(pSoldier) || TileIsOutOfBounds(sContactSpot))
@@ -4707,12 +4675,16 @@ BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, U
 	AIAbsorbFireteamRemnant(pSoldier);
 
 	// Fixed sentries and snipers do not consume a mobile response budget. They may
-	// still fight normally if contact reaches their position, but they do not block
-	// a farther ONCALL/patrol element from being released.
+	// still fight normally if contact reaches their position, but they do not abandon
+	// their mission merely because another element is responding.
 	if (!AIEnemyResponderEligible(pSoldier))
 		return TRUE;
 
 	UINT8 ubMine = AIFireteamId(pSoldier);
+	UINT8 ubMyReady = AIFireteamDeployableCountById(ubMine);
+	if (ubMyReady == 0)
+		return TRUE;
+
 	INT32 iMine = AIFireteamDeployableDistanceToSpot(ubMine, sContactSpot);
 	UINT16 usCloserReady = 0;
 
@@ -4730,23 +4702,26 @@ BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, U
 			usCloserReady += ubReady;
 	}
 
-	UINT16 usSoftCap = (UINT16)ubResponseLimit + 2;
-	UINT8 ubMyRank = AIFireteamResponderRank(pSoldier, sContactSpot);
-
-	// The nearest element gets the first response opportunity, but only up to the
-	// doctrine/wave budget plus a two-man cohesion allowance.
+	// Response is now element-based rather than soldier-ID based. The nearest
+	// deployable fireteam receives the first mission as a whole; we do not peel two
+	// or three men away from it merely to hit an exact numerical budget.
 	if (usCloserReady == 0)
-		return (ubMyRank > usSoftCap);
+		return FALSE;
 
+	// If already-released elements satisfy the current response budget, this whole
+	// fireteam stays in reserve for the next escalation.
 	if (usCloserReady >= ubResponseLimit)
 		return TRUE;
 
-	// Release only as much of the next element as fits the current wave. Remaining
-	// members form the reserve for the next escalation instead of all charging.
-	if (usCloserReady + ubMyRank > usSoftCap)
-		return TRUE;
+	// For later waves, release the next complete fireteam only when the response
+	// budget calls for a meaningful fraction of that element. This permits a small
+	// cohesion overrun while preventing a one-man budget increase from dragging an
+	// entire fresh squad into the fight.
+	UINT16 usNeeded = (UINT16)ubResponseLimit - usCloserReady;
+	UINT16 usReleaseThreshold = (UINT16)__max(2,
+		((INT32)ubMyReady + 1) / 2);
 
-	return FALSE;
+	return (usNeeded < usReleaseThreshold);
 }
 
 INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
