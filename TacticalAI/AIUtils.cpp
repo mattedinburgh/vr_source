@@ -10130,8 +10130,7 @@ BOOLEAN UseSightCoverAdvance(SOLDIERTYPE *pSoldier)
 	{
 		return TRUE;
 	}
-
-	if (TeamHighPercentKilled(pSoldier->bTeam))
+	if (AILocalCasualtyPercent(pSoldier) > ArmyPercentKilledTolerance())
 	{
 		return TRUE;
 	}
