@@ -3919,6 +3919,8 @@ UINT8 CountFriendsInDirectionFromSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, UINT8 
 		if (pFriend &&
 			pFriend != pSoldier &&
 			pFriend->bActive &&
+			pFriend->bInSector &&
+			AISameFireteam(pSoldier, pFriend) &&
 			pFriend->stats.bLife >= OKLIFE &&
 			AIDirection(sSpot, pFriend->sGridNo) == ubDirection &&
 			PythSpacesAway(sSpot, pFriend->sGridNo) <= sDistance)
@@ -3961,6 +3963,8 @@ UINT8 CountFriendsBetweenMeAndSpotFromSpot(SOLDIERTYPE *pSoldier, INT32 sTargetG
 
 		if (pFriend != pSoldier &&
 			pFriend->bActive &&
+			pFriend->bInSector &&
+			AISameFireteam(pSoldier, pFriend) &&
 			pFriend->stats.bLife >= OKLIFE &&
 			pFriend->stats.bLife >= pFriend->stats.bLifeMax / 2 &&
 			pFriend->aiData.bOrders > ONGUARD &&
@@ -4002,7 +4006,9 @@ UINT8 CountFriendsBlack( SOLDIERTYPE *pSoldier, INT32 sClosestOpponent )
 
 		// Make sure that character is alive, not too shocked, and conscious
 		if (pFriend != pSoldier && 
-			pFriend->bActive && 
+			pFriend->bActive &&
+			pFriend->bInSector &&
+			AISameFireteam(pSoldier, pFriend) &&
 			pFriend->stats.bLife >= OKLIFE &&
 			!pFriend->IsCowering() &&
 			!pFriend->IsUnconscious())
@@ -6506,6 +6512,8 @@ UINT8 CountFriendsFlankSameSpot(SOLDIERTYPE *pSoldier, INT32 sSpot)
 		if (pFriend &&
 			pFriend != pSoldier &&
 			pFriend->bActive &&
+			pFriend->bInSector &&
+			AISameFireteam(pSoldier, pFriend) &&
 			pFriend->stats.bLife >= OKLIFE &&
 			pFriend->aiData.bAlertStatus == STATUS_RED &&
 			pFriend->aiData.bOrders > ONGUARD)
