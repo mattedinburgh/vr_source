@@ -1980,8 +1980,10 @@ INT16 EstimatePathCostToLocation( SOLDIERTYPE * pSoldier, INT32 sDestGridNo, INT
 		{
 			// on ground or same building... normal!
 			sPathCost = EstimatePlotPath( pSoldier, sDestGridNo, FALSE, FALSE, FALSE, WALKING, FALSE, FALSE, 0);
-			*pfClimbingNecessary = FALSE;
-			*psClimbGridNo = NOWHERE;
+			if (pfClimbingNecessary)
+				*pfClimbingNecessary = FALSE;
+			if (psClimbGridNo)
+				*psClimbGridNo = NOWHERE;
 		}
 		else
 		{
