@@ -10924,6 +10924,8 @@ INT8 DecideCombatDispersion(SOLDIERTYPE *pSoldier)
 {
 	if (!gfTurnBasedAI || !pSoldier || !AICombatTeam(pSoldier) ||
 		!SoldierAI(pSoldier) || pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		pSoldier->IsFlanking() ||
+		AIDisengagementActive(pSoldier) ||
 		AIEscapeActive(pSoldier) || AIShouldStartEscape(pSoldier))
 	{
 		return AI_ACTION_NONE;
