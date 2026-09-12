@@ -2543,11 +2543,17 @@ void UIHandleMercAttack( SOLDIERTYPE *pSoldier , SOLDIERTYPE *pTargetSoldier, IN
 		}
 	}
 
-	// In realtime mode we cannot aim. Assume that max allowed aiming levels will be used.
+	// In realtime mode there is no AP-based deliberate aiming interaction.  Keep
+	// hand grenades as snap throws rather than granting four free aim levels;
+	// firearm behaviour remains unchanged.
 	if ( gTacticalStatus.uiFlags & REALTIME || !( gTacticalStatus.uiFlags & INCOMBAT ) )
-		pSoldier->aiData.bAimTime = AllowedAimingLevels(pSoldier, sGridNo);
+	{
+		if ( ubItemCursor == TOSSCURS )
+			pSoldier->aiData.bAimTime = 0;
+		else
+			pSoldier->aiData.bAimTime = AllowedAimingLevels(pSoldier, sGridNo);
+	}
 	else
-		// Set aim time to one in UI
 		pSoldier->aiData.bAimTime = (pSoldier->aiData.bShownAimTime );
 
 	// here, change gridno if we're targeting ourselves....
