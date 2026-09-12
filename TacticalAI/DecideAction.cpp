@@ -2794,7 +2794,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 
 			if ((BestThrow.bWeaponIn != NO_SLOT) &&
 				(CalcMaxTossRange(pSoldier, pSoldier->inv[BestThrow.bWeaponIn].usItem, TRUE) > MaxNormalDistanceVisible()) &&
-				(gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
+				(pSoldier->bTeam == ENEMY_TEAM ? AIFireteamAliveCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
 				(gTacticalStatus.ubSpottersCalledForBy == NOBODY))
 			{
 				// then call for spotters!  Uses up the rest of his turn (whatever
@@ -2858,7 +2858,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 
 				if (GunRange(gun, pSoldier) > MaxNormalDistanceVisible() &&
 					(IsScoped(gun) || pSoldier->aiData.bOrders == SNIPER) &&
-					(gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
+					(pSoldier->bTeam == ENEMY_TEAM ? AIFireteamAliveCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
 					(gTacticalStatus.ubSpottersCalledForBy == NOBODY))
 				{
 					// then call for spotters!  Uses up the rest of his turn (whatever
@@ -6866,9 +6866,12 @@ L_NEWAIM:
 	// (we never want NPCs to choose to radio if they would have to wait a turn)
 	// and we're not swimming in deep water, and somebody has called for spotters
 	// and we see the location of at least 2 opponents
-	if ( !(pSoldier->usSoldierFlagMask & SOLDIER_RAISED_REDALERT) && (gTacticalStatus.ubSpottersCalledForBy != NOBODY) && (pSoldier->bActionPoints >= APBPConstants[AP_RADIO]) &&
+	if ( !(pSoldier->usSoldierFlagMask & SOLDIER_RAISED_REDALERT) && (gTacticalStatus.ubSpottersCalledForBy != NOBODY) &&
+		MercPtrs[gTacticalStatus.ubSpottersCalledForBy] &&
+		AISameFireteam(pSoldier, MercPtrs[gTacticalStatus.ubSpottersCalledForBy]) &&
+		(pSoldier->bActionPoints >= APBPConstants[AP_RADIO]) &&
 		(pSoldier->aiData.bOppCnt > 1) && !fCivilian &&
-		(gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) && !bInDeepWater)
+		(pSoldier->bTeam == ENEMY_TEAM ? AIFireteamAliveCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) && !bInDeepWater)
 	{
 		// base chance depends on how much new info we have to radio to the others
 		iChance = 25 * WhatIKnowThatPublicDont(pSoldier,TRUE);	// just count them
