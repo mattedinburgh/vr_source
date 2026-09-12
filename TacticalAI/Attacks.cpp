@@ -798,8 +798,12 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 					iPenaltyPercent = 30 * ubSaturation;
 
 				// Immediate self-defence still justifies concentrated fire.
-				if (fCurrentContact && pOpponent->sLastTarget == pSoldier->sGridNo)
+				if (fCurrentContact &&
+					(pSoldier->ubPreviousAttackerID == pOpponent->ubID ||
+					 pSoldier->ubNextToPreviousAttackerID == pOpponent->ubID))
+				{
 					iPenaltyPercent /= 2;
+				}
 
 				// Concentrated fire is less wasteful when it is deliberately covering
 				// a teammate's movement or withdrawal.
