@@ -368,6 +368,8 @@ INT16 GetAPsToReloadGunWithAmmo( SOLDIERTYPE *pSoldier, OBJECTTYPE * pGun, OBJEC
 INT16 GetAPsToAutoReload( SOLDIERTYPE * pSoldier );
 
 INT32 CalcAPCostForAiming( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo, INT8 bAimTime );
+// Hand-thrown grenades/items use the normal aim-click AP cost, without gun raise/scope costs.
+INT16 CalcAPCostForThrowAiming( INT8 bAimTime );
 INT8 CalcAimingLevelsAvailableWithAP( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo, INT8 bAPsLeft );
 
 // SANDRO - added these: 
