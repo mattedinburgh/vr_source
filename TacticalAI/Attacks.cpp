@@ -673,11 +673,13 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		iAttackValue = (iEstDamage * iBestHitRate * ubChanceToReallyHit * iThreatValue) / 1000;
 		//NumMessage("SHOT AttackValue = ",iAttackValue / 1000);
 
-		// sevenfm: take into account friendly fire chance
+		// Take the actual residual friendly-fire probability into account. Candidate
+		// stances above already reject risk >3%; within that narrow band, preserve
+		// strong risk aversion without treating 1% and 3% as identical.
 		if (ubBestFriendlyFireChance > 0)
 		{
-			//iAttackValue = iAttackValue * (100 - ubFriendlyFireChance) / 100;
-			iAttackValue = iAttackValue / 2;
+			INT32 iFriendlyFirePenalty = __min(75, 15 * (INT32)ubBestFriendlyFireChance);
+			iAttackValue = iAttackValue * (100 - iFriendlyFirePenalty) / 100;
 		}
 
 		// sevenfm: penalize suppression fire
