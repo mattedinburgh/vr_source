@@ -3945,7 +3945,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 								//PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) < DAY_VISION_RANGE * 2 &&
 								PythSpacesAway(sMoveSpot, sClosestOpponent) < (INT16)MAX_VISION_RANGE &&
 								PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > DAY_VISION_RANGE / 2 &&
-								(!ProneSightCoverAtSpot(pSoldier, sMoveSpot, FALSE) || InLightAtNight(sMoveSpot, pSoldier->pathing.bLevel) || CorpseWarning(pSoldier, sMoveSpot, pSoldier->pathing.bLevel)) &&
+								(!ProneSightCoverAtSpot(pSoldier, sMoveSpot, FALSE) || InLightAtNight(sMoveSpot, pSoldier->pathing.bLevel) || AICorpseWarningKnown(pSoldier, sMoveSpot, pSoldier->pathing.bLevel)) &&
 								!AnyCoverAtSpot(pSoldier, sMoveSpot))
 							{
 								sAdvanceSpot = FindAdvanceSpot(pSoldier, sClosestDisturbance, AI_ACTION_SEEK_OPPONENT, ADVANCE_SPOT_ANY_COVER, FALSE);
@@ -4065,7 +4065,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 											CountFriendsBlack(pSoldier, sClosestDisturbance) > 0 ||
 											pSoldier->aiData.bUnderFire && !GuySawEnemy(pSoldier) ||
 											FindBombNearby(pSoldier, sCautiousMoveSpot, BOMB_DETECTION_RANGE) ||
-											CorpseWarning(pSoldier, sCautiousMoveSpot, pSoldier->pathing.bLevel) ||
+											AICorpseWarningKnown(pSoldier, sCautiousMoveSpot, pSoldier->pathing.bLevel) ||
 											EnemyCanAttackSpot(pSoldier, sCautiousMoveSpot, pSoldier->pathing.bLevel) ||
 											!SightCoverAtSpot(pSoldier, sCautiousMoveSpot, FALSE)))
 										{
@@ -9502,7 +9502,7 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 					!InSmoke(sCheckGridNo, pSoldier->pathing.bLevel) &&
 					/*(pSoldier->RushAttackPrepare() ||
 					fSectorAttack ||
-					CorpseWarning(pSoldier, sCheckGridNo, pSoldier->pathing.bLevel) ||
+					AICorpseWarningKnown(pSoldier, sCheckGridNo, pSoldier->pathing.bLevel) ||
 					InLightAtNight(sCheckGridNo, pSoldier->pathing.bLevel)) &&*/
 					!SightCoverAtSpot(pSoldier, sCheckGridNo, FALSE))
 				{
