@@ -982,6 +982,7 @@ void StartNPCAI(SOLDIERTYPE *pSoldier)
 #endif
 
 	gTacticalStatus.uiTimeSinceMercAIStart = GetJA2Clock();
+	gtTimeSinceMercAIStart = time(0);
 
 	DebugMsg( TOPIC_JA2AI, DBG_LEVEL_3 , "Clock set" );
 
