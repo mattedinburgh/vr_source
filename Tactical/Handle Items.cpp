@@ -1691,7 +1691,11 @@ INT32 HandleItem( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel, UINT16 usHa
 			sTargetGridNo	= sGridNo;
 		}
 
-		sAPCost = MinAPsToAttack( pSoldier, sTargetGridNo, TRUE, pSoldier->aiData.bAimTime, 0 );
+		// Hand-thrown grenades/items include deliberate aim AP in the affordability check.
+		if ( Item[usHandItem].usItemClass & ( IC_GRENADE | IC_THROWN ) )
+			sAPCost = CalcTotalAPsToAttack( pSoldier, sTargetGridNo, TRUE, pSoldier->aiData.bAimTime );
+		else
+			sAPCost = MinAPsToAttack( pSoldier, sTargetGridNo, TRUE, pSoldier->aiData.bAimTime, 0 );
 
 		// Check if these is room to place mortar!
 		if ( Item[usHandItem].mortar )
