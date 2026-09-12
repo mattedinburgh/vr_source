@@ -4017,7 +4017,7 @@ UINT8 CountFriendsBlack( SOLDIERTYPE *pSoldier, INT32 sClosestOpponent )
 				pFriend->LastAttackHit() ||
 				pFriend->usSoldierFlagMask2 & SOLDIER_SUCCESSFUL_ATTACK ||
 				pFriend->LastTargetSuppressed() ||
-				!CorpseWarning(pFriend, pFriend->sGridNo, pFriend->pathing.bLevel) && !InLightAtNight(pFriend->sGridNo, pFriend->pathing.bLevel) && !pFriend->aiData.bUnderFire))
+				!AICorpseWarningKnown(pFriend, pFriend->sGridNo, pFriend->pathing.bLevel) && !InLightAtNight(pFriend->sGridNo, pFriend->pathing.bLevel) && !pFriend->aiData.bUnderFire))
 			{
 				ubFriendCount++;
 			}
@@ -6882,7 +6882,7 @@ UINT8 SpotDangerLevel(SOLDIERTYPE *pSoldier, INT32 sGridNo)
 
 	// Mild hazards: tactically undesirable, but never worth trapping a soldier over.
 	if ((Water(sGridNo, pSoldier->pathing.bLevel) && !pSoldier->IsFlanking()) ||
-		CorpseWarning(pSoldier, sGridNo, pSoldier->pathing.bLevel))
+		AICorpseWarningKnown(pSoldier, sGridNo, pSoldier->pathing.bLevel))
 	{
 		ubLevel = 1;
 	}
@@ -9548,10 +9548,10 @@ BOOLEAN AbortFinalSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bAction, INT32 s
 
 	// abort seeking when soldier sees fresh corpse
 	if (fSafeSpot &&
-		CorpseWarning(pSoldier, sSpot, bLevel) &&
+		AICorpseWarningKnown(pSoldier, sSpot, bLevel) &&
 		!InSmoke(sSpot, bLevel) &&
 		!fFriendsBlack &&
-		(fFlankingFriends || !fSuccessfulAttack || !fSeekEnemy || EnemyCanAttackSpot(pSoldier, sSpot, bLevel) || InARoom(sSpot, NULL) && bLevel == 0 || CorpseWarning(pSoldier, sSpot, bLevel)))
+		(fFlankingFriends || !fSuccessfulAttack || !fSeekEnemy || EnemyCanAttackSpot(pSoldier, sSpot, bLevel) || InARoom(sSpot, NULL) && bLevel == 0 || AICorpseWarningKnown(pSoldier, sSpot, bLevel)))
 	{
 		DebugAI(AI_MSG_INFO, pSoldier, String("fresh corpse! abort!"));
 
@@ -9657,14 +9657,14 @@ BOOLEAN AbortPath(SOLDIERTYPE *pSoldier, INT8 bAction, INT32 sClosestDisturbance
 
 		// check for fresh corpses
 		if (fSafeSpot &&
-			CorpseWarning(pSoldier, sCheckGridNo, pSoldier->pathing.bLevel) &&
+			AICorpseWarningKnown(pSoldier, sCheckGridNo, pSoldier->pathing.bLevel) &&
 			!InSmoke(sCheckGridNo, pSoldier->pathing.bLevel) &&
 			!fFriendsBlack &&
-			(fFlankingFriends || !fSuccessfulAttack || !fSeekEnemy || EnemyCanAttackSpot(pSoldier, sCheckGridNo, bLevel) || InARoom(sCheckGridNo, NULL) && bLevel == 0 || CorpseWarning(pSoldier, sCheckGridNo, bLevel)))
+			(fFlankingFriends || !fSuccessfulAttack || !fSeekEnemy || EnemyCanAttackSpot(pSoldier, sCheckGridNo, bLevel) || InARoom(sCheckGridNo, NULL) && bLevel == 0 || AICorpseWarningKnown(pSoldier, sCheckGridNo, bLevel)))
 		{
 			DebugAI(AI_MSG_INFO, pSoldier, String("fresh corpse! abort!"));
 
-			if (!SightCoverAtSpot(pSoldier, sCheckGridNo, TRUE) || InARoom(sCheckGridNo, NULL) && bLevel == 0 || CorpseWarning(pSoldier, sCheckGridNo, bLevel))
+			if (!SightCoverAtSpot(pSoldier, sCheckGridNo, TRUE) || InARoom(sCheckGridNo, NULL) && bLevel == 0 || AICorpseWarningKnown(pSoldier, sCheckGridNo, bLevel))
 			{
 				sDangerousSpot = sCheckGridNo;
 			}
@@ -9695,6 +9695,50 @@ BOOLEAN AbortPath(SOLDIERTYPE *pSoldier, INT8 bAction, INT32 sClosestDisturbance
 	*/
 
 	return FALSE;
+}
+
+// Same battlefield-warning intent as AICorpseWarningKnown(), but restricted to corpses
+// this soldier can actually perceive.  This prevents unseen casualties elsewhere
+// in the sector from leaking into movement, support and morale decisions.
+UINT8 AICorpseWarningKnown(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel)
+{
+	if (!pSoldier || TileIsOutOfBounds(sGridNo))
+		return 0;
+
+	UINT8 ubWarning = 0;
+	for (INT32 cnt = 0; cnt < giNumRottingCorpse; ++cnt)
+	{
+		ROTTING_CORPSE *pCorpse = &(gRottingCorpse[cnt]);
+		if (!pCorpse ||
+			!pCorpse->fActivated ||
+			pCorpse->def.ubType >= ROTTING_STAGE2 ||
+			pCorpse->def.ubBodyType > REGFEMALE ||
+			pCorpse->def.ubAIWarningValue <= ubWarning ||
+			pCorpse->def.bLevel != bLevel ||
+			TileIsOutOfBounds(pCorpse->def.sGridNo) ||
+			PythSpacesAway(sGridNo, pCorpse->def.sGridNo) > CORPSE_WARNING_DIST)
+		{
+			continue;
+		}
+
+		if (!(pSoldier->bTeam == ENEMY_TEAM && CorpseEnemyTeam(pCorpse) ||
+			  pSoldier->bTeam == MILITIA_TEAM && CorpseMilitiaTeam(pCorpse) ||
+			  pSoldier->bTeam != ENEMY_TEAM && pSoldier->bTeam != MILITIA_TEAM))
+		{
+			continue;
+		}
+
+		if (!SoldierToVirtualSoldierLineOfSightTest(
+			pSoldier, pCorpse->def.sGridNo, pCorpse->def.bLevel,
+			ANIM_PRONE, TRUE, CALC_FROM_ALL_DIRS))
+		{
+			continue;
+		}
+
+		ubWarning = pCorpse->def.ubAIWarningValue;
+	}
+
+	return ubWarning;
 }
 
 BOOLEAN CorpseWarning(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel)
@@ -9913,7 +9957,7 @@ BOOLEAN UseSightCoverAdvance(SOLDIERTYPE *pSoldier)
 		if (pSoldier->aiData.bUnderFire ||
 			pSoldier->aiData.bShock > 0 ||
 			AICheckDefense(pSoldier) ||
-			CorpseWarning(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel) ||
+			AICorpseWarningKnown(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel) ||
 			CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE) > 0 ||
 			CountCorpses(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE, TRUE, TRUE) > 0)
 		{
@@ -9923,7 +9967,7 @@ BOOLEAN UseSightCoverAdvance(SOLDIERTYPE *pSoldier)
 	case SOLDIER_CLASS_ADMINISTRATOR:
 		if (pSoldier->aiData.bUnderFire ||
 			pSoldier->aiData.bShock > 0 ||
-			CorpseWarning(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel) ||
+			AICorpseWarningKnown(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel) ||
 			CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE) > 0 ||
 			CountCorpses(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE, TRUE, TRUE) > 0)
 		{
