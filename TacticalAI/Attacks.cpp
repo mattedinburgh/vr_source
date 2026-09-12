@@ -1890,21 +1890,20 @@ void CalcBestStab(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestStab, BOOLEAN fBladeAt
 	{
 		pOpponent = MercSlots[ uiLoop ];
 
-		// if this merc is inactive, at base, on assignment, or dead
-		if (!pOpponent || !pOpponent->stats.bLife)
-			continue;			// next merc
+		if (!pOpponent)
+			continue;
 
-		if (!ValidOpponent(pSoldier, pOpponent))
+		// Melee needs an exact current contact. Legacy Vengeance allowed a target
+		// merely seen earlier this turn, then path-tested and attacked his hidden live
+		// grid. If contact is lost, pursuit belongs to movement/search AI instead.
+		if (PersonalKnowledge(pSoldier, pOpponent->ubID) != SEEN_CURRENTLY &&
+			PublicKnowledge(pSoldier->bTeam, pOpponent->ubID) != SEEN_CURRENTLY)
 		{
 			continue;
 		}
 
-		// if this opponent is not currently in sight (ignore known but unseen!)
-		// sevenfm: allow stabbing recently seen opponents or public known opponents
-		if ( pSoldier->aiData.bOppList[pOpponent->ubID] != SEEN_CURRENTLY &&
-			pSoldier->aiData.bOppList[pOpponent->ubID] != SEEN_THIS_TURN &&
-			gbPublicOpplist[pSoldier->bTeam][pOpponent->ubID] != SEEN_CURRENTLY )
-			continue;			// next merc
+		if (!ValidOpponent(pSoldier, pOpponent))
+			continue;
 
 		// if this opponent is not on the same level
 		if (pSoldier->pathing.bLevel != pOpponent->pathing.bLevel)
