@@ -6435,6 +6435,7 @@ INT32 AICrossfirePositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT3
 			!AISameFireteam(pSoldier, pFriend) ||
 			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 			!AICheckHasGun(pFriend) || AIGunAmmo(pFriend) == 0 ||
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE)
 		{
@@ -6494,6 +6495,7 @@ INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		if (pFriend && pFriend != pSoldier && pFriend->bActive && pFriend->bInSector &&
 			pFriend->stats.bLife >= OKLIFE && !pFriend->bCollapsed && !pFriend->bBreathCollapsed &&
 			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
+			!(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) &&
 			AISameFireteam(pSoldier, pFriend) &&
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) <= DAY_VISION_RANGE / 4)
 		{
@@ -6848,7 +6850,11 @@ UINT8 AITargetSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
 			!AISameFireteam(pSoldier, pFriend) ||
-			pFriend->stats.bLife < OKLIFE)
+			pFriend->stats.bLife < OKLIFE ||
+			pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING))
 		{
 			continue;
 		}
