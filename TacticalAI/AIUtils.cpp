@@ -6271,6 +6271,7 @@ INT32 AISupportRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 	INT32 iScore = 20;
 	INT32 iGunRange = __max(1, (INT32)AIGunRange(pSoldier) / CELL_X_SIZE);
+	UINT16 usLoadedAmmo = AIGunAmmo(pSoldier);
 
 	if (AICheckIsMachinegunner(pSoldier))
 		iScore += 35;
@@ -6315,6 +6316,24 @@ INT32 AISupportRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 	if (AICheckShortWeaponRange(pSoldier))
 		iScore -= 15;
+
+	// Fire-base value depends on ammunition actually ready in the gun. A nearly
+	// empty LMG is still a support weapon, but it should not outrank a loaded rifle
+	// as if it could sustain a burst. Once reloaded, the role score rises again.
+	if (AIGunAutofireCapable(pSoldier))
+	{
+		if (usLoadedAmmo < 5)
+			iScore -= AICheckIsMachinegunner(pSoldier) ? 30 : 18;
+		else if (usLoadedAmmo < 10)
+			iScore -= AICheckIsMachinegunner(pSoldier) ? 15 : 8;
+		else if (usLoadedAmmo >= 20 && AICheckIsMachinegunner(pSoldier))
+			iScore += 8;
+	}
+	else if (usLoadedAmmo <= 2)
+	{
+		iScore -= 8;
+	}
+
 	if (AICheckIsMedic(pSoldier))
 		iScore -= 8;
 	if (pSoldier->aiData.bUnderFire)
@@ -6351,8 +6370,16 @@ INT32 AIManeuverRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 	if (AICheckHasGun(pSoldier))
 	{
-		if (AICheckShortWeaponRange(pSoldier))
+		if (AIGunAmmo(pSoldier) == 0)
+		{
+			// An empty specialist gun does not make its owner the new assault man.
+			// Reload/secondary-weapon logic should solve the ammunition problem first.
+			iScore -= 20;
+		}
+		else if (AICheckShortWeaponRange(pSoldier))
+		{
 			iScore += 18;
+		}
 	}
 	else if (FindAIUsableObjClass(pSoldier, IC_WEAPON) != NO_SLOT)
 	{
