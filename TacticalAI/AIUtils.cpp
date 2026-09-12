@@ -2624,9 +2624,9 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 	else							// odds better than 3:1
 		bMoraleCategory = MORALE_FEARLESS;
 
-	// make idiot administrators more aggressive
-	// sevenfm: also make civilians more aggressive
-	if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ADMINISTRATOR || pSoldier->bTeam == CIV_TEAM && !pSoldier->aiData.bNeutral)
+	// Doctrine removes the legacy administrator morale boost; hostile civilian
+	// behaviour keeps its existing boost.
+	if (pSoldier->bTeam == CIV_TEAM && !pSoldier->aiData.bNeutral)
 	{
 		bMoraleCategory += 2;
 	}
