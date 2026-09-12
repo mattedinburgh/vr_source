@@ -6654,28 +6654,40 @@ INT32 ClosestSeenLastTurnOpponent(SOLDIERTYPE *pSoldier, INT32 * psGridNo, INT8 
 	{
 		pOpponent = MercSlots[ uiLoop ];
 
-		// if this merc is inactive, at base, on assignment, or dead
 		if (!pOpponent)
-		{
-			continue;			// next merc
-		}
-
-		if (!ValidOpponent(pSoldier, pOpponent))
 		{
 			continue;
 		}
 
 		pbPersOL = pSoldier->aiData.bOppList + pOpponent->ubID;
 
-		// if this opponent is not seen currently or last turn
+		// This helper includes current, this-turn and last-turn visual contacts.
 		if (*pbPersOL < SEEN_CURRENTLY || *pbPersOL > SEEN_LAST_TURN)
 		{
-			continue;			// next merc
+			continue;
 		}
 
-		// since we're dealing with seen people, use exact gridnos
-		sGridNo = pOpponent->sGridNo;
-		bLevel = pOpponent->pathing.bLevel;
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			pOpponent->ubBodyType == CROW)
+		{
+			continue;
+		}
+
+		if (*pbPersOL == SEEN_CURRENTLY)
+		{
+			if (!ValidOpponent(pSoldier, pOpponent))
+				continue;
+			sGridNo = pOpponent->sGridNo;
+			bLevel = pOpponent->pathing.bLevel;
+		}
+		else
+		{
+			// A visual memory is still a memory: use the stored contact, not the
+			// opponent object's hidden current position.
+			sGridNo = gsLastKnownOppLoc[pSoldier->ubID][pOpponent->ubID];
+			bLevel = gbLastKnownOppLevel[pSoldier->ubID][pOpponent->ubID];
+		}
 
 		// if we are standing at that gridno(!, obviously our info is old...)
 		if (sGridNo == pSoldier->sGridNo)
@@ -9087,19 +9099,25 @@ UINT8 CountKnownEnemiesInDirection(SOLDIERTYPE *pSoldier, UINT8 ubDirection, INT
 	{
 		pOpponent = MercSlots[uiLoop];
 
-		// if this merc is inactive, at base, on assignment, dead, unconscious
-		if (!pOpponent || pOpponent->stats.bLife < OKLIFE)
+		if (!pOpponent)
 		{
 			continue;
 		}
 
-		if (!ValidOpponent(pSoldier, pOpponent))
+		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+		if (bKnowledge == NOT_HEARD_OR_SEEN)
 		{
 			continue;
 		}
 
-		// check knowledge
-		if (Knowledge(pSoldier, pOpponent->ubID) == NOT_HEARD_OR_SEEN)
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			pOpponent->ubBodyType == CROW)
+		{
+			continue;
+		}
+
+		if (bKnowledge == SEEN_CURRENTLY && !ValidOpponent(pSoldier, pOpponent))
 		{
 			continue;
 		}
