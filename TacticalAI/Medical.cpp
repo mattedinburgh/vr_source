@@ -687,6 +687,19 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 			continue;
 		}
 
+		// Do not make the medic chase a casualty while another squadmate is
+		// actively extracting them. Stale links are discarded defensively.
+		if (pPatient->ubDraggedByID != NOBODY)
+		{
+			SOLDIERTYPE *pRescuer = MercPtrs[pPatient->ubDraggedByID];
+			if (pRescuer && pRescuer->ubDraggedCasualtyID == pPatient->ubID &&
+				pRescuer->IsDraggingBleedoutCasualty())
+			{
+				continue;
+			}
+			pPatient->ubDraggedByID = NOBODY;
+		}
+
 		INT32 iUrgency = 30;
 		if (pPatient->stats.bLife < OKLIFE)
 			iUrgency = 100;
