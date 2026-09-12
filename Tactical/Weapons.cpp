@@ -2289,6 +2289,13 @@ BOOLEAN UseGunNCTH( SOLDIERTYPE *pSoldier , INT32 sTargetGridNo )
 	{
 		// Here, remove the knife...	or (for now) rocket launcher
 		pSoldier->inv[ HANDPOS ].RemoveObjectsFromStack(1);
+		// Current 1.13 convenience fix: if another throwing knife is already in the
+		// off hand, promote it automatically instead of forcing an inventory action.
+		if ( pSoldier->inv[SECONDHANDPOS].exists() &&
+			 ( Item[pSoldier->inv[SECONDHANDPOS].usItem].usItemClass & IC_THROWING_KNIFE ) )
+		{
+			SwapObjs( pSoldier, SECONDHANDPOS, HANDPOS, TRUE );
+		}
 		DirtyMercPanelInterface( pSoldier, DIRTYLEVEL2 );
 	}
 	else if ( Item[usUBItem].rocketlauncher )
@@ -2967,6 +2974,11 @@ BOOLEAN UseGun( SOLDIERTYPE *pSoldier , INT32 sTargetGridNo )
 	{
 		// Here, remove the knife...	or (for now) rocket launcher
 		pSoldier->inv[ HANDPOS ].RemoveObjectsFromStack(1);
+		if ( pSoldier->inv[SECONDHANDPOS].exists() &&
+			 ( Item[pSoldier->inv[SECONDHANDPOS].usItem].usItemClass & IC_THROWING_KNIFE ) )
+		{
+			SwapObjs( pSoldier, SECONDHANDPOS, HANDPOS, TRUE );
+		}
 		DirtyMercPanelInterface( pSoldier, DIRTYLEVEL2 );
 	}
 	else if ( Item[usUBItem].rocketlauncher )
