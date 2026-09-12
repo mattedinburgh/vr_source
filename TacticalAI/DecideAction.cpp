@@ -3582,14 +3582,14 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 			return bMedicAction;
 	}
 
-	// Ordinary soldiers only perform immediate adjacent stabilization; they never
-	// abandon their tactical role to run across the battlefield as improvised medics.
-	if (AICombatTeam(pSoldier) && !AICheckIsMedic(pSoldier))
-	{
-		INT8 bBuddyAidAction = DecideEmergencyBuddyAid(pSoldier);
-		if (bBuddyAidAction != AI_ACTION_NONE)
-			return bBuddyAidAction;
-	}
+			// Ordinary soldiers only perform immediate adjacent stabilization; they never
+			// abandon their tactical role to run across the battlefield as improvised medics.
+			if (AICombatTeam(pSoldier) && !AICheckIsMedic(pSoldier))
+			{
+				INT8 bBuddyAidAction = DecideEmergencyBuddyAid(pSoldier);
+				if (bBuddyAidAction != AI_ACTION_NONE)
+					return bBuddyAidAction;
+			}
 // WDS DEBUG - this will make all enemies run away (to test retreating into occupied sector bugs)
 //	pSoldier->aiData.bAIMorale = MORALE_HOPELESS;
 
@@ -5338,6 +5338,16 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				{
 					return(AI_ACTION_WITHDRAW);
 				}
+			}
+
+			// A non-medic may pull a viable exposed casualty into cover even during
+			// direct contact. Survival, fallback and personal-risk checks above retain
+			// priority, while the extraction helper itself rejects exposed/suicidal routes.
+			if (AICombatTeam(pSoldier) && ubCanMove)
+			{
+				INT8 bEvacAction = DecideCombatCasualtyEvacuation(pSoldier);
+				if (bEvacAction != AI_ACTION_NONE)
+					return bEvacAction;
 			}
 
 	// Ordinary soldiers only perform immediate adjacent stabilization; they never
