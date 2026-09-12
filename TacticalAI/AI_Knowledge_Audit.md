@@ -122,3 +122,19 @@ This chunk does not yet choose a map edge or leave the sector. That remains Chun
 Chunk 4 review hardening: disengagement state is additionally bound to `uiUniqueSoldierIdValue` so reused soldier slots cannot inherit stale state, and named/profile NPCs are excluded from entering the new persistent disengagement mode to avoid interfering with story scripts.
 
 Chunk 4 final audit: GREEN/YELLOW decisions now clear transient disengagement state through the common legacy dispatcher, and disengagement entry/update shares precomputed battle-state inputs to avoid a duplicated full assessment.
+
+## Consolidation audit: integrated AI interaction fixes
+
+The integrated branch was re-audited against the original Vengeance/SevenFM decision flow after the fireteam, doctrine, morale, casualty and reinforcement layers were combined.
+
+- Response episodes are contact-local and expire after two quiet tactical turns.
+- Response budgets count deployable troops; `STATIONARY` and `SNIPER` soldiers do not consume mobile response slots.
+- `SEEK_FRIEND` uses the same response budget as `SEEK_NOISE`.
+- YELLOW rear-area radio operators may provide legitimate remote artillery support without being forced into RED movement behavior.
+- Exact downed/incapacitated target state requires personal current sight.
+- Fireteam, response, escape/disengagement, tactical variation, escape-plan, militia-consolidation and drag caches reject stale state after a tactical turn rollback.
+- Fireteam lookups use a cached fast path but invalidate when the in-sector enemy force changes.
+- Casualty dragging is bound to unique soldier identities and is cancelled in high water.
+- With the prisoner system enabled, surviving hostile downed casualties are stabilized and routed into the POW pipeline after victory.
+
+These changes preserve the original Vengeance tactical core while preventing the added coordination layers from recreating sector-wide hive-mind behavior.
