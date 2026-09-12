@@ -624,6 +624,11 @@ INT32 InternalGoAsFarAsPossibleTowards(SOLDIERTYPE *pSoldier, INT32 sDesGrid, IN
 	// sevenfm: start here
 	sTempDest = pSoldier->sGridNo;
 
+	// Track the simulated previous movement mode exactly as the soldier advances along
+	// the stored path. This keeps run startup and fence landings consistent with PlotPath.
+	UINT16 usEstimatePrevMovementMode = pSoldier->usAnimState;
+	BOOLEAN fIgnoreNextEstimateCost = FALSE;
+
 	for (sLoop = pSoldier->pathing.usPathIndex; sLoop < pSoldier->pathing.usPathDataSize; sLoop++)
 	{
 		// what is the next gridno in the path?
@@ -675,18 +680,39 @@ INT32 InternalGoAsFarAsPossibleTowards(SOLDIERTYPE *pSoldier, INT32 sDesGrid, IN
 
 		if (gfTurnBasedAI)
 		{
-			// if we're just starting the "costing" process (first gridno)
-			if (sLoop == 0)
-			{
+			const INT8 bPathDir = (INT8)pSoldier->pathing.usPathingData[sLoop];
+			const INT16 sSwitchValue = gubWorldMovementCosts[sTempDest][bPathDir][pSoldier->pathing.bLevel];
 
-				if (pSoldier->usUIMovementMode == RUNNING)
+			if (fIgnoreNextEstimateCost)
+			{
+				// A fence hop already consumed this landing tile.
+				fIgnoreNextEstimateCost = FALSE;
+				usEstimatePrevMovementMode = WALKING;
+			}
+			else
+			{
+				sAPCost += EstimateActionPointCost(
+					pSoldier,
+					sTempDest,
+					bPathDir,
+					pSoldier->usUIMovementMode,
+					(INT8)sLoop,
+					(INT8)pSoldier->pathing.usPathDataSize,
+					usEstimatePrevMovementMode);
+
+				if (sSwitchValue == TRAVELCOST_FENCE)
 				{
-					sAPCost += GetAPsStartRun( pSoldier ); // changed by SANDRO
+					fIgnoreNextEstimateCost = TRUE;
+				}
+				else
+				{
+					UINT8 ubTerrainID = gpWorldLevelData[sTempDest].ubTerrainID;
+					if (pSoldier->usUIMovementMode == RUNNING && TERRAIN_IS_WATER(ubTerrainID) && pSoldier->pathing.bLevel == 0)
+						usEstimatePrevMovementMode = WALKING;
+					else
+						usEstimatePrevMovementMode = pSoldier->usUIMovementMode;
 				}
 			}
-
-			// ATE: Direction here?
-			sAPCost += EstimateActionPointCost( pSoldier, sTempDest, (INT8) pSoldier->pathing.usPathingData[sLoop], pSoldier->usUIMovementMode, (INT8) sLoop, (INT8) pSoldier->pathing.usPathDataSize );
 
 			bAPsLeft = pSoldier->bActionPoints - sAPCost;
 		}
