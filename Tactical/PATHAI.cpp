@@ -1410,6 +1410,14 @@ INT16 AStarPathfinder::CalcAP(int const terrainCost, UINT8 const direction)
 	}
 	///////////////////////////////////////////////////////////////////////////////////////////////
 
+	// Pulling a living downed casualty is deliberately slower/more expensive.
+	// Keep this in the path AP calculation so both planning and actual movement
+	// account for the extraction burden consistently.
+	if ( pSoldier->IsDraggingBleedoutCasualty() )
+	{
+		movementAPCost = max( 1, (INT16)((movementAPCost * 3 + 1) / 2) );
+	}
+
 	if (terrainCost == TRAVELCOST_FENCE)
 	{
 		switch( movementModeToUseForAPs )
