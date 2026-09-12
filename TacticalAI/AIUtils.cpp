@@ -6053,15 +6053,13 @@ BOOLEAN AIFriendNeedsCoveringFire(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID)
 {
 	if (!pSoldier || ubOpponentID == NOBODY || !MercPtrs[ubOpponentID])
 		return FALSE;
-
-	SOLDIERTYPE *pOpponent = MercPtrs[ubOpponentID];
-
-	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; iCounter++)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 
 		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			!AISameFireteam(pSoldier, pFriend) ||
 			pFriend->stats.bLife < OKLIFE ||
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE / 2)
 		{
@@ -6079,8 +6077,7 @@ BOOLEAN AIFriendNeedsCoveringFire(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID)
 
 		// Require evidence that this particular opponent is the threat to the ally.
 		if (pFriend->ubPreviousAttackerID == ubOpponentID ||
-			pFriend->ubNextToPreviousAttackerID == ubOpponentID ||
-			pOpponent->sLastTarget == pFriend->sGridNo)
+			pFriend->ubNextToPreviousAttackerID == ubOpponentID)
 		{
 			return TRUE;
 		}
@@ -6267,6 +6264,7 @@ BOOLEAN AIFriendWithdrawingNeedsCover(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID)
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (!pFriend || pFriend == pSoldier ||
 			!pFriend->bActive || !pFriend->bInSector ||
+			!AISameFireteam(pSoldier, pFriend) ||
 			pFriend->stats.bLife < OKLIFE ||
 			pFriend->pathing.bLevel != pSoldier->pathing.bLevel ||
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE ||
@@ -6332,6 +6330,7 @@ BOOLEAN AIFriendAdvancingNeedsCover(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID)
 			pFriend == pSoldier ||
 			!pFriend->bActive ||
 			!pFriend->bInSector ||
+			!AISameFireteam(pSoldier, pFriend) ||
 			pFriend->stats.bLife < OKLIFE ||
 			pFriend->bCollapsed ||
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
