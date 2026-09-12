@@ -563,25 +563,28 @@ INT16 ActionPointCost(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bDir, UINT16 us
 
 INT16 EstimateActionPointCost( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bDir, UINT16 usMovementMode, INT8 bPathIndex, INT8 bPathLength )
 {
-	// This action point cost code includes the penalty for having to change
-	// stance after jumping a fence IF our path continues...
+	return EstimateActionPointCost( pSoldier, sGridNo, bDir, usMovementMode, bPathIndex, bPathLength, pSoldier->usAnimState );
+}
+
+INT16 EstimateActionPointCost( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bDir, UINT16 usMovementMode, INT8 bPathIndex, INT8 bPathLength, UINT16 usPrevMovementMode )
+{
+	// Keep Vengeance's real movement deduction path unchanged, but simulate its
+	// one-time start-run charge using the previous tile's movement mode.
 	INT16 sTileCost, sPoints, sSwitchValue;
 	sPoints = 0;
 
-	// get the tile cost for that tile based on WALKING
 	sTileCost = TerrainActionPoints( pSoldier, sGridNo, bDir, pSoldier->pathing.bLevel );
 	if (sTileCost == -1)
 	{
 		return 100;
 	}
 
-	// Get switch value...
 	sSwitchValue = gubWorldMovementCosts[ sGridNo ][ bDir ][ pSoldier->pathing.bLevel ];
 
 	if ( sSwitchValue == TRAVELCOST_FENCE )
 	{
-		// If we are changeing stance ( either before or after getting there....
-		// We need to reflect that...
+		// Fence hops end in a stationary stance. Charge stance work here, but
+		// charge a renewed run on the first real tile after the landing instead.
 		switch(usMovementMode)
 		{
 			case SIDE_STEP:
@@ -589,38 +592,45 @@ INT16 EstimateActionPointCost( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bDir, 
 			case SIDE_STEP_DUAL_RDY:
 			case WALK_BACKWARDS:
 			case RUNNING:
-			case WALKING :
+			case WALKING:
 			case WALKING_WEAPON_RDY:
 			case WALKING_DUAL_RDY:
-			case WALKING_ALTERNATIVE_RDY :
+			case WALKING_ALTERNATIVE_RDY:
 			case SIDE_STEP_ALTERNATIVE_RDY:
-
-				// Add here cost to go from crouch to stand AFTER fence hop....
-				// Since it's AFTER.. make sure we will be moving after jump...
 				if ( ( bPathIndex + 2 ) < bPathLength )
 				{
-					sPoints += GetAPsCrouch(pSoldier, TRUE); // SANDRO changed..
+					sPoints += GetAPsCrouch(pSoldier, TRUE);
 				}
 				break;
 
 			case SWATTING:
 			case START_SWAT:
 			case SWAT_BACKWARDS:
-
-				// Add cost to stand once there BEFORE....
-				sPoints += GetAPsCrouch(pSoldier, TRUE); // SANDRO changed..
+				sPoints += GetAPsCrouch(pSoldier, TRUE);
 				break;
 
 			case CRAWLING:
-
-				// Can't do it here.....
 				break;
 		}
 	}
 
+	// Running is impossible in ground-level water, so do not invent a start-run
+	// charge for a step that real movement will execute as walking.
+	UINT8 ubTerrainID = gpWorldLevelData[ sGridNo ].ubTerrainID;
+	BOOLEAN fRunningThisTile = (usMovementMode == RUNNING);
+	if ( TERRAIN_IS_WATER( ubTerrainID ) && pSoldier->pathing.bLevel == 0 )
+	{
+		fRunningThisTile = FALSE;
+	}
+
+	if ( sSwitchValue != TRAVELCOST_FENCE && fRunningThisTile && usPrevMovementMode != RUNNING )
+	{
+		sPoints += GetAPsStartRun( pSoldier );
+	}
+
 	sPoints += ActionPointCost( pSoldier, sGridNo, bDir, usMovementMode );
 
-	return (sPoints);
+	return sPoints;
 }
 
 
