@@ -122,6 +122,10 @@ typedef struct
  INT32					iAPs;
  INT32					iCertainty;
  INT32					iOrigRange;
+ INT8					bLevel;
+ INT8					bKnowledge;
+ INT8					bPersonalKnowledge;
+ INT8					bPublicKnowledge;
 } THREATTYPE;
 
 // define for bAimTime for bursting
