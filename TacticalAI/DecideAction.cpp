@@ -6819,8 +6819,8 @@ void DecideAlertStatus( SOLDIERTYPE *pSoldier )
 				break;
 
 			case STATUS_YELLOW:
-				// if all enemies have been RED alerted, or we're under fire
-				if (!PTR_CIVILIAN && (gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition || pSoldier->aiData.bUnderFire))
+				// Distant team awareness alone is not personal RED alert; direct fire is.
+				if (!PTR_CIVILIAN && pSoldier->aiData.bUnderFire)
 				{
 					pSoldier->aiData.bAlertStatus = STATUS_RED;
 				}
@@ -6839,8 +6839,8 @@ void DecideAlertStatus( SOLDIERTYPE *pSoldier )
 				break;
 
 			case STATUS_GREEN:
-				// if all enemies have been RED alerted, or we're under fire
-				if (!PTR_CIVILIAN && (gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition || pSoldier->aiData.bUnderFire))
+				// Distant team awareness alone is not personal RED alert; direct fire is.
+				if (!PTR_CIVILIAN && pSoldier->aiData.bUnderFire)
 				{
 					pSoldier->aiData.bAlertStatus = STATUS_RED;
 				}
