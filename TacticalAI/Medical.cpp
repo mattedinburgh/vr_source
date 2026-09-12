@@ -418,6 +418,57 @@ INT8 FindBestPatient( SOLDIERTYPE * pSoldier, BOOLEAN * pfDoClimb )
 // Non-medics do not become roaming battlefield doctors. A soldier with basic
 // medical skill and a medkit may, however, stabilize a critically downed member
 // of his own fireteam who is already adjacent when local pressure permits it.
+// Stabilize meaningful self-bleeding during a genuine lull. This is not combat
+// autobandage: direct contact, incoming fire or an exposed position always outrank it.
+INT8 DecideEmergencySelfAid(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || !AICombatTeam(pSoldier) ||
+		pSoldier->stats.bMedical <= 0 ||
+		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		pSoldier->bBleeding <= 0 ||
+		pSoldier->aiData.bUnderFire || pSoldier->aiData.bOppCnt > 0 ||
+		AIEscapeActive(pSoldier) || AIDisengagementActive(pSoldier) ||
+		pSoldier->aiData.bAIMorale == MORALE_HOPELESS ||
+		pSoldier->bActionPoints < GetAPsToBeginFirstAid(pSoldier))
+	{
+		return AI_ACTION_NONE;
+	}
+
+	INT32 iHealthPercent = (pSoldier->stats.bLifeMax > 0) ?
+		(100 * pSoldier->stats.bLife) / pSoldier->stats.bLifeMax : 100;
+
+	// Ignore trivial bleeding. Lower health makes stabilization worthwhile sooner.
+	if (pSoldier->bBleeding < 15 && iHealthPercent >= 60)
+		return AI_ACTION_NONE;
+
+	INT8 bMedKitSlot = FindObjClass(pSoldier, IC_MEDKIT);
+	if (bMedKitSlot == NO_SLOT)
+		return AI_ACTION_NONE;
+
+	BOOLEAN fScreened = InSmokeNearby(pSoldier->sGridNo, pSoldier->pathing.bLevel);
+	BOOLEAN fDefensible = SafeSpot(pSoldier, pSoldier->sGridNo) ||
+		(fScreened && AnyCoverAtSpot(pSoldier, pSoldier->sGridNo));
+
+	if (!fDefensible)
+		return AI_ACTION_NONE;
+
+	// Even in cover, do not begin treatment while known threats have a clean shot.
+	if (AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel) > 100 &&
+		!fScreened)
+	{
+		return AI_ACTION_NONE;
+	}
+
+	if (bMedKitSlot != HANDPOS)
+	{
+		pSoldier->bSlotItemTakenFrom = bMedKitSlot;
+		SwapObjs(pSoldier, HANDPOS, bMedKitSlot, TRUE);
+	}
+
+	pSoldier->aiData.usActionData = pSoldier->sGridNo;
+	return AI_ACTION_GIVE_AID;
+}
+
 INT8 DecideEmergencyBuddyAid(SOLDIERTYPE *pSoldier)
 {
 	if (!pSoldier || !AICombatTeam(pSoldier) || AICheckIsMedic(pSoldier) ||
