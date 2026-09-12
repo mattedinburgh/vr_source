@@ -10189,6 +10189,9 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 			continue;
 		}
 
+		UINT16 usKnownExposure = AIKnownThreatExposure(
+			pSoldier, pFriend->sGridNo, pFriend->pathing.bLevel);
+
 		BOOLEAN fCriticalCasualty = pFriend->stats.bLife < OKLIFE && pFriend->bBleeding > 0;
 		BOOLEAN fSevereCasualty = pFriend->stats.bLife < pFriend->stats.bLifeMax / 2 && pFriend->bBleeding > 0;
 		BOOLEAN fPinned = pFriend->aiData.bUnderFire && ShockLevelPercent(pFriend) >= 50;
@@ -10200,7 +10203,7 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 		// was reported and the lane is genuinely long, smoke may be used proactively
 		// to break LOS. No hidden position/weapon information is consulted.
 		BOOLEAN fLongRangeFireLane = FALSE;
-		if (pFriend->aiData.bUnderFire && !AnyCoverAtSpot(pFriend, pFriend->sGridNo))
+		if (pFriend->aiData.bUnderFire && usKnownExposure > 0)
 		{
 			UINT8 ubAttacker = pFriend->ubPreviousAttackerID;
 			if (ubAttacker == NOBODY)
@@ -10226,7 +10229,7 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 
 		// Do not spend smoke on somebody whom the acting soldier does not believe is
 		// exposed to enemy fire. This keeps the behaviour information-fair.
-		if (AIKnownThreatExposure(pSoldier, pFriend->sGridNo, pFriend->pathing.bLevel) == 0)
+		if (usKnownExposure == 0)
 			continue;
 
 		INT32 iValue = 0;
