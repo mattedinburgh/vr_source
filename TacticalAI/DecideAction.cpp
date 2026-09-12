@@ -10474,8 +10474,8 @@ INT8 DecideCombatDispersion(SOLDIERTYPE *pSoldier)
 
 	// Do not break a cluster by moving from a protected tile into a position the
 	// known enemy can attack. Dispersion is useful only if it is not tactically worse.
-	if (EnemyCanAttackSpot(pSoldier, sDisperseSpot, pSoldier->pathing.bLevel) &&
-		!EnemyCanAttackSpot(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel))
+	if (AIKnownThreatExposure(pSoldier, sDisperseSpot, pSoldier->pathing.bLevel) >
+		AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel))
 	{
 		return AI_ACTION_NONE;
 	}
