@@ -495,29 +495,9 @@ INT32 CalcCoverValue(SOLDIERTYPE *pMe, INT32 sMyGridNo, INT32 iMyThreat, INT32 i
 		}
 	}
 
-	// try to account for who outnumbers who: the side with the advantage thus
-	// (hopefully) values offense more, while those in trouble will play defense
-	/*if (pHim->aiData.bOppCnt > 1)
-	{
-		iHisPosValue /= pHim->aiData.bOppCnt;
-	}
-
-	if (pMe->aiData.bOppCnt > 1)
-	{
-		iMyPosValue /= pMe->aiData.bOppCnt;
-	}*/
-	UINT8 ubMySide = CountSeenEnemiesLastTurn(pHim);
-	if (ubMySide > 0)
-	{
-		iHisPosValue = iHisPosValue / ubMySide;
-	}
-
-	UINT8 ubHisSide = CountSeenEnemiesLastTurn(pMe);
-	if (ubHisSide > 0)
-	{
-		iMyPosValue = iMyPosValue / ubHisSide;
-	}
-
+	// Do not inspect the opponent's private vision/opponent list to infer force
+	// ratios. Local odds, morale and mutual support are already modelled by the
+	// higher-level AI using this soldier's legitimate personal/public knowledge.
 
  // if my positional value is worth something at all here
  if (iMyPosValue > 0)
