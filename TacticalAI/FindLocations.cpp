@@ -3132,6 +3132,125 @@ INT32 FindNearestPassableSpot( INT32 sGridNo, UINT8 usSearchRadius )
 	return( sNearestSpot );
 }
 
+// Find a bounded tactical retreat position.  Unlike the legacy withdraw-flank
+// search, this explicitly rewards standoff, cover, lower exposure to known threats
+// and nearby friendly support.  It uses only personal/public last-known enemy state.
+INT32 FindRetreatSpot(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier)
+		return NOWHERE;
+
+	INT32 sThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	if (TileIsOutOfBounds(sThreat))
+		return NOWHERE;
+
+	UINT8 ubReserveAP = GetAPsCrouch(pSoldier, TRUE) + APBPConstants[AP_CHANGE_FACING];
+	if (pSoldier->bActionPoints <= ubReserveAP)
+		return NOWHERE;
+
+	const INT32 iSearchRange = AI_PATHCOST_RADIUS;
+	INT32 sOrigin = NOWHERE;
+	INT32 iRoamRange = RoamingRange(pSoldier, &sOrigin);
+	INT16 usMovementMode = DetermineMovementMode(pSoldier, AI_ACTION_WITHDRAW);
+
+	gubNPCAPBudget = pSoldier->bActionPoints - ubReserveAP;
+	gubNPCDistLimit = (UINT8)iSearchRange;
+
+	INT16 sMaxLeft = min(iSearchRange, (pSoldier->sGridNo % MAXCOL));
+	INT16 sMaxRight = min(iSearchRange, MAXCOL - ((pSoldier->sGridNo % MAXCOL) + 1));
+	INT16 sMaxUp = min(iSearchRange, (pSoldier->sGridNo / MAXROW));
+	INT16 sMaxDown = min(iSearchRange, MAXROW - ((pSoldier->sGridNo / MAXROW) + 1));
+
+	for (INT16 sYOffset = -sMaxUp; sYOffset <= sMaxDown; ++sYOffset)
+	{
+		for (INT16 sXOffset = -sMaxLeft; sXOffset <= sMaxRight; ++sXOffset)
+		{
+			INT32 sGridNo = pSoldier->sGridNo + sXOffset + MAXCOL * sYOffset;
+			if (sGridNo >= 0 && sGridNo < WORLD_MAX)
+				gpWorldLevelData[sGridNo].uiFlags &= ~MAPELEMENT_REACHABLE;
+		}
+	}
+
+	FindBestPath(pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, usMovementMode, COPYREACHABLE_AND_APS, 0);
+	gpWorldLevelData[pSoldier->sGridNo].uiFlags &= ~MAPELEMENT_REACHABLE;
+
+	const INT32 iCurrentDistance = PythSpacesAway(pSoldier->sGridNo, sThreat);
+	const UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+	const INT32 iCurrentSupport = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2);
+	const BOOLEAN fCurrentSightCover = SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE);
+	const BOOLEAN fCurrentCover = AnyCoverAtSpot(pSoldier, pSoldier->sGridNo);
+
+	INT32 iBestScore =
+		6 * iCurrentDistance +
+		(fCurrentCover ? 18 : 0) +
+		(fCurrentSightCover ? 24 : 0) +
+		7 * __min(iCurrentSupport, 3) -
+		(INT32)(usCurrentExposure / 4);
+
+	INT32 sBestSpot = NOWHERE;
+
+	for (INT16 sYOffset = -sMaxUp; sYOffset <= sMaxDown; ++sYOffset)
+	{
+		for (INT16 sXOffset = -sMaxLeft; sXOffset <= sMaxRight; ++sXOffset)
+		{
+			INT32 sGridNo = pSoldier->sGridNo + sXOffset + MAXCOL * sYOffset;
+			if (sGridNo < 0 || sGridNo >= WORLD_MAX)
+				continue;
+			if (!(gpWorldLevelData[sGridNo].uiFlags & MAPELEMENT_REACHABLE))
+				continue;
+			if (sGridNo == pSoldier->pathing.sBlackList)
+				continue;
+
+			if (iRoamRange < MAX_ROAMING_RANGE && !TileIsOutOfBounds(sOrigin) &&
+				SpacesAway(sOrigin, sGridNo) > iRoamRange)
+			{
+				continue;
+			}
+
+			if (!CheckNPCDestination(pSoldier, sGridNo) ||
+				!LegalNPCDestination(pSoldier, sGridNo, IGNORE_PATH, NOWATER, 0))
+			{
+				continue;
+			}
+
+			// Retreat into usable cover rather than merely maximizing raw distance.
+			if (!AnyCoverAtSpot(pSoldier, sGridNo))
+				continue;
+			if (NumberOfTeamMatesAdjacent(pSoldier, sGridNo) > 1)
+				continue;
+
+			INT32 iDistance = PythSpacesAway(sGridNo, sThreat);
+			// Allow a small lateral detour around an obstacle, but not a meaningful move
+			// toward the threat under the label of withdrawal.
+			if (iDistance + 2 < iCurrentDistance)
+				continue;
+
+			UINT16 usExposure = AIKnownThreatExposure(pSoldier, sGridNo, pSoldier->pathing.bLevel);
+			INT32 iSupport = CountNearbyFriends(pSoldier, sGridNo, DAY_VISION_RANGE / 2);
+			BOOLEAN fSightCover = SightCoverAtSpot(pSoldier, sGridNo, FALSE);
+			INT32 iPathCost = gubAIPathCosts[AI_PATHCOST_RADIUS + sXOffset][AI_PATHCOST_RADIUS + sYOffset];
+
+			INT32 iScore =
+				6 * iDistance +
+				18 +
+				(fSightCover ? 24 : 0) +
+				7 * __min(iSupport, 3) -
+				(INT32)(usExposure / 4) -
+				iPathCost / 3;
+
+			if (iScore > iBestScore)
+			{
+				iBestScore = iScore;
+				sBestSpot = sGridNo;
+			}
+		}
+	}
+
+	gubNPCAPBudget = 0;
+	gubNPCDistLimit = 0;
+	return sBestSpot;
+}
+
 INT32 FindAdvanceSpot(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bAction, UINT8 ubType, BOOLEAN fUnlimited)
 {
 	INT32	sGridNo, sRealGridNo;
