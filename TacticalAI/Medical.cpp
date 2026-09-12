@@ -463,6 +463,24 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 		if (pPatient->aiData.bUnderFire)
 			iUrgency += 10;
 
+		BOOLEAN fSameElement = AISameFireteam(pSoldier, pPatient);
+		INT32 iPatientDistance = PythSpacesAway(pSoldier->sGridNo, pPatient->sGridNo);
+
+		// Enemy medics primarily serve their own fireteam. Cross-element rescues remain
+		// possible when the casualty is nearby or genuinely critical.
+		if (!fSameElement &&
+			pSoldier->bTeam == ENEMY_TEAM &&
+			pPatient->stats.bLife >= OKLIFE &&
+			iPatientDistance > TACTICAL_RANGE / 3)
+		{
+			continue;
+		}
+
+		if (fSameElement)
+			iUrgency += 15;
+		else if (pSoldier->bTeam == ENEMY_TEAM)
+			iUrgency -= 10;
+
 		UINT8 ubDirection = 0;
 		INT32 sAdjustedGrid = NOWHERE;
 		INT32 sApproachGrid = FindAdjacentGridEx(pSoldier, pPatient->sGridNo,
@@ -497,7 +515,10 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 
 			if (AIKnownThreatExposure(pSoldier, sCheckGrid, pSoldier->pathing.bLevel) > 0)
 			{
-				iPathExposure += AnyCoverAtSpot(pSoldier, sCheckGrid) ? 3 : 7;
+				if (InSmokeNearby(sCheckGrid, pSoldier->pathing.bLevel))
+					iPathExposure += 1;
+				else
+					iPathExposure += AnyCoverAtSpot(pSoldier, sCheckGrid) ? 3 : 7;
 			}
 		}
 
@@ -505,20 +526,23 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 		BOOLEAN fDestinationAttackable =
 			(AIKnownThreatExposure(pSoldier, sApproachGrid, pSoldier->pathing.bLevel) > 0);
 		BOOLEAN fDestinationCovered = AnyCoverAtSpot(pSoldier, sApproachGrid);
+		BOOLEAN fDestinationScreened = InSmokeNearby(sApproachGrid, pSoldier->pathing.bLevel);
 
 		// Absolute veto: do not cross a long exposed fire lane or enter an exposed,
 		// attackable casualty position without somebody nearby to support the rescue.
 		if (iPathExposure >= 28 ||
-			(fDestinationAttackable && !fDestinationCovered && ubSupport == 0))
+			(fDestinationAttackable && !fDestinationCovered && !fDestinationScreened && ubSupport == 0))
 		{
 			continue;
 		}
 
 		INT32 iRescueRisk = iMedicRisk + iDistance * 2 + iPathExposure;
-		if (fDestinationAttackable)
+		if (fDestinationAttackable && !fDestinationScreened)
 			iRescueRisk += 12;
-		if (!fDestinationCovered)
+		if (!fDestinationCovered && !fDestinationScreened)
 			iRescueRisk += 10;
+		if (fDestinationScreened)
+			iRescueRisk -= 6;
 		if (pPatient->aiData.bUnderFire)
 			iRescueRisk += 8;
 		iRescueRisk -= 5 * __min((INT32)ubSupport, 3);
