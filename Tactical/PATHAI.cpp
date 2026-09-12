@@ -465,7 +465,7 @@ UINT32 guiUnsuccessfulPathChecks = 0;
 //ADB the extra cover feature is supposed to pick a path of the same distance as one calculated with the feature off,
 //but a safer path, usually farther away from an enemy or following behind some cover.
 //however it has not been tested and it may need some work, I haven't touched it in a while
-//#define ASTAR_USING_EXTRACOVER
+#define ASTAR_USING_EXTRACOVER
 
 using namespace std;
 using namespace ASTAR;
