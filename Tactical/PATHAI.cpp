@@ -1326,6 +1326,17 @@ INT16 AStarPathfinder::CalcAP(int const terrainCost, UINT8 const direction)
 {
 	// NEW Apr 21 by Ian: abort if cost exceeds budget
 	INT16 movementAPCost;
+
+	// A dragged casualty cannot be teleported through traversal animations the
+	// casualty itself cannot perform. Release before fences/windows/deep water.
+	if ( pSoldier->IsDraggingBleedoutCasualty() &&
+		( terrainCost == TRAVELCOST_FENCE || terrainCost == TRAVELCOST_DEEPWATER ||
+		  terrainCost == TRAVELCOST_JUMPABLEWINDOW ||
+		  terrainCost == TRAVELCOST_JUMPABLEWINDOW_N ||
+		  terrainCost == TRAVELCOST_JUMPABLEWINDOW_W ) )
+	{
+		return -1;
+	}
 	switch(terrainCost)
 	{
 	case TRAVELCOST_NONE:		movementAPCost = 0; break;
@@ -1409,6 +1420,14 @@ INT16 AStarPathfinder::CalcAP(int const terrainCost, UINT8 const direction)
 		movementAPCost = max(1, (INT16)((movementAPCost * (100 - gSkillTraitValues.ubATAPsMovementReduction) / 100) + 0.5));
 	}
 	///////////////////////////////////////////////////////////////////////////////////////////////
+
+	// Pulling a living downed casualty is deliberately slower/more expensive.
+	// Keep this in the path AP calculation so both planning and actual movement
+	// account for the extraction burden consistently.
+	if ( pSoldier->IsDraggingBleedoutCasualty() )
+	{
+		movementAPCost = max( 1, (INT16)((movementAPCost * 3 + 1) / 2) );
+	}
 
 	if (terrainCost == TRAVELCOST_FENCE)
 	{
