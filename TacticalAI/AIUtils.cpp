@@ -4896,12 +4896,14 @@ static BOOLEAN AIShouldStartEscapeFromState(SOLDIERTYPE *pSoldier, INT8 bSituati
 		return TRUE;
 
 	INT32 iRoutThreshold = 60 +
-		(AIPersonalRiskTolerance(pSoldier) - 50) / 2;
+		(AIPersonalRiskTolerance(pSoldier) - 50) / 2 +
+		AIBoundedDecisionJitter(pSoldier, 211u, 4);
 	iRoutThreshold = __max(45, __min(75, iRoutThreshold));
 
 	if (bSituation == AI_BATTLE_CATASTROPHIC)
 	{
-		INT32 iCasualtyThreshold = 30 + AIProfessionalismModifier(pSoldier) / 2;
+		INT32 iCasualtyThreshold = 30 + AIProfessionalismModifier(pSoldier) / 2 +
+			AIBoundedDecisionJitter(pSoldier, 223u, 3);
 		iCasualtyThreshold = __max(25, __min(38, iCasualtyThreshold));
 
 		if (ubCasualties >= iCasualtyThreshold)
@@ -4925,7 +4927,8 @@ static BOOLEAN AIShouldStartEscapeFromState(SOLDIERTYPE *pSoldier, INT8 bSituati
 
 	// In a merely losing fight, social collapse can push a soldier from
 	// disengagement into full escape, but only after substantial losses.
-	INT32 iLosingEscapeThreshold = 40 + AIProfessionalismModifier(pSoldier) / 2;
+	INT32 iLosingEscapeThreshold = 40 + AIProfessionalismModifier(pSoldier) / 2 +
+		AIBoundedDecisionJitter(pSoldier, 227u, 3);
 	iLosingEscapeThreshold = __max(35, __min(48, iLosingEscapeThreshold));
 
 	if (bSituation == AI_BATTLE_LOSING &&
