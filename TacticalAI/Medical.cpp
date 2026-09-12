@@ -413,6 +413,17 @@ INT8 FindBestPatient( SOLDIERTYPE * pSoldier, BOOLEAN * pfDoClimb )
 
 // Is there a viable medic close enough to make an extraction worthwhile?
 // Non-medics do not drag a casualty around merely to watch the bleed-out timer expire.
+static BOOLEAN AIMedicalResponderReady( SOLDIERTYPE *pSoldier )
+{
+	return pSoldier &&
+		pSoldier->bActive &&
+		pSoldier->bInSector &&
+		pSoldier->stats.bLife >= OKLIFE &&
+		!pSoldier->bCollapsed &&
+		!pSoldier->bBreathCollapsed &&
+		!(pSoldier->usSoldierFlagMask & SOLDIER_POW);
+}
+
 static BOOLEAN AIAvailableMedicForCasualty( SOLDIERTYPE *pRescuer, SOLDIERTYPE *pPatient )
 {
 	if ( !pRescuer || !pPatient )
@@ -422,8 +433,7 @@ static BOOLEAN AIAvailableMedicForCasualty( SOLDIERTYPE *pRescuer, SOLDIERTYPE *
 		iCounter <= gTacticalStatus.Team[pRescuer->bTeam].bLastID; ++iCounter )
 	{
 		SOLDIERTYPE *pMedic = MercPtrs[iCounter];
-		if ( !pMedic || pMedic == pPatient || !pMedic->bActive || !pMedic->bInSector ||
-			pMedic->stats.bLife < OKLIFE || pMedic->bCollapsed ||
+		if ( pMedic == pPatient || !AIMedicalResponderReady( pMedic ) ||
 			pMedic->pathing.bLevel != pPatient->pathing.bLevel ||
 			!AICheckIsMedic( pMedic ) || FindObjClass( pMedic, IC_MEDKIT ) == NO_SLOT )
 		{
@@ -445,8 +455,8 @@ static BOOLEAN AIAvailableMedicForCasualty( SOLDIERTYPE *pRescuer, SOLDIERTYPE *
 // can stabilize them without the entire team making a suicidal rush into the fire lane.
 INT8 DecideCombatCasualtyEvacuation( SOLDIERTYPE *pSoldier )
 {
-	if ( !pSoldier || !AICombatTeam( pSoldier ) || pSoldier->stats.bLife < OKLIFE ||
-		pSoldier->bCollapsed || pSoldier->aiData.bAIMorale == MORALE_HOPELESS )
+	if ( !AICombatTeam( pSoldier ) || !AIMedicalResponderReady( pSoldier ) ||
+		pSoldier->aiData.bAIMorale == MORALE_HOPELESS )
 		return AI_ACTION_NONE;
 
 	if ( pSoldier->IsDraggingBleedoutCasualty() )
@@ -502,6 +512,7 @@ INT8 DecideCombatCasualtyEvacuation( SOLDIERTYPE *pSoldier )
 	{
 		SOLDIERTYPE *pPatient = MercPtrs[iCounter];
 		if ( !pPatient || pPatient == pSoldier || !pPatient->bActive || !pPatient->bInSector ||
+			(pPatient->usSoldierFlagMask & SOLDIER_POW) ||
 			pPatient->ubBleedoutState != BLEEDOUT_ACTIVE || !IsBleedoutCasualty( pPatient ) ||
 			pPatient->pathing.bLevel != pSoldier->pathing.bLevel || pPatient->ubServiceCount > 0 )
 			continue;
@@ -622,9 +633,8 @@ INT8 DecideCombatCasualtyEvacuation( SOLDIERTYPE *pSoldier )
 // a critically downed fireteam mate who is already adjacent.
 INT8 DecideEmergencySelfAid(SOLDIERTYPE *pSoldier)
 {
-	if (!pSoldier || !AICombatTeam(pSoldier) ||
+	if (!AICombatTeam(pSoldier) || !AIMedicalResponderReady(pSoldier) ||
 		pSoldier->stats.bMedical <= 0 ||
-		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
 		pSoldier->bBleeding <= 0 ||
 		pSoldier->aiData.bUnderFire || pSoldier->aiData.bOppCnt > 0 ||
 		AIEscapeActive(pSoldier) || AIDisengagementActive(pSoldier) ||
@@ -665,9 +675,9 @@ INT8 DecideEmergencySelfAid(SOLDIERTYPE *pSoldier)
 
 INT8 DecideEmergencyBuddyAid(SOLDIERTYPE *pSoldier)
 {
-	if (!pSoldier || !AICombatTeam(pSoldier) || AICheckIsMedic(pSoldier) ||
+	if (!AICombatTeam(pSoldier) || !AIMedicalResponderReady(pSoldier) ||
+		AICheckIsMedic(pSoldier) ||
 		pSoldier->stats.bMedical <= 0 ||
-		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
 		pSoldier->aiData.bUnderFire ||
 		AIEscapeActive(pSoldier) || AIDisengagementActive(pSoldier) ||
 		pSoldier->aiData.bAIMorale == MORALE_HOPELESS ||
@@ -694,6 +704,7 @@ INT8 DecideEmergencyBuddyAid(SOLDIERTYPE *pSoldier)
 		SOLDIERTYPE *pPatient = MercPtrs[iCounter];
 		if (!pPatient || pPatient == pSoldier ||
 			!pPatient->bActive || !pPatient->bInSector ||
+			(pPatient->usSoldierFlagMask & SOLDIER_POW) ||
 			!AISameFireteam(pSoldier, pPatient) ||
 			pPatient->stats.bLife <= 0 || pPatient->stats.bLife >= OKLIFE ||
 			pPatient->bBleeding <= 0 || pPatient->ubServiceCount > 0 ||
@@ -726,8 +737,8 @@ INT8 DecideEmergencyBuddyAid(SOLDIERTYPE *pSoldier)
 
 INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 {
-	if (!pSoldier || !AICombatTeam(pSoldier) || !AICheckIsMedic(pSoldier) ||
-		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+	if (!AICombatTeam(pSoldier) || !AIMedicalResponderReady(pSoldier) ||
+		!AICheckIsMedic(pSoldier) ||
 		AIEscapeActive(pSoldier) || AIShouldStartEscape(pSoldier) ||
 		pSoldier->aiData.bAIMorale == MORALE_HOPELESS)
 	{
@@ -777,6 +788,7 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 	{
 		SOLDIERTYPE *pPatient = MercPtrs[iCounter];
 		if (!pPatient || pPatient == pSoldier || !pPatient->bActive || !pPatient->bInSector ||
+			(pPatient->usSoldierFlagMask & SOLDIER_POW) ||
 			pPatient->stats.bLife <= 0 || pPatient->bBleeding <= 0 || pPatient->ubServiceCount > 0)
 		{
 			continue;
