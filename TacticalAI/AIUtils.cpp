@@ -4380,22 +4380,45 @@ BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, U
 {
 	if (!AIEnemyFireteamEligible(pSoldier) || TileIsOutOfBounds(sContactSpot))
 		return FALSE;
+
 	AIAbsorbFireteamRemnant(pSoldier);
+
 	UINT8 ubMine = AIFireteamId(pSoldier);
+	UINT8 ubMineReady = AIFireteamCountById(ubMine, TRUE);
 	INT32 iMine = AIFireteamDistanceToSpot(ubMine, sContactSpot);
 	UINT16 usCloserReady = 0;
+
 	for (UINT8 ubTeam = 1; ubTeam < gubAINextFireteam; ++ubTeam)
 	{
 		if (ubTeam == ubMine)
 			continue;
+
 		UINT8 ubReady = AIFireteamCountById(ubTeam, TRUE);
 		if (ubReady == 0)
 			continue;
+
 		INT32 iDistance = AIFireteamDistanceToSpot(ubTeam, sContactSpot);
 		if (iDistance < iMine || (iDistance == iMine && ubTeam < ubMine))
 			usCloserReady += ubReady;
 	}
-	return usCloserReady >= ubResponseLimit;
+
+	// The nearest viable element always gets the first response opportunity.
+	if (usCloserReady == 0)
+		return FALSE;
+
+	// If nearer elements already fill the current wave, this element remains reserve.
+	if (usCloserReady >= ubResponseLimit)
+		return TRUE;
+
+	// Preserve coherent fireteams, but do not let a nearly full wave pull an entire
+	// additional 6-9 man element and massively overshoot the intended response.
+	// A small under-strength/remnant screen (fewer than four ready soldiers) is
+	// allowed to call the next element immediately so it is not left unsupported.
+	UINT16 usCombined = usCloserReady + ubMineReady;
+	if (usCloserReady >= 4 && usCombined > (UINT16)ubResponseLimit + 2)
+		return TRUE;
+
+	return FALSE;
 }
 
 INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
