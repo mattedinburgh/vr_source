@@ -441,6 +441,28 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 	INT32 sBestApproachGrid = NOWHERE;
 	INT32 iBestRescueValue = 0;
 
+	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+	BOOLEAN fCommanded = AIHasLocalCommandSupport(pSoldier);
+	INT32 iMaxRescueDistance = DAY_VISION_RANGE / 2;
+	INT32 iMaxPathExposure = 28;
+	INT32 iMinRescueValue = 15;
+
+	// Security medics provide local first aid rather than assault-rescue. Ordinary
+	// uncommanded line medics are somewhat more cautious; veterans/elites keep the
+	// full existing rescue envelope.
+	if (pSoldier->bTeam == ENEMY_TEAM && ubDoctrine == AI_DOCTRINE_SECURITY)
+	{
+		iMaxRescueDistance = __max(4, DAY_VISION_RANGE / 4);
+		iMaxPathExposure = 16;
+		iMinRescueValue = 28;
+	}
+	else if (pSoldier->bTeam == ENEMY_TEAM && ubDoctrine == AI_DOCTRINE_LINE && !fCommanded)
+	{
+		iMaxRescueDistance = __max(6, DAY_VISION_RANGE / 3);
+		iMaxPathExposure = 22;
+		iMinRescueValue = 20;
+	}
+
 	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; iCounter++)
 	{
@@ -489,7 +511,7 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 			continue;
 
 		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, sApproachGrid);
-		if (iDistance > DAY_VISION_RANGE / 2)
+		if (iDistance > iMaxRescueDistance)
 			continue;
 
 		gubNPCAPBudget = 0;
@@ -530,7 +552,7 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 
 		// Absolute veto: do not cross a long exposed fire lane or enter an exposed,
 		// attackable casualty position without somebody nearby to support the rescue.
-		if (iPathExposure >= 28 ||
+		if (iPathExposure >= iMaxPathExposure ||
 			(fDestinationAttackable && !fDestinationCovered && !fDestinationScreened && ubSupport == 0))
 		{
 			continue;
@@ -548,7 +570,7 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 		iRescueRisk -= 5 * __min((INT32)ubSupport, 3);
 
 		INT32 iRescueValue = iUrgency - iRescueRisk;
-		if (iRescueValue < 15 || iRescueValue <= iBestRescueValue)
+		if (iRescueValue < iMinRescueValue || iRescueValue <= iBestRescueValue)
 			continue;
 
 		pBestPatient = pPatient;
