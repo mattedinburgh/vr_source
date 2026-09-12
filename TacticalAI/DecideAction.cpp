@@ -58,6 +58,15 @@ STR8 gStr8Team[] = { "OUR_TEAM", "ENEMY_TEAM", "CREATURE_TEAM", "MILITIA_TEAM", 
 STR8 gStr8Class[] = { "SOLDIER_CLASS_NONE", "SOLDIER_CLASS_ADMINISTRATOR", "SOLDIER_CLASS_ELITE", "SOLDIER_CLASS_ARMY", "SOLDIER_CLASS_GREEN_MILITIA", "SOLDIER_CLASS_REG_MILITIA", "SOLDIER_CLASS_ELITE_MILITIA", "SOLDIER_CLASS_CREATURE", "SOLDIER_CLASS_MINER", "SOLDIER_CLASS_ZOMBIE" };
 STR8 gStr8Knowledge[] = { "HEARD_3_TURNS_AGO", "HEARD_2_TURNS_AGO", "HEARD_LAST_TURN", "HEARD_THIS_TURN", "NOT_HEARD_OR_SEEN", "SEEN_CURRENTLY", "SEEN_THIS_TURN", "SEEN_LAST_TURN", "SEEN_2_TURNS_AGO", "SEEN_3_TURNS_AGO" };
 
+extern UINT32 guiTurnCnt;
+
+// Sector-local reinforcement pacing.  Kept outside SOLDIERTYPE/savegames.
+static UINT32 guiAIEnemyResponseStartTurn = 0;
+static INT32 gsAIEnemyResponseSpot = NOWHERE;
+static INT16 gsAIEnemyResponseSectorX = -1;
+static INT16 gsAIEnemyResponseSectorY = -1;
+static INT8 gbAIEnemyResponseSectorZ = -1;
+
 // global status time counters to determine what takes the most time
 
 #define CENTER_OF_RING 11237//dnl!!!
@@ -2029,27 +2038,35 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 						ubResponseLimit = 6;
 					}
 
-					UINT8 ubCloserResponders = 0;
-					for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
-						iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+					// Enemy reinforcements are released as coherent fireteams.  Once the
+					// nearer element fills the current response budget, the next element
+					// stays in reserve instead of feeding individual soldiers into contact.
+					if (pSoldier->bTeam == ENEMY_TEAM)
 					{
-						SOLDIERTYPE *pFriend = MercPtrs[iCounter];
-						if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
-							pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
-							pFriend->aiData.bOrders == STATIONARY || pFriend->aiData.bOrders == SNIPER)
+						fHoldRemoteReserve = AIFireteamShouldHoldReserve(pSoldier, sNoiseGridNo, ubResponseLimit);
+					}
+					else
+					{
+						UINT8 ubCloserResponders = 0;
+						for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+							iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
 						{
-							continue;
-						}
+							SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+							if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+								pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+								pFriend->aiData.bOrders == STATIONARY || pFriend->aiData.bOrders == SNIPER)
+								continue;
 
-						INT32 iFriendDistance = PythSpacesAway(pFriend->sGridNo, sNoiseGridNo);
-						if (iFriendDistance < iResponseDistance ||
-							(iFriendDistance == iResponseDistance && pFriend->ubID < pSoldier->ubID))
-						{
-							++ubCloserResponders;
-							if (ubCloserResponders >= ubResponseLimit)
+							INT32 iFriendDistance = PythSpacesAway(pFriend->sGridNo, sNoiseGridNo);
+							if (iFriendDistance < iResponseDistance ||
+								(iFriendDistance == iResponseDistance && pFriend->ubID < pSoldier->ubID))
 							{
-								fHoldRemoteReserve = TRUE;
-								break;
+								++ubCloserResponders;
+								if (ubCloserResponders >= ubResponseLimit)
+								{
+									fHoldRemoteReserve = TRUE;
+									break;
+								}
 							}
 						}
 					}
@@ -3169,6 +3186,16 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		if (bDisperseAction != AI_ACTION_NONE)
 			return bDisperseAction;
 	}
+	// A soldier whose own element is engaged closes back toward that element
+	// before independently wandering into another fight. One/two-man remnants
+	// are absorbed into the nearest viable element by this same helper.
+	if (AICombatTeam(pSoldier))
+	{
+		INT8 bCohesionAction = DecideFireteamCohesionAction(pSoldier, ubCanMove);
+		if (bCohesionAction != AI_ACTION_NONE)
+			return bCohesionAction;
+	}
+
 	// Persistent break-contact intent outranks ordinary fallback.
 	if (AICombatTeam(pSoldier))
 	{
@@ -4903,6 +4930,15 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				if (bDisperseAction != AI_ACTION_NONE)
 					return bDisperseAction;
 			}
+			// Maintain element cohesion before ordinary offensive movement. Soldiers
+			// already under direct pressure are excluded inside the helper.
+			if (AICombatTeam(pSoldier))
+			{
+				INT8 bCohesionAction = DecideFireteamCohesionAction(pSoldier, ubCanMove);
+				if (bCohesionAction != AI_ACTION_NONE)
+					return bCohesionAction;
+			}
+
 			// Persistent break-contact intent outranks ordinary fallback/attack setup.
 			if (AICombatTeam(pSoldier))
 			{
@@ -8600,17 +8636,6 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 
 	return -1;
 }
-
-extern UINT32 guiTurnCnt;
-
-// Transient sector-local reinforcement pacing. Kept outside SOLDIERTYPE so this
-// does not affect savegame layout. On load/new sector it simply restarts at the
-// first reinforcement wave.
-static UINT32 guiAIEnemyResponseStartTurn = 0;
-static INT32 gsAIEnemyResponseSpot = NOWHERE;
-static INT16 gsAIEnemyResponseSectorX = -1;
-static INT16 gsAIEnemyResponseSectorY = -1;
-static INT8 gbAIEnemyResponseSectorZ = -1;
 
 static UINT32 guiAITacticalVariationTurn[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAITacticalVariationIdentity[MAX_NUM_SOLDIERS] = { 0 };
