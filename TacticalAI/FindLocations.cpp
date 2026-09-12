@@ -1307,65 +1307,45 @@ INT32 FindSpotMaxDistFromOpponents(SOLDIERTYPE *pSoldier)
 	INT32	sOrigin;
 	INT32	iRoamRange;
 
-	// BUILD A LIST OF THREATENING GRID #s FROM PERSONAL & PUBLIC opplistS
+	// BUILD A LIST OF THREATENING GRID #s FROM LEGITIMATE PERSONAL/PUBLIC KNOWLEDGE
 
-	// look through all opponents for those we know of
-	for (uiLoop = 0; uiLoop < guiNumMercSlots; uiLoop++)
+	for (uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
 	{
-		pOpponent = MercSlots[ uiLoop ];
+		pOpponent = MercSlots[uiLoop];
+		if (!pOpponent)
+			continue;
 
-		// if this merc is inactive, at base, on assignment, dead, unconscious
-		if (!pOpponent || (pOpponent->stats.bLife < OKLIFE))
-		{
-			continue;			// next merc
-		}
+		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+		if (bKnowledge == NOT_HEARD_OR_SEEN)
+			continue;
 
-		if (!ValidOpponent(pSoldier, pOpponent))
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pSoldier->bSide == pOpponent->bSide ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			pOpponent->ubBodyType == CROW)
 		{
 			continue;
 		}
 
-		pbPersOL = &(pSoldier->aiData.bOppList[pOpponent->ubID]);
-		pbPublOL = &(gbPublicOpplist[pSoldier->bTeam][pOpponent->ubID]);
+		const BOOLEAN fCurrentContact =
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY ||
+			 PublicKnowledge(pSoldier->bTeam, pOpponent->ubID) == SEEN_CURRENTLY);
+		if (fCurrentContact && !ValidOpponent(pSoldier, pOpponent))
+			continue;
 
-		// if this opponent is unknown personally and publicly
-		if ((*pbPersOL == NOT_HEARD_OR_SEEN) && (*pbPublOL == NOT_HEARD_OR_SEEN))
-		{
-			continue;			// check next opponent
-		}
+		sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
+		if (TileIsOutOfBounds(sThreatLoc))
+			continue;
 
-		// if the opponent is no threat at all for some reason
-		if (CalcManThreatValue(pOpponent,pSoldier->sGridNo,FALSE,pSoldier) == -999)
-		{
-			continue;			// check next opponent
-		}
-
-		// if personal knowledge is more up to date or at least equal
-		if ((gubKnowledgeValue[*pbPublOL - OLDEST_HEARD_VALUE][*pbPersOL - OLDEST_HEARD_VALUE] > 0) || (*pbPersOL == *pbPublOL))
-		{
-			// using personal knowledge, obtain opponent's "best guess" gridno
-			sThreatLoc = gsLastKnownOppLoc[pSoldier->ubID][pOpponent->ubID];
-		}
-		else
-		{
-			// using public knowledge, obtain opponent's "best guess" gridno
-			sThreatLoc = gsPublicLastKnownOppLoc[pSoldier->bTeam][pOpponent->ubID];
-		}
-
-		// calculate how far away this threat is (in adjusted pixels)
-		iThreatRange = GetRangeInCellCoordsFromGridNoDiff( pSoldier->sGridNo, sThreatLoc );
-
+		// A stale threat remains relevant to withdrawal until its knowledge ages out.
+		// Retreat geometry should never improve merely because the hidden target died
+		// or moved after the last observation.
+		iThreatRange = GetRangeInCellCoordsFromGridNoDiff(pSoldier->sGridNo, sThreatLoc);
 		if (iThreatRange < iClosestThreatRange)
-		{
 			iClosestThreatRange = iThreatRange;
-			//NumMessage("New Closest Threat Range = ",iClosestThreatRange);
-		}
 
-		// remember this threat's gridno
-		sThreatGridNo[uiThreatCnt] = sThreatLoc;
-		uiThreatCnt++;
+		sThreatGridNo[uiThreatCnt++] = sThreatLoc;
 	}
-
 	// if no known opponents were found to threaten us, can't worry about them
 	if (!uiThreatCnt)
 	{
