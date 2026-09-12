@@ -2274,6 +2274,7 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 							if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
 								pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
 								(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+								(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 								pFriend->aiData.bOrders == STATIONARY || pFriend->aiData.bOrders == SNIPER)
 								continue;
 
