@@ -1978,7 +1978,8 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 							iReinforcementUrgency = 15;
 						}
 					}
-UINT8 ubCloserResponders = 0;
+
+					UINT8 ubCloserResponders = 0;
 					for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 						iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
 					{
