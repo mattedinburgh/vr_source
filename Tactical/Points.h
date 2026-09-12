@@ -379,6 +379,7 @@ INT16 GetAPsToPicklock( SOLDIERTYPE *pSoldier );
 INT16 GetAPsToBombDoor( SOLDIERTYPE *pSoldier );
 INT16 GetAPsToUntrapDoor( SOLDIERTYPE *pSoldier );
 INT16 GetBasicAPsToPickupItem( SOLDIERTYPE *pSoldier );
+INT16 GetAPsToBreakWindow( SOLDIERTYPE *pSoldier, BOOLEAN fStance );
 INT16 GetAPsToDisarmMine( SOLDIERTYPE *pSoldier );
 
 INT16 GetAPsToJumpWall( SOLDIERTYPE *pSoldier, BOOLEAN fClimbDown );
