@@ -9604,7 +9604,7 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 					PythSpacesAway(pSoldier->sGridNo, sCheckGridNo) < TACTICAL_RANGE / 2 &&
 					PythSpacesAway(pSoldier->sGridNo, sCheckGridNo) > TACTICAL_RANGE / 4 &&
 					!Water(sCheckGridNo, pSoldier->pathing.bLevel) &&
-					!InSmoke(sCheckGridNo, pSoldier->pathing.bLevel) &&
+					!InSmokeNearby(sCheckGridNo, pSoldier->pathing.bLevel) &&
 					/*(pSoldier->RushAttackPrepare() ||
 					fSectorAttack ||
 					AICorpseWarningKnown(pSoldier, sCheckGridNo, pSoldier->pathing.bLevel) ||
@@ -9686,7 +9686,7 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 		if (!pFriend || !pFriend->bActive || !pFriend->bInSector || pFriend->stats.bLife <= 0)
 			continue;
 
-		if (InSmoke(pFriend->sGridNo, pFriend->pathing.bLevel))
+		if (InSmokeNearby(pFriend->sGridNo, pFriend->pathing.bLevel))
 			continue;
 
 		// Current 1.13 smoke-targeting logic avoids water. Do the same here so
