@@ -3099,7 +3099,26 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 				}
 			}
 			// if we can't call in artillery, jam frequencies, so that the player can't use radio skills
-			else if (!pSoldier->IsJamming() && !pSoldier->CanAnyArtilleryStrikeBeOrdered(&tmp))
+			else if (pSoldier->CanAnyArtilleryStrikeBeOrdered(&tmp))
+			{
+				if (SectorJammed())
+				{
+					if (pSoldier->IsJamming())
+					{
+						pSoldier->usAISkillUse = SKILLS_RADIO_TURNOFF;
+						pSoldier->aiData.usActionData = skilltargetgridno;
+						return(AI_ACTION_USE_SKILL);
+					}
+				}
+				else if (gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition &&
+					AISelectKnownArtilleryTarget(pSoldier, &skilltargetgridno))
+				{
+					pSoldier->usAISkillUse = SKILLS_RADIO_ARTILLERY;
+					pSoldier->aiData.usActionData = skilltargetgridno;
+					return(AI_ACTION_USE_SKILL);
+				}
+			}
+			else if (!pSoldier->IsJamming())
 			{
 				pSoldier->usAISkillUse = SKILLS_RADIO_JAM;
 				pSoldier->aiData.usActionData = skilltargetgridno;
@@ -5346,7 +5365,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				}
 			}
 			// frequencies are clear, order a strike
-			else if ( GetBestAoEGridNo(pSoldier, &skilltargetgridno, max(1, gSkillTraitValues.usVOMortarRadius - 2), 1, 2, SoldierCondTrue, SoldierCondFalse) )
+			else if ( AISelectKnownArtilleryTarget(pSoldier, &skilltargetgridno) )
 			{
 				pSoldier->usAISkillUse = SKILLS_RADIO_ARTILLERY;
 				pSoldier->aiData.usActionData = skilltargetgridno;
