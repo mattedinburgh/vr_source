@@ -1919,7 +1919,9 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 
 				if (iResponseDistance > iImmediateResponseRange)
 				{
-					UINT8 ubResponseLimit = 4;
+					// Doctrine defines the initial contact element: security reacts locally,
+					// while ONCALL/mobile elite troops form larger QRFs.
+					UINT8 ubResponseLimit = AIDoctrineResponseLimit(pSoldier);
 
 					// Reinforce in waves. The nearest actually engaged friendly element
 					// determines both perceived enemy strength and whether more troops
@@ -2021,12 +2023,6 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 						UINT8 ubWaveCap = (UINT8)__min((INT32)ubDesiredResponse,
 							(INT32)ubInitialWave + 2 * (INT32)uiElapsedTurns);
 						ubResponseLimit = __max(ubResponseLimit, ubWaveCap);
-					}
-					else if (pSoldier->aiData.bOrders == ONCALL || pSoldier->aiData.bOrders == SEEKENEMY)
-					{
-						// Before confirmed radio contact, mobile reserve troops can still
-						// enlarge the immediate sound response slightly, but no global wave.
-						ubResponseLimit = 6;
 					}
 
 					UINT8 ubCloserResponders = 0;
@@ -2824,6 +2820,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			(AIFriendNeedsCoveringFire(pSoldier, BestShot.ubOpponent) ||
 			 AIFriendWithdrawingNeedsCover(pSoldier, BestShot.ubOpponent) ||
 			 AIFriendAdvancingNeedsCover(pSoldier, BestShot.ubOpponent));
+		BOOLEAN fDoctrineProactiveSupport = AIAllowsProactiveSupport(pSoldier);
 
 		// WarmSteel - Because of suppression fire, we need enough ammo to even consider suppressing
 		// This means we need to reload. Also reload if we're just plainly low on bullets.
@@ -2831,7 +2828,10 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		if( BestShot.bWeaponIn != NO_SLOT &&
 			!TANK(pSoldier) &&
 			pSoldier->bActionPoints > APBPConstants[AP_MINIMUM] &&
-			(fCoveringFireSupport || !pSoldier->aiData.bUnderFire && !GuySawEnemy(pSoldier, SEEN_LAST_TURN) && (TileIsOutOfBounds(sClosestOpponent) || PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 2) || AICheckIsMachinegunner(pSoldier) && Chance(25) || Chance(10)) &&
+			(fCoveringFireSupport || fDoctrineProactiveSupport &&
+			 (!pSoldier->aiData.bUnderFire && !GuySawEnemy(pSoldier, SEEN_LAST_TURN) &&
+			  (TileIsOutOfBounds(sClosestOpponent) || PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 2) ||
+			  AICheckIsMachinegunner(pSoldier) && Chance(25) || Chance(10))) &&
 			IsGunAutofireCapable(&pSoldier->inv[BestShot.bWeaponIn]) &&
 			Weapon[pSoldier->inv[BestShot.bWeaponIn].usItem].swapClips &&
 			pSoldier->inv[BestShot.bWeaponIn][0]->data.gun.ubGunShotsLeft < gGameExternalOptions.ubAISuppressionMinimumAmmo &&
@@ -2869,13 +2869,21 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			}
 		}
 
+		// Security/ordinary line troops suppress reactively (direct contact, return fire,
+		// or a specific covering-fire task). Veterans/elites may establish fire proactively.
+		BOOLEAN fDoctrineSuppressionTask = fCoveringFireSupport ||
+			pSoldier->aiData.bUnderFire ||
+			GuySawEnemy(pSoldier, SEEN_LAST_TURN) ||
+			fDoctrineProactiveSupport;
+
 		//must have a small chance to hit and the opponent must be on the ground (can't suppress guys on the roof)
 		// HEADROCK HAM BETA2.4: Adjusted this for a random chance to suppress regardless of chance. This augments
 		// current revamp of suppression fire.
 
 		// CHRISL: Changed from a simple flag to two externalized values for more modder control over AI suppression
 		// WarmSteel - Don't *always* try to suppress when under 50 CTH
-		if (BestShot.ubPossible &&
+		if (fDoctrineSuppressionTask &&
+			BestShot.ubPossible &&
 			BestShot.bWeaponIn != NO_SLOT &&
 			// check valid target
 			!TileIsOutOfBounds(BestShot.sTarget) &&
@@ -8474,6 +8482,7 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		(pSoldier->aiData.bAttitude == BRAVESOLO || pSoldier->aiData.bAttitude == BRAVEAID) && CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) > 2) &&
 		AICombatTeam(pSoldier) &&
 		!AIShouldAvoidAdvance(pSoldier) &&
+		AIAllowsIndependentFlank(pSoldier) &&
 		pSoldier->ubSoldierClass != SOLDIER_CLASS_ADMINISTRATOR &&
 		!AICheckSpecialRole(pSoldier) &&		
 		gAnimControl[pSoldier->usAnimState].ubHeight != ANIM_PRONE &&
@@ -8754,6 +8763,18 @@ void PrepareMainRedAIWeights(SOLDIERTYPE *pSoldier, INT8 &bSeekPts, INT8 &bHelpP
 		}
 	}
 
+	// Formation doctrine reinforces existing map orders. Security and elite guards
+	// are mission-anchored; mobile elites retain operational freedom.
+	INT8 bDoctrineAnchor = AIDoctrineAnchorModifier(pSoldier);
+	if (bDoctrineAnchor < 0 && bSeekPts > -90)
+	{
+		bSeekPts += bDoctrineAnchor;
+		if (bWatchPts > -90)
+			bWatchPts += __min((INT8)3, (INT8)((-bDoctrineAnchor + 1) / 2));
+		if (bHidePts > -90 && bDoctrineAnchor <= -3)
+			bHidePts += 1;
+	}
+
 	// modify tendencies according to attitude
 	switch (pSoldier->aiData.bAttitude)
 	{
@@ -8816,6 +8837,14 @@ void PrepareMainRedAIWeights(SOLDIERTYPE *pSoldier, INT8 &bSeekPts, INT8 &bHelpP
 
 INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 {
+	// Loss of local command ends an uncommanded regular's complex flank; elites and
+	// veteran/cunning troops can continue independently.
+	if (pSoldier->bTeam == ENEMY_TEAM && !AIAllowsIndependentFlank(pSoldier))
+	{
+		pSoldier->numFlanks = MAX_FLANKS_RED;
+		return -1;
+	}
+
 	if (AIShouldAvoidAdvance(pSoldier))
 	{
 		// End the manoeuvre cleanly; ordinary RED logic can now hold/fallback instead.
@@ -9478,6 +9507,11 @@ INT8 DecideUseGrenadeSpecial(SOLDIERTYPE *pSoldier)
 INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 {
 	DebugAI(AI_MSG_TOPIC, pSoldier, String("[Smoke to cover movement]"));
+
+	// Movement smoke is a coordinated support task. Emergency casualty/self-
+	// protection smoke remains available to lower-quality troops elsewhere.
+	if (pSoldier && pSoldier->bTeam == ENEMY_TEAM && !AIAllowsProactiveSupport(pSoldier))
+		return -1;
 
 	ATTACKTYPE BestThrow;
 
