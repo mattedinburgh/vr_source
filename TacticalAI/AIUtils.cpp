@@ -5683,6 +5683,17 @@ INT32 AISupportRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	if (AIGunAutofireCapable(pSoldier))
 		iScore += 10;
 
+	if (AICheckIsRadioOperator(pSoldier))
+		iScore += 14;
+	if (AICheckIsCommander(pSoldier))
+		iScore += 12;
+	else if (AICheckIsOfficer(pSoldier))
+		iScore += 6;
+	if (AICheckIsGLOperator(pSoldier))
+		iScore += 12;
+	if (AICheckIsMortarOperator(pSoldier))
+		iScore += 10;
+
 	iScore += __min((INT32)18, iGunRange / 2);
 	iScore += __max(-8, __min(18, ((INT32)pSoldier->stats.bMarksmanship - 60) / 2));
 
@@ -5764,8 +5775,14 @@ INT32 AIManeuverRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		iScore -= 18;
 	if (AICheckIsMortarOperator(pSoldier))
 		iScore -= 35;
+	if (AICheckIsRadioOperator(pSoldier))
+		iScore -= 24;
 	if (AICheckIsCommander(pSoldier))
-		iScore -= 10;
+		iScore -= 18;
+	else if (AICheckIsOfficer(pSoldier))
+		iScore -= 8;
+	if (AICheckIsGLOperator(pSoldier))
+		iScore -= 12;
 	if (AICheckIsMedic(pSoldier))
 		iScore -= 10;
 
