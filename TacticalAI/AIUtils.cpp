@@ -3887,6 +3887,8 @@ UINT8 CountFriendsInDirection(SOLDIERTYPE *pSoldier, UINT8 ubDirection, INT16 sD
 		if (pFriend &&
 			pFriend != pSoldier &&
 			pFriend->bActive &&
+			pFriend->bInSector &&
+			AISameFireteam(pSoldier, pFriend) &&
 			pFriend->stats.bLife >= OKLIFE &&
 			AIDirection(pSoldier->sGridNo, pFriend->sGridNo) == ubDirection &&
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) <= sDistance &&
@@ -8289,6 +8291,8 @@ UINT8 CountFriendsLastAttackHit(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 sDis
 		if (pFriend &&
 			pFriend != pSoldier &&
 			pFriend->bActive &&
+			pFriend->bInSector &&
+			AISameFireteam(pSoldier, pFriend) &&
 			pFriend->stats.bLife >= OKLIFE &&
 			pFriend->aiData.bOrders > ONGUARD &&
 			PythSpacesAway(sGridNo, pFriend->sGridNo) <= sDistance &&
