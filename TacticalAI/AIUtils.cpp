@@ -4843,7 +4843,21 @@ UINT16 AIPerceivedEnemyStrength(SOLDIERTYPE *pSoldier)
 
 		// ThreatPercent already encodes JA2's confidence in seen/heard information:
 		// current sight is strongest; stale contacts count progressively less.
-		uiStrength += ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+		UINT32 uiContactStrength = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+
+		// A personally observed incapacitated human is still a residual threat because
+		// he may recover or be revived, but he should not count like an active rifleman.
+		// Public/stale contacts keep their normal uncertainty weight.
+		if (PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			IS_MERC_BODY_TYPE(pOpponent) &&
+			!pOpponent->IsZombie() &&
+			(pOpponent->stats.bLife < OKLIFE ||
+			 (pOpponent->bCollapsed && pOpponent->bBreath < OKBREATH)))
+		{
+			uiContactStrength = __max((UINT32)10, uiContactStrength / 5);
+		}
+
+		uiStrength += uiContactStrength;
 	}
 
 	return (UINT16)__min((UINT32)65535, uiStrength);
