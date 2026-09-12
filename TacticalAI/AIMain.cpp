@@ -2605,7 +2605,10 @@ void ATTACKTYPE::InitAttackType(ATTACKTYPE *pAttack)//dnl ch69 140913
 void HandleInitialRedAlert( INT8 bTeam, UINT8 ubCivGroup)
 {
 	// sevenfm: even if sector jammed, we still need to alert friends
-	AlertFriends(bTeam, ubCivGroup);
+	// Do not force every soldier in the sector to RED merely because one man
+	// established contact. Local soldiers escalate through sight, fire and
+	// ManChecksOnFriends(); radio/public knowledge informs distant groups without
+	// instantly committing the whole sector to the same firefight.
 
 	// Flugente radio operator: if the sector is jammed, no radio communication possible
 	if ( SectorJammed() )
@@ -2643,7 +2646,8 @@ void HandleInitialRedAlert( INT8 bTeam, UINT8 ubCivGroup)
 		}
 	}
 
-	// remember enemies are alerted, prevent another red alert from happening
+	// Team-level awareness means contact has been reported; it no longer means
+	// every individual soldier has personally escalated to RED.
 	gTacticalStatus.Team[ bTeam ].bAwareOfOpposition = TRUE;
 }
 
