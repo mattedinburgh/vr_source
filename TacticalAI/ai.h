@@ -301,7 +301,26 @@ enum
 	AI_BATTLE_CATASTROPHIC
 };
 
+// Enemy doctrine describes training/initiative rather than granting hidden combat bonuses.
+// Deidranna's heterogeneous forces keep the same fair knowledge model, but differ in
+// how independently they can coordinate complex tactics.
+enum
+{
+	AI_DOCTRINE_SECURITY = 0,		// administrators / armed regime security
+	AI_DOCTRINE_LINE,			// ordinary army rank and file
+	AI_DOCTRINE_VETERAN,			// cunning regulars and local leaders
+	AI_DOCTRINE_ELITE_MOBILE,		// blackshirt / professional mobile element
+	AI_DOCTRINE_ELITE_GUARD		// elite troops tied to a defensive mission
+};
+
 BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier);
+UINT8 AIGetDoctrineProfile(SOLDIERTYPE *pSoldier);
+BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier);
+BOOLEAN AIAllowsComplexManeuver(SOLDIERTYPE *pSoldier);
+BOOLEAN AIAllowsIndependentFlank(SOLDIERTYPE *pSoldier);
+BOOLEAN AIAllowsProactiveSupport(SOLDIERTYPE *pSoldier);
+UINT8 AIDoctrineResponseLimit(SOLDIERTYPE *pSoldier);
+INT8 AIDoctrineAnchorModifier(SOLDIERTYPE *pSoldier);
 UINT8 AIObservedRecentCasualties(SOLDIERTYPE *pSoldier);
 UINT8 AILocalCasualtyPercent(SOLDIERTYPE *pSoldier);
 UINT8 AIFriendlyCasualtyPercent(SOLDIERTYPE *pSoldier);
