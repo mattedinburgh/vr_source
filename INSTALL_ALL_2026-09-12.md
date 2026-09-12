@@ -49,6 +49,7 @@ Use this branch as the single source install candidate:
 - Dynamic/mod-aware artillery shell and launcher lookup.
 - Knowledge-safe AI artillery target selection.
 - Existing Vengeance radio/jamming/error handling retained.
+- Artillery remains physically sector-sourced: support is only ordered from eligible adjacent strategic sectors, with direction, troops/mortars/ammunition and cooldowns derived from that firing sector. No magical CAS/airstrike spawn is introduced.
 
 ### Downed casualties
 - Symmetric player/enemy/militia downed state for eligible human combatants.
@@ -57,6 +58,9 @@ Use this branch as the single source install candidate:
 - First aid stabilizes the casualty.
 - Stabilized casualties remain incapacitated for the rest of the fight and can recover normally outside combat.
 - Battle-end cleanup no longer automatically executes these casualties.
+- Player rescuers can face an adjacent downed friendly and press **Backslash** to stabilize and drag them to safety.
+- Dragging requires a free hand, forces walking, costs pickup AP to start in combat, and adds a 50% movement-AP burden; press Backslash again to release.
+- Drag state is transient and does not consume more SOLDIERTYPE/savegame bytes.
 - Save-structure size preserved by consuming existing filler bytes rather than expanding SOLDIERTYPE.
 
 ### UI / presentation / fixes
@@ -66,13 +70,12 @@ Use this branch as the single source install candidate:
 - Melee aiming-circle preservation under NCTH.
 - Flare throw flash behavior.
 - Interrupted throw item return and self-target attack deadlock fixes.
+- **Improve gear** restored in the Ctrl+. tactical-functions menu: outside combat, it exchanges worn items for better-condition identical reachable sector items and consolidates/restocks matching magazine stacks.
 
 ## Deliberately not claimed as implemented
 
-These were discussed but are not in this install candidate because they require separate safe implementation:
-- Carry/drag a downed soldier to safety.
-- New separate CAS/airstrike subsystem. Legacy Air Raid remains unsuitable and is not re-enabled.
-- The unverified equipment-upgrade shortcut/button.
+The following remains deliberately excluded:
+- A separate CAS/airstrike subsystem. Legacy Air Raid remains unsuitable and is not re-enabled; the implemented radio/artillery system instead requires real support from an eligible adjacent strategic sector.
 
 ## Validation performed
 
