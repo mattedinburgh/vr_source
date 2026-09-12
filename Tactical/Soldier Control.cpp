@@ -9740,7 +9740,7 @@ BOOLEAN IsBleedoutCasualty( SOLDIERTYPE *pSoldier )
 		return FALSE;
 
 	if ( pSoldier->ubBleedoutState == BLEEDOUT_ACTIVE )
-		return ( pSoldier->ubBleedoutTurns >= 1 && pSoldier->ubBleedoutTurns <= 6 );
+		return ( pSoldier->ubBleedoutTurns >= 1 && pSoldier->ubBleedoutTurns <= 7 );
 
 	if ( pSoldier->ubBleedoutState == BLEEDOUT_STABILIZED )
 		return ( pSoldier->ubBleedoutTurns == 0 );
@@ -10160,13 +10160,13 @@ static UINT8 BleedoutRescueTurns( INT16 sLifeDeduct, INT8 bOldLife )
 	INT16 sOverkill = __max( 0, sLifeDeduct - (INT16)bOldLife );
 
 	if ( sOverkill <= 5 )
-		return 5;
+		return 6;
 	if ( sOverkill <= 10 )
-		return 4;
+		return 5;
 	if ( sOverkill <= 20 )
-		return 3;
+		return 4;
 
-	return 2;
+	return 4;
 }
 
 
@@ -10240,7 +10240,7 @@ void ProcessBleedoutCasualties( )
 			continue;
 		}
 
-		if ( pSoldier->ubBleedoutTurns == 0 || pSoldier->ubBleedoutTurns > 6 )
+		if ( pSoldier->ubBleedoutTurns == 0 || pSoldier->ubBleedoutTurns > 7 )
 		{
 			pSoldier->ClearBleedoutDragLinks();
 			pSoldier->ubBleedoutState = BLEEDOUT_NONE;
@@ -10597,7 +10597,7 @@ UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPo
 		this->stats.bLife = 1;
 		this->ubBleedoutState = BLEEDOUT_ACTIVE;
 		// One hidden buffer tick prevents a casualty created late in the round from
-		// losing one of the promised 2-5 rescue turns immediately at round end.
+		// losing one of the promised 4-6 rescue turns immediately at round end.
 		this->ubBleedoutTurns = BleedoutRescueTurns( sLifeDeduct, bOldLife ) + 1;
 	}
 
