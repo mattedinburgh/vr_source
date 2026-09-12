@@ -2185,7 +2185,42 @@ BOOLEAN SOLDIERTYPE::Load(HWFILE hFile)
 			numBytesRead = ReadFieldByField(hFile, &this->usAISkillUse, sizeof(usAISkillUse), sizeof(UINT8), numBytesRead);
 			numBytesRead = ReadFieldByField(hFile, &this->usSkillCounter, sizeof(usSkillCounter), sizeof(UINT16), numBytesRead);
 			numBytesRead = ReadFieldByField(hFile, &this->usSkillCooldown, sizeof(usSkillCooldown), sizeof(UINT32), numBytesRead);
+
+			// Downed/drag state consumes four bytes that previously belonged to ubFiller.
+			// The total SOLDIERTYPE POD size remains unchanged; consuming these bytes
+			// explicitly preserves alignment for legacy version-151 saves.
+			numBytesRead = ReadFieldByField(hFile, &this->ubBleedoutTurns, sizeof(ubBleedoutTurns), sizeof(UINT8), numBytesRead);
+			numBytesRead = ReadFieldByField(hFile, &this->ubBleedoutState, sizeof(ubBleedoutState), sizeof(UINT8), numBytesRead);
+			numBytesRead = ReadFieldByField(hFile, &this->ubDraggedCasualtyID, sizeof(ubDraggedCasualtyID), sizeof(UINT8), numBytesRead);
+			numBytesRead = ReadFieldByField(hFile, &this->ubDraggedByID, sizeof(ubDraggedByID), sizeof(UINT8), numBytesRead);
 			numBytesRead = ReadFieldByField(hFile, &this->ubFiller, sizeof(ubFiller), sizeof(UINT8), numBytesRead);
+
+			// Old version-151 saves used these four bytes as filler. Normalise legacy
+			// zero-filled or otherwise impossible combinations after reading them.
+			if ( this->ubBleedoutState == BLEEDOUT_NONE )
+			{
+				this->ubBleedoutTurns = 0;
+				this->ubDraggedCasualtyID = NOBODY;
+				this->ubDraggedByID = NOBODY;
+			}
+			else if ( this->ubBleedoutState > BLEEDOUT_STABILIZED ||
+				(this->ubBleedoutState == BLEEDOUT_ACTIVE &&
+				 (this->ubBleedoutTurns < 1 || this->ubBleedoutTurns > 6)) )
+			{
+				this->ubBleedoutTurns = 0;
+				this->ubBleedoutState = BLEEDOUT_NONE;
+				this->ubDraggedCasualtyID = NOBODY;
+				this->ubDraggedByID = NOBODY;
+			}
+			else
+			{
+				if ( this->ubBleedoutState == BLEEDOUT_STABILIZED )
+					this->ubBleedoutTurns = 0;
+				if ( this->ubDraggedCasualtyID >= TOTAL_SOLDIERS )
+					this->ubDraggedCasualtyID = NOBODY;
+				if ( this->ubDraggedByID >= TOTAL_SOLDIERS )
+					this->ubDraggedByID = NOBODY;
+			}
 		}
 		else
 		{
@@ -2421,7 +2456,7 @@ BOOLEAN SOLDIERTYPE::Load(HWFILE hFile)
 			return(FALSE);
 		}
 
-		// WANNE - BMP: TODO! Struktur prüfen
+		// WANNE - BMP: TODO! Struktur prÃ¼fen
 		//load some structs, atm just POD but could change
 		//Load STRUCT_AIData
 		numBytesRead = 0;
