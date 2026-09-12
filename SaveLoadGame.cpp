@@ -2205,7 +2205,7 @@ BOOLEAN SOLDIERTYPE::Load(HWFILE hFile)
 			}
 			else if ( this->ubBleedoutState > BLEEDOUT_STABILIZED ||
 				(this->ubBleedoutState == BLEEDOUT_ACTIVE &&
-				 (this->ubBleedoutTurns < 1 || this->ubBleedoutTurns > 6)) )
+				 (this->ubBleedoutTurns < 1 || this->ubBleedoutTurns > 7)) )
 			{
 				this->ubBleedoutTurns = 0;
 				this->ubBleedoutState = BLEEDOUT_NONE;
