@@ -8517,7 +8517,8 @@ UINT32 AICalcChanceToHitGun(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTim
 
 		if (dAperture == 0)
 		{
-			return 100;
+			// Perfect muzzle alignment still has to pass the weapon-range checks below.
+			uiChance = 100;
 		}
 		else
 		{
