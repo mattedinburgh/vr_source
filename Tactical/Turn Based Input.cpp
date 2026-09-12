@@ -748,8 +748,10 @@ void	QueryTBLeftButton( UINT32 *puiNewEvent )
 													{
 														if ( !HandleUIReloading( pSoldier ) )
 														{
-															// ATE: Reset refine aim..
-															pSoldier->aiData.bShownAimTime = 0;
+															// Normal attacks begin confirmation from zero aim. Hand grenades can
+															// already have deliberate aim selected in ACTION_MODE, so preserve it.
+															if ( GetActionModeCursor( pSoldier ) != TOSSCURS )
+																pSoldier->aiData.bShownAimTime = 0;
 
 															if ( gsCurrentActionPoints == 0 )
 															{
