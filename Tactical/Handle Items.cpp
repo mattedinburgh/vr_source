@@ -292,6 +292,14 @@ INT32 HandleItem( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel, UINT16 usHa
 		Item[usHandItem].usItemClass != IC_MEDKIT && !Item[usHandItem].gascan &&
 		!ItemCanBeAppliedToOthers( usHandItem ) )
 	{
+		// Current 1.13 safety fix: never let an attack resolve against the acting soldier.
+		// Self-heal and other valid self-use actions are excluded by the conditions above.
+		if ( pSoldier == pTargetSoldier )
+		{
+			TacticalCharacterDialogue( pSoldier, QUOTE_REFUSING_ORDER );
+			return( ITEM_HANDLE_REFUSAL );
+		}
+
 		if ( pSoldier->ubProfile != NO_PROFILE	)
 		{
 			// nice mercs won't shoot other nice guys or neutral civilians
