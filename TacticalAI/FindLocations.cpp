@@ -287,6 +287,7 @@ INT32 CalcCoverValue(SOLDIERTYPE *pMe, INT32 sMyGridNo, INT32 iMyThreat, INT32 i
 	INT32	iMyPosValue, iHisPosValue, iCoverValue;
 	INT32	iReductionFactor, iThisScale;
 	INT32	sHisGridNo, sMyRealGridNo = NOWHERE, sHisRealGridNo = NOWHERE;
+	INT8	bHisRealLevel = -1;
 	INT16 sTempX, sTempY;
 	FLOAT dMyX, dMyY, dHisX, dHisY;
 	INT8	bHisBestCTGT, bHisActualCTGT, bHisCTGT, bMyCTGT;
@@ -305,8 +306,7 @@ INT32 CalcCoverValue(SOLDIERTYPE *pMe, INT32 sMyGridNo, INT32 iMyThreat, INT32 i
 	sHisGridNo = Threat[uiThreatIndex].sGridNo;
 
 	// sevenfm
-	//bHisLevel = Threat[uiThreatIndex].bLevel;
-	bHisLevel = pHim->pathing.bLevel;
+	bHisLevel = Threat[uiThreatIndex].bLevel;
 	bMyLevel = pMe->pathing.bLevel;
 	UINT8 ubFriendlyFireChance = 0;
 
@@ -327,13 +327,15 @@ INT32 CalcCoverValue(SOLDIERTYPE *pMe, INT32 sMyGridNo, INT32 iMyThreat, INT32 i
 	}
 
 	// if this is theoretical, and he's not actually at hisGrid right now
-	if (pHim->sGridNo != sHisGridNo)
+	if (pHim->sGridNo != sHisGridNo || pHim->pathing.bLevel != bHisLevel)
 	{
-		sHisRealGridNo = pHim->sGridNo;		// remember where he REALLY is
+		sHisRealGridNo = pHim->sGridNo;
+		bHisRealLevel = pHim->pathing.bLevel;
 		dHisX = pHim->dXPos;
 		dHisY = pHim->dYPos;
 
-		pHim->sGridNo = sHisGridNo;			// but pretend he's standing at sHisGridNo
+		pHim->sGridNo = sHisGridNo;
+		pHim->pathing.bLevel = bHisLevel;
 		ConvertGridNoToCenterCellXY( sHisGridNo, &sTempX, &sTempY );
 		pHim->dXPos = (FLOAT) sTempX;
 		pHim->dYPos = (FLOAT) sTempY;
@@ -431,9 +433,11 @@ INT32 CalcCoverValue(SOLDIERTYPE *pMe, INT32 sMyGridNo, INT32 iMyThreat, INT32 i
 	
 	if (!TileIsOutOfBounds(sHisRealGridNo))
 	{
-		pHim->sGridNo = sHisRealGridNo;		// put HIM back where HE belongs!
-		pHim->dXPos = dHisX;					// also change the 'x'
-		pHim->dYPos = dHisY;					// and the 'y'
+		pHim->sGridNo = sHisRealGridNo;
+		if (bHisRealLevel >= 0)
+			pHim->pathing.bLevel = bHisRealLevel;
+		pHim->dXPos = dHisX;
+		pHim->dYPos = dHisY;
 	}
 
 	// sevenfm: special calculations for zombies: zombie is very dangerous at close range
@@ -680,9 +684,6 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 	BOOLEAN fProneCover;
 	BOOLEAN fSightCover;
 	UINT8 ubDiff = SoldierDifficultyLevel( pSoldier );
-	// Keep the believed level alongside each Threat entry. The legacy Threat
-	// structure stores the believed grid but not the corresponding known level.
-	INT8 bThreatLevel[MAXMERCS];
 
 	INT32 iMinPercentbetter = MIN_PERCENT_BETTER;
 	iMinPercentbetter += iMinPercentbetter * pSoldier->usSkillCounter[SOLDIER_COUNTER_COVER];
@@ -788,13 +789,7 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 	{
 		pOpponent = MercSlots[ uiLoop ];
 
-		// if this merc is inactive, at base, on assignment, dead, unconscious
-		if (!pOpponent || pOpponent->stats.bLife < OKLIFE)
-		{
-			continue;			// next merc
-		}
-
-		if (!ValidOpponent(pSoldier, pOpponent))
+		if (!pOpponent)
 		{
 			continue;
 		}
@@ -802,6 +797,26 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 		pbPersOL = pSoldier->aiData.bOppList + pOpponent->ubID;
 		pbPublOL = gbPublicOpplist[pSoldier->bTeam] + pOpponent->ubID;
 		pusLastLoc = gsLastKnownOppLoc[pSoldier->ubID] + pOpponent->ubID;
+
+		if (*pbPersOL == NOT_HEARD_OR_SEEN && *pbPublOL == NOT_HEARD_OR_SEEN)
+		{
+			continue;
+		}
+
+		BOOLEAN fCurrentThreat = (*pbPersOL == SEEN_CURRENTLY || *pbPublOL == SEEN_CURRENTLY);
+		// Relation/identity is stable knowledge; live life/sector state is not. A
+		// stale contact remains a possible threat until the knowledge system ages it out.
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pSoldier->bSide == pOpponent->bSide ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			pOpponent->ubBodyType == CROW)
+		{
+			continue;
+		}
+		if (fCurrentThreat && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife < OKLIFE || pOpponent->IsEmptyVehicle()))
+		{
+			continue;
+		}
 
 		// A previous attacker is not automatically known at his live engine position.
 		// Use the exact grid only while somebody on the team actually sees him;
@@ -811,7 +826,7 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 			(*pbPersOL == SEEN_CURRENTLY || *pbPublOL == SEEN_CURRENTLY))
 		{
 			sThreatLoc = pOpponent->sGridNo;
-			bThreatLevel[uiThreatCnt] = pOpponent->pathing.bLevel;
+			Threat[uiThreatCnt].bLevel = pOpponent->pathing.bLevel;
 			iThreatCertainty = ThreatPercent[SEEN_CURRENTLY - OLDEST_HEARD_VALUE];
 		}
 		else
@@ -828,14 +843,14 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 			{
 				// using personal knowledge, obtain opponent's "best guess" gridno/level
 				sThreatLoc = *pusLastLoc;
-				bThreatLevel[uiThreatCnt] = gbLastKnownOppLevel[pSoldier->ubID][pOpponent->ubID];
+				Threat[uiThreatCnt].bLevel = gbLastKnownOppLevel[pSoldier->ubID][pOpponent->ubID];
 				iThreatCertainty = ThreatPercent[*pbPersOL - OLDEST_HEARD_VALUE];
 			}
 			else
 			{
 				// using public knowledge, obtain opponent's "best guess" gridno/level
 				sThreatLoc = gsPublicLastKnownOppLoc[pSoldier->bTeam][pOpponent->ubID];
-				bThreatLevel[uiThreatCnt] = gbPublicLastKnownOppLevel[pSoldier->bTeam][pOpponent->ubID];
+				Threat[uiThreatCnt].bLevel = gbPublicLastKnownOppLevel[pSoldier->bTeam][pOpponent->ubID];
 				iThreatCertainty = ThreatPercent[*pbPublOL - OLDEST_HEARD_VALUE];
 			}
 		}
@@ -860,26 +875,29 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 			continue;			// check next opponent
 		}
 
-		// remember this opponent as a current threat, but DON'T REDUCE FOR COVER!
-		Threat[uiThreatCnt].iValue = CalcManThreatValue(pOpponent,pSoldier->sGridNo,FALSE,pSoldier);
+		Threat[uiThreatCnt].pOpponent = pOpponent;
+		Threat[uiThreatCnt].sGridNo = sThreatLoc;
+		Threat[uiThreatCnt].iCertainty = iThreatCertainty;
+		Threat[uiThreatCnt].iOrigRange = iThreatRange;
+		Threat[uiThreatCnt].bPersonalKnowledge = *pbPersOL;
+		Threat[uiThreatCnt].bPublicKnowledge = *pbPublOL;
+		Threat[uiThreatCnt].bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
 
-		// if the opponent is no threat at all for some reason
-		if (Threat[uiThreatCnt].iValue == -999)
+		// Exact wounds/AP/weapon state is legitimate only for a current contact.
+		// Stale contacts retain a neutral threat prior and are already discounted by
+		// iCertainty in CalcCoverValue.
+		if (fCurrentThreat)
 		{
-			//NameMessage(pOpponent,"is thought to be no threat");
-			continue;			// check next opponent
+			Threat[uiThreatCnt].iValue = CalcManThreatValue(pOpponent,pSoldier->sGridNo,FALSE,pSoldier);
+			Threat[uiThreatCnt].iAPs = pOpponent->CalcActionPoints();
+			if (Threat[uiThreatCnt].iValue == -999)
+				continue;
 		}
-
-		//NameMessage(pOpponent,"added to the list of threats");
-		//NumMessage("His/Her threat value = ",threatValue[uiThreatCnt]);
-
-		Threat[uiThreatCnt].pOpponent		= pOpponent;
-		Threat[uiThreatCnt].sGridNo			= sThreatLoc;
-		Threat[uiThreatCnt].iCertainty	= iThreatCertainty;
-		Threat[uiThreatCnt].iOrigRange	= iThreatRange;
-
-		// calculate how many APs he will have at the start of the next turn
-		Threat[uiThreatCnt].iAPs = pOpponent->CalcActionPoints();
+		else
+		{
+			Threat[uiThreatCnt].iValue = 100;
+			Threat[uiThreatCnt].iAPs = APBPConstants[AP_MAXIMUM];
+		}
 
 		if (iThreatRange < iClosestThreatRange)
 		{
@@ -920,12 +938,12 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 		// Evaluate cover from the believed threat location/level. Using the hidden
 		// opponent object's current level (and current visibility range) leaked roof
 		// changes and other unseen state into cover selection.
-		if( LocationToLocationLineOfSightTest( Threat[uiLoop].sGridNo, bThreatLevel[uiLoop], pSoldier->sGridNo, pSoldier->pathing.bLevel, TRUE, MAX_VISION_RANGE, STANDING_LOS_POS, PRONE_LOS_POS) )
+		if( LocationToLocationLineOfSightTest( Threat[uiLoop].sGridNo, Threat[uiLoop].bLevel, pSoldier->sGridNo, pSoldier->pathing.bLevel, TRUE, MAX_VISION_RANGE, STANDING_LOS_POS, PRONE_LOS_POS) )
 		//if ( SoldierToVirtualSoldierLineOfSightTest( Threat[uiLoop].pOpponent, pSoldier->sGridNo, pSoldier->pathing.bLevel, ANIM_PRONE, TRUE, -1 ) != 0 )
 		{
 			fProneCover = FALSE;
 		}
-		if( LocationToLocationLineOfSightTest( Threat[uiLoop].sGridNo, bThreatLevel[uiLoop], pSoldier->sGridNo, pSoldier->pathing.bLevel, TRUE, MAX_VISION_RANGE, STANDING_LOS_POS, STANDING_LOS_POS) )
+		if( LocationToLocationLineOfSightTest( Threat[uiLoop].sGridNo, Threat[uiLoop].bLevel, pSoldier->sGridNo, pSoldier->pathing.bLevel, TRUE, MAX_VISION_RANGE, STANDING_LOS_POS, STANDING_LOS_POS) )
 			//if ( SoldierToVirtualSoldierLineOfSightTest( Threat[uiLoop].pOpponent, pSoldier->sGridNo, pSoldier->pathing.bLevel, ANIM_PRONE, TRUE, -1 ) != 0 )
 		{
 			fSightCover = FALSE;
@@ -1137,12 +1155,12 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 						(pSoldier->bActionPoints - iPathCost),
 						uiLoop,iThreatRange,morale,&iCoverScale);
 				}
-				if( LocationToLocationLineOfSightTest( Threat[uiLoop].sGridNo, bThreatLevel[uiLoop], sGridNo, pSoldier->pathing.bLevel, TRUE, MAX_VISION_RANGE, STANDING_LOS_POS, PRONE_LOS_POS) )
+				if( LocationToLocationLineOfSightTest( Threat[uiLoop].sGridNo, Threat[uiLoop].bLevel, sGridNo, pSoldier->pathing.bLevel, TRUE, MAX_VISION_RANGE, STANDING_LOS_POS, PRONE_LOS_POS) )
 				//if ( SoldierToVirtualSoldierLineOfSightTest( Threat[uiLoop].pOpponent, sGridNo, pSoldier->pathing.bLevel, ANIM_PRONE, TRUE, -1 ) != 0 )
 				{
 					fProneCover = FALSE;
 				}
-				if( LocationToLocationLineOfSightTest( Threat[uiLoop].sGridNo, bThreatLevel[uiLoop], sGridNo, pSoldier->pathing.bLevel, TRUE, MAX_VISION_RANGE, STANDING_LOS_POS, STANDING_LOS_POS) )
+				if( LocationToLocationLineOfSightTest( Threat[uiLoop].sGridNo, Threat[uiLoop].bLevel, sGridNo, pSoldier->pathing.bLevel, TRUE, MAX_VISION_RANGE, STANDING_LOS_POS, STANDING_LOS_POS) )
 					//if ( SoldierToVirtualSoldierLineOfSightTest( Threat[uiLoop].pOpponent, sGridNo, pSoldier->pathing.bLevel, ANIM_PRONE, TRUE, -1 ) != 0 )
 				{
 					fSightCover = FALSE;
