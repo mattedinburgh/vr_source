@@ -2737,6 +2737,50 @@ void GetKeyboardInput( UINT32 *puiNewEvent )
 				}
 				break;
 
+			case '\\':
+				// 1.13-style contextual interaction: break an intact window first;
+				// otherwise start/stop dragging an adjacent living downed teammate.
+				if ( gusSelectedSoldier != NOBODY )
+				{
+					SOLDIERTYPE *pSoldier = MercPtrs[ gusSelectedSoldier ];
+					if ( pSoldier )
+					{
+						if ( pSoldier->CanBreakWindow() )
+						{
+							if ( EnoughPoints( pSoldier, GetAPsToBreakWindow( pSoldier, TRUE ), BP_USE_CROWBAR, TRUE ) )
+								pSoldier->BreakWindow();
+						}
+						else if ( pSoldier->IsDraggingBleedoutCasualty() )
+						{
+							pSoldier->StopDraggingBleedoutCasualty();
+						}
+						else
+						{
+							SOLDIERTYPE *pCasualty = NULL;
+							INT32 sCheckGrid = NewGridNo( pSoldier->sGridNo, DirectionInc( pSoldier->ubDirection ) );
+							UINT8 ubWho = TileIsOutOfBounds( sCheckGrid ) ? NOBODY : WhoIsThere2( sCheckGrid, pSoldier->pathing.bLevel );
+
+							if ( ubWho != NOBODY && pSoldier->CanDragBleedoutCasualty( MercPtrs[ ubWho ] ) )
+								pCasualty = MercPtrs[ ubWho ];
+
+							for ( UINT8 ubDir = 0; !pCasualty && ubDir < NUM_WORLD_DIRECTIONS; ++ubDir )
+							{
+								sCheckGrid = NewGridNo( pSoldier->sGridNo, DirectionInc( ubDir ) );
+								if ( TileIsOutOfBounds( sCheckGrid ) )
+									continue;
+
+								ubWho = WhoIsThere2( sCheckGrid, pSoldier->pathing.bLevel );
+								if ( ubWho != NOBODY && pSoldier->CanDragBleedoutCasualty( MercPtrs[ ubWho ] ) )
+									pCasualty = MercPtrs[ ubWho ];
+							}
+
+							if ( pCasualty )
+								pSoldier->StartDraggingBleedoutCasualty( pCasualty, TRUE );
+						}
+					}
+				}
+				break;
+
 #if 0//dnl ch75 021113
 			case '\"':
 				Testing(1);
