@@ -4920,17 +4920,51 @@ UINT16 AIPerceivedFriendlyStrength(SOLDIERTYPE *pSoldier)
 		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
-		if (pFriend &&
-			pFriend->bActive &&
-			pFriend->bInSector &&
-			pFriend->stats.bLife >= OKLIFE &&
-			!pFriend->bCollapsed &&
-			!pFriend->bBreathCollapsed &&
-			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
-			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) <= TACTICAL_RANGE)
+		if (!pFriend ||
+			!pFriend->bActive ||
+			!pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE ||
+			pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > TACTICAL_RANGE)
 		{
-			uiStrength += 100;
+			continue;
 		}
+
+		// Preserve the existing scale (100 = one fresh combatant), but assess actual
+		// current combat power rather than treating every conscious body as identical.
+		// Friendly wounds, fatigue and suppression are legitimate team information.
+		INT32 iReadiness = 100;
+
+		if (pFriend->stats.bLifeMax > 0)
+		{
+			INT32 iLifePercent = (100 * pFriend->stats.bLife) / pFriend->stats.bLifeMax;
+			if (iLifePercent < 50)
+				iReadiness = iReadiness * 70 / 100;
+			else if (iLifePercent < 75)
+				iReadiness = iReadiness * 85 / 100;
+		}
+
+		if (pFriend->bBreath < 25)
+			iReadiness = iReadiness * 70 / 100;
+		else if (pFriend->bBreath < 50)
+			iReadiness = iReadiness * 85 / 100;
+
+		INT32 iShockPercent = ShockLevelPercent(pFriend);
+		if (iShockPercent >= 75)
+			iReadiness = iReadiness * 60 / 100;
+		else if (iShockPercent >= 50)
+			iReadiness = iReadiness * 75 / 100;
+		else if (iShockPercent >= 25)
+			iReadiness = iReadiness * 90 / 100;
+
+		if (pFriend->flags.uiStatusFlags & SOLDIER_COWERING)
+			iReadiness = iReadiness * 50 / 100;
+
+		// A conscious soldier still has some local value even when badly degraded,
+		// but never counts like a fresh rifleman merely because bLife >= OKLIFE.
+		uiStrength += (UINT32)__max(20, __min(100, iReadiness));
 	}
 
 	return (UINT16)__min((UINT32)65535, uiStrength);
