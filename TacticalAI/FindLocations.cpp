@@ -956,7 +956,7 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 	iCurrentCoverValue -= ubNearbyFriends * abs(iCurrentCoverValue) / (10-ubDiff);
 
 	// sevenfm: penalize locations with fresh corpses
-	if(GetNearestRottingCorpseAIWarning( pSoldier->sGridNo ) > 0)
+	if(AICorpseWarningKnown(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel) > 0)
 	{
 		iCurrentCoverValue -= abs(iCurrentCoverValue) / (8-ubDiff);
 	}
@@ -1185,7 +1185,7 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 			iCoverValue -= ubNearbyFriends * abs(iCoverValue) / (10-ubDiff);
 
 			// sevenfm: penalize locations with fresh corpses
-			if(GetNearestRottingCorpseAIWarning( sGridNo ) > 0)
+			if(AICorpseWarningKnown(pSoldier, sGridNo, pSoldier->pathing.bLevel) > 0)
 			{
 				iCoverValue -= abs(iCoverValue) / (8-ubDiff);
 			}
@@ -2767,7 +2767,7 @@ INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction )
 			}
 
 			// sevenfm: avoid locations with fresh corpses
-			if( GetNearestRottingCorpseAIWarning( sGridNo ) > 0 )
+			if( AICorpseWarningKnown(pSoldier, sGridNo, pSoldier->pathing.bLevel) > 0 )
 			{
 				continue;
 			}
@@ -3430,7 +3430,7 @@ INT32 FindAdvanceSpot(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bAction, UI
 			}
 
 			// avoid locations near fresh corpses
-			//if( GetNearestRottingCorpseAIWarning( sGridNo ) > 0 )
+			//if( AICorpseWarningKnown(pSoldier, sGridNo, pSoldier->pathing.bLevel) > 0 )
 			if (AICorpseWarningKnown(pSoldier, sGridNo, pSoldier->pathing.bLevel))
 			{
 				continue;
