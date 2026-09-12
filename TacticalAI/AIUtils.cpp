@@ -1244,13 +1244,7 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 	{
 		pOpponent = MercSlots[uiLoop];
 
-		// if this merc is inactive, at base, on assignment, or dead
 		if (!pOpponent)
-		{
-			continue;			// next merc
-		}
-
-		if (!ValidOpponent(pSoldier, pOpponent))
 		{
 			continue;
 		}
@@ -1260,10 +1254,22 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 		psLastLoc = gsLastKnownOppLoc[pSoldier->ubID] + pOpponent->ubID;
 		pbLastLevel = gbLastKnownOppLevel[pSoldier->ubID] + pOpponent->ubID;
 
-		// if this opponent is unknown personally and publicly
 		if ((*pbPersOL == NOT_HEARD_OR_SEEN) && (*pbPublOL == NOT_HEARD_OR_SEEN))
 		{
-			continue;			// next merc
+			continue;
+		}
+
+		BOOLEAN fCurrentContact = (*pbPersOL == SEEN_CURRENTLY || *pbPublOL == SEEN_CURRENTLY);
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			(gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
+			pOpponent->ubBodyType == CROW)
+		{
+			continue;
+		}
+		if (fCurrentContact && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
+		{
+			continue;
 		}
 
 		// this is possible if get here from BLACK AI in one of those rare
@@ -1335,12 +1341,10 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 		{
 			iPathCost = EstimatePathCostToLocation(pSoldier, sGridNo, bLevel, FALSE, &fClimbingNecessary, &sClimbGridNo);
 
-			// if we can get there and it's first reachable enemy or closer than other known enemies
+			// Select from reachable believed locations. Hidden current consciousness of
+			// stale contacts must not change which disturbance this soldier pursues.
 			if (iPathCost != 0 &&
-				(!pClosestOpponent || pClosestOpponent->stats.bLife < OKLIFE || pOpponent->stats.bLife >= OKLIFE) &&
-				(TileIsOutOfBounds(sClosestDisturbance) ||
-				iPathCost < iShortestPath ||
-				pClosestOpponent && !pClosestOpponent->IsZombie() && pClosestOpponent->stats.bLife < OKLIFE && pOpponent->stats.bLife >= OKLIFE))
+				(TileIsOutOfBounds(sClosestDisturbance) || iPathCost < iShortestPath))
 			{
 				if (fClimbingNecessary)
 				{
@@ -1488,13 +1492,7 @@ INT32 ClosestKnownOpponent(SOLDIERTYPE *pSoldier, INT32 * psGridNo, INT8 * pbLev
 	{
 		pOpponent = MercSlots[uiLoop];
 
-		// if this merc is inactive, at base, on assignment, or dead
 		if (!pOpponent)
-		{
-			continue;			// next merc
-		}
-
-		if (!ValidOpponent(pSoldier, pOpponent))
 		{
 			continue;
 		}
@@ -1503,10 +1501,22 @@ INT32 ClosestKnownOpponent(SOLDIERTYPE *pSoldier, INT32 * psGridNo, INT8 * pbLev
 		pbPublOL = gbPublicOpplist[pSoldier->bTeam] + pOpponent->ubID;
 		psLastLoc = gsLastKnownOppLoc[pSoldier->ubID] + pOpponent->ubID;
 
-		// if this opponent is unknown personally and publicly
 		if ((*pbPersOL == NOT_HEARD_OR_SEEN) && (*pbPublOL == NOT_HEARD_OR_SEEN))
 		{
-			continue;			// next merc
+			continue;
+		}
+
+		BOOLEAN fCurrentContact = (*pbPersOL == SEEN_CURRENTLY || *pbPublOL == SEEN_CURRENTLY);
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			(gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
+			pOpponent->ubBodyType == CROW)
+		{
+			continue;
+		}
+		if (fCurrentContact && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
+		{
+			continue;
 		}
 
 		// if personal knowledge is more up to date or at least equal
@@ -1542,9 +1552,9 @@ INT32 ClosestKnownOpponent(SOLDIERTYPE *pSoldier, INT32 * psGridNo, INT8 * pbLev
 		//sRange = PythSpacesAway( pSoldier->sGridNo, sGridNo);
 		iRange = GetRangeInCellCoordsFromGridNoDiff(pSoldier->sGridNo, sGridNo);
 
-		if (sClosestOpponent == NOWHERE ||
-			iRange < iClosestRange ||
-			pClosestOpponent && !pClosestOpponent->IsZombie() && !(pSoldier->flags.uiStatusFlags & SOLDIER_BOXER) && pClosestOpponent->stats.bLife < OKLIFE && pOpponent->stats.bLife >= OKLIFE)
+		// "Closest known" should be selected from believed locations. Do not let the
+		// hidden current consciousness of a stale contact override geometric distance.
+		if (sClosestOpponent == NOWHERE || iRange < iClosestRange)
 		{
 			iClosestRange = iRange;
 			sClosestOpponent = sGridNo;
