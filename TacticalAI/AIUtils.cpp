@@ -9874,7 +9874,7 @@ BOOLEAN AICheckDefense(SOLDIERTYPE *pSoldier)
 	}
 
 	// SEEKENEMY should always try to attack
-	if (pSoldier->bTeam == SEEKENEMY)
+	if (pSoldier->aiData.bOrders == SEEKENEMY)
 	{
 		return FALSE;
 	}
