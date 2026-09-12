@@ -9313,6 +9313,7 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 {
 	if (!gfTurnBasedAI || !pSoldier || !AICombatTeam(pSoldier) ||
 		!SoldierAI(pSoldier) || pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		AIEscapeActive(pSoldier) || AIShouldStartEscape(pSoldier) ||
 		pSoldier->bActionPoints < APBPConstants[AP_MINIMUM] ||
 		FindThrowableGrenade(pSoldier, EXPLOSV_SMOKE) == NO_SLOT)
 	{
@@ -10431,7 +10432,8 @@ INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 INT8 DecideCombatDispersion(SOLDIERTYPE *pSoldier)
 {
 	if (!gfTurnBasedAI || !pSoldier || !AICombatTeam(pSoldier) ||
-		!SoldierAI(pSoldier) || pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed)
+		!SoldierAI(pSoldier) || pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		AIEscapeActive(pSoldier) || AIShouldStartEscape(pSoldier))
 	{
 		return AI_ACTION_NONE;
 	}
