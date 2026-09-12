@@ -4478,15 +4478,11 @@ UINT8 AIFriendlyCasualtyPercent(SOLDIERTYPE *pSoldier)
 	if (!AICombatTeam(pSoldier))
 		return 0;
 
-	UINT8 ubLocal = AILocalCasualtyPercent(pSoldier);
-
-	// Enemy-team battle losses are already tracked by JA2. They represent friendly
-	// force status, not hidden opponent information. Militia currently has no
-	// equivalent reliable sector-loss counter, so militia uses the local signal.
-	if (pSoldier->bTeam == ENEMY_TEAM)
-		return __max(ubLocal, TeamPercentKilled(ENEMY_TEAM));
-
-	return ubLocal;
+	// Ordinary morale, disengagement and battle-ratio decisions are local.
+	// Sector-wide enemy losses belong only in the explicit true-last-survivor
+	// check below; otherwise a remote fireteam would instantly inherit casualties
+	// it never observed simply because another element was destroyed elsewhere.
+	return AILocalCasualtyPercent(pSoldier);
 }
 
 // Strength is expressed in certainty points: 100 is one fully known combatant.
