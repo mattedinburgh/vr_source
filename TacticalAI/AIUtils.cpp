@@ -4257,6 +4257,36 @@ static void AISeedEnemyFireteams(void)
 	gfAIFireteamsSeeded = TRUE;
 }
 
+static INT32 AIFireteamJoinDistance(UINT8 ubFireteam, SOLDIERTYPE *pCandidate)
+{
+	if (ubFireteam == AI_FIRETEAM_NONE || !pCandidate)
+		return 10000;
+
+	INT32 iBest = 10000;
+
+	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!AIEnemyFireteamEligible(pFriend) ||
+			pFriend->ubID >= MAX_NUM_SOLDIERS ||
+			guiAIFireteamIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
+			gubAIFireteam[pFriend->ubID] != ubFireteam)
+		{
+			continue;
+		}
+
+		INT32 iDistance = PythSpacesAway(pFriend->sGridNo, pCandidate->sGridNo);
+
+		if (pFriend->pathing.bLevel != pCandidate->pathing.bLevel)
+			iDistance += __max(6, DAY_VISION_RANGE / 3);
+
+		iBest = __min(iBest, iDistance);
+	}
+
+	return iBest;
+}
+
 static void AIEnsureEnemyFireteams(void)
 {
 	AISeedEnemyFireteams();
@@ -4276,7 +4306,7 @@ static void AIEnsureEnemyFireteams(void)
 		{
 			if (AIFireteamCountById(ubTeam, FALSE) >= AI_FIRETEAM_MAX_NORMAL)
 				continue;
-			INT32 iDistance = AIFireteamDistanceToSpot(ubTeam, pSoldier->sGridNo);
+			INT32 iDistance = AIFireteamJoinDistance(ubTeam, pSoldier);
 			if (iDistance < iBest) { iBest = iDistance; ubBest = ubTeam; }
 		}
 		if (ubBest == AI_FIRETEAM_NONE)
@@ -4305,7 +4335,7 @@ static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 			continue;
 		if (AIFireteamCountById(ubTeam, FALSE) + ubOldTotal > AI_FIRETEAM_MAX_MERGED)
 			continue;
-		INT32 iDistance = AIFireteamDistanceToSpot(ubTeam, pSoldier->sGridNo);
+		INT32 iDistance = AIFireteamJoinDistance(ubTeam, pSoldier);
 		if (iDistance < iBest) { iBest = iDistance; ubBest = ubTeam; }
 	}
 	if (ubBest == AI_FIRETEAM_NONE)
