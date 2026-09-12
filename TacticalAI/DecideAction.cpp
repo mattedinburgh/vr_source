@@ -2814,13 +2814,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		// sevenfm: set bAimShotLocation
 		pSoldier->bAimShotLocation = AIM_SHOT_RANDOM;
 		CheckIfShotPossible(pSoldier, &BestShot);
-
-		BOOLEAN fBestShotTargetStateKnown =
-			BestShot.ubPossible &&
-			BestShot.ubOpponent != NOBODY &&
-			MercPtrs[BestShot.ubOpponent] &&
-			PersonalKnowledge(pSoldier, BestShot.ubOpponent) == SEEN_CURRENTLY;
-		DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible? = %d, CTH = %d",BestShot.ubPossible,BestShot.ubChanceToReallyHit));
+DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible? = %d, CTH = %d",BestShot.ubPossible,BestShot.ubChanceToReallyHit));
 
 		// sevenfm: changed sniper shot min CTH to 25%
 		if (BestShot.ubPossible && BestShot.ubChanceToReallyHit > 25 )
