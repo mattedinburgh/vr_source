@@ -1923,7 +1923,62 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 					if (pSoldier->aiData.bOrders == ONCALL || pSoldier->aiData.bOrders == SEEKENEMY)
 						ubResponseLimit = 6;
 
-					UINT8 ubCloserResponders = 0;
+					// Reinforce in waves. The nearest actually engaged friendly element
+					// determines whether more troops should be released from reserve.
+					// Expansion beyond the initial response requires a reported contact
+					// (bAwareOfOpposition), so radio jamming still matters.
+					INT8 bEngagedSituation = AI_BATTLE_UNKNOWN;
+					UINT8 ubEngagedCasualties = 0;
+					UINT8 ubEngagedRoutPressure = 0;
+					INT32 iBestEngagedDistance = 10000;
+
+					for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+						iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+					{
+						SOLDIERTYPE *pEngaged = MercPtrs[iCounter];
+						if (!pEngaged || !pEngaged->bActive || !pEngaged->bInSector ||
+							pEngaged->stats.bLife < OKLIFE || pEngaged->bCollapsed)
+						{
+							continue;
+						}
+
+						if (!pEngaged->aiData.bUnderFire &&
+							pEngaged->aiData.bOppCnt == 0 &&
+							!GuySawEnemy(pEngaged, SEEN_LAST_TURN))
+						{
+							continue;
+						}
+
+						INT32 iEngagedDistance = PythSpacesAway(pEngaged->sGridNo, sNoiseGridNo);
+						if (iEngagedDistance < iBestEngagedDistance)
+						{
+							iBestEngagedDistance = iEngagedDistance;
+							bEngagedSituation = AIBattleSituation(pEngaged);
+							ubEngagedCasualties = AILocalCasualtyPercent(pEngaged);
+							ubEngagedRoutPressure = AILocalRoutPressure(pEngaged);
+						}
+					}
+
+					INT32 iReinforcementUrgency = 0;
+					if (gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition)
+					{
+						if (bEngagedSituation == AI_BATTLE_CATASTROPHIC)
+						{
+							ubResponseLimit = __max((UINT8)9, ubResponseLimit);
+							iReinforcementUrgency = 40;
+						}
+						else if (bEngagedSituation == AI_BATTLE_LOSING)
+						{
+							ubResponseLimit = __max((UINT8)7, ubResponseLimit);
+							iReinforcementUrgency = 25;
+						}
+						else if (ubEngagedCasualties >= 25 || ubEngagedRoutPressure >= 45)
+						{
+							ubResponseLimit = __max((UINT8)6, ubResponseLimit);
+							iReinforcementUrgency = 15;
+						}
+					}
+UINT8 ubCloserResponders = 0;
 					for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 						iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
 					{
@@ -1952,6 +2007,7 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 					// not an order for every soldier in earshot to sprint to its source.
 					INT32 iDistancePenalty = 10 + 2 * (iResponseDistance - iImmediateResponseRange);
 					iChance -= __min(65, iDistancePenalty);
+					iChance += iReinforcementUrgency;
 
 					switch (pSoldier->aiData.bOrders)
 					{
