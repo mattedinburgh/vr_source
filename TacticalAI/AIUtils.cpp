@@ -2535,16 +2535,25 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 	{
 		pOpponent = MercSlots[ uiLoop ];
 
-		// if this merc is inactive, at base, on assignment, dead, unconscious
 		if (!pOpponent)
-			continue;			// next merc
-
-		if (!ValidOpponent(pSoldier, pOpponent))
 			continue;
 
 		pbPersOL = pSoldier->aiData.bOppList + pOpponent->ubID;
 		pbPublOL = gbPublicOpplist[pSoldier->bTeam] + pOpponent->ubID;
 		pSeenOpp = (UINT8 *)gbSeenOpponents[pSoldier->ubID] + pOpponent->ubID;
+
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			pOpponent->ubBodyType == CROW)
+		{
+			continue;
+		}
+
+		BOOLEAN fCurrentContact = (*pbPersOL == SEEN_CURRENTLY || *pbPublOL == SEEN_CURRENTLY);
+		if (fCurrentContact && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
+		{
+			continue;
+		}
 
 		// if this opponent is unknown to me personally AND unknown to my team, too
 		if ((*pbPersOL == NOT_HEARD_OR_SEEN) && (*pbPublOL == NOT_HEARD_OR_SEEN))
@@ -2567,7 +2576,13 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 
 		iPercent = ThreatPercent[bMostRecentOpplistValue - OLDEST_HEARD_VALUE];
 
-		sOppThreatValue = (iPercent * CalcManThreatValue(pOpponent,pSoldier->sGridNo,FALSE,pSoldier)) / 100;
+		// A stale contact contributes according to remembered certainty, not hidden
+		// current wounds/AP/weapon state. Current contacts keep the detailed threat model.
+		INT32 iOpponentThreat = fCurrentContact ?
+			CalcManThreatValue(pOpponent,pSoldier->sGridNo,FALSE,pSoldier) : 100;
+		if (iOpponentThreat < 1)
+			iOpponentThreat = 1;
+		sOppThreatValue = (iPercent * iOpponentThreat) / 100;
 
 		//sprintf(tempstr,"Known opponent %s, opplist status %d, percent %d, threat = %d",
 		//			ExtMen[pOpponent->ubID].name,ubMostRecentOpplistValue,ubPercent,sOppThreatValue);
