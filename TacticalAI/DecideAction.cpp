@@ -1975,7 +1975,7 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 						// Six/seven known mercs therefore imply an eventual normal response
 						// of roughly eight/nine soldiers rather than only four.
 						UINT8 ubDesiredResponse = (UINT8)__min(14, __max(4,
-							(INT32)ubPerceivedEnemies + 3));
+							(INT32)ubPerceivedEnemies + 2));
 
 						if (bEngagedSituation == AI_BATTLE_CATASTROPHIC)
 						{
@@ -1992,7 +1992,7 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 						else if (ubEngagedCasualties >= 25 || ubEngagedRoutPressure >= 45)
 						{
 							ubDesiredResponse = (UINT8)__min(11,
-								__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 2));
+								__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 3));
 							iReinforcementUrgency = 15;
 						}
 
@@ -2016,7 +2016,6 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 
 						// First confirmed wave aims for local parity, bounded so a large player squad
 						// still does not summon the whole sector at once; later waves add two per turn.
-						// turn until the desired local strength is reached.
 						UINT8 ubInitialWave = (UINT8)__max(4,
 							__min(7, (INT32)ubPerceivedEnemies));
 						UINT8 ubWaveCap = (UINT8)__min((INT32)ubDesiredResponse,
