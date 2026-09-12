@@ -2745,6 +2745,14 @@ void HandleTakeDamageDeath( SOLDIERTYPE *pSoldier, UINT8 bOldLife, UINT8 ubReaso
 BOOLEAN IsBleedoutCasualty( SOLDIERTYPE *pSoldier );
 void ProcessBleedoutCasualties( );
 
+// Lightweight, transient rescue dragging for living downed casualties.
+// Drag state is deliberately not stored in SOLDIERTYPE, preserving savegame layout.
+BOOLEAN IsDraggingDownedPerson( SOLDIERTYPE *pSoldier );
+BOOLEAN StartDraggingDownedPerson( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pTarget );
+void StopDraggingDownedPerson( SOLDIERTYPE *pSoldier );
+BOOLEAN ToggleDownedDragInFront( SOLDIERTYPE *pSoldier );
+void UpdateDraggedDownedPersonPosition( SOLDIERTYPE *pSoldier, INT32 sOldGridNo );
+
 void SetDamageDisplayCounter(SOLDIERTYPE* pSoldier);
 
 // sevenfm
