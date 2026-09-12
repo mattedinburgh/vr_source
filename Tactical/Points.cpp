@@ -404,6 +404,9 @@ INT16 ActionPointCost(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bDir, UINT16 us
 	// Tile cost should not be reduced based on movement mode...
 	if (sSwitchValue == TRAVELCOST_FENCE)
 	{
+		// A casualty cannot be pulled through a fence-jump animation.
+		if ( IsDraggingDownedPerson( pSoldier ) )
+			return 100;
 		return(sTileCost);
 	}
 
