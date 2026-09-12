@@ -4517,281 +4517,66 @@ INT32 PlotPath(SOLDIERTYPE *pSold, INT32 sDestGridNo, INT8 bCopyRoute, INT8 bPlo
 				usMovementModeToUseForAPs = WALKING;
 			}
 
-			// get the tile cost for that tile based on WALKING
-			sTileCost = TerrainActionPoints(pSold, sTempGrid, (INT8)guiPathingData[iCnt], pSold->pathing.bLevel);
-
-
+			// A fence hop consumes the following landing tile as part of the same move.
+			// When we reach that synthetic landing entry, do not charge it separately and
+			// mark the soldier as no longer running so a later run correctly pays startup AP.
+			const BOOLEAN fIgnoredFenceLanding = bIgnoreNextCost;
 			if (bIgnoreNextCost)
 			{
 				bIgnoreNextCost = FALSE;
+				usMovementModeBefore = WALKING;
 			}
 			else
 			{
-				// ATE: If we have a 'special cost, like jump fence...
+				const UINT16 usPrevMovementMode = usMovementModeBefore;
+				sPoints += EstimateActionPointCost(
+					pSold,
+					sTempGrid,
+					(INT8)guiPathingData[iCnt],
+					usMovementModeToUseForAPs,
+					(INT8)iCnt,
+					(INT8)iLastGrid,
+					usPrevMovementMode);
+
 				if (sSwitchValue == TRAVELCOST_FENCE)
 				{
-					sPoints = sPoints + sTileCost;
-
 					bIgnoreNextCost = TRUE;
-
-					// If we are changing stance ( either before or after getting there....
-					// We need to reflect that...
-					switch (usMovementModeToUseForAPs)
-					{
-					case RUNNING:
-					case WALKING:
-					case WALKING_WEAPON_RDY:
-					case WALKING_DUAL_RDY:
-					case WALKING_ALTERNATIVE_RDY:
-
-						// Add here cost to go from crouch to stand AFTER fence hop....
-						// Since it's AFTER.. make sure we will be moving after jump...
-						if ((iCnt + 2) < iLastGrid)
-						{
-							sExtraCostStand += GetAPsCrouch(pSold, TRUE);
-
-							// ATE: if running, charge extra point to start again
-							if (usMovementModeToUseForAPs == RUNNING)
-							{
-								// sevenfm: use GetAPsStartRun()
-								//sExtraCostStand++;
-								sExtraCostStand += GetAPsStartRun(pSold);
-							}
-
-							sPoints = sPoints + sExtraCostStand;
-						}
-						break;
-
-					case SWATTING:
-
-						// Add cost to stand once there BEFORE....
-						sExtraCostSwat = GetAPsCrouch(pSold, TRUE);
-						sPoints = sPoints + sExtraCostSwat;
-						break;
-
-					case CRAWLING:
-
-						// Can't do it here.....
-						break;
-
-					}
 				}
-				else if (sTileCost > 0)
+				else
 				{
-					// else, movement is adjusted based on mode...
-
-					// so, then we must modify it for other movement styles and accumulate
-					// CHRISL: Force display path to calculate AP cost differently if we're wearing a backpack
-					///////////////////////////////////////////////////////////////////////////////////////////////////////////
-					// SANDRO - This part have been modified "a bit" (see also "TerrainActionPoints" in "points.cpp")
-					// Check movement modifiers
-					switch (usMovementModeToUseForAPs)
-					{
-					case RUNNING:
-						sMovementAPsCost = sTileCost + APBPConstants[AP_MODIFIER_RUN];
-						break;
-					case WALKING:
-						if (!(pSold->MercInWater()) && ((gAnimControl[pSold->usAnimState].uiFlags & ANIM_FIREREADY) || (gAnimControl[pSold->usAnimState].uiFlags & ANIM_FIRE)))
-						{
-							sMovementAPsCost = sTileCost + APBPConstants[AP_MODIFIER_WALK] + APBPConstants[AP_MODIFIER_READY];
-						}
-						else
-						{
-							sMovementAPsCost = sTileCost + APBPConstants[AP_MODIFIER_WALK];
-						}
-						break;
-					case WALKING_ALTERNATIVE_RDY:
-						sMovementAPsCost = sTileCost + APBPConstants[AP_MODIFIER_WALK];
-						break;
-					case WALKING_WEAPON_RDY:
-					case WALKING_DUAL_RDY:
-						sMovementAPsCost = sTileCost + APBPConstants[AP_MODIFIER_WALK] + APBPConstants[AP_MODIFIER_READY];
-						break;
-					case SWATTING:
-						sMovementAPsCost = sTileCost + APBPConstants[AP_MODIFIER_SWAT];
-						break;
-					case CRAWLING:
-						sMovementAPsCost = sTileCost + APBPConstants[AP_MODIFIER_CRAWL];
-						break;
-					default:
-						sMovementAPsCost = sTileCost;
-						break;
-					}
-
-					// Check for reverse mode
-					if (pSold->bReverse || bReverse)
-						sMovementAPsCost += APBPConstants[AP_REVERSE_MODIFIER];
-
-					// Check for backpack
-					sMovementAPsCost += BackpackMovementPenalty(pSold);
-
-					// STOMP traits - Athletics trait decreases movement cost
-					if (gGameOptions.fNewTraitSystem && HAS_SKILL_TRAIT(pSold, ATHLETICS_NT))
-					{
-						sMovementAPsCost = max(1, (INT16)(((FLOAT)sMovementAPsCost * (100.0f - (FLOAT)gSkillTraitValues.ubATAPsMovementReduction) / 100.0f) + 0.5));
-					}
-
-					// Moa: scuba fins and swimming background
-					if (pSold->inv[LEGPOS].exists() && HasItemFlag(pSold->inv[LEGPOS].usItem, SCUBA_FINS))
-					{
-						if (TERRAIN_IS_HIGH_WATER(ubTerrainID))
-							sMovementAPsCost /= 2;
-						else
-							sMovementAPsCost *= 2;
-					}
-
-					if (TERRAIN_IS_HIGH_WATER(ubTerrainID))
-					{
-						sMovementAPsCost = (sMovementAPsCost * (100 + pSold->GetBackgroundValue(BG_SWIMMING))) / 100;
-					}
-
-					// Check for stealth mode
-					if (pSold->bStealthMode || bStealth)
-					{
-						// STOMP traits - Stealthy trait decreases stealth AP modifier
-						if (gGameOptions.fNewTraitSystem && HAS_SKILL_TRAIT(pSold, STEALTHY_NT))
-						{
-							sMovementAPsCost += (max(0, (INT16)(((FLOAT)APBPConstants[AP_STEALTH_MODIFIER] * (FLOAT)(100 - gSkillTraitValues.ubSTStealthModeSpeedBonus) / 100.0f) + 0.5f)));
-						}
-						else
-						{
-							sMovementAPsCost += APBPConstants[AP_STEALTH_MODIFIER];
-						}
-					}
-
-					// moving diagonally
-					if (guiPathingData[iCnt] & 1)
-					{
-						sMovementAPsCost = (INT16)(sMovementAPsCost * 14.0f / 10.0f + 0.5f);
-					}
-
-					// Check if doors if not player's merc (they have to open them manually)
-					if (sSwitchValue == TRAVELCOST_DOOR && pSold->bTeam != gbPlayerNum)
-					{
-						sMovementAPsCost += GetAPsToOpenDoor(pSold) + GetAPsToOpenDoor(pSold); // Include open and close costs!
-					}
-
-					if (sSwitchValue == TRAVELCOST_NOT_STANDING)
-					{
-						switch (usMovementModeToUseForAPs)
-						{
-						case RUNNING:
-						case WALKING:
-						case WALKING_WEAPON_RDY:
-						case WALKING_DUAL_RDY:
-						case WALKING_ALTERNATIVE_RDY:
-							// charge crouch APs for ducking head!
-							sExtraCostStand += GetAPsCrouch(pSold, TRUE);
-							break;
-
-						default:
-							break;
-						}
-					}
-
-					sPoints += sMovementAPsCost + sExtraCostStand;
-					///////////////////////////////////////////////////////////////////////////////////////////////////////////
+					usMovementModeBefore = usMovementModeToUseForAPs;
 				}
 			}
 
 			// THIS NEXT SECTION ONLY NEEDS TO HAPPEN FOR CURSOR UI FEEDBACK, NOT ACTUAL COSTING
 
-			if (bPlot && ((gTacticalStatus.uiFlags & TURNBASED) && (gTacticalStatus.uiFlags & INCOMBAT))) // OR USER OPTION ON... ***)
+			if (bPlot && ((gTacticalStatus.uiFlags & TURNBASED) && (gTacticalStatus.uiFlags & INCOMBAT))) // OR USER OPTION ON... ***
 			{
-				// ATE; TODO: Put stuff in here to allow for fact of costs other than movement ( jump fence, open door )
-
-				// CHRISL: Adjusted system to use different move costs while wearing a backpack
-				////////////////////////////////////////////////////////////////////////////////////////////////////////////
-				// SANDRO - This part was modified "a bit"
-				sMovementAPsCost = sTileCost;
-				// Check for reverse mode
-				if (pSold->bReverse || bReverse)
+				if (fIgnoredFenceLanding)
 				{
-					sMovementAPsCost += APBPConstants[AP_REVERSE_MODIFIER];
+					// The fence animation already consumes this landing tile.
+					usRunModeBefore = WALKING;
 				}
-				// STOMP traits - Athletics trait decreases movement cost
-				if (gGameOptions.fNewTraitSystem && HAS_SKILL_TRAIT(pSold, ATHLETICS_NT))
-				{
-					sPointsWalk += max(1, (INT16)(((FLOAT)(sMovementAPsCost + APBPConstants[AP_MODIFIER_WALK]) * (100.0f - (FLOAT)gSkillTraitValues.ubATAPsMovementReduction) / 100.0f) + 0.5f));
-					sPointsCrawl += max(1, (INT16)(((FLOAT)(sMovementAPsCost + APBPConstants[AP_MODIFIER_CRAWL]) * (100.0f - (FLOAT)gSkillTraitValues.ubATAPsMovementReduction) / 100.0f) + 0.5f));
-					sPointsSwat += max(1, (INT16)(((FLOAT)(sMovementAPsCost + APBPConstants[AP_MODIFIER_SWAT]) * (100.0f - (FLOAT)gSkillTraitValues.ubATAPsMovementReduction) / 100.0f) + 0.5f));
-					sPointsRun += max(1, (INT16)(((FLOAT)(sMovementAPsCost + APBPConstants[AP_MODIFIER_RUN]) * (100.0f - (FLOAT)gSkillTraitValues.ubATAPsMovementReduction) / 1000.f) + 0.5f));
-				}
-				// Specify movement modes
 				else
 				{
-					sPointsWalk += sMovementAPsCost + APBPConstants[AP_MODIFIER_WALK];
-					sPointsCrawl += sMovementAPsCost + APBPConstants[AP_MODIFIER_CRAWL];
-					sPointsSwat += sMovementAPsCost + APBPConstants[AP_MODIFIER_SWAT];
-					sPointsRun += sMovementAPsCost + APBPConstants[AP_MODIFIER_RUN];
-				}
+					// Use the same estimator as the displayed path AP total. This removes a
+					// long-standing duplicate cost formula (including its 1000.f run typo)
+					// and keeps footprint reachability colours aligned with real movement.
+					sPointsWalk += EstimateActionPointCost(pSold, sTempGrid, (INT8)guiPathingData[iCnt], WALKING, (INT8)iCnt, (INT8)iLastGrid, WALKING);
+					sPointsCrawl += EstimateActionPointCost(pSold, sTempGrid, (INT8)guiPathingData[iCnt], CRAWLING, (INT8)iCnt, (INT8)iLastGrid, CRAWLING);
+					sPointsSwat += EstimateActionPointCost(pSold, sTempGrid, (INT8)guiPathingData[iCnt], SWATTING, (INT8)iCnt, (INT8)iLastGrid, SWATTING);
+					sPointsRun += EstimateActionPointCost(pSold, sTempGrid, (INT8)guiPathingData[iCnt], RUNNING, (INT8)iCnt, (INT8)iLastGrid, usRunModeBefore);
 
-				// Moa: scuba fins and swimming background
-				if (pSold->inv[LEGPOS].exists() && HasItemFlag(pSold->inv[LEGPOS].usItem, SCUBA_FINS))
-				{
-					if (TERRAIN_IS_HIGH_WATER(ubTerrainID))
+					if (sSwitchValue != TRAVELCOST_FENCE)
 					{
-						sPointsWalk /= 2;
-						sPointsCrawl /= 2;
-						sPointsSwat /= 2;
-						sPointsRun /= 2;
-					}
-					else
-					{
-						sPointsWalk *= 2;
-						sPointsCrawl *= 2;
-						sPointsSwat *= 2;
-						sPointsRun *= 2;
+						UINT8 ubRunTerrainID = gpWorldLevelData[sTempGrid].ubTerrainID;
+						if (TERRAIN_IS_WATER(ubRunTerrainID) && pSold->pathing.bLevel == 0)
+							usRunModeBefore = WALKING;
+						else
+							usRunModeBefore = RUNNING;
 					}
 				}
-				if (TERRAIN_IS_HIGH_WATER(ubTerrainID))
-				{
-					sPointsWalk = (sPointsWalk * (100 + pSold->GetBackgroundValue(BG_SWIMMING))) / 100;
-					sPointsCrawl = (sPointsCrawl * (100 + pSold->GetBackgroundValue(BG_SWIMMING))) / 100;
-					sPointsSwat = (sPointsSwat * (100 + pSold->GetBackgroundValue(BG_SWIMMING))) / 100;
-					sPointsRun = (sPointsRun * (100 + pSold->GetBackgroundValue(BG_SWIMMING))) / 100;
-				}
-				// walking with weapon raised?
-				if (!(pSold->MercInWater()) && ((gAnimControl[pSold->usAnimState].uiFlags & ANIM_FIREREADY) || (gAnimControl[pSold->usAnimState].uiFlags & ANIM_FIRE)))
-				{
-					sPointsWalk += APBPConstants[AP_MODIFIER_READY];
-				}
-				// Check for stealth mode
-				if (pSold->bStealthMode || bStealth)
-				{
-					// STOMP traits - Stealthy trait decreases stealth AP modifier
-					if (gGameOptions.fNewTraitSystem && HAS_SKILL_TRAIT(pSold, STEALTHY_NT))
-					{
-						sPointsWalk += (max(0, (INT16)(((FLOAT)APBPConstants[AP_STEALTH_MODIFIER] * (FLOAT)(100 - gSkillTraitValues.ubSTStealthModeSpeedBonus) / 100.0f) + 0.5f)));
-						sPointsCrawl += (max(0, (INT16)(((FLOAT)APBPConstants[AP_STEALTH_MODIFIER] * (FLOAT)(100 - gSkillTraitValues.ubSTStealthModeSpeedBonus) / 100.0f) + 0.5f)));
-						sPointsSwat += (max(0, (INT16)(((FLOAT)APBPConstants[AP_STEALTH_MODIFIER] * (FLOAT)(100 - gSkillTraitValues.ubSTStealthModeSpeedBonus) / 100.0f) + 0.5f)));
-						sPointsRun += (max(0, (INT16)(((FLOAT)APBPConstants[AP_STEALTH_MODIFIER] * (FLOAT)(100 - gSkillTraitValues.ubSTStealthModeSpeedBonus) / 100.0f) + 0.5f)));
-					}
-					else
-					{
-						sPointsWalk += APBPConstants[AP_STEALTH_MODIFIER];
-						sPointsCrawl += APBPConstants[AP_STEALTH_MODIFIER];
-						sPointsSwat += APBPConstants[AP_STEALTH_MODIFIER];
-						sPointsRun += APBPConstants[AP_STEALTH_MODIFIER];
-					}
-				}
-
-				// Check for backpack
-				sPointsWalk += BackpackMovementPenalty(pSold);
-				sPointsCrawl += BackpackMovementPenalty(pSold);
-				sPointsSwat += BackpackMovementPenalty(pSold);
-				sPointsRun += BackpackMovementPenalty(pSold);
-
-				if (sExtraCostStand)
-				{
-					sPointsWalk += sExtraCostStand;
-					sPointsCrawl += sExtraCostStand;
-					sPointsSwat += sExtraCostStand;
-					sPointsRun += sExtraCostStand;
-				}
-				////////////////////////////////////////////////////////////////////////////////////////////////////////////
 			}
-
 			if (iCnt == 0 && bPlot)
 			{
 				gusAPtsToMove = sPoints;
