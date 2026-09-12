@@ -1519,10 +1519,11 @@ INT32 FindSpotMaxDistFromOpponents(SOLDIERTYPE *pSoldier)
 				continue;
 			}
 
-			// Vengeance does not provide current 1.13's CheckNPCDestination()/SpotDangerLevel()
-			// helper chain. Keep the compatible destination guards below instead of calling a
-			// partially ported helper that breaks the build. Bomb/red-smoke checks above and
-			// LegalNPCDestination() below still reject the important unsafe/illegal escape tiles.
+			// Avoid retreat destinations that are environmentally worse than the current tile.
+			if (!CheckNPCDestination(pSoldier, sGridNo))
+			{
+				continue;
+			}
 
 			// Retreating soldiers should not choose water as a new escape destination.
 			// Soldiers already in deep water are handled by AI_ACTION_LEAVE_WATER_GAS.
