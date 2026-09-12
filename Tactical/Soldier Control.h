@@ -1489,10 +1489,12 @@ public:
 	// incapacitated at 1 life for a limited number of full tactical rounds.
 	UINT8	ubBleedoutTurns;		// internal countdown; active casualties use 3-6 to guarantee 2-5 rescue turns
 	UINT8	ubBleedoutState;		// BLEEDOUT_NONE / BLEEDOUT_ACTIVE / BLEEDOUT_STABILIZED
+	UINT8	ubDraggedCasualtyID;	// rescuer -> downed casualty, NOBODY when inactive
+	UINT8	ubDraggedByID;			// casualty -> rescuer, NOBODY when inactive
 
 	// Flugente: Decrease this filler by 1 for each new UINT8 / BOOLEAN variable, so we can maintain savegame compatibility!!
 	// Note that we also have to account for padding, so you might need to substract more than just the size of the new variables
-	UINT8	ubFiller[18];
+	UINT8	ubFiller[16];
 
 	UINT32	usSoldierFlagMask2;		// anv: another usSoldierFlagMask
 
@@ -1646,6 +1648,17 @@ public:
 	void SetSoldierAsUnderAiControl( void );
 	void ResetSoldierChangeStatTimer( void );
 	void SetSoldierGridNo( INT32 sNewGridNo, BOOLEAN fForceRemove );
+
+	// Vengeance casualty rescue / 1.13 window interaction.
+	void BreakWindow( void );
+	BOOLEAN CanBreakWindow( void );
+	BOOLEAN CanDragBleedoutCasualty( SOLDIERTYPE *pCasualty );
+	BOOLEAN IsDraggingBleedoutCasualty( void );
+	BOOLEAN StartDraggingBleedoutCasualty( SOLDIERTYPE *pCasualty, BOOLEAN fDeductAP = TRUE );
+	void StopDraggingBleedoutCasualty( void );
+	void ClearBleedoutDragLinks( void );
+	void UpdateDraggedBleedoutCasualty( INT32 sOldGridNo );
+
 	void SetSoldierHeight( FLOAT dNewHeight );
 	void InternalSetSoldierHeight( FLOAT dNewHeight, BOOLEAN fUpdateLevel );//this function did not have a forward declaration
 
