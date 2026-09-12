@@ -6940,8 +6940,7 @@ UINT8 SpotDangerLevel(SOLDIERTYPE *pSoldier, INT32 sGridNo)
 	UINT8 ubLevel = 0;
 
 	// Mild hazards: tactically undesirable, but never worth trapping a soldier over.
-	if ((Water(sGridNo, pSoldier->pathing.bLevel) && !pSoldier->IsFlanking()) ||
-		AICorpseWarningKnown(pSoldier, sGridNo, pSoldier->pathing.bLevel))
+	if (Water(sGridNo, pSoldier->pathing.bLevel) && !pSoldier->IsFlanking())
 	{
 		ubLevel = 1;
 	}
