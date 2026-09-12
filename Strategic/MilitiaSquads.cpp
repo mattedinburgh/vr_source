@@ -854,7 +854,7 @@ BOOLEAN FindMilitiaStrategicRetreatSector(INT16 sMapX, INT16 sMapY, INT16 *psTar
 
 		SECTORINFO *pTarget = &(SectorInfo[SECTOR(sTargetX, sTargetY)]);
 		UINT8 ubTargetMilitia = CountMilitia(pTarget);
-		BOOLEAN fPlayerSupport = PlayerMercsInSector_MSE((UINT8)sTargetX, (UINT8)sTargetY, FALSE);
+		BOOLEAN fPlayerSupport = PlayerMercsInSector_MSE((UINT8)sTargetX, (UINT8)sTargetY, TRUE);
 
 		// A strategic rout goes toward a genuine defensive concentration. A tiny
 		// one- or two-man militia remnant is not a "reinforced position" unless
