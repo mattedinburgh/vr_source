@@ -504,6 +504,7 @@ INT32 FindRetreatSpot(SOLDIERTYPE *pSoldier);
 BOOLEAN FindObstacleNearSpot(INT32 sSpot, INT8 bLevel);
 BOOLEAN FindNearbyExplosiveStructure(INT32 sSpot, INT8 bLevel);
 UINT8 CountObstaclesNearSpot(INT32 sSpot, INT8 bLevel);
+UINT8 TerrainDensity(INT32 sSpot, INT8 bLevel, UINT8 ubDistance, BOOLEAN fGrass);
 BOOLEAN FindShadowAtSpot(INT32 sSpot, INT8 bLevel);
 BOOLEAN EnemyCanAttackSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel);
 
