@@ -6727,288 +6727,122 @@ INT32 ClosestSeenLastTurnOpponent(SOLDIERTYPE *pSoldier, INT32 * psGridNo, INT8 
 }
 
 // check if we have a prone sight cover from known enemies at spot
+static BOOLEAN AIKnownThreatHasSightToSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, BOOLEAN fUnlimited, UINT8 ubTargetStance, UINT8 ubTargetLOSPos)
+{
+	CHECKF(pSoldier);
+
+	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
+	{
+		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
+		if (!pOpponent)
+			continue;
+
+		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+		if (bKnowledge == NOT_HEARD_OR_SEEN)
+			continue;
+
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pSoldier->bSide == pOpponent->bSide ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			pOpponent->ubBodyType == CROW)
+		{
+			continue;
+		}
+
+		const BOOLEAN fCurrentContact =
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY ||
+			 PublicKnowledge(pSoldier->bTeam, pOpponent->ubID) == SEEN_CURRENTLY);
+
+		if (fCurrentContact && !ValidOpponent(pSoldier, pOpponent))
+			continue;
+
+		INT32 sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
+		INT8 bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
+		if (TileIsOutOfBounds(sThreatLoc))
+			continue;
+
+		UINT16 usAdjustedSight;
+		if (fCurrentContact)
+		{
+			// Current sight can legitimately use the observer's actual vision state.
+			INT16 sSightAdjustment =
+				GetSightAdjustment(pOpponent, pSoldier, sSpot, pSoldier->pathing.bLevel, ubTargetStance);
+
+			gbForceWeaponReady = true;
+			UINT16 usSightLimit =
+				pOpponent->GetMaxDistanceVisible(sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
+			gbForceWeaponReady = false;
+
+			usAdjustedSight = max((UINT16)1,
+				(UINT16)(usSightLimit + usSightLimit * sSightAdjustment / 100));
+		}
+		else
+		{
+			// Stale/heard contacts have a believed firing/observation sector, not access
+			// to hidden current optics, stance, breath, wounds or weapon-ready state.
+			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+			usAdjustedSight = (UINT16)max(1, (MAX_VISION_RANGE * iCertainty) / 100);
+		}
+
+		if ((fUnlimited &&
+			 LocationToLocationLineOfSightTest(sThreatLoc, bThreatLevel, sSpot, pSoldier->pathing.bLevel,
+				 TRUE, NO_DISTANCE_LIMIT, STANDING_LOS_POS, ubTargetLOSPos)) ||
+			(!fUnlimited &&
+			 PythSpacesAway(sSpot, sThreatLoc) <= usAdjustedSight &&
+			 LocationToLocationLineOfSightTest(sThreatLoc, bThreatLevel, sSpot, pSoldier->pathing.bLevel,
+				 TRUE, usAdjustedSight, STANDING_LOS_POS, ubTargetLOSPos)))
+		{
+			return TRUE;
+		}
+
+		// Predict a one-tile reposition only for a currently observed opponent. Doing
+		// this for stale contacts lets hidden current movement/body state leak into cover.
+		if (fCurrentContact && gfTurnBasedAI)
+		{
+			for (UINT8 ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ++ubDirection)
+			{
+				INT32 sTempGridNo = NewGridNo(sThreatLoc, DirectionInc(ubDirection));
+				if (sTempGridNo == sThreatLoc)
+					continue;
+
+				UINT8 ubMovementCost = gubWorldMovementCosts[sTempGridNo][ubDirection][bThreatLevel];
+				if (ubMovementCost >= TRAVELCOST_BLOCKED ||
+					!NewOKDestination(pOpponent, sTempGridNo, FALSE, bThreatLevel))
+				{
+					continue;
+				}
+
+				if ((fUnlimited &&
+					 LocationToLocationLineOfSightTest(sTempGridNo, bThreatLevel, sSpot, pSoldier->pathing.bLevel,
+						 TRUE, NO_DISTANCE_LIMIT, STANDING_LOS_POS, ubTargetLOSPos)) ||
+					(!fUnlimited &&
+					 PythSpacesAway(sSpot, sTempGridNo) <= usAdjustedSight &&
+					 LocationToLocationLineOfSightTest(sTempGridNo, bThreatLevel, sSpot, pSoldier->pathing.bLevel,
+						 TRUE, usAdjustedSight, STANDING_LOS_POS, ubTargetLOSPos)))
+				{
+					return TRUE;
+				}
+			}
+		}
+	}
+
+	return FALSE;
+}
+
+// TRUE means the checked spot provides sight cover from all known threats.
 BOOLEAN ProneSightCoverAtSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, BOOLEAN fUnlimited)
 {
-	CHECKF(pSoldier);
-
-	UINT32		uiLoop;
-	SOLDIERTYPE *pOpponent;
-	INT32		sThreatLoc;
-	INT8		iThreatLevel;
-	UINT16		usSightLimit;
-	UINT16		usAdjustedSight;
-	INT8		bKnowledge;
-	INT16		sSightAdjustment;
-
-	// for adjacent tiles check
-	UINT8	ubMovementCost;
-	INT32	sTempGridNo;
-	UINT8	ubDirection;
-
-	// look through all opponents for those we know of
-	for (uiLoop = 0; uiLoop < guiNumMercSlots; uiLoop++)
-	{
-		pOpponent = MercSlots[ uiLoop ];
-
-		// if this merc is inactive, at base, on assignment, dead, unconscious
-		if (!pOpponent || pOpponent->stats.bLife < OKLIFE)
-		{
-			continue;			// next merc
-		}
-
-		if(!ValidOpponent(pSoldier, pOpponent))
-		{
-			continue;
-		}
-
-		bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-
-		// if this opponent is unknown personally and publicly
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-		{
-			continue;
-		}
-
-		// obtain opponent's location and level
-		sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		iThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
-
-		// check that our knowledge is correct
-		if (TileIsOutOfBounds(sThreatLoc))
-		{
-			continue;
-		}
-
-		sSightAdjustment = GetSightAdjustment(pOpponent, pSoldier, sSpot, pSoldier->pathing.bLevel, ANIM_PRONE);
-
-		gbForceWeaponReady = true;
-		usSightLimit = pOpponent->GetMaxDistanceVisible(sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
-		gbForceWeaponReady = false;
-
-		usAdjustedSight = max(min(1, usSightLimit), usSightLimit + usSightLimit * sSightAdjustment / 100);
-
-		if (fUnlimited && LocationToLocationLineOfSightTest(sThreatLoc, iThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, NO_DISTANCE_LIMIT, STANDING_LOS_POS, PRONE_LOS_POS) ||
-			!fUnlimited && PythSpacesAway(sSpot, sThreatLoc) <= usAdjustedSight && LocationToLocationLineOfSightTest(sThreatLoc, iThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, usAdjustedSight, STANDING_LOS_POS, PRONE_LOS_POS))
-		{
-			return FALSE;
-		}
-
-		// check adjacent spots
-		if(gfTurnBasedAI)
-		{
-			for (ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ubDirection++)
-			{
-				sTempGridNo = NewGridNo(sThreatLoc, DirectionInc(ubDirection));
-
-				if (sTempGridNo != sThreatLoc)
-				{
-					ubMovementCost = gubWorldMovementCosts[sTempGridNo][ubDirection][iThreatLevel];
-
-					if (ubMovementCost < TRAVELCOST_BLOCKED &&
-						NewOKDestination(pOpponent, sTempGridNo, FALSE, iThreatLevel))
-					{
-						if (fUnlimited && LocationToLocationLineOfSightTest(sTempGridNo, iThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, NO_DISTANCE_LIMIT, STANDING_LOS_POS, PRONE_LOS_POS) ||
-							!fUnlimited && PythSpacesAway(sSpot, sTempGridNo) <= usAdjustedSight && LocationToLocationLineOfSightTest(sTempGridNo, iThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, usAdjustedSight, STANDING_LOS_POS, PRONE_LOS_POS))
-						{
-							return FALSE;
-						}
-					}
-				}
-			}
-		}
-	}
-
-	return TRUE;
+	return !AIKnownThreatHasSightToSpot(pSoldier, sSpot, fUnlimited, ANIM_PRONE, PRONE_LOS_POS);
 }
 
-// check if we have a crouched sight cover from known enemies at spot
 BOOLEAN CrouchedSightCoverAtSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, BOOLEAN fUnlimited)
 {
-	CHECKF(pSoldier);
-
-	UINT32		uiLoop;
-	SOLDIERTYPE *pOpponent;
-	INT32		sThreatLoc;
-	INT8		iThreatLevel;
-	UINT16		usSightLimit;
-	UINT16		usAdjustedSight;
-	INT8		bKnowledge;
-	INT16		sSightAdjustment;
-
-	// for adjacent tiles check
-	UINT8	ubMovementCost;
-	INT32	sTempGridNo;
-	UINT8	ubDirection;
-
-	// look through all opponents for those we know of
-	for (uiLoop = 0; uiLoop < guiNumMercSlots; uiLoop++)
-	{
-		pOpponent = MercSlots[uiLoop];
-
-		// if this merc is inactive, at base, on assignment, dead, unconscious
-		if (!pOpponent || pOpponent->stats.bLife < OKLIFE)
-		{
-			continue;			// next merc
-		}
-
-		if (!ValidOpponent(pSoldier, pOpponent))
-		{
-			continue;
-		}
-
-		bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-
-		// if this opponent is unknown personally and publicly
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-		{
-			continue;
-		}
-
-		// obtain opponent's location and level
-		sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		iThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
-
-		// check that our knowledge is correct
-		if (TileIsOutOfBounds(sThreatLoc))
-		{
-			continue;
-		}
-
-		sSightAdjustment = GetSightAdjustment(pOpponent, pSoldier, sSpot, pSoldier->pathing.bLevel, ANIM_CROUCH);
-
-		gbForceWeaponReady = true;
-		usSightLimit = pOpponent->GetMaxDistanceVisible(sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
-		gbForceWeaponReady = false;
-
-		usAdjustedSight = max(min(1, usSightLimit), usSightLimit + usSightLimit * sSightAdjustment / 100);
-
-		if (fUnlimited && LocationToLocationLineOfSightTest(sThreatLoc, iThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, NO_DISTANCE_LIMIT, STANDING_LOS_POS, CROUCHED_LOS_POS) ||
-			!fUnlimited && PythSpacesAway(sSpot, sThreatLoc) <= usAdjustedSight && LocationToLocationLineOfSightTest(sThreatLoc, iThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, usAdjustedSight, STANDING_LOS_POS, CROUCHED_LOS_POS))
-		{
-			return FALSE;
-		}
-
-		// check adjacent spots
-		if (gfTurnBasedAI)
-		{
-			for (ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ubDirection++)
-			{
-				sTempGridNo = NewGridNo(sThreatLoc, DirectionInc(ubDirection));
-
-				if (sTempGridNo != sThreatLoc)
-				{
-					ubMovementCost = gubWorldMovementCosts[sTempGridNo][ubDirection][iThreatLevel];
-
-					if (ubMovementCost < TRAVELCOST_BLOCKED &&
-						NewOKDestination(pOpponent, sTempGridNo, FALSE, iThreatLevel))
-					{
-						if (fUnlimited && LocationToLocationLineOfSightTest(sTempGridNo, iThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, NO_DISTANCE_LIMIT, STANDING_LOS_POS, CROUCHED_LOS_POS) ||
-							!fUnlimited && PythSpacesAway(sSpot, sTempGridNo) <= usAdjustedSight && LocationToLocationLineOfSightTest(sTempGridNo, iThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, usAdjustedSight, STANDING_LOS_POS, CROUCHED_LOS_POS))
-						{
-							return FALSE;
-						}
-					}
-				}
-			}
-		}
-	}
-
-	return TRUE;
+	return !AIKnownThreatHasSightToSpot(pSoldier, sSpot, fUnlimited, ANIM_CROUCH, CROUCHED_LOS_POS);
 }
 
-// check if we have sight cover from known enemies at spot
 BOOLEAN SightCoverAtSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, BOOLEAN fUnlimited)
 {
-	CHECKF(pSoldier);
-
-	UINT32		uiLoop;
-	SOLDIERTYPE *pOpponent;
-	INT32		sThreatLoc;
-	INT8		bThreatLevel;
-	UINT16		usSightLimit;
-	UINT16		usAdjustedSight;
-	INT8		bKnowledge;
-	INT16		sSightAdjustment;
-
-	// for adjacent tiles check
-	UINT8	ubMovementCost;
-	INT32	sTempGridNo;
-	UINT8	ubDirection;
-
-	// look through all opponents for those we know of
-	for (uiLoop = 0; uiLoop < guiNumMercSlots; uiLoop++)
-	{
-		pOpponent = MercSlots[uiLoop];
-
-		// if this merc is inactive, at base, on assignment, dead, unconscious
-		if (!pOpponent || pOpponent->stats.bLife < OKLIFE)
-		{
-			continue;			// next merc
-		}
-
-		if (!ValidOpponent(pSoldier, pOpponent))
-		{
-			continue;
-		}
-
-		bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-
-		// if this opponent is unknown personally and publicly
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-		{
-			continue;
-		}
-
-		// obtain opponent's location and level
-		sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
-
-		// check that our knowledge is correct
-		if (TileIsOutOfBounds(sThreatLoc))
-		{
-			continue;
-		}
-
-		sSightAdjustment = GetSightAdjustment(pOpponent, pSoldier, sSpot, pSoldier->pathing.bLevel, ANIM_PRONE);
-
-		gbForceWeaponReady = true;
-		usSightLimit = pOpponent->GetMaxDistanceVisible(sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
-		gbForceWeaponReady = false;
-
-		usAdjustedSight = max(min(1, usSightLimit), usSightLimit + usSightLimit * sSightAdjustment / 100);
-
-		if (fUnlimited && LocationToLocationLineOfSightTest(sThreatLoc, bThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, usAdjustedSight, STANDING_LOS_POS, STANDING_LOS_POS) ||
-			!fUnlimited && PythSpacesAway(sSpot, sThreatLoc) <= usAdjustedSight && LocationToLocationLineOfSightTest(sThreatLoc, bThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, NO_DISTANCE_LIMIT, STANDING_LOS_POS, STANDING_LOS_POS))
-		{
-			return FALSE;
-		}
-
-		// check adjacent spots
-		if (gfTurnBasedAI)
-		{
-			for (ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ubDirection++)
-			{
-				sTempGridNo = NewGridNo(sThreatLoc, DirectionInc(ubDirection));
-
-				if (sTempGridNo != sThreatLoc)
-				{
-					ubMovementCost = gubWorldMovementCosts[sTempGridNo][ubDirection][bThreatLevel];
-
-					if (ubMovementCost < TRAVELCOST_BLOCKED &&
-						NewOKDestination(pOpponent, sTempGridNo, FALSE, bThreatLevel))
-					{
-						if (fUnlimited && LocationToLocationLineOfSightTest(sTempGridNo, bThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, usAdjustedSight, STANDING_LOS_POS, STANDING_LOS_POS) ||
-							!fUnlimited && PythSpacesAway(sSpot, sTempGridNo) <= usAdjustedSight && LocationToLocationLineOfSightTest(sTempGridNo, bThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, NO_DISTANCE_LIMIT, STANDING_LOS_POS, STANDING_LOS_POS))
-						{
-							return FALSE;
-						}
-					}
-				}
-			}
-		}
-	}
-
-	return TRUE;
+	return !AIKnownThreatHasSightToSpot(pSoldier, sSpot, fUnlimited, ANIM_STAND, STANDING_LOS_POS);
 }
 
 BOOLEAN CheckDangerousDirection(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
