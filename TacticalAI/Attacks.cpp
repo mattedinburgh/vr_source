@@ -223,6 +223,41 @@ static BOOLEAN AIShouldAvoidFinishingDownedTarget(
 		(pOpponent->bCollapsed && pOpponent->bBreath < OKBREATH));
 }
 
+// This is deliberately behaviour-based, not trait-based: the shooter has to
+// currently see the opponent administering aid.  A hidden doctor/medic skill is
+// not legitimate tactical knowledge.
+static BOOLEAN AIObservedActiveMedicalTreatment(
+	SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent, BOOLEAN fCurrentContact)
+{
+	if (!pSoldier || !pOpponent || !fCurrentContact || !AICombatTeam(pSoldier))
+		return FALSE;
+
+	if (pSoldier->aiData.bAttitude == ATTACKSLAYONLY ||
+		pOpponent->IsZombie() ||
+		!IS_MERC_BODY_TYPE(pOpponent))
+	{
+		return FALSE;
+	}
+
+	BOOLEAN fGivingAid =
+		pOpponent->aiData.bAction == AI_ACTION_GIVE_AID ||
+		(pOpponent->aiData.bLastAction == AI_ACTION_GIVE_AID &&
+		 pOpponent->bActionPoints < pOpponent->bInitialActionPoints);
+
+	if (!fGivingAid)
+		return FALSE;
+
+	// Immediate self-defence overrides the reluctance.
+	if (pSoldier->ubPreviousAttackerID == pOpponent->ubID ||
+		pSoldier->ubNextToPreviousAttackerID == pOpponent->ubID)
+	{
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+
 void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 {
 	UINT32 uiLoop;
@@ -774,6 +809,13 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		if (fCurrentContact && (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed && pOpponent->bBreath == 0))
 		{
 			iAttackValue /= 4;
+		}
+
+		// A visibly active caregiver is a lower-priority deliberate target. This is
+		// hesitation, not immunity: if there is no better threat the AI can still fire.
+		if (AIObservedActiveMedicalTreatment(pSoldier, pOpponent, fCurrentContact))
+		{
+			iAttackValue = iAttackValue * 55 / 100;
 		}
 
 		// Fire-and-manoeuvre target priority. If a teammate is currently bounding
@@ -2135,6 +2177,11 @@ void CalcBestStab(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestStab, BOOLEAN fBladeAt
 		// NOTE: ignore my cover!	By the time I run beside him I won't have any!
 		//iThreatValue = CalcManThreatValue(pOpponent,pSoldier->sGridNo,FALSE,pSoldier);
 		iThreatValue = CalcManThreatValue(pOpponent,pSoldier->sGridNo,TRUE,pSoldier);
+
+		if (AIObservedActiveMedicalTreatment(pSoldier, pOpponent, TRUE))
+		{
+			iThreatValue = iThreatValue * 55 / 100;
+		}
 
 		// estimate the damage this stab would do to this opponent
 		iEstDamage = EstimateStabDamage(pSoldier,pOpponent,ubBestChanceToHit, fBladeAttack );
