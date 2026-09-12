@@ -4839,6 +4839,7 @@ static BOOLEAN AIEnemyResponderEligible(SOLDIERTYPE *pSoldier)
 		!pSoldier->bCollapsed &&
 		!pSoldier->bBreathCollapsed &&
 		!(pSoldier->usSoldierFlagMask & SOLDIER_POW) &&
+		!(pSoldier->flags.uiStatusFlags & SOLDIER_COWERING) &&
 		pSoldier->aiData.bOrders != STATIONARY &&
 		pSoldier->aiData.bOrders != SNIPER;
 }
