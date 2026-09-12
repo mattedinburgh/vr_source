@@ -232,7 +232,7 @@ UINT16 DetermineMovementMode( SOLDIERTYPE * pSoldier, INT8 bAction );
 
 INT32 EstimateShotDamage(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent, INT16 ubChanceToHit);
 INT32 EstimateStabDamage(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,	INT16 ubChanceToHit, BOOLEAN fBladeAttack);
-INT32 EstimateThrowDamage(SOLDIERTYPE *pSoldier, UINT8 ubItemPos, SOLDIERTYPE *pOpponent, INT32 sGridNo, INT8 bTargetLevel);
+INT32 EstimateThrowDamage(SOLDIERTYPE *pSoldier, UINT8 ubItemPos, SOLDIERTYPE *pOpponent, INT32 sGridNo, INT8 bTargetLevel, BOOLEAN fTargetStateKnown);
 INT16 EstimatePathCostToLocation( SOLDIERTYPE * pSoldier, INT32 sDestGridNo, INT8 bDestLevel, BOOLEAN fAddCostAfterClimbingUp, BOOLEAN * pfClimbingNecessary, INT32 * psClimbGridNo );
 
 BOOLEAN FindBetterSpotForItem( SOLDIERTYPE * pSoldier, INT8 bSlot );
