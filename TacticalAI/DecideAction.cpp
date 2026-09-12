@@ -11357,7 +11357,10 @@ INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 INT8 DecideCombatDispersion(SOLDIERTYPE *pSoldier)
 {
 	if (!gfTurnBasedAI || !pSoldier || !AICombatTeam(pSoldier) ||
-		!SoldierAI(pSoldier) || pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		!SoldierAI(pSoldier) || pSoldier->stats.bLife < OKLIFE ||
+		pSoldier->bCollapsed || pSoldier->bBreathCollapsed ||
+		(pSoldier->usSoldierFlagMask & SOLDIER_POW) ||
+		(pSoldier->flags.uiStatusFlags & SOLDIER_COWERING) ||
 		pSoldier->IsFlanking() ||
 		AIDisengagementActive(pSoldier) ||
 		AIEscapeActive(pSoldier) || AIShouldStartEscape(pSoldier))
@@ -11375,7 +11378,11 @@ INT8 DecideCombatDispersion(SOLDIERTYPE *pSoldier)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
-			pFriend->stats.bLife < OKLIFE)
+			pFriend->stats.bLife < OKLIFE ||
+			pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING))
 		{
 			continue;
 		}
