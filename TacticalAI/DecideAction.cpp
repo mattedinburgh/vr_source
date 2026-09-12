@@ -1457,6 +1457,7 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 	BOOLEAN fCivilian = (PTR_CIVILIAN && (pSoldier->ubCivilianGroup == NON_CIV_GROUP || pSoldier->aiData.bNeutral || (pSoldier->ubBodyType >= FATCIV && pSoldier->ubBodyType <= CRIPPLECIV) ) );
 	BOOLEAN fClimb;
 	BOOLEAN fReachable;
+	BOOLEAN fHoldRemoteReserve = FALSE;
 
 	INT8  bInWater,bInGas;
 
@@ -1908,9 +1909,9 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 
 
 			// A radioed sector contact should not make every distant patrol abandon its post.
-			// Soldiers with no recent personal sighting respond strongly when close, but
-			// reinforcement probability falls with distance. ONCALL/SEEKENEMY remain the
-			// units most willing to reinforce a remote firefight.
+			// Nearby troops react locally. Farther away, only a limited response element
+			// actively investigates; the rest remain a reserve/guard screen until the
+			// fight spreads, they see an alerted friend, or they come under fire.
 			if (gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition &&
 				!GuySawEnemy(pSoldier, SEEN_LAST_TURN) &&
 				!pSoldier->aiData.bUnderFire)
@@ -1920,6 +1921,35 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 
 				if (iResponseDistance > iLocalResponseRange)
 				{
+					UINT8 ubResponseLimit = 5;
+					if (pSoldier->aiData.bOrders == ONCALL || pSoldier->aiData.bOrders == SEEKENEMY)
+						ubResponseLimit = 7;
+
+					UINT8 ubCloserResponders = 0;
+					for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+						iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+					{
+						SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+						if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+							pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+							pFriend->aiData.bOrders == STATIONARY || pFriend->aiData.bOrders == SNIPER)
+						{
+							continue;
+						}
+
+						INT32 iFriendDistance = PythSpacesAway(pFriend->sGridNo, sNoiseGridNo);
+						if (iFriendDistance < iResponseDistance ||
+							(iFriendDistance == iResponseDistance && pFriend->ubID < pSoldier->ubID))
+						{
+							++ubCloserResponders;
+							if (ubCloserResponders >= ubResponseLimit)
+							{
+								fHoldRemoteReserve = TRUE;
+								break;
+							}
+						}
+					}
+
 					INT32 iDistancePenalty = 10 + 2 * (iResponseDistance - iLocalResponseRange);
 					iChance -= __min(65, iDistancePenalty);
 
@@ -1934,6 +1964,9 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 					case SEEKENEMY:     iChance += 15; break;
 					default: break;
 					}
+
+					if (fHoldRemoteReserve)
+						iChance = 0;
 				}
 			}
 
@@ -2015,6 +2048,11 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 
 			// reduce chance if breath is down, less likely to wander around when tired
 			iChance -= (100 - pSoldier->bBreath);
+
+			// Soldiers outside the designated remote response element hold their post
+			// instead of bypassing the noise cap by running to the reporting friend.
+			if (fHoldRemoteReserve)
+				iChance = 0;
 
 			// sevenfm: stationary/snipers should not help
 			if ( pSoldier->aiData.bOrders == SNIPER || pSoldier->aiData.bOrders == STATIONARY )
