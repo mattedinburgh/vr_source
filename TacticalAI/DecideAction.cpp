@@ -9352,7 +9352,7 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 
 		// Do not spend smoke on somebody whom the acting soldier does not believe is
 		// exposed to enemy fire. This keeps the behaviour information-fair.
-		if (!EnemyCanAttackSpot(pSoldier, pFriend->sGridNo, pFriend->pathing.bLevel))
+		if (AIKnownThreatExposure(pSoldier, pFriend->sGridNo, pFriend->pathing.bLevel) == 0)
 			continue;
 
 		INT32 iValue = 0;
