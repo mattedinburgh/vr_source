@@ -1125,6 +1125,10 @@ static UINT8 AIRecentTossSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, IN
 		if (!pFriend || pFriend == pSoldier ||
 			!pFriend->bActive || !pFriend->bInSector ||
 			pFriend->stats.bLife < OKLIFE ||
+			pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 			pFriend->pathing.bLevel != bTargetLevel ||
 			!AISameFireteam(pSoldier, pFriend))
 		{
