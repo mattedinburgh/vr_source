@@ -3322,6 +3322,15 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		}
 	}
 
+	// Any capable squadmate may extract an exposed downed comrade when a medic is
+	// available and the route is not suicidal. Medics still handle stabilization.
+	if (AICombatTeam(pSoldier) && ubCanMove)
+	{
+		INT8 bEvacAction = DecideCombatCasualtyEvacuation(pSoldier);
+		if (bEvacAction != AI_ACTION_NONE)
+			return bEvacAction;
+	}
+
 	// Combat medics prioritize saving viable casualties, but only when the rescue
 	// passes the medic's personal-risk and route-exposure checks.
 	if (AICombatTeam(pSoldier) && AICheckIsMedic(pSoldier))
