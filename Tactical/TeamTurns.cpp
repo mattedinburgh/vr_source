@@ -69,6 +69,10 @@ class SOLDIERTYPE;
 extern INT8 STRAIGHT;
 //extern UINT8 gubSpeedUpAnimationFactor;
 void SetSoldierAniSpeed( SOLDIERTYPE *pSoldier );
+
+// Wall-clock watchdog timestamp. Fast tactical clock modes must not shorten the
+// amount of real time an AI soldier is allowed to finish its action.
+time_t gtTimeSinceMercAIStart = 0;
 void ProcessBleedoutCasualties( );
 
 void RecalculateSoldiersAniSpeed()
