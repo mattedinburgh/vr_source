@@ -4426,6 +4426,8 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (!fCanMove || !gfTurnBasedAI || !AIEnemyFireteamEligible(pSoldier) ||
 		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
 		pSoldier->aiData.bUnderFire || pSoldier->aiData.bOppCnt > 0 ||
+		pSoldier->IsFlanking() ||
+		AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier) ||
 		GuySawEnemy(pSoldier, SEEN_LAST_TURN) || pSoldier->aiData.bOrders == STATIONARY ||
 		pSoldier->aiData.bOrders == SNIPER)
 		return AI_ACTION_NONE;
