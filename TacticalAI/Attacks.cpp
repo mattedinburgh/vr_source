@@ -202,6 +202,27 @@ static UINT8 AIKnownShotChanceToGetThrough(SOLDIERTYPE *pSoldier, SOLDIERTYPE *p
 	return ubChance;
 }
 
+// Human tactical AI does not deliberately execute a visibly incapacitated
+// human opponent. Stale contacts are never tested here: callers pass TRUE only
+// when current contact makes current life/collapse state legitimate knowledge.
+static BOOLEAN AIShouldAvoidFinishingDownedTarget(
+	SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent, BOOLEAN fCurrentContact)
+{
+	if (!pSoldier || !pOpponent || !fCurrentContact || !AICombatTeam(pSoldier))
+		return FALSE;
+
+	// Preserve explicitly scripted killer behaviour and non-human threats.
+	if (pSoldier->aiData.bAttitude == ATTACKSLAYONLY ||
+		pOpponent->IsZombie() ||
+		!IS_MERC_BODY_TYPE(pOpponent))
+	{
+		return FALSE;
+	}
+
+	return (pOpponent->stats.bLife < OKLIFE ||
+		(pOpponent->bCollapsed && pOpponent->bBreath < OKBREATH));
+}
+
 void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 {
 	UINT32 uiLoop;
@@ -274,6 +295,9 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		const BOOLEAN fCurrentContact =
 			(bPersonalKnowledge == SEEN_CURRENTLY || bPublicKnowledge == SEEN_CURRENTLY);
 		if (fCurrentContact && !ValidOpponent(pSoldier, pOpponent))
+			continue;
+
+		if (AIShouldAvoidFinishingDownedTarget(pSoldier, pOpponent, fCurrentContact))
 			continue;
 
 		// check knowledge
@@ -1296,8 +1320,10 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 			continue;
 		}
 
-		// Do not infer hidden health changes from stale contacts.
-		if (fCurrentContact && pOpponent->stats.bLife < OKLIFE && !pOpponent->IsZombie())
+		// Do not infer hidden health changes from stale contacts. When the target
+		// is currently visible, human AI also avoids deliberately finishing a downed
+		// opponent with explosives.
+		if (AIShouldAvoidFinishingDownedTarget(pSoldier, pOpponent, fCurrentContact))
 		{
 			continue;
 		}
@@ -1988,6 +2014,9 @@ void CalcBestStab(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestStab, BOOLEAN fBladeAt
 		}
 
 		if (!ValidOpponent(pSoldier, pOpponent))
+			continue;
+
+		if (AIShouldAvoidFinishingDownedTarget(pSoldier, pOpponent, TRUE))
 			continue;
 
 		// if this opponent is not on the same level
