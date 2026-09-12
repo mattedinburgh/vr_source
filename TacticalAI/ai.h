@@ -270,6 +270,7 @@ UINT8 NumberOfTeamMatesAdjacent( SOLDIERTYPE * pSoldier, INT32 sGridNo );
 UINT8 GetClosestFlaggedSoldierID( SOLDIERTYPE * pSoldier, INT16 aRange, UINT8 auTeam, UINT32 aFlag, BOOLEAN fCheckSight = TRUE );
 
 // sevenfm:
+BOOLEAN InSmokeNearby(INT32 sGridNo, INT8 bLevel);
 INT16 MaxNormalVisionDistance( void );
 BOOLEAN GuySawEnemy( SOLDIERTYPE * pSoldier, UINT8 ubMax = SEEN_3_TURNS_AGO );
 BOOLEAN GuyHeardEnemy(SOLDIERTYPE * pSoldier, UINT8 ubMax = HEARD_2_TURNS_AGO);
