@@ -6845,6 +6845,62 @@ BOOLEAN SightCoverAtSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, BOOLEAN fUnlimited)
 	return !AIKnownThreatHasSightToSpot(pSoldier, sSpot, fUnlimited, ANIM_STAND, STANDING_LOS_POS);
 }
 
+// Grade environmental/tactical destination hazards using only information the AI
+// can legitimately know.  This is deliberately coarse: movement callers need a
+// stable "worse / not worse" signal, not another expensive cover calculation.
+UINT8 SpotDangerLevel(SOLDIERTYPE *pSoldier, INT32 sGridNo)
+{
+	if (!pSoldier || TileIsOutOfBounds(sGridNo))
+		return 0;
+
+	UINT8 ubLevel = 0;
+
+	// Mild hazards: tactically undesirable, but never worth trapping a soldier over.
+	if ((Water(sGridNo, pSoldier->pathing.bLevel) && !pSoldier->IsFlanking()) ||
+		CorpseWarning(pSoldier, sGridNo, pSoldier->pathing.bLevel))
+	{
+		ubLevel = 1;
+	}
+
+	// Once alerted, stepping into illumination at night is a meaningful exposure cost.
+	if ((pSoldier->aiData.bAlertStatus >= STATUS_RED ||
+		 pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE) &&
+		InLightAtNight(sGridNo, pSoldier->pathing.bLevel))
+	{
+		ubLevel = __max((UINT8)2, ubLevel);
+	}
+
+	// Severe terrain / area denial.
+	if ((DeepWater(sGridNo, pSoldier->pathing.bLevel) && !pSoldier->IsFlanking()) ||
+		RedSmokeDanger(sGridNo, pSoldier->pathing.bLevel))
+	{
+		ubLevel = __max((UINT8)3, ubLevel);
+	}
+
+	// Immediate hazards. FindBombNearby() only reacts to visible/detected armed bombs.
+	if (InGas(pSoldier, sGridNo) ||
+		FindBombNearby(pSoldier, sGridNo, BOMB_DETECTION_RANGE))
+	{
+		ubLevel = 4;
+	}
+
+	return ubLevel;
+}
+
+BOOLEAN CheckNPCDestination(SOLDIERTYPE *pSoldier, INT32 sGridNo)
+{
+	if (!pSoldier || TileIsOutOfBounds(sGridNo))
+		return FALSE;
+
+	const UINT8 ubCurrentDanger = SpotDangerLevel(pSoldier, pSoldier->sGridNo);
+	const UINT8 ubTargetDanger = SpotDangerLevel(pSoldier, sGridNo);
+
+	// Reject only a strictly worse destination.  Allow equal danger so a soldier
+	// already caught in smoke/water/light can still move laterally toward an exit
+	// instead of becoming artificially rooted in place.
+	return (ubTargetDanger <= ubCurrentDanger);
+}
+
 BOOLEAN CheckDangerousDirection(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 {
 	CHECKF(pSoldier);
