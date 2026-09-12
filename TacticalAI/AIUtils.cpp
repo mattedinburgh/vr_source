@@ -4505,6 +4505,80 @@ static void AIEnsureEnemyFireteams(void)
 	gsAIFireteamKnownMenInSector = gTacticalStatus.Team[ENEMY_TEAM].bMenInSector;
 }
 
+static BOOLEAN AIFireteamPredominantlyFixed(UINT8 ubFireteam)
+{
+	UINT8 ubFixed = 0;
+	UINT8 ubMobile = 0;
+
+	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pMember = MercPtrs[iCounter];
+		if (!AIEnemyFireteamEligible(pMember) ||
+			pMember->ubID >= MAX_NUM_SOLDIERS ||
+			guiAIFireteamIdentity[pMember->ubID] != pMember->uiUniqueSoldierIdValue ||
+			gubAIFireteam[pMember->ubID] != ubFireteam ||
+			pMember->stats.bLife < OKLIFE ||
+			pMember->bCollapsed ||
+			pMember->bBreathCollapsed)
+		{
+			continue;
+		}
+
+		if (AIEnemyFixedMissionRole(pMember))
+			++ubFixed;
+		else
+			++ubMobile;
+	}
+
+	return ubFixed > ubMobile;
+}
+
+static INT32 AIFireteamMergeDistance(UINT8 ubFirst, UINT8 ubSecond)
+{
+	INT32 iBest = 10000;
+
+	for (UINT16 i = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		i <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++i)
+	{
+		SOLDIERTYPE *pFirst = MercPtrs[i];
+		if (!AIEnemyFireteamEligible(pFirst) ||
+			pFirst->ubID >= MAX_NUM_SOLDIERS ||
+			guiAIFireteamIdentity[pFirst->ubID] != pFirst->uiUniqueSoldierIdValue ||
+			gubAIFireteam[pFirst->ubID] != ubFirst ||
+			pFirst->stats.bLife < OKLIFE ||
+			pFirst->bCollapsed ||
+			pFirst->bBreathCollapsed)
+		{
+			continue;
+		}
+
+		for (UINT16 j = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+			j <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++j)
+		{
+			SOLDIERTYPE *pSecond = MercPtrs[j];
+			if (!AIEnemyFireteamEligible(pSecond) ||
+				pSecond->ubID >= MAX_NUM_SOLDIERS ||
+				guiAIFireteamIdentity[pSecond->ubID] != pSecond->uiUniqueSoldierIdValue ||
+				gubAIFireteam[pSecond->ubID] != ubSecond ||
+				pSecond->stats.bLife < OKLIFE ||
+				pSecond->bCollapsed ||
+				pSecond->bBreathCollapsed)
+			{
+				continue;
+			}
+
+			INT32 iDistance = PythSpacesAway(pFirst->sGridNo, pSecond->sGridNo);
+			if (pFirst->pathing.bLevel != pSecond->pathing.bLevel)
+				iDistance += __max(6, DAY_VISION_RANGE / 3);
+
+			iBest = __min(iBest, iDistance);
+		}
+	}
+
+	return iBest;
+}
+
 static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 {
 	if (!AIEnemyFireteamEligible(pSoldier))
@@ -4514,17 +4588,36 @@ static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 	if (ubReady == 0 || ubReady > 2)
 		return FALSE;
 
-	UINT8 ubOldTotal = AIFireteamCountById(ubOld, FALSE);
 	UINT8 ubBest = AI_FIRETEAM_NONE;
 	INT32 iBest = 10000;
+	BOOLEAN fOldFixed = AIFireteamPredominantlyFixed(ubOld);
+
 	for (UINT8 ubTeam = 1; ubTeam < gubAINextFireteam; ++ubTeam)
 	{
-		if (ubTeam == ubOld || AIFireteamCountById(ubTeam, TRUE) < 3)
+		UINT8 ubTargetReady = AIFireteamCountById(ubTeam, TRUE);
+		if (ubTeam == ubOld || ubTargetReady < 3)
 			continue;
-		if (AIFireteamCountById(ubTeam, FALSE) + ubOldTotal > AI_FIRETEAM_MAX_MERGED)
+
+		// Merge capacity is combat strength, not body count. Downed casualties move
+		// with the remnant for cohesion/rescue, but they do not block two survivors
+		// from joining a viable element.
+		if (ubTargetReady + ubReady > AI_FIRETEAM_MAX_MERGED)
 			continue;
-		INT32 iDistance = AIFireteamJoinDistance(ubTeam, pSoldier);
-		if (iDistance < iBest) { iBest = iDistance; ubBest = ubTeam; }
+
+		INT32 iDistance = AIFireteamMergeDistance(ubOld, ubTeam);
+		if (iDistance >= 10000)
+			continue;
+
+		// Prefer a compatible mission element when two destinations are similarly
+		// close, but never let role preference overwhelm geography.
+		if (AIFireteamPredominantlyFixed(ubTeam) != fOldFixed)
+			iDistance += 8;
+
+		if (iDistance < iBest)
+		{
+			iBest = iDistance;
+			ubBest = ubTeam;
+		}
 	}
 	if (ubBest == AI_FIRETEAM_NONE)
 		return FALSE;
