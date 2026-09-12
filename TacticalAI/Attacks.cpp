@@ -1203,20 +1203,19 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 			continue;
 		}
 
-		// don't use flare if soldier is in light
-		if (usGrenade != NOTHING &&
-			Item[usGrenade].flare &&
-			InLightAtNight(pOpponent->sGridNo, pOpponent->pathing.bLevel))
+		// Flare decisions must use contact knowledge as well. Looking at the live
+		// opponent tile/light/level here leaks whether an unseen target moved into
+		// light or climbed onto a roof.
+		if (usGrenade != NOTHING && Item[usGrenade].flare)
 		{
-			continue;
-		}
-
-		// don't use flares against opponents on roof
-		if (usGrenade != NOTHING &&
-			Item[usGrenade].flare &&
-			pOpponent->pathing.bLevel > 0)
-		{
-			continue;
+			INT32 sKnownFlareSpot = KnownLocation(pSoldier, pOpponent->ubID);
+			INT8 bKnownFlareLevel = KnownLevel(pSoldier, pOpponent->ubID);
+			if (TileIsOutOfBounds(sKnownFlareSpot) ||
+				InLightAtNight(sKnownFlareSpot, bKnownFlareLevel) ||
+				bKnownFlareLevel > 0)
+			{
+				continue;
+			}
 		}
 
 		if ((Item[usInHand].mortar ) || (Item[usInHand].grenadelauncher ) )
