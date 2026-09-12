@@ -18250,21 +18250,44 @@ BOOLEAN SOLDIERTYPE::OrderArtilleryStrike( UINT32 usSectorNr, INT32 sTargetGridN
 			return FALSE;
 		}
 
-		// send a signal shell at first. This marks the area that the shells will come in
-		static UINT16 usSignalShellIndex = 1700;
-		if ( HasItemFlag(usSignalShellIndex, SIGNAL_SHELL) || GetFirstItemWithFlag(&usSignalShellIndex, SIGNAL_SHELL) )
-			ArtilleryStrike( usSignalShellIndex, this->ubID + 2, sStartingGridNo, sTargetGridNo );
-		else
+		// Resolve the active mod's signal shell and matching HE shell instead of relying on fixed item IDs.
+		// Current 1.13 uses the same approach, which is safer for Vengeance/AIM custom item tables.
+		static UINT16 usSignalShellIndex = NOTHING;
+		static UINT16 usHeShellIndex = NOTHING;
+		if ( usSignalShellIndex == NOTHING || usHeShellIndex == NOTHING )
 		{
-			ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, New113Message[ MSG113_NO_SIGNAL_SHELL ]);
-			return FALSE;
+			UINT16 findSignalShellIndex = 1700;
+			UINT16 findHeShellIndex = 140;
+
+			if ( !HasItemFlag( findSignalShellIndex, SIGNAL_SHELL ) && !GetFirstItemWithFlag( &findSignalShellIndex, SIGNAL_SHELL ) )
+			{
+				ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, New113Message[ MSG113_NO_SIGNAL_SHELL ] );
+				return FALSE;
+			}
+
+			UINT16 mortarIndex = GetLauncherFromLaunchable( findSignalShellIndex );
+			if ( mortarIndex == NOTHING )
+				return FALSE;
+
+			if ( GetLauncherFromLaunchable( findHeShellIndex ) != mortarIndex )
+				findHeShellIndex = GetLaunchableOfExplosionType( mortarIndex, EXPLOSV_NORMAL );
+
+			if ( findHeShellIndex == NOTHING )
+			{
+				ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, New113Message[ MSG113_NOT_ENOUGH_MORTAR_SHELLS ] );
+				return FALSE;
+			}
+
+			usSignalShellIndex = findSignalShellIndex;
+			usHeShellIndex = findHeShellIndex;
 		}
 
-		// we just 'plant' the mortar shells as bombs. We time them so that they will be fired at the beginning of the next turn
-		// for every 'wave' of shells, we just plant one and then clone them when firing
-		// create mortar shell item
+		// send a signal shell first. This marks the area that the barrage will cover.
+		ArtilleryStrike( usSignalShellIndex, this->ubID + 2, sStartingGridNo, sTargetGridNo );
+
+		// Plant the matching HE mortar shell as a timed artillery wave.
 		OBJECTTYPE shellobj;
-		CreateItem( 140, 100, &shellobj );	// 140 is mortar HE shell
+		CreateItem( usHeShellIndex, 100, &shellobj );
 
 		shellobj.fFlags |= OBJECT_ARMED_BOMB;
 		shellobj[0]->data.misc.bDetonatorType = BOMB_TIMED;
