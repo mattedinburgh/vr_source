@@ -10955,7 +10955,21 @@ UINT32 CalcThrownChanceToHit(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTi
 	// ADJUST FOR EXTRA AIMING TIME
 	if (ubAimTime)
 	{
-		iChance += (AIM_BONUS_PER_AP * ubAimTime); // bonus for every pt of aiming
+		if ( Item[usHandItem].usItemClass & ( IC_GRENADE | IC_THROWN ) )
+		{
+			// Deliberate grenade aiming has diminishing returns.  The first moment spent
+			// settling the throw matters most; later clicks refine rather than laser-guide it.
+			INT16 bThrowAim = __min( 4, ubAimTime );
+			INT32 iAimBonus = AIM_BONUS_PER_AP;
+			if ( bThrowAim > 1 ) iAimBonus += ( AIM_BONUS_PER_AP * 3 ) / 4;
+			if ( bThrowAim > 2 ) iAimBonus += AIM_BONUS_PER_AP / 2;
+			if ( bThrowAim > 3 ) iAimBonus += AIM_BONUS_PER_AP / 4;
+			iChance += iAimBonus;
+		}
+		else
+		{
+			iChance += (AIM_BONUS_PER_AP * ubAimTime); // existing knife/launcher behaviour
+		}
 	}
 
 /*
