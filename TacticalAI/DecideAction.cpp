@@ -271,7 +271,8 @@ static UINT8 AIEnemyResponseLimitForContact(
 	{
 		SOLDIERTYPE *pEngaged = MercPtrs[iCounter];
 		if (!pEngaged || !pEngaged->bActive || !pEngaged->bInSector ||
-			pEngaged->stats.bLife < OKLIFE || pEngaged->bCollapsed)
+			pEngaged->stats.bLife < OKLIFE || pEngaged->bCollapsed || pEngaged->bBreathCollapsed ||
+			(pEngaged->usSoldierFlagMask & SOLDIER_POW))
 			continue;
 
 		if (!pEngaged->aiData.bUnderFire &&
@@ -2258,7 +2259,8 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 						{
 							SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 							if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
-								pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+								pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
+								(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
 								pFriend->aiData.bOrders == STATIONARY || pFriend->aiData.bOrders == SNIPER)
 								continue;
 
@@ -8849,7 +8851,9 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (!pFriend || pFriend == pSoldier ||
 			!pFriend->bActive || !pFriend->bInSector ||
-			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 			!AISameFireteam(pSoldier, pFriend))
 		{
 			continue;
@@ -8910,7 +8914,9 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 			SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 			if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
 				!AISameFireteam(pSoldier, pFriend) ||
-				pFriend->stats.bLife < OKLIFE || !pFriend->IsFlanking() ||
+				pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
+				(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+				!pFriend->IsFlanking() ||
 				TileIsOutOfBounds(pFriend->lastFlankSpot) ||
 				PythSpacesAway(pFriend->lastFlankSpot, sClosestDisturbance) > TACTICAL_RANGE / 2)
 			{
@@ -10917,7 +10923,8 @@ static BOOLEAN AIValidMilitiaConsolidationAnchor(SOLDIERTYPE *pSoldier, SOLDIERT
 		pFriend->bTeam != MILITIA_TEAM ||
 		pFriend == pSoldier ||
 		!pFriend->bActive || !pFriend->bInSector ||
-		pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+		pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
+		(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
 		(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 		pFriend->pathing.bLevel != pSoldier->pathing.bLevel ||
 		pFriend->aiData.bUnderFire ||
