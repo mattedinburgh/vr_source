@@ -2949,15 +2949,15 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			fCoveringFireSupport ||																				// cover a nearby ally's movement/withdrawal
 			NightLight() && CountFriendsFlankSameSpot(pSoldier) && Chance(50) ||
 			TANK(pSoldier) ||																		// tanks don't need cover
-			pSoldier->aiData.bUnderFire && (pSoldier->ubPreviousAttackerID == BestShot.ubOpponent || pSoldier->ubNextToPreviousAttackerID == BestShot.ubOpponent || MercPtrs[BestShot.ubOpponent]->sLastTarget == pSoldier->sGridNo) ||	// return fire
+			pSoldier->aiData.bUnderFire && (pSoldier->ubPreviousAttackerID == BestShot.ubOpponent || pSoldier->ubNextToPreviousAttackerID == BestShot.ubOpponent) ||	// return fire
 			Chance((BestShot.ubChanceToReallyHit + 100) / 2) ||											// 50% chance to fire without cover
-			SoldierToSoldierLineOfSightTest(pSoldier, MercPtrs[BestShot.ubOpponent], TRUE, CALC_FROM_ALL_DIRS)) &&		// can see target after turning
+			LocationToLocationLineOfSightTest(pSoldier->sGridNo, pSoldier->pathing.bLevel, BestShot.sTarget, BestShot.bTargetLevel, TRUE, MAX_VISION_RANGE)) &&		// can see target after turning
 			// reduce chance to shoot if target is beyond weapon range
 			(AICheckIsMachinegunner(pSoldier) ||
 			fCoveringFireSupport ||
 			TANK(pSoldier) ||
 			AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
-			pSoldier->aiData.bUnderFire && (pSoldier->ubPreviousAttackerID == BestShot.ubOpponent || pSoldier->ubNextToPreviousAttackerID == BestShot.ubOpponent || MercPtrs[BestShot.ubOpponent]->sLastTarget == pSoldier->sGridNo) ||	// return fire
+			pSoldier->aiData.bUnderFire && (pSoldier->ubPreviousAttackerID == BestShot.ubOpponent || pSoldier->ubNextToPreviousAttackerID == BestShot.ubOpponent) ||	// return fire
 			Chance(100 * (GunRange(&pSoldier->inv[BestShot.bWeaponIn], pSoldier) / CELL_X_SIZE) / PythSpacesAway(pSoldier->sGridNo, BestShot.sTarget))) &&
 			// check that we have spare ammo
 			(fExtraClip || pSoldier->inv[BestShot.bWeaponIn][0]->data.gun.ubGunShotsLeft >= gGameExternalOptions.ubAISuppressionMinimumMagSize))
