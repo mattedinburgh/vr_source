@@ -5117,8 +5117,21 @@ INT32 AIManeuverRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	iScore += iHealthPercent / 6;
 	iScore += (INT32)pSoldier->bBreath / 12;
 
-	if (AICheckShortWeaponRange(pSoldier))
-		iScore += 18;
+	if (AICheckHasGun(pSoldier))
+	{
+		if (AICheckShortWeaponRange(pSoldier))
+			iScore += 18;
+	}
+	else if (FindAIUsableObjClass(pSoldier, IC_WEAPON) != NO_SLOT)
+	{
+		// A real melee weapon can justify closing distance, but should not outrank
+		// a healthy rifleman merely because the legacy short-range helper treats no gun as short.
+		iScore += 4;
+	}
+	else
+	{
+		iScore -= 40;
+	}
 
 	if (AICheckIsMachinegunner(pSoldier))
 		iScore -= 32;
