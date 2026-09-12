@@ -9534,6 +9534,17 @@ BOOLEAN AbortFinalSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bAction, INT32 s
 		return TRUE;
 	}
 
+	// Do not choose a nominally useful destination that introduces a new
+	// environmental mobility hazard. Leaving an existing hazard is handled by
+	// the dedicated water/gas escape logic before ordinary RED movement.
+	if ((InGas(pSoldier, sSpot) && !InGas(pSoldier, pSoldier->sGridNo)) ||
+		(DeepWater(sSpot, pSoldier->pathing.bLevel) && !DeepWater(pSoldier->sGridNo, pSoldier->pathing.bLevel)))
+	{
+		DebugAI(AI_MSG_INFO, pSoldier, String("hazardous destination! abort!"));
+		sDangerousSpot = sSpot;
+		return TRUE;
+	}
+
 	// don't go into light at night (includes smoke check)
 	if (InLightAtNight(sSpot, bLevel) &&
 		!InLightAtNight(pSoldier->sGridNo, pSoldier->pathing.bLevel) &&
@@ -9630,6 +9641,19 @@ BOOLEAN AbortPath(SOLDIERTYPE *pSoldier, INT8 bAction, INT32 sClosestDisturbance
 			continue;
 		}
 
+		// Reject paths that cross hazards even when the final destination itself
+		// is safe. Legacy Vengeance only validated the endpoint, so a seek/help/
+		// cover route could walk through a bomb, red smoke, gas or deep water.
+		if (FindBombNearby(pSoldier, sCheckGridNo, BOMB_DETECTION_RANGE) ||
+			(RedSmokeDanger(sCheckGridNo, bLevel) && !RedSmokeDanger(pSoldier->sGridNo, bLevel)) ||
+			(InGas(pSoldier, sCheckGridNo) && !InGas(pSoldier, pSoldier->sGridNo)) ||
+			(DeepWater(sCheckGridNo, bLevel) && !DeepWater(pSoldier->sGridNo, bLevel)))
+		{
+			DebugAI(AI_MSG_INFO, pSoldier, String("hazard on movement path! abort!"));
+			sDangerousSpot = sCheckGridNo;
+			return TRUE;
+		}
+
 		// don't go into light at night (includes smoke check)
 		if (InLightAtNight(sCheckGridNo, bLevel) &&
 			!InLightAtNight(pSoldier->sGridNo, pSoldier->pathing.bLevel) &&
@@ -9657,6 +9681,13 @@ BOOLEAN AbortPath(SOLDIERTYPE *pSoldier, INT8 bAction, INT32 sClosestDisturbance
 				sDangerousSpot = sCheckGridNo;
 			}
 			return TRUE;
+		}
+
+		// Preserve partial progress for callers that can stop short rather than
+		// discard an otherwise safe approach when a later tile becomes dangerous.
+		if (sCheckGridNo != pSoldier->sGridNo)
+		{
+			sLastSafeSpot = sCheckGridNo;
 		}
 	}
 
