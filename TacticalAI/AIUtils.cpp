@@ -4607,6 +4607,18 @@ BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridN
 				fFriendlyDanger = TRUE;
 				break;
 			}
+
+			// Artillery is ordered against an area, not an instantaneous bullet path.
+			// Protect a friendly's already-committed movement destination as well as his
+			// current tile so support is not called onto an advancing/withdrawing element.
+			if (pFriend->aiData.bAction >= FIRST_MOVEMENT_ACTION &&
+				pFriend->aiData.bAction <= LAST_MOVEMENT_ACTION &&
+				!TileIsOutOfBounds(pFriend->aiData.usActionData) &&
+				PythSpacesAway(pFriend->aiData.usActionData, sCandidateSpot) <= iFriendlySafetyRadius)
+			{
+				fFriendlyDanger = TRUE;
+				break;
+			}
 		}
 
 		if (fFriendlyDanger)
