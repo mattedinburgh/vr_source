@@ -2318,7 +2318,7 @@ INT32 EstimateShotDamage(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent, INT16 ub
 	// 15% of all shots are to the head, 80% are to the torso.	Calc. avg. prot.
 	// NB: make AI guys shoot at head 15% of time, 5% of time at legs
 
-	iTotalProt = ((15 * iHeadProt) + (75 * iTorsoProt) + 5 * iLegProt) / 100;
+	iTotalProt = ((15 * iHeadProt) + (80 * iTorsoProt) + 5 * iLegProt) / 100;
 	iTotalProt = (INT32) (iTotalProt * AmmoTypes[ubAmmoType].armourImpactReductionMultiplier / max(1,AmmoTypes[ubAmmoType].armourImpactReductionDivisor) );
 
 	iDamageBeforeArmour = iDamage;
@@ -2594,7 +2594,9 @@ INT32 EstimateStabDamage( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
 	{
 		if ( HAS_SKILL_TRAIT( pSoldier, MELEE_NT ) && (gGameOptions.fNewTraitSystem) )
 		{
-			iImpact += (iImpact * (100 + gSkillTraitValues.ubMEDamageBonusBlades ) / 100); // +30% damage
+			// Apply the configured percentage once. Legacy Vengeance added 130% of
+			// the base value for a nominal +30% trait, effectively more than doubling it.
+			iImpact = iImpact * (100 + gSkillTraitValues.ubMEDamageBonusBlades) / 100;
 		}
 		// SANDRO - Enhanced Close Combat System
 		if (gGameExternalOptions.fEnhancedCloseCombatSystem)
