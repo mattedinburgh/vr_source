@@ -4889,6 +4889,29 @@ BOOLEAN AssignTraitsToSoldier( SOLDIERTYPE *pSoldier, SOLDIERCREATE_STRUCT *pCre
 
 		// NOW BASED ON WHAT WE HAVE FOUND, ASSIGN UNASSIGNED TRAITS
 
+		// Radio operator: evaluate this role before generic combat traits consume the available slots.
+		// This mirrors current 1.13 behaviour and ensures that a soldier who actually carries a radio can use it.
+		if ( gGameOptions.fNewTraitSystem && fRadioSetFound && (!ATraitAssigned || !BTraitAssigned || !CTraitAssigned) )
+		{
+			// Elites have a third (minor) trait slot, which is the natural place for the radio role.
+			if ( ubSolClass == SOLDIER_CLASS_ELITE || ubSolClass == SOLDIER_CLASS_ELITE_MILITIA )
+			{
+				pSoldier->stats.ubSkillTraits[2] = RADIO_OPERATOR_NT;
+				CTraitAssigned = TRUE;
+				return( TRUE );
+			}
+			else if ( !ATraitAssigned )
+			{
+				pSoldier->stats.ubSkillTraits[0] = RADIO_OPERATOR_NT;
+				ATraitAssigned = TRUE;
+			}
+			else if ( !BTraitAssigned )
+			{
+				pSoldier->stats.ubSkillTraits[1] = RADIO_OPERATOR_NT;
+				BTraitAssigned = TRUE;
+			}
+		}
+
 		// HEAVY WEAPONS TRAIT 
 		if ( foundMortar || foundRocketlauncher || foundGrenadelauncher )
 		{
@@ -5419,30 +5442,6 @@ BOOLEAN AssignTraitsToSoldier( SOLDIERTYPE *pSoldier, SOLDIERCREATE_STRUCT *pCre
 			}
 		}
 
-		// Flugente: new traits
-		if ( gGameOptions.fNewTraitSystem && (!ATraitAssigned || !BTraitAssigned || !CTraitAssigned ) )
-		{
-			// if we have a radio set, give us the corresponding trait so we can use it...
-			if ( fRadioSetFound )
-			{
-				if ( !ATraitAssigned )
-				{
-					pSoldier->stats.ubSkillTraits[0] = RADIO_OPERATOR_NT;
-					ATraitAssigned = TRUE;
-				}
-				else if ( !BTraitAssigned )
-				{
-					pSoldier->stats.ubSkillTraits[1] = RADIO_OPERATOR_NT;
-					BTraitAssigned = TRUE;
-				}
-				else if ( ubSolClass == SOLDIER_CLASS_ELITE || ubSolClass == SOLDIER_CLASS_ELITE_MILITIA )
-				{
-					pSoldier->stats.ubSkillTraits[2] = RADIO_OPERATOR_NT;
-					CTraitAssigned = TRUE;
-					return( TRUE ); // We no longer need to continue from here
-				}
-			}
-		}
 	}
 
 	// RETURN TRUE IF ALL TRAITS ASSIGNED OTHERWISE FALSE
