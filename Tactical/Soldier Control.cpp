@@ -9769,16 +9769,32 @@ void ProcessBleedoutCasualties( )
 			continue;
 		}
 
-		// Any recovery above critical life ends the special casualty state.
-		if ( pSoldier->stats.bLife >= OKLIFE )
+		// A stabilized casualty has survived the wound but is out of this fight.
+		// Do not let in-combat first aid push the casualty back above the normal
+		// conscious-life threshold.  Once combat has ended, ordinary JA2 healing
+		// can recover them normally and the special state is released.
+		if ( pSoldier->ubBleedoutState == BLEEDOUT_STABILIZED )
 		{
-			pSoldier->ubBleedoutState = BLEEDOUT_NONE;
 			pSoldier->ubBleedoutTurns = 0;
+
+			if ( gTacticalStatus.uiFlags & INCOMBAT )
+			{
+				if ( pSoldier->stats.bLife >= OKLIFE )
+					pSoldier->stats.bLife = OKLIFE - 1;
+			}
+			else if ( pSoldier->stats.bLife >= OKLIFE )
+			{
+				pSoldier->ubBleedoutState = BLEEDOUT_NONE;
+			}
+
 			continue;
 		}
 
-		if ( pSoldier->ubBleedoutState == BLEEDOUT_STABILIZED )
+		// An unstabilized casualty that recovers above critical life by some other
+		// effect no longer needs the special bleed-out protection.
+		if ( pSoldier->stats.bLife >= OKLIFE )
 		{
+			pSoldier->ubBleedoutState = BLEEDOUT_NONE;
 			pSoldier->ubBleedoutTurns = 0;
 			continue;
 		}
