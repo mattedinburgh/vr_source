@@ -698,6 +698,16 @@ INT32 InternalGoAsFarAsPossibleTowards(SOLDIERTYPE *pSoldier, INT32 sDesGrid, IN
 		if (!LegalNPCDestination(pSoldier,sTempDest,IGNORE_PATH,WATEROK,0) && !IsJumpableFencePresentAtGridNo(sTempDest))
 			break;           // quit here, sGoToGrid is where we are going
 
+		// Indirect-response movement should not cross a newly worse tactical hazard.
+		// Direct combat advance has its own richer AbortPath()/support logic; limiting
+		// this here to noise/friend movement avoids making patrol/script movement brittle.
+		if (AICombatTeam(pSoldier) &&
+			(bAction == AI_ACTION_SEEK_NOISE || bAction == AI_ACTION_SEEK_FRIEND) &&
+			!CheckNPCDestination(pSoldier, sTempDest))
+		{
+			break;
+		}
+
 		// if after this, we have <= 5 APs remaining, that's far enough, break out
 		// (the idea is to preserve APs so we can crouch or react if
 		// necessary, and benefit from the carry-over next turn if not needed)
