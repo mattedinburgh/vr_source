@@ -5358,6 +5358,11 @@ INT32 AICrossfirePositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT3
 	if (!AICombatTeam(pSoldier) || TileIsOutOfBounds(sCandidateSpot) || TileIsOutOfBounds(sTargetSpot))
 		return 0;
 
+	// Crossfire geometry is an advanced coordination task. Ordinary line troops only
+	// receive it while local command is intact; security troops do not improvise it.
+	if (pSoldier->bTeam == ENEMY_TEAM && !AIAllowsComplexManeuver(pSoldier))
+		return 0;
+
 	UINT8 ubCandidateDir = AIDirection(sTargetSpot, sCandidateSpot);
 	if (ubCandidateDir == DIRECTION_IRRELEVANT)
 		return 0;
@@ -5467,6 +5472,26 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 	BOOLEAN fAdvanceCover = AnyCoverAtSpot(pSoldier, sAdvanceSpot);
 	INT32 iCurrentDist = PythSpacesAway(pSoldier->sGridNo, sTargetSpot);
 	INT32 iAdvanceDist = PythSpacesAway(sAdvanceSpot, sTargetSpot);
+	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+	BOOLEAN fComplexDoctrine = AIAllowsComplexManeuver(pSoldier);
+
+	// Lower-quality formations can still make sensible covered advances, but do not
+	// independently solve exposed manoeuvre problems like a professional fireteam.
+	if (pSoldier->bTeam == ENEMY_TEAM && !fComplexDoctrine && iAdvanceDist + 2 < iCurrentDist)
+	{
+		if (ubDoctrine == AI_DOCTRINE_SECURITY &&
+			(!fAdvanceCover || usAdvanceExposure > usCurrentExposure + 25))
+		{
+			return FALSE;
+		}
+
+		if (ubDoctrine == AI_DOCTRINE_LINE &&
+			((!fAdvanceCover && usAdvanceExposure >= usCurrentExposure) ||
+			 usAdvanceExposure > usCurrentExposure + 80))
+		{
+			return FALSE;
+		}
+	}
 
 	// Fire-and-manoeuvre role separation. Two nearby soldiers may actively bound
 	// toward essentially the same known contact. A third healthy soldier normally
@@ -5477,15 +5502,15 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 		AIPersonalRisk(pSoldier) <= AIPersonalRiskTolerance(pSoldier))
 	{
 		UINT8 ubActiveMovers = 0;
-		UINT8 ubMoverLimit = 2;
-		INT32 iMoverJitter = AIBoundedDecisionJitter(pSoldier,
-			(UINT32)(sTargetSpot + 101), 6);
+		UINT8 ubMoverLimit = fComplexDoctrine ? 2 : 1;
+		INT32 iMoverJitter = fComplexDoctrine ? AIBoundedDecisionJitter(pSoldier,
+			(UINT32)(sTargetSpot + 101), 6) : 0;
 
-		// Most fireteams use two movers. Sometimes a cautious element sends one;
-		// occasionally a locally superior, low-stress element pushes three.
-		if (iMoverJitter <= -4)
+		// Professional/veteran fireteams vary their bound size. Uncommanded line and
+		// security elements use a simple one-mover-at-a-time rule instead.
+		if (fComplexDoctrine && iMoverJitter <= -4)
 			ubMoverLimit = 1;
-		else if (iMoverJitter >= 5 &&
+		else if (fComplexDoctrine && iMoverJitter >= 5 &&
 			AILocalStress(pSoldier) < 20 &&
 			AICheckWeOutnumberLocal(pSoldier, sTargetSpot))
 			ubMoverLimit = 3;
@@ -5515,6 +5540,11 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 			{
 				continue;
 			}
+
+			// Choosing the best mover by weapon, mobility and stress is an advanced
+			// NCO/fireteam behaviour; basic formations simply obey the mover cap.
+			if (!fComplexDoctrine)
+				continue;
 
 			INT32 iCandidateScore = AIManeuverRoleScore(pCandidate, sTargetSpot);
 			if (iCandidateScore > iMyManeuverScore + 4 ||
@@ -5663,6 +5693,11 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 
 	if (ubSupporters >= 1)
 		return TRUE;
+
+	// Unsupported improvisation belongs to experienced/mobile troops. Security and
+	// uncommanded line infantry hold or seek another covered route instead.
+	if (pSoldier->bTeam == ENEMY_TEAM && !fComplexDoctrine)
+		return FALSE;
 
 	// A very bold soldier may make a modest unsupported dash, but not while
 	// stressed and never into the severe-exposure case above.
