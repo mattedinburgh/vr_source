@@ -2565,10 +2565,17 @@ void CheckForChangingOrders(SOLDIERTYPE *pSoldier)
 	case STATUS_YELLOW:
 		break;
 	default:
-		if ((pSoldier->aiData.bOrders == ONGUARD) || (pSoldier->aiData.bOrders == CLOSEPATROL))
+		// Preserve assigned defensive tasks unless this soldier has direct tactical
+		// evidence of the enemy. Merely hearing a radio report or seeing an alerted
+		// friend should increase awareness, not automatically widen guard/patrol orders.
+		BOOLEAN fDirectContact = pSoldier->aiData.bUnderFire ||
+			pSoldier->aiData.bOppCnt > 0 || GuySawEnemy(pSoldier, SEEN_LAST_TURN);
+
+		if (((pSoldier->aiData.bOrders == ONGUARD) || (pSoldier->aiData.bOrders == CLOSEPATROL)) &&
+			(pSoldier->bTeam != ENEMY_TEAM || fDirectContact))
 		{
-			// crank up ONGUARD to CLOSEPATROL, and CLOSEPATROL to FARPATROL
-			pSoldier->aiData.bOrders++;       // increase roaming range by 1 category
+			// Directly engaged guards may expand their local freedom of movement.
+			pSoldier->aiData.bOrders++;
 		}
 		else if ( pSoldier->bTeam == MILITIA_TEAM && pSoldier->aiData.bOrders != SNIPER )
 		{
