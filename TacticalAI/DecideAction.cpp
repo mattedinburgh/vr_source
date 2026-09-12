@@ -1978,7 +1978,28 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 
 			if ((INT16) PreRandom(100) < iChance  )
 			{
-				pSoldier->aiData.usActionData = GoAsFarAsPossibleTowards(pSoldier,sNoiseGridNo,AI_ACTION_SEEK_NOISE);
+				INT32 sNoiseApproachSpot = sNoiseGridNo;
+
+				// Investigation is not an assault. A soldier responding to a reported
+				// contact that he has not personally confirmed should establish a covered
+				// perimeter/observation position instead of collapsing onto the exact
+				// noise tile with the rest of the response element.
+				if (!fClimb &&
+					gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition &&
+					!GuySawEnemy(pSoldier, SEEN_LAST_TURN) &&
+					!pSoldier->aiData.bUnderFire &&
+					PythSpacesAway(pSoldier->sGridNo, sNoiseGridNo) > DAY_VISION_RANGE / 4)
+				{
+					INT32 sPerimeterSpot = FindAdvanceSpot(pSoldier, sNoiseGridNo,
+						AI_ACTION_SEEK_NOISE, ADVANCE_SPOT_ANY_COVER, FALSE);
+
+					if (!TileIsOutOfBounds(sPerimeterSpot))
+					{
+						sNoiseApproachSpot = sPerimeterSpot;
+					}
+				}
+
+				pSoldier->aiData.usActionData = GoAsFarAsPossibleTowards(pSoldier,sNoiseApproachSpot,AI_ACTION_SEEK_NOISE);
 				
 				if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
 				{
