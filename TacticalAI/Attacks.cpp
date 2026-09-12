@@ -351,7 +351,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		// A downed casualty is no longer an intentional target. Stale-area fire can
 		// still hit them incidentally, but a soldier who can currently see that the
 		// opponent is down will switch to an active threat instead of finishing them.
-		if (fCurrentContact && IsBleedoutCasualty( pOpponent ))
+		if (fPersonalStateKnown && IsBleedoutCasualty( pOpponent ))
 		{
 			continue;
 		}
@@ -2140,8 +2140,7 @@ void CalcBestStab(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestStab, BOOLEAN fBladeAt
 		// Melee needs an exact current contact. Legacy Vengeance allowed a target
 		// merely seen earlier this turn, then path-tested and attacked his hidden live
 		// grid. If contact is lost, pursuit belongs to movement/search AI instead.
-		if (PersonalKnowledge(pSoldier, pOpponent->ubID) != SEEN_CURRENTLY &&
-			PublicKnowledge(pSoldier->bTeam, pOpponent->ubID) != SEEN_CURRENTLY)
+		if (PersonalKnowledge(pSoldier, pOpponent->ubID) != SEEN_CURRENTLY)
 		{
 			continue;
 		}
