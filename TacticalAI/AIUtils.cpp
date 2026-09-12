@@ -5149,12 +5149,14 @@ static BOOLEAN AIShouldStartDisengagementFromState(SOLDIERTYPE *pSoldier, INT8 b
 		return TRUE;
 
 	INT32 iRoutThreshold = 40 +
-		(AIPersonalRiskTolerance(pSoldier) - 50) / 2;
+		(AIPersonalRiskTolerance(pSoldier) - 50) / 2 +
+		AIBoundedDecisionJitter(pSoldier, 239u, 4);
 	iRoutThreshold = __max(25, __min(60, iRoutThreshold));
 
 	if (bSituation == AI_BATTLE_LOSING)
 	{
-		INT32 iDisengageThreshold = 30 + AIProfessionalismModifier(pSoldier) / 2;
+		INT32 iDisengageThreshold = 30 + AIProfessionalismModifier(pSoldier) / 2 +
+			AIBoundedDecisionJitter(pSoldier, 241u, 3);
 		iDisengageThreshold = __max(25, __min(38, iDisengageThreshold));
 
 		if (ubCasualties >= iDisengageThreshold)
@@ -5175,7 +5177,8 @@ static BOOLEAN AIShouldStartDisengagementFromState(SOLDIERTYPE *pSoldier, INT8 b
 
 	// Even a nominally even fight can locally unravel when casualties are already
 	// meaningful and multiple nearby comrades are visibly breaking contact.
-	INT32 iEvenBreakThreshold = 30 + AIProfessionalismModifier(pSoldier) / 2;
+	INT32 iEvenBreakThreshold = 30 + AIProfessionalismModifier(pSoldier) / 2 +
+		AIBoundedDecisionJitter(pSoldier, 251u, 3);
 	iEvenBreakThreshold = __max(25, __min(38, iEvenBreakThreshold));
 
 	if (bSituation == AI_BATTLE_EVEN &&
