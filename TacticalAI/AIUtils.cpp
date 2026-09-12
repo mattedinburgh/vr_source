@@ -4524,6 +4524,26 @@ BOOLEAN AISameFireteam(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend)
 	return ubMine != AI_FIRETEAM_NONE && ubMine == AIFireteamId(pFriend);
 }
 
+static BOOLEAN AIPersonallyConfirmedNonThreat(
+	SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent)
+{
+	if (!pSoldier || !pOpponent ||
+		PersonalKnowledge(pSoldier, pOpponent->ubID) != SEEN_CURRENTLY)
+	{
+		return FALSE;
+	}
+
+	if (!ValidOpponent(pSoldier, pOpponent) ||
+		(pOpponent->usSoldierFlagMask & SOLDIER_POW))
+	{
+		return TRUE;
+	}
+
+	return IS_MERC_BODY_TYPE(pOpponent) &&
+		!pOpponent->IsZombie() &&
+		pOpponent->IsUnconscious();
+}
+
 BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridNo)
 {
 	if (!pSoldier || !psTargetGridNo || !AICombatTeam(pSoldier) || gbWorldSectorZ > 0)
@@ -4562,6 +4582,9 @@ BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridN
 		{
 			continue;
 		}
+
+		if (AIPersonallyConfirmedNonThreat(pSoldier, pCandidate))
+			continue;
 
 		INT32 sCandidateSpot = KnownLocation(pSoldier, pCandidate->ubID);
 		if (TileIsOutOfBounds(sCandidateSpot))
@@ -4616,6 +4639,9 @@ BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridN
 			{
 				continue;
 			}
+
+			if (AIPersonallyConfirmedNonThreat(pSoldier, pOpponent))
+				continue;
 
 			INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
 			if (TileIsOutOfBounds(sKnownSpot) ||
