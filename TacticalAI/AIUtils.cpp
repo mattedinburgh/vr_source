@@ -4326,6 +4326,47 @@ static INT32 AIFireteamJoinDistance(UINT8 ubFireteam, SOLDIERTYPE *pCandidate)
 	return iBest;
 }
 
+static INT32 AIFireteamRoleOverlapPenalty(UINT8 ubFireteam, SOLDIERTYPE *pCandidate)
+{
+	if (ubFireteam == AI_FIRETEAM_NONE || !pCandidate)
+		return 0;
+
+	BOOLEAN fHasLeader = FALSE;
+	BOOLEAN fHasMedic = FALSE;
+	BOOLEAN fHasMachinegunner = FALSE;
+	BOOLEAN fHasRadio = FALSE;
+
+	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pMember = MercPtrs[iCounter];
+		if (!AIEnemyFireteamEligible(pMember) ||
+			pMember->ubID >= MAX_NUM_SOLDIERS ||
+			guiAIFireteamIdentity[pMember->ubID] != pMember->uiUniqueSoldierIdValue ||
+			gubAIFireteam[pMember->ubID] != ubFireteam)
+		{
+			continue;
+		}
+
+		fHasLeader = fHasLeader || AICheckIsOfficer(pMember) || AICheckIsCommander(pMember);
+		fHasMedic = fHasMedic || AICheckIsMedic(pMember);
+		fHasMachinegunner = fHasMachinegunner || AICheckIsMachinegunner(pMember);
+		fHasRadio = fHasRadio || AICheckIsRadioOperator(pMember);
+	}
+
+	INT32 iPenalty = 0;
+	if (fHasLeader && (AICheckIsOfficer(pCandidate) || AICheckIsCommander(pCandidate)))
+		iPenalty += 4;
+	if (fHasMedic && AICheckIsMedic(pCandidate))
+		iPenalty += 4;
+	if (fHasMachinegunner && AICheckIsMachinegunner(pCandidate))
+		iPenalty += 4;
+	if (fHasRadio && AICheckIsRadioOperator(pCandidate))
+		iPenalty += 4;
+
+	return __min(12, iPenalty);
+}
+
 static void AIEnsureEnemyFireteams(void)
 {
 	AISeedEnemyFireteams();
@@ -4346,6 +4387,7 @@ static void AIEnsureEnemyFireteams(void)
 			if (AIFireteamCountById(ubTeam, FALSE) >= AI_FIRETEAM_MAX_NORMAL)
 				continue;
 			INT32 iDistance = AIFireteamJoinDistance(ubTeam, pSoldier);
+			iDistance += AIFireteamRoleOverlapPenalty(ubTeam, pSoldier);
 			if (iDistance < iBest) { iBest = iDistance; ubBest = ubTeam; }
 		}
 		if (ubBest == AI_FIRETEAM_NONE)
