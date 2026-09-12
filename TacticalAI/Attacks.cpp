@@ -302,13 +302,6 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			continue;
 		}
 
-		// sevenfm: don't allow blind suppression fire for militia
-		if (fSuppression &&
-			pSoldier->bTeam == MILITIA_TEAM &&
-			!pSoldier->aiData.bUnderFire)
-		{
-			continue;
-		}
 
 		// sevenfm: only try to suppress alive and conscious human targets
 		if (fSuppression &&
