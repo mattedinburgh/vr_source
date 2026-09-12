@@ -4147,7 +4147,14 @@ void DeleteEnhancedDescBox( UINT32 guiCurrentItemDescriptionScreen )
 	DeleteVideoObjectFromIndex( guiItemInfoExplosiveIcon );
 	// HEADROCK HAM 4: Delete new icons
 	DeleteVideoObjectFromIndex( guiItemInfoSecondaryIcon );
-	DeleteVideoObjectFromIndex( guiItemInfoAdvancedIcon );
+	// Current 1.13 fix: this handle is also used by scope-mode UI.  Clear it after
+	// deleting the EDB object so leaving the description box cannot leave a stale
+	// video-object index and make scope icons disappear.
+	if ( guiItemInfoAdvancedIcon != 0 )
+	{
+		DeleteVideoObjectFromIndex( guiItemInfoAdvancedIcon );
+		guiItemInfoAdvancedIcon = 0;
+	}
 	DeleteVideoObjectFromIndex( guiItemInfoWH40KIcon );
 
 	if ( UsingEDBSystem() > 0 )
