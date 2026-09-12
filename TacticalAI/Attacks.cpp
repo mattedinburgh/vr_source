@@ -224,6 +224,9 @@ static BOOLEAN AIShouldAvoidFinishingDownedTarget(
 		return FALSE;
 	}
 
+	if (pOpponent->usSoldierFlagMask & SOLDIER_POW)
+		return TRUE;
+
 	return (pOpponent->stats.bLife < OKLIFE ||
 		(pOpponent->bCollapsed && pOpponent->bBreath < OKBREATH));
 }
@@ -818,6 +821,17 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		if (fCurrentContact && (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed && pOpponent->bBreath == 0))
 		{
 			iAttackValue /= 4;
+		}
+
+		// A personally observed cowering opponent is a lower immediate threat, but
+		// not immune: self-defence or lack of better targets can still justify fire.
+		if (AICombatTeam(pSoldier) &&
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			(pOpponent->flags.uiStatusFlags & SOLDIER_COWERING) &&
+			pSoldier->ubPreviousAttackerID != pOpponent->ubID &&
+			pSoldier->ubNextToPreviousAttackerID != pOpponent->ubID)
+		{
+			iAttackValue = iAttackValue * 70 / 100;
 		}
 
 		// A visibly active caregiver is a lower-priority deliberate target. This is
