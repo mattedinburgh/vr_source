@@ -801,11 +801,15 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 		pbPublOL = gbPublicOpplist[pSoldier->bTeam] + pOpponent->ubID;
 		pusLastLoc = gsLastKnownOppLoc[pSoldier->ubID] + pOpponent->ubID;
 
-		// sevenfm: use attacker
-		if( pSoldier->ubPreviousAttackerID != NOBODY && pSoldier->ubPreviousAttackerID == pOpponent->ubID )
+		// A previous attacker is not automatically known at his live engine position.
+		// Use the exact grid only while somebody on the team actually sees him;
+		// otherwise fall back to the normal personal/public last-known location.
+		if (pSoldier->ubPreviousAttackerID != NOBODY &&
+			pSoldier->ubPreviousAttackerID == pOpponent->ubID &&
+			(*pbPersOL == SEEN_CURRENTLY || *pbPublOL == SEEN_CURRENTLY))
 		{
 			sThreatLoc = pOpponent->sGridNo;
-			iThreatCertainty = ThreatPercent[6];
+			iThreatCertainty = ThreatPercent[SEEN_CURRENTLY - OLDEST_HEARD_VALUE];
 		}
 		else
 		{
