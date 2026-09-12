@@ -784,6 +784,7 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 		}
 
 		BOOLEAN fCurrentThreat = (*pbPersOL == SEEN_CURRENTLY || *pbPublOL == SEEN_CURRENTLY);
+		BOOLEAN fThreatStateKnown = (*pbPersOL == SEEN_CURRENTLY);
 		// Relation/identity is stable knowledge; live life/sector state is not. A
 		// stale contact remains a possible threat until the knowledge system ages it out.
 		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
@@ -793,7 +794,7 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 		{
 			continue;
 		}
-		if (fCurrentThreat && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife < OKLIFE || pOpponent->IsEmptyVehicle()))
+		if (fThreatStateKnown && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife < OKLIFE || pOpponent->IsEmptyVehicle()))
 		{
 			continue;
 		}
@@ -805,8 +806,10 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 			pSoldier->ubPreviousAttackerID == pOpponent->ubID &&
 			(*pbPersOL == SEEN_CURRENTLY || *pbPublOL == SEEN_CURRENTLY))
 		{
-			sThreatLoc = pOpponent->sGridNo;
-			Threat[uiThreatCnt].bLevel = pOpponent->pathing.bLevel;
+			// Current personal/public contact makes the reported position exact, but a
+			// public-only sighting must still come from the knowledge tables.
+			sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
+			Threat[uiThreatCnt].bLevel = KnownLevel(pSoldier, pOpponent->ubID);
 			iThreatCertainty = ThreatPercent[SEEN_CURRENTLY - OLDEST_HEARD_VALUE];
 		}
 		else
@@ -866,7 +869,7 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 		// Exact wounds/AP/weapon state is legitimate only for a current contact.
 		// Stale contacts retain a neutral threat prior and are already discounted by
 		// iCertainty in CalcCoverValue.
-		if (fCurrentThreat)
+		if (fThreatStateKnown)
 		{
 			Threat[uiThreatCnt].iValue = CalcManThreatValue(pOpponent,pSoldier->sGridNo,FALSE,pSoldier);
 			Threat[uiThreatCnt].iAPs = pOpponent->CalcActionPoints();
