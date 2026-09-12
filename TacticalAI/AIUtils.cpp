@@ -5021,11 +5021,15 @@ UINT8 AIGetDoctrineProfile(SOLDIERTYPE *pSoldier)
 		return AI_DOCTRINE_ELITE_MOBILE;
 
 	case SOLDIER_CLASS_ARMY:
-		// Officers and the existing cunning attitudes stand in for the more experienced
-		// regulars/NCOs who can improvise without waiting for local command support.
+		// Regular attitudes are often randomized at creation, so CUNNING alone must
+		// not magically create a veteran. Actual experience is the primary signal;
+		// a cunning level-5 regular is treated as an experienced NCO-like soldier,
+		// while level-6+ regulars have enough field competence to act independently.
 		if (AICheckIsCommander(pSoldier) || AICheckIsOfficer(pSoldier) ||
-			pSoldier->aiData.bAttitude == CUNNINGAID ||
-			pSoldier->aiData.bAttitude == CUNNINGSOLO)
+			pSoldier->stats.bExpLevel >= 6 ||
+			(pSoldier->stats.bExpLevel >= 5 &&
+			 (pSoldier->aiData.bAttitude == CUNNINGAID ||
+			  pSoldier->aiData.bAttitude == CUNNINGSOLO)))
 		{
 			return AI_DOCTRINE_VETERAN;
 		}
