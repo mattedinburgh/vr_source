@@ -341,7 +341,8 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 
 		const BOOLEAN fCurrentContact =
 			(bPersonalKnowledge == SEEN_CURRENTLY || bPublicKnowledge == SEEN_CURRENTLY);
-		if (fCurrentContact && !ValidOpponent(pSoldier, pOpponent))
+		const BOOLEAN fPersonalStateKnown = (bPersonalKnowledge == SEEN_CURRENTLY);
+		if (fPersonalStateKnown && !ValidOpponent(pSoldier, pOpponent))
 			continue;
 
 		if (AIShouldAvoidFinishingDownedTarget(pSoldier, pOpponent, fCurrentContact))
@@ -766,9 +767,9 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			(ubChanceToReallyHit < 25 || (PythSpacesAway(pSoldier->sGridNo, sTarget) > CalcMaxTossRange(pSoldier, pSoldier->usAttackingWeapon, FALSE))))// Madd / 2 ) ) ) //dnl ch69 160913 was ubChanceToReallyHit < 30
 			continue; // don't bother... next opponent
 
-		if (fCurrentContact)
+		if (fPersonalStateKnown)
 		{
-			// Exact current contact: detailed armour/wounds/weapon threat are observable.
+			// Personal current sight: detailed armour/wounds/weapon threat are legitimate.
 			iThreatValue = CalcManThreatValue(pOpponent,pSoldier->sGridNo,TRUE,pSoldier);
 			iEstDamage = EstimateShotDamage(pSoldier,pOpponent,ubBestChanceToHit);
 		}
@@ -812,13 +813,13 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		}
 
 		// sevenfm: empty vehicles have very low priority
-		if (fCurrentContact && pOpponent->ubWhatKindOfMercAmI == MERC_TYPE__VEHICLE && GetNumberInVehicle( pOpponent->bVehicleID ) == 0 )
+		if (fPersonalStateKnown && pOpponent->ubWhatKindOfMercAmI == MERC_TYPE__VEHICLE && GetNumberInVehicle( pOpponent->bVehicleID ) == 0 )
 		{
 			iAttackValue /= 4;
 		}
 
 		// sevenfm: dying, cowering or unconscious soldiers have very low priority
-		if (fCurrentContact && (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed && pOpponent->bBreath == 0))
+		if (fPersonalStateKnown && (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed && pOpponent->bBreath == 0))
 		{
 			iAttackValue /= 4;
 		}
@@ -883,7 +884,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 				INT32 iPenaltyPercent = 15 * ubSaturation;
 
 				// Do not waste several shooters finishing an already disabled opponent.
-				if (fCurrentContact && (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed || pOpponent->bBreathCollapsed))
+				if (fPersonalStateKnown && (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed || pOpponent->bBreathCollapsed))
 					iPenaltyPercent = 30 * ubSaturation;
 
 				// Immediate self-defence still justifies concentrated fire.
@@ -919,7 +920,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 
 				//dnl ch62 180813 ignore firing into breathless targets if there are targets in better condition
 				// sevenfm: check that best opponent exists
-				if (fBestTargetStateKnown && fCurrentContact && pBestShot->ubOpponent != NOBODY &&
+				if (fBestTargetStateKnown && fPersonalStateKnown && pBestShot->ubOpponent != NOBODY &&
 					(Menptr[pBestShot->ubOpponent].bCollapsed || Menptr[pBestShot->ubOpponent].bBreathCollapsed) &&
 					Menptr[pBestShot->ubOpponent].bBreath < OKBREATH &&
 					Menptr[pBestShot->ubOpponent].bBreath < pOpponent->bBreath)
@@ -928,7 +929,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 				}
 
 				// sevenfm: if best opponent is dying and new opponent is ok, use new opponent
-				if (fBestTargetStateKnown && fCurrentContact && pBestShot->ubOpponent != NOBODY &&
+				if (fBestTargetStateKnown && fPersonalStateKnown && pBestShot->ubOpponent != NOBODY &&
 					Menptr[pBestShot->ubOpponent].stats.bLife < OKLIFE &&
 					pOpponent->stats.bLife >= OKLIFE)
 				{
@@ -955,7 +956,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			}
 
 			// sevenfm: if new opponent is dying and best opponent is ok, ignore new opponent
-			if (fBestTargetStateKnown && fCurrentContact && pBestShot->ubOpponent != NOBODY &&
+			if (fBestTargetStateKnown && fPersonalStateKnown && pBestShot->ubOpponent != NOBODY &&
 				Menptr[pBestShot->ubOpponent].stats.bLife >= OKLIFE &&
 				pOpponent->stats.bLife < OKLIFE)
 			{
@@ -975,7 +976,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			pBestShot->ubStance				= ubBestStance;
 			pBestShot->bScopeMode			= bScopeMode;
 			pBestShot->ubFriendlyFireChance = (UINT8)ubBestFriendlyFireChance;
-			fBestTargetStateKnown = fCurrentContact;
+			fBestTargetStateKnown = fPersonalStateKnown;
 		}
 	}
 //if(pBestShot->ubPossible)SendFmtMsg("CalcBestShot;\r\n  ID=%d Loc=%d APs=%d Ac=%d AcData=%d Al=%d, SM=%d, LAc=%d, NAc=%d AT=%d\r\n  AP?=%d,%d,%d/%d BS=%d", pSoldier->ubID, pSoldier->sGridNo, pSoldier->bActionPoints, pSoldier->aiData.bAction, pSoldier->aiData.usActionData, pSoldier->aiData.bAlertStatus, pBestShot->bScopeMode, pSoldier->aiData.bLastAction, pSoldier->aiData.bNextAction, pBestShot->ubAimTime, pBestShot->ubAPCost, CalcAPCostForAiming(pSoldier, pBestShot->sTarget, (INT8)pBestShot->ubAimTime), CalcTotalAPsToAttack(pSoldier, pBestShot->sTarget, TRUE, pBestShot->ubAimTime), CalcTotalAPsToAttack(pSoldier, pBestShot->sTarget, FALSE, pBestShot->ubAimTime), pBestShot->ubStance);
@@ -1324,6 +1325,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 		}
 
 		const BOOLEAN fCurrentContact = (bPersOL == SEEN_CURRENTLY || bPublOL == SEEN_CURRENTLY);
+		const BOOLEAN fPersonalStateKnown = (bPersOL == SEEN_CURRENTLY);
 
 		// Relation/identity filters are safe for remembered contacts. Mutable hidden
 		// state (death, leaving the sector, empty vehicle) is only trusted when the
@@ -1336,7 +1338,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 		{
 			continue;
 		}
-		if (fCurrentContact &&
+		if (fPersonalStateKnown &&
 			(!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
 		{
 			continue;
@@ -1367,7 +1369,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 		// Dynamic target-state filters are valid only for a contact we can currently
 		// observe. For stale contacts, do not inspect hidden shock, weapon or spotting
 		// state to decide whether smoke is worthwhile.
-		if (fCurrentContact &&
+		if (fPersonalStateKnown &&
 			usGrenade != NOTHING &&
 			Explosive[Item[usGrenade].ubClassIndex].ubType == EXPLOSV_SMOKE &&
 			(!AICheckHasGun(pOpponent) ||
@@ -1398,7 +1400,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 		}
 
 		// don't use stun/gas grenades against collapsed enemies
-		if (fCurrentContact &&
+		if (fPersonalStateKnown &&
 			usGrenade != NOTHING &&
 			!Item[usGrenade].flare &&
 			!pOpponent->IsZombie() &&
@@ -1516,9 +1518,9 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 		ubOpponentID[ubOpponentCnt] = pOpponent->ubID;
 		ubOpponentCertainty[ubOpponentCnt] = (UINT8)__max(0, __min(100,
 			(INT32)ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE]));
-		fOpponentStateKnown[ubOpponentCnt] = fCurrentContact;
+		fOpponentStateKnown[ubOpponentCnt] = fPersonalStateKnown;
 
-		if (fCurrentContact)
+		if (fPersonalStateKnown)
 			iOppThreatValue[ubOpponentCnt] = CalcManThreatValue(pOpponent,pSoldier->sGridNo,FALSE,pSoldier);
 		else
 			iOppThreatValue[ubOpponentCnt] = 100;
