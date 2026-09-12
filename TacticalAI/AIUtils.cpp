@@ -6749,6 +6749,13 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 		if (iFriendTargetDist > iFriendGunRange + iFriendGunRange / 4)
 			continue;
 
+		// A nominal rifleman is not covering the bound if he has already spent the
+		// AP needed to fire. Sequential JA2 turns make this distinction important:
+		// only shooters who can still engage this contact count as a current fire base.
+		INT16 sMinAttackAP = MinAPsToAttack(pFriend, sTargetSpot, ADDTURNCOST, 0, 1);
+		if (sMinAttackAP <= 0 || pFriend->bActionPoints < sMinAttackAP)
+			continue;
+
 		if (!LocationToLocationLineOfSightTest(pFriend->sGridNo, pFriend->pathing.bLevel,
 			sTargetSpot, bTargetLevel, TRUE, MAX_VISION_RANGE))
 		{
