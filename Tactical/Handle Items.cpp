@@ -5004,9 +5004,40 @@ static void SwapUpdateGearObjectState( StackedObjectData *pEquipped, StackedObje
 	if ( !pEquipped || !pSector )
 		return;
 
-	ObjectData temp = pEquipped->data;
-	pEquipped->data = pSector->data;
-	pSector->data = temp;
+	// Match 1.13's convenience swap: exchange condition/property state only.
+	// Do not exchange the gun union wholesale, which would silently replace loaded ammo.
+	INT16 sObjectStatus = pEquipped->data.objectStatus;
+	INT8 bTrap = pEquipped->data.bTrap;
+	UINT8 fUsed = pEquipped->data.fUsed;
+	UINT8 ubImprintID = pEquipped->data.ubImprintID;
+	FLOAT bTemperature = pEquipped->data.bTemperature;
+	UINT8 ubDirection = pEquipped->data.ubDirection;
+	UINT32 ubWireNetworkFlag = pEquipped->data.ubWireNetworkFlag;
+	INT8 bDefuseFrequency = pEquipped->data.bDefuseFrequency;
+	INT16 sRepairThreshold = pEquipped->data.sRepairThreshold;
+	UINT64 sObjectFlag = pEquipped->data.sObjectFlag;
+
+	pEquipped->data.objectStatus = pSector->data.objectStatus;
+	pEquipped->data.bTrap = pSector->data.bTrap;
+	pEquipped->data.fUsed = pSector->data.fUsed;
+	pEquipped->data.ubImprintID = pSector->data.ubImprintID;
+	pEquipped->data.bTemperature = pSector->data.bTemperature;
+	pEquipped->data.ubDirection = pSector->data.ubDirection;
+	pEquipped->data.ubWireNetworkFlag = pSector->data.ubWireNetworkFlag;
+	pEquipped->data.bDefuseFrequency = pSector->data.bDefuseFrequency;
+	pEquipped->data.sRepairThreshold = pSector->data.sRepairThreshold;
+	pEquipped->data.sObjectFlag = pSector->data.sObjectFlag;
+
+	pSector->data.objectStatus = sObjectStatus;
+	pSector->data.bTrap = bTrap;
+	pSector->data.fUsed = fUsed;
+	pSector->data.ubImprintID = ubImprintID;
+	pSector->data.bTemperature = bTemperature;
+	pSector->data.ubDirection = ubDirection;
+	pSector->data.ubWireNetworkFlag = ubWireNetworkFlag;
+	pSector->data.bDefuseFrequency = bDefuseFrequency;
+	pSector->data.sRepairThreshold = sRepairThreshold;
+	pSector->data.sObjectFlag = sObjectFlag;
 }
 
 void UpdateGear()
