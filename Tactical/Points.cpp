@@ -420,6 +420,12 @@ INT16 ActionPointCost(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bDir, UINT16 us
 		usMovementMode = WALKING;
 	}
 
+	// A rescuer dragging a casualty moves at walking pace even if a faster mode was selected.
+	if ( IsDraggingDownedPerson( pSoldier ) )
+	{
+		usMovementMode = WALKING;
+	}
+
 	// so, then we must modify it for other movement styles and accumulate
 	// CHRISL: Adjusted system to use different move costs while wearing a backpack
 	if (sTileCost > 0)
@@ -556,6 +562,13 @@ INT16 ActionPointCost(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bDir, UINT16 us
 		default:
 			break;
 		}
+	}
+
+	// Dragging a living casualty is deliberately costly: 50% more AP per movement tile.
+	// EstimateActionPointCost() calls this function too, so path previews and real deduction agree.
+	if ( IsDraggingDownedPerson( pSoldier ) && sPoints > 0 )
+	{
+		sPoints = max( (INT16)1, (INT16)((3 * sPoints + 1) / 2) );
 	}
 
 	return(sPoints);
