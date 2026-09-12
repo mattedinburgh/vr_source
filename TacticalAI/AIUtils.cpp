@@ -6849,71 +6849,71 @@ BOOLEAN CheckDangerousDirection(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 {
 	CHECKF(pSoldier);
 	CHECKF(!TileIsOutOfBounds(sSpot));
-	
-	UINT32		uiLoop;
-	SOLDIERTYPE *pOpponent;
-	INT32		sThreatLoc;
-	INT8		bThreatLevel;
-	UINT16		usSightLimit;
-	UINT16		usAdjustedSight;
-	INT8		bKnowledge;
-	INT16		sSightAdjustment;
-	UINT8		ubDirection;
 
-	// look through all opponents for those we know of
-	for (uiLoop = 0; uiLoop < guiNumMercSlots; uiLoop++)
+	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
 	{
-		pOpponent = MercSlots[uiLoop];
-
-		// if this merc is inactive, at base, on assignment, dead, unconscious
-		if (!pOpponent || pOpponent->stats.bLife < OKLIFE)
-		{
-			continue;			// next merc
-		}
-
-		if (!ValidOpponent(pSoldier, pOpponent))
-		{
+		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
+		if (!pOpponent)
 			continue;
-		}
 
-		if(pOpponent->IsUnconscious() || pOpponent->IsEmptyVehicle())
-		{
-			continue;
-		}
-
-		bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-
-		// if this opponent is unknown personally and publicly
+		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
 		if (bKnowledge == NOT_HEARD_OR_SEEN)
+			continue;
+
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pSoldier->bSide == pOpponent->bSide ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			pOpponent->ubBodyType == CROW)
 		{
 			continue;
 		}
 
-		// obtain opponent's location and level
-		sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
+		const BOOLEAN fCurrentContact =
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY ||
+			 PublicKnowledge(pSoldier->bTeam, pOpponent->ubID) == SEEN_CURRENTLY);
 
-		// check that our knowledge is correct
+		if (fCurrentContact &&
+			(!ValidOpponent(pSoldier, pOpponent) || pOpponent->IsUnconscious() || pOpponent->IsEmptyVehicle()))
+		{
+			continue;
+		}
+
+		INT32 sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
+		INT8 bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
 		if (TileIsOutOfBounds(sThreatLoc))
-		{
 			continue;
+
+		UINT16 usAdjustedSight;
+		if (fCurrentContact)
+		{
+			INT16 sSightAdjustment =
+				GetSightAdjustment(pOpponent, pSoldier, sSpot, pSoldier->pathing.bLevel, ANIM_STAND);
+
+			gbForceWeaponNotReady = true;
+			UINT16 usSightLimit =
+				pOpponent->GetMaxDistanceVisible(sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
+			gbForceWeaponNotReady = false;
+
+			usAdjustedSight = max((UINT16)1,
+				(UINT16)(usSightLimit + usSightLimit * sSightAdjustment / 100));
+		}
+		else
+		{
+			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+			usAdjustedSight = (UINT16)max(1, (MAX_VISION_RANGE * iCertainty) / 100);
 		}
 
-		sSightAdjustment = GetSightAdjustment(pOpponent, pSoldier, sSpot, pSoldier->pathing.bLevel, ANIM_STAND);
-
-		gbForceWeaponNotReady = true;
-		usSightLimit = pOpponent->GetMaxDistanceVisible(sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
-		gbForceWeaponNotReady = false;
-
-		usAdjustedSight = max(min(1, usSightLimit), usSightLimit + usSightLimit * sSightAdjustment / 100);
-		ubDirection = AIDirection(sThreatLoc, sSpot);
-
+		UINT8 ubDirection = AIDirection(sThreatLoc, sSpot);
 		if (PythSpacesAway(sSpot, sThreatLoc) <= usAdjustedSight &&
-			(CountCorpsesInDirection(pSoldier, sThreatLoc, ubDirection, max(usAdjustedSight, DAY_VISION_RANGE), FALSE, TRUE) ||
-			CountCorpsesInDirection(pSoldier, sThreatLoc, gOneCDirection[ubDirection], max(usAdjustedSight, DAY_VISION_RANGE), FALSE, TRUE) ||
-			CountCorpsesInDirection(pSoldier, sThreatLoc, gOneCCDirection[ubDirection], max(usAdjustedSight, DAY_VISION_RANGE), FALSE, TRUE)) &&
+			(CountCorpsesInDirection(pSoldier, sThreatLoc, ubDirection,
+				max(usAdjustedSight, (UINT16)DAY_VISION_RANGE), FALSE, TRUE) ||
+			 CountCorpsesInDirection(pSoldier, sThreatLoc, gOneCDirection[ubDirection],
+				max(usAdjustedSight, (UINT16)DAY_VISION_RANGE), FALSE, TRUE) ||
+			 CountCorpsesInDirection(pSoldier, sThreatLoc, gOneCCDirection[ubDirection],
+				max(usAdjustedSight, (UINT16)DAY_VISION_RANGE), FALSE, TRUE)) &&
 			!AnyCoverFromSpot(sSpot, bLevel, sThreatLoc, bThreatLevel) &&
-			LocationToLocationLineOfSightTest(sThreatLoc, bThreatLevel, sSpot, bLevel, TRUE, usAdjustedSight, STANDING_LOS_POS, STANDING_LOS_POS))
+			LocationToLocationLineOfSightTest(sThreatLoc, bThreatLevel, sSpot, bLevel,
+				TRUE, usAdjustedSight, STANDING_LOS_POS, STANDING_LOS_POS))
 		{
 			return TRUE;
 		}
