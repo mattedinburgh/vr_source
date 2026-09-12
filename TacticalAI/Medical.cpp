@@ -494,7 +494,7 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 			if (TileIsOutOfBounds(sCheckGrid))
 				break;
 
-			if (EnemyCanAttackSpot(pSoldier, sCheckGrid, pSoldier->pathing.bLevel))
+			if (AIKnownThreatExposure(pSoldier, sCheckGrid, pSoldier->pathing.bLevel) > 0)
 			{
 				iPathExposure += AnyCoverAtSpot(pSoldier, sCheckGrid) ? 3 : 7;
 			}
