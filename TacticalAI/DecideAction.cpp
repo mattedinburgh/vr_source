@@ -8897,6 +8897,33 @@ void PrepareMainRedAIWeights(SOLDIERTYPE *pSoldier, INT8 &bSeekPts, INT8 &bHelpP
 			bWatchPts += 1;
 	}
 
+	// Dynamic specialist posture. When this soldier is materially better suited
+	// to supporting the element than maneuvering, make holding/observing somewhat
+	// more attractive. This remains a soft preference: SEEK stays available, and
+	// incoming fire cancels the bias so specialists can react normally.
+	if (AICombatTeam(pSoldier) &&
+		!pSoldier->aiData.bUnderFire &&
+		AICheckSpecialRole(pSoldier) &&
+		bSeekPts > -90)
+	{
+		INT32 sRoleTarget = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		INT32 iSupportScore = AISupportRoleScore(pSoldier, sRoleTarget);
+		INT32 iManeuverScore = AIManeuverRoleScore(pSoldier, sRoleTarget);
+
+		if (iSupportScore > iManeuverScore + 15)
+		{
+			bSeekPts -= 2;
+			if (bWatchPts > -90) bWatchPts += 2;
+			if (bHidePts > -90) bHidePts += 1;
+		}
+
+		if (iSupportScore > iManeuverScore + 40)
+		{
+			bSeekPts -= 1;
+			if (bWatchPts > -90) bWatchPts += 1;
+		}
+	}
+
 	// Break ties and near-ties between otherwise sensible RED choices. This is
 	// deliberately applied after deterministic tactical modifiers so randomness
 	// cannot resurrect actions that safety/morale/order logic disabled.
