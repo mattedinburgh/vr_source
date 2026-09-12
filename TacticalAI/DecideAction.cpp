@@ -1985,7 +1985,6 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 				// perimeter/observation position instead of collapsing onto the exact
 				// noise tile with the rest of the response element.
 				if (!fClimb &&
-					gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition &&
 					!GuySawEnemy(pSoldier, SEEN_LAST_TURN) &&
 					!pSoldier->aiData.bUnderFire &&
 					PythSpacesAway(pSoldier->sGridNo, sNoiseGridNo) > DAY_VISION_RANGE / 4)
