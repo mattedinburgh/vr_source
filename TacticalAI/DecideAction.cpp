@@ -8291,7 +8291,8 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		(PythSpacesAway(pSoldier->sGridNo, sClosestDisturbance) < MAX_FLANK_DIST || fAbortSeek) &&
 		(!GuySawEnemy(pSoldier) || CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) > 2 || fAbortSeek) &&
 		(fAbortSeek || CountFriendsBetweenMeAndSpotFromSpot(pSoldier, sClosestDisturbance) > 0 || NightTime() || CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) > 2))
-	{		// Dynamic role deconfliction: a rifleman/marksman in a strong support posture
+	{
+		// Dynamic role deconfliction: a rifleman/marksman in a strong support posture
 		// should not abandon the fire base merely because flanking is otherwise legal.
 		// Require a clear support advantage and nearby teammates before suppressing the flank.
 		if (CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2) >= 2 &&
