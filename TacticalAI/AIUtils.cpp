@@ -9488,29 +9488,38 @@ BOOLEAN AICheckSpecialRole(SOLDIERTYPE *pSoldier)
 BOOLEAN SafeSpot(SOLDIERTYPE *pSoldier, INT32 sSpot)
 {
 	if (!pSoldier)
-	{
 		return FALSE;
-	}
 
 	if (sSpot == NOWHERE)
-	{
 		sSpot = pSoldier->sGridNo;
-	}
+
+	if (TileIsOutOfBounds(sSpot))
+		return FALSE;
 
 	INT8 bLevel = pSoldier->pathing.bLevel;
 	BOOLEAN fUnlimitedSightCover = SightCoverAtSpot(pSoldier, sSpot, TRUE);
 	BOOLEAN fProneSightCover = ProneSightCoverAtSpot(pSoldier, sSpot, FALSE);
 	BOOLEAN fAnyCover = AnyCoverAtSpot(pSoldier, sSpot);
 
-	if ((fUnlimitedSightCover || fProneSightCover && fAnyCover || InARoom(sSpot, NULL) && bLevel == 0 && (fAnyCover || fProneSightCover)) &&
-		!InLightAtNight(sSpot, pSoldier->pathing.bLevel) &&
-		!pSoldier->aiData.bUnderFire &&
-		AICorpseWarningKnown(pSoldier, sSpot, bLevel) == 0)
-	{
-		return TRUE;
-	}
+	BOOLEAN fDefensible =
+		fUnlimitedSightCover ||
+		(fProneSightCover && fAnyCover) ||
+		(InARoom(sSpot, NULL) && bLevel == 0 && (fAnyCover || fProneSightCover));
 
-	return FALSE;
+	if (!fDefensible)
+		return FALSE;
+
+	if (pSoldier->aiData.bUnderFire)
+		return FALSE;
+
+	// Use the same environmental danger model as movement selection.  A position
+	// is not a true safe spot merely because it has cover if it is in gas, water,
+	// red smoke, dangerous light, beside explosive scenery, near a known bomb, or
+	// next to a fresh casualty the soldier can actually perceive.
+	if (Water(sSpot, bLevel) || SpotDangerLevel(pSoldier, sSpot) > 0)
+		return FALSE;
+
+	return TRUE;
 }
 
 BOOLEAN AbortFinalSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bAction, INT32 sClosestDisturbance, INT8 bDisturbanceLevel, INT32& sDangerousSpot)
