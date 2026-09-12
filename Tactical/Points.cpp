@@ -3623,9 +3623,9 @@ INT16 GetAPsToBeginFirstAid( SOLDIERTYPE *pSoldier )
 INT16 GetAPsToBreakWindow( SOLDIERTYPE *pSoldier, BOOLEAN fStance )
 {
 	if ( fStance )
-		return MinAPsToPunch( pSoldier, pSoldier->sGridNo );
+		return MinAPsToPunch( pSoldier, pSoldier->sGridNo, FALSE );
 
-	return MinAPsToPunch( pSoldier, NOWHERE );
+	return MinAPsToPunch( pSoldier, NOWHERE, FALSE );
 }
 
 INT16 GetAPsToBeginRepair( SOLDIERTYPE *pSoldier )
