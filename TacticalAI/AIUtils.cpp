@@ -4997,6 +4997,187 @@ static INT8 AIProfessionalismModifier(SOLDIERTYPE *pSoldier)
 	return (INT8)__max(-10, __min(15, iModifier));
 }
 
+// Doctrine is intentionally orthogonal to accuracy/AP. It describes how much
+// initiative and coordination the soldier's formation plausibly possesses.
+UINT8 AIGetDoctrineProfile(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return AI_DOCTRINE_LINE;
+
+	switch (pSoldier->ubSoldierClass)
+	{
+	case SOLDIER_CLASS_ADMINISTRATOR:
+		return AI_DOCTRINE_SECURITY;
+
+	case SOLDIER_CLASS_ELITE:
+		// Elite troops on static/guard orders behave like palace/base guards:
+		// tactically capable, but less willing to abandon the mission.
+		if (pSoldier->aiData.bOrders == STATIONARY ||
+			pSoldier->aiData.bOrders == ONGUARD ||
+			pSoldier->aiData.bOrders == SNIPER)
+		{
+			return AI_DOCTRINE_ELITE_GUARD;
+		}
+		return AI_DOCTRINE_ELITE_MOBILE;
+
+	case SOLDIER_CLASS_ARMY:
+		// Officers and the existing cunning attitudes stand in for the more experienced
+		// regulars/NCOs who can improvise without waiting for local command support.
+		if (AICheckIsCommander(pSoldier) || AICheckIsOfficer(pSoldier) ||
+			pSoldier->aiData.bAttitude == CUNNINGAID ||
+			pSoldier->aiData.bAttitude == CUNNINGSOLO)
+		{
+			return AI_DOCTRINE_VETERAN;
+		}
+		return AI_DOCTRINE_LINE;
+
+	default:
+		return AI_DOCTRINE_LINE;
+	}
+}
+
+BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier)
+		return FALSE;
+
+	// Doctrine restrictions are for Deidranna's army only. Preserve militia behaviour.
+	if (pSoldier->bTeam != ENEMY_TEAM)
+		return TRUE;
+
+	if (AICheckIsCommander(pSoldier) || AICheckIsOfficer(pSoldier))
+		return TRUE;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pLeader = MercPtrs[iCounter];
+		if (!pLeader || pLeader == pSoldier || !pLeader->bActive || !pLeader->bInSector ||
+			pLeader->stats.bLife < OKLIFE || pLeader->bCollapsed ||
+			(pLeader->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			pLeader->pathing.bLevel != pSoldier->pathing.bLevel ||
+			PythSpacesAway(pSoldier->sGridNo, pLeader->sGridNo) > TACTICAL_RANGE / 2 ||
+			AIDisengagementActive(pLeader) || AIEscapeActive(pLeader))
+		{
+			continue;
+		}
+
+		if (AICheckIsCommander(pLeader) || AICheckIsOfficer(pLeader))
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
+BOOLEAN AIAllowsComplexManeuver(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return TRUE;
+
+	switch (AIGetDoctrineProfile(pSoldier))
+	{
+	case AI_DOCTRINE_SECURITY:
+		return FALSE;
+	case AI_DOCTRINE_LINE:
+		return AIHasLocalCommandSupport(pSoldier);
+	default:
+		return TRUE;
+	}
+}
+
+BOOLEAN AIAllowsIndependentFlank(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return TRUE;
+
+	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+	if (ubDoctrine == AI_DOCTRINE_SECURITY)
+		return FALSE;
+	if (ubDoctrine == AI_DOCTRINE_LINE)
+		return AIHasLocalCommandSupport(pSoldier);
+
+	return TRUE;
+}
+
+BOOLEAN AIAllowsProactiveSupport(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return TRUE;
+
+	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+	if (ubDoctrine == AI_DOCTRINE_SECURITY)
+		return FALSE;
+	if (ubDoctrine == AI_DOCTRINE_LINE)
+		return AIHasLocalCommandSupport(pSoldier);
+
+	return TRUE;
+}
+
+UINT8 AIDoctrineResponseLimit(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return 4;
+
+	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+	UINT8 ubLimit = 4;
+	switch (ubDoctrine)
+	{
+	case AI_DOCTRINE_SECURITY:     ubLimit = 2; break;
+	case AI_DOCTRINE_LINE:         ubLimit = 4; break;
+	case AI_DOCTRINE_VETERAN:      ubLimit = 5; break;
+	case AI_DOCTRINE_ELITE_MOBILE: ubLimit = 6; break;
+	case AI_DOCTRINE_ELITE_GUARD:  ubLimit = 4; break;
+	}
+
+	// ONCALL is the natural QRF order. SEEKENEMY has more freedom, but does not
+	// empty a garrison as aggressively as a designated response element.
+	if (pSoldier->aiData.bOrders == ONCALL)
+		ubLimit += 2;
+	else if (pSoldier->aiData.bOrders == SEEKENEMY)
+		ubLimit += 1;
+
+	if (ubDoctrine == AI_DOCTRINE_SECURITY && ubLimit > 3)
+		ubLimit = 3;
+
+	return __min((UINT8)8, ubLimit);
+}
+
+INT8 AIDoctrineAnchorModifier(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return 0;
+
+	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+	switch (ubDoctrine)
+	{
+	case AI_DOCTRINE_SECURITY:
+		switch (pSoldier->aiData.bOrders)
+		{
+		case STATIONARY: return -6;
+		case ONGUARD: return -5;
+		case CLOSEPATROL:
+		case POINTPATROL:
+		case RNDPTPATROL: return -3;
+		default: return -1;
+		}
+
+	case AI_DOCTRINE_LINE:
+		if (pSoldier->aiData.bOrders == STATIONARY || pSoldier->aiData.bOrders == ONGUARD)
+			return -2;
+		if (pSoldier->aiData.bOrders == CLOSEPATROL)
+			return -1;
+		return 0;
+
+	case AI_DOCTRINE_VETERAN:
+		return (pSoldier->aiData.bOrders == STATIONARY) ? -1 : 0;
+
+	case AI_DOCTRINE_ELITE_GUARD:
+		return -3;
+
+	default:
+		return 0;
+	}
+}
 // Individual willingness to accept danger. Personality and current morale change
 // the threshold, but no ordinary attitude makes a soldier completely suicidal.
 INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier)
