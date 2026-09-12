@@ -5783,8 +5783,11 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		RangeChangeDesire(pSoldier) < 4 &&
 		pSoldier->aiData.bOrders != STATIONARY &&
 		pSoldier->aiData.bOrders != SNIPER &&
-		!(TileIsOutOfBounds(sClosestThreat) &&
-		PythSpacesAway(pSoldier->sGridNo, sClosestThreat) > DAY_VISION_RANGE/2) &&
+		!pSoldier->aiData.bUnderFire &&
+		!TileIsOutOfBounds(sClosestThreat) &&
+		// Climbing spends a turn exposed. Only reposition vertically when the closest
+		// known threat is far enough away that the climb is not a point-blank escape.
+		PythSpacesAway(pSoldier->sGridNo, sClosestThreat) > DAY_VISION_RANGE/2 &&
 		PythSpacesAway(pSoldier->sGridNo, sClosestThreat) < 3*(usRange/CELL_X_SIZE)/2 &&
 		usRange/CELL_X_SIZE > DAY_VISION_RANGE/2 &&
 		pSoldier->pathing.bLevel == 0 &&
