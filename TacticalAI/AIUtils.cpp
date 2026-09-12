@@ -5332,6 +5332,7 @@ static UINT8 AIUpdateRecoveryStreak(SOLDIERTYPE *pSoldier, INT8 bSituation,
 static void AIResetRecoveryStreak(SOLDIERTYPE *pSoldier);
 
 static INT32 AIBoundedDecisionJitter(SOLDIERTYPE *pSoldier, UINT32 uiSalt, INT32 iAmplitude);
+static INT32 AIBoundedElementJitter(SOLDIERTYPE *pSoldier, UINT32 uiSalt, INT32 iAmplitude);
 
 static BOOLEAN AIShouldStartEscapeFromState(SOLDIERTYPE *pSoldier, INT8 bSituation, UINT8 ubCasualties, BOOLEAN fLastSurvivor, UINT8 ubRoutPressure)
 {
@@ -6574,7 +6575,7 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 	{
 		UINT8 ubActiveMovers = 0;
 		UINT8 ubMoverLimit = fComplexDoctrine ? 2 : 1;
-		INT32 iMoverJitter = fComplexDoctrine ? AIBoundedDecisionJitter(pSoldier,
+		INT32 iMoverJitter = fComplexDoctrine ? AIBoundedElementJitter(pSoldier,
 			(UINT32)(sTargetSpot + 101), 6) : 0;
 
 		// Professional/veteran fireteams vary their bound size. Uncommanded line and
@@ -6999,6 +7000,33 @@ static INT32 AIBoundedDecisionJitter(SOLDIERTYPE *pSoldier, UINT32 uiSalt, INT32
 	uiValue ^= uiSalt * 2246822519u;
 	uiValue ^= uiValue >> 13;
 	uiValue *= 3266489917u;
+	uiValue ^= uiValue >> 16;
+
+	UINT32 uiSpan = (UINT32)(2 * iAmplitude + 1);
+	return (INT32)(uiValue % uiSpan) - iAmplitude;
+}
+
+static INT32 AIBoundedElementJitter(SOLDIERTYPE *pSoldier, UINT32 uiSalt, INT32 iAmplitude)
+{
+	if (!pSoldier || iAmplitude <= 0)
+		return 0;
+
+	// Bound size is an element decision. Use the fireteam identity (or the team for
+	// non-enemy combatants) so every soldier evaluating the same contact this turn
+	// receives the same one/two/three-mover limit.
+	UINT32 uiElement = (UINT32)(pSoldier->bTeam + 1);
+	if (pSoldier->bTeam == ENEMY_TEAM)
+	{
+		UINT8 ubFireteam = AIFireteamId(pSoldier);
+		if (ubFireteam != AI_FIRETEAM_NONE)
+			uiElement = ((UINT32)(pSoldier->bTeam + 1) << 8) | ubFireteam;
+	}
+
+	UINT32 uiValue = uiElement * 2654435761u;
+	uiValue ^= (guiTurnCnt + 1) * 2246822519u;
+	uiValue ^= uiSalt * 3266489917u;
+	uiValue ^= uiValue >> 13;
+	uiValue *= 668265263u;
 	uiValue ^= uiValue >> 16;
 
 	UINT32 uiSpan = (UINT32)(2 * iAmplitude + 1);
