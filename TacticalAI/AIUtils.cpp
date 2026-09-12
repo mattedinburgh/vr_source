@@ -2696,9 +2696,9 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 	else							// odds better than 3:1
 		bMoraleCategory = MORALE_FEARLESS;
 
-	// make idiot administrators more aggressive
-	// sevenfm: also make civilians more aggressive
-	if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ADMINISTRATOR || pSoldier->bTeam == CIV_TEAM && !pSoldier->aiData.bNeutral)
+	// Doctrine removes the legacy administrator morale boost; hostile civilian
+	// behaviour keeps its existing boost.
+	if (pSoldier->bTeam == CIV_TEAM && !pSoldier->aiData.bNeutral)
 	{
 		bMoraleCategory += 2;
 	}
@@ -5744,6 +5744,191 @@ static INT8 AIProfessionalismModifier(SOLDIERTYPE *pSoldier)
 	return (INT8)__max(-10, __min(15, iModifier));
 }
 
+// Doctrine is intentionally orthogonal to accuracy/AP. It describes how much
+// initiative and coordination the soldier's formation plausibly possesses.
+UINT8 AIGetDoctrineProfile(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return AI_DOCTRINE_LINE;
+
+	switch (pSoldier->ubSoldierClass)
+	{
+	case SOLDIER_CLASS_ADMINISTRATOR:
+		return AI_DOCTRINE_SECURITY;
+
+	case SOLDIER_CLASS_ELITE:
+		// Elite troops on static/guard orders behave like palace/base guards:
+		// tactically capable, but less willing to abandon the mission.
+		if (pSoldier->aiData.bOrders == STATIONARY ||
+			pSoldier->aiData.bOrders == ONGUARD ||
+			pSoldier->aiData.bOrders == SNIPER)
+		{
+			return AI_DOCTRINE_ELITE_GUARD;
+		}
+		return AI_DOCTRINE_ELITE_MOBILE;
+
+	case SOLDIER_CLASS_ARMY:
+		// Regular attitudes are often randomized at creation, so CUNNING alone must
+		// not magically create a veteran. Actual experience is the primary signal;
+		// a cunning level-5 regular is treated as an experienced NCO-like soldier,
+		// while level-6+ regulars have enough field competence to act independently.
+		if (AICheckIsCommander(pSoldier) || AICheckIsOfficer(pSoldier) ||
+			pSoldier->stats.bExpLevel >= 6 ||
+			(pSoldier->stats.bExpLevel >= 5 &&
+			 (pSoldier->aiData.bAttitude == CUNNINGAID ||
+			  pSoldier->aiData.bAttitude == CUNNINGSOLO)))
+		{
+			return AI_DOCTRINE_VETERAN;
+		}
+		return AI_DOCTRINE_LINE;
+
+	default:
+		return AI_DOCTRINE_LINE;
+	}
+}
+
+BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier)
+		return FALSE;
+
+	// Doctrine restrictions are for Deidranna's army only. Preserve militia behaviour.
+	if (pSoldier->bTeam != ENEMY_TEAM)
+		return TRUE;
+
+	if (AICheckIsCommander(pSoldier) || AICheckIsOfficer(pSoldier))
+		return TRUE;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pLeader = MercPtrs[iCounter];
+		if (!pLeader || pLeader == pSoldier || !pLeader->bActive || !pLeader->bInSector ||
+			pLeader->stats.bLife < OKLIFE || pLeader->bCollapsed ||
+			(pLeader->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			pLeader->pathing.bLevel != pSoldier->pathing.bLevel ||
+			PythSpacesAway(pSoldier->sGridNo, pLeader->sGridNo) > TACTICAL_RANGE / 2 ||
+			AIDisengagementActive(pLeader) || AIEscapeActive(pLeader))
+		{
+			continue;
+		}
+
+		if (AICheckIsCommander(pLeader) || AICheckIsOfficer(pLeader))
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
+BOOLEAN AIAllowsComplexManeuver(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return TRUE;
+
+	switch (AIGetDoctrineProfile(pSoldier))
+	{
+	case AI_DOCTRINE_SECURITY:
+		return FALSE;
+	case AI_DOCTRINE_LINE:
+		return AIHasLocalCommandSupport(pSoldier);
+	default:
+		return TRUE;
+	}
+}
+
+BOOLEAN AIAllowsIndependentFlank(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return TRUE;
+
+	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+	if (ubDoctrine == AI_DOCTRINE_SECURITY)
+		return FALSE;
+	if (ubDoctrine == AI_DOCTRINE_LINE)
+		return AIHasLocalCommandSupport(pSoldier);
+
+	return TRUE;
+}
+
+BOOLEAN AIAllowsProactiveSupport(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return TRUE;
+
+	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+	if (ubDoctrine == AI_DOCTRINE_SECURITY)
+		return FALSE;
+	if (ubDoctrine == AI_DOCTRINE_LINE)
+		return AIHasLocalCommandSupport(pSoldier);
+
+	return TRUE;
+}
+
+UINT8 AIDoctrineResponseLimit(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return 4;
+
+	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+	UINT8 ubLimit = 4;
+	switch (ubDoctrine)
+	{
+	case AI_DOCTRINE_SECURITY:     ubLimit = 2; break;
+	case AI_DOCTRINE_LINE:         ubLimit = 4; break;
+	case AI_DOCTRINE_VETERAN:      ubLimit = 5; break;
+	case AI_DOCTRINE_ELITE_MOBILE: ubLimit = 6; break;
+	case AI_DOCTRINE_ELITE_GUARD:  ubLimit = 4; break;
+	}
+
+	// ONCALL is the natural QRF order. SEEKENEMY has more freedom, but does not
+	// empty a garrison as aggressively as a designated response element.
+	if (pSoldier->aiData.bOrders == ONCALL)
+		ubLimit += 2;
+	else if (pSoldier->aiData.bOrders == SEEKENEMY)
+		ubLimit += 1;
+
+	if (ubDoctrine == AI_DOCTRINE_SECURITY && ubLimit > 3)
+		ubLimit = 3;
+
+	return __min((UINT8)8, ubLimit);
+}
+
+INT8 AIDoctrineAnchorModifier(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return 0;
+
+	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+	switch (ubDoctrine)
+	{
+	case AI_DOCTRINE_SECURITY:
+		switch (pSoldier->aiData.bOrders)
+		{
+		case STATIONARY: return -6;
+		case ONGUARD: return -5;
+		case CLOSEPATROL:
+		case POINTPATROL:
+		case RNDPTPATROL: return -3;
+		default: return -1;
+		}
+
+	case AI_DOCTRINE_LINE:
+		if (pSoldier->aiData.bOrders == STATIONARY || pSoldier->aiData.bOrders == ONGUARD)
+			return -2;
+		if (pSoldier->aiData.bOrders == CLOSEPATROL)
+			return -1;
+		return 0;
+
+	case AI_DOCTRINE_VETERAN:
+		return (pSoldier->aiData.bOrders == STATIONARY) ? -1 : 0;
+
+	case AI_DOCTRINE_ELITE_GUARD:
+		return -3;
+
+	default:
+		return 0;
+	}
+}
 // Individual willingness to accept danger. Personality and current morale change
 // the threshold, but no ordinary attitude makes a soldier completely suicidal.
 INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier)
@@ -5941,6 +6126,11 @@ INT32 AICrossfirePositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT3
 	if (!AICombatTeam(pSoldier) || TileIsOutOfBounds(sCandidateSpot) || TileIsOutOfBounds(sTargetSpot))
 		return 0;
 
+	// Crossfire geometry is an advanced coordination task. Ordinary line troops only
+	// receive it while local command is intact; security troops do not improvise it.
+	if (pSoldier->bTeam == ENEMY_TEAM && !AIAllowsComplexManeuver(pSoldier))
+		return 0;
+
 	UINT8 ubCandidateDir = AIDirection(sTargetSpot, sCandidateSpot);
 	if (ubCandidateDir == DIRECTION_IRRELEVANT)
 		return 0;
@@ -6061,6 +6251,26 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 	BOOLEAN fAdvanceCover = AnyCoverAtSpot(pSoldier, sAdvanceSpot);
 	INT32 iCurrentDist = PythSpacesAway(pSoldier->sGridNo, sTargetSpot);
 	INT32 iAdvanceDist = PythSpacesAway(sAdvanceSpot, sTargetSpot);
+	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+	BOOLEAN fComplexDoctrine = AIAllowsComplexManeuver(pSoldier);
+
+	// Lower-quality formations can still make sensible covered advances, but do not
+	// independently solve exposed manoeuvre problems like a professional fireteam.
+	if (pSoldier->bTeam == ENEMY_TEAM && !fComplexDoctrine && iAdvanceDist + 2 < iCurrentDist)
+	{
+		if (ubDoctrine == AI_DOCTRINE_SECURITY &&
+			(!fAdvanceCover || usAdvanceExposure > usCurrentExposure + 25))
+		{
+			return FALSE;
+		}
+
+		if (ubDoctrine == AI_DOCTRINE_LINE &&
+			((!fAdvanceCover && usAdvanceExposure >= usCurrentExposure) ||
+			 usAdvanceExposure > usCurrentExposure + 80))
+		{
+			return FALSE;
+		}
+	}
 
 	// Fire-and-manoeuvre role separation. Two nearby soldiers may actively bound
 	// toward essentially the same known contact. A third healthy soldier normally
@@ -6071,15 +6281,15 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 		AIPersonalRisk(pSoldier) <= AIPersonalRiskTolerance(pSoldier))
 	{
 		UINT8 ubActiveMovers = 0;
-		UINT8 ubMoverLimit = 2;
-		INT32 iMoverJitter = AIBoundedDecisionJitter(pSoldier,
-			(UINT32)(sTargetSpot + 101), 6);
+		UINT8 ubMoverLimit = fComplexDoctrine ? 2 : 1;
+		INT32 iMoverJitter = fComplexDoctrine ? AIBoundedDecisionJitter(pSoldier,
+			(UINT32)(sTargetSpot + 101), 6) : 0;
 
-		// Most fireteams use two movers. Sometimes a cautious element sends one;
-		// occasionally a locally superior, low-stress element pushes three.
-		if (iMoverJitter <= -4)
+		// Professional/veteran fireteams vary their bound size. Uncommanded line and
+		// security elements use a simple one-mover-at-a-time rule instead.
+		if (fComplexDoctrine && iMoverJitter <= -4)
 			ubMoverLimit = 1;
-		else if (iMoverJitter >= 5 &&
+		else if (fComplexDoctrine && iMoverJitter >= 5 &&
 			AILocalStress(pSoldier) < 20 &&
 			AICheckWeOutnumberLocal(pSoldier, sTargetSpot))
 			ubMoverLimit = 3;
@@ -6110,6 +6320,11 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 			{
 				continue;
 			}
+
+			// Choosing the best mover by weapon, mobility and stress is an advanced
+			// NCO/fireteam behaviour; basic formations simply obey the mover cap.
+			if (!fComplexDoctrine)
+				continue;
 
 			INT32 iCandidateScore = AIManeuverRoleScore(pCandidate, sTargetSpot);
 			if (iCandidateScore > iMyManeuverScore + 4 ||
@@ -6260,6 +6475,11 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 
 	if (ubSupporters >= 1)
 		return TRUE;
+
+	// Unsupported improvisation belongs to experienced/mobile troops. Security and
+	// uncommanded line infantry hold or seek another covered route instead.
+	if (pSoldier->bTeam == ENEMY_TEAM && !fComplexDoctrine)
+		return FALSE;
 
 	// A very bold soldier may make a modest unsupported dash, but not while
 	// stressed and never into the severe-exposure case above.
