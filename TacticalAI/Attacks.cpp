@@ -1696,7 +1696,12 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 					ubRawAPCost = ubMinAPcost;
 
 				DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("calcbestthrow: checking hit rate: ubRawAPCost %d, ubMaxPossibleAimTime %d", ubRawAPCost, ubMaxPossibleAimTime ));
-				iHitRate = (pSoldier->bActionPoints * ubChanceToHit) / __max( 1, (INT32)ubRawAPCost + (INT32)sSelectedAimAPCost );
+				// Preserve the legacy direct-fire explosive scoring.  Hand throws use the
+				// real aim-click AP cost introduced above instead of assuming 1 AP per level.
+				if ( EXPLOSIVE_GUN( usInHand ) )
+					iHitRate = (pSoldier->bActionPoints * ubChanceToHit) / __max( 1, (INT32)ubRawAPCost + (INT32)ubMaxPossibleAimTime );
+				else
+					iHitRate = (pSoldier->bActionPoints * ubChanceToHit) / __max( 1, (INT32)ubRawAPCost + (INT32)sSelectedAimAPCost );
 				DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"calcbestthrow: checked hit rate");
 				//NumMessage("iHitRate = ",iHitRate);
 
