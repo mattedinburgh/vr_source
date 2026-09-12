@@ -9239,6 +9239,101 @@ INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 	return -1;
 }
 
+// After completing the lateral flank arc, cautiously close onto the original
+// flank objective.  The old Vengeance implementation for this phase was disabled;
+// this version uses the newer knowledge, hazard and fireteam-support checks.
+INT8 DecideFinishFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, INT8 bDisturbanceLevel)
+{
+	if (!pSoldier || pSoldier->numFlanks != MAX_FLANKS_RED)
+		return -1;
+
+	// A completed flank is no longer worth exploiting if the local situation changed.
+	if (AIShouldAvoidAdvance(pSoldier) ||
+		pSoldier->aiData.bUnderFire ||
+		GuySawEnemy(pSoldier) ||
+		AILocalStress(pSoldier) >= 50 ||
+		pSoldier->stats.bLife < OKLIFE ||
+		pSoldier->bBreath < 35)
+	{
+		pSoldier->numFlanks++;
+		return -1;
+	}
+
+	if (gfTurnBasedAI && pSoldier->bActionPoints < pSoldier->bInitialActionPoints)
+		return AI_ACTION_END_TURN;
+
+	INT32 sObjective = pSoldier->lastFlankSpot;
+	if (TileIsOutOfBounds(sObjective))
+	{
+		pSoldier->numFlanks++;
+		return -1;
+	}
+
+	// If the currently relevant disturbance has moved far away from the contact this
+	// flank was built around, do not blindly finish an obsolete manoeuvre.
+	if (!TileIsOutOfBounds(sClosestDisturbance) &&
+		PythSpacesAway(sObjective, sClosestDisturbance) > TACTICAL_RANGE / 2)
+	{
+		pSoldier->numFlanks++;
+		return -1;
+	}
+
+	// We have reached a useful flank angle/position. Hand control back to normal RED AI.
+	if (PythSpacesAway(pSoldier->sGridNo, sObjective) <= MIN_FLANK_DIST_RED &&
+		LocationToLocationLineOfSightTest(
+			pSoldier->sGridNo, pSoldier->pathing.bLevel,
+			sObjective, bDisturbanceLevel, TRUE, MAX_VISION_RANGE))
+	{
+		pSoldier->numFlanks++;
+		return -1;
+	}
+
+	INT8 bReserveAP = GetAPsCrouch(pSoldier, TRUE) + GetAPsToLook(pSoldier);
+	INT32 sAdvance = InternalGoAsFarAsPossibleTowards(
+		pSoldier, sObjective, bReserveAP, AI_ACTION_SEEK_OPPONENT, FLAG_CAUTIOUS);
+
+	if (TileIsOutOfBounds(sAdvance) || sAdvance == pSoldier->sGridNo)
+	{
+		pSoldier->numFlanks++;
+		return -1;
+	}
+
+	if (!CheckNPCDestination(pSoldier, sAdvance) ||
+		InGas(pSoldier, sAdvance) ||
+		Water(sAdvance, pSoldier->pathing.bLevel))
+	{
+		pSoldier->numFlanks++;
+		return -1;
+	}
+
+	// The flank completion must still behave like fire-and-manoeuvre, not a solo rush.
+	if (!AIAdvanceHasMutualSupport(
+		pSoldier, sAdvance, sObjective, bDisturbanceLevel))
+	{
+		pSoldier->numFlanks++;
+		return -1;
+	}
+
+	UINT16 usCurrentExposure = AIKnownThreatExposure(
+		pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+	UINT16 usAdvanceExposure = AIKnownThreatExposure(
+		pSoldier, sAdvance, pSoldier->pathing.bLevel);
+
+	// Even with support, do not leave useful cover for a sharply more exposed square.
+	if (usAdvanceExposure > usCurrentExposure + 150 &&
+		AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) &&
+		!AnyCoverAtSpot(pSoldier, sAdvance))
+	{
+		pSoldier->numFlanks++;
+		return -1;
+	}
+
+	pSoldier->aiData.usActionData = sAdvance;
+	pSoldier->aiData.fAIFlags |= AI_CAUTIOUS;
+	pSoldier->aiData.bNextAction = AI_ACTION_END_TURN;
+	return AI_ACTION_SEEK_OPPONENT;
+}
+
 INT8 DecideUseWirecutters(SOLDIERTYPE *pSoldier)
 {
 	INT32 sOpponentGridNo;
