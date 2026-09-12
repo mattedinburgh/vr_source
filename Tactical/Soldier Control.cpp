@@ -9815,8 +9815,8 @@ static SOLDIERTYPE *GetDraggedDownedPerson( SOLDIERTYPE *pSoldier )
 		 pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
 		 pTarget->pathing.bLevel != pSoldier->pathing.bLevel ||
 		 PythSpacesAway( pSoldier->sGridNo, pTarget->sGridNo ) > 2 ||
-		 TERRAIN_IS_HIGH_WATER( pSoldier->sGridNo ) ||
-		 TERRAIN_IS_HIGH_WATER( pTarget->sGridNo ) )
+		 TERRAIN_IS_HIGH_WATER( gpWorldLevelData[pSoldier->sGridNo].ubTerrainID ) ||
+		 TERRAIN_IS_HIGH_WATER( gpWorldLevelData[pTarget->sGridNo].ubTerrainID ) )
 	{
 		// During a legal drag step the rescuer can briefly be two tiles from the casualty
 		// before UpdateDraggedDownedPersonPosition() pulls them into the vacated tile.
@@ -9861,8 +9861,8 @@ BOOLEAN StartDraggingDownedPerson( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pTarget )
 		 pTarget->pathing.bLevel != pSoldier->pathing.bLevel ||
 		 PythSpacesAway( pSoldier->sGridNo, pTarget->sGridNo ) > 1 ||
 		 pTarget->bSide != pSoldier->bSide ||
-		 TERRAIN_IS_HIGH_WATER( pSoldier->sGridNo ) ||
-		 TERRAIN_IS_HIGH_WATER( pTarget->sGridNo ) )
+		 TERRAIN_IS_HIGH_WATER( gpWorldLevelData[pSoldier->sGridNo].ubTerrainID ) ||
+		 TERRAIN_IS_HIGH_WATER( gpWorldLevelData[pTarget->sGridNo].ubTerrainID ) )
 	{
 		return FALSE;
 	}
@@ -9954,9 +9954,9 @@ void UpdateDraggedDownedPersonPosition( SOLDIERTYPE *pSoldier, INT32 sOldGridNo 
 	// This prevents teleporting through climbs, traversal or unusual scripted movement.
 	if ( pTarget->pathing.bLevel != pSoldier->pathing.bLevel ||
 		 PythSpacesAway( sOldGridNo, pTarget->sGridNo ) > 1 ||
-		 TERRAIN_IS_HIGH_WATER( pSoldier->sGridNo ) ||
-		 TERRAIN_IS_HIGH_WATER( sOldGridNo ) ||
-		 TERRAIN_IS_HIGH_WATER( pTarget->sGridNo ) )
+		 TERRAIN_IS_HIGH_WATER( gpWorldLevelData[pSoldier->sGridNo].ubTerrainID ) ||
+		 TERRAIN_IS_HIGH_WATER( gpWorldLevelData[sOldGridNo].ubTerrainID ) ||
+		 TERRAIN_IS_HIGH_WATER( gpWorldLevelData[pTarget->sGridNo].ubTerrainID ) )
 	{
 		StopDraggingDownedPerson( pSoldier );
 		return;
