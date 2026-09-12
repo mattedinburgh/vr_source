@@ -2814,6 +2814,12 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		// sevenfm: set bAimShotLocation
 		pSoldier->bAimShotLocation = AIM_SHOT_RANDOM;
 		CheckIfShotPossible(pSoldier, &BestShot);
+
+		BOOLEAN fBestShotTargetStateKnown =
+			BestShot.ubPossible &&
+			BestShot.ubOpponent != NOBODY &&
+			MercPtrs[BestShot.ubOpponent] &&
+			PersonalKnowledge(pSoldier, BestShot.ubOpponent) == SEEN_CURRENTLY;
 		DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible? = %d, CTH = %d",BestShot.ubPossible,BestShot.ubChanceToReallyHit));
 
 		// sevenfm: changed sniper shot min CTH to 25%
@@ -5835,6 +5841,12 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 	// NB a desire of 4 or more is only achievable by brave/aggressive guys with high morale
 	UINT16 usRange = BestAttack.bWeaponIn==NO_SLOT ? 0 : GetModifiedGunRange(pSoldier->inv[BestAttack.bWeaponIn].usItem);//dnl ch69 150913
 
+	BOOLEAN fBestAttackTargetStateKnown =
+		ubBestAttackAction != AI_ACTION_NONE &&
+		BestAttack.ubOpponent != NOBODY &&
+		MercPtrs[BestAttack.ubOpponent] &&
+		PersonalKnowledge(pSoldier, BestAttack.ubOpponent) == SEEN_CURRENTLY;
+
 	// sevenfm: black climb
 	// don't climb if there are enemies close (count all enemies, not only the current target)
 	INT32 sClosestThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
@@ -6309,7 +6321,7 @@ L_NEWAIM:
 						pSoldier->inv[ BestAttack.bWeaponIn ][0]->data.gun.ubGunShotsLeft >= pSoldier->bDoAutofire &&
 						//dnl ch64 130913 pSoldier->ubAttackingHand is wrong because decision is to use BestAttack.bWeaponIn, also missing sActualAimTime
 						// sevenfm limit max auto penalty if target has shock (suppressed)
-						GetAutoPenalty(pSoldier, &pSoldier->inv[ BestAttack.bWeaponIn ], gAnimControl[ pSoldier->usAnimState ].ubEndHeight == ANIM_PRONE)*pSoldier->bDoAutofire <= __max(BestAttack.ubChanceToReallyHit, 40 + 80 / (2+MercPtrs[BestAttack.ubOpponent]->aiData.bShock)) ); 
+						GetAutoPenalty(pSoldier, &pSoldier->inv[ BestAttack.bWeaponIn ], gAnimControl[ pSoldier->usAnimState ].ubEndHeight == ANIM_PRONE)*pSoldier->bDoAutofire <= __max(BestAttack.ubChanceToReallyHit, 40 + 80 / (2 + (fBestAttackTargetStateKnown ? MercPtrs[BestAttack.ubOpponent]->aiData.bShock : 0))) ); 
 						//GetAutoPenalty(&pSoldier->inv[ BestAttack.bWeaponIn ], gAnimControl[ pSoldier->usAnimState ].ubEndHeight == ANIM_PRONE)*pSoldier->bDoAutofire <= 80);//dnl ch64 130913 pSoldier->ubAttackingHand is wrong because decision is to use BestAttack.bWeaponIn, also missing sActualAimTime
 				}
 
@@ -6321,7 +6333,7 @@ L_NEWAIM:
 					fExtraClip &&
 					pSoldier->aiData.bOrders != SNIPER &&
 					BestAttack.ubChanceToReallyHit < 5 &&
-					!CoweringShockLevel(MercPtrs[BestAttack.ubOpponent]) &&
+					(!fBestAttackTargetStateKnown || !CoweringShockLevel(MercPtrs[BestAttack.ubOpponent])) &&
 					(pSoldier->aiData.bUnderFire || pSoldier->aiData.bAttitude == AGGRESSIVE) &&
 					pSoldier->inv[BestAttack.bWeaponIn][0]->data.gun.ubGunShotsLeft >= 3)//dnl ch69 130913 let try increase autofire rate for aim cost
 				{
@@ -6446,7 +6458,8 @@ L_NEWAIM:
 				pSoldier->aiData.bShock < 2 * RangeChangeDesire(pSoldier) && 
 				pSoldier->stats.bLife > pSoldier->stats.bLifeMax / 2 && 
 				// sevenfm: increased to 10-40 depending on target shock
-				(BestAttack.ubChanceToReallyHit < 10 + MercPtrs[BestAttack.ubOpponent]->aiData.bShock) &&
+				(BestAttack.ubChanceToReallyHit < 10 +
+				 (fBestAttackTargetStateKnown ? MercPtrs[BestAttack.ubOpponent]->aiData.bShock : 0)) &&
 				// sevenfm: advance when too far or target is cowering or hit
 				(	PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) > usRange / (CELL_X_SIZE) ||
 					CoweringShockLevel(MercPtrs[BestAttack.ubOpponent]) ||
