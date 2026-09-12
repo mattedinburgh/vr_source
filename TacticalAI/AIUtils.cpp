@@ -5033,6 +5033,128 @@ INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier)
 	return __max(20, __min(85, iTolerance));
 }
 
+// Dynamic fireteam role suitability. These are not permanent classes: the score is
+// recalculated from current weapon, position, wounds, fatigue and local stress, so a
+// soldier can change from maneuver to support (or back) as the fight develops.
+INT32 AISupportRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
+{
+	if (!AICombatTeam(pSoldier) || !pSoldier->bActive || !pSoldier->bInSector ||
+		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		!AICheckHasGun(pSoldier) || AIGunAmmo(pSoldier) == 0)
+	{
+		return -10000;
+	}
+
+	if (TileIsOutOfBounds(sTargetSpot))
+		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+
+	INT32 iScore = 20;
+	INT32 iGunRange = __max(1, (INT32)AIGunRange(pSoldier) / CELL_X_SIZE);
+
+	if (AICheckIsMachinegunner(pSoldier))
+		iScore += 35;
+	if (AICheckIsSniper(pSoldier))
+		iScore += 30;
+	else if (AICheckIsMarksman(pSoldier))
+		iScore += 18;
+	if (AIGunAutofireCapable(pSoldier))
+		iScore += 10;
+
+	iScore += __min((INT32)18, iGunRange / 2);
+	iScore += __max(-8, __min(18, ((INT32)pSoldier->stats.bMarksmanship - 60) / 2));
+
+	if (AnyCoverAtSpot(pSoldier, pSoldier->sGridNo))
+		iScore += 16;
+	if (SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE))
+		iScore += 10;
+
+	if (!TileIsOutOfBounds(sTargetSpot))
+	{
+		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, sTargetSpot);
+		if (iDistance <= iGunRange)
+			iScore += 12;
+		else if (iDistance > iGunRange + iGunRange / 3)
+			iScore -= 12;
+
+		INT8 bRangePreference = AIEngagementRangeModifier(pSoldier, sTargetSpot);
+		if (bRangePreference < 0)
+			iScore += 6;
+	}
+
+	if (AICheckShortWeaponRange(pSoldier))
+		iScore -= 15;
+	if (AICheckIsMedic(pSoldier))
+		iScore -= 8;
+	if (pSoldier->aiData.bUnderFire)
+		iScore -= 10;
+
+	iScore -= AILocalStress(pSoldier) / 4;
+	iScore -= AIPersonalRisk(pSoldier) / 4;
+
+	return __max(-100, __min(150, iScore));
+}
+
+INT32 AIManeuverRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
+{
+	if (!AICombatTeam(pSoldier) || !pSoldier->bActive || !pSoldier->bInSector ||
+		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		(pSoldier->usSoldierFlagMask & SOLDIER_POW) ||
+		(pSoldier->flags.uiStatusFlags & SOLDIER_COWERING) ||
+		AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier))
+	{
+		return -10000;
+	}
+
+	if (TileIsOutOfBounds(sTargetSpot))
+		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+
+	INT32 iHealthPercent = pSoldier->stats.bLifeMax > 0 ?
+		(100 * pSoldier->stats.bLife) / pSoldier->stats.bLifeMax : 0;
+	INT32 iScore = 20;
+
+	iScore += (INT32)pSoldier->stats.bAgility / 6;
+	iScore += (INT32)pSoldier->stats.bDexterity / 12;
+	iScore += iHealthPercent / 6;
+	iScore += (INT32)pSoldier->bBreath / 12;
+
+	if (AICheckShortWeaponRange(pSoldier))
+		iScore += 18;
+
+	if (AICheckIsMachinegunner(pSoldier))
+		iScore -= 32;
+	if (AICheckIsSniper(pSoldier))
+		iScore -= 35;
+	else if (AICheckIsMarksman(pSoldier))
+		iScore -= 18;
+	if (AICheckIsMortarOperator(pSoldier))
+		iScore -= 35;
+	if (AICheckIsCommander(pSoldier))
+		iScore -= 10;
+	if (AICheckIsMedic(pSoldier))
+		iScore -= 10;
+
+	FLOAT dScope = AIGunScopeMagFactor(pSoldier);
+	if (dScope >= 4.0f)
+		iScore -= 15;
+	else if (dScope >= 2.0f)
+		iScore -= 7;
+
+	if (!TileIsOutOfBounds(sTargetSpot))
+	{
+		INT8 bRangePreference = AIEngagementRangeModifier(pSoldier, sTargetSpot);
+		if (bRangePreference > 0)
+			iScore += 8 * bRangePreference;
+		else if (bRangePreference < 0)
+			iScore += 8 * bRangePreference;
+	}
+
+	if (pSoldier->aiData.bUnderFire)
+		iScore -= 15;
+	iScore -= AILocalStress(pSoldier) / 3;
+	iScore -= AIPersonalRisk(pSoldier) / 3;
+
+	return __max(-100, __min(150, iScore));
+}
 // Local cooperation modifier for offensive movement.  Soldiers are more willing
 // to advance when nearby teammates or teammates already engaging the same threat
 // can support them, and less willing to push forward alone.
@@ -5111,6 +5233,42 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 			AICheckWeOutnumberLocal(pSoldier, sTargetSpot))
 			ubMoverLimit = 3;
 
+		// Capability-aware bounding: if enough healthier/more mobile nearby soldiers
+		// are materially better maneuver candidates, this soldier remains part of the
+		// support base instead of advancing merely because his turn happened first.
+		INT32 iMyManeuverScore = AIManeuverRoleScore(pSoldier, sTargetSpot);
+		UINT8 ubBetterMovers = 0;
+		for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+			iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+		{
+			SOLDIERTYPE *pCandidate = MercPtrs[iCounter];
+			if (!pCandidate || pCandidate == pSoldier ||
+				!pCandidate->bActive || !pCandidate->bInSector ||
+				pCandidate->stats.bLife < OKLIFE || pCandidate->bCollapsed ||
+				pCandidate->pathing.bLevel != pSoldier->pathing.bLevel ||
+				pCandidate->bActionPoints <= 0 ||
+				PythSpacesAway(pSoldier->sGridNo, pCandidate->sGridNo) > TACTICAL_RANGE / 2)
+			{
+				continue;
+			}
+
+			INT32 sCandidateThreat = ClosestKnownOpponent(pCandidate, NULL, NULL);
+			if (TileIsOutOfBounds(sCandidateThreat) ||
+				PythSpacesAway(sCandidateThreat, sTargetSpot) > 3)
+			{
+				continue;
+			}
+
+			INT32 iCandidateScore = AIManeuverRoleScore(pCandidate, sTargetSpot);
+			if (iCandidateScore > iMyManeuverScore + 4 ||
+				(iCandidateScore >= iMyManeuverScore - 4 &&
+				 pCandidate->ubID < pSoldier->ubID))
+			{
+				++ubBetterMovers;
+				if (ubBetterMovers >= ubMoverLimit)
+					return FALSE;
+			}
+		}
 		for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 			iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
 		{
