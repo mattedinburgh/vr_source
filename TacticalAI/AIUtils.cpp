@@ -7476,37 +7476,35 @@ UINT8 CountFriendsNeedHelp( SOLDIERTYPE *pSoldier )
 
 BOOLEAN GuyKnowsEnemyPosition( SOLDIERTYPE * pSoldier )
 {
-	UINT8		uiLoop;
-	SOLDIERTYPE *pOpponent;
+	CHECKF(pSoldier);
 
-	for (uiLoop = 0; uiLoop < guiNumMercSlots; uiLoop++)
+	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
 	{
-		pOpponent = MercSlots[ uiLoop ];
-
-		// if this merc is inactive, at base, on assignment, or dead
+		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
 		if (!pOpponent)
+			continue;
+
+		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+		if (bKnowledge == NOT_HEARD_OR_SEEN)
+			continue;
+
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pSoldier->bSide == pOpponent->bSide ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			pOpponent->ubBodyType == CROW)
 		{
 			continue;
 		}
 
-		if (!ValidOpponent(pSoldier, pOpponent))
-		{
+		// Only a current contact may disappear because of its live engine state.
+		if (bKnowledge == SEEN_CURRENTLY && !ValidOpponent(pSoldier, pOpponent))
 			continue;
-		}
 
-		// if this guy knows something about this enemy
-		if ( pSoldier->aiData.bOppList[ pOpponent->ubID ] != NOT_HEARD_OR_SEEN )
-		{
-			return( TRUE );
-		}
-		// check also public knowledge
-		if ( gbPublicOpplist[pSoldier->bTeam][ pOpponent->ubID ] != NOT_HEARD_OR_SEEN )
-		{
-			return( TRUE );
-		}
+		if (!TileIsOutOfBounds(KnownLocation(pSoldier, pOpponent->ubID)))
+			return TRUE;
 	}
 
-	return( FALSE );
+	return FALSE;
 }
 
 BOOLEAN AICheckIsSniper(SOLDIERTYPE *pSoldier)
@@ -9960,79 +9958,61 @@ BOOLEAN FindObstacleNearSpot(INT32 sSpot, INT8 bLevel)
 BOOLEAN EnemyCanAttackSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 {
 	CHECKF(pSoldier);
+	CHECKF(!TileIsOutOfBounds(sSpot));
 
-	UINT32		uiLoop;
-	SOLDIERTYPE *pOpponent;
-	INT8		bPersonalKnowledge, bPublicKnowledge;
-
-	INT32		sThreatLoc;
-	INT32		iThreatCertainty;
-	INT8		iThreatLevel;
-
-	// look through all opponents for those we know of
-	for (uiLoop = 0; uiLoop < guiNumMercSlots; uiLoop++)
+	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
 	{
-		pOpponent = MercSlots[uiLoop];
+		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
+		if (!pOpponent)
+			continue;
 
-		// if this merc is inactive, at base, on assignment, dead, unconscious
-		if (!pOpponent || pOpponent->stats.bLife < OKLIFE)
-		{
-			continue;			// next merc
-		}
+		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+		if (bKnowledge == NOT_HEARD_OR_SEEN)
+			continue;
 
-		if (!ValidOpponent(pSoldier, pOpponent))
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pSoldier->bSide == pOpponent->bSide ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			pOpponent->ubBodyType == CROW)
 		{
 			continue;
 		}
 
-		// if this opponent is unknown personally and publicly
-		if (Knowledge(pSoldier, pOpponent->ubID) == NOT_HEARD_OR_SEEN)
-		{
-			continue;
-		}
-
-		sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		iThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
-		iThreatCertainty = ThreatPercent[Knowledge(pSoldier, pOpponent->ubID) - OLDEST_HEARD_VALUE];
-
-		bPersonalKnowledge = PersonalKnowledge(pSoldier, pOpponent->ubID);
-		bPublicKnowledge = PublicKnowledge(pSoldier->bTeam, pOpponent->ubID);
-
-		// safety check
+		INT32 sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
+		INT8 bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
 		if (TileIsOutOfBounds(sThreatLoc))
-		{
 			continue;
-		}
 
-		// standard interrupt conditions
-		if ((bPersonalKnowledge == SEEN_CURRENTLY || bPersonalKnowledge == SEEN_THIS_TURN || bPersonalKnowledge == HEARD_THIS_TURN ||
-			bPublicKnowledge == SEEN_CURRENTLY || bPublicKnowledge == SEEN_THIS_TURN || bPublicKnowledge == HEARD_THIS_TURN))
+		const BOOLEAN fCurrentContact =
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY ||
+			 PublicKnowledge(pSoldier->bTeam, pOpponent->ubID) == SEEN_CURRENTLY);
+
+		INT32 iAttackRange;
+		if (fCurrentContact)
 		{
-			if (!pOpponent->CanInterrupt())
-			{
+			if (!ValidOpponent(pSoldier, pOpponent) || pOpponent->IsUnconscious() || pOpponent->IsEmptyVehicle())
 				continue;
-			}
-		}
 
-		// ignore opponents without weapons
-		if (!AICheckHasGun(pOpponent) &&
-			PythSpacesAway(sThreatLoc, sSpot) > DAY_VISION_RANGE / 2)
+			if (!pOpponent->CanInterrupt())
+				continue;
+
+			// For an observed opponent we legitimately know whether his current weapon
+			// can threaten the tile.
+			if (!AICheckHasGun(pOpponent) && PythSpacesAway(sThreatLoc, sSpot) > DAY_VISION_RANGE / 2)
+				continue;
+
+			iAttackRange = AICheckHasGun(pOpponent) ? AIGunRange(pOpponent) * 3 / 2 : DAY_VISION_RANGE / 2;
+		}
+		else
 		{
-			continue;
+			// For a stale contact, represent uncertainty through the knowledge age.
+			// Do not inspect hidden current weapon, AP, shock, stance or consciousness.
+			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+			iAttackRange = max(DAY_VISION_RANGE / 4, (MAX_VISION_RANGE * iCertainty) / 100);
 		}
 
-		// sevenfm: use real location/level
-		//sThreatLoc = pOpponent->sGridNo;
-		//iThreatLevel = pOpponent->pathing.bLevel;
-
-		// if we have actual information, and this opponent has enough APs to attack
-		//if( AIGunDeadliness(pOpponent) > 0 && 
-		//	pOpponent->bActionPoints >= AIGunMinAPsToShoot(pOpponent) )
-
-		// sevenfm: check only sight from enemy location to checked location
-		if (LocationToLocationLineOfSightTest(sThreatLoc, iThreatLevel, sSpot, bLevel, TRUE, MAX_VISION_RANGE) &&
-			//LOS_Location(sThreatLoc, iThreatLevel, sSpot, bLevel, MAX_VISION_RANGE) &&
-			AIGunRange(pOpponent) * 3 / 2 >= PythSpacesAway(sThreatLoc, sSpot))
+		if (PythSpacesAway(sThreatLoc, sSpot) <= iAttackRange &&
+			LocationToLocationLineOfSightTest(sThreatLoc, bThreatLevel, sSpot, bLevel, TRUE, MAX_VISION_RANGE))
 		{
 			return TRUE;
 		}
