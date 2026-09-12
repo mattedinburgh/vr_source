@@ -1096,8 +1096,20 @@ BOOLEAN AdjustToNextAnimationFrame( SOLDIERTYPE *pSoldier )
 						DeductPoints( pSoldier, APBPConstants[AP_TOSS_ITEM], 0, AFTERACTION_INTERRUPT );
 					}
 
-					// sevenfm: enable muzzle flash
-					if (pSoldier->flags.fMuzzleFlash)
+					// Current 1.13 behaviour: a lit flare should illuminate the throw itself.
+					// Preserve Vengeance's existing explicit muzzle-flash flag, but also detect
+					// flare items directly so the effect does not depend on firearm code setting it.
+					BOOLEAN fThrowFlash = pSoldier->flags.fMuzzleFlash;
+					UINT16 usThrownItem = pSoldier->pTempObject->usItem;
+					UINT16 usBuddyItem = Item[usThrownItem].usBuddyItem;
+					if ( pSoldier->pThrowParams->ubActionCode == THROW_ARM_ITEM &&
+						 ( Item[usThrownItem].flare ||
+						   ( usBuddyItem && Item[usBuddyItem].flare ) ) )
+					{
+						fThrowFlash = TRUE;
+					}
+
+					if (fThrowFlash)
 					{
 						if ((pSoldier->iMuzFlash = LightSpriteCreate("L-R03.LHT", 0)) != -1)
 						{
