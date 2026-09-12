@@ -2576,6 +2576,17 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 			if ( pSoldier->bSide != pFriend->bSide )
 				continue;		// next merc
 
+			// Morale support is tactical, not sector-wide. Healthy enemy fireteams
+			// should draw confidence primarily from their own element and nearby
+			// cross-support, rather than from soldiers fighting on the far side of the map.
+			if (pSoldier->bTeam == ENEMY_TEAM && pFriend->bTeam == ENEMY_TEAM &&
+				!AISameFireteam(pSoldier, pFriend) &&
+				AIFireteamAliveCount(pSoldier) > 2 &&
+				PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > TACTICAL_RANGE / 2)
+			{
+				continue;
+			}
+
 			// THIS TEST IS INVALID IF A COMPUTER-TEAM IS PLAYING CO-OPERATIVELY
 			// WITH A NON-COMPUTER TEAM SINCE THE OPPLISTS INVOLVED ARE NOT
 			// UP-TO-DATE.	THIS SITUATION IS CURRENTLY NOT POSSIBLE IN HTH/DG.
@@ -2597,7 +2608,14 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 				}
 			}
 
-			sFrndThreatValue = (iPercent * CalcManThreatValue(pFriend,pOpponent->sGridNo,FALSE,pSoldier)) / 100;
+			// Evaluate support against the location this friend actually knows, not the
+			// opponent object's hidden live position.
+			INT32 sFriendKnownOpponent = KnownLocation(pFriend, pOpponent->ubID);
+			if (TileIsOutOfBounds(sFriendKnownOpponent))
+			{
+				continue;
+			}
+			sFrndThreatValue = (iPercent * CalcManThreatValue(pFriend, sFriendKnownOpponent, FALSE, pSoldier)) / 100;
 
 			//sprintf(tempstr,"Known by friend %s, opplist status %d, percent %d, threat = %d",
 			//		 ExtMen[pFriend->ubID].name,pFriend->aiData.bOppList[pOpponent->ubID],ubPercent,sFrndThreatValue);
