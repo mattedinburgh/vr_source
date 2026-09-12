@@ -1168,7 +1168,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 	UINT8	ubLoop, ubLoop2;
 	INT32	iAttackValue;
 	INT32	iHitRate, iThreatValue, iTotalThreatValue,iOppThreatValue[MAXMERCS];
-	INT32	sGridNo, sEndGridNo, sFriendTile[MAXMERCS], sOpponentTile[MAXMERCS];
+	INT32	sGridNo, sEndGridNo, sFriendTile[MAXMERCS], sFriendMoveTile[MAXMERCS], sOpponentTile[MAXMERCS];
 	INT8	bFriendLevel[MAXMERCS], bOpponentLevel[MAXMERCS];
 	BOOLEAN fFriendCritical[MAXMERCS];
 	INT32	iEstDamage;
@@ -1338,35 +1338,39 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 
 		pFriend = MercSlots[ubLoop];
 
-		if ( !pFriend )
-		{
-			continue; // next soldier
-		}
-
-		if (pFriend->stats.bLife == 0)
+		if (!pFriend ||
+			!pFriend->bActive ||
+			!pFriend->bInSector ||
+			pFriend->stats.bLife <= 0)
 		{
 			continue;
 		}
 
-		/*
-		// if this soldier is inactive, at base, on assignment, or dead
-		if (!Menptr[ubLoop].bActive || !Menptr[ubLoop].bInSector || !Menptr[ubLoop].bLife)
-		continue;			// next soldier
-		*/
-
-		// if this man is neutral / NOT on the same side, he's not a friend
+		// If this man is neutral / NOT on the same side, he's not a friend.
 		if (pFriend->aiData.bNeutral || (pSoldier->bSide != pFriend->bSide))
 		{
-			continue;			// next soldier
+			continue;
 		}
 
-		// active friend, remember where he is so that we DON'T blow him up!
-		// this includes US, since we don't want to blow OURSELVES up either
+		// Remember both the current tile and, for an action already in progress, the
+		// committed movement destination. This prevents a later-acting grenadier from
+		// throwing into the tile a teammate is currently bounding/withdrawing toward.
 		sFriendTile[ubFriendCnt] = pFriend->sGridNo;
+		sFriendMoveTile[ubFriendCnt] = NOWHERE;
+		if (pFriend->aiData.bAction >= FIRST_MOVEMENT_ACTION &&
+			pFriend->aiData.bAction <= LAST_MOVEMENT_ACTION &&
+			!TileIsOutOfBounds(pFriend->aiData.usActionData) &&
+			pFriend->aiData.usActionData != pFriend->sGridNo)
+		{
+			sFriendMoveTile[ubFriendCnt] = pFriend->aiData.usActionData;
+		}
+
 		bFriendLevel[ubFriendCnt] = pFriend->pathing.bLevel;
 		fFriendCritical[ubFriendCnt] =
 			pFriend->stats.bLife < OKLIFE ||
-			(pFriend->bCollapsed && pFriend->bBreath < OKBREATH);
+			pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW);
 		ubFriendCnt++;
 	}
 
@@ -1805,12 +1809,19 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 							(UINT8)(ubSafetyMargin + 1));
 					}
 
-					if ((bFriendLevel[ubLoop2] == bOpponentLevel[ubLoop]) &&
-						(PythSpacesAway(sFriendTile[ubLoop2], sGridNo) <= ubFriendSafetyMargin))
+					if (bFriendLevel[ubLoop2] == bOpponentLevel[ubLoop])
 					{
-						//NumMessage("Friend too close: at gridno",sFriendTile[ubLoop2]);
-						fFriendsNearby = TRUE;
-						break;		// don't bother checking any other friends
+						BOOLEAN fCurrentTileUnsafe =
+							PythSpacesAway(sFriendTile[ubLoop2], sGridNo) <= ubFriendSafetyMargin;
+						BOOLEAN fMoveTileUnsafe =
+							!TileIsOutOfBounds(sFriendMoveTile[ubLoop2]) &&
+							PythSpacesAway(sFriendMoveTile[ubLoop2], sGridNo) <= ubFriendSafetyMargin;
+
+						if (fCurrentTileUnsafe || fMoveTileUnsafe)
+						{
+							fFriendsNearby = TRUE;
+							break;		// don't bother checking any other friends
+						}
 					}
 				}
 
