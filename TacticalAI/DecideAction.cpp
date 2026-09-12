@@ -3382,7 +3382,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			InLightAtNight(pSoldier->sGridNo, pSoldier->pathing.bLevel) &&
 			//pSoldier->aiData.bOrders != STATIONARY &&			
 			!InSmoke(pSoldier->sGridNo, pSoldier->pathing.bLevel) &&
-			(pSoldier->aiData.bUnderFire || pSoldier->aiData.bOrders != SEEKENEMY || !SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE) || GetNearestRottingCorpseAIWarning(pSoldier->sGridNo) > 0) &&
+			(pSoldier->aiData.bUnderFire || pSoldier->aiData.bOrders != SEEKENEMY || !SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE) || AICorpseWarningKnown(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel) > 0) &&
 			(CountFriendsFlankSameSpot(pSoldier, sClosestDisturbance) > 0 || !AICheckSuccessfulAttack(pSoldier, TRUE) || pSoldier->aiData.bOrders != SEEKENEMY) &&
 			CountFriendsBlack(pSoldier, sClosestDisturbance) == 0)
 		{
@@ -3814,7 +3814,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 							// Check for a trap
 							if ( !ArmySeesOpponents() )
 							{
-								if ( GetNearestRottingCorpseAIWarning( pSoldier->aiData.usActionData ) > 0 )
+								if ( AICorpseWarningKnown(pSoldier, pSoldier->aiData.usActionData, pSoldier->pathing.bLevel) > 0 )
 								{
 									// abort! abort!
 									pSoldier->aiData.usActionData = NOWHERE;
@@ -4299,7 +4299,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 					if ((fProneSightCover && AnyCoverAtSpot(pSoldier, pSoldier->sGridNo)) && 
 						!pSoldier->aiData.bUnderFire && 
 						!InLightAtNight(pSoldier->sGridNo, pSoldier->pathing.bLevel) && 
-						GetNearestRottingCorpseAIWarning(pSoldier->sGridNo) == 0)
+						AICorpseWarningKnown(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel) == 0)
 					{
 						bSeekPts = -99;
 					}
