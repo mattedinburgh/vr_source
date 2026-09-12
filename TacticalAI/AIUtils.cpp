@@ -1260,6 +1260,7 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 		}
 
 		BOOLEAN fCurrentContact = (*pbPersOL == SEEN_CURRENTLY || *pbPublOL == SEEN_CURRENTLY);
+		BOOLEAN fThreatStateKnown = (*pbPersOL == SEEN_CURRENTLY);
 		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
 			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
 			(gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
@@ -1267,7 +1268,7 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 		{
 			continue;
 		}
-		if (fCurrentContact && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
+		if (fThreatStateKnown && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
 		{
 			continue;
 		}
@@ -1523,6 +1524,7 @@ INT32 ClosestKnownOpponent(SOLDIERTYPE *pSoldier, INT32 * psGridNo, INT8 * pbLev
 		}
 
 		BOOLEAN fCurrentContact = (*pbPersOL == SEEN_CURRENTLY || *pbPublOL == SEEN_CURRENTLY);
+		BOOLEAN fThreatStateKnown = (*pbPersOL == SEEN_CURRENTLY);
 		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
 			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
 			(gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
@@ -1530,7 +1532,7 @@ INT32 ClosestKnownOpponent(SOLDIERTYPE *pSoldier, INT32 * psGridNo, INT8 * pbLev
 		{
 			continue;
 		}
-		if (fCurrentContact && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
+		if (fThreatStateKnown && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
 		{
 			continue;
 		}
@@ -2550,7 +2552,8 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 		}
 
 		BOOLEAN fCurrentContact = (*pbPersOL == SEEN_CURRENTLY || *pbPublOL == SEEN_CURRENTLY);
-		if (fCurrentContact && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
+		BOOLEAN fThreatStateKnown = (*pbPersOL == SEEN_CURRENTLY);
+		if (fThreatStateKnown && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
 		{
 			continue;
 		}
@@ -2578,7 +2581,7 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 
 		// A stale contact contributes according to remembered certainty, not hidden
 		// current wounds/AP/weapon state. Current contacts keep the detailed threat model.
-		INT32 iOpponentThreat = fCurrentContact ?
+		INT32 iOpponentThreat = fThreatStateKnown ?
 			CalcManThreatValue(pOpponent,pSoldier->sGridNo,FALSE,pSoldier) : 100;
 		if (iOpponentThreat < 1)
 			iOpponentThreat = 1;
