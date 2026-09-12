@@ -1086,9 +1086,13 @@ BOOLEAN AdjustToNextAnimationFrame( SOLDIERTYPE *pSoldier )
 					// ATE: If we are armmed...
 					if ( pSoldier->pThrowParams->ubActionCode == THROW_ARM_ITEM )
 					{
-						//AXP 25.03.2007: MinAPsToThrow now actually returns the real cost, not 0
-						// ATE: Deduct points!
-						DeductPoints( pSoldier, MinAPsToThrow( pSoldier, pSoldier->sTargetGridNo, FALSE ), 0, AFTERACTION_INTERRUPT );
+						// Aimed hand throws pay the same aim-click cost shown by the UI/AI planner.
+						INT16 sThrowAPCost = MinAPsToThrow( pSoldier, pSoldier->sTargetGridNo, FALSE );
+						if ( Item[pSoldier->pTempObject->usItem].usItemClass & ( IC_GRENADE | IC_THROWN ) )
+						{
+							sThrowAPCost += CalcAPCostForThrowAiming( pSoldier->aiData.bAimTime );
+						}
+						DeductPoints( pSoldier, sThrowAPCost, 0, AFTERACTION_INTERRUPT );
 					}
 					else
 					{
@@ -1096,8 +1100,20 @@ BOOLEAN AdjustToNextAnimationFrame( SOLDIERTYPE *pSoldier )
 						DeductPoints( pSoldier, APBPConstants[AP_TOSS_ITEM], 0, AFTERACTION_INTERRUPT );
 					}
 
-					// sevenfm: enable muzzle flash
-					if (pSoldier->flags.fMuzzleFlash)
+					// Current 1.13 behaviour: a lit flare should illuminate the throw itself.
+					// Preserve Vengeance's existing explicit muzzle-flash flag, but also detect
+					// flare items directly so the effect does not depend on firearm code setting it.
+					BOOLEAN fThrowFlash = pSoldier->flags.fMuzzleFlash;
+					UINT16 usThrownItem = pSoldier->pTempObject->usItem;
+					UINT16 usBuddyItem = Item[usThrownItem].usBuddyItem;
+					if ( pSoldier->pThrowParams->ubActionCode == THROW_ARM_ITEM &&
+						 ( Item[usThrownItem].flare ||
+						   ( usBuddyItem && Item[usBuddyItem].flare ) ) )
+					{
+						fThrowFlash = TRUE;
+					}
+
+					if (fThrowFlash)
 					{
 						if ((pSoldier->iMuzFlash = LightSpriteCreate("L-R03.LHT", 0)) != -1)
 						{
