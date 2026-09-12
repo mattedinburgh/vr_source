@@ -4056,8 +4056,12 @@ UINT8 CountNearbyFriendsOnRoof( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDi
 		pFriend = MercPtrs[ iCounter ];
 
 		if (pFriend != pSoldier && 
-			pFriend->bActive && 
+			pFriend->bActive &&
+			pFriend->bInSector &&
 			pFriend->stats.bLife >= OKLIFE &&
+			!pFriend->bCollapsed &&
+			!pFriend->bBreathCollapsed &&
+			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
 			PythSpacesAway( sGridNo, pFriend->sGridNo ) <= ubDistance &&
 			pFriend->pathing.bLevel > 0)
 		{
@@ -4854,7 +4858,9 @@ UINT8 AILocalCasualtyPercent(SOLDIERTYPE *pSoldier)
 			continue;
 		}
 
-		if (pFriend->stats.bLife < OKLIFE)
+		if (pFriend->stats.bLife < OKLIFE ||
+			pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed)
 			++iLosses;
 		else
 			++iPresent;
@@ -4896,6 +4902,9 @@ UINT16 AIPerceivedFriendlyStrength(SOLDIERTYPE *pSoldier)
 			pFriend->bActive &&
 			pFriend->bInSector &&
 			pFriend->stats.bLife >= OKLIFE &&
+			!pFriend->bCollapsed &&
+			!pFriend->bBreathCollapsed &&
+			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) <= TACTICAL_RANGE)
 		{
 			uiStrength += 100;
@@ -7127,7 +7136,13 @@ UINT8 CountNearbyFriends( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDistance
 		pFriend = MercPtrs[ iCounter ];
 		// Make sure that character is alive, not too shocked, and conscious, and of higher experience level
 		// than the character being suppressed.
-		if (pFriend != pSoldier && pFriend->bActive && pFriend->stats.bLife >= OKLIFE &&
+		if (pFriend != pSoldier &&
+			pFriend->bActive &&
+			pFriend->bInSector &&
+			pFriend->stats.bLife >= OKLIFE &&
+			!pFriend->bCollapsed &&
+			!pFriend->bBreathCollapsed &&
+			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
 			PythSpacesAway( sGridNo, pFriend->sGridNo ) <= ubDistance )
 		{
 			ubFriendCount++;
