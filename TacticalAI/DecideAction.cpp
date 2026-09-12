@@ -2053,6 +2053,26 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 							continue;
 						}
 
+						// Do not count objective-anchored guards as members of the mobile response
+						// element merely because they are physically closer to the noise. Otherwise
+						// they can consume the responder quota while doctrine simultaneously tells
+						// them to hold their post, starving the actual QRF behind them.
+						if (pFriend->bTeam == ENEMY_TEAM)
+						{
+							UINT8 ubFriendDoctrine = AIGetDoctrineProfile(pFriend);
+							BOOLEAN fExplicitMobileOrder =
+								pFriend->aiData.bOrders == ONCALL ||
+								pFriend->aiData.bOrders == SEEKENEMY ||
+								pFriend->aiData.bOrders == FARPATROL;
+
+							if (!fExplicitMobileOrder &&
+								(ubFriendDoctrine == AI_DOCTRINE_SECURITY ||
+								 ubFriendDoctrine == AI_DOCTRINE_ELITE_GUARD))
+							{
+								continue;
+							}
+						}
+
 						INT32 iFriendDistance = PythSpacesAway(pFriend->sGridNo, sNoiseGridNo);
 						if (iFriendDistance < iResponseDistance ||
 							(iFriendDistance == iResponseDistance && pFriend->ubID < pSoldier->ubID))
