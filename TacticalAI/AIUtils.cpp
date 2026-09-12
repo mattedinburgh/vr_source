@@ -5097,6 +5097,9 @@ UINT8 AILocalRoutPressure(SOLDIERTYPE *pSoldier)
 			!pFriend->bInSector ||
 			!AISameFireteam(pSoldier, pFriend) ||
 			pFriend->stats.bLife < OKLIFE ||
+			pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
 			pFriend->pathing.bLevel != pSoldier->pathing.bLevel ||
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > iRadius)
 		{
@@ -5437,7 +5440,9 @@ static BOOLEAN AIHasNearbyStableLeader(SOLDIERTYPE *pSoldier)
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (!pFriend || pFriend == pSoldier ||
 			!pFriend->bActive || !pFriend->bInSector ||
-			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 			pFriend->pathing.bLevel != pSoldier->pathing.bLevel ||
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > TACTICAL_RANGE / 2 ||
 			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend) ||
@@ -6002,7 +6007,8 @@ BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier)
 	{
 		SOLDIERTYPE *pLeader = MercPtrs[iCounter];
 		if (!pLeader || pLeader == pSoldier || !pLeader->bActive || !pLeader->bInSector ||
-			pLeader->stats.bLife < OKLIFE || pLeader->bCollapsed ||
+			pLeader->stats.bLife < OKLIFE || pLeader->bCollapsed || pLeader->bBreathCollapsed ||
+			(pLeader->usSoldierFlagMask & SOLDIER_POW) ||
 			(pLeader->flags.uiStatusFlags & SOLDIER_COWERING) ||
 			pLeader->pathing.bLevel != pSoldier->pathing.bLevel ||
 			PythSpacesAway(pSoldier->sGridNo, pLeader->sGridNo) > TACTICAL_RANGE / 2 ||
