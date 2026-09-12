@@ -4068,7 +4068,12 @@ static void AISeedEnemyFireteams(void)
 	{
 		UINT16 usGroupsLeft = usGroups - usGroup;
 		UINT16 usTarget = (usRemaining + usGroupsLeft - 1) / usGroupsLeft;
-		usTarget = __min((UINT16)AI_FIRETEAM_MAX_NORMAL, usTarget);
+		// A small sector force of ten remains one coherent element; larger forces
+		// are balanced into normal 6-9 man elements.
+		if (usGroups == 1)
+			usTarget = usRemaining;
+		else
+			usTarget = __min((UINT16)AI_FIRETEAM_MAX_NORMAL, usTarget);
 
 		INT16 sSeedIndex = -1;
 		for (UINT16 i = 0; i < usCount; ++i)
