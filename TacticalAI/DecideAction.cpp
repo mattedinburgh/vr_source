@@ -8291,7 +8291,16 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		(PythSpacesAway(pSoldier->sGridNo, sClosestDisturbance) < MAX_FLANK_DIST || fAbortSeek) &&
 		(!GuySawEnemy(pSoldier) || CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) > 2 || fAbortSeek) &&
 		(fAbortSeek || CountFriendsBetweenMeAndSpotFromSpot(pSoldier, sClosestDisturbance) > 0 || NightTime() || CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) > 2))
-	{
+	{		// Dynamic role deconfliction: a rifleman/marksman in a strong support posture
+		// should not abandon the fire base merely because flanking is otherwise legal.
+		// Require a clear support advantage and nearby teammates before suppressing the flank.
+		if (CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2) >= 2 &&
+			AISupportRoleScore(pSoldier, sClosestDisturbance) >
+			AIManeuverRoleScore(pSoldier, sClosestDisturbance) + 15)
+		{
+			return -1;
+		}
+
 		UINT8 ubFriends, ubFriendsLeft, ubFriendsRight;
 		UINT8 ubDirection = AIDirection(sClosestDisturbance, pSoldier->sGridNo);
 
@@ -8301,6 +8310,25 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		ubFriendsRight = CountFriendsInDirectionFromSpot(pSoldier, sClosestDisturbance, gOneCCDirection[ubDirection], VISION_RANGE * 2) +
 			CountFriendsInDirectionFromSpot(pSoldier, sClosestDisturbance, gTwoCCDirection[ubDirection], VISION_RANGE * 2);
 
+		UINT8 ubActiveLeftFlankers = 0;
+		UINT8 ubActiveRightFlankers = 0;
+		for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+			iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+		{
+			SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+			if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+				pFriend->stats.bLife < OKLIFE || !pFriend->IsFlanking() ||
+				TileIsOutOfBounds(pFriend->lastFlankSpot) ||
+				PythSpacesAway(pFriend->lastFlankSpot, sClosestDisturbance) > TACTICAL_RANGE / 2)
+			{
+				continue;
+			}
+
+			if (pFriend->flags.lastFlankLeft)
+				++ubActiveLeftFlankers;
+			else
+				++ubActiveRightFlankers;
+		}
 		BOOLEAN fLeftFlankPossible = FALSE;
 		BOOLEAN fRightFlankPossible = FALSE;
 
@@ -8328,7 +8356,17 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		}
 		else if (fLeftFlankPossible && fRightFlankPossible)
 		{
-			if (Random(6) < 3)
+			// Deconflict flank commitments first. If both sides are equally committed,
+			// prefer the side with fewer friendly bodies already occupying that arc.
+			if (ubActiveLeftFlankers < ubActiveRightFlankers)
+				bAction = AI_ACTION_FLANK_LEFT;
+			else if (ubActiveRightFlankers < ubActiveLeftFlankers)
+				bAction = AI_ACTION_FLANK_RIGHT;
+			else if (ubFriendsLeft < ubFriendsRight)
+				bAction = AI_ACTION_FLANK_LEFT;
+			else if (ubFriendsRight < ubFriendsLeft)
+				bAction = AI_ACTION_FLANK_RIGHT;
+			else if (Random(6) < 3)
 				bAction = AI_ACTION_FLANK_LEFT;
 			else
 				bAction = AI_ACTION_FLANK_RIGHT;
