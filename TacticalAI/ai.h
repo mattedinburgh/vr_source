@@ -327,6 +327,8 @@ INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
 INT32 AILocalStress(SOLDIERTYPE *pSoldier);
 INT32 AIPersonalRisk(SOLDIERTYPE *pSoldier);
 INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier);
+INT32 AISupportRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
+INT32 AIManeuverRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT32 sTargetSpot, INT8 bTargetLevel);
 INT8 AIEngagementRangeModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
