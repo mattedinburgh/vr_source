@@ -1259,7 +1259,6 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 			continue;
 		}
 
-		BOOLEAN fCurrentContact = (*pbPersOL == SEEN_CURRENTLY || *pbPublOL == SEEN_CURRENTLY);
 		BOOLEAN fThreatStateKnown = (*pbPersOL == SEEN_CURRENTLY);
 		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
 			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
@@ -1523,7 +1522,6 @@ INT32 ClosestKnownOpponent(SOLDIERTYPE *pSoldier, INT32 * psGridNo, INT8 * pbLev
 			continue;
 		}
 
-		BOOLEAN fCurrentContact = (*pbPersOL == SEEN_CURRENTLY || *pbPublOL == SEEN_CURRENTLY);
 		BOOLEAN fThreatStateKnown = (*pbPersOL == SEEN_CURRENTLY);
 		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
 			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
@@ -2551,7 +2549,6 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 			continue;
 		}
 
-		BOOLEAN fCurrentContact = (*pbPersOL == SEEN_CURRENTLY || *pbPublOL == SEEN_CURRENTLY);
 		BOOLEAN fThreatStateKnown = (*pbPersOL == SEEN_CURRENTLY);
 		if (fThreatStateKnown && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
 		{
@@ -7146,9 +7143,6 @@ static BOOLEAN AIKnownThreatHasSightToSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, B
 			continue;
 		}
 
-		const BOOLEAN fCurrentContact =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY ||
-			 PublicKnowledge(pSoldier->bTeam, pOpponent->ubID) == SEEN_CURRENTLY);
 		const BOOLEAN fThreatStateKnown =
 			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY);
 
@@ -7341,9 +7335,6 @@ BOOLEAN CheckDangerousDirection(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 			continue;
 		}
 
-		const BOOLEAN fCurrentContact =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY ||
-			 PublicKnowledge(pSoldier->bTeam, pOpponent->ubID) == SEEN_CURRENTLY);
 		const BOOLEAN fThreatStateKnown =
 			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY);
 
@@ -8860,9 +8851,6 @@ BOOLEAN AnyCoverAtSpot( SOLDIERTYPE *pSoldier, INT32 sSpot )
 			continue;
 		}
 
-		const BOOLEAN fCurrentContact =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY ||
-			 PublicKnowledge(pSoldier->bTeam, pOpponent->ubID) == SEEN_CURRENTLY);
 		const BOOLEAN fThreatStateKnown =
 			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY);
 		if (fThreatStateKnown && !ValidOpponent(pSoldier, pOpponent))
@@ -10594,9 +10582,6 @@ BOOLEAN EnemyCanAttackSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		if (TileIsOutOfBounds(sThreatLoc))
 			continue;
 
-		const BOOLEAN fCurrentContact =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY ||
-			 PublicKnowledge(pSoldier->bTeam, pOpponent->ubID) == SEEN_CURRENTLY);
 		const BOOLEAN fThreatStateKnown =
 			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY);
 
