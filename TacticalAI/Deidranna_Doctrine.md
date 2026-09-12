@@ -12,7 +12,7 @@ anti-cheat rules documented in `AI_Knowledge_Audit.md`.
 | --- | --- | --- | --- | --- |
 | SECURITY | enemy administrators | very low | very high | no |
 | LINE | ordinary army | low/moderate | moderate | only with nearby command |
-| VETERAN | officers/commanders and cunning regulars | moderate/high | low | yes |
+| VETERAN | officers/commanders; level 6+ regulars; level 5 cunning regulars | moderate/high | low | yes |
 | ELITE_MOBILE | mobile enemy elites | high | low | yes |
 | ELITE_GUARD | stationary/guard/sniper elites | high tactical skill, low roaming | high | yes |
 
@@ -34,11 +34,17 @@ If the leader becomes incapacitated, cowers, disengages or escapes, ordinary lin
 troops immediately revert to simpler covered movement/support behavior. Veterans and
 elites remain independently capable.
 
+Veteran regular status is not based on CUNNING attitude alone because Vengeance can
+randomize attitudes when strategic troops are created. Experience level is the main
+signal: level 6+ regulars are veteran; a level 5 regular also qualifies when using a
+cunning attitude. This lets late/high-quality regulars gain initiative without randomly
+promoting a large share of early redshirts.
+
 ## Contact / QRF doctrine
 
 The existing staged noise-response system remains the base.
 
-Initial distant response size is doctrine-dependent:
+Initial distant response size is doctrine-dependent. Anchored SECURITY/ELITE_GUARD troops do not consume the mobile responder quota unless their orders explicitly make them mobile:
 
 - SECURITY: 2 (maximum 3 even on mobile orders);
 - LINE: 4;
