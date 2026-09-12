@@ -9799,8 +9799,11 @@ void SOLDIERTYPE::BreakWindow( void )
 
 BOOLEAN SOLDIERTYPE::IsDraggingBleedoutCasualty( void )
 {
-	if ( this->ubDraggedCasualtyID == NOBODY )
+	if ( !this->bActive || !this->bInSector || this->stats.bLife < OKLIFE ||
+		this->bCollapsed || this->ubDraggedCasualtyID == NOBODY )
+	{
 		return FALSE;
+	}
 
 	SOLDIERTYPE *pCasualty = MercPtrs[ this->ubDraggedCasualtyID ];
 	if ( !pCasualty || !pCasualty->bActive || !pCasualty->bInSector ||
@@ -10054,6 +10057,9 @@ void ProcessBleedoutCasualties( )
 
 void HandleTakeDamageDeath( SOLDIERTYPE *pSoldier, UINT8 bOldLife, UINT8 ubReason )
 {
+	if ( pSoldier && pSoldier->stats.bLife <= 0 )
+		pSoldier->ClearBleedoutDragLinks();
+
 	switch( ubReason )
 	{
 	case TAKE_DAMAGE_BLOODLOSS:
@@ -10369,6 +10375,8 @@ UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPo
 	// Convert an otherwise-lethal survivable combat wound into the downed state.
 	else if ( this->stats.bLife <= 0 && CanEnterBleedoutState( this, ubReason, sLifeDeduct, bOldLife ) )
 	{
+		// A newly downed rescuer cannot keep towing somebody else.
+		this->ClearBleedoutDragLinks();
 		this->stats.bLife = 1;
 		this->ubBleedoutState = BLEEDOUT_ACTIVE;
 		// One hidden buffer tick prevents a casualty created late in the round from
