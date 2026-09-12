@@ -10163,8 +10163,6 @@ static UINT8 BleedoutRescueTurns( INT16 sLifeDeduct, INT8 bOldLife )
 		return 6;
 	if ( sOverkill <= 10 )
 		return 5;
-	if ( sOverkill <= 20 )
-		return 4;
 
 	return 4;
 }
