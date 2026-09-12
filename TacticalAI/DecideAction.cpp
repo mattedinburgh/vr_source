@@ -6108,6 +6108,18 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		MercPtrs[BestAttack.ubOpponent] &&
 		PersonalKnowledge(pSoldier, BestAttack.ubOpponent) == SEEN_CURRENTLY;
 
+	// BLACK AI already receives target-value bonuses for covering a teammate's
+	// bound/withdrawal inside CalcBestShot(). Preserve that task through the later
+	// legacy attack-vs-cover arbitration as well, otherwise a support gunner can
+	// select the right threat and then discard the shot for an unrelated cover tile.
+	BOOLEAN fBestAttackCoveringTask =
+		ubBestAttackAction == AI_ACTION_FIRE_GUN &&
+		BestAttack.ubOpponent != NOBODY &&
+		MercPtrs[BestAttack.ubOpponent] &&
+		(AIFriendNeedsCoveringFire(pSoldier, BestAttack.ubOpponent) ||
+		 AIFriendWithdrawingNeedsCover(pSoldier, BestAttack.ubOpponent) ||
+		 AIFriendAdvancingNeedsCover(pSoldier, BestAttack.ubOpponent));
+
 	// sevenfm: black climb
 	// don't climb if there are enemies close (count all enemies, not only the current target)
 	INT32 sClosestThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
@@ -6327,6 +6339,27 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			iOffense += 10;
 		else if ((pSoldier->aiData.bOrders == STATIONARY) || (pSoldier->aiData.bOrders == ONGUARD) || pSoldier->aiData.bOrders == SNIPER )
 			iDefense += 10;
+
+		// A specific fire-and-manoeuvre task is more valuable than an ordinary shot,
+		// especially for a soldier well suited to the support role. This remains a
+		// preference rather than a forced attack: personal danger can still make the
+		// defensive score win.
+		if (fBestAttackCoveringTask)
+		{
+			INT32 iSupportScore = AISupportRoleScore(pSoldier, BestAttack.sTarget);
+			INT32 iTaskBonus = 15;
+			if (iSupportScore >= 80)
+				iTaskBonus += 15;
+			else if (iSupportScore >= 55)
+				iTaskBonus += 8;
+
+			INT32 iRisk = AIPersonalRisk(pSoldier);
+			INT32 iTolerance = AIPersonalRiskTolerance(pSoldier);
+			if (pSoldier->aiData.bUnderFire || iRisk > iTolerance)
+				iTaskBonus /= 2;
+
+			iOffense += __max(5, iTaskBonus);
+		}
 
 		switch (pSoldier->aiData.bAttitude)
 		{
