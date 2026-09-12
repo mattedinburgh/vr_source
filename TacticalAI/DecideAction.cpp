@@ -2403,10 +2403,16 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 				!GuySawEnemy(pSoldier, SEEN_LAST_TURN) &&
 				!pSoldier->aiData.bUnderFire)
 			{
+				// The reporting friend is the movement destination, not a new tactical
+				// contact. Use the shared noise/contact location for reserve allocation so
+				// different members of one fireteam cannot choose different reporters and
+				// consequently disagree about whether their element has been released.
+				INT32 sResponseContact = !TileIsOutOfBounds(sNoiseGridNo) ?
+					sNoiseGridNo : sClosestFriend;
 				UINT8 ubFriendResponseLimit = AIEnemyResponseLimitForContact(
-					pSoldier, sClosestFriend, &iFriendResponseUrgency);
+					pSoldier, sResponseContact, &iFriendResponseUrgency);
 				if (AIFireteamShouldHoldReserve(
-					pSoldier, sClosestFriend, ubFriendResponseLimit))
+					pSoldier, sResponseContact, ubFriendResponseLimit))
 					fHoldRemoteReserve = TRUE;
 			}
 
