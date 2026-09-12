@@ -1970,18 +1970,20 @@ BOOLEAN UseGunNCTH( SOLDIERTYPE *pSoldier , INT32 sTargetGridNo )
 					if ( (*pA)[0]->data.objectStatus >=USABLE)
 					{
 						INT16 ammoReliability = Item[(*pObjAttHand)[0]->data.gun.usGunAmmoItem].bReliability;
+						// Keep the intermediate signed: negative reliability must not wrap through UINT32.
+						INT32 iDepreciateTest = 0;
 						// HEADROCK HAM 5: Variable base chance
 						if ( UsingNewCTHSystem() == true)
 						{	
 							UINT16 usBaseChance = gGameCTHConstants.BASIC_RELIABILITY_ODDS;
 							FLOAT dReliabilityRatio = 3.0f * ((FLOAT)usBaseChance / (FLOAT)BASIC_DEPRECIATE_CHANCE); // Compare original odds to new odds.
-							uiDepreciateTest = usBaseChance + (INT16)( dReliabilityRatio * (Item[ iter->usItem ].bReliability + ammoReliability) );
-							uiDepreciateTest = max(0, uiDepreciateTest);
+							iDepreciateTest = usBaseChance + (INT16)( dReliabilityRatio * (Item[ iter->usItem ].bReliability + ammoReliability) );
 						}
 						else
 						{
-							uiDepreciateTest = max(0,BASIC_DEPRECIATE_CHANCE + 3 * (Item[ iter->usItem ].bReliability + ammoReliability));
+							iDepreciateTest = BASIC_DEPRECIATE_CHANCE + 3 * (Item[ iter->usItem ].bReliability + ammoReliability);
 						}
+						uiDepreciateTest = __min( 100, __max( 0, iDepreciateTest ) );
 						if ( !PreRandom( uiDepreciateTest ) && ( (*pObjAttHand)[0]->data.objectStatus > 1) )
 						{
 							(*pA)[0]->data.objectStatus--;
@@ -2289,6 +2291,13 @@ BOOLEAN UseGunNCTH( SOLDIERTYPE *pSoldier , INT32 sTargetGridNo )
 	{
 		// Here, remove the knife...	or (for now) rocket launcher
 		pSoldier->inv[ HANDPOS ].RemoveObjectsFromStack(1);
+		// Current 1.13 convenience fix: if another throwing knife is already in the
+		// off hand, promote it automatically instead of forcing an inventory action.
+		if ( pSoldier->inv[SECONDHANDPOS].exists() &&
+			 ( Item[pSoldier->inv[SECONDHANDPOS].usItem].usItemClass & IC_THROWING_KNIFE ) )
+		{
+			SwapObjs( pSoldier, SECONDHANDPOS, HANDPOS, TRUE );
+		}
 		DirtyMercPanelInterface( pSoldier, DIRTYLEVEL2 );
 	}
 	else if ( Item[usUBItem].rocketlauncher )
@@ -2375,17 +2384,18 @@ BOOLEAN UseGunNCTH( SOLDIERTYPE *pSoldier , INT32 sTargetGridNo )
 
 	// Flugente FTW 1: Added a malus to reliability for overheated guns
 	// HEADROCK HAM 5: Variable NCTH base change
+	INT32 iDepreciateTest = 0;
 	if ( UsingNewCTHSystem() == true)
 	{
 		UINT16 usBaseChance = gGameCTHConstants.BASIC_RELIABILITY_ODDS;
 		FLOAT dReliabilityRatio = 3.0f * ((FLOAT)usBaseChance / (FLOAT)BASIC_DEPRECIATE_CHANCE); // Compare original odds to new odds.
-		uiDepreciateTest = usBaseChance + (INT16)( dReliabilityRatio * GetReliability( &(pSoldier->inv[pSoldier->ubAttackingHand]) ) - iOverheatReliabilityMalus);
-		uiDepreciateTest = max(0, uiDepreciateTest);
+		iDepreciateTest = usBaseChance + (INT16)( dReliabilityRatio * GetReliability( &(pSoldier->inv[pSoldier->ubAttackingHand]) ) - iOverheatReliabilityMalus);
 	}
 	else
 	{
-		uiDepreciateTest = max( BASIC_DEPRECIATE_CHANCE + 3 * GetReliability( pObjAttHand ) - iOverheatReliabilityMalus, 0);
+		iDepreciateTest = BASIC_DEPRECIATE_CHANCE + 3 * GetReliability( pObjAttHand ) - iOverheatReliabilityMalus;
 	}
+	uiDepreciateTest = __min( 100, __max( 0, iDepreciateTest ) );
 	if ( !PreRandom( uiDepreciateTest ) && ( (*pObjAttHand)[0]->data.objectStatus > 1) )
 	{
 		(*pObjAttHand)[0]->data.objectStatus--;
@@ -2623,18 +2633,20 @@ BOOLEAN UseGun( SOLDIERTYPE *pSoldier , INT32 sTargetGridNo )
 					if ( (*pA)[0]->data.objectStatus >=USABLE)
 					{
 						INT16 ammoReliability = Item[(*pObjUsed)[0]->data.gun.usGunAmmoItem].bReliability;
+						// Keep the intermediate signed: negative reliability must not wrap through UINT32.
+						INT32 iDepreciateTest = 0;
 						// HEADROCK HAM 5: Variable base chance
 						if ( UsingNewCTHSystem() == true )
 						{
 							UINT16 usBaseChance = gGameCTHConstants.BASIC_RELIABILITY_ODDS;
 							FLOAT dReliabilityRatio = 3.0f * ((FLOAT)usBaseChance / (FLOAT)BASIC_DEPRECIATE_CHANCE); // Compare original odds to new odds.
-							uiDepreciateTest = usBaseChance + (INT16)( dReliabilityRatio * (Item[ iter->usItem ].bReliability + ammoReliability) );
-							uiDepreciateTest = __max(0, uiDepreciateTest);
+							iDepreciateTest = usBaseChance + (INT16)( dReliabilityRatio * (Item[ iter->usItem ].bReliability + ammoReliability) );
 						}
 						else
 						{
-							uiDepreciateTest = __max(0,BASIC_DEPRECIATE_CHANCE + 3 * (Item[ iter->usItem ].bReliability + ammoReliability));
+							iDepreciateTest = BASIC_DEPRECIATE_CHANCE + 3 * (Item[ iter->usItem ].bReliability + ammoReliability);
 						}
+						uiDepreciateTest = __min( 100, __max( 0, iDepreciateTest ) );
 						if ( !PreRandom( uiDepreciateTest ) && ( (*pObjUsed)[0]->data.objectStatus > 1) )
 						{
 							(*pA)[0]->data.objectStatus--;
@@ -3052,17 +3064,18 @@ BOOLEAN UseGun( SOLDIERTYPE *pSoldier , INT32 sTargetGridNo )
 	*/
 
 	// Flugente FTW 1: Added a malus to reliability for overheated guns
+	INT32 iDepreciateTest = 0;
 	if ( UsingNewCTHSystem() == true )
 	{
 		UINT16 usBaseChance = gGameCTHConstants.BASIC_RELIABILITY_ODDS;
 		FLOAT dReliabilityRatio = 3.0f * ((FLOAT)usBaseChance / (FLOAT)BASIC_DEPRECIATE_CHANCE); // Compare original odds to new odds.
-		uiDepreciateTest = usBaseChance + (INT16)( dReliabilityRatio * GetReliability( &(pSoldier->inv[ pSoldier->ubAttackingHand ])) - iOverheatReliabilityMalus);
-		uiDepreciateTest = max(0, uiDepreciateTest);
+		iDepreciateTest = usBaseChance + (INT16)( dReliabilityRatio * GetReliability( &(pSoldier->inv[ pSoldier->ubAttackingHand ])) - iOverheatReliabilityMalus);
 	}
 	else
 	{
-		uiDepreciateTest = max( BASIC_DEPRECIATE_CHANCE + 3 * ( GetReliability( pObjUsed ) ) - iOverheatReliabilityMalus, 0);
+		iDepreciateTest = BASIC_DEPRECIATE_CHANCE + 3 * ( GetReliability( pObjUsed ) ) - iOverheatReliabilityMalus;
 	}
+	uiDepreciateTest = __min( 100, __max( 0, iDepreciateTest ) );
 
 	if ( !PreRandom( uiDepreciateTest ) && ( (*pObjUsed)[0]->data.objectStatus > 1) )
 	{
@@ -11013,7 +11026,21 @@ UINT32 CalcThrownChanceToHit(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTi
 	// ADJUST FOR EXTRA AIMING TIME
 	if (ubAimTime)
 	{
-		iChance += (AIM_BONUS_PER_AP * ubAimTime); // bonus for every pt of aiming
+		if ( Item[usHandItem].usItemClass & ( IC_GRENADE | IC_THROWN ) )
+		{
+			// Deliberate grenade aiming has diminishing returns.  The first moment spent
+			// settling the throw matters most; later clicks refine rather than laser-guide it.
+			INT16 bThrowAim = __min( 4, ubAimTime );
+			INT32 iAimBonus = AIM_BONUS_PER_AP;
+			if ( bThrowAim > 1 ) iAimBonus += ( AIM_BONUS_PER_AP * 3 ) / 4;
+			if ( bThrowAim > 2 ) iAimBonus += AIM_BONUS_PER_AP / 2;
+			if ( bThrowAim > 3 ) iAimBonus += AIM_BONUS_PER_AP / 4;
+			iChance += iAimBonus;
+		}
+		else
+		{
+			iChance += (AIM_BONUS_PER_AP * ubAimTime); // existing knife/launcher behaviour
+		}
 	}
 
 /*
