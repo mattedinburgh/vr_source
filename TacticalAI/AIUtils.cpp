@@ -2608,9 +2608,19 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 		{
 			pFriend = MercSlots[ uiLoop2 ];
 
-			// if this merc is inactive, at base, on assignment, dead, unconscious
-			if (!pFriend || (pFriend->stats.bLife < OKLIFE))
-				continue;		// next merc
+			// Morale support comes from soldiers who can still contribute to the fight.
+			// A downed/captured/cowering body nearby is a casualty signal, not covering power.
+			if (!pFriend ||
+				!pFriend->bActive ||
+				!pFriend->bInSector ||
+				pFriend->stats.bLife < OKLIFE ||
+				pFriend->bCollapsed ||
+				pFriend->bBreathCollapsed ||
+				(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+				(pFriend->flags.uiStatusFlags & SOLDIER_COWERING))
+			{
+				continue;
+			}
 
 			// if this merc is not on my side, then he's NOT one of my friends
 
