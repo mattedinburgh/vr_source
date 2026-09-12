@@ -9756,6 +9756,15 @@ static SOLDIERTYPE *GetDraggedDownedPerson( SOLDIERTYPE *pSoldier )
 	}
 
 	SOLDIERTYPE *pTarget = MercPtrs[usTargetID];
+
+	// The free-hand requirement remains active for the whole drag, not only pickup.
+	if ( (pSoldier->inv[HANDPOS].exists() && pSoldier->inv[SECONDHANDPOS].exists()) ||
+		 (pSoldier->inv[HANDPOS].exists() && Item[pSoldier->inv[HANDPOS].usItem].twohanded) )
+	{
+		gusDownedDragTarget[usDraggerID] = 0;
+		return NULL;
+	}
+
 	if ( !pTarget || !pTarget->bActive || !pTarget->bInSector ||
 		 pTarget->stats.bLife <= 0 || !IsBleedoutCasualty( pTarget ) ||
 		 pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
