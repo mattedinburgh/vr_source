@@ -8095,10 +8095,21 @@ BOOLEAN KillIncompacitatedEnemyInSector( )
         if ( pTeamSoldier->bActive && pTeamSoldier->bInSector && pTeamSoldier->stats.bLife < OKLIFE && !( pTeamSoldier->flags.uiStatusFlags & SOLDIER_DEAD ) )
         {
             // Downed casualties created by the bleed-out system are not automatically
-            // executed when the battle is won. They can remain wounded/stabilized and
-            // are resolved by the normal bleeding/medical rules instead.
+            // executed when the battle is won. If the prisoner system is enabled,
+            // surviving hostile wounded are stabilized and passed to the existing POW
+            // post-battle pipeline.
             if ( IsBleedoutCasualty( pTeamSoldier ) )
             {
+                if ( !pTeamSoldier->aiData.bNeutral &&
+                    pTeamSoldier->bSide != gbPlayerNum &&
+                    gGameExternalOptions.fAllowPrisonerSystem )
+                {
+                    pTeamSoldier->bBleeding = 0;
+                    pTeamSoldier->ubBleedoutState = BLEEDOUT_STABILIZED;
+                    pTeamSoldier->ubBleedoutTurns = 0;
+                    pTeamSoldier->usSoldierFlagMask |= SOLDIER_POW;
+                    RemoveManAsTarget( pTeamSoldier );
+                }
                 continue;
             }
 
