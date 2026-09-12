@@ -3564,32 +3564,14 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 		}
 	}
 
-	// Any capable squadmate may extract an exposed downed comrade when a medic is
-	// available and the route is not suicidal. Medics still handle stabilization.
-	if (AICombatTeam(pSoldier) && ubCanMove)
+	// Shared casualty policy: extraction first, then medic rescue or adjacent buddy aid.
+	// The underlying routines retain their own route-exposure and personal-risk gates.
+	if (AICombatTeam(pSoldier))
 	{
-		INT8 bEvacAction = DecideCombatCasualtyEvacuation(pSoldier);
-		if (bEvacAction != AI_ACTION_NONE)
-			return bEvacAction;
+		INT8 bCasualtyAction = DecideCombatCasualtyResponse(pSoldier, ubCanMove);
+		if (bCasualtyAction != AI_ACTION_NONE)
+			return bCasualtyAction;
 	}
-
-	// Combat medics prioritize saving viable casualties, but only when the rescue
-	// passes the medic's personal-risk and route-exposure checks.
-	if (AICombatTeam(pSoldier) && AICheckIsMedic(pSoldier))
-	{
-		INT8 bMedicAction = DecideCombatMedicRescue(pSoldier);
-		if (bMedicAction != AI_ACTION_NONE)
-			return bMedicAction;
-	}
-
-			// Ordinary soldiers only perform immediate adjacent stabilization; they never
-			// abandon their tactical role to run across the battlefield as improvised medics.
-			if (AICombatTeam(pSoldier) && !AICheckIsMedic(pSoldier))
-			{
-				INT8 bBuddyAidAction = DecideEmergencyBuddyAid(pSoldier);
-				if (bBuddyAidAction != AI_ACTION_NONE)
-					return bBuddyAidAction;
-			}
 // WDS DEBUG - this will make all enemies run away (to test retreating into occupied sector bugs)
 //	pSoldier->aiData.bAIMorale = MORALE_HOPELESS;
 
@@ -5340,32 +5322,13 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				}
 			}
 
-			// A non-medic may pull a viable exposed casualty into cover even during
-			// direct contact. Survival, fallback and personal-risk checks above retain
-			// priority, while the extraction helper itself rejects exposed/suicidal routes.
-			if (AICombatTeam(pSoldier) && ubCanMove)
+			// Use the same casualty-response priority as RED so alert-state changes do
+			// not silently reorder evacuation, medic rescue and adjacent buddy aid.
+			if (AICombatTeam(pSoldier))
 			{
-				INT8 bEvacAction = DecideCombatCasualtyEvacuation(pSoldier);
-				if (bEvacAction != AI_ACTION_NONE)
-					return bEvacAction;
-			}
-
-	// Ordinary soldiers only perform immediate adjacent stabilization; they never
-	// abandon their tactical role to run across the battlefield as improvised medics.
-	if (AICombatTeam(pSoldier) && !AICheckIsMedic(pSoldier))
-	{
-		INT8 bBuddyAidAction = DecideEmergencyBuddyAid(pSoldier);
-		if (bBuddyAidAction != AI_ACTION_NONE)
-			return bBuddyAidAction;
-	}
-
-			// Combat medic rescue is considered before ordinary offensive behaviour.
-			// The rescue routine itself rejects suicidal routes and over-risked medics.
-			if (AICombatTeam(pSoldier) && AICheckIsMedic(pSoldier))
-			{
-				INT8 bMedicAction = DecideCombatMedicRescue(pSoldier);
-				if (bMedicAction != AI_ACTION_NONE)
-					return bMedicAction;
+				INT8 bCasualtyAction = DecideCombatCasualtyResponse(pSoldier, ubCanMove);
+				if (bCasualtyAction != AI_ACTION_NONE)
+					return bCasualtyAction;
 			}
 
 			////////////////////////////////////////////////////////////////////////////
