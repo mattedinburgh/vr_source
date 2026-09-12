@@ -1920,16 +1920,14 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 				if (iResponseDistance > iImmediateResponseRange)
 				{
 					UINT8 ubResponseLimit = 4;
-					if (pSoldier->aiData.bOrders == ONCALL || pSoldier->aiData.bOrders == SEEKENEMY)
-						ubResponseLimit = 6;
 
 					// Reinforce in waves. The nearest actually engaged friendly element
-					// determines whether more troops should be released from reserve.
-					// Expansion beyond the initial response requires a reported contact
-					// (bAwareOfOpposition), so radio jamming still matters.
+					// determines both perceived enemy strength and whether more troops
+					// should be released from reserve. The AI never counts unseen mercs.
 					INT8 bEngagedSituation = AI_BATTLE_UNKNOWN;
 					UINT8 ubEngagedCasualties = 0;
 					UINT8 ubEngagedRoutPressure = 0;
+					UINT16 usPerceivedEnemyStrength = 0;
 					INT32 iBestEngagedDistance = 10000;
 
 					for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
@@ -1956,27 +1954,74 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 							bEngagedSituation = AIBattleSituation(pEngaged);
 							ubEngagedCasualties = AILocalCasualtyPercent(pEngaged);
 							ubEngagedRoutPressure = AILocalRoutPressure(pEngaged);
+							usPerceivedEnemyStrength = AIPerceivedEnemyStrength(pEngaged);
 						}
 					}
 
 					INT32 iReinforcementUrgency = 0;
 					if (gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition)
 					{
+						// Convert certainty-points into an approximate known enemy count.
+						// 100 points is one fully known opponent; partial/stale knowledge
+						// contributes proportionally instead of becoming omniscient headcount.
+						UINT8 ubPerceivedEnemies = (UINT8)__max(1, __min(12,
+							(INT32)(usPerceivedEnemyStrength + 99) / 100));
+
+						// Aim for slight local superiority once contact has been confirmed.
+						// Six/seven known mercs therefore imply an eventual normal response
+						// of roughly seven/eight soldiers rather than only four.
+						UINT8 ubDesiredResponse = (UINT8)__min(14, __max(5,
+							(INT32)ubPerceivedEnemies + 1));
+
 						if (bEngagedSituation == AI_BATTLE_CATASTROPHIC)
 						{
-							ubResponseLimit = __max((UINT8)9, ubResponseLimit);
+							ubDesiredResponse = (UINT8)__min(14,
+								__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 5));
 							iReinforcementUrgency = 40;
 						}
 						else if (bEngagedSituation == AI_BATTLE_LOSING)
 						{
-							ubResponseLimit = __max((UINT8)7, ubResponseLimit);
+							ubDesiredResponse = (UINT8)__min(12,
+								__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 3));
 							iReinforcementUrgency = 25;
 						}
 						else if (ubEngagedCasualties >= 25 || ubEngagedRoutPressure >= 45)
 						{
-							ubResponseLimit = __max((UINT8)6, ubResponseLimit);
+							ubDesiredResponse = (UINT8)__min(11,
+								__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 2));
 							iReinforcementUrgency = 15;
 						}
+
+						// New contact/new sector starts a fresh reinforcement clock.
+						if (gsAIEnemyResponseSectorX != gWorldSectorX ||
+							gsAIEnemyResponseSectorY != gWorldSectorY ||
+							gbAIEnemyResponseSectorZ != gbWorldSectorZ ||
+							TileIsOutOfBounds(gsAIEnemyResponseSpot) ||
+							PythSpacesAway(gsAIEnemyResponseSpot, sNoiseGridNo) > TACTICAL_RANGE)
+						{
+							gsAIEnemyResponseSectorX = gWorldSectorX;
+							gsAIEnemyResponseSectorY = gWorldSectorY;
+							gbAIEnemyResponseSectorZ = gbWorldSectorZ;
+							gsAIEnemyResponseSpot = sNoiseGridNo;
+							guiAIEnemyResponseStartTurn = guiTurnCnt + 1;
+						}
+
+						UINT32 uiTurnStamp = guiTurnCnt + 1;
+						UINT32 uiElapsedTurns = (uiTurnStamp > guiAIEnemyResponseStartTurn) ?
+							(uiTurnStamp - guiAIEnemyResponseStartTurn) : 0;
+
+						// First confirmed response is substantial enough to face a normal
+						// player squad, then only two additional soldiers are released per
+						// turn until the desired local strength is reached.
+						UINT8 ubWaveCap = (UINT8)__min((INT32)ubDesiredResponse,
+							6 + 2 * (INT32)uiElapsedTurns);
+						ubResponseLimit = __max(ubResponseLimit, ubWaveCap);
+					}
+					else if (pSoldier->aiData.bOrders == ONCALL || pSoldier->aiData.bOrders == SEEKENEMY)
+					{
+						// Before confirmed radio contact, mobile reserve troops can still
+						// enlarge the immediate sound response slightly, but no global wave.
+						ubResponseLimit = 6;
 					}
 
 					UINT8 ubCloserResponders = 0;
@@ -8552,6 +8597,15 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 }
 
 extern UINT32 guiTurnCnt;
+
+// Transient sector-local reinforcement pacing. Kept outside SOLDIERTYPE so this
+// does not affect savegame layout. On load/new sector it simply restarts at the
+// first reinforcement wave.
+static UINT32 guiAIEnemyResponseStartTurn = 0;
+static INT32 gsAIEnemyResponseSpot = NOWHERE;
+static INT16 gsAIEnemyResponseSectorX = -1;
+static INT16 gsAIEnemyResponseSectorY = -1;
+static INT8 gbAIEnemyResponseSectorZ = -1;
 
 static UINT32 guiAITacticalVariationTurn[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAITacticalVariationIdentity[MAX_NUM_SOLDIERS] = { 0 };
