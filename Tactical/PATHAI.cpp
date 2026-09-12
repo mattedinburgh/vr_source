@@ -4409,10 +4409,8 @@ void ErasePath(char bEraseOldOne)
 
 INT32 PlotPath(SOLDIERTYPE *pSold, INT32 sDestGridNo, INT8 bCopyRoute, INT8 bPlot, INT8 bStayOn, UINT16 usMovementMode, INT8 bStealth, INT8 bReverse, INT16 sAPBudget)
 {
-	INT16 sTileCost, sPoints = 0, sAnimCost = 0;
+	INT16 sPoints = 0, sAnimCost = 0;
 	INT16 sPointsWalk = 0, sPointsCrawl = 0, sPointsRun = 0, sPointsSwat = 0;
-	INT16 sExtraCostStand, sExtraCostSwat, sExtraCostCrawl;
-	INT16 sMovementAPsCost = 0; // added by SANDRO
 	INT32 iLastGrid, sTempGrid;
 	INT32 iCnt;
 	INT32 sOldGrid = 0;
@@ -4424,7 +4422,6 @@ INT32 PlotPath(SOLDIERTYPE *pSold, INT32 sDestGridNo, INT8 bCopyRoute, INT8 bPlo
 	LEVELNODE	*pNode;
 	UINT16 usMovementModeToUseForAPs;
 	BOOLEAN	bIgnoreNextCost = FALSE;
-	INT32    sTestGridNo;
 
 	if (bPlot && gusPathShown)
 	{
@@ -4448,34 +4445,18 @@ INT32 PlotPath(SOLDIERTYPE *pSold, INT32 sDestGridNo, INT8 bCopyRoute, INT8 bPlo
 	//if ( gfRecalculatingExistingPathCost || FindBestPath( pSold, sDestGridNo, pSold->pathing.bLevel, usMovementMode, bCopyRoute, 0 ) )
 	if (gfRecalculatingExistingPathCost || FindBestPath(pSold, sDestGridNo, pSold->pathing.bLevel, usMovementMode, bCopyRoute, gfEstimatePath ? PATH_IGNORE_PERSON_AT_DEST : 0))
 	{
-		// if soldier would be STARTING to run then he pays a penalty since it takes time to
-		// run full speed
-		if (pSold->usAnimState != RUNNING)
-		{
-			// for estimation purposes, always pay penalty
-			sPointsRun = GetAPsStartRun(pSold); // changed by SANDRO
-		}
-
-		// Add to points, those needed to start from different stance!
+		// Initial stance changes are still handled by Vengeance's existing helper.
+		// Start-run itself is simulated per tile below so water and post-fence restarts
+		// are charged on the same step as real movement.
 		sPoints = sPoints + MinAPsToStartMovement(pSold, usMovementMode);
-
-
-		// We should reduce points for starting to run if first tile is a fence...
-		sTestGridNo = NewGridNo(pSold->sGridNo, DirectionInc((UINT8)guiPathingData[0]));
-
-		// WANNE: Quickfix for wrong pathing data (direction). This fixes crash that could rarly occur
-		if ((UINT8)guiPathingData[0] > 7)
+		if (usMovementMode == RUNNING && pSold->usAnimState != RUNNING)
 		{
-			guiPathingData[0] = 0;
+			sPoints -= GetAPsStartRun(pSold);
 		}
 
-		if (gubWorldMovementCosts[sTestGridNo][guiPathingData[0]][pSold->pathing.bLevel] == TRAVELCOST_FENCE)
-		{
-			if (usMovementMode == RUNNING && pSold->usAnimState != RUNNING)
-			{
-				sPoints -= GetAPsStartRun(pSold); // changed by SANDRO
-			}
-		}
+		UINT16 usMovementModeBefore = pSold->usAnimState;
+
+		UINT16 usRunModeBefore = pSold->usAnimState;
 
 		// FIRST, add up "startup" additional costs - such as intermediate animations, etc.
 		/* removing warning C4060 (jonathanl)
@@ -4513,9 +4494,6 @@ INT32 PlotPath(SOLDIERTYPE *pSold, INT32 sDestGridNo, INT8 bCopyRoute, INT8 bPlo
 
 		for (iCnt = 0; iCnt < iLastGrid; iCnt++)
 		{
-			sExtraCostStand = 0;
-			sExtraCostSwat = 0;
-			sExtraCostCrawl = 0;
 			// what is the next gridno in the path?
 			sOldGrid = sTempGrid;
 
