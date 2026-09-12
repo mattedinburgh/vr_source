@@ -68,6 +68,7 @@ class SOLDIERTYPE;
 extern INT8 STRAIGHT;
 //extern UINT8 gubSpeedUpAnimationFactor;
 void SetSoldierAniSpeed( SOLDIERTYPE *pSoldier );
+void ProcessBleedoutCasualties( );
 
 void RecalculateSoldiersAniSpeed()
 {
@@ -459,6 +460,11 @@ void EndTurnEvents( void )
 	// HANDLE END OF TURN EVENTS
 	// handle team services like healing
 	HandleTeamServices( gbPlayerNum );
+
+	// Resolve the symmetric downed-casualty countdown once per full tactical round.
+	// Team services run first so successful first aid can stabilize a casualty before
+	// the bleed-out clock advances.
+	ProcessBleedoutCasualties( );
 	// handle smell and blood decay
 	DecaySmells();
 	// decay bomb timers and maybe set some off!

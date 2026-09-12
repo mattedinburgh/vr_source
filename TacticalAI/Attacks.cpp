@@ -276,6 +276,14 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		if (fCurrentContact && !ValidOpponent(pSoldier, pOpponent))
 			continue;
 
+		// A downed casualty is no longer an intentional target. Stale-area fire can
+		// still hit them incidentally, but a soldier who can currently see that the
+		// opponent is down will switch to an active threat instead of finishing them.
+		if (fCurrentContact && IsBleedoutCasualty( pOpponent ))
+		{
+			continue;
+		}
+
 		// check knowledge
 		if (bKnowledge != SEEN_CURRENTLY &&
 			bKnowledge != SEEN_THIS_TURN &&
@@ -1988,6 +1996,10 @@ void CalcBestStab(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestStab, BOOLEAN fBladeAt
 		}
 
 		if (!ValidOpponent(pSoldier, pOpponent))
+			continue;
+
+		// Do not deliberately close in to execute a downed casualty.
+		if (IsBleedoutCasualty( pOpponent ))
 			continue;
 
 		// if this opponent is not on the same level

@@ -8094,6 +8094,14 @@ BOOLEAN KillIncompacitatedEnemyInSector( )
     {
         if ( pTeamSoldier->bActive && pTeamSoldier->bInSector && pTeamSoldier->stats.bLife < OKLIFE && !( pTeamSoldier->flags.uiStatusFlags & SOLDIER_DEAD ) )
         {
+            // Downed casualties created by the bleed-out system are not automatically
+            // executed when the battle is won. They can remain wounded/stabilized and
+            // are resolved by the normal bleeding/medical rules instead.
+            if ( IsBleedoutCasualty( pTeamSoldier ) )
+            {
+                continue;
+            }
+
             // Checkf for any more bacguys
             if ( !pTeamSoldier->aiData.bNeutral && (pTeamSoldier->bSide != gbPlayerNum ) )
             {

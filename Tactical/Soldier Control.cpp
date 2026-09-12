@@ -5979,7 +5979,7 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 		}
 	}
 	// marke added one 'or' for explosive ammo. variation of: AmmoTypes[this->inv[this->ubAttackingHand ][0]->data.gun.ubGunAmmoType].explosionSize > 1
-	//  extracting attacker´s ammo type
+	//  extracting attackerÂ´s ammo type
 	else if ( Item[ usWeaponIndex ].usItemClass & IC_EXPLOSV || AmmoTypes[MercPtrs[ubAttackerID]->inv[MercPtrs[ubAttackerID]->ubAttackingHand ][0]->data.gun.ubGunAmmoType].explosionSize > 1)
 	{
 		INT8 bDeafValue;
@@ -9660,6 +9660,159 @@ void SOLDIERTYPE::BeginSoldierGetup( void )
 }
 
 
+
+// Downed casualty handling ----------------------------------------------------
+// Vengeance already has a robust unconscious/critical-life system.  Rather than
+// adding a second health pool, a survivable lethal wound is clamped to 1 life and
+// given a short tactical bleed-out window.  Existing first aid stabilizes the
+// casualty by stopping bleeding.
+static BOOLEAN CanEnterBleedoutState( SOLDIERTYPE *pSoldier, UINT8 ubReason, INT16 sLifeDeduct, INT8 bOldLife )
+{
+	if ( !pSoldier || bOldLife <= 0 || pSoldier->ubBleedoutState != BLEEDOUT_NONE )
+		return FALSE;
+
+	// Human-sized combatants only. Vehicles, robots, creatures and zombies retain
+	// their existing death rules.
+	if ( !IS_MERC_BODY_TYPE( pSoldier ) ||
+		(pSoldier->flags.uiStatusFlags & ( SOLDIER_VEHICLE | SOLDIER_ROBOT )) ||
+		pSoldier->IsZombie() )
+	{
+		return FALSE;
+	}
+
+	// Keep scripted/profiled NPC death semantics intact. Player mercs are always
+	// eligible; generic enemy soldiers and militia use the same symmetric system.
+	if ( pSoldier->bTeam != gbPlayerNum )
+	{
+		if ( (pSoldier->bTeam != ENEMY_TEAM && pSoldier->bTeam != MILITIA_TEAM) ||
+			pSoldier->ubProfile != NO_PROFILE )
+		{
+			return FALSE;
+		}
+	}
+
+	switch ( ubReason )
+	{
+	case TAKE_DAMAGE_GUNFIRE:
+	case TAKE_DAMAGE_BLADE:
+	case TAKE_DAMAGE_HANDTOHAND:
+	case TAKE_DAMAGE_FALLROOF:
+	case TAKE_DAMAGE_EXPLOSION:
+	case TAKE_DAMAGE_STRUCTURE_EXPLOSION:
+	case TAKE_DAMAGE_OBJECT:
+		break;
+
+	default:
+		return FALSE;
+	}
+
+	// Massive overkill remains immediately lethal. This preserves the danger of
+	// catastrophic hits while ordinary lethal wounds become rescue situations.
+	INT16 sOverkill = __max( 0, sLifeDeduct - (INT16)bOldLife );
+	return ( sOverkill <= 30 );
+}
+
+
+BOOLEAN IsBleedoutCasualty( SOLDIERTYPE *pSoldier )
+{
+	if ( !pSoldier || pSoldier->stats.bLife <= 0 || pSoldier->stats.bLife >= OKLIFE )
+		return FALSE;
+
+	if ( pSoldier->ubBleedoutState == BLEEDOUT_ACTIVE )
+		return ( pSoldier->ubBleedoutTurns >= 1 && pSoldier->ubBleedoutTurns <= 6 );
+
+	if ( pSoldier->ubBleedoutState == BLEEDOUT_STABILIZED )
+		return ( pSoldier->ubBleedoutTurns == 0 );
+
+	return FALSE;
+}
+
+
+static UINT8 BleedoutRescueTurns( INT16 sLifeDeduct, INT8 bOldLife )
+{
+	INT16 sOverkill = __max( 0, sLifeDeduct - (INT16)bOldLife );
+
+	if ( sOverkill <= 5 )
+		return 5;
+	if ( sOverkill <= 10 )
+		return 4;
+	if ( sOverkill <= 20 )
+		return 3;
+
+	return 2;
+}
+
+
+void ProcessBleedoutCasualties( )
+{
+	for ( INT32 cnt = 0; cnt < TOTAL_SOLDIERS; ++cnt )
+	{
+		SOLDIERTYPE *pSoldier = Menptr + cnt;
+
+		if ( !pSoldier->bActive || !pSoldier->bInSector || pSoldier->ubBleedoutState == BLEEDOUT_NONE )
+			continue;
+
+		// State bytes occupy legacy filler space for savegame-size compatibility.
+		// Reject impossible values/countdowns defensively when loading an older save.
+		if ( pSoldier->ubBleedoutState != BLEEDOUT_ACTIVE &&
+			pSoldier->ubBleedoutState != BLEEDOUT_STABILIZED )
+		{
+			pSoldier->ubBleedoutState = BLEEDOUT_NONE;
+			pSoldier->ubBleedoutTurns = 0;
+			continue;
+		}
+
+		if ( (pSoldier->flags.uiStatusFlags & SOLDIER_DEAD) || pSoldier->stats.bLife <= 0 )
+		{
+			pSoldier->ubBleedoutState = BLEEDOUT_NONE;
+			pSoldier->ubBleedoutTurns = 0;
+			continue;
+		}
+
+		// Any recovery above critical life ends the special casualty state.
+		if ( pSoldier->stats.bLife >= OKLIFE )
+		{
+			pSoldier->ubBleedoutState = BLEEDOUT_NONE;
+			pSoldier->ubBleedoutTurns = 0;
+			continue;
+		}
+
+		if ( pSoldier->ubBleedoutState == BLEEDOUT_STABILIZED )
+		{
+			pSoldier->ubBleedoutTurns = 0;
+			continue;
+		}
+
+		if ( pSoldier->ubBleedoutTurns == 0 || pSoldier->ubBleedoutTurns > 6 )
+		{
+			pSoldier->ubBleedoutState = BLEEDOUT_NONE;
+			pSoldier->ubBleedoutTurns = 0;
+			continue;
+		}
+
+		// Existing first aid is the stabilization mechanic: once bleeding is stopped
+		// the soldier survives, but remains incapacitated under normal JA2 rules.
+		if ( pSoldier->bBleeding <= 0 )
+		{
+			pSoldier->ubBleedoutState = BLEEDOUT_STABILIZED;
+			pSoldier->ubBleedoutTurns = 0;
+			continue;
+		}
+
+		if ( pSoldier->ubBleedoutTurns > 0 )
+			--pSoldier->ubBleedoutTurns;
+
+		if ( pSoldier->ubBleedoutTurns == 0 )
+		{
+			// Drop the special protection before applying the final blood loss so the
+			// normal JA2 death pipeline, sounds, corpses and strategic handling run.
+			pSoldier->ubBleedoutState = BLEEDOUT_NONE;
+			pSoldier->SoldierTakeDamage( ANIM_CROUCH, pSoldier->stats.bLife, 0, 100,
+				TAKE_DAMAGE_BLOODLOSS, pSoldier->ubAttackerID, NOWHERE, 0, TRUE );
+		}
+	}
+}
+
 void HandleTakeDamageDeath( SOLDIERTYPE *pSoldier, UINT8 bOldLife, UINT8 ubReason )
 {
 	switch( ubReason )
@@ -9968,6 +10121,22 @@ UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPo
 			this->bPoisonLife -= (INT8) (dpoisonliferelation * sLifeDeduct);
 	}
 
+	// A lethal blood-loss tick must not bypass the guaranteed rescue window.
+	if ( this->stats.bLife <= 0 && ubReason == TAKE_DAMAGE_BLOODLOSS &&
+		this->ubBleedoutState == BLEEDOUT_ACTIVE && this->ubBleedoutTurns > 0 )
+	{
+		this->stats.bLife = 1;
+	}
+	// Convert an otherwise-lethal survivable combat wound into the downed state.
+	else if ( this->stats.bLife <= 0 && CanEnterBleedoutState( this, ubReason, sLifeDeduct, bOldLife ) )
+	{
+		this->stats.bLife = 1;
+		this->ubBleedoutState = BLEEDOUT_ACTIVE;
+		// One hidden buffer tick prevents a casualty created late in the round from
+		// losing one of the promised 2-5 rescue turns immediately at round end.
+		this->ubBleedoutTurns = BleedoutRescueTurns( sLifeDeduct, bOldLife ) + 1;
+	}
+
 	/////////////////////////////////////////////////////////////////////////////////////////////////
 	// SANDRO - Doctor trait - need a variable holding the number of insta-healable hit points
 	if ((IS_MERC_BODY_TYPE( this ) || IS_CIV_BODY_TYPE( this )) && ( gGameOptions.fNewTraitSystem ))
@@ -9991,7 +10160,8 @@ UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPo
 	// ATE: Put some logic in here to allow enemies to die quicker.....
 	// Are we an enemy?
 	// zombies don't die suddenly, as they regenerate health by bloodloss and poison. You have to make sure they die!
-	if ( this->bSide != gbPlayerNum && !this->aiData.bNeutral && this->ubProfile == NO_PROFILE && !this->IsZombie() )
+	if ( !IsBleedoutCasualty( this ) &&
+		this->bSide != gbPlayerNum && !this->aiData.bNeutral && this->ubProfile == NO_PROFILE && !this->IsZombie() )
 	{
 		// ATE: Give them a chance to fall down...
 		if ( this->stats.bLife > 0 && this->stats.bLife < ( OKLIFE - 1 ) )

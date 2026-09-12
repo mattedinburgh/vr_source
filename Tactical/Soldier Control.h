@@ -59,6 +59,12 @@ extern UINT16 CivLastNames[MAXCIVLASTNAMES][10];
 #define TAKE_DAMAGE_STRUCTURE_EXPLOSION 10
 #define TAKE_DAMAGE_OBJECT		11
 
+// Downed casualty states. These use bytes from the existing SOLDIERTYPE filler so
+// savegame structure size remains unchanged.
+#define BLEEDOUT_NONE				0
+#define BLEEDOUT_ACTIVE				1
+#define BLEEDOUT_STABILIZED		2
+
 
 #define SOLDIER_UNBLIT_SIZE			(75*75*2)
 
@@ -1479,9 +1485,14 @@ public:
 	UINT16	usSkillCounter[SOLDIER_COUNTER_MAX];	// counters used for various skill/trait/taint effects
 	UINT32	usSkillCooldown[SOLDIER_COOLDOWN_MAX];	// cooldown used for various skill/trait/taint effects
 	
+	// Downed/bleed-out system. A lethal but survivable combat wound leaves the soldier
+	// incapacitated at 1 life for a limited number of full tactical rounds.
+	UINT8	ubBleedoutTurns;		// internal countdown; active casualties use 3-6 to guarantee 2-5 rescue turns
+	UINT8	ubBleedoutState;		// BLEEDOUT_NONE / BLEEDOUT_ACTIVE / BLEEDOUT_STABILIZED
+
 	// Flugente: Decrease this filler by 1 for each new UINT8 / BOOLEAN variable, so we can maintain savegame compatibility!!
 	// Note that we also have to account for padding, so you might need to substract more than just the size of the new variables
-	UINT8	ubFiller[20];
+	UINT8	ubFiller[18];
 
 	UINT32	usSoldierFlagMask2;		// anv: another usSoldierFlagMask
 
@@ -2731,6 +2742,8 @@ public:
 
 
 void HandleTakeDamageDeath( SOLDIERTYPE *pSoldier, UINT8 bOldLife, UINT8 ubReason );
+BOOLEAN IsBleedoutCasualty( SOLDIERTYPE *pSoldier );
+void ProcessBleedoutCasualties( );
 
 void SetDamageDisplayCounter(SOLDIERTYPE* pSoldier);
 
