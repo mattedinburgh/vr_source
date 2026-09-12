@@ -18104,7 +18104,7 @@ BOOLEAN SOLDIERTYPE::OrderArtilleryStrike( UINT32 usSectorNr, INT32 sTargetGridN
 
 			if ( findHeShellIndex == NOTHING )
 			{
-				ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, New113Message[ MSG113_NO_DEFAULT_SHELL ] );
+				ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, New113Message[ MSG113_NOT_ENOUGH_MORTAR_SHELLS ] );
 				return FALSE;
 			}
 
