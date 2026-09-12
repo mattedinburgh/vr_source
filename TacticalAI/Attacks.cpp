@@ -314,6 +314,59 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 	pBestShot->ubFriendlyFireChance = 0;
 	pSoldier->bAimShotLocation = AIM_SHOT_RANDOM;
 
+	// Count credible alternative threats from the same knowledge window used below.
+	// This lets target-saturation logic distribute fire when the soldier knows about
+	// multiple threats through personal/team reports, without requiring hive-mind
+	// access to hidden live state.
+	UINT8 ubCredibleThreats = 0;
+	for (UINT32 uiThreat = 0; uiThreat < guiNumMercSlots; ++uiThreat)
+	{
+		SOLDIERTYPE *pThreat = MercSlots[uiThreat];
+		if (!pThreat)
+			continue;
+
+		INT8 bThreatKnowledge = Knowledge(pSoldier, pThreat->ubID);
+		if (CONSIDERED_NEUTRAL(pSoldier, pThreat) ||
+			pSoldier->bSide == pThreat->bSide ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pThreat->ubProfile != SLAY) ||
+			(gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pThreat->IsBoxer()) ||
+			pThreat->ubBodyType == CROW)
+		{
+			continue;
+		}
+
+		BOOLEAN fRecentKnowledge =
+			bThreatKnowledge == SEEN_CURRENTLY ||
+			bThreatKnowledge == SEEN_THIS_TURN ||
+			bThreatKnowledge == SEEN_LAST_TURN ||
+			bThreatKnowledge == HEARD_THIS_TURN ||
+			bThreatKnowledge == HEARD_LAST_TURN ||
+			((bThreatKnowledge == SEEN_2_TURNS_AGO ||
+			  bThreatKnowledge == SEEN_3_TURNS_AGO ||
+			  bThreatKnowledge == HEARD_2_TURNS_AGO) &&
+			 Weapon[pSoldier->usAttackingWeapon].ubWeaponType == GUN_LMG);
+
+		if (!fRecentKnowledge)
+			continue;
+
+		BOOLEAN fThreatStateKnown =
+			PersonalKnowledge(pSoldier, pThreat->ubID) == SEEN_CURRENTLY;
+		if (fThreatStateKnown &&
+			(!ValidOpponent(pSoldier, pThreat) ||
+			 IsBleedoutCasualty(pThreat) ||
+			 pThreat->IsUnconscious()))
+		{
+			continue;
+		}
+
+		if (TileIsOutOfBounds(KnownLocation(pSoldier, pThreat->ubID)))
+			continue;
+
+		++ubCredibleThreats;
+		if (ubCredibleThreats >= 2)
+			break;
+	}
+
 	// hang a pointer into active soldier's personal opponent list
 	//pbPersOL = &(pSoldier->aiData.bOppList[0]);
 
@@ -887,7 +940,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		// Lightweight target allocation: when several local teammates have just fired
 		// at this target area, prefer spreading fire to another viable threat. This is
 		// deliberately a soft penalty, so a very dangerous target can still justify focus fire.
-		if (AICombatTeam(pSoldier) && pSoldier->aiData.bOppCnt > 1)
+		if (AICombatTeam(pSoldier) && ubCredibleThreats > 1)
 		{
 			UINT8 ubSaturation = AITargetSaturation(pSoldier, sTarget);
 			if (ubSaturation > 0)
