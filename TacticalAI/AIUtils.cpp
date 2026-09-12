@@ -3897,6 +3897,9 @@ UINT8 CountFriendsInDirection(SOLDIERTYPE *pSoldier, UINT8 ubDirection, INT16 sD
 			pFriend->bInSector &&
 			AISameFireteam(pSoldier, pFriend) &&
 			pFriend->stats.bLife >= OKLIFE &&
+			!pFriend->bCollapsed &&
+			!pFriend->bBreathCollapsed &&
+			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
 			AIDirection(pSoldier->sGridNo, pFriend->sGridNo) == ubDirection &&
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) <= sDistance &&
 			(!fCheckSight || LocationToLocationLineOfSightTest(pSoldier->sGridNo, pSoldier->pathing.bLevel, pFriend->sGridNo, pFriend->pathing.bLevel, TRUE, MAX_VISION_RANGE)))
@@ -3931,6 +3934,9 @@ UINT8 CountFriendsInDirectionFromSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, UINT8 
 			pFriend->bInSector &&
 			AISameFireteam(pSoldier, pFriend) &&
 			pFriend->stats.bLife >= OKLIFE &&
+			!pFriend->bCollapsed &&
+			!pFriend->bBreathCollapsed &&
+			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
 			AIDirection(sSpot, pFriend->sGridNo) == ubDirection &&
 			PythSpacesAway(sSpot, pFriend->sGridNo) <= sDistance)
 		{
@@ -3975,6 +3981,9 @@ UINT8 CountFriendsBetweenMeAndSpotFromSpot(SOLDIERTYPE *pSoldier, INT32 sTargetG
 			pFriend->bInSector &&
 			AISameFireteam(pSoldier, pFriend) &&
 			pFriend->stats.bLife >= OKLIFE &&
+			!pFriend->bCollapsed &&
+			!pFriend->bBreathCollapsed &&
+			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
 			pFriend->stats.bLife >= pFriend->stats.bLifeMax / 2 &&
 			pFriend->aiData.bOrders > ONGUARD &&
 			(ubFriendDir == ubMyDir || ubFriendDir == gOneCDirection[ubMyDir] || ubFriendDir == gOneCCDirection[ubMyDir]) &&
@@ -7298,6 +7307,9 @@ UINT8 CountFriendsFlankSameSpot(SOLDIERTYPE *pSoldier, INT32 sSpot)
 			pFriend->bInSector &&
 			AISameFireteam(pSoldier, pFriend) &&
 			pFriend->stats.bLife >= OKLIFE &&
+			!pFriend->bCollapsed &&
+			!pFriend->bBreathCollapsed &&
+			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
 			pFriend->aiData.bAlertStatus == STATUS_RED &&
 			pFriend->aiData.bOrders > ONGUARD)
 		{
@@ -7336,6 +7348,9 @@ UINT8 CountNearbyFriendsLastAttackHit( SOLDIERTYPE *pSoldier, INT32 sGridNo, UIN
 		if (pFriend != pSoldier &&
 			pFriend->bActive &&
 			pFriend->stats.bLife >= OKLIFE &&
+			!pFriend->bCollapsed &&
+			!pFriend->bBreathCollapsed &&
+			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
 			pFriend->aiData.bOrders > ONGUARD &&
 			pFriend->aiData.bOrders != SNIPER &&
 			PythSpacesAway( sGridNo, pFriend->sGridNo ) <= ubDistance &&
