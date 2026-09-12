@@ -1086,9 +1086,13 @@ BOOLEAN AdjustToNextAnimationFrame( SOLDIERTYPE *pSoldier )
 					// ATE: If we are armmed...
 					if ( pSoldier->pThrowParams->ubActionCode == THROW_ARM_ITEM )
 					{
-						//AXP 25.03.2007: MinAPsToThrow now actually returns the real cost, not 0
-						// ATE: Deduct points!
-						DeductPoints( pSoldier, MinAPsToThrow( pSoldier, pSoldier->sTargetGridNo, FALSE ), 0, AFTERACTION_INTERRUPT );
+						// Aimed hand throws pay the same aim-click cost shown by the UI/AI planner.
+						INT16 sThrowAPCost = MinAPsToThrow( pSoldier, pSoldier->sTargetGridNo, FALSE );
+						if ( Item[pSoldier->pTempObject->usItem].usItemClass & ( IC_GRENADE | IC_THROWN ) )
+						{
+							sThrowAPCost += CalcAPCostForThrowAiming( pSoldier->aiData.bAimTime );
+						}
+						DeductPoints( pSoldier, sThrowAPCost, 0, AFTERACTION_INTERRUPT );
 					}
 					else
 					{
