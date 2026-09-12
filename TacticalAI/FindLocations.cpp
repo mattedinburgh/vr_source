@@ -618,9 +618,20 @@ UINT8 NumberOfTeamMatesAdjacent( SOLDIERTYPE * pSoldier, INT32 sGridNo )
 		if ( sTempGridNo != sGridNo )
 		{
 			ubWhoIsThere = WhoIsThere2( sTempGridNo, pSoldier->pathing.bLevel );
-			if ( ubWhoIsThere != NOBODY && ubWhoIsThere != pSoldier->ubID && MercPtrs[ ubWhoIsThere ]->bTeam == pSoldier->bTeam )
+			if (ubWhoIsThere != NOBODY && ubWhoIsThere != pSoldier->ubID)
 			{
-				ubCount++;
+				SOLDIERTYPE *pFriend = MercPtrs[ubWhoIsThere];
+				if (pFriend &&
+					pFriend->bTeam == pSoldier->bTeam &&
+					pFriend->bActive &&
+					pFriend->bInSector &&
+					pFriend->stats.bLife >= OKLIFE &&
+					!pFriend->bCollapsed &&
+					!pFriend->bBreathCollapsed &&
+					!(pFriend->usSoldierFlagMask & SOLDIER_POW))
+				{
+					ubCount++;
+				}
 			}
 		}
 	}
@@ -880,6 +891,18 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 		{
 			Threat[uiThreatCnt].iValue = 100;
 			Threat[uiThreatCnt].iAPs = APBPConstants[AP_MAXIMUM];
+		}
+
+		// While under direct pressure, cover should be chosen first and foremost
+		// against the opponent who actually established the dangerous fire lane.
+		// This uses only attacker identity + the already-known/believed location; it
+		// does not reveal the attacker's hidden current position or state.
+		if (pSoldier->aiData.bUnderFire &&
+			(pSoldier->ubPreviousAttackerID == pOpponent->ubID ||
+			 pSoldier->ubNextToPreviousAttackerID == pOpponent->ubID))
+		{
+			Threat[uiThreatCnt].iValue =
+				__min((INT32)10000, Threat[uiThreatCnt].iValue * 130 / 100);
 		}
 
 		if (iThreatRange < iClosestThreatRange)
