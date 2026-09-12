@@ -6257,7 +6257,9 @@ INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier)
 INT32 AISupportRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 {
 	if (!AICombatTeam(pSoldier) || !pSoldier->bActive || !pSoldier->bInSector ||
-		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed || pSoldier->bBreathCollapsed ||
+		(pSoldier->usSoldierFlagMask & SOLDIER_POW) ||
+		(pSoldier->flags.uiStatusFlags & SOLDIER_COWERING) ||
 		!AICheckHasGun(pSoldier) || AIGunAmmo(pSoldier) == 0)
 	{
 		return -10000;
@@ -6326,7 +6328,7 @@ INT32 AISupportRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 INT32 AIManeuverRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 {
 	if (!AICombatTeam(pSoldier) || !pSoldier->bActive || !pSoldier->bInSector ||
-		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed || pSoldier->bBreathCollapsed ||
 		(pSoldier->usSoldierFlagMask & SOLDIER_POW) ||
 		(pSoldier->flags.uiStatusFlags & SOLDIER_COWERING) ||
 		AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier))
@@ -6719,6 +6721,7 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 			!AISameFireteam(pSoldier, pFriend) ||
 			pFriend->stats.bLife < OKLIFE ||
 			pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed ||
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
 			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 			AIDisengagementActive(pFriend) ||
@@ -6885,6 +6888,10 @@ for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
 			!AISameFireteam(pSoldier, pFriend) ||
 			pFriend->stats.bLife < OKLIFE ||
+			pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE / 2)
 		{
 			continue;
@@ -7016,6 +7023,10 @@ BOOLEAN AIShouldHoldForWithdrawingFriend(SOLDIERTYPE *pSoldier)
 	if (!AICombatTeam(pSoldier) ||
 		!pSoldier->bActive || !pSoldier->bInSector ||
 		pSoldier->stats.bLife < OKLIFE ||
+		pSoldier->bCollapsed ||
+		pSoldier->bBreathCollapsed ||
+		(pSoldier->usSoldierFlagMask & SOLDIER_POW) ||
+		(pSoldier->flags.uiStatusFlags & SOLDIER_COWERING) ||
 		AIEscapeActive(pSoldier) ||
 		AILastSurvivorPressure(pSoldier))
 	{
@@ -7033,6 +7044,10 @@ BOOLEAN AIShouldHoldForWithdrawingFriend(SOLDIERTYPE *pSoldier)
 			!pFriend->bActive || !pFriend->bInSector ||
 			!AISameFireteam(pSoldier, pFriend) ||
 			pFriend->stats.bLife < OKLIFE ||
+			pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 			pFriend->pathing.bLevel != pSoldier->pathing.bLevel ||
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE ||
 			!AIRecentWithdrawal(pFriend))
@@ -7092,6 +7107,10 @@ BOOLEAN AIFriendWithdrawingNeedsCover(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID)
 			!pFriend->bActive || !pFriend->bInSector ||
 			!AISameFireteam(pSoldier, pFriend) ||
 			pFriend->stats.bLife < OKLIFE ||
+			pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 			pFriend->pathing.bLevel != pSoldier->pathing.bLevel ||
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE ||
 			!AIRecentWithdrawal(pFriend))
