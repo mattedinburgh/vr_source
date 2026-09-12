@@ -1958,9 +1958,6 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 							bEngagedSituation = AIBattleSituation(pEngaged);
 							ubEngagedCasualties = AILocalCasualtyPercent(pEngaged);
 							ubEngagedRoutPressure = AILocalRoutPressure(pEngaged);
-							UINT16 usEngagedEnemyStrength = AIPerceivedEnemyStrength(pEngaged);
-							if (usEngagedEnemyStrength > usPerceivedEnemyStrength)
-								usPerceivedEnemyStrength = usEngagedEnemyStrength;
 						}
 					}
 
@@ -1974,22 +1971,22 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 						UINT8 ubPerceivedEnemies = (UINT8)__max(1, __min(12,
 							(INT32)(usPerceivedEnemyStrength + 99) / 100));
 
-						// Aim for slight local superiority once contact has been confirmed.
+						// Aim for meaningful local superiority once contact has been confirmed.
 						// Six/seven known mercs therefore imply an eventual normal response
-						// of roughly seven/eight soldiers rather than only four.
-						UINT8 ubDesiredResponse = (UINT8)__min(14, __max(5,
-							(INT32)ubPerceivedEnemies + 1));
+						// of roughly eight/nine soldiers rather than only four.
+						UINT8 ubDesiredResponse = (UINT8)__min(14, __max(4,
+							(INT32)ubPerceivedEnemies + 3));
 
 						if (bEngagedSituation == AI_BATTLE_CATASTROPHIC)
 						{
 							ubDesiredResponse = (UINT8)__min(14,
-								__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 5));
+								__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 6));
 							iReinforcementUrgency = 40;
 						}
 						else if (bEngagedSituation == AI_BATTLE_LOSING)
 						{
 							ubDesiredResponse = (UINT8)__min(12,
-								__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 3));
+								__max((INT32)ubDesiredResponse, (INT32)ubPerceivedEnemies + 4));
 							iReinforcementUrgency = 25;
 						}
 						else if (ubEngagedCasualties >= 25 || ubEngagedRoutPressure >= 45)
@@ -2017,11 +2014,13 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 						UINT32 uiElapsedTurns = (uiTurnStamp > guiAIEnemyResponseStartTurn) ?
 							(uiTurnStamp - guiAIEnemyResponseStartTurn) : 0;
 
-						// First confirmed response is substantial enough to face a normal
-						// player squad, then only two additional soldiers are released per
+						// First confirmed wave aims for local parity, bounded so a large player squad
+						// still does not summon the whole sector at once; later waves add two per turn.
 						// turn until the desired local strength is reached.
+						UINT8 ubInitialWave = (UINT8)__max(4,
+							__min(7, (INT32)ubPerceivedEnemies));
 						UINT8 ubWaveCap = (UINT8)__min((INT32)ubDesiredResponse,
-							6 + 2 * (INT32)uiElapsedTurns);
+							(INT32)ubInitialWave + 2 * (INT32)uiElapsedTurns);
 						ubResponseLimit = __max(ubResponseLimit, ubWaveCap);
 					}
 					else if (pSoldier->aiData.bOrders == ONCALL || pSoldier->aiData.bOrders == SEEKENEMY)
