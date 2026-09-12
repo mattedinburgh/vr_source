@@ -1671,6 +1671,12 @@ INT16 CalcTotalAPsToAttack( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubAddTur
 	{
 		sAPCost = MinAPsToAttack( pSoldier, sGridNo, ubAddTurningCost, bAimTime, 0 );
 
+		// Hand-thrown grenades use bAimTime in CalcThrownChanceToHit().  Charge
+		// the same regular per-click aiming AP that the UI displays, otherwise
+		// extra grenade accuracy would be free.
+		if ( (uiItemClass & IC_GRENADE) && bAimTime > 0 )
+			sAPCost += bAimTime * APBPConstants[AP_CLICK_AIM];
+
 		//sAPCost = 5;
 	}
 
