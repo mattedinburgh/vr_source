@@ -3187,7 +3187,14 @@ INT32 FindRetreatSpot(SOLDIERTYPE *pSoldier)
 		7 * __min(iCurrentSupport, 3) -
 		(INT32)(usCurrentExposure / 4);
 
-	INT32 sBestSpot = NOWHERE;
+	const UINT8 ubShortlistSize = 6;
+	INT32 sShortlist[6];
+	INT32 iShortlistScore[6];
+	for (UINT8 ubIndex = 0; ubIndex < ubShortlistSize; ++ubIndex)
+	{
+		sShortlist[ubIndex] = NOWHERE;
+		iShortlistScore[ubIndex] = -100000;
+	}
 
 	for (INT16 sYOffset = -sMaxUp; sYOffset <= sMaxDown; ++sYOffset)
 	{
@@ -3225,24 +3232,54 @@ INT32 FindRetreatSpot(SOLDIERTYPE *pSoldier)
 			if (iDistance + 2 < iCurrentDistance)
 				continue;
 
-			UINT16 usExposure = AIKnownThreatExposure(pSoldier, sGridNo, pSoldier->pathing.bLevel);
 			INT32 iSupport = CountNearbyFriends(pSoldier, sGridNo, DAY_VISION_RANGE / 2);
 			BOOLEAN fSightCover = SightCoverAtSpot(pSoldier, sGridNo, FALSE);
 			INT32 iPathCost = gubAIPathCosts[AI_PATHCOST_RADIUS + sXOffset][AI_PATHCOST_RADIUS + sYOffset];
 
+			// First-stage score deliberately avoids AIKnownThreatExposure(), which is
+			// LOS-expensive. SightCoverAtSpot already provides the coarse threat-aware
+			// distinction needed to build a small candidate shortlist.
 			INT32 iScore =
 				6 * iDistance +
 				18 +
 				(fSightCover ? 24 : 0) +
 				7 * __min(iSupport, 3) -
-				(INT32)(usExposure / 4) -
 				iPathCost / 3;
 
-			if (iScore > iBestScore)
+			for (UINT8 ubIndex = 0; ubIndex < ubShortlistSize; ++ubIndex)
 			{
-				iBestScore = iScore;
-				sBestSpot = sGridNo;
+				if (iScore > iShortlistScore[ubIndex])
+				{
+					for (INT8 bShift = (INT8)ubShortlistSize - 1; bShift > (INT8)ubIndex; --bShift)
+					{
+						iShortlistScore[bShift] = iShortlistScore[bShift - 1];
+						sShortlist[bShift] = sShortlist[bShift - 1];
+					}
+					iShortlistScore[ubIndex] = iScore;
+					sShortlist[ubIndex] = sGridNo;
+					break;
+				}
 			}
+		}
+	}
+
+	INT32 sBestSpot = NOWHERE;
+
+	// Second stage: run the expensive multi-threat exposure test only on the best
+	// few geometry candidates, then compare them with the soldier's current spot.
+	for (UINT8 ubIndex = 0; ubIndex < ubShortlistSize; ++ubIndex)
+	{
+		if (TileIsOutOfBounds(sShortlist[ubIndex]))
+			continue;
+
+		UINT16 usExposure = AIKnownThreatExposure(
+			pSoldier, sShortlist[ubIndex], pSoldier->pathing.bLevel);
+		INT32 iAdjustedScore = iShortlistScore[ubIndex] - (INT32)(usExposure / 4);
+
+		if (iAdjustedScore > iBestScore)
+		{
+			iBestScore = iAdjustedScore;
+			sBestSpot = sShortlist[ubIndex];
 		}
 	}
 
