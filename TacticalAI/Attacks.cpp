@@ -920,6 +920,8 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 	INT8	bFriendLevel[MAXMERCS], bOpponentLevel[MAXMERCS];
 	INT32	iEstDamage;
 	UINT8	ubFriendCnt = 0,ubOpponentCnt = 0, ubOpponentID[MAXMERCS];
+	UINT8	ubOpponentCertainty[MAXMERCS];
+	BOOLEAN fOpponentStateKnown[MAXMERCS];
 	UINT8	ubMaxPossibleAimTime;
 	INT16	ubRawAPCost, ubMinAPcost;
 	UINT8	ubChanceToHit, ubChanceToGetThrough, ubChanceToReallyHit;
@@ -1319,11 +1321,18 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 				continue;
 			}
 		}
-		// also remember who he is (which soldier #)
+		// Remember contact identity and how certain the believed location is. Exact
+		// dynamic threat state is used only while the target is currently observed;
+		// stale contacts use a neutral human-threat prior and lose value with age.
 		ubOpponentID[ubOpponentCnt] = pOpponent->ubID;
+		ubOpponentCertainty[ubOpponentCnt] = (UINT8)__max(0, __min(100,
+			(INT32)ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE]));
+		fOpponentStateKnown[ubOpponentCnt] = fCurrentContact;
 
-		// remember how relatively dangerous this opponent is (ignore my cover)
-		iOppThreatValue[ubOpponentCnt] = CalcManThreatValue(pOpponent,pSoldier->sGridNo,FALSE,pSoldier);
+		if (fCurrentContact)
+			iOppThreatValue[ubOpponentCnt] = CalcManThreatValue(pOpponent,pSoldier->sGridNo,FALSE,pSoldier);
+		else
+			iOppThreatValue[ubOpponentCnt] = 100;
 
 		ubOpponentCnt++;
 	}
@@ -1544,10 +1553,10 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 					if (usOppDist <= 3)
 					{
 						// start with this opponents base threat value
-						iThreatValue = iOppThreatValue[ubLoop2];
+						iThreatValue = (iOppThreatValue[ubLoop2] * ubOpponentCertainty[ubLoop2]) / 100;
 
 						// estimate how much damage this tossed item would do to him
-						iEstDamage = EstimateThrowDamage(pSoldier,bPayloadPocket,MercPtrs[ubOpponentID[ubLoop2]],sGridNo,bOpponentLevel[ubLoop2]);
+						iEstDamage = EstimateThrowDamage(pSoldier,bPayloadPocket,MercPtrs[ubOpponentID[ubLoop2]],sGridNo,bOpponentLevel[ubLoop2],fOpponentStateKnown[ubLoop2]);
 						//NumMessage("THROW EstDamage = ",iEstDamage);
 
 						if (usOppDist)
@@ -1566,8 +1575,10 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 						// add the product of his threat value & damage caused to total
 						iTotalThreatValue += (iThreatValue * iEstDamage);
 
-						// only count opponents still standing worth shooting at (in range)
-						if (Menptr[ ubOpponentID[ubLoop2] ].stats.bLife >= OKLIFE)
+						// A currently observed downed target is not worth another grenade. For a
+						// stale contact we do not inspect hidden current health; uncertainty is
+						// already represented by ubOpponentCertainty above.
+						if (!fOpponentStateKnown[ubLoop2] || Menptr[ ubOpponentID[ubLoop2] ].stats.bLife >= OKLIFE)
 						{
 							ubOppsInRange++;
 							if (usOppDist < 2)
@@ -1576,7 +1587,6 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 								if (ubOppsAdjacent > 1 || Item[usGrenade].flare )
 								{
 									fSkipLocation = FALSE;
-									// add to exclusion list so we don't consider it again
 								}
 							}
 						}
@@ -2348,7 +2358,7 @@ INT32 EstimateShotDamage(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent, INT16 ub
 	return( iDamage );
 }
 
-INT32 EstimateThrowDamage( SOLDIERTYPE *pSoldier, UINT8 ubItemPos, SOLDIERTYPE *pOpponent, INT32 sGridNo, INT8 bTargetLevel )
+INT32 EstimateThrowDamage( SOLDIERTYPE *pSoldier, UINT8 ubItemPos, SOLDIERTYPE *pOpponent, INT32 sGridNo, INT8 bTargetLevel, BOOLEAN fTargetStateKnown )
 {
 	UINT16	ubExplosiveIndex;
 	INT32	iExplosDamage, iBreathDamage, iArmourAmount, iDamage = 0;
@@ -2442,7 +2452,7 @@ INT32 EstimateThrowDamage( SOLDIERTYPE *pSoldier, UINT8 ubItemPos, SOLDIERTYPE *
 	else if (iExplosDamage)
 	{
 		// EXPLOSION DAMAGE is spread amongst locations
-		iArmourAmount = ArmourVersusExplosivesPercent( pOpponent );
+		iArmourAmount = fTargetStateKnown ? ArmourVersusExplosivesPercent( pOpponent ) : 20;
 		iExplosDamage -= iExplosDamage * iArmourAmount / 100;
 
 		if (iExplosDamage < 1)
@@ -2450,13 +2460,13 @@ INT32 EstimateThrowDamage( SOLDIERTYPE *pSoldier, UINT8 ubItemPos, SOLDIERTYPE *
 	}
 
 	// if this opponent is standing
-	if (gAnimControl[ pOpponent->usAnimState ].ubEndHeight == ANIM_STAND)
+	if (fTargetStateKnown && gAnimControl[ pOpponent->usAnimState ].ubEndHeight == ANIM_STAND)
 	{
 		// 15 pt. flat bonus for knocking him down (for ANY type of explosion)
 		iDamage += 15;
 	}
 
-	if ( pOpponent->bBreath < OKBREATH || AM_A_ROBOT( pOpponent ) )
+	if ( (fTargetStateKnown && pOpponent->bBreath < OKBREATH) || AM_A_ROBOT( pOpponent ) )
 	{
 		// don't bother to count breath damage against people already down
 		iBreathDamage = 0;
