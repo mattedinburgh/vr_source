@@ -415,6 +415,73 @@ INT8 FindBestPatient( SOLDIERTYPE * pSoldier, BOOLEAN * pfDoClimb )
 // firefight and therefore refuses rescues that would expose the medic to excessive risk.
 // The decision is re-evaluated every turn, so a medic can wait for suppression/smoke
 // instead of committing to a suicidal run.
+// Non-medics do not become roaming battlefield doctors. A soldier with basic
+// medical skill and a medkit may, however, stabilize a critically downed member
+// of his own fireteam who is already adjacent when local pressure permits it.
+INT8 DecideEmergencyBuddyAid(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || !AICombatTeam(pSoldier) || AICheckIsMedic(pSoldier) ||
+		pSoldier->stats.bMedical <= 0 ||
+		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		pSoldier->aiData.bUnderFire ||
+		AIEscapeActive(pSoldier) || AIDisengagementActive(pSoldier) ||
+		pSoldier->aiData.bAIMorale == MORALE_HOPELESS ||
+		pSoldier->bActionPoints < GetAPsToBeginFirstAid(pSoldier))
+	{
+		return AI_ACTION_NONE;
+	}
+
+	INT8 bMedKitSlot = FindObjClass(pSoldier, IC_MEDKIT);
+	if (bMedKitSlot == NO_SLOT)
+		return AI_ACTION_NONE;
+
+	// Do not stop to treat somebody in an open, known fire lane unless the local
+	// position is already screened by smoke or physical cover.
+	if (AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel) > 0 &&
+		!InSmokeNearby(pSoldier->sGridNo, pSoldier->pathing.bLevel) &&
+		!AnyCoverAtSpot(pSoldier, pSoldier->sGridNo))
+	{
+		return AI_ACTION_NONE;
+	}
+
+	SOLDIERTYPE *pBestPatient = NULL;
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pPatient = MercPtrs[iCounter];
+		if (!pPatient || pPatient == pSoldier ||
+			!pPatient->bActive || !pPatient->bInSector ||
+			!AISameFireteam(pSoldier, pPatient) ||
+			pPatient->stats.bLife <= 0 || pPatient->stats.bLife >= OKLIFE ||
+			pPatient->bBleeding <= 0 || pPatient->ubServiceCount > 0 ||
+			pPatient->pathing.bLevel != pSoldier->pathing.bLevel ||
+			CardinalSpacesAway(pSoldier->sGridNo, pPatient->sGridNo) != 1)
+		{
+			continue;
+		}
+
+		if (!pBestPatient ||
+			pPatient->stats.bLife < pBestPatient->stats.bLife ||
+			(pPatient->stats.bLife == pBestPatient->stats.bLife &&
+			 pPatient->bBleeding > pBestPatient->bBleeding))
+		{
+			pBestPatient = pPatient;
+		}
+	}
+
+	if (!pBestPatient)
+		return AI_ACTION_NONE;
+
+	if (bMedKitSlot != HANDPOS)
+	{
+		pSoldier->bSlotItemTakenFrom = bMedKitSlot;
+		SwapObjs(pSoldier, HANDPOS, bMedKitSlot, TRUE);
+	}
+
+	pSoldier->aiData.usActionData = pBestPatient->sGridNo;
+	return AI_ACTION_GIVE_AID;
+}
+
 INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 {
 	if (!pSoldier || !AICombatTeam(pSoldier) || !AICheckIsMedic(pSoldier) ||
