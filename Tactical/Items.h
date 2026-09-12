@@ -189,6 +189,7 @@ UINT8 AttachmentAPCost( UINT16 usAttachment, OBJECTTYPE * pObj, SOLDIERTYPE * pS
 
 BOOLEAN ValidLaunchable( UINT16 usLaunchable, UINT16 usItem );
 UINT16 GetLauncherFromLaunchable( UINT16 usLaunchable );
+UINT16 GetLaunchableOfExplosionType( UINT16 launcher, UINT8 explosionType );
 
 BOOLEAN ValidMerge( UINT16 usMerge, UINT16 usItem );
 BOOLEAN EvaluateValidMerge( UINT16 usMerge, UINT16 usItem, UINT16 * pusResult, UINT16 * pusResult2, UINT8 * pubType, UINT8 * pubAPCost );
