@@ -419,6 +419,7 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 {
 	if (!pSoldier || !AICombatTeam(pSoldier) || !AICheckIsMedic(pSoldier) ||
 		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		AIEscapeActive(pSoldier) || AIShouldStartEscape(pSoldier) ||
 		pSoldier->aiData.bAIMorale == MORALE_HOPELESS)
 	{
 		return AI_ACTION_NONE;
