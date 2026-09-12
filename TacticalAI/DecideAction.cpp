@@ -1947,6 +1947,10 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 							continue;
 						}
 
+						UINT16 usEngagedEnemyStrength = AIPerceivedEnemyStrength(pEngaged);
+						if (usEngagedEnemyStrength > usPerceivedEnemyStrength)
+							usPerceivedEnemyStrength = usEngagedEnemyStrength;
+
 						INT32 iEngagedDistance = PythSpacesAway(pEngaged->sGridNo, sNoiseGridNo);
 						if (iEngagedDistance < iBestEngagedDistance)
 						{
@@ -1954,12 +1958,15 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 							bEngagedSituation = AIBattleSituation(pEngaged);
 							ubEngagedCasualties = AILocalCasualtyPercent(pEngaged);
 							ubEngagedRoutPressure = AILocalRoutPressure(pEngaged);
-							usPerceivedEnemyStrength = AIPerceivedEnemyStrength(pEngaged);
+							UINT16 usEngagedEnemyStrength = AIPerceivedEnemyStrength(pEngaged);
+							if (usEngagedEnemyStrength > usPerceivedEnemyStrength)
+								usPerceivedEnemyStrength = usEngagedEnemyStrength;
 						}
 					}
 
 					INT32 iReinforcementUrgency = 0;
-					if (gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition)
+					if (pSoldier->bTeam == ENEMY_TEAM &&
+						gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition)
 					{
 						// Convert certainty-points into an approximate known enemy count.
 						// 100 points is one fully known opponent; partial/stale knowledge
