@@ -6441,9 +6441,22 @@ L_NEWAIM:
 
 				pSoldier->aiData.usActionData = InternalGoAsFarAsPossibleTowards(pSoldier, BestAttack.sTarget, bReserveAP, AI_ACTION_GET_CLOSER, 0 );
 
-				if (!TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
-					!Water(pSoldier->aiData.usActionData, pSoldier->pathing.bLevel) &&
-					!InGas(pSoldier, pSoldier->aiData.usActionData) &&
+				BOOLEAN fAbortAdvance = FALSE;
+				INT32 sAdvanceDanger = NOWHERE;
+				INT32 sLastSafeAdvance = NOWHERE;
+				if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
+				{
+					fAbortAdvance = AbortFinalSpot(pSoldier, pSoldier->aiData.usActionData,
+						AI_ACTION_GET_CLOSER, BestAttack.sTarget, BestAttack.bTargetLevel, sAdvanceDanger);
+					if (!fAbortAdvance)
+					{
+						fAbortAdvance = AbortPath(pSoldier, AI_ACTION_GET_CLOSER, BestAttack.sTarget,
+							BestAttack.bTargetLevel, sAdvanceDanger, sLastSafeAdvance);
+					}
+				}
+
+				if (!fAbortAdvance &&
+					!TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
 					PythSpacesAway(pSoldier->aiData.usActionData, BestAttack.sTarget) < PythSpacesAway(pSoldier->sGridNo, BestAttack.sTarget) &&
 					LocationToLocationLineOfSightTest( pSoldier->aiData.usActionData, pSoldier->pathing.bLevel, BestAttack.sTarget, BestAttack.bTargetLevel, TRUE, CALC_FROM_ALL_DIRS ) &&
 					AIAdvanceHasMutualSupport(pSoldier, pSoldier->aiData.usActionData, BestAttack.sTarget, BestAttack.bTargetLevel))
