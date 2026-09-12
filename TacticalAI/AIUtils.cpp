@@ -4019,6 +4019,7 @@ UINT8 CountFriendsBlack( SOLDIERTYPE *pSoldier, INT32 sClosestOpponent )
 			pFriend->bInSector &&
 			AISameFireteam(pSoldier, pFriend) &&
 			pFriend->stats.bLife >= OKLIFE &&
+			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
 			!pFriend->IsCowering() &&
 			!pFriend->IsUnconscious())
 		{
