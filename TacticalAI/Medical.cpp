@@ -411,6 +411,220 @@ INT8 FindBestPatient( SOLDIERTYPE * pSoldier, BOOLEAN * pfDoClimb )
 	}
 }
 
+// Is there a viable medic close enough to make an extraction worthwhile?
+// Non-medics do not drag a casualty around merely to watch the bleed-out timer expire.
+static BOOLEAN AIAvailableMedicForCasualty( SOLDIERTYPE *pRescuer, SOLDIERTYPE *pPatient )
+{
+	if ( !pRescuer || !pPatient )
+		return FALSE;
+
+	for ( UINT8 iCounter = gTacticalStatus.Team[pRescuer->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pRescuer->bTeam].bLastID; ++iCounter )
+	{
+		SOLDIERTYPE *pMedic = MercPtrs[iCounter];
+		if ( !pMedic || pMedic == pPatient || !pMedic->bActive || !pMedic->bInSector ||
+			pMedic->stats.bLife < OKLIFE || pMedic->bCollapsed ||
+			pMedic->pathing.bLevel != pPatient->pathing.bLevel ||
+			!AICheckIsMedic( pMedic ) || FindObjClass( pMedic, IC_MEDKIT ) == NO_SLOT )
+		{
+			continue;
+		}
+
+		if ( AIEscapeActive( pMedic ) || AIShouldStartEscape( pMedic ) )
+			continue;
+
+		if ( PythSpacesAway( pMedic->sGridNo, pPatient->sGridNo ) <= DAY_VISION_RANGE / 2 )
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
+// Physical casualty extraction.  Medics retain the existing direct-treatment logic;
+// this routine lets another squadmate pull an exposed casualty into cover so the medic
+// can stabilize them without the entire team making a suicidal rush into the fire lane.
+INT8 DecideCombatCasualtyEvacuation( SOLDIERTYPE *pSoldier )
+{
+	if ( !pSoldier || !AICombatTeam( pSoldier ) || pSoldier->stats.bLife < OKLIFE ||
+		pSoldier->bCollapsed || pSoldier->aiData.bAIMorale == MORALE_HOPELESS )
+	{
+		return AI_ACTION_NONE;
+	}
+
+	// Continue an extraction already in progress before looking for a new patient.
+	if ( pSoldier->IsDraggingBleedoutCasualty() )
+	{
+		SOLDIERTYPE *pPatient = MercPtrs[pSoldier->ubDraggedCasualtyID];
+		if ( !pPatient || AIEscapeActive( pSoldier ) || AIShouldStartEscape( pSoldier ) ||
+			AIPersonalRisk( pSoldier ) > AIPersonalRiskTolerance( pSoldier ) )
+		{
+			pSoldier->StopDraggingBleedoutCasualty();
+			return AI_ACTION_NONE;
+		}
+
+		UINT16 usPatientExposure = AIKnownThreatExposure( pSoldier, pPatient->sGridNo, pPatient->pathing.bLevel );
+		BOOLEAN fPatientScreened = InSmokeNearby( pPatient->sGridNo, pPatient->pathing.bLevel );
+		BOOLEAN fPatientCovered = AnyCoverAtSpot( pSoldier, pPatient->sGridNo );
+
+		// Once the casualty is screened or genuinely out of the known fire lane,
+		// release them. A medic will then use the normal GIVE_AID rescue logic.
+		if ( usPatientExposure == 0 || fPatientScreened ||
+			(fPatientCovered && !pPatient->aiData.bUnderFire) )
+		{
+			pSoldier->StopDraggingBleedoutCasualty();
+			return AI_ACTION_NONE;
+		}
+
+		INT32 sEvacGrid = FindRetreatSpot( pSoldier );
+		if ( TileIsOutOfBounds( sEvacGrid ) )
+		{
+			pSoldier->StopDraggingBleedoutCasualty();
+			return AI_ACTION_NONE;
+		}
+
+		pSoldier->usUIMovementMode = WALKING;
+		pSoldier->aiData.usActionData = sEvacGrid;
+		return AI_ACTION_GET_CLOSER;
+	}
+	else if ( pSoldier->ubDraggedCasualtyID != NOBODY )
+	{
+		// Stale link (old save, death, interrupted movement).
+		pSoldier->StopDraggingBleedoutCasualty();
+	}
+
+	// A real medic should stabilize first; other soldiers perform the physical extraction.
+	if ( AICheckIsMedic( pSoldier ) || AIEscapeActive( pSoldier ) || AIShouldStartEscape( pSoldier ) )
+		return AI_ACTION_NONE;
+
+	INT32 iRescuerRisk = AIPersonalRisk( pSoldier );
+	if ( iRescuerRisk > AIPersonalRiskTolerance( pSoldier ) )
+		return AI_ACTION_NONE;
+
+	SOLDIERTYPE *pBestPatient = NULL;
+	INT32 sBestApproachGrid = NOWHERE;
+	INT32 iBestScore = -100000;
+
+	for ( UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter )
+	{
+		SOLDIERTYPE *pPatient = MercPtrs[iCounter];
+		if ( !pPatient || pPatient == pSoldier || !pPatient->bActive || !pPatient->bInSector ||
+			pPatient->ubBleedoutState != BLEEDOUT_ACTIVE || !IsBleedoutCasualty( pPatient ) ||
+			pPatient->pathing.bLevel != pSoldier->pathing.bLevel || pPatient->ubServiceCount > 0 )
+		{
+			continue;
+		}
+
+		// With only a couple of rescue turns left, moving the casualty is the wrong
+		// trade: leave the direct sprint-and-stabilize attempt to the medic.
+		if ( pPatient->ubBleedoutTurns < 4 )
+			continue;
+
+		if ( pPatient->ubDraggedByID != NOBODY )
+		{
+			SOLDIERTYPE *pOther = MercPtrs[pPatient->ubDraggedByID];
+			if ( pOther && pOther->ubDraggedCasualtyID == pPatient->ubID )
+				continue;
+			pPatient->ubDraggedByID = NOBODY;
+		}
+
+		if ( !AIAvailableMedicForCasualty( pSoldier, pPatient ) )
+			continue;
+
+		INT32 iDistanceToPatient = PythSpacesAway( pSoldier->sGridNo, pPatient->sGridNo );
+		BOOLEAN fSameElement = AISameFireteam( pSoldier, pPatient );
+		if ( !fSameElement && iDistanceToPatient > 3 )
+			continue;
+		if ( iDistanceToPatient > 6 )
+			continue;
+
+		UINT16 usPatientExposure = AIKnownThreatExposure( pSoldier, pPatient->sGridNo, pPatient->pathing.bLevel );
+		if ( usPatientExposure == 0 && !pPatient->aiData.bUnderFire )
+			continue;
+
+		UINT8 ubDirection = 0;
+		INT32 sAdjustedGrid = NOWHERE;
+		INT32 sApproachGrid = FindAdjacentGridEx( pSoldier, pPatient->sGridNo,
+			&ubDirection, &sAdjustedGrid, FALSE, FALSE );
+		if ( TileIsOutOfBounds( sApproachGrid ) )
+			continue;
+
+		INT32 iPathSteps = 1;
+		if ( sApproachGrid != pSoldier->sGridNo )
+		{
+			gubNPCAPBudget = 0;
+			gubNPCDistLimit = 0;
+			iPathSteps = FindBestPath( pSoldier, sApproachGrid, pSoldier->pathing.bLevel,
+				RUNNING, NO_COPYROUTE, PATH_THROUGH_PEOPLE );
+		}
+		if ( iPathSteps == 0 )
+			continue;
+
+		INT32 iPathExposure = 0;
+		INT32 sCheckGrid = pSoldier->sGridNo;
+		for ( INT32 iStep = 0; sApproachGrid != pSoldier->sGridNo &&
+			iStep < iPathSteps && iStep < MAX_PATH_LIST_SIZE; ++iStep )
+		{
+			sCheckGrid = NewGridNo( sCheckGrid, DirectionInc( (UINT8)guiPathingData[iStep] ) );
+			if ( TileIsOutOfBounds( sCheckGrid ) )
+				break;
+
+			if ( AIKnownThreatExposure( pSoldier, sCheckGrid, pSoldier->pathing.bLevel ) > 0 )
+			{
+				if ( InSmokeNearby( sCheckGrid, pSoldier->pathing.bLevel ) )
+					iPathExposure += 1;
+				else
+					iPathExposure += AnyCoverAtSpot( pSoldier, sCheckGrid ) ? 3 : 7;
+			}
+		}
+
+		// A non-medic rescue is never worth crossing a long open killing ground.
+		if ( iPathExposure >= 22 )
+			continue;
+
+		INT32 iUrgency = 120 - 12 * pPatient->ubBleedoutTurns;
+		if ( pPatient->aiData.bUnderFire )
+			iUrgency += 20;
+		if ( fSameElement )
+			iUrgency += 20;
+
+		INT32 iScore = iUrgency - 4 * iDistanceToPatient - iPathExposure - iRescuerRisk / 2;
+		if ( iScore > iBestScore )
+		{
+			iBestScore = iScore;
+			pBestPatient = pPatient;
+			sBestApproachGrid = sApproachGrid;
+		}
+	}
+
+	gubNPCAPBudget = 0;
+	gubNPCDistLimit = 0;
+
+	if ( !pBestPatient || iBestScore < 20 )
+		return AI_ACTION_NONE;
+
+	if ( SpacesAway( pSoldier->sGridNo, pBestPatient->sGridNo ) == 1 )
+	{
+		if ( !pSoldier->StartDraggingBleedoutCasualty( pBestPatient, TRUE ) )
+			return AI_ACTION_NONE;
+
+		INT32 sEvacGrid = FindRetreatSpot( pSoldier );
+		if ( TileIsOutOfBounds( sEvacGrid ) )
+		{
+			pSoldier->StopDraggingBleedoutCasualty();
+			return AI_ACTION_NONE;
+		}
+
+		pSoldier->usUIMovementMode = WALKING;
+		pSoldier->aiData.usActionData = sEvacGrid;
+		return AI_ACTION_GET_CLOSER;
+	}
+
+	pSoldier->usUIMovementMode = RUNNING;
+	pSoldier->aiData.usActionData = sBestApproachGrid;
+	return AI_ACTION_GET_CLOSER;
+}
+
 // Combat medic behaviour for enemy AI.  Unlike autobandage, this runs during a
 // firefight and therefore refuses rescues that would expose the medic to excessive risk.
 // The decision is re-evaluated every turn, so a medic can wait for suppression/smoke
