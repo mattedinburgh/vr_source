@@ -9756,6 +9756,14 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 		if (iDistance > DAY_VISION_RANGE / 2)
 			continue;
 
+		BOOLEAN fSameElement = AISameFireteam(pSoldier, pFriend);
+		if (pSoldier->bTeam == ENEMY_TEAM &&
+			!fSameElement &&
+			iDistance > DAY_VISION_RANGE / 4)
+		{
+			continue;
+		}
+
 		BOOLEAN fCriticalCasualty = pFriend->stats.bLife < OKLIFE && pFriend->bBleeding > 0;
 		BOOLEAN fSevereCasualty = pFriend->stats.bLife < pFriend->stats.bLifeMax / 2 && pFriend->bBleeding > 0;
 		BOOLEAN fPinned = pFriend->aiData.bUnderFire && ShockLevelPercent(pFriend) >= 50;
@@ -9771,6 +9779,8 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 			continue;
 
 		INT32 iValue = 0;
+		if (fSameElement)
+			iValue += 15;
 		if (fCriticalCasualty)
 			iValue += 110;
 		else if (fSevereCasualty)
