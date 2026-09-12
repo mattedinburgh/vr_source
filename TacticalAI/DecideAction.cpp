@@ -1908,22 +1908,20 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 			iChance -= (100 - pSoldier->bBreath);
 
 
-			// A radioed sector contact should not make every distant patrol abandon its post.
-			// Nearby troops react locally. Farther away, only a limited response element
-			// actively investigates; the rest remain a reserve/guard screen until the
-			// fight spreads, they see an alerted friend, or they come under fire.
-			if (gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition &&
-				!GuySawEnemy(pSoldier, SEEN_LAST_TURN) &&
-				!pSoldier->aiData.bUnderFire)
+			// Hearing the same gunshot should not make an entire sector converge on one point.
+			// Troops very close to the sound can react immediately. Beyond that immediate
+			// area, only a fireteam-sized response element actively investigates; other
+			// guards/patrols remain alert in place until the contact spreads to them.
+			if (!GuySawEnemy(pSoldier, SEEN_LAST_TURN) && !pSoldier->aiData.bUnderFire)
 			{
 				INT32 iResponseDistance = PythSpacesAway(pSoldier->sGridNo, sNoiseGridNo);
-				INT32 iLocalResponseRange = __max(8, TACTICAL_RANGE / 2);
+				INT32 iImmediateResponseRange = __max(6, DAY_VISION_RANGE / 4);
 
-				if (iResponseDistance > iLocalResponseRange)
+				if (iResponseDistance > iImmediateResponseRange)
 				{
-					UINT8 ubResponseLimit = 5;
+					UINT8 ubResponseLimit = 4;
 					if (pSoldier->aiData.bOrders == ONCALL || pSoldier->aiData.bOrders == SEEKENEMY)
-						ubResponseLimit = 7;
+						ubResponseLimit = 6;
 
 					UINT8 ubCloserResponders = 0;
 					for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
@@ -1950,7 +1948,9 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 						}
 					}
 
-					INT32 iDistancePenalty = 10 + 2 * (iResponseDistance - iLocalResponseRange);
+					// Distance matters even before a radio call: hearing a shot is evidence,
+					// not an order for every soldier in earshot to sprint to its source.
+					INT32 iDistancePenalty = 10 + 2 * (iResponseDistance - iImmediateResponseRange);
 					iChance -= __min(65, iDistancePenalty);
 
 					switch (pSoldier->aiData.bOrders)
