@@ -302,6 +302,13 @@ enum
 };
 
 BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier);
+// Enemy fireteam coordination.  Fireteams are transient sector-local AI state and
+// deliberately do not alter SOLDIERTYPE/savegame layout.
+UINT8 AIFireteamId(SOLDIERTYPE *pSoldier);
+UINT8 AIFireteamAliveCount(SOLDIERTYPE *pSoldier);
+BOOLEAN AISameFireteam(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend);
+BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, UINT8 ubResponseLimit);
+INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
 UINT8 AIObservedRecentCasualties(SOLDIERTYPE *pSoldier);
 UINT8 AILocalCasualtyPercent(SOLDIERTYPE *pSoldier);
 UINT8 AIFriendlyCasualtyPercent(SOLDIERTYPE *pSoldier);
