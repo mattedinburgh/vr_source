@@ -7153,6 +7153,7 @@ static BOOLEAN AIEligibleWithdrawalCoverer(SOLDIERTYPE *pCandidate, SOLDIERTYPE 
 		pCandidate->pathing.bLevel != pRetreating->pathing.bLevel ||
 		PythSpacesAway(pCandidate->sGridNo, pRetreating->sGridNo) > DAY_VISION_RANGE ||
 		pCandidate->bActionPoints != pCandidate->bInitialActionPoints ||
+		AIDisengagementActive(pCandidate) ||
 		AIEscapeActive(pCandidate) ||
 		!AICheckHasGun(pCandidate) || AIGunAmmo(pCandidate) == 0)
 	{
@@ -7261,6 +7262,7 @@ BOOLEAN AIShouldHoldForWithdrawingFriend(SOLDIERTYPE *pSoldier)
 		pSoldier->bBreathCollapsed ||
 		(pSoldier->usSoldierFlagMask & SOLDIER_POW) ||
 		(pSoldier->flags.uiStatusFlags & SOLDIER_COWERING) ||
+		AIDisengagementActive(pSoldier) ||
 		AIEscapeActive(pSoldier) ||
 		AILastSurvivorPressure(pSoldier))
 	{
