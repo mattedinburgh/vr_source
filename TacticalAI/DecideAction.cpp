@@ -8904,25 +8904,9 @@ INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 						pSoldier->bActionPoints >= GetAPsToCutFence(pSoldier) + GetAPsToLook(pSoldier) &&
 						FindFenceAroundSpot(pSoldier->sGridNo))
 					{
+						// Flanking can exploit a fence only if this soldier actually carries
+						// wirecutters. Legacy Vengeance spawned an undroppable tool here.
 						INT8 bWirecutterSlot = FindWirecutters(pSoldier);
-
-						if (bWirecutterSlot == NO_SLOT)
-						{
-							// try to create item
-							UINT16 usItem = GetWirecutters(WIRECUTTERS);
-							if (usItem > 0)
-							{
-								OBJECTTYPE newobj;
-								CreateItem(usItem, 80 + Random(20), &newobj);
-								newobj.fFlags |= OBJECT_UNDROPPABLE;
-
-								// try to place item in inventory
-								if (AutoPlaceObject(pSoldier, &newobj, FALSE))
-								{
-									bWirecutterSlot = FindWirecutters(pSoldier);
-								}
-							}
-						}
 
 						if (bWirecutterSlot != NO_SLOT)
 						{
@@ -9114,25 +9098,9 @@ INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 						pSoldier->bActionPoints >= GetAPsToCutFence(pSoldier) + GetAPsToLook(pSoldier) &&
 						FindFenceAroundSpot(pSoldier->sGridNo))
 					{
+						// Flanking can exploit a fence only if this soldier actually carries
+						// wirecutters. Legacy Vengeance spawned an undroppable tool here.
 						INT8 bWirecutterSlot = FindWirecutters(pSoldier);
-
-						if (bWirecutterSlot == NO_SLOT)
-						{
-							// try to create item
-							UINT16 usItem = GetWirecutters(WIRECUTTERS);
-							if (usItem > 0)
-							{
-								OBJECTTYPE newobj;
-								CreateItem(usItem, 80 + Random(20), &newobj);
-								newobj.fFlags |= OBJECT_UNDROPPABLE;
-
-								// try to place item in inventory
-								if (AutoPlaceObject(pSoldier, &newobj, FALSE))
-								{
-									bWirecutterSlot = FindWirecutters(pSoldier);
-								}
-							}
-						}
 
 						if (bWirecutterSlot != NO_SLOT)
 						{
