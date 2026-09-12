@@ -1,3 +1,4 @@
+#include <time.h>
 #ifdef PRECOMPILEDHEADERS
 #include "AI All.h"
 #include "sound control.h"
@@ -81,6 +82,9 @@ void UpdateFastForwardMode(SOLDIERTYPE* pSoldier, INT8 bAction);
 extern UINT8 gubElementsOnExplosionQueue;
 
 extern BOOLEAN gfWaitingForTriggerTimer;
+
+// Set whenever AI control begins in TeamTurns/StartNPCAI.
+extern time_t gtTimeSinceMercAIStart;
 
 UINT8 gubAICounter;
 
@@ -619,9 +623,14 @@ void HandleSoldierAI( SOLDIERTYPE *pSoldier ) // FIXME - this function is named 
 
 	if (gfTurnBasedAI)
 	{
-		if ( ( GetJA2Clock() - gTacticalStatus.uiTimeSinceMercAIStart	) > ( (UINT32)gGameExternalOptions.gubDeadLockDelay * 1000 ) && 
-			!gfUIInDeadlock &&
-			_KeyDown(ESC) )
+		const time_t tCurrentTime = time(0);
+		const UINT32 uiElapsedSeconds = (UINT32)(tCurrentTime - gtTimeSinceMercAIStart);
+		const UINT32 uiDeadlockDelay = (UINT32)gGameExternalOptions.gubDeadLockDelay;
+		const BOOLEAN fManualBreak = (uiElapsedSeconds > 10 && _KeyDown(ESC));
+
+		// Use wall-clock time: fast-forward changes the JA2 clock and previously could
+		// make a healthy AI action look deadlocked. Keep ESC as an early manual escape.
+		if ( (uiElapsedSeconds > uiDeadlockDelay || fManualBreak) && !gfUIInDeadlock )
 		{
 			// ATE: Display message that deadlock occurred...
 			LiveMessage( "Breaking Deadlock" );
@@ -679,7 +688,8 @@ void HandleSoldierAI( SOLDIERTYPE *pSoldier ) // FIXME - this function is named 
 		if (pSoldier->aiData.bAction >= FIRST_MOVEMENT_ACTION && pSoldier->aiData.bAction <= LAST_MOVEMENT_ACTION && !pSoldier->flags.fDelayedMovement)
 		{
 			if (pSoldier->pathing.usPathIndex == pSoldier->pathing.usPathDataSize)
-			{				
+			{
+				INT8 bEscapeDirection = NOWHERE;
 				if (!TileIsOutOfBounds(pSoldier->sAbsoluteFinalDestination))
 				{
 					if ( !ACTING_ON_SCHEDULE( pSoldier ) &&  SpacesAway( pSoldier->sGridNo, pSoldier->sAbsoluteFinalDestination ) < 4 )
@@ -720,7 +730,8 @@ void HandleSoldierAI( SOLDIERTYPE *pSoldier ) // FIXME - this function is named 
 					}
 				}
 				// for regular guys still have to check for leaving the map
-				else if (pSoldier->ubQuoteActionID >= QUOTE_ACTION_ID_TRAVERSE_EAST && pSoldier->ubQuoteActionID <= QUOTE_ACTION_ID_TRAVERSE_NORTH)
+				else if (pSoldier->ubQuoteActionID >= QUOTE_ACTION_ID_TRAVERSE_EAST && pSoldier->ubQuoteActionID <= QUOTE_ACTION_ID_TRAVERSE_NORTH &&
+						GridNoOnEdgeOfMap(pSoldier->sGridNo, &bEscapeDirection) && EscapeDirectionIsValid(&bEscapeDirection))
 				{
 					HandleAITacticalTraversal( pSoldier );
 					return;
