@@ -4198,20 +4198,55 @@ static void AISeedEnemyFireteams(void)
 		{
 			INT16 sBestIndex = -1;
 			INT32 iBestDistance = 10000;
+
 			for (UINT16 i = 0; i < usCount; ++i)
 			{
 				if (fAssigned[i])
 					continue;
+
 				SOLDIERTYPE *pCandidate = MercPtrs[ubMembers[i]];
-				INT32 iDistance = PythSpacesAway(pSeed->sGridNo, pCandidate->sGridNo);
-				if (iDistance < iBestDistance)
+				if (!pCandidate)
+					continue;
+
+				// Grow from the current fireteam footprint rather than measuring
+				// every new member only from the original seed. This keeps the
+				// element spatially connected even on irregular deployments.
+				INT32 iCandidateDistance = 10000;
+
+				for (UINT16 j = 0; j < usCount; ++j)
 				{
-					iBestDistance = iDistance;
+					if (!fAssigned[j])
+						continue;
+
+					UINT8 ubAssignedId = ubMembers[j];
+					if (gubAIFireteam[ubAssignedId] != ubFireteam)
+						continue;
+
+					SOLDIERTYPE *pMember = MercPtrs[ubAssignedId];
+					if (!pMember)
+						continue;
+
+					INT32 iDistance = PythSpacesAway(
+						pMember->sGridNo, pCandidate->sGridNo);
+
+					// Same-elevation neighbours are preferred. A roof/ground
+					// combination is still possible when no better cluster fit exists.
+					if (pMember->pathing.bLevel != pCandidate->pathing.bLevel)
+						iDistance += __max(6, DAY_VISION_RANGE / 3);
+
+					iCandidateDistance = __min(iCandidateDistance, iDistance);
+				}
+
+				if (iCandidateDistance < iBestDistance)
+				{
+					iBestDistance = iCandidateDistance;
 					sBestIndex = (INT16)i;
 				}
 			}
+
 			if (sBestIndex < 0)
 				break;
+
 			UINT8 ubId = ubMembers[sBestIndex];
 			fAssigned[sBestIndex] = TRUE;
 			gubAIFireteam[ubId] = ubFireteam;
