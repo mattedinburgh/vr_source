@@ -339,9 +339,9 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			continue;
 		}
 
-		const BOOLEAN fCurrentContact =
-			(bPersonalKnowledge == SEEN_CURRENTLY || bPublicKnowledge == SEEN_CURRENTLY);
 		const BOOLEAN fPersonalStateKnown = (bPersonalKnowledge == SEEN_CURRENTLY);
+		const BOOLEAN fCurrentTeamReport = (bPublicKnowledge == SEEN_CURRENTLY);
+		const BOOLEAN fCurrentContact = fPersonalStateKnown || fCurrentTeamReport;
 		if (fPersonalStateKnown && !ValidOpponent(pSoldier, pOpponent))
 			continue;
 
@@ -376,19 +376,14 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			continue;	// next opponent
 		}
 
-		// Exact fire requires a current personal/public contact. Everything else is
-		// suppression against the believed location.
-		fSuppression = !fCurrentContact;
+		// Only personal current sight permits ordinary aimed fire. A teammate's
+		// current sighting can provide a precise reported tile, but the shooter still
+		// treats it as suppression because he cannot directly observe target movement,
+		// exposure, wounds or stance.
+		fSuppression = !fPersonalStateKnown;
 
 		// determine enemy location
-		if (fSuppression)
-		{
-			// Stale knowledge: use the believed position and deliberately blur it.
-			sTarget = KnownLocation(pSoldier, pOpponent->ubID);
-			bLevel = KnownLevel(pSoldier, pOpponent->ubID);
-			sTarget = RandomizeLocation(sTarget, bLevel, 1, pSoldier);
-		}
-		else if (fPersonalStateKnown)
+		if (fPersonalStateKnown)
 		{
 			// Personal current sight: exact live position/level are legitimate.
 			sTarget = pOpponent->sGridNo;
@@ -396,10 +391,13 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		}
 		else
 		{
-			// Current public/team sight provides an exact reported tile and level, but
-			// does not authorize reading the opponent object's live coordinates.
+			// Team knowledge supplies the believed location. A current team sighting is
+			// precise enough to suppress the reported tile; older/heard information is
+			// deliberately blurred so the AI cannot track an unseen opponent perfectly.
 			sTarget = KnownLocation(pSoldier, pOpponent->ubID);
 			bLevel = KnownLevel(pSoldier, pOpponent->ubID);
+			if (!fCurrentTeamReport)
+				sTarget = RandomizeLocation(sTarget, bLevel, 1, pSoldier);
 		}
 
 		// safety check
@@ -429,7 +427,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 
 		// Static target type is legitimate knowledge. Dynamic wounds/cower/collapse
 		// are deliberately not inspected for a stale suppression contact.
-		if (fSuppression &&
+		if (fSuppression && !fCurrentTeamReport &&
 			Weapon[pSoldier->usAttackingWeapon].ubWeaponType != GUN_LMG &&
 			(pOpponent->IsZombie() || !IS_MERC_BODY_TYPE(pOpponent)))
 		{
