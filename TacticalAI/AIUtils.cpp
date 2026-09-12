@@ -4123,6 +4123,13 @@ static BOOLEAN AIEnemyFireteamEligible(SOLDIERTYPE *pSoldier)
 		!(pSoldier->usSoldierFlagMask & SOLDIER_POW);
 }
 
+static BOOLEAN AIEnemyFixedMissionRole(SOLDIERTYPE *pSoldier)
+{
+	return pSoldier &&
+		(pSoldier->aiData.bOrders == STATIONARY ||
+		 pSoldier->aiData.bOrders == SNIPER);
+}
+
 static void AIResetFireteamsForSector(void)
 {
 	UINT32 uiTurnStamp = guiTurnCnt + 1;
@@ -4243,6 +4250,7 @@ static void AISeedEnemyFireteams(void)
 		UINT8 ubFireteam = gubAINextFireteam++;
 		UINT8 ubSeedId = ubMembers[sSeedIndex];
 		SOLDIERTYPE *pSeed = MercPtrs[ubSeedId];
+		BOOLEAN fSeedFixedMission = AIEnemyFixedMissionRole(pSeed);
 		fAssigned[sSeedIndex] = TRUE;
 		gubAIFireteam[ubSeedId] = ubFireteam;
 		guiAIFireteamIdentity[ubSeedId] = pSeed->uiUniqueSoldierIdValue;
@@ -4319,6 +4327,13 @@ static void AISeedEnemyFireteams(void)
 				// the one that adds a missing support capability. The penalty is
 				// intentionally small so geography remains the primary grouping rule.
 				INT32 iRolePenalty = 0;
+
+				// Keep fixed defenders and mobile responders coherent when geography gives
+				// us a reasonable choice. This is deliberately softer than distance so a
+				// nearby sentry is not assigned to a remote static group merely by role.
+				if (AIEnemyFixedMissionRole(pCandidate) != fSeedFixedMission)
+					iRolePenalty += 8;
+
 				if (fHasLeader && (AICheckIsOfficer(pCandidate) || AICheckIsCommander(pCandidate)))
 					iRolePenalty += 4;
 				if (fHasMedic && AICheckIsMedic(pCandidate))
@@ -4421,6 +4436,43 @@ static INT32 AIFireteamRoleOverlapPenalty(UINT8 ubFireteam, SOLDIERTYPE *pCandid
 	return __min(12, iPenalty);
 }
 
+static INT32 AIFireteamMissionRolePenalty(UINT8 ubFireteam, SOLDIERTYPE *pCandidate)
+{
+	if (ubFireteam == AI_FIRETEAM_NONE || !pCandidate)
+		return 0;
+
+	UINT8 ubFixed = 0;
+	UINT8 ubMobile = 0;
+	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pMember = MercPtrs[iCounter];
+		if (!AIEnemyFireteamEligible(pMember) ||
+			pMember->ubID >= MAX_NUM_SOLDIERS ||
+			guiAIFireteamIdentity[pMember->ubID] != pMember->uiUniqueSoldierIdValue ||
+			gubAIFireteam[pMember->ubID] != ubFireteam)
+		{
+			continue;
+		}
+
+		if (AIEnemyFixedMissionRole(pMember))
+			++ubFixed;
+		else
+			++ubMobile;
+	}
+
+	if (ubFixed == 0 && ubMobile == 0)
+		return 0;
+
+	BOOLEAN fCandidateFixed = AIEnemyFixedMissionRole(pCandidate);
+	if (fCandidateFixed && ubMobile > ubFixed)
+		return 8;
+	if (!fCandidateFixed && ubFixed > ubMobile)
+		return 8;
+
+	return 0;
+}
+
 static void AIEnsureEnemyFireteams(void)
 {
 	AISeedEnemyFireteams();
@@ -4442,6 +4494,7 @@ static void AIEnsureEnemyFireteams(void)
 				continue;
 			INT32 iDistance = AIFireteamJoinDistance(ubTeam, pSoldier);
 			iDistance += AIFireteamRoleOverlapPenalty(ubTeam, pSoldier);
+			iDistance += AIFireteamMissionRolePenalty(ubTeam, pSoldier);
 			if (iDistance < iBest) { iBest = iDistance; ubBest = ubTeam; }
 		}
 		if (ubBest == AI_FIRETEAM_NONE)
