@@ -84,6 +84,14 @@ These were discussed but are not in this install candidate because they require 
 - Bleed-out save layout, full-round countdown and no-return-to-combat stabilization were rechecked.
 - Temporary direct-merge PRs were closed after manual reconciliation.
 
+## Final consolidation audit
+
+- Unique content from `ai/human-tactical-final` was checked against this branch at file-content level; all substantive additions are present or superseded by newer compatible logic.
+- Unique content from `ai/shared-enemy-militia-brain` is fully represented.
+- Unique content from `ai/legacy-core-modernization` is fully represented; apparent Medical.cpp line mismatches were formatting/newer-logic differences, not missing behavior.
+- The recoil auto-weapons divisor uses a backward-compatible read of both the legacy Vengeance key and the newer 1.13 key, intentionally superseding the older single-key implementation.
+- Temporary integration PRs were closed after reconciliation; use only `install/all-2026-09-12`.
+
 ## Build gate
 
 There is no repository CI build configured for this branch. A local Windows Visual Studio **Rebuild Solution** is still required before treating the executable as compiler-verified.
