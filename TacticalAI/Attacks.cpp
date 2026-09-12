@@ -2107,16 +2107,20 @@ void CalcBestStab(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestStab, BOOLEAN fBladeAt
 			ubRawAPCost = 1;
 		}
 
-		// determine if this is a surprise stab (must be next to opponent & unseen)
-		fSurpriseStab = FALSE;		// assume it is not a surprise stab
-
-		// if opponent doesn't see the attacker
-		if (pOpponent->aiData.bOppList[pSoldier->ubID] != SEEN_CURRENTLY)
+		// Surprise melee is based on observable geometry rather than reading the
+		// target's private opponent-list state. Only a genuine rear/rear-diagonal
+		// adjacent attack receives the maximum-CTH surprise treatment.
+		fSurpriseStab = FALSE;
+		if (SpacesAway(pSoldier->sGridNo, pOpponent->sGridNo) == 1)
 		{
-			// and he's only one space away from attacker
-			if (SpacesAway(pSoldier->sGridNo,pOpponent->sGridNo) == 1)
+			UINT8 ubDirToAttacker = AIDirection(pOpponent->sGridNo, pSoldier->sGridNo);
+			UINT8 ubRearDir = gOppositeDirection[pOpponent->ubDirection];
+
+			if (ubDirToAttacker == ubRearDir ||
+				ubDirToAttacker == gOneCDirection[ubRearDir] ||
+				ubDirToAttacker == gOneCCDirection[ubRearDir])
 			{
-				fSurpriseStab = TRUE;	// we got 'im lined up where we want 'im!
+				fSurpriseStab = TRUE;
 			}
 		}
 
