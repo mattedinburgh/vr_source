@@ -165,16 +165,16 @@ void ResetWeaponMode( SOLDIERTYPE * pSoldier )
 //</SB>
 
 // Evaluate shot geometry against what the shooter actually knows.
-// Current contacts use the real target. Stale contacts temporarily virtualize
-// the target at the remembered grid/level in a neutral standing posture, so
-// CTGT cannot leak the opponent object's hidden current location or stance.
+// Personally observed targets use their real stance. Public-only or stale contacts
+// temporarily virtualize the target at the reported grid/level in a neutral standing
+// posture, so CTGT cannot leak hidden current stance/body geometry.
 static UINT8 AIKnownShotChanceToGetThrough(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
-	INT32 sTarget, INT8 bTargetLevel, BOOLEAN fCurrentContact)
+	INT32 sTarget, INT8 bTargetLevel, BOOLEAN fTargetStateKnown)
 {
 	if (!pSoldier || !pOpponent || TileIsOutOfBounds(sTarget))
 		return 0;
 
-	if (fCurrentContact)
+	if (fTargetStateKnown)
 		return AISoldierToSoldierChanceToGetThrough(pSoldier, pOpponent);
 
 	INT32 sRealGridNo = pOpponent->sGridNo;
@@ -375,18 +375,23 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		// determine enemy location
 		if (fSuppression)
 		{
-			// personal/public knowledge
+			// Stale knowledge: use the believed position and deliberately blur it.
 			sTarget = KnownLocation(pSoldier, pOpponent->ubID);
 			bLevel = KnownLevel(pSoldier, pOpponent->ubID);
-			// try to randomize location
 			sTarget = RandomizeLocation(sTarget, bLevel, 1, pSoldier);
-			//DebugShot(pSoldier, String("randomize spot %d", sTarget));
+		}
+		else if (fPersonalStateKnown)
+		{
+			// Personal current sight: exact live position/level are legitimate.
+			sTarget = pOpponent->sGridNo;
+			bLevel = pOpponent->pathing.bLevel;
 		}
 		else
 		{
-			// we know exact enemy location
-			sTarget = pOpponent->sGridNo;
-			bLevel = pOpponent->pathing.bLevel;
+			// Current public/team sight provides an exact reported tile and level, but
+			// does not authorize reading the opponent object's live coordinates.
+			sTarget = KnownLocation(pSoldier, pOpponent->ubID);
+			bLevel = KnownLevel(pSoldier, pOpponent->ubID);
 		}
 
 		// safety check
