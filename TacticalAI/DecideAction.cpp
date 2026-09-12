@@ -2289,9 +2289,11 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 	}
 
 	////////////////////////////////////////////////////////////////////////////
-	// SWITCH TO GREEN: determine if soldier acts as if nothing at all was wrong
+	// SWITCH TO GREEN: only relax once there is no useful reachable evidence.
+	// Legacy Vengeance had a flat 50% chance to forget a valid noise every pass,
+	// which made alerted soldiers oscillate between investigation and idle patrol.
 	////////////////////////////////////////////////////////////////////////////
-	if ((INT16)PreRandom(100) < 50 )
+	if ((TileIsOutOfBounds(sNoiseGridNo) || !fReachable) && (INT16)PreRandom(100) < 50 )
 	{
 		// Skip YELLOW until new situation, 15% extra chance to do GREEN actions
 		pSoldier->aiData.bBypassToGreen = 15;
