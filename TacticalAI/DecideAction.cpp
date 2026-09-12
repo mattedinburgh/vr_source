@@ -5864,52 +5864,10 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		}
 	}
 
-	UINT8 bMinRangeChangeDesire = 4;
-	if( ubBestAttackAction == AI_ACTION_FIRE_GUN &&
-		( CoweringShockLevel(MercPtrs[BestAttack.ubOpponent]) || 
-		BestAttack.ubChanceToReallyHit == 1 ) )
-	{
-		bMinRangeChangeDesire = 3;
-	}
-
-	// sevenfm: decide to advance
-	if( pSoldier->bActionPoints == pSoldier->bInitialActionPoints &&
-		ubBestAttackAction == AI_ACTION_FIRE_GUN && 
-		pSoldier->aiData.bShock < 2 * RangeChangeDesire(pSoldier) &&
-		pSoldier->stats.bLife > pSoldier->stats.bLifeMax / 2 && 
-		(20 + MercPtrs[BestAttack.ubOpponent]->aiData.bShock) > BestAttack.ubChanceToReallyHit &&
-		(	
-			PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) > usRange / CELL_X_SIZE ||
-			CoweringShockLevel(MercPtrs[BestAttack.ubOpponent]) ||
-			CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE/4) > 0 ||
-			BestAttack.ubChanceToReallyHit == 1 
-		) && 
-		(	
-			RangeChangeDesire(pSoldier) >= 4 ||
-			RangeChangeDesire(pSoldier) >= 3 &&
-			(	
-				CoweringShockLevel(MercPtrs[BestAttack.ubOpponent]) ||
-				BestAttack.ubChanceToReallyHit == 1 ||
-				pSoldier->aiData.bLastAttackHit 
-			) 
-		) &&
-		ubCanMove &&
-		pSoldier->aiData.bOrders > ONGUARD &&
-		pSoldier->aiData.bOrders != SNIPER &&
-		!gfHiddenInterrupt &&
-		!(pSoldier->flags.uiStatusFlags & SOLDIER_BOXER) )
-	{
-		if( PreRandom( 20 + MercPtrs[BestAttack.ubOpponent]->aiData.bShock ) > BestAttack.ubChanceToReallyHit )
-		{
-			fAllowCoverCheck = TRUE;
-		}		
-		if ( PreRandom( MercPtrs[BestAttack.ubOpponent]->aiData.bShock + CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE/4) ) > BestAttack.ubChanceToReallyHit )
-		{
-			DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"DecideActionBlack: can't hit so screw the attack");
-			// screw the attack!
-			ubBestAttackAction = AI_ACTION_NONE;
-		}
-	}
+	// Legacy Vengeance had a second "decide to advance" block here that never
+	// actually moved. It randomly discarded a valid shot or enabled cover based
+	// on target shock and nearby-friend count. Real movement is handled later by
+	// the supported GET_CLOSER logic; attack-vs-cover is evaluated below.
 
 	// sevenfm: allow to take cover
 	if ((pSoldier->bActionPoints == pSoldier->bInitialActionPoints || pSoldier->usSoldierFlagMask2 & SOLDIER_ATTACKED_THIS_TURN) &&
