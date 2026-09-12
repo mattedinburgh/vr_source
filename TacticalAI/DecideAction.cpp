@@ -3309,6 +3309,15 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			}
 		}
 	}
+	// A badly bleeding soldier stabilizes himself first if contact has broken and
+	// his current position is protected enough to spend AP on first aid.
+	if (AICombatTeam(pSoldier))
+	{
+		INT8 bSelfAidAction = DecideEmergencySelfAid(pSoldier);
+		if (bSelfAidAction != AI_ACTION_NONE)
+			return bSelfAidAction;
+	}
+
 
 	// Combat medics prioritize saving viable casualties, but only when the rescue
 	// passes the medic's personal-risk and route-exposure checks.
@@ -5068,6 +5077,14 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 					return(AI_ACTION_WITHDRAW);
 				}
 			}
+			// A badly bleeding soldier stabilizes himself first during a protected lull.
+			if (AICombatTeam(pSoldier))
+			{
+				INT8 bSelfAidAction = DecideEmergencySelfAid(pSoldier);
+				if (bSelfAidAction != AI_ACTION_NONE)
+					return bSelfAidAction;
+			}
+
 
 			// Combat medic rescue is considered before ordinary offensive behaviour.
 			// The rescue routine itself rejects suicidal routes and over-risked medics.
