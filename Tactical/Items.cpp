@@ -14475,6 +14475,14 @@ UINT8 AllowedAimingLevelsNCTH( SOLDIERTYPE *pSoldier, INT32 sGridNo )
 
 UINT8 AllowedAimingLevels(SOLDIERTYPE * pSoldier, INT32 sGridNo)
 {
+	// Hand-thrown grenades/items can be deliberately aimed for up to four clicks.
+	// Handle them before NCTH/OCTH firearm logic, which assumes a Weapon[] entry.
+	if ( pSoldier != NULL && pSoldier->inv[HANDPOS].exists() &&
+		 ( Item[pSoldier->inv[HANDPOS].usItem].usItemClass & ( IC_GRENADE | IC_THROWN ) ) )
+	{
+		return 4;
+	}
+
 	if(UsingNewCTHSystem() == true)
 		return AllowedAimingLevelsNCTH(pSoldier, sGridNo);
 
