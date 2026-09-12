@@ -5979,7 +5979,7 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 		}
 	}
 	// marke added one 'or' for explosive ammo. variation of: AmmoTypes[this->inv[this->ubAttackingHand ][0]->data.gun.ubGunAmmoType].explosionSize > 1
-	//  extracting attacker´s ammo type
+	//  extracting attackerÂ´s ammo type
 	else if ( Item[ usWeaponIndex ].usItemClass & IC_EXPLOSV || AmmoTypes[MercPtrs[ubAttackerID]->inv[MercPtrs[ubAttackerID]->ubAttackingHand ][0]->data.gun.ubGunAmmoType].explosionSize > 1)
 	{
 		INT8 bDeafValue;
@@ -13414,15 +13414,31 @@ void SOLDIERTYPE::HaultSoldierFromSighting( BOOLEAN fFromSightingEnemy )
 	// OK, check if we were going to throw something, and give it back if so!
 	if ( this->pTempObject != NULL && fFromSightingEnemy )
 	{
-		// Place it back into inv....
-		AutoPlaceObject( this, this->pTempObject, FALSE );
+		// Current 1.13 fix: if a throw is interrupted by spotting, return the armed
+		// item to the hand when possible instead of silently auto-placing it elsewhere.
+		if ( this->pThrowParams != NULL && this->pThrowParams->ubActionCode == THROW_ARM_ITEM )
+		{
+			if ( !this->inv[HANDPOS].exists() )
+			{
+				if ( !PlaceObject( this, HANDPOS, this->pTempObject ) )
+				{
+					AutoPlaceObject( this, this->pTempObject, FALSE );
+				}
+			}
+			else
+			{
+				AutoPlaceObject( this, this->pTempObject, FALSE );
+			}
+		}
+		else
+		{
+			// Non-armed temporary objects retain the original inventory behaviour.
+			AutoPlaceObject( this, this->pTempObject, FALSE );
+		}
 
 		//AXP 25.03.2007: Not needed anymore, grenade costs are only deducted on throwing the object
 		//AXP 24.03.2007: Give APs back if we wanted to throw grenade, but interrupt/spotting occured
-		//if ( this->pThrowParams->ubActionCode == THROW_ARM_ITEM )
-		//{
-		//	DeductPoints( this, -MinAPsToAttack( this, this->sTargetGridNo, FALSE ), 0 );
-		//}
+		//DeductPoints( this, -MinAPsToAttack( this, this->sTargetGridNo, FALSE ), 0 );
 
 		OBJECTTYPE::DeleteMe( &this->pTempObject );
 		this->usPendingAnimation  = NO_PENDING_ANIMATION;
