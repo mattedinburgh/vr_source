@@ -156,6 +156,14 @@ void CallEldinTo( INT32 sGridNo )
 
 INT32 MostImportantNoiseHeard( SOLDIERTYPE *pSoldier, INT32 *piRetValue, BOOLEAN * pfClimbingNecessary, BOOLEAN * pfReachable )
 {
+	// Always initialize optional outputs. Several legacy callers reuse these flags
+	// across decision branches, and the old implementation left pfReachable
+	// undefined when no useful noise existed.
+	if ( pfClimbingNecessary )
+		*pfClimbingNecessary = FALSE;
+	if ( pfReachable )
+		*pfReachable = FALSE;
+
 	UINT32 uiLoop;
 	INT8 * pbPersOL, * pbPublOL;
 	INT32 *psLastLoc,*psNoiseGridNo;
@@ -318,7 +326,9 @@ INT32 MostImportantNoiseHeard( SOLDIERTYPE *pSoldier, INT32 *piRetValue, BOOLEAN
 			// any other combo uses the default of ubRoom == 0, set above
 			if ( InARoom( pSoldier->aiData.sPatrolGrid[0], &usRoom ) )
 			{
-				if ( !InARoom( pSoldier->aiData.sPatrolGrid[0], &usNewRoom ) || usRoom != usNewRoom )
+				// Compare the patrol room with the actual noise destination. The
+				// legacy code accidentally tested the patrol tile twice.
+				if ( !InARoom( sBestGridNo, &usNewRoom ) || usRoom != usNewRoom )
 				{
 					*pfReachable = FALSE;
 				}
