@@ -1803,7 +1803,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 				if ( EXPLOSIVE_GUN( usInHand ) )
 				{
 					ubRawAPCost = MinAPsToShootOrStab( pSoldier, sGridNo,ubMaxPossibleAimTime,FALSE);
-					ubChanceToHit = (UINT8) AICalcChanceToHitGun(pSoldier, sGridNo, ubMaxPossibleAimTime, AIM_SHOT_TORSO, pOpponent->pathing.bLevel, STANDING);//dnl ch59 130813
+					ubChanceToHit = (UINT8) AICalcChanceToHitGun(pSoldier, sGridNo, ubMaxPossibleAimTime, AIM_SHOT_TORSO, bOpponentLevel[ubLoop], STANDING);//dnl ch59 130813
 //SendFmtMsg("CalcBestThrow=%d APs=%d mat=%d gno=%d  EXPGUN!!!", ubChanceToHit, ubRawAPCost, ubMaxPossibleAimTime, sGridNo);
 				}
 				else
