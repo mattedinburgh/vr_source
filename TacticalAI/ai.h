@@ -501,6 +501,7 @@ UINT8 CountTeamUnderAttack(INT8 bTeam, INT32 sGridNo, INT16 sDistance);
 INT32 FindAdvanceSpot(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bAction, UINT8 ubType, BOOLEAN fUnlimited);
 INT32 FindRetreatSpot(SOLDIERTYPE *pSoldier);
 BOOLEAN FindObstacleNearSpot(INT32 sSpot, INT8 bLevel);
+BOOLEAN FindNearbyExplosiveStructure(INT32 sSpot, INT8 bLevel);
 UINT8 CountObstaclesNearSpot(INT32 sSpot, INT8 bLevel);
 BOOLEAN FindShadowAtSpot(INT32 sSpot, INT8 bLevel);
 BOOLEAN EnemyCanAttackSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel);
