@@ -806,8 +806,10 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 			pSoldier->ubPreviousAttackerID == pOpponent->ubID &&
 			(*pbPersOL == SEEN_CURRENTLY || *pbPublOL == SEEN_CURRENTLY))
 		{
-			sThreatLoc = pOpponent->sGridNo;
-			Threat[uiThreatCnt].bLevel = pOpponent->pathing.bLevel;
+			// Current personal/public contact makes the reported position exact, but a
+			// public-only sighting must still come from the knowledge tables.
+			sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
+			Threat[uiThreatCnt].bLevel = KnownLevel(pSoldier, pOpponent->ubID);
 			iThreatCertainty = ThreatPercent[SEEN_CURRENTLY - OLDEST_HEARD_VALUE];
 		}
 		else
