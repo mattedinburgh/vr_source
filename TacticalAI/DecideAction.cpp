@@ -249,18 +249,21 @@ static void AIEvaluateLocalResponseNeed(
 static UINT8 AIEnemyResponseLimitForContact(
 	SOLDIERTYPE *pSoldier, INT32 sContactSpot, INT32 *piReinforcementUrgency)
 {
-	// Doctrine is the baseline amount of mobile force this type of unit is willing
-	// to commit.  Contact-local evidence may raise that budget in later waves.
-	UINT8 ubDoctrineBaseline = AIDoctrineResponseLimit(pSoldier);
+	// The response budget belongs to the contact, not to whichever individual
+	// responder happens to be taking his AI turn.  A responder's orders still
+	// affect his willingness to move below, but cannot give two members of the
+	// same fireteam different release budgets.
+	const UINT8 ubDefaultResponse = 4;
 	if (piReinforcementUrgency)
 		*piReinforcementUrgency = 0;
 
 	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM ||
 		TileIsOutOfBounds(sContactSpot) ||
 		!gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition)
-		return ubDoctrineBaseline;
+		return ubDefaultResponse;
 
 	BOOLEAN fLocalEngagement = FALSE;
+	SOLDIERTYPE *pResponseAnchor = NULL;
 	UINT8 ubPerceivedEnemies = 0;
 	UINT8 ubDesiredResponse = 0;
 	INT32 iUrgency = 0;
@@ -290,9 +293,9 @@ static UINT8 AIEnemyResponseLimitForContact(
 		AIEvaluateLocalResponseNeed(
 			pEngaged, &ubElementEnemies, &ubElementDesired, &iElementUrgency);
 
-		// Keep force ratio, casualty state and rout state from the same local element.
-		// The old aggregation could combine the strongest contact seen by one group
-		// with the losing/casualty state of another, producing distorted QRF sizes.
+		// Keep force ratio, casualty state, rout state and doctrine from the same
+		// local element.  This makes the response decision deterministic for every
+		// potential responder evaluating the same contact.
 		if (!fLocalEngagement ||
 			ubElementDesired > ubDesiredResponse ||
 			(ubElementDesired == ubDesiredResponse && iElementUrgency > iUrgency) ||
@@ -300,6 +303,7 @@ static UINT8 AIEnemyResponseLimitForContact(
 			 iEngagedDistance < iBestDistance))
 		{
 			fLocalEngagement = TRUE;
+			pResponseAnchor = pEngaged;
 			ubPerceivedEnemies = ubElementEnemies;
 			ubDesiredResponse = ubElementDesired;
 			iUrgency = iElementUrgency;
@@ -307,8 +311,8 @@ static UINT8 AIEnemyResponseLimitForContact(
 		}
 	}
 
-	if (!fLocalEngagement)
-		return ubDoctrineBaseline;
+	if (!fLocalEngagement || !pResponseAnchor)
+		return ubDefaultResponse;
 
 	if (piReinforcementUrgency)
 		*piReinforcementUrgency = iUrgency;
@@ -327,12 +331,21 @@ static UINT8 AIEnemyResponseLimitForContact(
 	UINT8 ubWaveCap = (UINT8)__min((INT32)ubDesiredResponse,
 		(INT32)ubInitialWave + 2 * (INT32)uiElapsedTurns);
 
-	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+	// Doctrine belongs to the element actually in contact.  Individual QRF members
+	// may have different orders/classes, but those differences must not split a
+	// fireteam into contradictory release/hold decisions.
+	UINT8 ubDoctrineBaseline = AIDoctrineResponseLimit(pResponseAnchor);
+	UINT8 ubDoctrine = AIGetDoctrineProfile(pResponseAnchor);
 	if (ubDoctrine == AI_DOCTRINE_SECURITY &&
-		pSoldier->aiData.bOrders != ONCALL && pSoldier->aiData.bOrders != SEEKENEMY)
+		pResponseAnchor->aiData.bOrders != ONCALL &&
+		pResponseAnchor->aiData.bOrders != SEEKENEMY)
+	{
 		ubWaveCap = __min((UINT8)3, ubWaveCap);
+	}
 	else if (ubDoctrine == AI_DOCTRINE_ELITE_GUARD)
+	{
 		ubWaveCap = __min((UINT8)5, ubWaveCap);
+	}
 
 	return __max(ubDoctrineBaseline, ubWaveCap);
 }
