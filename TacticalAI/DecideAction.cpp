@@ -3239,7 +3239,9 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		INT32 sWithdrawalThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
 		if (!TileIsOutOfBounds(sWithdrawalThreat))
 		{
-			pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, sWithdrawalThreat, AI_ACTION_WITHDRAW);
+			pSoldier->aiData.usActionData = FindRetreatSpot(pSoldier);
+			if (TileIsOutOfBounds(pSoldier->aiData.usActionData))
+				pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, sWithdrawalThreat, AI_ACTION_WITHDRAW);
 			if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
 			{
 				return(AI_ACTION_WITHDRAW);
@@ -4979,7 +4981,9 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				 CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0) &&
 				!TileIsOutOfBounds(sClosestOpponent))
 			{
-				pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, sClosestOpponent, AI_ACTION_WITHDRAW);
+				pSoldier->aiData.usActionData = FindRetreatSpot(pSoldier);
+				if (TileIsOutOfBounds(pSoldier->aiData.usActionData))
+					pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, sClosestOpponent, AI_ACTION_WITHDRAW);
 				if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
 				{
 					return(AI_ACTION_WITHDRAW);
@@ -10537,7 +10541,9 @@ INT8 DecideDisengagementAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
 	INT32 iCurrentSupport = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2);
 
-	INT32 sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
+	INT32 sFallback = FindRetreatSpot(pSoldier);
+	if (TileIsOutOfBounds(sFallback))
+		sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
 	if (!TileIsOutOfBounds(sFallback))
 	{
 		UINT16 usFallbackExposure = AIKnownThreatExposure(pSoldier, sFallback, pSoldier->pathing.bLevel);
@@ -10581,7 +10587,9 @@ INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (TileIsOutOfBounds(sThreat))
 		return AI_ACTION_NONE;
 
-	INT32 sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
+	INT32 sFallback = FindRetreatSpot(pSoldier);
+	if (TileIsOutOfBounds(sFallback))
+		sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
 	if (TileIsOutOfBounds(sFallback))
 		return AI_ACTION_NONE;
 
@@ -10642,7 +10650,9 @@ INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	// sector; it simply increases separation while preferring cover and support.
 	if (pSoldier->aiData.bOrders != STATIONARY)
 	{
-		INT32 sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
+		INT32 sFallback = FindRetreatSpot(pSoldier);
+	if (TileIsOutOfBounds(sFallback))
+		sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
 		if (!TileIsOutOfBounds(sFallback))
 		{
 			UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
