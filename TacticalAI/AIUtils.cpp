@@ -5787,6 +5787,20 @@ BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier)
 		return FALSE;
 	}
 
+	// A soldier with a live personal contact from a defensible firing position
+	// should normally exploit that position before making a generic fallback move.
+	// This prevents the higher-level pressure model from pre-empting a good shot
+	// simply because the wider local fight is deteriorating.
+	if (pSoldier->aiData.bOppCnt > 0 &&
+		!pSoldier->aiData.bUnderFire &&
+		AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) &&
+		AILocalStress(pSoldier) < 30 &&
+		AIPersonalRisk(pSoldier) + 10 < AIPersonalRiskTolerance(pSoldier) &&
+		AIEngagementRangeModifier(pSoldier, sThreat) >= 0)
+	{
+		return FALSE;
+	}
+
 	INT32 iPressure = 0;
 	INT8 bSituation = AIBattleSituation(pSoldier);
 
