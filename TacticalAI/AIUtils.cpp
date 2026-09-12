@@ -4373,9 +4373,38 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (iBest <= __max(8, DAY_VISION_RANGE / 2))
 		return AI_ACTION_NONE;
 
-	pSoldier->aiData.usActionData = GoAsFarAsPossibleTowards(pSoldier, pAnchor->sGridNo, AI_ACTION_SEEK_FRIEND);
-	if (TileIsOutOfBounds(pSoldier->aiData.usActionData))
+	INT8 bReserveAP = fEngagedAnchor ?
+		(GetAPsCrouch(pSoldier, TRUE) + GetAPsToLook(pSoldier)) : 0;
+	UINT8 ubFlags = fEngagedAnchor ? FLAG_CAUTIOUS : 0;
+
+	pSoldier->aiData.usActionData = InternalGoAsFarAsPossibleTowards(
+		pSoldier, pAnchor->sGridNo, bReserveAP, AI_ACTION_SEEK_FRIEND, ubFlags);
+
+	if (TileIsOutOfBounds(pSoldier->aiData.usActionData) ||
+		pSoldier->aiData.usActionData == pSoldier->sGridNo)
+	{
 		return AI_ACTION_NONE;
+	}
+
+	if (!CheckNPCDestination(pSoldier, pSoldier->aiData.usActionData))
+		return AI_ACTION_NONE;
+
+	if (fEngagedAnchor)
+	{
+		UINT16 usCurrentExposure = AIKnownThreatExposure(
+			pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+		UINT16 usMoveExposure = AIKnownThreatExposure(
+			pSoldier, pSoldier->aiData.usActionData, pSoldier->pathing.bLevel);
+
+		if (usMoveExposure > usCurrentExposure + 150 &&
+			!AnyCoverAtSpot(pSoldier, pSoldier->aiData.usActionData))
+		{
+			return AI_ACTION_NONE;
+		}
+
+		pSoldier->aiData.fAIFlags |= AI_CAUTIOUS;
+	}
+
 	return AI_ACTION_SEEK_FRIEND;
 }
 
