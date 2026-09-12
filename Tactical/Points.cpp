@@ -1666,8 +1666,15 @@ INT16 CalcTotalAPsToAttack( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubAddTur
 		}
 	}
 
+	// Aimed hand throws: base throw cost plus normal aim-click APs.  Keep this
+	// separate from firearm aiming so grenades never inherit scope/raise-gun costs.
+	if ( uiItemClass & ( IC_GRENADE | IC_THROWN ) )
+	{
+		sAPCost = MinAPsToThrow( pSoldier, sGridNo, ubAddTurningCost );
+		sAPCost += CalcAPCostForThrowAiming( (INT8)bAimTime );
+	}
 	//ATE: HERE, need to calculate APs!
-	if ( uiItemClass & IC_EXPLOSV )
+	else if ( uiItemClass & IC_EXPLOSV )
 	{
 		sAPCost = MinAPsToAttack( pSoldier, sGridNo, ubAddTurningCost, bAimTime, 0 );
 
@@ -3918,6 +3925,21 @@ INT16 GetAPsToJumpOver( SOLDIERTYPE *pSoldier )
 		return(GetAPsToChangeStance(pSoldier, ANIM_STAND) + max(1, (INT16)(((FLOAT)APBPConstants[AP_JUMP_OVER] * (FLOAT)(100 - gSkillTraitValues.ubMAAPsClimbOrJumpReduction * NUM_SKILL_TRAITS(pSoldier, MARTIAL_ARTS_NT)) / 100.0f) + 0.5f)));
 	else
 		return(	GetAPsToChangeStance( pSoldier, ANIM_STAND ) + APBPConstants[AP_JUMP_OVER] );
+}
+
+// Aimed hand throws deliberately use a small, transparent AP model.  Unlike gun aiming,
+// there is no weapon-ready, scope or raise-gun surcharge: each aim level costs one normal
+// aim click.  Four levels is the hard gameplay cap used by AllowedAimingLevels().
+INT16 CalcAPCostForThrowAiming( INT8 bAimTime )
+{
+	INT16 sAimLevels = bAimTime;
+
+	if ( sAimLevels < 0 )
+		sAimLevels = 0;
+	else if ( sAimLevels > 4 )
+		sAimLevels = 4;
+
+	return (INT16)( sAimLevels * APBPConstants[AP_CLICK_AIM] );
 }
 
 // HEADROCK HAM 3.6: Calculate the actual AP cost to add this many Extra Aiming levels, taking into account
