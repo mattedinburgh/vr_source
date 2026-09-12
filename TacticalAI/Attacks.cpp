@@ -1067,6 +1067,13 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 	// sevenfm: limit ubSafetyMargin in case it is set too high in XML
 	ubSafetyMargin = min(ubSafetyMargin, TACTICAL_RANGE / 2);
 
+	// Flares are a night illumination tool. Legacy Vengeance could spend them in
+	// daylight even though they add no meaningful tactical value there.
+	if (usGrenade != NOTHING && Item[usGrenade].flare && !NightLight())
+	{
+		return;
+	}
+
 	ubDiff = SoldierDifficultyLevel( pSoldier );
 
 	// make a list of tiles one's friends are positioned in
