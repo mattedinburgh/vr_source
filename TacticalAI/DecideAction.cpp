@@ -8539,6 +8539,7 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		{
 			SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 			if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+				!AISameFireteam(pSoldier, pFriend) ||
 				pFriend->stats.bLife < OKLIFE || !pFriend->IsFlanking() ||
 				TileIsOutOfBounds(pFriend->lastFlankSpot) ||
 				PythSpacesAway(pFriend->lastFlankSpot, sClosestDisturbance) > TACTICAL_RANGE / 2)
