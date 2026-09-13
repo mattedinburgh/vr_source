@@ -504,10 +504,21 @@ INT32 GetAvailableWorkForceForMineForPlayer( INT8 bMineIndex )
 		return ( 0 );
 	}
 
-	// until the player contacts the head miner, production in mine ceases if in player's control
-	if ( !gMineStatus[ bMineIndex ].fSpokeToHeadMiner)
+	// A living/present head miner still requires the normal takeover conversation.
+	// If the assigned NPC is dead or missing, the no-foreman penalty handles the
+	// reduced efficiency instead of hard-locking production at zero.
+	if ( !gMineStatus[ bMineIndex ].fSpokeToHeadMiner )
 	{
-		return ( 0 );
+		UINT16 usMinerProfile = GetHeadMinerProfileIdForMine( bMineIndex );
+		if ( usMinerProfile != (UINT16)-1 )
+		{
+			MERCPROFILESTRUCT *pMiner = &( gMercProfiles[ usMinerProfile ] );
+			if ( pMiner->bLife >= OKLIFE && pMiner->bSectorZ == 0 &&
+				GetMineIndexForSector( pMiner->sSectorX, pMiner->sSectorY ) == bMineIndex )
+			{
+				return ( 0 );
+			}
+		}
 	}
 
 
@@ -856,24 +867,29 @@ BOOLEAN IsThereAMineInThisSector( INT16 sX, INT16 sY )
 
 BOOLEAN PlayerControlsMine(INT8 bMineIndex)
 {
-	// a value of TRUE is from the enemy's point of view
-	//if (StrategicMap[( gMineLocation[ bMineIndex ].sSectorX ) + ( MAP_WORLD_X * ( gMineLocation[ bMineIndex ].sSectorY ) )].fEnemyControlled == TRUE )
 	if (StrategicMap[( gMineStatus[ bMineIndex ].sSectorX ) + ( MAP_WORLD_X * ( gMineStatus[ bMineIndex ].sSectorY ) )].fEnemyControlled == TRUE )
 		return(FALSE);
-	else
-	{
-		// player only controls the actual mine after he has made arrangements to do so with the head miner there
-		if (gMineStatus[ bMineIndex ].fSpokeToHeadMiner)
-		{
-			return(TRUE);
-		}
-		else
-		{
-			return(FALSE);
-		}
-	}
-}
 
+	if ( gMineStatus[ bMineIndex ].fSpokeToHeadMiner )
+		return(TRUE);
+
+	// VR allows mines and oil rigs to operate without a foreman at the configured
+	// MINE_NO_FOREMAN_PENALTY. If the assigned NPC foreman is dead, absent or no
+	// longer at this mine, do not leave the liberated site permanently at zero income.
+	UINT16 usMinerProfile = GetHeadMinerProfileIdForMine( bMineIndex );
+	if ( usMinerProfile == (UINT16)-1 )
+		return(TRUE);
+
+	MERCPROFILESTRUCT *pMiner = &( gMercProfiles[ usMinerProfile ] );
+	if ( pMiner->bLife < OKLIFE || pMiner->bSectorZ != 0 ||
+		GetMineIndexForSector( pMiner->sSectorX, pMiner->sSectorY ) != bMineIndex )
+	{
+		return(TRUE);
+	}
+
+	// A living foreman who is present still requires the normal takeover conversation.
+	return(FALSE);
+}
 
 BOOLEAN SaveMineStatusToSaveGameFile( HWFILE hFile )
 {
