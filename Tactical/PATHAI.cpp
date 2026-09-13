@@ -1391,6 +1391,13 @@ INT16 AStarPathfinder::CalcAP(int const terrainCost, UINT8 const direction)
 		movementModeToUseForAPs = WALKING;
 	}
 
+	// Casualty extraction is always walking. Match the real ActionPointCost()
+	// path so path previews, AI planning and actual AP deduction stay identical.
+	if ( pSoldier->IsDraggingBleedoutCasualty() )
+	{
+		movementModeToUseForAPs = WALKING;
+	}
+
 	// adjust AP cost for movement mode
 	switch( movementModeToUseForAPs )
 	{
