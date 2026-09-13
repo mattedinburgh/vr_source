@@ -531,7 +531,8 @@ INT8 DecideCombatCasualtyEvacuation( SOLDIERTYPE *pSoldier )
 
 			if ( pOther && pOther->ubDraggedCasualtyID == pPatient->ubID )
 				pOther->StopDraggingBleedoutCasualty();
-			pPatient->ubDraggedByID = NOBODY;
+			else
+				pPatient->ubDraggedByID = NOBODY;
 		}
 
 		// Extraction has independent value: active bleed-out is stabilized on
@@ -871,10 +872,16 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 		if (pPatient->ubDraggedByID != NOBODY)
 		{
 			SOLDIERTYPE *pRescuer = MercPtrs[pPatient->ubDraggedByID];
-			if (pRescuer && pRescuer->ubDraggedCasualtyID == pPatient->ubID &&
-				pRescuer->IsDraggingBleedoutCasualty())
-				continue;
-			pPatient->ubDraggedByID = NOBODY;
+			if (pRescuer && pRescuer->ubDraggedCasualtyID == pPatient->ubID)
+			{
+				if (pRescuer->IsDraggingBleedoutCasualty())
+					continue;
+				pRescuer->StopDraggingBleedoutCasualty();
+			}
+			else
+			{
+				pPatient->ubDraggedByID = NOBODY;
+			}
 		}
 
 		INT32 iUrgency = 30;
