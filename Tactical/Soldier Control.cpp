@@ -9841,6 +9841,14 @@ BOOLEAN IsCarryableLivingCasualty( SOLDIERTYPE *pSoldier )
 		return FALSE;
 	}
 
+	// Share the same person-drag body restrictions as current 1.13. This keeps
+	// player input, AI extraction, reload validation and ongoing drag state aligned.
+	if ( pSoldier->ubBodyType >= COW || pSoldier->ubBodyType == QUEENMONSTER ||
+		(pSoldier->flags.uiStatusFlags & (SOLDIER_VEHICLE | SOLDIER_ROBOT)) )
+	{
+		return FALSE;
+	}
+
 	if ( IsBleedoutCasualty( pSoldier ) )
 		return TRUE;
 
@@ -9888,6 +9896,9 @@ void SOLDIERTYPE::BreakWindow( void )
 	if ( !CanBreakWindow() )
 		return;
 
+	if ( this->IsDraggingBleedoutCasualty() )
+		this->StopDraggingBleedoutCasualty();
+
 	this->usAttackingWeapon = this->inv[ HANDPOS ].usItem;
 	this->aiData.bAction = AI_ACTION_KNIFE_STAB;
 	this->aiData.usActionData = this->sGridNo;
@@ -9915,6 +9926,19 @@ BOOLEAN SOLDIERTYPE::IsDraggingBleedoutCasualty( void )
 		pCasualty->pathing.bLevel != this->pathing.bLevel || !IsCarryableLivingCasualty( pCasualty ) ||
 		pCasualty->ubServiceCount > 0 || PythSpacesAway( this->sGridNo, pCasualty->sGridNo ) > 2 )
 		return FALSE;
+
+	// When the pair is in its normal adjacent formation, continuously revalidate
+	// the barrier between them. This mirrors 1.13's CanDragPerson() behaviour and
+	// prevents a newly closed door or changed structure from preserving a drag.
+	if ( SpacesAway( this->sGridNo, pCasualty->sGridNo ) == 1 )
+	{
+		UINT8 ubDragDirection = AIDirection( this->sGridNo, pCasualty->sGridNo );
+		if ( ubDragDirection == DIRECTION_IRRELEVANT ||
+			gubWorldMovementCosts[pCasualty->sGridNo][ubDragDirection][this->pathing.bLevel] >= TRAVELCOST_BLOCKED )
+		{
+			return FALSE;
+		}
+	}
 
 	return TRUE;
 }
