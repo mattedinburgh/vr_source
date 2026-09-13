@@ -7,6 +7,8 @@
 	#include "Random.h"
 	#include "Items.h"
 	#include "Item Types.h"
+	#include "Inventory Choosing.h"
+	#include "GameSettings.h"
 #endif
 
 #include "Enemy Loadout Planner.h"
@@ -1343,6 +1345,165 @@ INT32 ScoreEnemyLBEForPlan(
 	iScore += __min((INT32)8, (INT32)Item[usLBEItem].ubCoolness);
 
 	return iScore;
+}
+
+static INT8 EnemyLoadoutPoolClass(INT8 bSoldierClass)
+{
+	if ( bSoldierClass >= SOLDIER_GUN_CHOICE_SELECTIONS ||
+		 bSoldierClass < SOLDIER_CLASS_NONE ||
+		 !gGameExternalOptions.fSoldierClassSpecificItemTables )
+	{
+		return SOLDIER_CLASS_NONE;
+	}
+
+	return bSoldierClass;
+}
+
+static BOOLEAN EnemyAttachmentIsDefaultOnBaseItem(UINT16 usBaseItem, UINT16 usAttachment)
+{
+	if ( usBaseItem == 0 || usAttachment == 0 )
+		return FALSE;
+
+	for (UINT8 i = 0; i < MAX_DEFAULT_ATTACHMENTS; ++i)
+	{
+		if ( Item[usBaseItem].defaultattachments[i] == 0 )
+			break;
+
+		if ( Item[usBaseItem].defaultattachments[i] == usAttachment )
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
+UINT16 SelectBestEnemyAttachmentForPlan(
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	INT8 bSoldierClass,
+	UINT16 usBaseItem,
+	UINT8 ubItemChoiceType,
+	UINT8 ubMaxCoolness)
+{
+	INT8 bPoolClass;
+	const ARMY_GUN_CHOICE_TYPE *pPool;
+	UINT16 usBestItem = 0;
+	INT32 iBestScore = -10000;
+	UINT8 ubBestCoolness = 255;
+
+	if ( !pPlan || usBaseItem == 0 )
+		return 0;
+
+	if ( ubItemChoiceType != SCOPE && ubItemChoiceType != ATTACHMENTS )
+		return 0;
+
+	bPoolClass = EnemyLoadoutPoolClass(bSoldierClass);
+	pPool = &gArmyItemChoices[bPoolClass][ubItemChoiceType];
+
+	for (UINT8 i = 0; i < pPool->ubChoices && i < 50; ++i)
+	{
+		INT16 sPoolItem = pPool->bItemNo[i];
+		UINT16 usCandidate;
+		INT32 iScore;
+		UINT8 ubCoolness;
+
+		if ( sPoolItem <= 0 )
+			continue;
+
+		usCandidate = (UINT16)sPoolItem;
+
+		if ( EnemyAttachmentIsDefaultOnBaseItem(usBaseItem, usCandidate) )
+			continue;
+
+		iScore = ScoreEnemyAttachmentForPlan(
+			pPlan,
+			usBaseItem,
+			usCandidate,
+			ubMaxCoolness);
+
+		if ( iScore <= -10000 )
+			continue;
+
+		ubCoolness = Item[usCandidate].ubCoolness;
+
+		// Deterministic tie order for audits:
+		//  1. role score
+		//  2. lower coolness for equal utility (avoids gratuitous gear inflation)
+		//  3. earlier class-pool entry, preserving authored pool priority.
+		if ( iScore > iBestScore ||
+			 (iScore == iBestScore && ubCoolness < ubBestCoolness) )
+		{
+			iBestScore = iScore;
+			ubBestCoolness = ubCoolness;
+			usBestItem = usCandidate;
+		}
+	}
+
+	return usBestItem;
+}
+
+UINT16 SelectBestEnemyLBEForPlan(
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	INT8 bSoldierClass,
+	UINT8 ubMaxCoolness,
+	INT8 bRequiredLBEClass)
+{
+	INT8 bPoolClass;
+	const ARMY_GUN_CHOICE_TYPE *pPool;
+	UINT16 usBestItem = 0;
+	INT32 iBestScore = -10000;
+	UINT8 ubBestCoolness = 255;
+
+	if ( !pPlan )
+		return 0;
+
+	bPoolClass = EnemyLoadoutPoolClass(bSoldierClass);
+	pPool = &gArmyItemChoices[bPoolClass][LBE];
+
+	for (UINT8 i = 0; i < pPool->ubChoices && i < 50; ++i)
+	{
+		INT16 sPoolItem = pPool->bItemNo[i];
+		UINT16 usCandidate;
+		UINT16 usLBEIndex;
+		INT32 iScore;
+		UINT8 ubCoolness;
+
+		if ( sPoolItem <= 0 )
+			continue;
+
+		usCandidate = (UINT16)sPoolItem;
+
+		if ( Item[usCandidate].usItemClass != IC_LBEGEAR )
+			continue;
+
+		usLBEIndex = Item[usCandidate].ubClassIndex;
+		if ( usLBEIndex >= LoadBearingEquipment.size() )
+			continue;
+
+		if ( bRequiredLBEClass > 0 &&
+			 LoadBearingEquipment[usLBEIndex].lbeClass != bRequiredLBEClass )
+		{
+			continue;
+		}
+
+		iScore = ScoreEnemyLBEForPlan(
+			pPlan,
+			usCandidate,
+			ubMaxCoolness);
+
+		if ( iScore <= -10000 )
+			continue;
+
+		ubCoolness = Item[usCandidate].ubCoolness;
+
+		if ( iScore > iBestScore ||
+			 (iScore == iBestScore && ubCoolness < ubBestCoolness) )
+		{
+			iBestScore = iScore;
+			ubBestCoolness = ubCoolness;
+			usBestItem = usCandidate;
+		}
+	}
+
+	return usBestItem;
 }
 
 const char *EnemyLoadoutRoleName(ENEMY_LOADOUT_ROLE Role)
