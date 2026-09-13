@@ -3626,8 +3626,10 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 			pSoldier->aiData.usActionData = FindRetreatSpot(pSoldier);
 			if (TileIsOutOfBounds(pSoldier->aiData.usActionData))
 				pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, sWithdrawalThreat, AI_ACTION_WITHDRAW);
-			if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
-			{
+			if (!TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
+	AIKnownRouteExposureAcceptable(
+		pSoldier, pSoldier->aiData.usActionData,
+		AI_ACTION_WITHDRAW, 200, 110, 130)){
 				return(AI_ACTION_WITHDRAW);
 			}
 		}
@@ -7279,8 +7281,11 @@ L_NEWAIM:
 			//pSoldier->aiData.usActionData = RunAway( pSoldier );
 			pSoldier->aiData.usActionData = FindSpotMaxDistFromOpponents(pSoldier);
 			
-			if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
-			{
+			if (!TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
+	(!AICombatTeam(pSoldier) ||
+	 AIKnownRouteExposureAcceptable(
+		 pSoldier, pSoldier->aiData.usActionData,
+		 AI_ACTION_RUN_AWAY, 220, 140, 150))){
 				return(AI_ACTION_RUN_AWAY);
 			}
 		}
