@@ -3112,7 +3112,7 @@ void LoadGameAPBPConstants()
 	//CHRISL: To allow for dynamic settings, we need to switch AP_MAXIMUM and AP_MINIMUM so that only the max value needs
 	//	to be changed to effect the entire system.  This will require a change in the ENUM so that we can use a loop to
 	//	modify the remaining values.
-	APBPConstants[AP_MAXIMUM] = iniReader.ReadInteger("APConstants","AP_MAXIMUM",100, 25, 250);
+	// Vengeance release invariant: this branch uses the modern 100-AP economy.\r\n	// APBPConstants.ini values are authored on the 100-AP scale and then dynamically\r\n	// adjusted from AP_MAXIMUM.  A stale pre-upgrade Data-Vengeance file with 25 here\r\n	// silently collapses the entire game back to the old AP economy (most visibly in\r\n	// boxing, where AP generation is intentionally halved again).  Do not allow that.\r\n	const INT16 sConfiguredAPMaximum = iniReader.ReadInteger("APConstants","AP_MAXIMUM",100, 25, 250);\r\n	APBPConstants[AP_MAXIMUM] = 100;\r\n	if ( sConfiguredAPMaximum != APBPConstants[AP_MAXIMUM] )\r\n	{\r\n		DebugMsg( TOPIC_JA2, DBG_LEVEL_3, String("Vengeance 100 AP economy: overriding stale AP_MAXIMUM=%d with 100", sConfiguredAPMaximum) );\r\n	}
  
 	//CHRISL: Once we've loaded the AP_MAXIMUM value, we can use it to modifiy all the remaining values
 	APBPConstants[AP_MINIMUM] = DynamicAdjustAPConstants(iniReader.ReadInteger("APConstants","AP_MINIMUM",40, 10, 100),40);
