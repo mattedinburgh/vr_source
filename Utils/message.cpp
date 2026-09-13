@@ -498,8 +498,8 @@ static void BattleLogClampGeometry( void )
 
 	if ( gsBattleLogY < 0 )
 	{
-		// Prefer the lower-left widescreen strip created by the right-aligned HUD.
-		// On narrower resolutions, where that strip is too small, sit directly
+		// Prefer the existing lower-left widescreen margin beside the centered HUD.
+		// On narrower resolutions, where that margin is too small, sit directly
 		// above the tactical interface instead of covering merc portraits.
 		if ( INTERFACE_START_X >= gsBattleLogX + gsBattleLogW + 6 )
 			gsBattleLogY = (INT16)__max( 2, SCREEN_HEIGHT - gsBattleLogH - 4 );
