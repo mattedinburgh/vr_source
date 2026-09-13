@@ -72,6 +72,8 @@
 	#include "Editor Taskbar Utils.h"
 #endif
 
+#include "ExceptionHandling.h"
+
 
 #define	SET_MOVEMENTCOST( a, b, c, d )				( ( gubWorldMovementCosts[ a ][ b ][ c ] < d ) ? ( gubWorldMovementCosts[ a ][ b ][ c ] = d ) : 0 );
 #define	FORCE_SET_MOVEMENTCOST( a, b, c, d )	( gubWorldMovementCosts[ a ][ b ][ c ] = d )
@@ -3184,6 +3186,8 @@ extern UINT8 GetCurrentSummaryVersion();
 extern void LoadShadeTablesFromTextFile();
 BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinorMapVersion)//dnl ch44 290909
 {
+	BlackBoxEvent( "MAP", "LoadWorld begin requested=%s force=%d", puiFilename, gfForceLoad ? 1 : 0 );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=BEGIN", puiFilename );
 	HWFILE					hfile;
 	FLOAT					dMajorMapVersion;
 	UINT32					uiFlags;
@@ -3255,6 +3259,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	if(!gfEditMode)//dnl ch74 211013
 		SetNewLoadScreenHint();
 
+	BlackBoxEvent( "MAP", "file=%s phase=TRASH_WORLD offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=TRASH_WORLD offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 	SetRelativeStartAndEndPercentage(0, 0, 1, L"Trashing world...");
 #ifdef JA2TESTVERSION
 	uiStartTime = GetJA2Clock();
@@ -3373,6 +3379,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 			RemoveAllLandsOfTypeRange(cnt, FIRSTTEXTURE, DEEPWATERTEXTURE);
 	}
 
+	BlackBoxEvent( "MAP", "file=%s phase=COUNT_LAYERS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=COUNT_LAYERS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 	SetRelativeStartAndEndPercentage(0, 35, 40, L"Counting layers...");
 	RenderProgressBar(0, 100);
 	// Read layer counts
@@ -3400,6 +3408,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		bCounts[cnt][5] = (UINT8)(ubCombine & 0x0F);
 	}
 
+	BlackBoxEvent( "MAP", "file=%s phase=LAND_LAYER offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=LAND_LAYER offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 	SetRelativeStartAndEndPercentage(0, 40, 43, L"Loading land layers...");
 	RenderProgressBar(0, 100);
 	for(i=0; i<iWorldSize; i++)
@@ -3422,6 +3432,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
 		TraceB1RemasterLoad( "LAND OK", "" );
 
+	BlackBoxEvent( "MAP", "file=%s phase=OBJECT_LAYER offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=OBJECT_LAYER offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 	SetRelativeStartAndEndPercentage(0, 43, 46, L"Loading object layer...");
 	RenderProgressBar(0, 100);
 	// New load require UINT16 for the type subindex due to the fact that ROADPIECES contain over 300 type subindices.
@@ -3447,6 +3459,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
 		TraceB1RemasterLoad( "OBJECT OK", "" );
 
+	BlackBoxEvent( "MAP", "file=%s phase=STRUCT_LAYER offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=STRUCT_LAYER offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 	SetRelativeStartAndEndPercentage(0, 46, 49, L"Loading struct layer...");
 	RenderProgressBar(0, 100);
 	for(i=0; i<iWorldSize; i++)
@@ -3475,6 +3489,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
 		TraceB1RemasterLoad( "STRUCT OK", "" );
 
+	BlackBoxEvent( "MAP", "file=%s phase=SHADOW_LAYER offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=SHADOW_LAYER offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 	SetRelativeStartAndEndPercentage(0, 49, 52, L"Loading shadow layer...");
 	RenderProgressBar(0, 100);
 	for(i=0; i<iWorldSize; i++)
@@ -3496,6 +3512,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
 		TraceB1RemasterLoad( "SHADOW OK", "" );
 
+	BlackBoxEvent( "MAP", "file=%s phase=ROOF_LAYER offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=ROOF_LAYER offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 	SetRelativeStartAndEndPercentage(0, 52, 55, L"Loading roof layer...");
 	RenderProgressBar(0, 100);
 	for(i=0; i<iWorldSize; i++)
@@ -3517,6 +3535,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
 		TraceB1RemasterLoad( "ROOF OK", "" );
 
+	BlackBoxEvent( "MAP", "file=%s phase=ONROOF_LAYER offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=ONROOF_LAYER offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 	SetRelativeStartAndEndPercentage(0, 55, 58, L"Loading on roof layer...");
 	RenderProgressBar(0, 100);
 	for(i=0; i<iWorldSize; i++)
@@ -3553,6 +3573,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	}
 	//now the data is discarded and when saved, as 6.27, you won't have this problem!
 
+	BlackBoxEvent( "MAP", "file=%s phase=ROOMS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=ROOMS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 	SetRelativeStartAndEndPercentage(0, 58, 59, L"Loading room information...");
 	RenderProgressBar(0, 100);
 #ifdef JA2EDITOR
@@ -3588,6 +3610,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 #endif
 	memset(gubWorldRoomHidden, TRUE, sizeof(gubWorldRoomHidden));
 
+	BlackBoxEvent( "MAP", "file=%s phase=ITEMS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=ITEMS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 	SetRelativeStartAndEndPercentage(0, 59, 61, L"Loading items...");
 	RenderProgressBar(0, 100);
 	if(uiFlags & MAP_WORLDITEMS_SAVED)
@@ -3598,6 +3622,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		gfLoadPitsWithoutArming = FALSE;
 	}
 
+	BlackBoxEvent( "MAP", "file=%s phase=LIGHTS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=LIGHTS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 	SetRelativeStartAndEndPercentage(0, 62, 85, L"Loading lights...");
 	RenderProgressBar(0, 0);
 	if(uiFlags & MAP_AMBIENTLIGHTLEVEL_SAVED)
@@ -3632,6 +3658,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	uiLoadMapLightsTime = GetJA2Clock() - uiStartTime;
 #endif
 
+	BlackBoxEvent( "MAP", "file=%s phase=MAP_INFO offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=MAP_INFO offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 	SetRelativeStartAndEndPercentage(0, 85, 86, L"Loading map information...");
 	RenderProgressBar(0, 0);
 	LoadMapInformation(&pBuffer, dMajorMapVersion);
@@ -3645,24 +3673,32 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 
 	if(uiFlags & MAP_FULLSOLDIER_SAVED)
 	{
+		BlackBoxEvent( "MAP", "file=%s phase=PLACEMENTS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+		BlackBoxCheckpoint( "MAP", "file=%s phase=PLACEMENTS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 		SetRelativeStartAndEndPercentage(0, 86, 87, L"Loading placements...");
 		RenderProgressBar(0, 0);
 		LoadSoldiersFromMap(&pBuffer, dMajorMapVersion, ubMinorMapVersion);
 	}
 	if(uiFlags & MAP_EXITGRIDS_SAVED)
 	{
+		BlackBoxEvent( "MAP", "file=%s phase=EXIT_GRIDS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+		BlackBoxCheckpoint( "MAP", "file=%s phase=EXIT_GRIDS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 		SetRelativeStartAndEndPercentage(0, 87, 88, L"Loading exit grids...");
 		RenderProgressBar(0, 0);
 		LoadExitGrids(&pBuffer, dMajorMapVersion);
 	}
 	if(uiFlags & MAP_DOORTABLE_SAVED)
 	{
+		BlackBoxEvent( "MAP", "file=%s phase=DOORS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+		BlackBoxCheckpoint( "MAP", "file=%s phase=DOORS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 		SetRelativeStartAndEndPercentage(0, 89, 90, L"Loading door tables...");
 		RenderProgressBar(0, 0);
 		LoadDoorTableFromMap(&pBuffer, dMajorMapVersion);
 	}
 	if(uiFlags & MAP_EDGEPOINTS_SAVED)
 	{
+		BlackBoxEvent( "MAP", "file=%s phase=EDGEPOINTS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+		BlackBoxCheckpoint( "MAP", "file=%s phase=EDGEPOINTS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 		SetRelativeStartAndEndPercentage(0, 90, 91, L"Loading edgepoints...");
 		RenderProgressBar(0, 0);
 		if(!LoadMapEdgepoints(&pBuffer, dMajorMapVersion))
@@ -3678,18 +3714,24 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		fGenerateEdgePoints = TRUE;
 	if(uiFlags & MAP_NPCSCHEDULES_SAVED)
 	{
+		BlackBoxEvent( "MAP", "file=%s phase=NPC_SCHEDULES offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+		BlackBoxCheckpoint( "MAP", "file=%s phase=NPC_SCHEDULES offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 		SetRelativeStartAndEndPercentage(0, 91, 92, L"Loading NPC schedules...");
 		RenderProgressBar(0, 0);
 		LoadSchedules(&pBuffer, dMajorMapVersion);
 	}
 
 	ValidateAndUpdateMapVersionIfNecessary();
+	BlackBoxEvent( "MAP", "file=%s phase=INIT_LOADED_WORLD offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=INIT_LOADED_WORLD offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 	SetRelativeStartAndEndPercentage(0, 93, 94, L"Init Loaded World...");
 	RenderProgressBar(0, 0);
 	InitLoadedWorld();
 
 	if(fGenerateEdgePoints)
 	{
+		BlackBoxEvent( "MAP", "file=%s phase=GENERATE_EDGEPOINTS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+		BlackBoxCheckpoint( "MAP", "file=%s phase=GENERATE_EDGEPOINTS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 		SetRelativeStartAndEndPercentage(0, 94, 95, L"Generating map edgepoints...");
 		RenderProgressBar(0, 0);
 		CompileWorldMovementCosts();
@@ -3697,6 +3739,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	}
 
 	RenderProgressBar(0, 20);
+	BlackBoxEvent( "MAP", "file=%s phase=GENERAL_INIT offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=GENERAL_INIT offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 	SetRelativeStartAndEndPercentage(0, 95, 100, L"General initialization...");
 	// RESET AI!
 	InitOpponentKnowledgeSystem();
@@ -3735,6 +3779,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
 		TraceB1RemasterLoad( "WORLD OK", "" );
 
+	BlackBoxCheckpoint( "MAP", "file=%s phase=COMPLETE", aFilename );
+	BlackBoxEvent( "MAP", "LoadWorld complete file=%s", aFilename );
 	return(TRUE);
 }
 
