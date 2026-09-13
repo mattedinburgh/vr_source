@@ -5871,7 +5871,7 @@ static UINT8 AIUpdateRecoveryStreak(SOLDIERTYPE *pSoldier, INT8 bSituation,
 		ubRoutPressure < 35;
 
 	BOOLEAN fLocalSupport =
-		CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) >= 2 ||
+		AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) >= 2 ||
 		AIHasNearbyStableLeader(pSoldier) ||
 		(AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) &&
 		 (pSoldier->LastAttackHit() || pSoldier->LastTargetSuppressed()));
@@ -6194,7 +6194,7 @@ BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier)
 		iPressure += 1;
 	if (AIEngagementRangeModifier(pSoldier, sThreat) < 0)
 		iPressure += 1;
-	if (CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0)
+	if (AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0)
 		iPressure += 1;
 
 	// A winning group gives ground only under clear immediate pressure.
@@ -6228,7 +6228,7 @@ INT32 AILocalStress(SOLDIERTYPE *pSoldier)
 		DAY_VISION_RANGE / 2, TRUE, TRUE);
 	iStress += 12 * __min((INT32)3, iFreshCorpses);
 
-	UINT8 ubNearbyFriends = CountNearbyFriends(pSoldier, pSoldier->sGridNo,
+	UINT8 ubNearbyFriends = AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo,
 		DAY_VISION_RANGE / 4);
 	if (ubNearbyFriends == 0)
 		iStress += 12;
@@ -6283,7 +6283,7 @@ INT32 AIPersonalRisk(SOLDIERTYPE *pSoldier)
 		iRisk += 12;
 
 	// Isolation raises risk; nearby conscious allies reduce it.
-	UINT8 ubNearbyFriends = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4);
+	UINT8 ubNearbyFriends = AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4);
 	if (ubNearbyFriends == 0)
 		iRisk += 15;
 	else if (ubNearbyFriends == 1)
