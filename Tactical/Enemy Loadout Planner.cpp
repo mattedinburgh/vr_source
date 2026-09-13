@@ -9,6 +9,7 @@
 	#include "Item Types.h"
 	#include "Inventory Choosing.h"
 	#include "GameSettings.h"
+	#include "Weapons.h"
 #endif
 
 #include "Enemy Loadout Planner.h"
@@ -1789,6 +1790,131 @@ void BuildBestEnemyLBEPackageForPlan(
 		pPackage->usBackpack = usBackpack;
 	else
 		pPackage->usCombatPack = usCombatPack;
+}
+
+BOOLEAN ValidateEnemyLoadoutPlan(const ENEMY_LOADOUT_PLAN *pPlan)
+{
+	if ( !pPlan )
+		return FALSE;
+
+	if ( pPlan->Role < 0 || pPlan->Role >= ENEMY_ROLE_MAX )
+		return FALSE;
+
+	if ( pPlan->LBEProfile < ENEMY_LBE_LIGHT ||
+		 pPlan->LBEProfile > ENEMY_LBE_HEAVY_SUPPORT )
+	{
+		return FALSE;
+	}
+
+	if ( pPlan->OpticProfile < ENEMY_OPTIC_IRONS ||
+		 pPlan->OpticProfile > ENEMY_OPTIC_SNIPER )
+	{
+		return FALSE;
+	}
+
+	if ( pPlan->ubAmmoMinimum > pPlan->ubAmmoMaximum ||
+		 pPlan->ubGrenadeMinimum > pPlan->ubGrenadeMaximum ||
+		 pPlan->ubSmokeMinimum > pPlan->ubSmokeMaximum ||
+		 pPlan->ubAttachmentMinimum > pPlan->ubAttachmentMaximum ||
+		 pPlan->ubAttachmentMaximum > ENEMY_LOADOUT_MAX_ATTACHMENTS )
+	{
+		return FALSE;
+	}
+
+	if ( pPlan->fAllowSuppressor &&
+		 pPlan->Role != ENEMY_ROLE_SCOUT &&
+		 pPlan->Role != ENEMY_ROLE_SNIPER )
+	{
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+BOOLEAN ValidateEnemyLoadoutBatch(const ENEMY_LOADOUT_BATCH *pBatch)
+{
+	UINT16 usCellSoldiers = 0;
+	UINT16 usAdmins = 0;
+	UINT16 usRegulars = 0;
+	UINT16 usElites = 0;
+	UINT8 i;
+
+	if ( !pBatch )
+		return FALSE;
+
+	if ( pBatch->ubTotalSoldiers == 0 )
+		return pBatch->ubCellCount == 0;
+
+	if ( pBatch->ubCellCount == 0 ||
+		 pBatch->ubCellCount > ENEMY_LOADOUT_MAX_CELLS )
+	{
+		return FALSE;
+	}
+
+	for ( i = 0; i < pBatch->ubCellCount; ++i )
+	{
+		const ENEMY_LOADOUT_CELL *pCell = &pBatch->Cells[i];
+		UINT16 usRoles = 0;
+		UINT16 usAdminRoles = 0;
+		UINT16 usRegularRoles = 0;
+		UINT16 usEliteRoles = 0;
+
+		if ( pCell->ubSize == 0 || pCell->ubSize > ENEMY_LOADOUT_TEAM_MAX )
+			return FALSE;
+
+		if ( pBatch->ubTotalSoldiers >= ENEMY_LOADOUT_TEAM_MIN &&
+			 pCell->ubSize < ENEMY_LOADOUT_TEAM_MIN )
+		{
+			return FALSE;
+		}
+
+		if ( (UINT16)pCell->ubAdmins +
+			 pCell->ubRegulars +
+			 pCell->ubElites != pCell->ubSize )
+		{
+			return FALSE;
+		}
+
+		for ( UINT8 r = 0; r < ENEMY_ROLE_MAX; ++r )
+		{
+			UINT16 usClassRoles =
+				(UINT16)pCell->ubAdminRoleCount[r] +
+				pCell->ubRegularRoleCount[r] +
+				pCell->ubEliteRoleCount[r];
+
+			if ( usClassRoles != pCell->ubRoleCount[r] )
+				return FALSE;
+
+			if ( pCell->ubRoleCount[r] > pCell->State.Targets.ubMaximum[r] )
+				return FALSE;
+
+			usRoles += pCell->ubRoleCount[r];
+			usAdminRoles += pCell->ubAdminRoleCount[r];
+			usRegularRoles += pCell->ubRegularRoleCount[r];
+			usEliteRoles += pCell->ubEliteRoleCount[r];
+		}
+
+		if ( usRoles != pCell->ubSize ||
+			 usAdminRoles != pCell->ubAdmins ||
+			 usRegularRoles != pCell->ubRegulars ||
+			 usEliteRoles != pCell->ubElites )
+		{
+			return FALSE;
+		}
+
+		if ( pCell->State.ubAssignedSoldiers != pCell->ubSize )
+			return FALSE;
+
+		usCellSoldiers += pCell->ubSize;
+		usAdmins += pCell->ubAdmins;
+		usRegulars += pCell->ubRegulars;
+		usElites += pCell->ubElites;
+	}
+
+	return usCellSoldiers == pBatch->ubTotalSoldiers &&
+		usAdmins == pBatch->ubAdmins &&
+		usRegulars == pBatch->ubRegulars &&
+		usElites == pBatch->ubElites;
 }
 
 const char *EnemyLoadoutRoleName(ENEMY_LOADOUT_ROLE Role)
