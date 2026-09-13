@@ -570,6 +570,10 @@ typedef struct
 	FLOAT fBaseEffect;
 	FLOAT fBaseWeapon;
 	FLOAT fBaseSpecial;
+	FLOAT fClassAccuracyBonus;
+	FLOAT fSpecialNPCAccuracyBonus;
+	FLOAT fBaseDifficultyBonus;
+	FLOAT fAimDifficultyBonus;
 	FLOAT fBaseTarget;
 	FLOAT fGearAim;
 	FLOAT fBaseModifier;
