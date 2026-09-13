@@ -3691,9 +3691,9 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 		ubCanMove &&
 		pSoldier->aiData.bOrders != STATIONARY &&
 		pSoldier->stats.bLife >= OKLIFE &&
-				AIPersonalRisk(pSoldier) > AIPersonalRiskTolerance(pSoldier) &&
-		(pSoldier->aiData.bUnderFire ||
-		 !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
+				AIPersonalRisk(pSoldier) >= AIPersonalRiskTolerance(pSoldier) + 10 &&
+		(pSoldier->aiData.bUnderFire || AILocalStress(pSoldier) >= 45) &&
+		(!AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
 		 AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0))
 	{
 		INT32 sWithdrawalThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
@@ -11617,10 +11617,18 @@ INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (AIEngagementRangeModifier(pSoldier, sThreat) < 0 && iFallbackDistance > iCurrentDistance)
 		iGain += __min((INT32)20, 3 * (iFallbackDistance - iCurrentDistance));
 
-	// Under direct pressure, a modest improvement is enough; otherwise require a
-	// clearly better position so the AI does not shuffle backwards every turn.
+	// A generic step-back must buy a meaningful positional advantage. Under fire
+	// we still permit withdrawal from a genuinely bad tile, but no longer accept
+	// tiny gains that repeatedly pull the whole line backwards.
 	INT32 iRequiredGain = (pSoldier->aiData.bUnderFire || !fCurrentCover ||
-		AILocalStress(pSoldier) >= 35) ? 8 : 18;
+		AILocalStress(pSoldier) >= 45) ? 16 : 24;
+	if (pSoldier->aiData.bAttitude == AGGRESSIVE ||
+		pSoldier->aiData.bAttitude == ATTACKSLAYONLY)
+	{
+		iRequiredGain += 6;
+	}
+	if (pSoldier->aiData.bOrders == SEEKENEMY)
+		iRequiredGain += 4;
 
 	if (iGain < iRequiredGain)
 		return AI_ACTION_NONE;
