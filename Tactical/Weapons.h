@@ -644,4 +644,36 @@ void NCTHBeginShotDiagnostic( SOLDIERTYPE *pShooter, INT32 sTargetGridNo, UINT8 
 void NCTHRegisterBulletDiagnostic( INT32 iBullet, UINT8 ubVolleyShot );
 BOOLEAN NCTHGetBulletDiagnostic( INT32 iBullet, NCTH_SHOT_DIAGNOSTIC *pOut );
 
+// Runtime-only snapshot of the actual BulletImpact() damage pipeline. Like the
+// NCTH diagnostic above, this stays out of BULLET/SOLDIERTYPE so save layouts
+// are unchanged.
+typedef struct
+{
+	BOOLEAN fValid;
+	INT32   iBullet;
+	UINT8   ubShooterID;
+	UINT8   ubTargetID;
+	UINT16  usWeapon;
+	UINT8   ubAmmoType;
+	UINT8   ubHitLocation;
+	INT32 iImpactAtContact;
+	INT32 iFlukePercent;
+	INT32 iAccuracyPercent;
+	INT32 iImpactAfterHitQuality;
+	INT32 iImpactBeforeArmour;
+	INT32 iArmourProtection;
+	INT32 iImpactAfterArmour;
+	INT32 iMinimumDamageFloor;
+	INT32 iImpactAfterMinimum;
+	INT32 iImpactAfterAmmo;
+	INT32 iImpactAfterTraits;
+	INT32 iDamageResistancePercent;
+	INT32 iImpactAfterResistance;
+	INT32 iImpactAfterHitLocation;
+	INT32 iFinalDamage;
+} DAMAGE_DIAGNOSTIC;
+
+void DamageRegisterBulletDiagnostic( INT32 iBullet, const DAMAGE_DIAGNOSTIC *pDiagnostic );
+BOOLEAN DamageGetBulletDiagnostic( INT32 iBullet, DAMAGE_DIAGNOSTIC *pOut );
+
 #endif
