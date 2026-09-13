@@ -206,6 +206,19 @@ void BuildEnemyLoadoutPlan(
 	INT8 bExpLevel,
 	BOOLEAN fNight);
 
+// Deterministic scoring helpers for the future role-aware item selectors.
+// Negative large scores mean "do not use"; no RNG is consumed.
+INT32 ScoreEnemyAttachmentForPlan(
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	UINT16 usBaseItem,
+	UINT16 usAttachment,
+	UINT8 ubMaxCoolness);
+
+INT32 ScoreEnemyLBEForPlan(
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	UINT16 usLBEItem,
+	UINT8 ubMaxCoolness);
+
 const char *EnemyLoadoutRoleName(ENEMY_LOADOUT_ROLE Role);
 
 #endif
