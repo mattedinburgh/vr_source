@@ -118,4 +118,11 @@ void DisplayLastMessage( void );
 */
 
 
+
+// Vengeance: persistent tactical battle log. MISS entries can carry an exact
+// runtime NCTH snapshot and open the shot inspector when clicked.
+void BattleLogAddNCTHMiss( INT32 iBullet );
+void BattleLogAddText( UINT16 usColor, STR16 pString );
+void BattleLogSetVisible( BOOLEAN fVisible );
+
 #endif
