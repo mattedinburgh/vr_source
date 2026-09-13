@@ -3390,6 +3390,15 @@ INT32 GetSectorMvtTimeForGroup( UINT8 ubSector, UINT8 ubDirection, GROUP *pGroup
 			}
 		}
 	}
+
+	// Living Generals improve operational movement. The cap is intentionally the
+	// same conservative 25% ceiling as modern 1.13, so this never becomes a hidden
+	// tactical AP/speed bonus.
+	if (!pGroup->fPlayer && pGroup->pEnemyGroup && gGameExternalOptions.fEnemyRoles && gGameExternalOptions.fEnemyGenerals)
+	{
+		FLOAT dGeneralMovementFactor = max(0.75f, 1.0f - CountActiveEnemyGenerals() * gGameExternalOptions.fEnemyGeneralStrategicMovementSpeedBonus);
+		iBestTraverseTime = (UINT32)(iBestTraverseTime * dGeneralMovementFactor);
+	}
 	///////////////////////////////////////////////////////////////////////////////
 
 	return iBestTraverseTime;
