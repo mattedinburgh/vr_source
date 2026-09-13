@@ -1969,7 +1969,7 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 		}
 
 		// sevenfm: officer can come to inspect suspicious soldier
-		if ( HAS_SKILL_TRAIT(pSoldier, SQUADLEADER_NT) )
+		if ( pSoldier->bTeam == ENEMY_TEAM && HAS_SKILL_TRAIT(pSoldier, SQUADLEADER_NT) )
 		{
 			UINT8 ubPerson = GetClosestFlaggedSoldierID( pSoldier, VISION_RANGE, OUR_TEAM, SOLDIER_COVERT_SOLDIER | SOLDIER_COVERT_CIV, TRUE );
 
