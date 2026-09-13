@@ -11358,9 +11358,11 @@ INT8 DecideDisengagementAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		BOOLEAN fCurrentSightCover = SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE);
 		BOOLEAN fFallbackSightCover = SightCoverAtSpot(pSoldier, sFallback, FALSE);
 
-		if (usFallbackExposure <= usCurrentExposure ||
-			(fFallbackSightCover && !fCurrentSightCover) ||
-			iFallbackSupport > iCurrentSupport)
+		if ((usFallbackExposure <= usCurrentExposure ||
+			 (fFallbackSightCover && !fCurrentSightCover) ||
+			 iFallbackSupport > iCurrentSupport) &&
+			AIKnownRouteExposureAcceptable(
+				pSoldier, sFallback, AI_ACTION_WITHDRAW, 180, 90, 115))
 		{
 			pSoldier->aiData.usActionData = sFallback;
 			return AI_ACTION_WITHDRAW;
@@ -11372,7 +11374,9 @@ INT8 DecideDisengagementAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (!TileIsOutOfBounds(sCover) && sCover != pSoldier->sGridNo)
 	{
 		UINT16 usCoverExposure = AIKnownThreatExposure(pSoldier, sCover, pSoldier->pathing.bLevel);
-		if (usCoverExposure <= usCurrentExposure)
+		if (usCoverExposure <= usCurrentExposure &&
+			AIKnownRouteExposureAcceptable(
+				pSoldier, sCover, AI_ACTION_TAKE_COVER, 140, 70, 90))
 		{
 			pSoldier->aiData.usActionData = sCover;
 			return AI_ACTION_TAKE_COVER;
@@ -11437,6 +11441,12 @@ INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (iGain < iRequiredGain)
 		return AI_ACTION_NONE;
 
+	if (!AIKnownRouteExposureAcceptable(
+		pSoldier, sFallback, AI_ACTION_WITHDRAW, 180, 90, 115))
+	{
+		return AI_ACTION_NONE;
+	}
+
 	pSoldier->aiData.usActionData = sFallback;
 	return AI_ACTION_WITHDRAW;
 }
@@ -11458,14 +11468,19 @@ INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (pSoldier->aiData.bOrders != STATIONARY)
 	{
 		INT32 sFallback = FindRetreatSpot(pSoldier);
-	if (TileIsOutOfBounds(sFallback))
-		sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
+		if (TileIsOutOfBounds(sFallback))
+			sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
+
 		if (!TileIsOutOfBounds(sFallback))
 		{
-			UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
-			UINT16 usFallbackExposure = AIKnownThreatExposure(pSoldier, sFallback, pSoldier->pathing.bLevel);
+			UINT16 usCurrentExposure = AIKnownThreatExposure(
+				pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+			UINT16 usFallbackExposure = AIKnownThreatExposure(
+				pSoldier, sFallback, pSoldier->pathing.bLevel);
 
-			if (usFallbackExposure <= usCurrentExposure)
+			if (usFallbackExposure <= usCurrentExposure &&
+				AIKnownRouteExposureAcceptable(
+					pSoldier, sFallback, AI_ACTION_WITHDRAW, 200, 110, 130))
 			{
 				pSoldier->aiData.usActionData = sFallback;
 				return AI_ACTION_WITHDRAW;
@@ -11481,7 +11496,9 @@ INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	{
 		UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
 		UINT16 usCoverExposure = AIKnownThreatExposure(pSoldier, sCover, pSoldier->pathing.bLevel);
-		if (usCoverExposure <= usCurrentExposure)
+		if (usCoverExposure <= usCurrentExposure &&
+			AIKnownRouteExposureAcceptable(
+				pSoldier, sCover, AI_ACTION_TAKE_COVER, 140, 70, 90))
 		{
 			pSoldier->aiData.usActionData = sCover;
 			return AI_ACTION_TAKE_COVER;
@@ -11549,6 +11566,12 @@ INT8 DecideCombatDispersion(SOLDIERTYPE *pSoldier)
 	// known enemy can attack. Dispersion is useful only if it is not tactically worse.
 	if (AIKnownThreatExposure(pSoldier, sDisperseSpot, pSoldier->pathing.bLevel) >
 		AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel))
+	{
+		return AI_ACTION_NONE;
+	}
+
+	if (!AIKnownRouteExposureAcceptable(
+		pSoldier, sDisperseSpot, AI_ACTION_TAKE_COVER, 120, 60, 80))
 	{
 		return AI_ACTION_NONE;
 	}
