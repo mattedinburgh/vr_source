@@ -57,6 +57,15 @@ enum ENEMY_OPTIC_PROFILE
 	ENEMY_OPTIC_SNIPER
 };
 
+enum ENEMY_SUPPORT_PROFILE
+{
+	ENEMY_SUPPORT_NONE = 0,
+	ENEMY_SUPPORT_GRENADE_LAUNCHER,
+	ENEMY_SUPPORT_LIGHT_AT,
+	ENEMY_SUPPORT_RPG,
+	ENEMY_SUPPORT_MORTAR
+};
+
 struct ENEMY_ROLE_TARGETS
 {
 	UINT8 ubDesired[ENEMY_ROLE_MAX];
@@ -115,6 +124,16 @@ struct ENEMY_ATTACHMENT_PACKAGE
 	UINT16 usItem[ENEMY_LOADOUT_MAX_ATTACHMENTS];
 };
 
+struct ENEMY_EQUIPMENT_RECOMMENDATION
+{
+	UINT16 usPrimaryGun;
+	ENEMY_ATTACHMENT_PACKAGE Attachments;
+	ENEMY_LBE_PACKAGE LBE;
+	ENEMY_SUPPORT_PROFILE SupportProfile;
+	UINT8 ubSupportAmmoMinimum;
+	UINT8 ubSupportAmmoMaximum;
+};
+
 struct ENEMY_LOADOUT_ASSIGNMENT_STATE
 {
 	ENEMY_LOADOUT_BATCH Remaining;
@@ -128,6 +147,11 @@ struct ENEMY_LOADOUT_PLAN
 	ENEMY_LOADOUT_ROLE Role;
 	ENEMY_LBE_PROFILE LBEProfile;
 	ENEMY_OPTIC_PROFILE OpticProfile;
+	ENEMY_SUPPORT_PROFILE SupportProfile;
+
+	// Specialist ammunition is separate from ordinary hand grenades.
+	UINT8 ubSupportAmmoMinimum;
+	UINT8 ubSupportAmmoMaximum;
 
 	// Carry/load targets.  The actual item chooser will translate these to
 	// concrete magazines, belts, rockets, grenades and LBE pocket layouts.
@@ -319,6 +343,16 @@ void BuildBestEnemyAttachmentPackageForPlan(
 // Structural audit helpers for isolated testing/instrumentation.
 BOOLEAN ValidateEnemyLoadoutBatch(const ENEMY_LOADOUT_BATCH *pBatch);
 BOOLEAN ValidateEnemyLoadoutPlan(const ENEMY_LOADOUT_PLAN *pPlan);
+
+// Produces a deterministic, non-live recommendation from existing Vengeance
+// item pools.  No soldier inventory is modified and no game RNG is consumed.
+void BuildEnemyEquipmentRecommendation(
+	ENEMY_EQUIPMENT_RECOMMENDATION *pRecommendation,
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	INT8 bSoldierClass,
+	INT8 bWeaponClass,
+	UINT8 ubAttachmentCoolness,
+	UINT8 ubLBECoolness);
 
 const char *EnemyLoadoutRoleName(ENEMY_LOADOUT_ROLE Role);
 
