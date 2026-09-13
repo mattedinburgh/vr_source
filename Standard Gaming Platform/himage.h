@@ -21,6 +21,7 @@
 #define TRLE_FILE_READER				0x8
 #define PNG_FILE_READER					0x10
 #define JPC_FILE_READER					0x20
+#define B1TC_FILE_READER				0x40
 #define UNKNOWN_FILE_READER			0x200
 
 // Defines for buffer bit depth
