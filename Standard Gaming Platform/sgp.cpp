@@ -1121,11 +1121,6 @@ int PASCAL HandledWinMain(HINSTANCE hInstance,	HINSTANCE hPrevInstance, LPSTR pC
 	HWND			hPrevInstanceWindow;
 	UINT32			uiTimer = 0;
 
-	BlackBoxInitialize();
-	BlackBoxEvent( "ENGINE", "HandledWinMain begin" );
-
-
-
 #ifdef USE_VFS
 	vfs::Log::setSharedString( getGameID() );
 #endif
@@ -1153,6 +1148,9 @@ int PASCAL HandledWinMain(HINSTANCE hInstance,	HINSTANCE hPrevInstance, LPSTR pC
 		ShowWindow( hPrevInstanceWindow, SW_RESTORE );
 		return( 0 );
 	}
+
+	BlackBoxInitialize();
+	BlackBoxEvent( "ENGINE", "HandledWinMain begin" );
 
 	FastDebugMsg("Initializing Random");
 	// Initialize random number generator
