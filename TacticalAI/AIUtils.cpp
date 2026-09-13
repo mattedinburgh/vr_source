@@ -6442,13 +6442,24 @@ BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier)
 		if (AICheckIsCommander(pLeader) || AICheckIsOfficer(pLeader))
 			return TRUE;
 
-		// Militia do not always carry formal officer roles. A nearby regular or elite
-		// militia soldier provides the local experience a green element needs to use
-		// the same coordinated manoeuvre logic as a commanded army fireteam.
-		if (pSoldier->bTeam == MILITIA_TEAM &&
-			(pLeader->ubSoldierClass == SOLDIER_CLASS_REG_MILITIA ||
-			 pLeader->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA))
-			return TRUE;
+		// Militia do not always carry formal officer roles. Green militia can borrow
+		// local experience from a regular or elite neighbour. Regular militia remain
+		// line-infantry peers of regular army troops and need an elite/formal leader
+		// before unlocking the same independent complex manoeuvres.
+		if (pSoldier->bTeam == MILITIA_TEAM)
+		{
+			if (pSoldier->ubSoldierClass == SOLDIER_CLASS_GREEN_MILITIA &&
+				(pLeader->ubSoldierClass == SOLDIER_CLASS_REG_MILITIA ||
+				 pLeader->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA))
+			{
+				return TRUE;
+			}
+			if (pSoldier->ubSoldierClass == SOLDIER_CLASS_REG_MILITIA &&
+				pLeader->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA)
+			{
+				return TRUE;
+			}
+		}
 	}
 
 	return FALSE;
