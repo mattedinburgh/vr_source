@@ -3025,7 +3025,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 
 			if ((BestThrow.bWeaponIn != NO_SLOT) &&
 				(CalcMaxTossRange(pSoldier, pSoldier->inv[BestThrow.bWeaponIn].usItem, TRUE) > MaxNormalDistanceVisible()) &&
-				(pSoldier->bTeam == ENEMY_TEAM ? AIFireteamAliveCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
+				(pSoldier->bTeam == ENEMY_TEAM ? AIFireteamCombatReadyCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
 				(gTacticalStatus.ubSpottersCalledForBy == NOBODY))
 			{
 				// then call for spotters!  Uses up the rest of his turn (whatever
@@ -3083,7 +3083,7 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 
 				if (GunRange(gun, pSoldier) > MaxNormalDistanceVisible() &&
 					(IsScoped(gun) || pSoldier->aiData.bOrders == SNIPER) &&
-					(pSoldier->bTeam == ENEMY_TEAM ? AIFireteamAliveCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
+					(pSoldier->bTeam == ENEMY_TEAM ? AIFireteamCombatReadyCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
 					(gTacticalStatus.ubSpottersCalledForBy == NOBODY))
 				{
 					// then call for spotters!  Uses up the rest of his turn (whatever
@@ -7158,7 +7158,7 @@ L_NEWAIM:
 		AISameFireteam(pSoldier, MercPtrs[gTacticalStatus.ubSpottersCalledForBy]) &&
 		(pSoldier->bActionPoints >= APBPConstants[AP_RADIO]) &&
 		(pSoldier->aiData.bOppCnt > 1) && !fCivilian &&
-		(pSoldier->bTeam == ENEMY_TEAM ? AIFireteamAliveCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) && !bInDeepWater)
+		(pSoldier->bTeam == ENEMY_TEAM ? AIFireteamCombatReadyCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) && !bInDeepWater)
 	{
 		// base chance depends on how much new info we have to radio to the others
 		iChance = 25 * WhatIKnowThatPublicDont(pSoldier,TRUE);	// just count them
@@ -8952,7 +8952,7 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		UINT8 ubActiveFlankers = ubActiveLeftFlankers + ubActiveRightFlankers;
 		UINT8 ubFlankLimit = 2;
 
-		if (AIFireteamAliveCount(pSoldier) >= 7 &&
+		if (AIFireteamCombatReadyCount(pSoldier) >= 7 &&
 			AICheckWeOutnumberLocal(pSoldier, sClosestDisturbance) &&
 			AILocalStress(pSoldier) < 25)
 		{
