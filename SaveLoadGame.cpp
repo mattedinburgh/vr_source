@@ -2189,37 +2189,46 @@ BOOLEAN SOLDIERTYPE::Load(HWFILE hFile)
 			numBytesRead = ReadFieldByField(hFile, &this->usSkillCounter, sizeof(usSkillCounter), sizeof(UINT16), numBytesRead);
 			numBytesRead = ReadFieldByField(hFile, &this->usSkillCooldown, sizeof(usSkillCooldown), sizeof(UINT32), numBytesRead);
 
-			// Downed/drag state consumes four bytes that previously belonged to ubFiller.
-			// The total SOLDIERTYPE POD size remains unchanged; consuming these bytes
-			// explicitly preserves alignment for legacy version-151 saves.
-			numBytesRead = ReadFieldByField(hFile, &this->ubBleedoutTurns, sizeof(ubBleedoutTurns), sizeof(UINT8), numBytesRead);
-			numBytesRead = ReadFieldByField(hFile, &this->ubBleedoutState, sizeof(ubBleedoutState), sizeof(UINT8), numBytesRead);
-			numBytesRead = ReadFieldByField(hFile, &this->ubDraggedCasualtyID, sizeof(ubDraggedCasualtyID), sizeof(UINT8), numBytesRead);
-			numBytesRead = ReadFieldByField(hFile, &this->ubDraggedByID, sizeof(ubDraggedByID), sizeof(UINT8), numBytesRead);
-			numBytesRead = ReadFieldByField(hFile, &this->ubFiller, sizeof(ubFiller), sizeof(UINT8), numBytesRead);
-
-			// Old version-151 saves used these four bytes as filler. Validate the
-			// bleed-out bytes here, but do NOT tie drag validity to bleed-out state:
-			// ordinary unconscious/collapsed casualties legitimately have
-			// BLEEDOUT_NONE while being extracted. Reciprocal drag links are validated
-			// after every soldier has been reconstructed.
-			if ( this->ubBleedoutState > BLEEDOUT_STABILIZED ||
-				(this->ubBleedoutState == BLEEDOUT_ACTIVE &&
-				 (this->ubBleedoutTurns < 1 || this->ubBleedoutTurns > 7)) )
+			if ( guiCurrentSaveGameVersion >= VR_BLEEDOUT_SAVE_STATE )
 			{
+				// Version 152 is the first version where these four bytes have named
+				// meaning. Earlier saves used the same physical bytes as filler.
+				numBytesRead = ReadFieldByField(hFile, &this->ubBleedoutTurns, sizeof(ubBleedoutTurns), sizeof(UINT8), numBytesRead);
+				numBytesRead = ReadFieldByField(hFile, &this->ubBleedoutState, sizeof(ubBleedoutState), sizeof(UINT8), numBytesRead);
+				numBytesRead = ReadFieldByField(hFile, &this->ubDraggedCasualtyID, sizeof(ubDraggedCasualtyID), sizeof(UINT8), numBytesRead);
+				numBytesRead = ReadFieldByField(hFile, &this->ubDraggedByID, sizeof(ubDraggedByID), sizeof(UINT8), numBytesRead);
+				numBytesRead = ReadFieldByField(hFile, &this->ubFiller, sizeof(ubFiller), sizeof(UINT8), numBytesRead);
+
+				if ( this->ubBleedoutState > BLEEDOUT_STABILIZED ||
+					(this->ubBleedoutState == BLEEDOUT_ACTIVE &&
+					 (this->ubBleedoutTurns < 1 || this->ubBleedoutTurns > 7)) )
+				{
+					this->ubBleedoutTurns = 0;
+					this->ubBleedoutState = BLEEDOUT_NONE;
+				}
+				else if ( this->ubBleedoutState == BLEEDOUT_NONE ||
+					this->ubBleedoutState == BLEEDOUT_STABILIZED )
+				{
+					this->ubBleedoutTurns = 0;
+				}
+
+				if ( this->ubDraggedCasualtyID >= TOTAL_SOLDIERS )
+					this->ubDraggedCasualtyID = NOBODY;
+				if ( this->ubDraggedByID >= TOTAL_SOLDIERS )
+					this->ubDraggedByID = NOBODY;
+			}
+			else
+			{
+				// Versions 147-151 already contain the radio-trait fields above, but
+				// the following 20 bytes were still anonymous filler. Consume them
+				// without interpreting random legacy data as a real casualty.
 				this->ubBleedoutTurns = 0;
 				this->ubBleedoutState = BLEEDOUT_NONE;
-			}
-			else if ( this->ubBleedoutState == BLEEDOUT_NONE ||
-				this->ubBleedoutState == BLEEDOUT_STABILIZED )
-			{
-				this->ubBleedoutTurns = 0;
-			}
-
-			if ( this->ubDraggedCasualtyID >= TOTAL_SOLDIERS )
 				this->ubDraggedCasualtyID = NOBODY;
-			if ( this->ubDraggedByID >= TOTAL_SOLDIERS )
 				this->ubDraggedByID = NOBODY;
+				UINT8 legacyBleedoutFiller[20];
+				numBytesRead = ReadFieldByField(hFile, &legacyBleedoutFiller, 20, sizeof(UINT8), numBytesRead);
+			}
 		}
 		else
 		{
