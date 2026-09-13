@@ -141,85 +141,19 @@ jobs:
         run: |
           $sandbox = 'C:\VENGENCE\JA2_RENDER_SANDBOX'
           $editor = Join-Path $sandbox 'MapEditor_EN_Release.exe'
-          $previewDir = Join-Path $sandbox 'MAP_PREVIEWS'
-          $statusFile = Join-Path $previewDir 'mapshot_status.txt'
-
-          # MAPSHOT remains the first switch so the legacy InitializeJA2 path
-          # recognises it. /WINDOW avoids the fullscreen DirectDraw wrapper path
-          # on the self-hosted runner; /NOSOUND removes an unnecessary device init.
           $p = Start-Process -FilePath $editor -ArgumentList @('-MAPSHOT=A3.dat','/WINDOW','/NOSOUND') -WorkingDirectory $sandbox -PassThru
-
           if (-not $p.WaitForExit(600000)) {
             try { $p.Kill() } catch {}
-            if (Test-Path $statusFile) {
-              Write-Host '--- MAPSHOT STATUS ---'
-              Get-Content $statusFile
-            }
             throw 'MapEditor MAPSHOT timed out after 600 seconds.'
           }
-
-          Write-Host "MapEditor exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { throw "MapEditor exited with code $($p.ExitCode)" }
+          $statusFile = Join-Path $sandbox 'MAP_PREVIEWS\mapshot_status.txt'
           if (Test-Path $statusFile) {
             Write-Host '--- MAPSHOT STATUS ---'
             Get-Content $statusFile
-          } else {
-            Write-Warning "No mapshot status file was produced: $statusFile"
           }
-
-          # Prefer the deterministic executable-relative location. Also search
-          # recursively so an old VFS/current-directory quirk cannot hide output.
-          $bmp = Join-Path $previewDir 'A3_overview.bmp'
-          if (-not (Test-Path $bmp)) {
-            $found = Get-ChildItem $sandbox -Recurse -File -Filter 'A3_overview.bmp' -ErrorAction SilentlyContinue |
-              Select-Object -First 1
-            if ($found) {
-              $bmp = $found.FullName
-              Write-Host "Recovered preview from alternate location: $bmp"
-            }
-          }
-
-          if ($p.ExitCode -ne 0 -or -not (Test-Path $bmp)) {
-            Write-Host '--- MAPSHOT DIAGNOSTIC FILES ---'
-            Get-ChildItem $sandbox -Recurse -File -ErrorAction SilentlyContinue |
-              Where-Object { $_.Name -match '(mapshot|blackbox|error|exception|debug|vfs).*\.(txt|log)$|A3_overview\.bmp
-
-      - name: Upload render artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: A3-engine-preview
-          path: |
-            MapPreviews/Auto/A3_latest.png
-            MapPreviews/Auto/A3_latest.json
-          retention-days: 14
-
-      - name: Publish latest preview to repository
-        shell: powershell
-        run: |
-          $git = '${{ steps.git.outputs.path }}'
-          & $git add MapPreviews/Auto/A3_latest.png MapPreviews/Auto/A3_latest.json
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $git diff --cached --quiet
-          if ($LASTEXITCODE -eq 0) { Write-Host 'Preview is unchanged.'; exit 0 }
-          & $git config user.name 'github-actions[bot]'
-          & $git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          & $git commit -m 'Update autonomous A3 engine preview'
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          for ($attempt = 1; $attempt -le 5; $attempt++) {
-            & $git pull --rebase origin install/all-2026-09-12
-            if ($LASTEXITCODE -eq 0) {
-              & $git push origin HEAD:install/all-2026-09-12
-              if ($LASTEXITCODE -eq 0) { exit 0 }
-            }
-            Start-Sleep -Seconds ($attempt * 2)
-          }
-          throw 'Could not publish A3 preview after 5 attempts.'
- } |
-              Select-Object FullName, Length, LastWriteTime |
-              Format-Table -AutoSize
-            if ($p.ExitCode -ne 0) { throw "MapEditor exited with code $($p.ExitCode)" }
-            throw "A3 preview not produced anywhere under $sandbox"
-          }
-
+          $bmp = Join-Path $sandbox 'MAP_PREVIEWS\A3_overview.bmp'
+          if (-not (Test-Path $bmp)) { throw "A3 preview not produced: $bmp" }
           Add-Type -AssemblyName System.Drawing
           $outDir = Join-Path $env:GITHUB_WORKSPACE 'MapPreviews\Auto'
           New-Item -ItemType Directory -Force -Path $outDir | Out-Null
@@ -233,7 +167,6 @@ jobs:
             generated_utc = (Get-Date).ToUniversalTime().ToString('o')
             renderer = 'JA2 MapEditor -MAPSHOT'
             sandbox = $sandbox
-            bmp_source = $bmp
           } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $outDir 'A3_latest.json')
           Write-Host "A3 preview created: $png"
 
