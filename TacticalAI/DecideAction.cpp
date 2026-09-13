@@ -2887,6 +2887,13 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 	pSoldier->aiData.bAIMorale = CalcMorale(pSoldier);
 	if (AICombatTeam(pSoldier))
 	{
+		// A shattered enemy element first tries to attach to another viable fireteam.
+		// This must precede disengagement state updates; otherwise the last one/two
+		// soldiers can acquire escape intent before cohesion gets a chance to absorb them.
+		INT8 bCohesionAction = DecideFireteamCohesionAction(pSoldier, ubCanMove);
+		if (bCohesionAction != AI_ACTION_NONE)
+			return bCohesionAction;
+
 		INT8 bDisengageAction = DecideDisengagementAction(pSoldier, ubCanMove);
 		if (bDisengageAction != AI_ACTION_NONE)
 			return bDisengageAction;
