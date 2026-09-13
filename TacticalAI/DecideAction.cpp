@@ -11536,24 +11536,32 @@ INT8 DecideDisengagementAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
 	INT32 iCurrentSupport = AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2);
 
-	INT32 sFallback = FindRetreatSpot(pSoldier);
-	if (TileIsOutOfBounds(sFallback))
-		sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
-	if (!TileIsOutOfBounds(sFallback))
+	// Disengagement shares the same one-bound allowance as ordinary tactical
+	// fallback. Once a soldier has yielded ground, pursuit should force him to
+	// hold/fight from cover rather than retreat tile-by-tile across the map.
+	// Full sector escape was already handled above by DecideEscapeAction().
+	if (!AIHasUsedTacticalFallback(pSoldier))
 	{
-		UINT16 usFallbackExposure = AIKnownThreatExposure(pSoldier, sFallback, pSoldier->pathing.bLevel);
-		INT32 iFallbackSupport = AICountNearbyOperationalFriends(pSoldier, sFallback, DAY_VISION_RANGE / 2);
-		BOOLEAN fCurrentSightCover = SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE);
-		BOOLEAN fFallbackSightCover = SightCoverAtSpot(pSoldier, sFallback, FALSE);
-
-		if ((usFallbackExposure <= usCurrentExposure ||
-			 (fFallbackSightCover && !fCurrentSightCover) ||
-			 iFallbackSupport > iCurrentSupport) &&
-			AIKnownRouteExposureAcceptable(
-				pSoldier, sFallback, AI_ACTION_WITHDRAW, 180, 90, 115))
+		INT32 sFallback = FindRetreatSpot(pSoldier);
+		if (TileIsOutOfBounds(sFallback))
+			sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
+		if (!TileIsOutOfBounds(sFallback))
 		{
-			pSoldier->aiData.usActionData = sFallback;
-			return AI_ACTION_WITHDRAW;
+			UINT16 usFallbackExposure = AIKnownThreatExposure(pSoldier, sFallback, pSoldier->pathing.bLevel);
+			INT32 iFallbackSupport = AICountNearbyOperationalFriends(pSoldier, sFallback, DAY_VISION_RANGE / 2);
+			BOOLEAN fCurrentSightCover = SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE);
+			BOOLEAN fFallbackSightCover = SightCoverAtSpot(pSoldier, sFallback, FALSE);
+
+			if ((usFallbackExposure <= usCurrentExposure ||
+				 (fFallbackSightCover && !fCurrentSightCover) ||
+				 iFallbackSupport > iCurrentSupport) &&
+				AIKnownRouteExposureAcceptable(
+					pSoldier, sFallback, AI_ACTION_WITHDRAW, 180, 90, 115))
+			{
+				pSoldier->aiData.usActionData = sFallback;
+				AIRegisterTacticalFallback(pSoldier);
+				return AI_ACTION_WITHDRAW;
+			}
 		}
 	}
 
