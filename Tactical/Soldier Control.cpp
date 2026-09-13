@@ -255,6 +255,10 @@ BATTLESNDS_STRUCT	 gBattleSndsData[] =
 	"enemy",		0,				1,			1,		1,		0,
 	"punch",		1,				0,			0,		0,		0,
 	"knife",		1,				0,			0,		0,		0,
+	// Casualty sound: reuse the existing per-voice DYING library without marking the soldier dead.
+	"dying",		2,		1,		1,		1,		0,
+	// Generic battlefield call; named mercs retain their character-specific wounded dialogue.
+	"medic",		2,		1,		1,		1,		0,
 };
 
 extern void ReduceAttachmentsOnGunForNonPlayerChars(SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj);
@@ -10255,6 +10259,15 @@ void ProcessBleedoutCasualties( )
 			continue;
 		}
 
+		// Living, unstabilized casualties occasionally gasp/groan between rescue turns.
+		UINT32 uiNow = GetJA2Clock();
+		if ( pSoldier->stats.bLife > 0 && pSoldier->stats.bLife < OKLIFE &&
+			( uiNow - pSoldier->uiTimeSinceLastBleedGrunt ) > 3500 && Random( 100 ) < 45 )
+		{
+			pSoldier->uiTimeSinceLastBleedGrunt = uiNow;
+			pSoldier->DoMercBattleSound( BATTLE_SOUND_AGONY );
+		}
+
 		if ( pSoldier->ubBleedoutTurns == 0 || pSoldier->ubBleedoutTurns > 7 )
 		{
 			pSoldier->ClearBleedoutDragLinks();
@@ -10374,6 +10387,87 @@ void HandleTakeDamageDeath( SOLDIERTYPE *pSoldier, UINT8 bOldLife, UINT8 ubReaso
 	// }
 }
 
+
+// -----------------------------------------------------------------------------
+// Battlefield casualty audio
+// -----------------------------------------------------------------------------
+static UINT32 guiLastBattlefieldMedicCall = 0;
+
+static BOOLEAN CanUseBattlefieldCasualtyVoice( SOLDIERTYPE *pSoldier )
+{
+	if ( !pSoldier || !pSoldier->bActive || !pSoldier->bInSector || pSoldier->stats.bLife <= 0 )
+		return FALSE;
+	if ( pSoldier->flags.uiStatusFlags & ( SOLDIER_VEHICLE | SOLDIER_ROBOT | SOLDIER_MONSTER ) )
+		return FALSE;
+	return ( IS_MERC_BODY_TYPE( pSoldier ) || IS_CIV_BODY_TYPE( pSoldier ) );
+}
+
+static SOLDIERTYPE *FindNearbyGenericMedicCaller( SOLDIERTYPE *pCasualty )
+{
+	SOLDIERTYPE *pBest = NULL;
+	INT16 sBestDistance = 13;
+	if ( !pCasualty )
+		return NULL;
+
+	for ( INT32 cnt = 0; cnt < TOTAL_SOLDIERS; ++cnt )
+	{
+		SOLDIERTYPE *pOther = Menptr + cnt;
+		if ( pOther == pCasualty || !CanUseBattlefieldCasualtyVoice( pOther ) ||
+			pOther->ubProfile != NO_PROFILE || pOther->bTeam != pCasualty->bTeam ||
+			pOther->pathing.bLevel != pCasualty->pathing.bLevel ||
+			pOther->stats.bLife < OKLIFE || pOther->bCollapsed )
+			continue;
+
+		INT16 sDistance = PythSpacesAway( pOther->sGridNo, pCasualty->sGridNo );
+		if ( sDistance < sBestDistance )
+		{
+			sBestDistance = sDistance;
+			pBest = pOther;
+		}
+	}
+	return pBest;
+}
+
+static void MaybePlayBattlefieldCasualtyAudio( SOLDIERTYPE *pCasualty, INT8 bOldLife )
+{
+	if ( !CanUseBattlefieldCasualtyVoice( pCasualty ) || pCasualty->stats.bLife >= OKLIFE || bOldLife < OKLIFE )
+		return;
+
+	UINT32 uiNow = GetJA2Clock();
+	BOOLEAN fMedicCalled = FALSE;
+
+	// Named player characters keep their own recorded voice.
+	if ( pCasualty->ubProfile != NO_PROFILE && pCasualty->bTeam == gbPlayerNum )
+	{
+		if ( pCasualty->stats.bLife >= CONSCIOUSNESS && !pCasualty->flags.fDyingComment )
+		{
+			TacticalCharacterDialogue( pCasualty, QUOTE_SERIOUSLY_WOUNDED );
+			pCasualty->flags.fDyingComment = TRUE;
+		}
+	}
+	else if ( pCasualty->ubProfile == NO_PROFILE &&
+		pCasualty->stats.bLife >= CONSCIOUSNESS && Random( 100 ) < 55 )
+	{
+		fMedicCalled = pCasualty->DoMercBattleSound( BATTLE_SOUND_MEDIC );
+		if ( fMedicCalled )
+			guiLastBattlefieldMedicCall = uiNow;
+	}
+
+	// Nearby generic teammate can call when the casualty cannot; sector-wide cooldown avoids spam.
+	if ( !fMedicCalled && ( uiNow - guiLastBattlefieldMedicCall ) > 6000 && Random( 100 ) < 65 )
+	{
+		SOLDIERTYPE *pCaller = FindNearbyGenericMedicCaller( pCasualty );
+		if ( pCaller && pCaller->DoMercBattleSound( BATTLE_SOUND_MEDIC ) )
+			guiLastBattlefieldMedicCall = uiNow;
+	}
+
+	// Nonfatal agony reuses DYING/BADx_DIE but does not consume the real death cue.
+	if ( Random( 100 ) < 70 )
+	{
+		pCasualty->uiTimeSinceLastBleedGrunt = uiNow;
+		pCasualty->DoMercBattleSound( BATTLE_SOUND_AGONY );
+	}
+}
 
 UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPoisonAdd, INT16 sBreathLoss, UINT8 ubReason, UINT8 ubAttacker, INT32 sSourceGrid, INT16 sSubsequent, BOOLEAN fShowDamage )
 {
@@ -10680,6 +10774,8 @@ UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPo
 		// We don't want that, because he is dying, so we manually skip that animation
 		this->usPendingAnimation = NO_PENDING_ANIMATION;
 	}
+
+	MaybePlayBattlefieldCasualtyAudio( this, bOldLife );
 
 	if ( fShowDamage )
 	{
@@ -11399,9 +11495,20 @@ BOOLEAN SOLDIERTYPE::InternalDoMercBattleSound( UINT8 ubBattleSoundID, INT8 bSpe
 		}
 		else
 		{
-			if ( ubSoundID == BATTLE_SOUND_DIE1 )
+			if ( ubSoundID == BATTLE_SOUND_DIE1 || ubSoundID == BATTLE_SOUND_AGONY )
 			{
+				// Generic enemy sets have large BADx_DIE libraries but no BADx_DYING set.
+				// AGONY borrows those clips without setting fDieSoundUsed.
 				sprintf(BasicPattern, "BATTLESNDS\\bad%d_die", pSoldier->ubBattleSoundID);
+				UseName = FALSE;
+			}
+			else if ( ubSoundID == BATTLE_SOUND_MEDIC )
+			{
+				// Shared CC0 call for no-profile soldiers. Named mercs keep their own voice.
+				if ( pSoldier->ubBodyType == REGFEMALE )
+					sprintf(BasicPattern, "BATTLESNDS\\f_medic");
+				else
+					sprintf(BasicPattern, "BATTLESNDS\\m_medic");
 				UseName = FALSE;
 			}
 			else
