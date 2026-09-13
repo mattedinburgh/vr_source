@@ -168,24 +168,23 @@ INT16 TerrainActionPoints( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bDir, INT8
 		//sAPCost += APBPConstants[AP_MOVEMENT_FLAT] + APBPConstants[AP_OPEN_DOOR] + APBPConstants[AP_OPEN_DOOR]; // Include open and close costs!
 		break;
 
-		// cost for jumping a fence REPLACES all other AP costs!
-	case TRAVELCOST_FENCE		: 
-		//ddd window{
+		// Traversal animations replace ordinary per-tile movement cost. Keep fence and
+	// window costs distinct so path planning matches the live traversal animation.
+	case TRAVELCOST_FENCE:
+		if (!IS_MERC_BODY_TYPE( pSoldier ))
+			return -1;
+		if((UsingNewInventorySystem() == true) && FindBackpackOnSoldier( pSoldier ) != ITEM_NOT_FOUND)
+			return GetAPsToJumpFence( pSoldier, TRUE );
+		return GetAPsToJumpFence( pSoldier, FALSE );
+
 	case TRAVELCOST_JUMPABLEWINDOW:
 	case TRAVELCOST_JUMPABLEWINDOW_N:
 	case TRAVELCOST_JUMPABLEWINDOW_W:
-		//ddd window}
 		if (!IS_MERC_BODY_TYPE( pSoldier ))
-		{
 			return -1;
-		}
-		// CHRISL: 
-		// SANDRO - some little changes here
 		if((UsingNewInventorySystem() == true) && FindBackpackOnSoldier( pSoldier ) != ITEM_NOT_FOUND)
-			return( GetAPsToJumpFence( pSoldier, TRUE ) );
-		else
-			return( GetAPsToJumpFence( pSoldier, FALSE ) );
-
+			return GetAPsToJumpThroughWindows( pSoldier, TRUE );
+		return GetAPsToJumpThroughWindows( pSoldier, FALSE );
 	case TRAVELCOST_NONE			: return( 0 );
 
 	default:
@@ -633,17 +632,22 @@ INT16 EstimateActionPointCost( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bDir, 
 	// Running is impossible in ground-level water, so do not invent a start-run
 	// charge for a step that real movement will execute as walking.
 	UINT8 ubTerrainID = gpWorldLevelData[ sGridNo ].ubTerrainID;
+	BOOLEAN fWindowTraversal =
+		sSwitchValue == TRAVELCOST_JUMPABLEWINDOW ||
+		sSwitchValue == TRAVELCOST_JUMPABLEWINDOW_N ||
+		sSwitchValue == TRAVELCOST_JUMPABLEWINDOW_W;
 	BOOLEAN fRunningThisTile = (usMovementMode == RUNNING);
-	if ( TERRAIN_IS_WATER( ubTerrainID ) && pSoldier->pathing.bLevel == 0 )
+	if ( (TERRAIN_IS_WATER( ubTerrainID ) && pSoldier->pathing.bLevel == 0) || fWindowTraversal )
 	{
+		// A window traversal is its own animation, not the first tile of a run.
 		fRunningThisTile = FALSE;
 	}
 
-	if ( sSwitchValue != TRAVELCOST_FENCE && fRunningThisTile && usPrevMovementMode != RUNNING )
+	if ( sSwitchValue != TRAVELCOST_FENCE && !fWindowTraversal &&
+		fRunningThisTile && usPrevMovementMode != RUNNING )
 	{
 		sPoints += GetAPsStartRun( pSoldier );
 	}
-
 	sPoints += ActionPointCost( pSoldier, sGridNo, bDir, usMovementMode );
 
 	return sPoints;
