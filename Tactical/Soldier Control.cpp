@@ -16405,20 +16405,24 @@ BOOLEAN		SOLDIERTYPE::SeemsLegit( UINT8 ubObserverID, BOOLEAN fShowResult )
 			return FALSE;
 		}
 
-		// If alert is raised, close inspection compares rank and experience. Covert expertise offsets
-		// the observer's experience, bringing this closer to modern 1.13 without discarding VR suspicion.
-		if ( fCloseLook && pSoldier->aiData.bAlertStatus >= STATUS_RED )
+		// Alerted elites/officers can recognize an unfamiliar soldier from somewhat farther away than
+		// a hands-on equipment inspection. Covert expertise offsets the observer's experience.
+		INT32 sObserverDistance = PythSpacesAway(this->sGridNo, pSoldier->sGridNo);
+		if ( ubObserverID != this->ubID &&
+			pSoldier->aiData.bOppList[this->ubID] == SEEN_CURRENTLY &&
+			sObserverDistance <= gSkillTraitValues.usCOEliteUncoverRadius &&
+			pSoldier->aiData.bAlertStatus >= STATUS_RED )
 		{
 			UINT8 ubCovertLevel = NUM_SKILL_TRAITS( this, COVERT_NT );
 			BOOLEAN fExperiencedEnough = EffectiveExpLevel( pSoldier ) >= EffectiveExpLevel( this ) + ubCovertLevel;
-			BOOLEAN fOfficer = NUM_SKILL_TRAITS( pSoldier, SQUADLEADER_NT ) > 0;
-			BOOLEAN fHigherRank = pSoldier->UniformLevel() > this->UniformLevel();
-			BOOLEAN fElitePeer = pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE &&
-				pSoldier->UniformLevel() == this->UniformLevel();
+			BOOLEAN fOfficer = NUM_SKILL_TRAITS( pSoldier, SQUADLEADER_NT ) > 0 ||
+				(pSoldier->usSoldierFlagMask & SOLDIER_ENEMY_OFFICER);
+			BOOLEAN fElite = pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE;
+			BOOLEAN fLowerUniform = this->UniformLevel() < pSoldier->UniformLevel();
 
-			if ( fExperiencedEnough && (fOfficer || fHigherRank || fElitePeer) )
+			if ( fExperiencedEnough && ( fOfficer || (fElite && fLowerUniform) ) )
 			{
-				if (fShowResult) ScreenMsg(FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, L"%s was uncovered!", this->GetName());
+				if (fShowResult) ScreenMsg(FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, L"%s was recognized as an unfamiliar soldier!", this->GetName());
 				return FALSE;
 			}
 		}		
