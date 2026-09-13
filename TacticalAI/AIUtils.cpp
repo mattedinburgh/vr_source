@@ -4610,8 +4610,17 @@ static BOOLEAN AIRecentlyReattachedFireteamRemnant(SOLDIERTYPE *pSoldier)
 	if (!AIEnemyFireteamEligible(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
 		return FALSE;
 
-	return guiAIFireteamIdentity[pSoldier->ubID] == pSoldier->uiUniqueSoldierIdValue &&
-		guiAIFireteamRejoinUntilTurn[pSoldier->ubID] >= guiTurnCnt + 1;
+	if (guiAIFireteamIdentity[pSoldier->ubID] != pSoldier->uiUniqueSoldierIdValue ||
+		guiAIFireteamRejoinUntilTurn[pSoldier->ubID] < guiTurnCnt + 1)
+	{
+		return FALSE;
+	}
+
+	// The sticky period is meaningful only while the merged element still contains
+	// another operational fighter. If that destination fireteam collapses immediately,
+	// release the survivor back to normal disengagement/escape logic rather than
+	// trapping him in a three-turn rejoin state with nobody left to join.
+	return AIFireteamRegroupingStrength(pSoldier) >= 2;
 }
 
 UINT8 AIFireteamId(SOLDIERTYPE *pSoldier)
