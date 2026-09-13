@@ -133,6 +133,7 @@
 #include "Luaglobal.h"
 
 #include "sgp_logger.h"
+#include "ExceptionHandling.h"
 
 #include "Map Screen Interface Map Inventory.h"	// added by Flugente
 
@@ -2325,7 +2326,33 @@ void HandleRPCDescriptionOfSector( INT16 sSectorX, INT16 sSectorY, INT16 sSector
 }
 
 
-BOOLEAN	SetCurrentWorldSector( INT16 sMapX, INT16 sMapY, INT8 bMapZ )
+static BOOLEAN SetCurrentWorldSectorBlackBoxInternal( INT16 sMapX, INT16 sMapY, INT8 bMapZ );
+
+BOOLEAN SetCurrentWorldSector( INT16 sMapX, INT16 sMapY, INT8 bMapZ )
+{
+	CHAR8 operationName[96];
+	DWORD operationToken;
+	BOOLEAN result;
+	INT16 oldX = gWorldSectorX;
+	INT16 oldY = gWorldSectorY;
+	INT8 oldZ = gbWorldSectorZ;
+
+	_snprintf( operationName, sizeof( operationName ) - 1,
+		"SetCurrentWorldSector %d,%d,%d", sMapX, sMapY, bMapZ );
+	operationName[ sizeof( operationName ) - 1 ] = 0;
+	BlackBoxCounterAdd( "sector.load.attempts", 1 );
+	BlackBoxContext( "sector.request", "from=%d,%d,%d to=%d,%d,%d",
+		oldX, oldY, oldZ, sMapX, sMapY, bMapZ );
+	operationToken = BlackBoxOperationBegin( "SECTOR", operationName );
+	result = SetCurrentWorldSectorBlackBoxInternal( sMapX, sMapY, bMapZ );
+	BlackBoxOperationEnd( operationToken, result ? "OK" : "FAILED" );
+	BlackBoxContext( "sector.current", "requested=%d,%d,%d result=%s active=%d,%d,%d",
+		sMapX, sMapY, bMapZ, result ? "OK" : "FAILED", gWorldSectorX, gWorldSectorY, gbWorldSectorZ );
+	BlackBoxCounterAdd( result ? "sector.load.successes" : "sector.load.failures", 1 );
+	return result;
+}
+
+static BOOLEAN SetCurrentWorldSectorBlackBoxInternal( INT16 sMapX, INT16 sMapY, INT8 bMapZ )
 {
 	BOOLEAN									fChangeMusic = TRUE;
 
