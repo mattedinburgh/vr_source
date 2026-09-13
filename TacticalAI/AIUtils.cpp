@@ -4931,7 +4931,14 @@ BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, U
 	if (!AIEnemyFireteamEligible(pSoldier) || TileIsOutOfBounds(sContactSpot))
 		return FALSE;
 
-	AIAbsorbFireteamRemnant(pSoldier);
+	// Reserve allocation is a query, not a fireteam mutation. A viable one/two-man
+	// remnant stays out of an independent QRF response and will perform the actual
+	// reattachment through DecideFireteamCohesionAction on its own decision turn.
+	if (AIFireteamRegroupingStrength(pSoldier) <= 2 &&
+		AICanAbsorbFireteamRemnant(pSoldier))
+	{
+		return TRUE;
+	}
 
 	// Fixed sentries and snipers do not consume a mobile response budget. They may
 	// still fight normally if contact reaches their position, but they do not abandon
