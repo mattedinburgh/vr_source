@@ -5000,9 +5000,9 @@ void RestCharacter( SOLDIERTYPE *pSoldier )
 				}
 				else
 				{
-					// Outdoors the bag matters more: apply its full bonus and shield against half of
-					// the terrain-related discomfort that separates this sector from town-quality sleep.
-					sSleepEfficiency += ubInventorySleepModifier + ( 100 - sLocationEfficiency ) / 2;
+					// Treat the sleeping bag as a complete field sleep system, including a basic ground mat.
+					// Outdoors it therefore receives its full sleep bonus; terrain still determines the baseline.
+					sSleepEfficiency += ubInventorySleepModifier;
 				}
 			}
 
@@ -5029,12 +5029,13 @@ void RestCharacter( SOLDIERTYPE *pSoldier )
 		bMaxBreathRegain = 17;
 	}
 
-	// if breath max is below the "really tired" threshold
-	if( pSoldier->bBreathMax < BREATHMAX_PRETTY_TIRED )
-	{
-		// real tired, rest rate is 50% higher (this is to prevent absurdly long sleep times for totally exhausted mercs)
-		bMaxBreathRegain = (UINT8)( bMaxBreathRegain * 3 / 2 );
-	}
+	// Recovery follows a smooth curve instead of a binary tired/not-tired step.
+	// Deep fatigue is recovered quickly, while the last part of the energy bar fills progressively more slowly.
+	// At complete exhaustion the multiplier is 1.50x; near full energy it approaches 0.50x.
+	FLOAT fFatigueRatio = (FLOAT)( 100 - pSoldier->bBreathMax ) / 100.0f;
+	fFatigueRatio = __min( 1.0f, __max( 0.0f, fFatigueRatio ) );
+	FLOAT fRecoveryCurve = 0.50f + (FLOAT)pow( fFatigueRatio, 0.75f );
+	bMaxBreathRegain = (INT8)__max( 1, (INT32)( (FLOAT)bMaxBreathRegain * fRecoveryCurve + 0.5f ) );
 
 	pSoldier->bBreathMax += bMaxBreathRegain;
 
