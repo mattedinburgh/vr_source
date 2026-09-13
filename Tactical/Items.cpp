@@ -14168,7 +14168,7 @@ UINT8 AllowedAimingLevelsNCTH( SOLDIERTYPE *pSoldier, INT32 sGridNo )
 
 	// Read from item
 	aimLevels = Weapon[pSoldier->inv[pSoldier->ubAttackingHand].usItem].ubAimLevels;
-	fTwoHanded = ItemIsTwoHanded(pSoldier->inv[pSoldier->ubAttackingHand].usItem);
+	fTwoHanded = TwoHandedItem(pSoldier->inv[pSoldier->ubAttackingHand].usItem);
 	weaponRange = ( Weapon[pSoldier->inv[pSoldier->ubAttackingHand].usItem].usRange * GetPercentRangeBonus(&pSoldier->inv[pSoldier->ubAttackingHand]) ) / 10000;
 	weaponRange += GetRangeBonus(&pSoldier->inv[pSoldier->ubAttackingHand]);
 	weaponType = Weapon[pSoldier->inv[pSoldier->ubAttackingHand].usItem].ubWeaponType;
