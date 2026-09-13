@@ -312,7 +312,30 @@ enum
 	AI_DOCTRINE_ELITE_GUARD
 };
 
+// Functional command hierarchy. The visible rank ladder mirrors 1.13 EnemyRank.xml
+// (experience levels 1-10); GENERAL is reserved for exceptional explicit commanders.
+// Rank changes command/cohesion behaviour only - never CTH, AP or weapon performance.
+enum
+{
+	AI_RANK_NONE = 0,
+	AI_RANK_RECRUIT = 1,
+	AI_RANK_PRIVATE,
+	AI_RANK_CORPORAL,
+	AI_RANK_SPECIALIST,
+	AI_RANK_SERGEANT,
+	AI_RANK_STAFF_SERGEANT,
+	AI_RANK_LIEUTENANT,
+	AI_RANK_CAPTAIN,
+	AI_RANK_MAJOR,
+	AI_RANK_COLONEL,
+	AI_RANK_GENERAL
+};
+
 BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier);
+UINT8 AIGetCommandRank(SOLDIERTYPE *pSoldier);
+UINT8 AICommandAuthority(SOLDIERTYPE *pSoldier);
+BOOLEAN AICheckIsNCO(SOLDIERTYPE *pSoldier);
+BOOLEAN AICheckIsLeader(SOLDIERTYPE *pSoldier);
 UINT8 AICountNearbyOperationalFriends(SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDistance);
 UINT8 AIGetDoctrineProfile(SOLDIERTYPE *pSoldier);
 BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier);
