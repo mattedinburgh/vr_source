@@ -740,7 +740,7 @@ static void BattleLogContentCallback( MOUSE_REGION *pRegion, INT32 iReason )
 		return;
 
 	BATTLE_LOG_ENTRY *pEntry = BattleLogEntryBySequence( seq );
-	if ( pEntry && pEntry->fClickable )
+	if ( pEntry )
 	{
 		if ( gfBattleLogInspectorVisible && guiBattleLogInspectorSequence == seq )
 		{
