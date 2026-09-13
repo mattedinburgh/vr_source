@@ -1,0 +1,159 @@
+name: Autonomous JA2 map visual QA
+
+on:
+  push:
+    branches:
+      - install/all-2026-09-12
+    paths-ignore:
+      - 'MapPreviews/**'
+      - '**/*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ja2-autonomous-map-preview
+  cancel-in-progress: true
+
+jobs:
+  render-a3:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: [self-hosted, Windows, X64, ja2-render]
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out vr_source
+        uses: actions/checkout@v4
+        with:
+          ref: install/all-2026-09-12
+          fetch-depth: 1
+
+      - name: Check out vr_gamedir
+        uses: actions/checkout@v4
+        with:
+          repository: mattedinburgh/vr_gamedir
+          ref: install/all-2026-09-12
+          path: _vr_gamedir
+          fetch-depth: 1
+
+      - name: Find MSBuild
+        id: msbuild
+        shell: powershell
+        run: |
+          $candidates = @(
+            'C:\Program Files (x86)\MSBuild\12.0\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\MSBuild\Current\Bin\MSBuild.exe'
+          )
+          $msbuild = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $msbuild) {
+            $cmd = Get-Command msbuild.exe -ErrorAction SilentlyContinue
+            if ($cmd) { $msbuild = $cmd.Source }
+          }
+          if (-not $msbuild) { throw 'MSBuild could not be found on the render PC.' }
+          "path=$msbuild" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Using MSBuild: $msbuild"
+
+      - name: Build MapEditor
+        shell: powershell
+        run: |
+          & '${{ steps.msbuild.outputs.path }}' '.\ja2_VS2013.sln' /m /t:ja2 /p:Configuration=MapEditor /p:Platform=Win32
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $editor = Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\MapEditor_EN_Release.exe'
+          if (-not (Test-Path $editor)) { throw "Expected MapEditor was not built: $editor" }
+
+      - name: Prepare isolated render sandbox
+        shell: powershell
+        run: |
+          $gameRoot = 'C:\VENGENCE\Jagged Alliance 2'
+          $sandbox = 'C:\VENGENCE\JA2_RENDER_SANDBOX'
+          if (-not (Test-Path (Join-Path $gameRoot 'JA2_EN_Release.exe'))) {
+            throw "Live JA2 game root not found: $gameRoot"
+          }
+
+          if (-not (Test-Path $sandbox)) {
+            New-Item -ItemType Directory -Force -Path $sandbox | Out-Null
+            & robocopy $gameRoot $sandbox /E /R:1 /W:1 /XD (Join-Path $gameRoot '00000') (Join-Path $gameRoot 'Profiles') (Join-Path $gameRoot 'MAP_PREVIEWS') /XF '*.log'
+            if ($LASTEXITCODE -gt 7) { throw "Initial sandbox copy failed: robocopy $LASTEXITCODE" }
+          }
+
+          $gamedir = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
+          & robocopy $gamedir $sandbox /E /R:1 /W:1 /XD '.git' '.github' 'MapPreviews'
+          if ($LASTEXITCODE -gt 7) { throw "Gamedir overlay failed: robocopy $LASTEXITCODE" }
+
+          $editor = Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\MapEditor_EN_Release.exe'
+          Copy-Item -Force $editor (Join-Path $sandbox 'MapEditor_EN_Release.exe')
+
+          $previewDir = Join-Path $sandbox 'MAP_PREVIEWS'
+          New-Item -ItemType Directory -Force -Path $previewDir | Out-Null
+          Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $previewDir 'A3_overview.bmp')
+
+      - name: Render A3 with the real JA2 engine
+        shell: powershell
+        run: |
+          $sandbox = 'C:\VENGENCE\JA2_RENDER_SANDBOX'
+          $editor = Join-Path $sandbox 'MapEditor_EN_Release.exe'
+          $p = Start-Process -FilePath $editor -ArgumentList '-MAPSHOT=A3.dat' -WorkingDirectory $sandbox -PassThru
+          if (-not $p.WaitForExit(180000)) {
+            try { $p.Kill() } catch {}
+            throw 'MapEditor MAPSHOT timed out after 180 seconds.'
+          }
+          if ($p.ExitCode -ne 0) { throw "MapEditor exited with code $($p.ExitCode)" }
+
+          $bmp = Join-Path $sandbox 'MAP_PREVIEWS\A3_overview.bmp'
+          if (-not (Test-Path $bmp)) { throw "A3 preview not produced: $bmp" }
+
+          Add-Type -AssemblyName System.Drawing
+          $outDir = Join-Path $env:GITHUB_WORKSPACE 'MapPreviews\Auto'
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          $png = Join-Path $outDir 'A3_latest.png'
+          $img = [System.Drawing.Image]::FromFile($bmp)
+          try {
+            $img.Save($png, [System.Drawing.Imaging.ImageFormat]::Png)
+          } finally {
+            $img.Dispose()
+          }
+
+          $srcSha = '${{ github.sha }}'
+          $gamedirSha = (git -C (Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir') rev-parse HEAD).Trim()
+          @{
+            sector = 'A3'
+            source_sha = $srcSha
+            gamedir_sha = $gamedirSha
+            generated_utc = (Get-Date).ToUniversalTime().ToString('o')
+            renderer = 'JA2 MapEditor -MAPSHOT'
+            sandbox = $sandbox
+          } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $outDir 'A3_latest.json')
+
+      - name: Upload render artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: A3-engine-preview
+          path: |
+            MapPreviews/Auto/A3_latest.png
+            MapPreviews/Auto/A3_latest.json
+          retention-days: 14
+
+      - name: Publish latest preview to repository
+        shell: bash
+        run: |
+          git add MapPreviews/Auto/A3_latest.png MapPreviews/Auto/A3_latest.json
+          if git diff --cached --quiet; then
+            echo "Preview is unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update autonomous A3 engine preview"
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin install/all-2026-09-12
+            if git push origin HEAD:install/all-2026-09-12; then
+              exit 0
+            fi
+            sleep $((attempt * 2))
+          done
+          exit 1
