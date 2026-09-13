@@ -2650,15 +2650,21 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 			if ( pSoldier->bSide != pFriend->bSide )
 				continue;		// next merc
 
-			// Morale support is tactical, not sector-wide. Healthy enemy fireteams
-			// should draw confidence primarily from their own element and nearby
-			// cross-support, rather than from soldiers fighting on the far side of the map.
-			if (AICombatTeam(pSoldier) && pFriend->bTeam == pSoldier->bTeam &&
-				!AISameFireteam(pSoldier, pFriend) &&
-				ubMyFireteamReady > 2 &&
-				PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > TACTICAL_RANGE / 2)
+			// Morale support is tactical, not sector-wide. Same-fireteam status does not
+			// magically provide confidence across the map: a newly reattached remnant must
+			// physically close on its destination element before gaining its full support.
+			if (AICombatTeam(pSoldier) && pFriend->bTeam == pSoldier->bTeam)
 			{
-				continue;
+				INT32 iFriendDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
+				if (AISameFireteam(pSoldier, pFriend))
+				{
+					if (iFriendDistance > TACTICAL_RANGE)
+						continue;
+				}
+				else if (ubMyFireteamReady > 2 && iFriendDistance > TACTICAL_RANGE / 2)
+				{
+					continue;
+				}
 			}
 
 			// THIS TEST IS INVALID IF A COMPUTER-TEAM IS PLAYING CO-OPERATIVELY
