@@ -379,7 +379,7 @@ void ClearDisplayedListOfTacticalStrings( void )
 #define BATTLE_LOG_MAX_ENTRIES 128
 #define BATTLE_LOG_HEADER_H 18
 #define BATTLE_LOG_RESIZE_GRIP 12
-#define BATTLE_LOG_INSPECTOR_H 220
+#define BATTLE_LOG_INSPECTOR_H 232
 
 #define BATTLELOG_OUTCOME_NONE    0
 #define BATTLELOG_OUTCOME_MISS    1
@@ -887,7 +887,7 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 			d.fBaseEffect, d.fBaseWeapon, d.fBaseTarget );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
 
-		swprintf( z, L"Base extra: gear %+0.1f%%  special %+0.1f%%  total %+0.1f%%",
+		swprintf( z, L"Base extra: gear %+0.1f%%  team/difficulty %+0.1f%%  total %+0.1f%%",
 			d.fGearAim, d.fBaseSpecial, d.fBaseModifier );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
 
@@ -895,7 +895,7 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 			d.fAimAttribute, d.fAimTraitCap, d.fPercentCap, d.fAimCap );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGREEN, z ); sy += lineH;
 
-		swprintf( z, L"Aim mod: condition %+0.1f%%  weapon %+0.1f%%  special %+0.1f%%",
+		swprintf( z, L"Aim mod: condition %+0.1f%%  weapon %+0.1f%%  team/difficulty %+0.1f%%",
 			d.fAimEffect, d.fAimWeapon, d.fAimSpecial );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
 
@@ -926,6 +926,12 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		swprintf( z, L"Weapon dispersion: %+0.2f,%+0.2f (radius %.2f) | final %+0.2f,%+0.2f",
 			d.fDeviationX, d.fDeviationY, d.fBulletDeviation, d.fShotOffsetX, d.fShotOffsetY );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTRED, z ); sy += lineH;
+
+		swprintf( z, L"Team/difficulty modifiers: base %+0.1f%% | aim %+0.1f%%",
+			d.fBaseSpecial, d.fAimSpecial );
+		BattleLogPrintInspectorLine( ix + 7, sy,
+			(d.fBaseSpecial != 0.0f || d.fAimSpecial != 0.0f) ? FONT_MCOLOR_LTYELLOW : FONT_MCOLOR_LTGRAY, z );
+		sy += lineH;
 
 		// Player-readable dominant formula factor. The raw values above remain
 		// visible so the explanation never hides the actual NCTH calculation.
