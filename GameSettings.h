@@ -568,6 +568,17 @@ typedef struct
 	BOOLEAN gfShiftFUnloadWeapons;
 	BOOLEAN gfShiftFRemoveAttachments;
 
+	// Advanced weather modernization (inactive by default).
+	// These gates let the new sector-local weather model coexist with the legacy rain system.
+	BOOLEAN gfEnableAdvancedWeather;
+	BOOLEAN gfEnableLocalWeather;
+	BOOLEAN gfEnableWeatherAIEffects;
+	BOOLEAN gfEnableWeatherSmokeEffects;
+	BOOLEAN gfEnableWeatherWeaponEffects;
+	BOOLEAN gfEnableFog;
+	BOOLEAN gfEnableDustStorms;
+	UINT32  uiAdvancedWeatherUpdateMinutes;
+
 	// Rain settings
 	BOOLEAN gfAllowRain;
 	UINT32 gusRainChancePerDay;
