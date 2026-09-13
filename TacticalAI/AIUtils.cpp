@@ -2215,7 +2215,7 @@ INT32 ClosestReachableFriendInTrouble(SOLDIERTYPE *pSoldier, BOOLEAN * pfClimbin
 				(pFriend->ubID == gTacticalStatus.Team[pFriend->bTeam].ubLastMercToRadio && GuySawEnemyThisTurnOrBefore( pFriend ) ) ||
 				CountSeenEnemiesLastTurn(pFriend) > CountNearbyFriendlies(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE/4) ) )*/
 		// sevenfm: help if friend has more recently seen opponents than friends nearby
-		if( !( CountSeenEnemiesLastTurn(pFriend) > CountNearbyCombatFriends(pFriend, pFriend->sGridNo, DAY_VISION_RANGE/4) ) )
+		if( !( CountSeenEnemiesLastTurn(pFriend) > AICountNearbyOperationalFriends(pFriend, pFriend->sGridNo, DAY_VISION_RANGE/4) ) )
 		{
 			continue;			// next merc
 		}
@@ -2828,7 +2828,7 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 			(InARoom(pSoldier->sGridNo, NULL) && pSoldier->pathing.bLevel == 0 || 
 			CountFriendsInDirection(pSoldier, AIDirection(pSoldier->sGridNo, sClosestOpponent), PythSpacesAway(sClosestOpponent, pSoldier->sGridNo), FALSE) ||
 			CountFriendsInDirectionFromSpot(pSoldier, sClosestOpponent, AIDirection(sClosestOpponent, pSoldier->sGridNo), PythSpacesAway(sClosestOpponent, pSoldier->sGridNo)) || 			
-			CountNearbyCombatFriends(pSoldier, pSoldier->sGridNo, TACTICAL_RANGE / 2)) &&
+			AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, TACTICAL_RANGE / 2)) &&
 		(AICheckSpecialRole(pSoldier) || pSoldier->aiData.bOrders != SEEKENEMY && !pSoldier->aiData.bLastAttackHit) &&
 		AnyCoverAtSpot(pSoldier, pSoldier->sGridNo))
 	{
@@ -7697,35 +7697,6 @@ UINT8 CountNearbyFriends( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDistance
 	return ubFriendCount;
 }
 
-UINT8 CountNearbyCombatFriends(SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDistance)
-{
-	CHECKF(pSoldier);
-
-	UINT8 ubFriendCount = 0;
-	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
-		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
-	{
-		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
-		if (!pFriend || pFriend == pSoldier ||
-			!pFriend->bActive || !pFriend->bInSector ||
-			pFriend->stats.bLife < OKLIFE ||
-			pFriend->bCollapsed ||
-			pFriend->bBreathCollapsed ||
-			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
-			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
-			AIDisengagementActive(pFriend) ||
-			AIEscapeActive(pFriend) ||
-			PythSpacesAway(sGridNo, pFriend->sGridNo) > ubDistance)
-		{
-			continue;
-		}
-
-		++ubFriendCount;
-	}
-
-	return ubFriendCount;
-}
-
 // count neutral civilians
 UINT8 CountNearbyNeutrals(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 sDistance)
 {
@@ -9752,7 +9723,7 @@ BOOLEAN AICheckWeOutnumberPublic(SOLDIERTYPE *pSoldier, INT32 sSpot)
 		return FALSE;
 	}
 
-	UINT8 ubFriends = CountNearbyCombatFriends(pSoldier, sSpot, TACTICAL_RANGE);
+	UINT8 ubFriends = AICountNearbyOperationalFriends(pSoldier, sSpot, TACTICAL_RANGE);
 	UINT8 ubEnemies = CountPublicKnownEnemies(pSoldier, sSpot, TACTICAL_RANGE);
 
 	if (ubEnemies > 0 && ubFriends > 2 * ubEnemies)
