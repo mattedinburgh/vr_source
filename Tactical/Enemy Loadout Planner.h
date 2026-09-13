@@ -270,6 +270,10 @@ void BuildBestEnemyAttachmentPackageForPlan(
 	UINT16 usBaseItem,
 	UINT8 ubMaxCoolness);
 
+// Structural audit helpers for isolated testing/instrumentation.
+BOOLEAN ValidateEnemyLoadoutBatch(const ENEMY_LOADOUT_BATCH *pBatch);
+BOOLEAN ValidateEnemyLoadoutPlan(const ENEMY_LOADOUT_PLAN *pPlan);
+
 const char *EnemyLoadoutRoleName(ENEMY_LOADOUT_ROLE Role);
 
 #endif
