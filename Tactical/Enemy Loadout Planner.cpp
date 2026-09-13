@@ -451,7 +451,11 @@ static UINT8 CountDesiredSpecialists(const ENEMY_ROLE_TARGETS *pTargets)
 	return count;
 }
 
-static void ProtectRifleCore(ENEMY_ROLE_TARGETS *pTargets, UINT8 ubSquadSize, UINT8 minimumRiflemen)
+static void ProtectRifleCore(
+	ENEMY_ROLE_TARGETS *pTargets,
+	UINT8 ubSquadSize,
+	UINT8 minimumRiflemen,
+	UINT8 optionalSlots)
 {
 	static const ENEMY_LOADOUT_ROLE demotionOrder[] =
 	{
@@ -471,7 +475,7 @@ static void ProtectRifleCore(ENEMY_ROLE_TARGETS *pTargets, UINT8 ubSquadSize, UI
 
 	for ( i = 0;
 		  i < sizeof(demotionOrder) / sizeof(demotionOrder[0]) &&
-		  specialistCount + minimumRiflemen > ubSquadSize;
+		  specialistCount + minimumRiflemen + optionalSlots > ubSquadSize;
 		  ++i )
 	{
 		ENEMY_LOADOUT_ROLE role = demotionOrder[i];
@@ -637,29 +641,27 @@ void BuildEnemyRoleTargets(
 		0,
 		(ubProgress >= 55 && ubSquadSize >= 10) ? 1 : 0);
 
-	// Keep a meaningful rifle core.  30% is a floor.  If a small squad
-	// accumulates too many mandatory specialist roles, lower-priority roles
-	// are demoted back to optional status rather than deleting the rifle core.
-	minimumRiflemen = ClampU8((ubSquadSize * 3 + 9) / 10, 1, ubSquadSize);
-	ProtectRifleCore(pTargets, ubSquadSize, minimumRiflemen);
-	mandatoryRoles = CountDesiredSpecialists(pTargets);
-
 	// Reserve one variable specialist slot once the army is established.
-	// Late elite groups may reserve two, but never at the expense of the
-	// protected rifle core.
+	// Late elite groups may reserve two.  This variation budget is protected:
+	// lower-priority "mandatory" roles are demoted before we sacrifice it.
 	if ( ubProgress >= 40 && ubSquadSize >= 8 )
 		optionalSlots = 1;
 	if ( IsEliteEnemy(bSoldierClass) && ubProgress >= 70 && ubSquadSize >= 10 )
 		optionalSlots = 2;
 
-	if ( mandatoryRoles + minimumRiflemen >= ubSquadSize )
-	{
-		optionalSlots = 0;
-	}
-	else if ( mandatoryRoles + minimumRiflemen + optionalSlots > ubSquadSize )
-	{
-		optionalSlots = (UINT8)(ubSquadSize - mandatoryRoles - minimumRiflemen);
-	}
+	// Keep a meaningful rifle core.  30% is a floor.  If the core roles plus
+	// the variation budget do not fit, demote lower-priority roles back to
+	// optional status rather than eliminating either riflemen or variation.
+	minimumRiflemen = ClampU8((ubSquadSize * 3 + 9) / 10, 1, ubSquadSize);
+	if ( minimumRiflemen + optionalSlots > ubSquadSize )
+		optionalSlots = (UINT8)(ubSquadSize - minimumRiflemen);
+
+	ProtectRifleCore(pTargets, ubSquadSize, minimumRiflemen, optionalSlots);
+	mandatoryRoles = CountDesiredSpecialists(pTargets);
+
+	// A final defensive clamp for pathological future target changes.
+	if ( mandatoryRoles + minimumRiflemen + optionalSlots > ubSquadSize )
+		optionalSlots = (UINT8)__max(0, (INT32)ubSquadSize - mandatoryRoles - minimumRiflemen);
 
 	SetRoleTarget(
 		pTargets,
