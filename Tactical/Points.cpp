@@ -405,7 +405,7 @@ INT16 ActionPointCost(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bDir, UINT16 us
 	if (sSwitchValue == TRAVELCOST_FENCE)
 	{
 		// A casualty cannot be pulled through a fence-jump animation.
-		if ( IsDraggingDownedPerson( pSoldier ) )
+		if ( pSoldier->IsDraggingBleedoutCasualty() )
 			return 100;
 		return(sTileCost);
 	}
@@ -424,7 +424,7 @@ INT16 ActionPointCost(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bDir, UINT16 us
 	}
 
 	// A rescuer dragging a casualty moves at walking pace even if a faster mode was selected.
-	if ( IsDraggingDownedPerson( pSoldier ) )
+	if ( pSoldier->IsDraggingBleedoutCasualty() )
 	{
 		usMovementMode = WALKING;
 	}
@@ -569,7 +569,7 @@ INT16 ActionPointCost(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bDir, UINT16 us
 
 	// Dragging a living casualty is deliberately costly: 50% more AP per movement tile.
 	// EstimateActionPointCost() calls this function too, so path previews and real deduction agree.
-	if ( IsDraggingDownedPerson( pSoldier ) && sPoints > 0 )
+	if ( pSoldier->IsDraggingBleedoutCasualty() && sPoints > 0 )
 	{
 		sPoints = max( (INT16)1, (INT16)((3 * sPoints + 1) / 2) );
 	}
