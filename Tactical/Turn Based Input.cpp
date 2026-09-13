@@ -2797,12 +2797,12 @@ void GetKeyboardInput( UINT32 *puiNewEvent )
 							}
 							else if ( pSoldier->CanBreakWindow() )
 							{
-								if ( EnoughPoints( pSoldier, GetAPsToBreakWindow( pSoldier, TRUE ), BP_USE_CROWBAR, TRUE ) )
+								if ( EnoughPoints( pSoldier, GetAPsToBreakWindow( pSoldier, FALSE ), BP_USE_CROWBAR, TRUE ) )
 									pSoldier->BreakWindow();
 							}
 							else
 							{
-								ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, L"No adjacent unconscious or downed teammate to move." );
+								ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, L"No adjacent casualty or breakable window available." );
 							}
 						}
 					}
