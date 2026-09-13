@@ -1390,8 +1390,11 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 					BOOLEAN fShareClear = TRUE;
 					if (AICombatTeam(pSoldier) && pOpponent->bTeam == pSoldier->bTeam)
 					{
-						fShareClear = AISameFireteam(pSoldier, pOpponent) ||
-							PythSpacesAway(pSoldier->sGridNo, pOpponent->sGridNo) <= TACTICAL_RANGE / 3;
+						INT32 iShareDistance = PythSpacesAway(pSoldier->sGridNo, pOpponent->sGridNo);
+						if (AISameFireteam(pSoldier, pOpponent))
+							fShareClear = (iShareDistance <= TACTICAL_RANGE);
+						else
+							fShareClear = (iShareDistance <= TACTICAL_RANGE / 3);
 					}
 					if (fShareClear)
 					{
