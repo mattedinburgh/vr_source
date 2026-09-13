@@ -47,7 +47,16 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 		return( NULL );
 	}
 	if ( fTraceB1Asset )
+	{
 		TraceB1RemasterLoad( "CREATE IMAGE OK", cFilename );
+		CHAR8 zB1ImageSource[256];
+		sprintf( zB1ImageSource, "requested=%s resolved=%s bitDepth=%u objects=%u",
+			cFilename,
+			hImage->ImageFile,
+			hImage->ubBitDepth,
+			hImage->usNumberOfObjects );
+		TraceB1RemasterLoad( hImage->ubBitDepth == 32 ? "TRUECOLOR ACTIVE" : "LEGACY IMAGE ACTIVE", zB1ImageSource );
+	}
 
 	VObjectDesc.fCreateFlags = VOBJECT_CREATE_FROMHIMAGE;
 	VObjectDesc.hImage = hImage;
