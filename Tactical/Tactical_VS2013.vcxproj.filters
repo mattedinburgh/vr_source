@@ -267,6 +267,45 @@
     <ClInclude Include="SkillMenu.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="LogicalBodyTypes\AbstractXMLLoader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="LogicalBodyTypes\BodyType.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="LogicalBodyTypes\BodyTypeDB.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="LogicalBodyTypes\EnumeratorDB.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="LogicalBodyTypes\Filter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="LogicalBodyTypes\FilterDB.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="LogicalBodyTypes\Layers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="LogicalBodyTypes\PaletteDB.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="LogicalBodyTypes\PaletteTable.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="LogicalBodyTypes\Singleton.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="LogicalBodyTypes\SurfaceCache.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="LogicalBodyTypes\SurfaceDB.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="LogicalBodyTypes\XMLParseException.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Air Raid.cpp">
@@ -378,6 +417,42 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Keys.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LogicalBodyTypes\AbstractXMLLoader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LogicalBodyTypes\BodyType.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LogicalBodyTypes\BodyTypeDB.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LogicalBodyTypes\EnumeratorDB.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LogicalBodyTypes\Filter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LogicalBodyTypes\FilterDB.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LogicalBodyTypes\Layers.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LogicalBodyTypes\PaletteDB.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LogicalBodyTypes\PaletteTable.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LogicalBodyTypes\SurfaceCache.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LogicalBodyTypes\SurfaceDB.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LogicalBodyTypes\XMLParseException.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="LOS.cpp">
