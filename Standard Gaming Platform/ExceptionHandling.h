@@ -24,6 +24,14 @@ extern "C" {
 
 INT32 RecordExceptionInfo( EXCEPTION_POINTERS *pExceptInfo );
 
+// Vengeance flight recorder / crash black box.
+// BlackBoxEvent() is for durable, low-frequency milestones.
+// BlackBoxCheckpoint() is memory-only and safe to call from hot diagnostic paths.
+void BlackBoxInitialize( void );
+void BlackBoxShutdown( void );
+void BlackBoxEvent( const char *category, const char *format, ... );
+void BlackBoxCheckpoint( const char *subsystem, const char *format, ... );
+
 
 #ifdef __cplusplus
 }
