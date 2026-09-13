@@ -34,6 +34,7 @@
 
 #include "SaveLoadScreen.h"
 #include "Standard Gaming Platform/ExceptionHandling.h"
+#include "Strategic/Strategic Movement.h"
 
 #include "Lua Interpreter.h"
 //**ddd direct link libraries
@@ -387,6 +388,16 @@ void GameLoop(void)
 	{
 		guiPendingScreen = MP_CHAT_SCREEN;
 	}
+
+	// Resolve tactical escape destinations only on a safe outer game-loop frame.
+	// This avoids nesting a second battle inside tactical battle teardown.
+	if( !gfInMsgBox && !gfInChatBox &&
+		guiPendingScreen == NO_PENDING_SCREEN &&
+		( guiCurrentScreen == GAME_SCREEN || guiCurrentScreen == MAP_SCREEN ) )
+	{
+		ProcessNextEnemyRetreatConflict();
+	}
+
 	if ( guiPendingScreen != NO_PENDING_SCREEN )
 	{
 		// Based on active screen, deinit!
