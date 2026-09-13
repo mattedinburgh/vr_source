@@ -120,9 +120,10 @@ corrected:
 - Bleed-out/drag state is explicitly save-versioned as version 152. Versions 147-151
   consume the historical 20 filler bytes without interpreting them, preventing plausible
   legacy filler values from becoming fake casualties or drag links.
-- Visible-equipment deployment is pinned to a fixed 1.13 gamedir revision instead of
-  moving `master`, while retaining case-resolved asset discovery and the READY marker
-  runtime gate.
+- Visible-equipment deployment is pinned at both ends: the Vengeance LOBOT catalog is
+  fixed to `vr_gamedir` commit `24b04534b4c4ba55b926f63092bfa0461a9ff2b0` and the
+  1.13 art source is fixed to commit `bdcf501e6b4db072933357a71f97243b7ab759e1`.
+  Case-resolved asset discovery and the READY marker runtime gate remain in place.
 - NCTH movement range evaluation now searches the same available scope-mode catalogue as
   firing logic rather than judging a position only through `USE_BEST_SCOPE`.
 - Allied casualty callouts share a six-second battlefield medic-call cooldown, and agony
