@@ -378,7 +378,7 @@ void ClearDisplayedListOfTacticalStrings( void )
 #define BATTLE_LOG_MAX_ENTRIES 128
 #define BATTLE_LOG_HEADER_H 18
 #define BATTLE_LOG_RESIZE_GRIP 12
-#define BATTLE_LOG_INSPECTOR_H 154
+#define BATTLE_LOG_INSPECTOR_H 178
 
 typedef struct
 {
@@ -759,17 +759,21 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 			d.fMagFactor, d.fEffectiveMagFactor, d.fMaxAperture, d.fFinalAperture );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
 
-		swprintf( z, L"Physical shot: muzzle X %+0.2f Y %+0.2f | weapon deviation %.2f",
-			d.fMuzzleOffsetX, d.fMuzzleOffsetY, d.fBulletDeviation );
+		swprintf( z, L"Sway/track: random %+0.2f,%+0.2f | tracking %+0.2f,%+0.2f",
+			d.fRandomSwayX, d.fRandomSwayY, d.fTargetTrackingX, d.fTargetTrackingY );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTYELLOW, z ); sy += lineH;
 
-		swprintf( z, L"Final offset: X %+0.2f  Y %+0.2f | aperture quality %d%%",
-			d.fShotOffsetX, d.fShotOffsetY, d.sApertureRatio );
+		swprintf( z, L"Volley: pre-recoil %+0.2f,%+0.2f | recoil %+0.2f,%+0.2f | range Y %+0.2f",
+			d.fPreRecoilX, d.fPreRecoilY, d.fRecoilX, d.fRecoilY, d.fRangeCompensationY );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
+
+		swprintf( z, L"Weapon dispersion: %+0.2f,%+0.2f (radius %.2f) | final %+0.2f,%+0.2f",
+			d.fDeviationX, d.fDeviationY, d.fBulletDeviation, d.fShotOffsetX, d.fShotOffsetY );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTRED, z ); sy += lineH;
 
-		// Player-readable dominant factor. The raw values above remain available
-		// so the explanation never hides the actual NCTH calculation.
-		const CHAR16 *why = L"random dispersion / final trajectory";
+		// Player-readable dominant formula factor. The raw values above remain
+		// visible so the explanation never hides the actual NCTH calculation.
+		const CHAR16 *why = L"no major formula penalty";
 		FLOAT worst = 0.0f;
 		if ( d.fBaseWeapon < worst ) { worst = d.fBaseWeapon; why = L"weapon handling / base weapon penalty"; }
 		if ( d.fAimWeapon < worst ) { worst = d.fAimWeapon; why = L"weapon handling while aiming"; }
@@ -777,8 +781,26 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		if ( d.fVisibility < worst ) { worst = d.fVisibility; why = L"visibility / intervening obstruction penalty"; }
 		if ( d.fScopePenalty < worst ) { worst = d.fScopePenalty; why = L"scope used inside its efficient range"; }
 		if ( d.fBaseEffect < worst ) { worst = d.fBaseEffect; why = L"shooter condition: shock, injury, fatigue or morale"; }
-		swprintf( z, L"Dominant accuracy factor: %s (%+.1f)", why, worst );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTYELLOW, z );
+		swprintf( z, L"Biggest formula penalty: %s (%+.1f)", why, worst );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTYELLOW, z ); sy += lineH;
+
+		// Also identify which physical component moved this particular round the
+		// most. This is what makes two shots with the same NCTH end differently.
+		const CHAR16 *physicalWhy = L"random muzzle sway";
+		FLOAT physicalMagnitude = d.fRandomSwayX*d.fRandomSwayX + d.fRandomSwayY*d.fRandomSwayY;
+		FLOAT candidate = d.fTargetTrackingX*d.fTargetTrackingX + d.fTargetTrackingY*d.fTargetTrackingY;
+		if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"target tracking/lead error"; }
+		candidate = d.fPreRecoilX*d.fPreRecoilX + d.fPreRecoilY*d.fPreRecoilY;
+		if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"pre-recoil compensation"; }
+		candidate = d.fRecoilX*d.fRecoilX + d.fRecoilY*d.fRecoilY;
+		if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"burst/autofire recoil"; }
+		candidate = d.fRangeCompensationY*d.fRangeCompensationY;
+		if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"beyond-range compensation"; }
+		candidate = d.fDeviationX*d.fDeviationX + d.fDeviationY*d.fDeviationY;
+		if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"intrinsic weapon dispersion"; }
+		swprintf( z, L"This round deviated most from: %s | aperture quality %d%%",
+			physicalWhy, d.sApertureRatio );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTRED, z );
 	}
 
 	InvalidateRegion( gsBattleLogX, __max(0, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 4),
