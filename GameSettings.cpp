@@ -2592,7 +2592,7 @@ void LoadSkillTraitsExternalSettings()
 	gSkillTraitValues.sCODisguiseAPReduction				= iniReader.ReadInteger("Covert Ops","COVERT_DISGUISE_PERCENT_AP_REDUCTION", 20, 0, 50);
 	gSkillTraitValues.sCOCloseDetectionRange				= iniReader.ReadInteger("Covert Ops","COVERT_CLOSE_DETECTION_RANGE", 10, 0, 100);
 	gSkillTraitValues.sCOCloseDetectionRangeSoldierCorpse	= iniReader.ReadInteger("Covert Ops","COVERT_CLOSE_DETECTION_RANGE_SOLDIER_CORPSE", 5, 0, 100);
-	gSkillTraitValues.fCOElitesDetectNextTile				= iniReader.ReadBoolean("Covert Ops","COVERT_ELITES_DETECT_NEXTTILE", TRUE);
+	gSkillTraitValues.usCOEliteUncoverRadius				= iniReader.ReadInteger("Covert Ops","COVERT_ELITES_UNCOVER_RADIUS", 5, 1, 20);
 
 	// Flugente: RADIO OPERATOR
 	gSkillTraitValues.fROAllowArtillery					= iniReader.ReadBoolean("Radio Operator","RADIO_OPERATOR_ARTILLERY", TRUE);
