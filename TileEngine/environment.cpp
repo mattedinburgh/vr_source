@@ -65,6 +65,7 @@ ADVANCED_WEATHER_STATE gAdvancedWeatherState[ ADVANCED_WEATHER_SECTOR_COUNT ];
 static BOOLEAN gfAdvancedWeatherInitialized = FALSE;
 static UINT32 guiLastAdvancedWeatherUpdate = 0xFFFFFFFF;
 static UINT8 gubLastAdvancedWeatherSector = 255;
+static UINT32 guiAdvancedWeatherThunderMaskUntil = 0;
 
 
 // frame cues for lightning
@@ -407,6 +408,27 @@ UINT8 WeatherGetVisionPenaltyPercent()
 	}
 }
 
+UINT8 WeatherGetPrecipitationPercent()
+{
+	if ( !gGameExternalOptions.gfEnableAdvancedWeather )
+		return 0;
+	return GetCurrentAdvancedWeatherState()->ubPrecipitation;
+}
+
+UINT8 WeatherGetWindStrength()
+{
+	if ( !gGameExternalOptions.gfEnableAdvancedWeather )
+		return 0;
+	return GetCurrentAdvancedWeatherState()->ubWindStrength;
+}
+
+UINT8 WeatherGetWindDirection()
+{
+	if ( !gGameExternalOptions.gfEnableAdvancedWeather )
+		return 0;
+	return GetCurrentAdvancedWeatherState()->ubWindDirection;
+}
+
 UINT8 WeatherGetHearingPenaltyPercent( UINT8 ubNoiseType )
 {
 	const ADVANCED_WEATHER_STATE* pState;
@@ -441,6 +463,20 @@ UINT8 WeatherGetHearingPenaltyPercent( UINT8 ubNoiseType )
 			break;
 		default:
 			break;
+	}
+
+	// A thunderclap creates a short high-noise masking window. This is tied to the
+	// actual delayed thunder sound, not merely to the existence of a storm.
+	if ( pState->ubType == ADV_WEATHER_THUNDERSTORM && GetJA2Clock() < guiAdvancedWeatherThunderMaskUntil )
+	{
+		switch ( ubNoiseType )
+		{
+			case NOISE_EXPLOSION:
+			case NOISE_GRENADE_IMPACT: iPenalty += 5; break;
+			case NOISE_GUNFIRE:
+			case NOISE_BULLET_IMPACT: iPenalty += 15; break;
+			default: iPenalty += 30; break;
+		}
 	}
 	return AdvancedWeatherClampPercent( iPenalty );
 }
@@ -928,6 +964,8 @@ void EnvDoLightning(void)
 	if( GetJA2Clock() > pDelayedSounds[ uiDSIndex ] )
 	{
 		PlayJA2Ambient(LIGHTNING_1+Random(2), HIGHVOLUME, 1);
+		if ( gGameExternalOptions.gfEnableAdvancedWeather )
+			guiAdvancedWeatherThunderMaskUntil = GetJA2Clock() + 2000;
 		pDelayedSounds[ uiDSIndex ] = NO_DL_SOUND;
 	}
 
