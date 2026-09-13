@@ -994,6 +994,16 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 					iPenaltyPercent /= 2;
 				iPenaltyPercent = __min(75, iPenaltyPercent);
 				iAttackValue = iAttackValue * (100 - iPenaltyPercent) / 100;
+
+				// A 2-5 man team should not merely tolerate concentration; when earlier
+				// fire has already produced an effect on an active threat, maintaining
+				// pressure is tactically valuable. This uses only the teammate's observed
+				// recent fire result and this shooter's own candidate target information.
+				if (fSmallUnitFocus && iPenaltyPercent == 0)
+				{
+					INT32 iFocusBonus = __min(24, 8 * (INT32)ubSaturation);
+					iAttackValue = iAttackValue * (100 + iFocusBonus) / 100;
+				}
 			}
 		}
 
