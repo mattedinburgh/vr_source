@@ -1083,6 +1083,32 @@ static const A3_FARM_VISUAL_PIECE gA3FieldBreach[] =
 	{1,1,THIRDDECORATIONS,8},{2,1,DEBRISSAND,5}
 };
 
+static const INT32 gA3FarmCowGridNo[] =
+{
+	7450, 7460, 7772, 7782, 8088, 8100, 7710, 7720, 8030, 8356
+};
+static const UINT8 gA3FarmCowDirection[] =
+{
+	SOUTHWEST, SOUTHEAST, WEST, EAST, WEST, NORTHEAST, EAST, NORTHWEST, EAST, NORTHWEST
+};
+
+static BOOLEAN A3FarmNearCowCore( INT32 sGridNo )
+{
+	if ( sGridNo < 0 || sGridNo >= WORLD_MAX )
+		return FALSE;
+
+	const INT32 sRow = sGridNo / WORLD_COLS;
+	const INT32 sColumn = sGridNo % WORLD_COLS;
+	for ( UINT16 i = 0; i < (UINT16)(sizeof(gA3FarmCowGridNo)/sizeof(gA3FarmCowGridNo[0])); ++i )
+	{
+		const INT32 sCowRow = gA3FarmCowGridNo[i] / WORLD_COLS;
+		const INT32 sCowColumn = gA3FarmCowGridNo[i] % WORLD_COLS;
+		if ( abs( sRow - sCowRow ) <= 1 && abs( sColumn - sCowColumn ) <= 1 )
+			return TRUE;
+	}
+	return FALSE;
+}
+
 static BOOLEAN A3FarmIsCattlePaddock( INT32 sRow, INT32 sColumn )
 {
 	// Two open paddock pockets around the runtime herd locations.  The older pass
@@ -1218,6 +1244,11 @@ static void DressA3FarmEnvironment( void )
 		// hiding the cattle in thick crop sprites.
 		if ( fOpenFarmGround && fPaddock && pMap->pObjectHead == NULL )
 		{
+			// Keep a clear 3x3 footprint around each animal so the hero dressing
+			// never spawns a trough, hay pile or rut directly under the herd.
+			if ( A3FarmNearCowCore( sGridNo ) )
+				continue;
+
 			if ( uiPaddockBlocks < 12 && ((uiHash >> 5) % 53) == 0 )
 			{
 				const UINT16 usPlaced = ((uiHash >> 18) & 1)
@@ -1487,16 +1518,14 @@ static void EnsureA3FarmCowPlacements( void )
 		return;
 	}
 
-	const INT32 sCowGridNo[] = { 7450, 7460, 8088, 8100, 8030, 8356 };
-	const UINT8 ubCowDirection[] = { SOUTHWEST, SOUTHEAST, WEST, NORTHEAST, EAST, NORTHWEST };
-	const UINT16 usDesired = (UINT16)( sizeof(sCowGridNo) / sizeof(sCowGridNo[0]) );
+	const UINT16 usDesired = (UINT16)( sizeof(gA3FarmCowGridNo) / sizeof(gA3FarmCowGridNo[0]) );
 	const UINT16 usToAdd = (usAvailable < usDesired) ? usAvailable : usDesired;
 
 	UINT16 usAdded = 0;
 	UINT16 usRejected = 0;
 	for ( UINT16 i = 0; i < usToAdd; ++i )
 	{
-		if ( !A3FarmCowGridSafe( sCowGridNo[i] ) )
+		if ( !A3FarmCowGridSafe( gA3FarmCowGridNo[i] ) )
 		{
 			++usRejected;
 			continue;
@@ -1505,9 +1534,9 @@ static void EnsureA3FarmCowPlacements( void )
 		BASIC_SOLDIERCREATE_STRUCT placement;
 		memset( &placement, 0, sizeof(placement) );
 		placement.fDetailedPlacement = FALSE;
-		placement.usStartingGridNo = sCowGridNo[i];
+		placement.usStartingGridNo = gA3FarmCowGridNo[i];
 		placement.bTeam = CIV_TEAM;
-		placement.ubDirection = ubCowDirection[i];
+		placement.ubDirection = gA3FarmCowDirection[i];
 		placement.bOrders = STATIONARY;
 		placement.bAttitude = DEFENSIVE;
 		placement.bBodyType = COW;
