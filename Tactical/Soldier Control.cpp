@@ -6194,6 +6194,24 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 			ubBloodStrength = 3;
 
 		DropBlood( this, ubBloodStrength, this->bVisible );
+
+		// Immediate animated impact spray.  This is deliberately independent of
+		// the persistent floor-blood decal so even very small wounds read on impact.
+		if ( this->bVisible != -1 && GridNoOnScreen( this->sGridNo ) )
+		{
+			ANITILE_PARAMS AniParams;
+			memset( &AniParams, 0, sizeof( ANITILE_PARAMS ) );
+			AniParams.sGridNo = this->sGridNo;
+			AniParams.ubLevelID = ANI_TOPMOST_LEVEL;
+			AniParams.sDelay = 55;
+			AniParams.sStartFrame = 0;
+			AniParams.uiFlags = ANITILE_CACHEDTILE | ANITILE_FORWARD | ANITILE_NOZBLITTER;
+			AniParams.sX = CenterX( this->sGridNo );
+			AniParams.sY = CenterY( this->sGridNo );
+			AniParams.sZ = 0;
+			strcpy( AniParams.zCachedFile, "TILECACHE\\\\SPRAY.STI" );
+			CreateAnimationTile( &AniParams );
+		}
 	}
 
 	// ATE: OK, Let's check our ASSIGNMENT state,
