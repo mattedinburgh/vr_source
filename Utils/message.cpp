@@ -428,7 +428,9 @@ static INT32 giBattleLogOverlay = -1;
 static MOUSE_REGION gBattleLogHeaderRegion;
 static MOUSE_REGION gBattleLogContentRegion;
 static MOUSE_REGION gBattleLogResizeRegion;
+static MOUSE_REGION gBattleLogInspectorRegion;
 static NCTH_SHOT_DIAGNOSTIC gBattleLogInspectorDiagnostic;
+static UINT32 guiBattleLogInspectorSequence = 0;
 static UINT8 gubBattleLogInspectorOutcome = BATTLELOG_OUTCOME_NONE;
 static UINT8 gubBattleLogInspectorActualTargetID = NOBODY;
 static UINT8 gubBattleLogInspectorBlockReason = BATTLELOG_BLOCK_STRUCTURE;
@@ -556,6 +558,8 @@ static void BattleLogHeaderCallback( MOUSE_REGION *pRegion, INT32 iReason )
 		if ( gfBattleLogInspectorVisible )
 		{
 			gfBattleLogInspectorVisible = FALSE;
+			guiBattleLogInspectorSequence = 0;
+			BattleLogUpdateRegions();
 			BattleLogRebuildOverlay();
 		}
 	}
@@ -587,6 +591,19 @@ static void BattleLogResizeCallback( MOUSE_REGION *pRegion, INT32 iReason )
 	}
 }
 
+static void BattleLogInspectorCallback( MOUSE_REGION *pRegion, INT32 iReason )
+{
+	// The inspector sits over the tactical world. Consume clicks here so a player
+	// cannot accidentally issue a move/fire command through the diagnostic panel.
+	if ( iReason & MSYS_CALLBACK_REASON_RBUTTON_UP )
+	{
+		gfBattleLogInspectorVisible = FALSE;
+		guiBattleLogInspectorSequence = 0;
+		BattleLogUpdateRegions();
+		BattleLogRebuildOverlay();
+	}
+}
+
 static void BattleLogContentCallback( MOUSE_REGION *pRegion, INT32 iReason )
 {
 	UINT32 endExclusive = 0;
@@ -613,6 +630,8 @@ static void BattleLogContentCallback( MOUSE_REGION *pRegion, INT32 iReason )
 		if ( gfBattleLogInspectorVisible )
 		{
 			gfBattleLogInspectorVisible = FALSE;
+			guiBattleLogInspectorSequence = 0;
+			BattleLogUpdateRegions();
 			BattleLogRebuildOverlay();
 		}
 		return;
@@ -631,12 +650,22 @@ static void BattleLogContentCallback( MOUSE_REGION *pRegion, INT32 iReason )
 	BATTLE_LOG_ENTRY *pEntry = BattleLogEntryBySequence( seq );
 	if ( pEntry && pEntry->fClickable )
 	{
-		gBattleLogInspectorDiagnostic = pEntry->ncth;
-		gubBattleLogInspectorOutcome = pEntry->ubOutcome;
-		gubBattleLogInspectorActualTargetID = pEntry->ubActualTargetID;
-		gubBattleLogInspectorBlockReason = pEntry->ubBlockReason;
-		gsBattleLogInspectorDamage = pEntry->sDamage;
-		gfBattleLogInspectorVisible = TRUE;
+		if ( gfBattleLogInspectorVisible && guiBattleLogInspectorSequence == seq )
+		{
+			gfBattleLogInspectorVisible = FALSE;
+			guiBattleLogInspectorSequence = 0;
+		}
+		else
+		{
+			gBattleLogInspectorDiagnostic = pEntry->ncth;
+			gubBattleLogInspectorOutcome = pEntry->ubOutcome;
+			gubBattleLogInspectorActualTargetID = pEntry->ubActualTargetID;
+			gubBattleLogInspectorBlockReason = pEntry->ubBlockReason;
+			gsBattleLogInspectorDamage = pEntry->sDamage;
+			guiBattleLogInspectorSequence = seq;
+			gfBattleLogInspectorVisible = TRUE;
+		}
+		BattleLogUpdateRegions();
 		BattleLogRebuildOverlay();
 	}
 }
@@ -661,6 +690,16 @@ static void BattleLogUpdateRegions( void )
 	gBattleLogResizeRegion.RegionBottomRightX = gsBattleLogX + gsBattleLogW;
 	gBattleLogResizeRegion.RegionBottomRightY = gsBattleLogY + gsBattleLogH;
 
+	INT16 sInspectorY = (INT16)__max( 2, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 3 );
+	gBattleLogInspectorRegion.RegionTopLeftX = gsBattleLogX;
+	gBattleLogInspectorRegion.RegionTopLeftY = sInspectorY;
+	gBattleLogInspectorRegion.RegionBottomRightX = gsBattleLogX + BattleLogInspectorWidth();
+	gBattleLogInspectorRegion.RegionBottomRightY = gsBattleLogY - 3;
+	if ( gfBattleLogInspectorVisible )
+		MSYS_EnableRegion( &gBattleLogInspectorRegion );
+	else
+		MSYS_DisableRegion( &gBattleLogInspectorRegion );
+
 	RefreshMouseRegions();
 }
 
@@ -684,6 +723,14 @@ static void BattleLogCreateRegions( void )
 		MSYS_PRIORITY_HIGHEST - 1, CURSOR_NORMAL, BattleLogMoveCallback, BattleLogResizeCallback );
 	MSYS_AddRegion( &gBattleLogResizeRegion );
 
+	INT16 sInspectorY = (INT16)__max( 2, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 3 );
+	MSYS_DefineRegion( &gBattleLogInspectorRegion, gsBattleLogX, sInspectorY,
+		gsBattleLogX + BattleLogInspectorWidth(), gsBattleLogY - 3,
+		MSYS_PRIORITY_HIGHEST - 3, CURSOR_NORMAL, MSYS_NO_CALLBACK, BattleLogInspectorCallback );
+	MSYS_AddRegion( &gBattleLogInspectorRegion );
+	if ( !gfBattleLogInspectorVisible )
+		MSYS_DisableRegion( &gBattleLogInspectorRegion );
+
 	gfBattleLogRegionsCreated = TRUE;
 }
 
@@ -691,6 +738,7 @@ static void BattleLogRemoveRegions( void )
 {
 	if ( !gfBattleLogRegionsCreated )
 		return;
+	MSYS_RemoveRegion( &gBattleLogInspectorRegion );
 	MSYS_RemoveRegion( &gBattleLogResizeRegion );
 	MSYS_RemoveRegion( &gBattleLogHeaderRegion );
 	MSYS_RemoveRegion( &gBattleLogContentRegion );
@@ -1021,6 +1069,7 @@ static void BattleLogRebuildOverlay( void )
 	d.sY = d.sTop;
 	d.BltCallback = BlitBattleLog;
 	giBattleLogOverlay = RegisterVideoOverlay( 0, &d );
+	BattleLogUpdateRegions();
 }
 
 static void BattleLogEnsureUI( void )
