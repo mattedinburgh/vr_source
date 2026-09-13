@@ -1608,36 +1608,19 @@ INT32 FindSpotMaxDistFromOpponents(SOLDIERTYPE *pSoldier)
 
 			iSpotClosestThreatRange = 1500;
 
-			if ( pSoldier->bTeam == ENEMY_TEAM && GridNoOnEdgeOfMap( sGridNo, &bEscapeDirection ) && EscapeDirectionIsValid( &bEscapeDirection ) )
+			// Generic RUN_AWAY is an in-sector tactical retreat only. Strategic edge
+			// selection and traversal belong exclusively to DecideEscapeAction(), which
+			// enforces the 2/3-runner quota and arms traversal only at a valid edge.
+			bEscapeDirection = -1;
+			for (uiLoop = 0; uiLoop < uiThreatCnt; uiLoop++)
 			{
-				// We can escape!	This is better than anything else except a closer spot which we can
-				// cross over from.
-
-				// Subtract the straight-line distance from our location to this one as an estimate of
-				// path cost and for looks...
-
-				// The edge spot closest to us which is on the edge will have the highest value, so
-				// it will be picked over locations further away.
-				// Only reachable gridnos will be picked so this should hopefully look okay
-				iSpotClosestThreatRange -= PythSpacesAway( pSoldier->sGridNo, sGridNo );
-
-			}
-			else
-			{
-				bEscapeDirection = -1;
-				// for every opponent that threatens, consider this spot's cover vs. him
-				for (uiLoop = 0; uiLoop < uiThreatCnt; uiLoop++)
+				iThreatRange = GetRangeInCellCoordsFromGridNoDiff( sGridNo, sThreatGridNo[uiLoop] );
+				if (iThreatRange < iSpotClosestThreatRange)
 				{
-					//iThreatRange = AdjPixelsAway(CenterX(sGridNo),CenterY(sGridNo), CenterX(sThreatGridNo[iLoop]),CenterY(sThreatGridNo[iLoop]));
-					iThreatRange = GetRangeInCellCoordsFromGridNoDiff( sGridNo, sThreatGridNo[uiLoop] );
-					if (iThreatRange < iSpotClosestThreatRange)
-					{
-						iSpotClosestThreatRange = iThreatRange;
-					}
+					iSpotClosestThreatRange = iThreatRange;
 				}
 			}
-
-			// if this is better than the best place found so far
+						// if this is better than the best place found so far
 			// (i.e. the closest guy would be farther away than previously)
 			if (iSpotClosestThreatRange > iClosestThreatRange)
 			{
@@ -1655,13 +1638,9 @@ INT32 FindSpotMaxDistFromOpponents(SOLDIERTYPE *pSoldier)
 	gubNPCAPBudget = 0;
 	gubNPCDistLimit = 0;
 
-	if (bBestEscapeDirection != -1)
-	{
-		// Woohoo!	We can escape!	Fake some stuff with the quote-related actions
-		pSoldier->ubQuoteActionID = GetTraversalQuoteActionID( bBestEscapeDirection );
-	}
-
-	return( sBestSpot );
+	// Generic RUN_AWAY never arms strategic traversal. The capped escape subsystem
+	// owns all enemy sector exits and will set the traversal quote at the edge.
+		return( sBestSpot );
 }
 
 INT32 FindNearestUngassedLand(SOLDIERTYPE *pSoldier)
