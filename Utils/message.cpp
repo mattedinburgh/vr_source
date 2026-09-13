@@ -379,7 +379,7 @@ void ClearDisplayedListOfTacticalStrings( void )
 #define BATTLE_LOG_MAX_ENTRIES 128
 #define BATTLE_LOG_HEADER_H 18
 #define BATTLE_LOG_RESIZE_GRIP 12
-#define BATTLE_LOG_INSPECTOR_H 232
+#define BATTLE_LOG_INSPECTOR_H 244
 
 #define BATTLELOG_OUTCOME_NONE    0
 #define BATTLELOG_OUTCOME_MISS    1
@@ -907,8 +907,12 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 			d.fAimTarget, d.fVisibility, d.fScopePenalty, d.fAimPoints );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
 
-		swprintf( z, L"Optics: %.2fx raw / %.2fx effective | aperture %.2f -> %.2f",
-			d.fMagFactor, d.fEffectiveMagFactor, d.fMaxAperture, d.fFinalAperture );
+		swprintf( z, L"Aperture: raw %.2f -> iron %.2f -> laser %.2f -> scope %.2f -> sway %.2f",
+			d.fRawBasicAperture, d.fIronAperture, d.fLaserAperture, d.fMaxAperture, d.fFinalAperture );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
+
+		swprintf( z, L"Optics: %.2fx raw / %.2fx effective | laser range %d | light %d | laser effect %.1f%%",
+			d.fMagFactor, d.fEffectiveMagFactor, d.sLaserRange, d.bLaserLightLevel, d.fLaserEffectPercent );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
 
 		swprintf( z, L"Sway/track: random %+0.2f,%+0.2f | tracking %+0.2f,%+0.2f",
