@@ -3648,6 +3648,23 @@ UINT16 CreateTilePaletteTables(HVOBJECT pObj, UINT32 uiTileIndex, BOOLEAN fForce
 
 		Assert(pObj!=NULL);
 
+		// Palette shade tables are an 8-bit indexed-image mechanism.  The
+		// true-colour tile path (16/32 BPP, including B1 .b1tc assets) is
+		// shaded per pixel by the true-colour blitters and has no 256-entry
+		// palette to dereference here.
+		if( pObj == NULL )
+		{
+			return(FALSE);
+		}
+		if( pObj->ubBitDepth != 8 )
+		{
+			return(TRUE);
+		}
+		if( pObj->pPaletteEntry == NULL )
+		{
+			return(FALSE);
+		}
+
 		// create the basic shade table
 		if( !gfForceBuildShadeTables && !fForce )
 		{ //The overwhelming majority of maps use the neutral 0,0,0 light for outdoors.	These shadetables
