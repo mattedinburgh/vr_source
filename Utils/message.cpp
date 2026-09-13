@@ -1023,7 +1023,70 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 
 	if ( gfBattleLogInspectorVisible )
 	{
-		NCTH_SHOT_DIAGNOSTIC &d = gBattleLogInspectorDiagnostic;
+		if ( gubBattleLogInspectorMode == BATTLELOG_INSPECTOR_DAMAGE )
+		{
+			DAMAGE_DIAGNOSTIC &dd = gBattleLogInspectorDamageDiagnostic;
+			INT16 ix = inspectorX;
+			INT16 iy = inspectorY;
+			CHAR16 z[256];
+			INT16 sy = iy + BATTLE_LOG_HEADER_H + 3;
+			const CHAR16 *pShooterName = L"unknown";
+			const CHAR16 *pTargetName = L"target";
+			const CHAR16 *pHitLocation = L"torso/other";
+
+			if ( dd.ubShooterID != NOBODY && MercPtrs[dd.ubShooterID] )
+				pShooterName = MercPtrs[dd.ubShooterID]->GetName();
+			if ( dd.ubTargetID != NOBODY && MercPtrs[dd.ubTargetID] )
+				pTargetName = MercPtrs[dd.ubTargetID]->GetName();
+			if ( dd.ubHitLocation == AIM_SHOT_HEAD ) pHitLocation = L"head";
+			else if ( dd.ubHitLocation == AIM_SHOT_LEGS ) pHitLocation = L"legs";
+			else if ( dd.ubHitLocation == AIM_SHOT_TORSO ) pHitLocation = L"torso";
+
+			BattleLogPrintInspectorLine( ix + 6, iy + 4, FONT_MCOLOR_LTGREEN, L"DAMAGE INSPECTOR" );
+			swprintf( z, L"%s -> %s | final damage %d", pShooterName, pTargetName, dd.iFinalDamage );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
+
+			const CHAR16 *pWeaponName = L"unknown weapon";
+			if ( dd.usWeapon < MAXITEMS && ShortItemNames[dd.usWeapon][0] != 0 )
+				pWeaponName = ShortItemNames[dd.usWeapon];
+			swprintf( z, L"Weapon: %s [item %d] | ammo type %d", pWeaponName, dd.usWeapon, dd.ubAmmoType );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
+
+			swprintf( z, L"Impact at contact: %d (range/obstacle losses already applied)", dd.iImpactAtContact );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
+
+			swprintf( z, L"Hit quality: random %+d%%  accuracy %+d%% -> %d",
+				dd.iFlukePercent, dd.iAccuracyPercent, dd.iImpactAfterHitQuality );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTYELLOW, z ); sy += lineH;
+
+			swprintf( z, L"Pre-armour ammo/tank effects -> %d", dd.iImpactBeforeArmour );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
+
+			swprintf( z, L"Armour: %d - %d protection -> %d",
+				dd.iImpactBeforeArmour, dd.iArmourProtection, dd.iImpactAfterArmour );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTYELLOW, z ); sy += lineH;
+
+			swprintf( z, L"Minimum floor %d -> %d | post-armour ammo -> %d",
+				dd.iMinimumDamageFloor, dd.iImpactAfterMinimum, dd.iImpactAfterAmmo );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
+
+			swprintf( z, L"Traits: %d -> %d | resistance %d%% -> %d",
+				dd.iImpactAfterAmmo, dd.iImpactAfterTraits,
+				dd.iDamageResistancePercent, dd.iImpactAfterResistance );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
+
+			swprintf( z, L"Hit location (%s): %d -> %d",
+				pHitLocation, dd.iImpactAfterResistance, dd.iImpactAfterHitLocation );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTYELLOW, z ); sy += lineH;
+
+			swprintf( z, L"Critical/special adjustment: %d -> %d final",
+				dd.iImpactAfterHitLocation, dd.iFinalDamage );
+			BattleLogPrintInspectorLine( ix + 7, sy,
+				dd.iImpactAfterHitLocation != dd.iFinalDamage ? FONT_MCOLOR_LTYELLOW : FONT_MCOLOR_LTGRAY, z );
+		}
+		else
+		{
+			NCTH_SHOT_DIAGNOSTIC &d = gBattleLogInspectorDiagnostic;
 		INT16 ix = inspectorX;
 		INT16 iy = inspectorY;
 		INT16 iw = inspectorW;
@@ -1208,6 +1271,7 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		swprintf( z, L"Largest trajectory component: %s | aperture quality %d%%",
 			physicalWhy, d.sApertureRatio );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTRED, z );
+		}
 	}
 
 	UnLockVideoSurface( pBlitter->uiDestBuff );
