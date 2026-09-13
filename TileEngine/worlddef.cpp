@@ -607,6 +607,19 @@ BOOLEAN LoadTileSurfaces( char ppTileSurfaceFilenames[][32], UINT8 ubTilesetID )
 	return( TRUE );
 }
 
+static void TraceB1RemasterLoad( const STR8 pStage, const STR8 pDetail )
+{
+	FILE *pTrace = fopen( "B1_remaster_load.log", "a" );
+	if ( pTrace == NULL )
+		return;
+
+	fprintf( pTrace, "%s%s%s\n", pStage != NULL ? pStage : "",
+		( pDetail != NULL && pDetail[0] != '\0' ) ? ": " : "",
+		pDetail != NULL ? pDetail : "" );
+	fflush( pTrace );
+	fclose( pTrace );
+}
+
 static UINT8 DetermineSectorVisualProfile( const STR8 pFilename )
 {
 	if ( pFilename == NULL )
@@ -877,6 +890,7 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 		// B1 remaster assets are mandatory. Never use root/INI/stock fallback for these slots.
 		// The exact replacement in TILESETS\\50 must exist and decode successfully.
 		sprintf( cAdjustedFile, "TILESETS\\50\\%s", cFileBPP );
+		TraceB1RemasterLoad( "ASSET REQUEST", cAdjustedFile );
 
 		if ( !FileExists( cAdjustedFile ) )
 		{
@@ -930,6 +944,7 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 
 	if ( fSectorReplacementRequested )
 	{
+		TraceB1RemasterLoad( "ASSET LOADED", cAdjustedFile );
 		if ( TileSurf->vo == NULL || TileSurf->vo->usNumberOfObjects == 0 )
 		{
 			DeleteTileSurface( TileSurf );
@@ -3324,11 +3339,15 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	// Choose visual treatment from the actual sector filename before any tile surfaces load.
 	// This deliberately leaves map data and scripted destruction untouched.
 	gubSectorVisualProfile = DetermineSectorVisualProfile( gfForceLoad ? gzForceLoadFile : puiFilename );
+	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
+		TraceB1RemasterLoad( "BEGIN", puiFilename );
 
 #ifdef JA2TESTVERSION
 	uiStartTime = GetJA2Clock();
 #endif
 	Assert(LoadMapTileset(iTilesetID));
+	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
+		TraceB1RemasterLoad( "TILESET OK", "" );
 #ifdef JA2TESTVERSION
 	uiLoadMapTilesetTime = GetJA2Clock() - uiStartTime;
 #endif
@@ -3400,6 +3419,9 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		}
 	}
 
+	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
+		TraceB1RemasterLoad( "LAND OK", "" );
+
 	SetRelativeStartAndEndPercentage(0, 43, 46, L"Loading object layer...");
 	RenderProgressBar(0, 100);
 	// New load require UINT16 for the type subindex due to the fact that ROADPIECES contain over 300 type subindices.
@@ -3421,6 +3443,9 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 			AddObjectToTail(cnt, usTileIndex);
 		}
 	}
+
+	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
+		TraceB1RemasterLoad( "OBJECT OK", "" );
 
 	SetRelativeStartAndEndPercentage(0, 46, 49, L"Loading struct layer...");
 	RenderProgressBar(0, 100);
@@ -3447,6 +3472,9 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		}
 	}
 
+	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
+		TraceB1RemasterLoad( "STRUCT OK", "" );
+
 	SetRelativeStartAndEndPercentage(0, 49, 52, L"Loading shadow layer...");
 	RenderProgressBar(0, 100);
 	for(i=0; i<iWorldSize; i++)
@@ -3464,6 +3492,9 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 			AddShadowToTail(cnt, usTileIndex);
 		}
 	}
+
+	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
+		TraceB1RemasterLoad( "SHADOW OK", "" );
 
 	SetRelativeStartAndEndPercentage(0, 52, 55, L"Loading roof layer...");
 	RenderProgressBar(0, 100);
@@ -3483,6 +3514,9 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		}
 	}
 
+	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
+		TraceB1RemasterLoad( "ROOF OK", "" );
+
 	SetRelativeStartAndEndPercentage(0, 55, 58, L"Loading on roof layer...");
 	RenderProgressBar(0, 100);
 	for(i=0; i<iWorldSize; i++)
@@ -3500,6 +3534,9 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 			AddOnRoofToTail(cnt, usTileIndex);
 		}
 	}
+
+	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
+		TraceB1RemasterLoad( "ONROOF OK", "" );
 
 	// For old Russian Maps which have version 6.0
 	if(dMajorMapVersion == 6.00 && ubMinorMapVersion < 27)
@@ -3694,6 +3731,9 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	MemFree(pBufferHead);
 	MemFree(bCounts);
 
+
+	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
+		TraceB1RemasterLoad( "WORLD OK", "" );
 
 	return(TRUE);
 }
