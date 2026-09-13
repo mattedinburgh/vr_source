@@ -158,6 +158,37 @@ void ProfileStatChange(MERCPROFILESTRUCT *pProfile, UINT8 ubStat, UINT16 usNumCh
 }
 
 
+// VR mastery learning curve.
+// Return value is in hundredths of a percent: 10000 = 100.00%, 100 = 1.00%.
+// Becoming competent should be comparatively easy; improvement slows sharply as a stat
+// approaches mastery. This depends only on CURRENT ability, never on how many points
+// the merc has already gained during the campaign.
+static UINT16 StatGrowthMasteryMultiplier(UINT16 usRating)
+{
+	if (usRating <= 60)
+		return 10000;
+	if (usRating <= 70)
+		return (UINT16)(10000 - ((usRating - 60) * 2000) / 10); // 100% -> 80%
+	if (usRating <= 75)
+		return (UINT16)(8000 - ((usRating - 70) * 1500) / 5);   // 80% -> 65%
+	if (usRating <= 80)
+		return (UINT16)(6500 - ((usRating - 75) * 2000) / 5);   // 65% -> 45%
+	if (usRating <= 85)
+		return (UINT16)(4500 - ((usRating - 80) * 1700) / 5);   // 45% -> 28%
+	if (usRating <= 90)
+		return (UINT16)(2800 - ((usRating - 85) * 1400) / 5);   // 28% -> 14%
+	if (usRating <= 92)
+		return (UINT16)(1400 - ((usRating - 90) * 400) / 2);    // 14% -> 10%
+	if (usRating <= 95)
+		return (UINT16)(1000 - ((usRating - 92) * 500) / 3);    // 10% -> 5%
+	if (usRating <= 97)
+		return (UINT16)(500 - ((usRating - 95) * 250) / 2);     // 5% -> 2.5%
+	if (usRating <= 99)
+		return (UINT16)(250 - ((usRating - 97) * 150) / 2);     // 2.5% -> 1%
+
+	return 100;
+}
+
 void ProcessStatChange(MERCPROFILESTRUCT *pProfile, UINT8 ubStat, UINT16 usNumChances, UINT8 ubReason)
 {
 	UINT32 uiCnt,uiEffLevel;
@@ -166,7 +197,6 @@ void ProcessStatChange(MERCPROFILESTRUCT *pProfile, UINT8 ubStat, UINT16 usNumCh
 	UINT16 usSubpointsPerPoint;
 	UINT16 usSubpointsPerLevel;
 	INT8 bCurrentRating;
-	INT8 bDelta = 0;
 	UINT16 *psStatGainPtr;
 	BOOLEAN fAffectedByWisdom = TRUE;
 
@@ -190,7 +220,6 @@ void ProcessStatChange(MERCPROFILESTRUCT *pProfile, UINT8 ubStat, UINT16 usNumCh
 	{
 		case HEALTHAMT:
 			bCurrentRating = pProfile->bLifeMax;
-			bDelta = pProfile->bLifeDelta;
 			psStatGainPtr = (UINT16 *)&(pProfile->sLifeGain);
 			// NB physical stat checks not affected by wisdom, unless training is going on
 			fAffectedByWisdom = FALSE;
@@ -198,64 +227,54 @@ void ProcessStatChange(MERCPROFILESTRUCT *pProfile, UINT8 ubStat, UINT16 usNumCh
 
 		case AGILAMT:
 			bCurrentRating = pProfile->bAgility;
-			bDelta = pProfile->bAgilityDelta;
 			psStatGainPtr = (UINT16 *)&(pProfile->sAgilityGain);
 			fAffectedByWisdom = FALSE;
 		break;
 
 		case DEXTAMT:
 			bCurrentRating = pProfile->bDexterity;
-			bDelta = pProfile->bDexterityDelta;
 			psStatGainPtr = (UINT16 *)&(pProfile->sDexterityGain);
 			fAffectedByWisdom = FALSE;
 		break;
 
 		case WISDOMAMT:
 			bCurrentRating = pProfile->bWisdom;
-			bDelta = pProfile->bWisdomDelta;
 			psStatGainPtr = (UINT16 *)&(pProfile->sWisdomGain);
 		break;
 
 		case MEDICALAMT:
 			bCurrentRating = pProfile->bMedical;
-			bDelta = pProfile->bMedicalDelta;
 			psStatGainPtr = (UINT16 *)&(pProfile->sMedicalGain);
 		break;
 
 		case EXPLODEAMT:
 			bCurrentRating = pProfile->bExplosive;
-			bDelta = pProfile->bExplosivesDelta;
 			psStatGainPtr = (UINT16 *)&(pProfile->sExplosivesGain);
 		break;
 
 		case MECHANAMT:
 			bCurrentRating = pProfile->bMechanical;
-			bDelta = pProfile->bMechanicDelta;
 			psStatGainPtr = (UINT16 *)&(pProfile->sMechanicGain);
 		break;
 
 		case MARKAMT:
 			bCurrentRating = pProfile->bMarksmanship;
-			bDelta = pProfile->bMarksmanshipDelta;
 			psStatGainPtr = (UINT16 *)&(pProfile->sMarksmanshipGain);
 		break;
 
 		case EXPERAMT:
 			bCurrentRating = pProfile->bExpLevel;
-			bDelta = pProfile->bExpLevelDelta;
 			psStatGainPtr = (UINT16 *)&(pProfile->sExpLevelGain);
 		break;
 
 		case STRAMT:
 			bCurrentRating = pProfile->bStrength;
-			bDelta = pProfile->bStrengthDelta;
 			psStatGainPtr = (UINT16 *)&(pProfile->sStrengthGain);
 			fAffectedByWisdom = FALSE;
 		break;
 
 		case LDRAMT:
 			bCurrentRating = pProfile->bLeadership;
-			bDelta = pProfile->bLeadershipDelta;
 			psStatGainPtr = (UINT16 *)&(pProfile->sLeadershipGain);
 		break;
 
@@ -348,29 +367,32 @@ void ProcessStatChange(MERCPROFILESTRUCT *pProfile, UINT8 ubStat, UINT16 usNumCh
 			else if (pProfile->bEvolution == ONEQUARTER_EVOLUTION)
 				usChance =  max(1, usChance * 0.25);
 
-			// sevenfm: 
-			if (gGameExternalOptions.fNewStatGainMode && bDelta > 0 && usChance > 0)
-			{	
-				if (ubStat == EXPERAMT)
-				{
-					// lower chance depending on value
-					usChance = max(1, usChance * 10 / (10 + 3 * bCurrentRating * bCurrentRating / 10));
-					// lower chance depending on delta
-					usChance = max(1, usChance * 10 / (10 + 3 * bDelta));
-				}
-				else
-				{
-					// lower chance depending on value
-					usChance = max(1, usChance * 100 / (100 + 3 * bCurrentRating * bCurrentRating / 100));
-					// lower chance depending on delta
-					usChance = max(1, usChance * 100 / (100 + 3 * bDelta));
-				}
-			}
-
-			// maximum possible usChance is 99%
+			// maximum possible base chance is 99%
 			usChance = min(99, usChance);
 
-			if (PreRandom(100) < usChance )
+			BOOLEAN fStatGainRollSuccess = FALSE;
+
+			// VR: NEW_STAT_GAIN_MODE now means a smooth mastery curve based on CURRENT
+			// ability. Do not punish a merc simply because he has already improved a lot
+			// in this campaign. Experience level retains its own existing progression curve
+			// (chance falls by level and subpoints required rise with level).
+			if (gGameExternalOptions.fNewStatGainMode && ubStat != EXPERAMT && usChance > 0)
+			{
+				UINT16 usEffectiveRating = (UINT16)(bCurrentRating + (*psStatGainPtr / usSubpointsPerPoint));
+				UINT16 usMasteryMultiplier = StatGrowthMasteryMultiplier(usEffectiveRating);
+
+				// Work in basis points so mastery above 90 can be meaningfully rarer than 1%
+				// without imposing an artificial 1% floor.
+				UINT32 uiChanceBasisPoints = ((UINT32)usChance * (UINT32)usMasteryMultiplier) / 100;
+				uiChanceBasisPoints = min((UINT32)9900, uiChanceBasisPoints);
+				fStatGainRollSuccess = (PreRandom(10000) < uiChanceBasisPoints);
+			}
+			else
+			{
+				fStatGainRollSuccess = (PreRandom(100) < usChance);
+			}
+
+			if (fStatGainRollSuccess)
 			{
 				(*psStatGainPtr)++;
 				sSubPointChange++;
