@@ -109,6 +109,24 @@ extern SOLDIERTYPE *pTMilitiaSoldier;
 extern BOOLEAN SoldierCanAffordNewStance( SOLDIERTYPE *pSoldier, UINT8 ubDesiredStance );
 
 
+static void ResetMilitiaCommandQueue( SOLDIERTYPE *pSoldier )
+{
+	if ( !pSoldier )
+		return;
+
+	// A new player command supersedes an old queued AI movement/order.
+	pSoldier->aiData.bNextAction = AI_ACTION_NONE;
+	pSoldier->aiData.usNextActionData = 0;
+	pSoldier->aiData.sPendingActionData2 = NOWHERE;
+	pSoldier->aiData.ubPendingActionAnimCount = 0;
+
+	if ( (gAnimControl[pSoldier->usAnimState].uiFlags & ANIM_MOVING) ||
+		pSoldier->pathing.usPathDataSize > pSoldier->pathing.usPathIndex )
+	{
+		pSoldier->EVENT_StopMerc( pSoldier->sGridNo, pSoldier->ubDirection );
+	}
+}
+
 static BOOLEAN MilitiaSpreadDestinationReserved( SOLDIERTYPE *pSoldier, INT32 sSpot )
 {
 	for ( UINT8 cnt = gTacticalStatus.Team[ MILITIA_TEAM ].bFirstID;
@@ -1404,6 +1422,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 						{
 							// Attack !!!
 
+							ResetMilitiaCommandQueue( pTMilitiaSoldier );
 							AIClearDisengagementState( pTMilitiaSoldier );
 							pTMilitiaSoldier->aiData.bOrders = SEEKENEMY;
 							pTMilitiaSoldier->aiData.bAttitude = AGGRESSIVE;
@@ -1438,6 +1457,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 						{
 							//Hold Position !!!
 							//ScreenMsg( FONT_WHITE, MSG_INTERFACE, L"Hold Position" );
+							ResetMilitiaCommandQueue( pTMilitiaSoldier );
 							pTMilitiaSoldier->aiData.bOrders = STATIONARY;
 							pTMilitiaSoldier->aiData.bAttitude = DEFENSIVE;
 							// sevenfm: set this spot as original point
@@ -1466,6 +1486,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 						{
 							INT16 sActionGridNo;
 
+							ResetMilitiaCommandQueue( pTMilitiaSoldier );
 							pTMilitiaSoldier->aiData.bOrders = FARPATROL;
 							pTMilitiaSoldier->aiData.bAttitude = DEFENSIVE;
 							AIForceDisengagementState( pTMilitiaSoldier, 4 );
@@ -1531,6 +1552,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 								if ( !TileIsOutOfBounds(sActionGridNo) )
 								{
 									// Rally to a distinct nearby position, then hold it.
+									ResetMilitiaCommandQueue( pTMilitiaSoldier );
 									pTMilitiaSoldier->aiData.bOrders = STATIONARY;
 									pTMilitiaSoldier->aiData.bAttitude = DEFENSIVE;
 									pTMilitiaSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
@@ -1623,6 +1645,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 							
 							if (!TileIsOutOfBounds(sActionGridNo))
 							{
+								ResetMilitiaCommandQueue( pTMilitiaSoldier );
 								AIClearDisengagementState( pTMilitiaSoldier );
 								pTMilitiaSoldier->aiData.bOrders = STATIONARY;
 								pTMilitiaSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
@@ -1667,6 +1690,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 						{
 							if ( (pTeamSoldier->bActive) && (pTeamSoldier->bInSector) && (pTeamSoldier->stats.bLife >= OKLIFE) )
 							{
+								ResetMilitiaCommandQueue( pTeamSoldier );
 								AIClearDisengagementState( pTeamSoldier );
 								pTeamSoldier->aiData.bOrders = SEEKENEMY;
 								pTeamSoldier->aiData.bAttitude = AGGRESSIVE;
@@ -1701,6 +1725,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 						{
 							if ( (pTeamSoldier->bActive) && (pTeamSoldier->bInSector) && (pTeamSoldier->stats.bLife >= OKLIFE) )
 							{
+								ResetMilitiaCommandQueue( pTeamSoldier );
 								pTeamSoldier->aiData.bOrders = STATIONARY;
 								pTeamSoldier->aiData.bAttitude = DEFENSIVE;
 								// sevenfm: set this spot as original point
@@ -1736,6 +1761,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 						{
 							if ( (pTeamSoldier->bActive) && (pTeamSoldier->bInSector) && (pTeamSoldier->stats.bLife >= OKLIFE) )
 							{
+								ResetMilitiaCommandQueue( pTeamSoldier );
 								pTeamSoldier->aiData.bOrders = FARPATROL;
 								pTeamSoldier->aiData.bAttitude = DEFENSIVE;
 								AIForceDisengagementState( pTeamSoldier, 4 );
@@ -1812,6 +1838,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 
 								if ( !TileIsOutOfBounds(sActionGridNo) )
 								{
+									ResetMilitiaCommandQueue( pTeamSoldier );
 									pTeamSoldier->aiData.bOrders = STATIONARY;
 									pTeamSoldier->aiData.bAttitude = DEFENSIVE;
 									pTeamSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
@@ -1976,6 +2003,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 																
 								if (!TileIsOutOfBounds(sActionGridNo))
 								{
+									ResetMilitiaCommandQueue( pTeamSoldier );
 									AIClearDisengagementState( pTeamSoldier );
 									pTeamSoldier->aiData.bOrders = STATIONARY;
 									pTeamSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
