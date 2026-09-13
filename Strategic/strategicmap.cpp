@@ -2718,6 +2718,7 @@ void PrepareLoadedSector()
 	//if we are loading a 'pristine' map ( ie, not loading a saved game )
 	if( !(gTacticalStatus.uiFlags & LOADING_SAVED_GAME ))
 	{
+		if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: PRISTINE SETUP BEGIN", "" );
 
 #ifdef JA2UB
 //Ja25 No meanwhiles
@@ -2750,44 +2751,32 @@ void PrepareLoadedSector()
 		{
 			if( is_server && fAddCivs && gCivEnabled == 1)//hayden its around here we apply .ini choices for Ai
 			{
-				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: CIVS BEGIN", "" );
-				AddSoldierInitListTeamToWorld( CIV_TEAM, 255 );
-				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: CIVS OK", "" );
+				AddSoldierInitListTeamToWorld( CIV_TEAM, 255 );
 			}
 		}
 		else if (fAddCivs)
 		{
-			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: CIVS BEGIN", "" );
-			AddSoldierInitListTeamToWorld( CIV_TEAM, 255 );
-			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: CIVS OK", "" );
+			AddSoldierInitListTeamToWorld( CIV_TEAM, 255 );
 		}
 
 		if (is_networked)
 		{
 			if(is_server && gMilitiaEnabled == 1)
-				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: MILITIA INIT BEGIN", "" );
-				AddSoldierInitListTeamToWorld( MILITIA_TEAM, 255 );
-				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: MILITIA INIT OK", "" );
+				AddSoldierInitListTeamToWorld( MILITIA_TEAM, 255 );
 		}
 		else
 		{
-			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: MILITIA INIT BEGIN", "" );
-			AddSoldierInitListTeamToWorld( MILITIA_TEAM, 255 );
-			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: MILITIA INIT OK", "" );
+			AddSoldierInitListTeamToWorld( MILITIA_TEAM, 255 );
 		}
 		
 		if (is_networked)
 		{
 			if(is_server && gCreatureEnabled == 1)
-				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: BLOODCATS BEGIN", "" );
-				AddSoldierInitListBloodcats();
-				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: BLOODCATS OK", "" );
+				AddSoldierInitListBloodcats();
 		}
 		else
 		{
-			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: BLOODCATS BEGIN", "" );
-			AddSoldierInitListBloodcats();
-			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: BLOODCATS OK", "" );
+			AddSoldierInitListBloodcats();
 		}
 
 
@@ -2823,9 +2812,7 @@ void PrepareLoadedSector()
 		if (is_networked)
 		{
 			if(is_server && gCreatureEnabled == 1)
-				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: CREATURES BEGIN", "" );
-				PrepareCreaturesForBattle();
-				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: CREATURES OK", "" );
+				PrepareCreaturesForBattle();
 
 			// Haydent
 			if(is_server && gMilitiaEnabled == 1)
@@ -2833,12 +2820,8 @@ void PrepareLoadedSector()
 		}
 		else
 		{
-			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: CREATURES BEGIN", "" );
-			PrepareCreaturesForBattle();
-			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: CREATURES OK", "" );
-			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: MILITIA PREP BEGIN", "" );
-			PrepareMilitiaForTactical(TRUE);
-			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: MILITIA PREP OK", "" );
+			PrepareCreaturesForBattle();
+			PrepareMilitiaForTactical(TRUE);
 		}
 
 		// OK, set varibles for entring this new sector...
@@ -2849,26 +2832,18 @@ void PrepareLoadedSector()
 		//do something else in a case where no enemies are present.
 		if( !gfRestoringEnemySoldiersFromTempFile )
 		{
-			//if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: CIVS BEGIN", "" );
-			//AddSoldierInitListTeamToWorld( CIV_TEAM, 255 );
-			//if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: CIVS OK", "" );
-//			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: ENEMIES BEGIN", "" );
-//			fEnemyPresenceInThisSector = PrepareEnemyForSectorBattle();
-//			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: ENEMIES OK", "" );
+			//AddSoldierInitListTeamToWorld( CIV_TEAM, 255 );
+//			fEnemyPresenceInThisSector = PrepareEnemyForSectorBattle();
 		}
 		
 		if (is_networked)
 		{
 			if(is_server && gCivEnabled == 1)
-				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: PROFILES NO INSERT BEGIN", "" );
-				AddProfilesNotUsingProfileInsertionData(); //hayden: is just for civ's
-				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: PROFILES NO INSERT OK", "" );
+				AddProfilesNotUsingProfileInsertionData(); //hayden: is just for civ's
 		}
 		else
 		{
-			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: PROFILES NO INSERT BEGIN", "" );
-			AddProfilesNotUsingProfileInsertionData();
-			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: PROFILES NO INSERT OK", "" );
+			AddProfilesNotUsingProfileInsertionData();
 		}
 #ifdef JA2UB
 //Ja25 No meanwhiles
@@ -2879,15 +2854,11 @@ void PrepareLoadedSector()
 			if (is_networked)
 			{
 				if(is_server && gEnemyEnabled == 1)
-					if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: ENEMIES BEGIN", "" );
-					fEnemyPresenceInThisSector = PrepareEnemyForSectorBattle();
-					if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: ENEMIES OK", "" );
+					fEnemyPresenceInThisSector = PrepareEnemyForSectorBattle();
 			}
 			else
 			{
-				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: ENEMIES BEGIN", "" );
-				fEnemyPresenceInThisSector = PrepareEnemyForSectorBattle();
-				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: ENEMIES OK", "" );
+				fEnemyPresenceInThisSector = PrepareEnemyForSectorBattle();
 			}
 		}
 
@@ -2909,13 +2880,10 @@ void PrepareLoadedSector()
 
 		//@@@Evaluate
 		//Add profiles to world using strategic info, not editor placements.
-		if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: PROFILES INSERT BEGIN", "" );
-		AddProfilesUsingProfileInsertionData();
-		if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: PROFILES INSERT OK", "" );
+		AddProfilesUsingProfileInsertionData();
 
-		if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: SCHEDULES BEGIN", "" );
-		PostSchedules();
-		if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: SCHEDULES OK", "" );
+		PostSchedules();
+			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: PRISTINE SETUP OK", "" );
 	}
 
 	if( gubEnemyEncounterCode == ENEMY_AMBUSH_CODE || gubEnemyEncounterCode == BLOODCAT_AMBUSH_CODE )
@@ -2936,7 +2904,7 @@ void PrepareLoadedSector()
 	// Officer/General roles require the full enemy roster, so assign them here rather
 	// than during individual soldier construction.
 	if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: COMMAND ROLES BEGIN", "" );
-	EnsureEnemyCommandRoles();
+	EnsureEnemyCommandRoles();
 	if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: COMMAND ROLES OK", "" );
 
 	if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: END LOAD SCREEN BEGIN", "" );
@@ -2966,8 +2934,9 @@ void PrepareLoadedSector()
 #endif
 
 	if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: ALL TEAMS LOOK BEGIN", "" );
-	AllTeamsLookForAll( TRUE );
+	AllTeamsLookForAll( TRUE );
 	if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: ALL TEAMS LOOK OK", "" );
+	if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: COMPLETE", "" );
 }
 
 #define RANDOM_HEAD_MINERS 4
