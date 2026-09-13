@@ -8701,7 +8701,7 @@ FLOAT CalcBulletDeviation( SOLDIERTYPE *pShooter, FLOAT *dShotOffsetX, FLOAT *dS
 	FLOAT iRangeRatio = 1.0f;
 	if (sEffRange > 0)
 	{
-		iRangeRatio = __max(1.0f, (FLOAT)(uiRange / sEffRange));
+		iRangeRatio = __max(1.0f, (FLOAT)uiRange / (FLOAT)sEffRange);
 	}
 	
 	// This value can be anywhere between 0 and 100. Let's make sure.
