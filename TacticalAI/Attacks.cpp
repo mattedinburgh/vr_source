@@ -1451,7 +1451,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 			usGrenade != NOTHING &&
 			Explosive[Item[usGrenade].ubClassIndex].ubType == EXPLOSV_SMOKE &&
 			(!AICheckHasGun(pOpponent) ||
-			(pSoldier->usAnimState == COWERING || pSoldier->usAnimState == COWERING_PRONE) ||
+			(pOpponent->usAnimState == COWERING || pOpponent->usAnimState == COWERING_PRONE) ||
 			ShockLevelPercent(pOpponent) > 50 ||
 			EffectiveMarksmanship(pOpponent) < 90 && !AICheckIsSniper(pOpponent) && !pOpponent->aiData.bLastAttackHit && !AICheckIsMachinegunner(pOpponent) && !pOpponent->IsSpotting()))
 		{
