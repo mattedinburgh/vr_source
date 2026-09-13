@@ -303,6 +303,19 @@ void ResetMilitia()
 //
 	if (gfStrategicMilitiaChangesMade)
 	{
+		// Never tear down and recreate tactical militia while this sector is contested.
+		// TeamDropAll() intentionally refuses to return sector gear during combat;
+		// rebuilding anyway would therefore delete militia inventories and could lose
+		// player equipment previously issued from the sector stash. Keep the change
+		// flag set and process the rebuild once hostile contact has ended.
+		if ( (gTacticalStatus.uiFlags & INCOMBAT) ||
+			 gTacticalStatus.fEnemyInSector ||
+			 NumHostilesInSector( gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) > 0 ||
+			 HostileBloodcatsPresent() )
+		{
+			return;
+		}
+
 		// I truly hope that we remove such inane control methods from the soldier create code when we break the merc slot barrier
 		// Hacks like this really depress me.
 		UINT32 cs = guiCurrentScreen;
