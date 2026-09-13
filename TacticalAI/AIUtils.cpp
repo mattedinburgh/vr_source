@@ -4547,6 +4547,54 @@ static INT32 AIFireteamMergeDistance(UINT8 ubFirst, UINT8 ubSecond, SOLDIERTYPE 
 	return iBest;
 }
 
+static INT32 AIFireteamRemnantDestinationPenalty(UINT8 ubFireteam)
+{
+	UINT8 ubOperational = 0;
+	UINT8 ubUnderFire = 0;
+	UINT8 ubShaken = 0;
+	BOOLEAN fStableLeader = FALSE;
+
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
+	{
+		SOLDIERTYPE *pMember = MercPtrs[iCounter];
+		if (!AIFireteamRegroupableMember(pMember) ||
+			guiAIFireteamIdentity[pMember->ubID] != pMember->uiUniqueSoldierIdValue ||
+			gubAIFireteam[pMember->ubID] != ubFireteam)
+		{
+			continue;
+		}
+
+		BOOLEAN fBreaking =
+			(pMember->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			AIDisengagementActive(pMember) || AIEscapeActive(pMember);
+
+		if (fBreaking)
+			++ubShaken;
+		else
+			++ubOperational;
+
+		if (pMember->aiData.bUnderFire)
+			++ubUnderFire;
+
+		if (!fBreaking && !pMember->aiData.bUnderFire &&
+			(AICheckIsCommander(pMember) || AICheckIsOfficer(pMember)))
+		{
+			fStableLeader = TRUE;
+		}
+	}
+
+	INT32 iPenalty = 0;
+	// Prefer elements that still have several usable rifles and intact leadership.
+	iPenalty -= __min((INT32)10, (INT32)ubOperational * 2);
+	if (fStableLeader)
+		iPenalty -= 8;
+
+	// Avoid attaching a remnant to another element that is itself collapsing unless
+	// no healthier destination exists. This is a preference, not a hard prohibition.
+	iPenalty += (INT32)ubUnderFire * 2;
+	iPenalty += (INT32)ubShaken * 4;
+	return iPenalty;
+}
 static UINT8 AISelectFireteamRemnantDestination(SOLDIERTYPE *pSoldier, UINT8 *pubOld)
 {
 	if (pubOld)
@@ -4586,12 +4634,15 @@ static UINT8 AISelectFireteamRemnantDestination(SOLDIERTYPE *pSoldier, UINT8 *pu
 		if (iDistance >= 10000)
 			continue;
 
+		INT32 iScore = iDistance + AIFireteamRemnantDestinationPenalty(ubTeam);
 		if (AIFireteamPredominantlyFixed(ubTeam) != fOldFixed)
-			iDistance += 8;
+			iScore += 8;
 
-		if (iDistance < iBest)
+		// Distance remains important, but a nearby panicking element should not beat a
+		// slightly farther cohesive team with usable fighters and intact leadership.
+		if (iScore < iBest)
 		{
-			iBest = iDistance;
+			iBest = iScore;
 			ubBest = ubTeam;
 		}
 	}
