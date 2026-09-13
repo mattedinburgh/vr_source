@@ -6021,54 +6021,92 @@ static BOOLEAN HandleVRCinematicGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 u
 
 	UINT8 ubReaction = 0;
 
-	// Damage-aware families. Light wounds mostly produce flinches/stumbles; medium
-	// wounds only sometimes put a survivor on the floor; heavy wounds can unlock the
-	// checked flyback family. Running reactions respect both momentum and hit energy.
-	UINT8 ubRoll = (UINT8)Random( 100 );
+	// TEMPORARY VR REACTION DEMO MODE:
+	// Every successful standing gun hit deliberately demonstrates one of the custom
+	// reaction animations. This is intentionally exaggerated for visual testing and
+	// is meant to be tuned back to damage/probability-based selection later.
+	const BOOLEAN fVRReactionDemoMode = TRUE;
 
-	if ( fRunning )
+	if ( fVRReactionDemoMode )
 	{
-		if ( sDamage <= 7 )
-			ubReaction = ( ubRoll < 55 ) ? (UINT8)( 20 + Random( 3 ) ) : (UINT8)Random( 6 );
-		else if ( sDamage <= 17 )
-			ubReaction = ( ubRoll < 70 ) ? (UINT8)( 20 + Random( 5 ) ) : (UINT8)( 8 + Random( 3 ) );
+		if ( fRunning )
+		{
+			// A running target should visibly carry momentum into the reaction every time.
+			static const UINT8 aubRunningDemoPool[ 10 ] = { 20, 21, 22, 23, 24, 25, 26, 27, 28, 29 };
+			ubReaction = aubRunningDemoPool[ Random( 10 ) ];
+		}
 		else
-			ubReaction = ( ubRoll < 55 ) ? (UINT8)( 20 + Random( 5 ) ) : (UINT8)( 25 + Random( 5 ) );
-	}
-	else if ( sDamage <= 7 )
-	{
-		ubReaction = (UINT8)Random( 12 );
-	}
-	else if ( sDamage <= 17 )
-	{
-		if ( ubRoll < 45 )
-			ubReaction = (UINT8)( 6 + Random( 6 ) );       // upright/stagger
-		else if ( ubRoll < 75 )
-			ubReaction = (UINT8)( 12 + Random( 8 ) );      // soft collapse/fallback
-		else
-			ubReaction = (UINT8)Random( 6 );                // compact flinch
+		{
+			// Falls, spills, stagger-falls and flybacks are the useful showcase. Keep a
+			// small share of rotational/upright reactions so those variants are still tested.
+			static const UINT8 aubDramaticDemoPool[ 24 ] =
+			{
+				3, 4, 5, 6,
+				8, 9, 10,
+				12, 13, 14, 15, 16, 17, 18, 19,
+				20, 21, 22, 23, 24,
+				25, 26, 27, 28
+			};
+			ubReaction = aubDramaticDemoPool[ Random( 24 ) ];
+
+			// Leg hits are especially useful for inspecting balance-loss/fall variants.
+			if ( ubHitLocation == AIM_SHOT_LEGS && Random( 100 ) < 65 )
+				ubReaction = (UINT8)( 12 + Random( 8 ) );
+			// Head hits often demonstrate a twist/rotation before the fall.
+			else if ( ubHitLocation == AIM_SHOT_HEAD && Random( 100 ) < 50 )
+			{
+				static const UINT8 aubHeadDemoPool[ 8 ] = { 3, 4, 5, 6, 14, 15, 16, 17 };
+				ubReaction = aubHeadDemoPool[ Random( 8 ) ];
+			}
+		}
 	}
 	else
 	{
-		if ( ubRoll < 30 )
-			ubReaction = (UINT8)( 6 + Random( 6 ) );       // still possible to stay upright
-		else if ( ubRoll < 65 )
-			ubReaction = (UINT8)( 12 + Random( 8 ) );      // soft/normal fall
+		// Final-balance path retained for later tuning: damage-aware selection with
+		// mostly small reactions for light wounds and progressively larger reactions.
+		UINT8 ubRoll = (UINT8)Random( 100 );
+
+		if ( fRunning )
+		{
+			if ( sDamage <= 7 )
+				ubReaction = ( ubRoll < 55 ) ? (UINT8)( 20 + Random( 3 ) ) : (UINT8)Random( 6 );
+			else if ( sDamage <= 17 )
+				ubReaction = ( ubRoll < 70 ) ? (UINT8)( 20 + Random( 5 ) ) : (UINT8)( 8 + Random( 3 ) );
+			else
+				ubReaction = ( ubRoll < 55 ) ? (UINT8)( 20 + Random( 5 ) ) : (UINT8)( 25 + Random( 5 ) );
+		}
+		else if ( sDamage <= 7 )
+		{
+			ubReaction = (UINT8)Random( 12 );
+		}
+		else if ( sDamage <= 17 )
+		{
+			if ( ubRoll < 45 )
+				ubReaction = (UINT8)( 6 + Random( 6 ) );
+			else if ( ubRoll < 75 )
+				ubReaction = (UINT8)( 12 + Random( 8 ) );
+			else
+				ubReaction = (UINT8)Random( 6 );
+		}
 		else
-			ubReaction = (UINT8)( 25 + Random( 5 ) );      // hard reaction
+		{
+			if ( ubRoll < 30 )
+				ubReaction = (UINT8)( 6 + Random( 6 ) );
+			else if ( ubRoll < 65 )
+				ubReaction = (UINT8)( 12 + Random( 8 ) );
+			else
+				ubReaction = (UINT8)( 25 + Random( 5 ) );
+		}
+
+		if ( !fRunning && ubHitLocation == AIM_SHOT_LEGS && sDamage >= 8 && Random( 100 ) < 35 )
+			ubReaction = (UINT8)( 12 + Random( 8 ) );
+		else if ( !fRunning && ubHitLocation == AIM_SHOT_HEAD && Random( 100 ) < 45 )
+			ubReaction = (UINT8)( 3 + Random( 5 ) );
 	}
 
-	// Hit-location bias is intentionally modest: it shapes the physical reaction
-	// without overriding the damage-energy family. Leg hits favor loss of balance;
-	// head hits favor rotational flinches; torso hits keep the full mix.
-	if ( !fRunning && ubHitLocation == AIM_SHOT_LEGS && sDamage >= 8 && Random( 100 ) < 35 )
-		ubReaction = (UINT8)( 12 + Random( 8 ) );
-	else if ( !fRunning && ubHitLocation == AIM_SHOT_HEAD && Random( 100 ) < 45 )
-		ubReaction = (UINT8)( 3 + Random( 5 ) );
-
 	DebugMsg( TOPIC_JA2, DBG_LEVEL_3, String(
-		"VR_HIT variant=%u soldier=%u damage=%d hitloc=%u running=%u incomingDir=%u momentumDir=%u",
-		ubReaction, pSoldier->ubID, sDamage, ubHitLocation, fRunning ? 1 : 0, ubIncomingDirection, ubMomentumDirection ) );
+		"VR_HIT demo=%u variant=%u soldier=%u damage=%d hitloc=%u running=%u incomingDir=%u momentumDir=%u",
+		fVRReactionDemoMode ? 1 : 0, ubReaction, pSoldier->ubID, sDamage, ubHitLocation, fRunning ? 1 : 0, ubIncomingDirection, ubMomentumDirection ) );
 
 	switch ( ubReaction )
 	{
