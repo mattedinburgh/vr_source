@@ -1905,7 +1905,7 @@ typedef struct
 	INT16	sCODisguiseAPReduction;
 	INT16	sCOCloseDetectionRange;
 	INT16	sCOCloseDetectionRangeSoldierCorpse;
-	BOOLEAN fCOElitesDetectNextTile;
+	UINT16	usCOEliteUncoverRadius;
 
 	// RADIO OPERATOR
 	BOOLEAN fROAllowArtillery;						// artillery can be forbidden for all teams with this setting
