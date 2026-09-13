@@ -1498,17 +1498,25 @@ static void EnsureA3FarmCowPlacements( void )
 		return;
 
 	UINT16 usCivilianPlacements = 0;
+	UINT16 usExistingCows = 0;
 	for ( SOLDIERINITNODE *pNode = gSoldierInitHead; pNode != NULL; pNode = pNode->next )
 	{
 		if ( pNode->pBasicPlacement == NULL )
 			continue;
 		if ( pNode->pBasicPlacement->bBodyType == COW )
-		{
-			TraceA3FarmLoad( "COWS", "authored cow placement already present; runtime herd skipped" );
-			return;
-		}
+			++usExistingCows;
 		if ( pNode->pBasicPlacement->bTeam == CIV_TEAM )
 			++usCivilianPlacements;
+	}
+
+	const UINT16 usDesiredTotal = (UINT16)( sizeof(gA3FarmCowGridNo) / sizeof(gA3FarmCowGridNo[0]) );
+	if ( usExistingCows >= usDesiredTotal )
+	{
+		CHAR8 zExisting[128];
+		sprintf( zExisting, "authored/runtime herd already sufficient: cows=%u target=%u",
+			usExistingCows, usDesiredTotal );
+		TraceA3FarmLoad( "COWS", zExisting );
+		return;
 	}
 
 	UINT16 usAvailable = (usCivilianPlacements < 28) ? (UINT16)(28 - usCivilianPlacements) : 0;
@@ -1518,13 +1526,31 @@ static void EnsureA3FarmCowPlacements( void )
 		return;
 	}
 
-	const UINT16 usDesired = (UINT16)( sizeof(gA3FarmCowGridNo) / sizeof(gA3FarmCowGridNo[0]) );
-	const UINT16 usToAdd = (usAvailable < usDesired) ? usAvailable : usDesired;
+	const UINT16 usMissing = (UINT16)( usDesiredTotal - usExistingCows );
+	const UINT16 usToAdd = (usAvailable < usMissing) ? usAvailable : usMissing;
 
 	UINT16 usAdded = 0;
 	UINT16 usRejected = 0;
-	for ( UINT16 i = 0; i < usToAdd; ++i )
+	UINT16 usAlreadyOccupied = 0;
+	for ( UINT16 i = 0; i < usDesiredTotal && usAdded < usToAdd; ++i )
 	{
+		BOOLEAN fCowAlreadyHere = FALSE;
+		for ( SOLDIERINITNODE *pNode = gSoldierInitHead; pNode != NULL; pNode = pNode->next )
+		{
+			if ( pNode->pBasicPlacement != NULL &&
+				 pNode->pBasicPlacement->bBodyType == COW &&
+				 pNode->pBasicPlacement->usStartingGridNo == gA3FarmCowGridNo[i] )
+			{
+				fCowAlreadyHere = TRUE;
+				break;
+			}
+		}
+		if ( fCowAlreadyHere )
+		{
+			++usAlreadyOccupied;
+			continue;
+		}
+
 		if ( !A3FarmCowGridSafe( gA3FarmCowGridNo[i] ) )
 		{
 			++usRejected;
@@ -1549,9 +1575,9 @@ static void EnsureA3FarmCowPlacements( void )
 			++usAdded;
 	}
 
-	CHAR8 zCows[128];
-	sprintf( zCows, "added=%u rejectedUnsafe=%u existingCivPlacements=%u",
-		usAdded, usRejected, usCivilianPlacements );
+	CHAR8 zCows[192];
+	sprintf( zCows, "existing=%u target=%u added=%u occupiedCandidates=%u rejectedUnsafe=%u civPlacementsBefore=%u",
+		usExistingCows, usDesiredTotal, usAdded, usAlreadyOccupied, usRejected, usCivilianPlacements );
 	TraceA3FarmLoad( "COWS", zCows );
 }
 
