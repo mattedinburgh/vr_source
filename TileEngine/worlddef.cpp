@@ -685,12 +685,12 @@ static const CHAR8 *SectorVisualLeafName( const STR8 pFilename )
 	return pLeaf;
 }
 
-static UINT8 DetermineSectorVisualProfile( const STR8 pFilename )
+static UINT8 DetermineSectorVisualProfile( const CHAR8 *pFilename )
 {
 	if ( pFilename == NULL )
 		return SECTOR_VISUAL_DEFAULT;
 
-	pFilename = (STR8)SectorVisualLeafName( pFilename );
+	pFilename = SectorVisualLeafName( pFilename );
 
 	// Keep normal A3 gameplay on the original authored sector until the remaster
 	// has passed visual QA.  MAPSHOT is deliberately allowed to activate the farm
