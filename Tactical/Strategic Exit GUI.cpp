@@ -36,6 +36,8 @@
 	#include "Creature Spreading.h"
 #endif
 
+#include "Soldier Control.h"
+
 #ifdef JA2UB
 #include "Explosion Control.h"
 #include "Ja25 Strategic Ai.h"
@@ -116,6 +118,23 @@ INT16	gsWarpWorldX;
 INT16	gsWarpWorldY;
 INT8	gbWarpWorldZ;
 INT32   gsWarpGridNo;
+
+// Tactical casualty dragging is a local extraction action. Never carry reciprocal
+// soldier IDs across a strategic/warp sector transition; release the casualty on
+// the current map before moving a merc or squad to another sector.
+static void ReleaseCasualtyDragsBeforeSectorTraversal( )
+{
+	for ( INT32 cnt = gTacticalStatus.Team[ gbPlayerNum ].bFirstID;
+		cnt <= gTacticalStatus.Team[ gbPlayerNum ].bLastID; ++cnt )
+	{
+		SOLDIERTYPE *pSoldier = MercPtrs[ cnt ];
+		if ( pSoldier && pSoldier->bActive &&
+			(pSoldier->ubDraggedCasualtyID != NOBODY || pSoldier->ubDraggedByID != NOBODY) )
+		{
+			pSoldier->ClearBleedoutDragLinks();
+		}
+	}
+}
 
 
 //KM:	New method is coded for more sophistocated rules.	All the information is stored within the gExitDialog struct
@@ -386,6 +405,8 @@ void DoneFadeInWarp( void )
 
 void DoneFadeOutWarpCallback( void )
 {
+	ReleaseCasualtyDragsBeforeSectorTraversal();
+
 	INT32 cnt;
 	SOLDIERTYPE *pSoldier;
 
@@ -765,6 +786,7 @@ void RemoveSectorExitMenu( BOOLEAN fOk )
 
 		if ( fOk )
 		{
+			ReleaseCasualtyDragsBeforeSectorTraversal();
 #ifdef JA2UB		
 			//ja25 ub
 			//If this is the sector with the power fan
