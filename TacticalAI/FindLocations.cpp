@@ -1936,6 +1936,14 @@ INT8 SearchForItems( SOLDIERTYPE * pSoldier, INT8 bReason, UINT16 usItem )
 {
 	DebugMsg(TOPIC_JA2AI,DBG_LEVEL_3,String("SearchForItems"));
 
+	// Militia must not consume ground/sector inventory during tactical combat.
+	// They fight with the equipment they brought into the battle.
+	if ( pSoldier && pSoldier->bTeam == MILITIA_TEAM &&
+		 ( (gTacticalStatus.uiFlags & INCOMBAT) || gTacticalStatus.fEnemyInSector ) )
+	{
+		return AI_ACTION_NONE;
+	}
+
 	INT32					iSearchRange;
 	INT16					sMaxLeft, sMaxRight, sMaxUp, sMaxDown, sXOffset, sYOffset;
 	INT32 sGridNo;
