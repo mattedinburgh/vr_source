@@ -592,6 +592,22 @@ typedef struct
 	FLOAT fEffectiveMagFactor;
 	FLOAT fMuzzleOffsetX;
 	FLOAT fMuzzleOffsetY;
+
+	// Physical contributors to the final point of impact. These are deltas,
+	// so the inspector can distinguish random sway, tracking, recoil and
+	// intrinsic weapon dispersion instead of merely showing one final offset.
+	FLOAT fRandomSwayX;
+	FLOAT fRandomSwayY;
+	FLOAT fTargetTrackingX;
+	FLOAT fTargetTrackingY;
+	FLOAT fPreRecoilX;
+	FLOAT fPreRecoilY;
+	FLOAT fRecoilX;
+	FLOAT fRecoilY;
+	FLOAT fRangeCompensationY;
+	FLOAT fDeviationX;
+	FLOAT fDeviationY;
+
 	FLOAT fBulletDeviation;
 	FLOAT fShotOffsetX;
 	FLOAT fShotOffsetY;
