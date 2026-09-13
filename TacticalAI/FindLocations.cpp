@@ -2762,7 +2762,7 @@ INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction )
 	{
 		fCurrentWithdrawCover = AnyCoverAtSpot(pSoldier, pSoldier->sGridNo);
 		fCurrentWithdrawSightCover = SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE);
-		iCurrentWithdrawSupport = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2);
+		iCurrentWithdrawSupport = AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2);
 		bCurrentWithdrawRangePreference = AIEngagementRangeModifier(pSoldier, sPos);
 	}
 
@@ -2932,7 +2932,7 @@ INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction )
 
 				// Nearby conscious allies make a fallback position more useful: the
 				// soldier is regrouping, not merely running away.
-				INT32 iNearbySupport = CountNearbyFriends(pSoldier, sGridNo, DAY_VISION_RANGE / 2);
+				INT32 iNearbySupport = AICountNearbyOperationalFriends(pSoldier, sGridNo, DAY_VISION_RANGE / 2);
 				sTempDist += 20 * __min(iNearbySupport, 3);
 				sTempDist += 12 * (__min(iNearbySupport, 3) - __min(iCurrentWithdrawSupport, 3));
 
