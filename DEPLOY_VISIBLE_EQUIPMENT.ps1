@@ -169,133 +169,7 @@ foreach ($relative in $assetPaths) {
         continue
     }
 
-    $xmlUrlCase = $relative -replace '(?i)\.STIforeach ($relative in $assetPaths) {
-    $destination = Join-Path $DataRoot $relative
-    if ($Force -or -not (Test-Path $destination) -or (Get-Item $destination).Length -eq 0) {
-        [void]$pending.Add($relative)
-    }
-}
-
-Write-Host ("Equipment surfaces referenced : {0}" -f $assetPaths.Count)
-Write-Host ("Equipment surfaces to fetch   : {0}" -f $pending.Count)
-
-if ($pending.Count -gt 0) {
-    Add-Type -AssemblyName System.Net.Http
-    $handler = New-Object System.Net.Http.HttpClientHandler
-    $client = New-Object System.Net.Http.HttpClient($handler)
-    $client.Timeout = [TimeSpan]::FromMinutes(5)
-    $client.DefaultRequestHeaders.UserAgent.ParseAdd("VengeanceReloaded-LOBOT-Port/1.0")
-
-    try {
-        for ($offset = 0; $offset -lt $pending.Count; $offset += $Workers) {
-            $lastIndex = [Math]::Min($pending.Count - 1, $offset + $Workers - 1)
-            $batch = @($pending[$offset..$lastIndex])
-            $jobs = @()
-
-            foreach ($relative in $batch) {
-                if (-not $upstreamPathMap.ContainsKey($relative)) {
-                    throw "No upstream path resolved for $relative"
-                }
-                $urlRel = $upstreamPathMap[$relative].Replace("\", "/")
-                $url = "$UpstreamRaw/$urlRel"
-                $destination = Join-Path $DataRoot $relative
-                $parent = Split-Path -Parent $destination
-                New-Item -ItemType Directory -Force -Path $parent | Out-Null
-
-                $jobs += [pscustomobject]@{
-                    Relative = $relative
-                    Url = $url
-                    Destination = $destination
-                    Task = $client.GetByteArrayAsync($url)
-                }
-            }
-
-            foreach ($job in $jobs) {
-                $ok = $false
-                $last = $null
-
-                try {
-                    $bytes = $job.Task.GetAwaiter().GetResult()
-                    if ($bytes.Length -le 0) { throw "Empty response" }
-                    [System.IO.File]::WriteAllBytes($job.Destination, $bytes)
-                    $ok = $true
-                }
-                catch {
-                    $last = $_
-                }
-
-                if (-not $ok) {
-                    # Parallel request failed: retry this one conservatively.
-                    for ($attempt = 1; $attempt -le 3 -and -not $ok; $attempt++) {
-                        try {
-                            $bytes = $client.GetByteArrayAsync($job.Url).GetAwaiter().GetResult()
-                            if ($bytes.Length -le 0) { throw "Empty response" }
-                            [System.IO.File]::WriteAllBytes($job.Destination, $bytes)
-                            $ok = $true
-                        }
-                        catch {
-                            $last = $_
-                            if ($attempt -lt 3) { Start-Sleep -Seconds $attempt }
-                        }
-                    }
-                }
-
-                if (-not $ok) {
-                    throw "Failed to download $($job.Relative): $last"
-                }
-            }
-
-            $done = [Math]::Min($pending.Count, $lastIndex + 1)
-            Write-Progress -Activity "Downloading visible armour animation layers" -Status "$done / $($pending.Count)" -PercentComplete (($done * 100.0) / $pending.Count)
-        }
-    }
-    finally {
-        if ($client) { $client.Dispose() }
-        if ($handler) { $handler.Dispose() }
-        Write-Progress -Activity "Downloading visible armour animation layers" -Completed
-    }
-}
-
-Write-Host "Verifying deployed assets..."
-$missing = New-Object System.Collections.ArrayList
-$totalBytes = [int64]0
-foreach ($relative in $assetPaths) {
-    $destination = Join-Path $DataRoot $relative
-    if (-not (Test-Path $destination) -or (Get-Item $destination).Length -eq 0) {
-        [void]$missing.Add($relative)
-    }
-    else {
-        $totalBytes += (Get-Item $destination).Length
-    }
-}
-
-if ($missing.Count -gt 0) {
-    Write-Host ""
-    Write-Host "Missing files:" -ForegroundColor Red
-    $missing | Select-Object -First 30 | ForEach-Object { Write-Host "  $_" }
-    if ($missing.Count -gt 30) {
-        Write-Host ("  ... and {0} more" -f ($missing.Count - 30))
-    }
-    throw "Visible-equipment deployment incomplete. Enable marker was NOT created."
-}
-
-$markerText = @"
-Vengeance Reloaded visible tactical equipment
-Source: 1dot13/gamedir master Data/Anims/LOBOT art
-Mode: overlay-only (native Vengeance body + 1.13 helmet/vest armour layers)
-Assets: $($assetPaths.Count)
-Bytes: $totalBytes
-"@
-[System.IO.File]::WriteAllText($Marker, $markerText, [System.Text.Encoding]::ASCII)
-
-Write-Host ""
-Write-Host "VISIBLE EQUIPMENT ASSETS VERIFIED"
-Write-Host ("Files : {0}" -f $assetPaths.Count)
-Write-Host ("Size  : {0:N1} MiB" -f ($totalBytes / 1MB))
-Write-Host "Marker: $Marker"
-Write-Host ""
-Write-Host "Rebuild/run the current install/all-2026-09-12 source. Helmets and torso armour are now eligible for tactical rendering."
-, '.sti'
+    $xmlUrlCase = $relative -replace '(?i)\.STI$', '.sti'
     if ($upstreamPathMap[$relative] -cne $xmlUrlCase) {
         $caseCorrections++
     }
@@ -338,9 +212,10 @@ if ($pending.Count -gt 0) {
             $jobs = @()
 
             foreach ($relative in $batch) {
-                $urlRel = $relative.Replace("\", "/")
-                # 1.13 gamedir stores STI extensions in lowercase; raw GitHub URLs are case-sensitive.
-                $urlRel = $urlRel -replace '(?i)\.STI$', '.sti'
+                if (-not $upstreamPathMap.ContainsKey($relative)) {
+                    throw "No upstream path resolved for $relative"
+                }
+                $urlRel = $upstreamPathMap[$relative].Replace("\", "/")
                 $url = "$UpstreamRaw/$urlRel"
                 $destination = Join-Path $DataRoot $relative
                 $parent = Split-Path -Parent $destination
