@@ -1985,7 +1985,7 @@ INT16 SOLDIERTYPE::CalcActionPoints( void )
 	}
 
 	// If tired, reduce action points accordingly (by up to 1/2)
-	if (this->bBreath < 100)
+	if ( this->bBreath < 100 && !(this->flags.uiStatusFlags & SOLDIER_VEHICLE) && !AM_A_ROBOT(this) )
 		ubPoints -= (ubPoints * (100 - this->bBreath)) / 200;
 
 	if (this->sWeightCarriedAtTurnStart > 100)
