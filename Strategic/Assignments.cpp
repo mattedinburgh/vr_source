@@ -414,6 +414,61 @@ OBJECTTYPE* FindRepairableItemInLBENODE(SOLDIERTYPE * pSoldier, OBJECTTYPE * pOb
 void HandleRepairBySoldier( SOLDIERTYPE *pSoldier );
 
 // rest the character
+static UINT8 GetSleepLocationEfficiency( SOLDIERTYPE *pSoldier )
+{
+	// Proper towns/settlements provide enough basic shelter that sleeping rough is the 100% baseline.
+	// Outside towns the sector terrain determines how punishing an improvised night outdoors is.
+	if ( pSoldier->bSectorZ > 0 )
+	{
+		// Underground positions are sheltered from weather, but are rarely comfortable.
+		return 90;
+	}
+
+	UINT8 ubTerrain = SectorInfo[ SECTOR( pSoldier->sSectorX, pSoldier->sSectorY ) ].ubTraversability[ THROUGH_STRATEGIC_MOVE ];
+
+	if ( GetTownIdForSector( pSoldier->sSectorX, pSoldier->sSectorY ) != BLANK_SECTOR || ubTerrain == TOWN )
+		return 100;
+
+	switch ( ubTerrain )
+	{
+		case ROAD:
+		case PLAINS_ROAD:
+		case FARMLAND_ROAD:
+		case COASTAL_ROAD:
+		case SAND_ROAD:
+			return 90;
+
+		case PLAINS:
+		case FARMLAND:
+		case COASTAL:
+			return 85;
+
+		case SAND:
+		case SPARSE:
+		case HILLS:
+		case SPARSE_ROAD:
+		case HILLS_ROAD:
+			return 80;
+
+		case TROPICS:
+		case DENSE:
+		case TROPICS_ROAD:
+		case DENSE_ROAD:
+			return 75;
+
+		case SWAMP:
+		case SWAMP_ROAD:
+			return 65;
+
+		case WATER:
+		case NS_RIVER:
+		case EW_RIVER:
+			return 60;
+
+		default:
+			return 80;
+	}
+}
 void RestCharacter( SOLDIERTYPE *pSoldier );
 // fatigue the character
 void FatigueCharacter( SOLDIERTYPE *pSoldier );
@@ -4931,16 +4986,32 @@ void RestCharacter( SOLDIERTYPE *pSoldier )
 	{
 		UINT8 ubInventorySleepModifier = GetInventorySleepModifier( pSoldier );
 
-		// Sleeping rough should be meaningfully worse than using proper sleep gear.
-		// With no bed/facility and no sleep-modifying item, actual sleep is only 80% efficient.
-		// A standard sleeping bag has SleepModifier 20, so it provides 120% efficiency:
-		// roughly 50% more recovery per hour than sleeping on bare ground.
-		if ( pSoldier->flags.fMercAsleep && ubInventorySleepModifier == 0 )
+		if ( pSoldier->flags.fMercAsleep )
 		{
-			bDivisor = ( bDivisor * 100 ) / 80;
+			INT16 sLocationEfficiency = GetSleepLocationEfficiency( pSoldier );
+			INT16 sSleepEfficiency = sLocationEfficiency;
+
+			if ( ubInventorySleepModifier > 0 )
+			{
+				if ( sLocationEfficiency >= 100 )
+				{
+					// In towns basic shelter is already available, so a sleeping bag is only a comfort upgrade.
+					sSleepEfficiency += ubInventorySleepModifier / 2;
+				}
+				else
+				{
+					// Outdoors the bag matters more: apply its full bonus and shield against half of
+					// the terrain-related discomfort that separates this sector from town-quality sleep.
+					sSleepEfficiency += ubInventorySleepModifier + ( 100 - sLocationEfficiency ) / 2;
+				}
+			}
+
+			sSleepEfficiency = __min( 140, __max( 50, sSleepEfficiency ) );
+			bDivisor = ( bDivisor * 100 ) / sSleepEfficiency;
 		}
 		else
 		{
+			// Preserve the old generic item effect while resting but not actually asleep.
 			bDivisor = ( bDivisor * 100 ) / ( 100 + ubInventorySleepModifier );
 		}
 	}
