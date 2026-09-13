@@ -112,13 +112,22 @@ try {
         "BGMCROUCH_R_RDY","BGMCROUCH_P_RDY","BGMCROUCH_D_RDY",
         "RGFCROUCH_R_RDY","RGFCROUCH_P_RDY","RGFCROUCH_D_RDY"
     )
-    $unsupportedPattern = ($unsupported | ForEach-Object { [regex]::Escape($_) }) -join "|"
-
     Get-ChildItem $DestTable -Recurse -File -Filter *.xml | ForEach-Object {
-        $txt = Get-Content $_.FullName -Raw
-        $pattern = '(?m)^\s*<Surface\b[^>]*(?:animstate|animsurface)\s*=\s*"(?:' + $unsupportedPattern + ')"[^>]*/>\s*\r?\n?'
-        $txt = [regex]::Replace($txt, $pattern, '')
-        Set-Content -Path $_.FullName -Value $txt -Encoding UTF8
+        $lines = Get-Content $_.FullName
+        $filtered = foreach ($line in $lines) {
+            $drop = $false
+            if ($line -match '<Surface\\b') {
+                foreach ($animationName in $unsupported) {
+                    if ($line.Contains('animstate="' + $animationName + '"') -or
+                        $line.Contains('animsurface="' + $animationName + '"')) {
+                        $drop = $true
+                        break
+                    }
+                }
+            }
+            if (-not $drop) { $line }
+        }
+        Set-Content -Path $_.FullName -Value $filtered -Encoding UTF8
     }
 
     # Extend the compatible 2022 filters to Vengeance's later equipment IDs.
