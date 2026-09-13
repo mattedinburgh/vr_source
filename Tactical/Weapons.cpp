@@ -7862,7 +7862,7 @@ UINT32 AICalcChanceToHitGun(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTim
 		}
 
 		// Match player laser bonuses by range, lighting and selected aiming mode.
-		INT16 sLaserRange = GetBestLaserRange( &(pSoldier->inv[pSoldier->ubAttackingHand]) );
+		INT16 sLaserRange = pSoldier->LaserActive() ? GetBestLaserRange( &(pSoldier->inv[pSoldier->ubAttackingHand]) ) : 0;
 		if ( sLaserRange > 0
 			&& ( gGameCTHConstants.LASER_PERFORMANCE_BONUS_HIP + gGameCTHConstants.LASER_PERFORMANCE_BONUS_IRON + gGameCTHConstants.LASER_PERFORMANCE_BONUS_SCOPE != 0) )
 		{
