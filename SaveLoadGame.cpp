@@ -117,6 +117,7 @@
 #endif
 
 #include		"BobbyR.h"
+#include "ExceptionHandling.h"
 #include		"Imp Portraits.h"
 #include		"Loading Screen.h"
 #include		"Interface Utils.h"
@@ -3282,6 +3283,8 @@ extern bool alreadySaving = false;
 
 BOOLEAN SaveGame( int ubSaveGameID, STR16 pGameDesc )
 {
+	BlackBoxEvent( "SAVE", "SaveGame begin slot=%d sector=%d,%d,%d screen=%u", ubSaveGameID, gWorldSectorX, gWorldSectorY, gbWorldSectorZ, guiCurrentScreen );
+	BlackBoxCheckpoint( "SAVE", "operation=SAVE slot=%d phase=BEGIN sector=%d,%d,%d", ubSaveGameID, gWorldSectorX, gWorldSectorY, gbWorldSectorZ );
 	UINT32	uiNumBytesWritten=0;
 	HWFILE	hFile=0;
 	SAVED_GAME_HEADER SaveGameHeader;
@@ -4348,11 +4351,15 @@ if( !SaveNewEmailDataToSaveGameFile( hFile ) )
 	NextLoopCheckForEnoughFreeHardDriveSpace();
 
 	alreadySaving = false;
+	BlackBoxCheckpoint( "SAVE", "operation=SAVE slot=%d phase=COMPLETE", ubSaveGameID );
+	BlackBoxEvent( "SAVE", "SaveGame complete slot=%d", ubSaveGameID );
 
 	return( TRUE );
 
 	//if there is an error saving the game
 FAILED_TO_SAVE:
+	BlackBoxCheckpoint( "SAVE", "operation=SAVE slot=%d phase=FAILED", ubSaveGameID );
+	BlackBoxEvent( "SAVE", "SaveGame FAILED slot=%d", ubSaveGameID );
 
 #ifdef JA2BETAVERSION
 	SaveGameFilePosition( FileGetPos( hFile ), "Failed to Save!!!" );
@@ -4403,6 +4410,8 @@ extern int gCivPreservedTempFileVersion[256];
 
 BOOLEAN LoadSavedGame( int ubSavedGameID )
 {
+	BlackBoxEvent( "SAVE", "LoadSavedGame begin slot=%d screen=%u", ubSavedGameID, guiCurrentScreen );
+	BlackBoxCheckpoint( "SAVE", "operation=LOAD slot=%d phase=BEGIN", ubSavedGameID );
 	HWFILE	hFile;
 	SAVED_GAME_HEADER SaveGameHeader;
 	UINT32	uiNumBytesRead=0;
@@ -4496,6 +4505,8 @@ BOOLEAN LoadSavedGame( int ubSavedGameID )
 
 	//Create the name of the file
 	CreateSavedGameFileNameFromNumber( ubSavedGameID, zSaveGameName );
+	BlackBoxEvent( "SAVE", "LoadSavedGame file=%s", zSaveGameName );
+	BlackBoxCheckpoint( "SAVE", "operation=LOAD slot=%d phase=OPEN file=%s", ubSavedGameID, zSaveGameName );
 
 	// open the save game file
 	hFile = FileOpen( zSaveGameName, FILE_ACCESS_READ | FILE_OPEN_EXISTING, FALSE );
@@ -4526,6 +4537,12 @@ BOOLEAN LoadSavedGame( int ubSavedGameID )
 	guiJA2EncryptionSet = CalcJA2EncryptionSet( &SaveGameHeader );
 	guiCurrentSaveGameVersion = SaveGameHeader.uiSavedGameVersion;
 	guiBrokenSaveGameVersion = SaveGameHeader.uiSavedGameVersion;
+	BlackBoxEvent( "SAVE", "header slot=%d version=%u day=%u hour=%u worldLoaded=%d sector=%d,%d,%d",
+		ubSavedGameID, SaveGameHeader.uiSavedGameVersion, SaveGameHeader.uiDay, SaveGameHeader.ubHour,
+		SaveGameHeader.fWorldLoaded ? 1 : 0, SaveGameHeader.sSectorX, SaveGameHeader.sSectorY, SaveGameHeader.bSectorZ );
+	BlackBoxCheckpoint( "SAVE", "operation=LOAD slot=%d phase=HEADER version=%u worldLoaded=%d sector=%d,%d,%d",
+		ubSavedGameID, SaveGameHeader.uiSavedGameVersion, SaveGameHeader.fWorldLoaded ? 1 : 0,
+		SaveGameHeader.sSectorX, SaveGameHeader.sSectorY, SaveGameHeader.bSectorZ );
 
 	// WANNE: Store the info
 	lastLoadedSaveGameDay = SaveGameHeader.uiDay;
@@ -4664,6 +4681,8 @@ BOOLEAN LoadSavedGame( int ubSavedGameID )
 		if( ( gWorldSectorX != 0 ) && ( gWorldSectorY != 0 ) )
 		{
 			//Load the sector
+			BlackBoxEvent( "SAVE", "restoring sector=%d,%d,%d from slot=%d", sLoadSectorX, sLoadSectorY, bLoadSectorZ, ubSavedGameID );
+			BlackBoxCheckpoint( "SAVE", "operation=LOAD slot=%d phase=SET_CURRENT_WORLD_SECTOR sector=%d,%d,%d", ubSavedGameID, sLoadSectorX, sLoadSectorY, bLoadSectorZ );
 			SetCurrentWorldSector( sLoadSectorX, sLoadSectorY, bLoadSectorZ );
 		}
 	}
@@ -6357,6 +6376,8 @@ BOOLEAN LoadSavedGame( int ubSavedGameID )
 		}
 	}
 
+	BlackBoxCheckpoint( "SAVE", "operation=LOAD slot=%d phase=COMPLETE sector=%d,%d,%d", ubSavedGameID, gWorldSectorX, gWorldSectorY, gbWorldSectorZ );
+	BlackBoxEvent( "SAVE", "LoadSavedGame complete slot=%d sector=%d,%d,%d", ubSavedGameID, gWorldSectorX, gWorldSectorY, gbWorldSectorZ );
 	return( TRUE );
 }
 
