@@ -7020,10 +7020,11 @@ BOOLEAN CheckForEndOfBattle( BOOLEAN fAnEnemyRetreated )
 
     if ( fBattleLost || fBattleWon )
     {
-		if( !gbWorldSectorZ )
+		if( !gbWorldSectorZ && fBattleWon )
 		{
-			// The no-second-escape rule lasts through the follow-up battle, then
-			// releases regardless of which side won.
+			// Clear only when the pursued enemy force is actually defeated. If the
+			// player loses the pursuit battle, surviving escapees still may not flee
+			// strategically a second time on the next attempt.
 			ClearEnemyRetreatLockInSector( (UINT8)gWorldSectorX, (UINT8)gWorldSectorY );
 		}
 
