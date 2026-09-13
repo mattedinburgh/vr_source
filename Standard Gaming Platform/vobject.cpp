@@ -565,73 +565,64 @@ HVOBJECT CreateVideoObject( VOBJECT_DESC *VObjectDesc )
 				}
 			}
 
-			if(hImage->ubBitDepth == 32)
+			if(hImage->ubBitDepth == 32 || hImage->ubBitDepth == 16)
 			{
+				// True-colour images use the same logical region model as indexed ETRLE
+				// images.  Preserve every region so tile indices and JSD structure counts
+				// remain compatible with legacy tilesets.
 				SGP_THROW_IFFALSE(hImage->usNumberOfObjects > 0, L"bad himage");
-				
-				// create one 16bpp object (that contains 32bpp data)
-				hVObject->p16BPPObject = (SixteenBPPObjectInfo*)MemAlloc(sizeof(SixteenBPPObjectInfo));
+				SGP_THROW_IFFALSE(hImage->pETRLEObject != NULL, L"true-colour himage has no region metadata");
+
+				const UINT16 usObjectCount = hImage->usNumberOfObjects;
+				const UINT32 uiBytesPerPixel = (hImage->ubBitDepth == 32) ? sizeof(UINT32) : sizeof(UINT16);
+				UINT8 *pSourceBase = (hImage->ubBitDepth == 32)
+					? (UINT8*)hImage->p32BPPData
+					: (UINT8*)hImage->p16BPPData;
+
+				SGP_THROW_IFFALSE(pSourceBase != NULL, L"true-colour himage has no pixel data");
+
+				hVObject->p16BPPObject = (SixteenBPPObjectInfo*)MemAlloc(sizeof(SixteenBPPObjectInfo) * usObjectCount);
 				if(!hVObject->p16BPPObject)
 				{
 					SGP_THROW(L"bad alloc");
 				}
-				memset(hVObject->p16BPPObject, 0, sizeof(SixteenBPPObjectInfo));
+				memset(hVObject->p16BPPObject, 0, sizeof(SixteenBPPObjectInfo) * usObjectCount);
 
-				int SIZE = hImage->pETRLEObject[0].usHeight * hImage->pETRLEObject[0].usWidth * sizeof(UINT32);
-				hVObject->p16BPPObject->p16BPPData = (UINT16*)MemAlloc(SIZE); // UINT32*
-				if(!hVObject->p16BPPObject->p16BPPData)
+				// Several tactical helpers still query pETRLEObject for dimensions and
+				// offsets.  Keep a metadata-only copy even though the pixels are not ETRLE.
+				hVObject->pETRLEObject = (ETRLEObject*)MemAlloc(sizeof(ETRLEObject) * usObjectCount);
+				if(!hVObject->pETRLEObject)
 				{
 					MemFree(hVObject->p16BPPObject);
+					hVObject->p16BPPObject = NULL;
 					SGP_THROW(L"bad alloc");
 				}
-				memcpy(hVObject->p16BPPObject->p16BPPData, hImage->p32BPPData, SIZE);
+				memcpy(hVObject->pETRLEObject, hImage->pETRLEObject, sizeof(ETRLEObject) * usObjectCount);
 
-				hVObject->p16BPPObject->sOffsetX		= hImage->pETRLEObject[0].sOffsetX;
-				hVObject->p16BPPObject->sOffsetY		= hImage->pETRLEObject[0].sOffsetY;
-				hVObject->p16BPPObject->ubShadeLevel	= 0;
-				hVObject->p16BPPObject->usHeight		= hImage->pETRLEObject[0].usHeight;
-				hVObject->p16BPPObject->usWidth			= hImage->pETRLEObject[0].usWidth;
-				hVObject->p16BPPObject->usRegionIndex	= 0;
-
-				hVObject->usNumberOf16BPPObjects = 1;
-				hVObject->ubBitDepth = hImage->ubBitDepth;
-
-				if ( VObjectDesc->fCreateFlags & VOBJECT_CREATE_FROMFILE )
+				for(UINT16 usObject = 0; usObject < usObjectCount; ++usObject)
 				{
-					DestroyImage( hImage );
+					ETRLEObject *pRegion = &hImage->pETRLEObject[usObject];
+					SixteenBPPObjectInfo *pObject = &hVObject->p16BPPObject[usObject];
+					const UINT32 uiSize = (UINT32)pRegion->usHeight * (UINT32)pRegion->usWidth * uiBytesPerPixel;
+
+					pObject->p16BPPData = (UINT16*)MemAlloc(uiSize);
+					if(!pObject->p16BPPData)
+					{
+						SGP_THROW(L"bad alloc");
+					}
+
+					memcpy(pObject->p16BPPData, pSourceBase + pRegion->uiDataOffset, uiSize);
+
+					pObject->sOffsetX = pRegion->sOffsetX;
+					pObject->sOffsetY = pRegion->sOffsetY;
+					pObject->ubShadeLevel = 0;
+					pObject->usHeight = pRegion->usHeight;
+					pObject->usWidth = pRegion->usWidth;
+					pObject->usRegionIndex = usObject;
 				}
 
-				return hVObject;
-			}
-			else if(hImage->ubBitDepth == 16)
-			{
-				SGP_THROW_IFFALSE(hImage->usNumberOfObjects > 0, L"bad himage");
-
-				// create one 16bpp object (that contains 32bpp data)
-				hVObject->p16BPPObject = (SixteenBPPObjectInfo*)MemAlloc(sizeof(SixteenBPPObjectInfo));
-				if(!hVObject->p16BPPObject)
-				{
-					SGP_THROW(L"bad alloc");
-				}
-				memset(hVObject->p16BPPObject, 0, sizeof(SixteenBPPObjectInfo));
-
-				int SIZE = hImage->pETRLEObject[0].usHeight * hImage->pETRLEObject[0].usWidth * sizeof(UINT16);
-				hVObject->p16BPPObject->p16BPPData = (UINT16*)MemAlloc(SIZE);
-				if(!hVObject->p16BPPObject->p16BPPData)
-				{
-					MemFree(hVObject->p16BPPObject);
-					SGP_THROW(L"bad alloc");
-				}
-				memcpy(hVObject->p16BPPObject->p16BPPData, hImage->p16BPPData, SIZE);
-
-				hVObject->p16BPPObject->sOffsetX		= hImage->pETRLEObject[0].sOffsetX;
-				hVObject->p16BPPObject->sOffsetY		= hImage->pETRLEObject[0].sOffsetY;
-				hVObject->p16BPPObject->ubShadeLevel	= 0;
-				hVObject->p16BPPObject->usHeight		= hImage->pETRLEObject[0].usHeight;
-				hVObject->p16BPPObject->usWidth			= hImage->pETRLEObject[0].usWidth;
-				hVObject->p16BPPObject->usRegionIndex	= 0;
-
-				hVObject->usNumberOf16BPPObjects = 1;
+				hVObject->usNumberOf16BPPObjects = usObjectCount;
+				hVObject->usNumberOfObjects = usObjectCount;
 				hVObject->ubBitDepth = hImage->ubBitDepth;
 
 				if ( VObjectDesc->fCreateFlags & VOBJECT_CREATE_FROMFILE )
