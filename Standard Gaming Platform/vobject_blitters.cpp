@@ -391,24 +391,19 @@ BOOLEAN BltTrueColorDataTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, 
 	return TRUE;
 }
 
-static UINT16 TrueColorGetZStripLevel(ZStripInfo *pZInfo, UINT16 usBaseZ, INT32 iSourceX, UINT16 usZStripDelta)
+static UINT16 TrueColorGetZStripLevel(ZStripInfo *pZInfo, UINT16 usBaseZ, INT32 iSourceX,
+	UINT16 usZStripDelta, const INT16 *psCumulativeZChange)
 {
-	INT32 iLevel = (INT32)usBaseZ + ((INT32)pZInfo->bInitialZChange * (INT32)usZStripDelta);
-
+	INT32 iChanges = 0;
 	if(iSourceX >= (INT32)pZInfo->ubFirstZStripWidth)
 	{
-		INT32 iChanges = 1 + ((iSourceX - (INT32)pZInfo->ubFirstZStripWidth) / 20);
+		iChanges = 1 + ((iSourceX - (INT32)pZInfo->ubFirstZStripWidth) / 20);
 		if(iChanges > (INT32)pZInfo->ubNumberOfZChanges)
 			iChanges = pZInfo->ubNumberOfZChanges;
-
-		for(INT32 i = 0; i < iChanges; ++i)
-		{
-			if(pZInfo->pbZChange[i] < 0)
-				iLevel -= usZStripDelta;
-			else if(pZInfo->pbZChange[i] > 0)
-				iLevel += usZStripDelta;
-		}
 	}
+
+	const INT32 iNetStripChange = (INT32)pZInfo->bInitialZChange + (INT32)psCumulativeZChange[iChanges];
+	INT32 iLevel = (INT32)usBaseZ + (iNetStripChange * (INT32)usZStripDelta);
 
 	if(iLevel < 0)
 		iLevel = 0;
@@ -442,6 +437,16 @@ BOOLEAN BltTrueColorDataTo16BPPBufferZStrip(UINT16 *pBuffer, UINT32 uiDestPitchB
 	ZStripInfo *pZInfo = hSrcVObject->ppZStripInfo[sZStripIndex];
 	if(pObject->p16BPPData == NULL || pObject->usWidth == 0 || pObject->usHeight == 0)
 		return FALSE;
+
+	// Prefix-sum the JSD Z-strip changes once per blit. The legacy assembly
+	// advances this state horizontally; this gives equivalent O(1) lookup per
+	// pixel without re-summing every preceding strip for every row.
+	INT16 sCumulativeZChange[256];
+	sCumulativeZChange[0] = 0;
+	for(UINT16 i = 0; i < pZInfo->ubNumberOfZChanges; ++i)
+	{
+		sCumulativeZChange[i + 1] = (INT16)(sCumulativeZChange[i] + pZInfo->pbZChange[i]);
+	}
 
 	INT32 iDestLeft = iX + pObject->sOffsetX;
 	INT32 iDestTop = iY + pObject->sOffsetY;
@@ -495,7 +500,7 @@ BOOLEAN BltTrueColorDataTo16BPPBufferZStrip(UINT16 *pBuffer, UINT32 uiDestPitchB
 			if(ubAlpha == 0)
 				continue;
 
-			const UINT16 usPixelZ = TrueColorGetZStripLevel(pZInfo, usZValue, iSourceX, usZStripDelta);
+			const UINT16 usPixelZ = TrueColorGetZStripLevel(pZInfo, usZValue, iSourceX, usZStripDelta, sCumulativeZChange);
 			const BOOLEAN fBlocked = fSameZBurnsThrough ? (*pZ > usPixelZ) : (*pZ >= usPixelZ);
 			if(fBlocked)
 			{
