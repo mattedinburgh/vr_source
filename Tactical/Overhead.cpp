@@ -10826,6 +10826,17 @@ void EnsureEnemyCommandRoles()
 		SOLDIERTYPE* p = MercPtrs[i];
 		if (!p || !p->bActive || !p->bInSector || p->stats.bLife <= 0 || (p->usSoldierFlagMask & SOLDIER_POW))
 			continue;
+
+		// Formal command and General-bodyguard duties are mutually exclusive.
+		// Older saves and earlier normalization passes could leave a soldier marked
+		// as both BODYGUARD and OFFICER/VIP, producing contradictory tactical orders.
+		// Preserve command rank and drop the subordinate bodyguard flag.
+		if ((p->usSoldierFlagMask & SOLDIER_BODYGUARD) &&
+			(p->usSoldierFlagMask & (SOLDIER_VIP | SOLDIER_ENEMY_OFFICER)))
+		{
+			p->usSoldierFlagMask &= ~SOLDIER_BODYGUARD;
+		}
+
 		++enemyCount;
 		if ((p->usSoldierFlagMask & SOLDIER_ENEMY_OFFICER) && !(p->usSoldierFlagMask & SOLDIER_VIP))
 			++officerCount;
@@ -10863,7 +10874,8 @@ void EnsureEnemyCommandRoles()
 		for (INT32 i = gTacticalStatus.Team[ENEMY_TEAM].bFirstID; i <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++i)
 		{
 			SOLDIERTYPE* p = MercPtrs[i];
-			if (!p || !p->bActive || !p->bInSector || p->stats.bLife < OKLIFE || (p->usSoldierFlagMask & SOLDIER_POW))
+			if (!p || !p->bActive || !p->bInSector || p->stats.bLife < OKLIFE ||
+				(p->usSoldierFlagMask & (SOLDIER_POW | SOLDIER_BODYGUARD)))
 				continue;
 			// A General represents command competence first, combat class second. A real
 			// Squadleader should outrank a merely elite shooter; Elite/experience/leadership
@@ -10933,7 +10945,7 @@ void EnsureEnemyCommandRoles()
 		{
 			SOLDIERTYPE* p = MercPtrs[i];
 			if (!p || !p->bActive || !p->bInSector || p->stats.bLife < OKLIFE ||
-				(p->usSoldierFlagMask & (SOLDIER_POW | SOLDIER_VIP | SOLDIER_ENEMY_OFFICER)) ||
+				(p->usSoldierFlagMask & (SOLDIER_POW | SOLDIER_VIP | SOLDIER_ENEMY_OFFICER | SOLDIER_BODYGUARD)) ||
 				!HAS_SKILL_TRAIT(p, SQUADLEADER_NT))
 				continue;
 			INT32 score = NUM_SKILL_TRAITS(p, SQUADLEADER_NT) * 10000 + p->stats.bExpLevel * 100 + p->stats.bLeadership;
