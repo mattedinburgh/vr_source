@@ -414,7 +414,19 @@ static void BlackBoxWriteHangEvidence( DWORD elapsedMs, LONG heartbeatSequence, 
 			dumpOk = MiniDumpWriteDump( GetCurrentProcess(), GetCurrentProcessId(), hDump,
 				dumpType, NULL, NULL, NULL );
 			if( !dumpOk )
+			{
 				dumpError = GetLastError();
+				// Older dbghelp.dll builds may reject newer dump flags. Retry with
+				// a conservative baseline instead of losing the hang snapshot.
+				SetFilePointer( hDump, 0, NULL, FILE_BEGIN );
+				SetEndOfFile( hDump );
+				dumpOk = MiniDumpWriteDump( GetCurrentProcess(), GetCurrentProcessId(), hDump,
+					(MINIDUMP_TYPE)( MiniDumpNormal | MiniDumpWithDataSegs ), NULL, NULL, NULL );
+				if( dumpOk )
+					dumpError = ERROR_SUCCESS;
+				else
+					dumpError = GetLastError();
+			}
 			CloseHandle( hDump );
 		}
 		else
