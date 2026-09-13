@@ -10788,6 +10788,15 @@ static BOOLEAN AIEscapeTargetStillSafe(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 
 		return FALSE;
 	}
 
+	// Cached escape targets are only valid while they are still on the intended
+	// strategic edge. Revalidate geometry as well as hazards/pathing so a stale
+	// plan can never arm traversal from an interior or wrong-edge tile.
+	INT8 bActualDirection = -1;
+	if (!GridNoOnEdgeOfMap(sSpot, &bActualDirection) ||
+		bActualDirection != bDirection)
+	{
+		return FALSE;
+	}
 	if (sSpot != pSoldier->sGridNo)
 	{
 		INT32 iPathCost = PlotPath(pSoldier, sSpot, NO_COPYROUTE, NO_PLOT,
