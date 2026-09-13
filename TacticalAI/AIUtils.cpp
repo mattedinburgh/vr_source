@@ -6282,8 +6282,9 @@ BOOLEAN AIDisengagementActive(SOLDIERTYPE *pSoldier)
 	if (guiAIDisengageIdentity[pSoldier->ubID] != pSoldier->uiUniqueSoldierIdValue)
 		return FALSE;
 
-	return (pSoldier->aiData.bAlertStatus >= STATUS_RED &&
-		gubAIDisengageTurns[pSoldier->ubID] > 0);
+	return (gubAIDisengageTurns[pSoldier->ubID] > 0 &&
+		(pSoldier->aiData.bAlertStatus >= STATUS_RED ||
+		 gubAIForcedDisengageTurns[pSoldier->ubID] > 0));
 }
 
 BOOLEAN AIForcedDisengagementActive(SOLDIERTYPE *pSoldier)
@@ -6543,9 +6544,14 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 		guiAIDisengageStartTurn[ubID] = 0;
 	}
 
+	BOOLEAN fForcedMilitiaRetreat =
+		pSoldier->bTeam == MILITIA_TEAM &&
+		gubAIForcedDisengageTurns[ubID] > 0;
+
 	if (!AICombatTeam(pSoldier) ||
 		pSoldier->ubProfile != NO_PROFILE ||
-		pSoldier->IsZombie() || pSoldier->aiData.bAlertStatus < STATUS_RED)
+		pSoldier->IsZombie() ||
+		(pSoldier->aiData.bAlertStatus < STATUS_RED && !fForcedMilitiaRetreat))
 	{
 		gubAIDisengageTurns[ubID] = 0;
 		gubAIForcedDisengageTurns[ubID] = 0;
