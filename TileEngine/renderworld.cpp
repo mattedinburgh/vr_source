@@ -48,6 +48,9 @@
 	#include "Sound Control.h"
 #endif
 
+#include "LogicalBodyTypes/BodyTypeDB.h"
+#include "LogicalBodyTypes/Layers.h"
+
 ///////////////////////////
 // C file include here
 #include "Render Z.h"
@@ -775,6 +778,73 @@ void RenderSetShadows(BOOLEAN fShadows)
 }
 
 
+
+// Render only the 1.13 LOBOT equipment layers over Vengeance's native soldier sprite.
+// This deliberately does not replace the base body/weapon animation: it preserves VR animation
+// compatibility while making equipped armour visible.  Equipment uses the same animation frame
+// index and Z test as the soldier, but never writes Z itself.
+static void RenderVisibleEquipmentLayers(
+	SOLDIERTYPE *pSoldier,
+	UINT8 *pDestBuf,
+	UINT32 uiDestPitchBYTES,
+	INT16 sZLevel,
+	INT16 sXPos,
+	INT16 sYPos,
+	UINT16 usImageIndex,
+	UINT16 *pShadeTable,
+	BOOLEAN fZBlitter,
+	BOOLEAN fObscuredBlitter )
+{
+	if ( pSoldier == NULL || pDestBuf == NULL || pShadeTable == NULL )
+		return;
+
+	using namespace LogicalBodyTypes;
+	BodyType *pBodyType = BodyTypeDB::Instance().Find( pSoldier );
+	if ( pBodyType == NULL )
+		return;
+
+	Layers::LayerGraphIterator layerIter = Layers::Instance().GetIterator( pSoldier->bMovementDirection );
+	Layers::LayerGraphIterator layerEnd  = Layers::Instance().GetIterationEnd( pSoldier->bMovementDirection );
+
+	for ( ; layerIter != layerEnd; ++layerIter )
+	{
+		const Layers::LayerProperties *pLayerProperties = pBodyType->GetLayerProperties( layerIter->index );
+		if ( pLayerProperties == NULL || !pLayerProperties->render )
+			continue;
+
+		BodyType::LogicalSurfaceType *pLogicalSurface = pBodyType->GetLogicalSurfaceType( layerIter->index, pSoldier );
+		if ( pLogicalSurface == NULL || pLogicalSurface->physicalSurfaceType == NULL )
+			continue;
+
+		HVOBJECT hEquipment = pLogicalSurface->physicalSurfaceType->hVideoObject;
+		if ( hEquipment == NULL || hEquipment->ubBitDepth != 8 || usImageIndex >= hEquipment->usNumberOfObjects )
+			continue;
+
+		// The armour-only VR catalog is palette-independent for the first production pass.
+		// Using the soldier's resolved shade table preserves lighting, fade and enemy highlight effects.
+		if ( fZBlitter )
+		{
+			if ( fObscuredBlitter )
+			{
+				Blt8BPPDataTo16BPPBufferTransShadowZNBObscuredClip(
+					(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
+					hEquipment, sXPos, sYPos, usImageIndex, &gClippingRect, pShadeTable );
+			}
+			else
+			{
+				Blt8BPPDataTo16BPPBufferTransShadowZNBClip(
+					(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
+					hEquipment, sXPos, sYPos, usImageIndex, &gClippingRect, pShadeTable );
+			}
+		}
+		else
+		{
+			Blt8BPPDataTo16BPPBufferTransShadowClip(
+				(UINT16*)pDestBuf, uiDestPitchBYTES, hEquipment,
+				sXPos, sYPos, usImageIndex, &gClippingRect, pShadeTable );
+		}
+	}
+}
 
 void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT32 iStartPointX_S, INT32 iStartPointY_S, INT32 iEndXS, INT32 iEndYS, UINT8 ubNumLevels, UINT32 *puiLevels, UINT16 *psLevelIDs )
 {
@@ -2619,6 +2689,16 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 													Blt8BPPDataTo8BPPBufferTransparent((UINT16*)pDestBuf, uiDestPitchBYTES, hVObject, sXPos, sYPos, usImageIndex);
 										}
 									}
+								}
+
+								// VR LOBOT: visible armour overlays.  Dirty rendering is left on the native
+								// soldier path; the deployed overlay art stays within the normal merc footprint.
+								if ( fMerc && pSoldier != NULL && !fTileInvisible && !( uiFlags & TILES_DIRTY ) &&
+									pSoldier->ubID < MAX_NUM_SOLDIERS )
+								{
+									RenderVisibleEquipmentLayers( pSoldier, pDestBuf, uiDestPitchBYTES,
+										sZLevel, sXPos, sYPos, usImageIndex, pShadeTable,
+										fZBlitter, fObscuredBlitter );
 								}
 
 								// RENDR APS ONTOP OF PLANNED MERC GUY
