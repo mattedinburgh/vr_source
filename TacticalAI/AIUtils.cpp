@@ -2742,6 +2742,16 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 		sMorale = (INT16) ((100 * iOurTotalThreat) / iTheirTotalThreat);
 	}
 
+	// 1.13 officer morale intent, localized for Vengeance: leadership helps troops
+	// who are actually within command distance instead of every enemy on the map.
+	if (pSoldier->bTeam == ENEMY_TEAM && gGameExternalOptions.fEnemyRoles && gGameExternalOptions.fEnemyOfficers)
+	{
+		EnsureEnemyCommandRoles();
+		UINT8 officerType = HighestEnemyOfficerNearSoldier(pSoldier, max(6, TACTICAL_RANGE / 2));
+		if (officerType > OFFICER_NONE)
+			sMorale = (INT16)(sMorale * (1.0f + gGameExternalOptions.dEnemyOfficerMoraleModifier * officerType));
+	}
+
 	if (sMorale <= 25)				// odds 1:4 or worse
 		bMoraleCategory = MORALE_HOPELESS;
 	else if (sMorale <= 50)		 // odds between 1:4 and 1:2
