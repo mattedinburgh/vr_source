@@ -58,6 +58,7 @@
 #endif
 
 #include "connect.h"
+#include "ExceptionHandling.h"
 #include "MilitiaSquads.h"	// routed militia strategic traversal
 // needed to use the modularized tactical AI:
 #include "ModularizedTacticalAI/include/Plan.h"
@@ -344,6 +345,9 @@ BOOLEAN AimingGun(SOLDIERTYPE *pSoldier)
 
 void HandleSoldierAI( SOLDIERTYPE *pSoldier ) // FIXME - this function is named inappropriately
 {
+	BlackBoxCheckpoint( "AI", "phase=HANDLE soldier=%u team=%d grid=%d AP=%d life=%d alert=%d action=%d data=%d",
+		pSoldier->ubID, pSoldier->bTeam, pSoldier->sGridNo, pSoldier->bActionPoints,
+		pSoldier->bLife, pSoldier->aiData.bAlertStatus, pSoldier->aiData.bAction, pSoldier->aiData.usActionData );
 	// ATE
 	// Bail if we are engaged in a NPC conversation/ and/or sequence ... or we have a pause because 
 	// we just saw someone... or if there are bombs on the bomb queue
@@ -1783,6 +1787,9 @@ UINT32 GetTankCannonIndex()
 
 INT8 ExecuteAction(SOLDIERTYPE *pSoldier)
 {
+	BlackBoxCheckpoint( "AI", "phase=EXECUTE soldier=%u team=%d grid=%d AP=%d life=%d action=%d data=%d",
+		pSoldier->ubID, pSoldier->bTeam, pSoldier->sGridNo, pSoldier->bActionPoints,
+		pSoldier->bLife, pSoldier->aiData.bAction, pSoldier->aiData.usActionData );
 	INT32 iRetCode;
 	//NumMessage("ExecuteAction - Guy#",pSoldier->ubID);
 
