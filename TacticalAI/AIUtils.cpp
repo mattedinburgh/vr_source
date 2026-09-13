@@ -2149,7 +2149,7 @@ INT32 ClosestReachableFriendInTrouble(SOLDIERTYPE *pSoldier, BOOLEAN * pfClimbin
 	INT32 sPathCost, sClosestFriend = NOWHERE, sShortestPath = 1000, sClimbGridNo;
 	BOOLEAN fClimbingNecessary, fClosestClimbingNecessary = FALSE;
 	SOLDIERTYPE *pFriend;
-	UINT8 ubMyFireteamAlive = (pSoldier->bTeam == ENEMY_TEAM) ?
+	UINT8 ubMyFireteamAlive = AICombatTeam(pSoldier) ?
 		AIFireteamAliveCount(pSoldier) : 0;
 
 	// civilians don't really have any "friends", so they don't bother with this
@@ -2186,7 +2186,7 @@ INT32 ClosestReachableFriendInTrouble(SOLDIERTYPE *pSoldier, BOOLEAN * pfClimbin
 		// sector. Healthy fireteams now help their own element first; cross-element
 		// help is allowed only locally, while one/two-man remnants remain free to
 		// merge through the fireteam cohesion logic.
-		if (pSoldier->bTeam == ENEMY_TEAM && pFriend->bTeam == ENEMY_TEAM &&
+		if (AICombatTeam(pSoldier) && pFriend->bTeam == pSoldier->bTeam &&
 			!AISameFireteam(pSoldier, pFriend) &&
 			ubMyFireteamAlive > 2 &&
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > __max(6, DAY_VISION_RANGE / 3))
@@ -2515,7 +2515,7 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 		return MORALE_FEARLESS;
 	}
 
-	UINT8 ubMyFireteamAlive = (pSoldier->bTeam == ENEMY_TEAM) ?
+	UINT8 ubMyFireteamAlive = AICombatTeam(pSoldier) ?
 		AIFireteamAliveCount(pSoldier) : 0;
 
 	// An enemy with no usable weapon should prioritize self-preservation instead of
@@ -4127,7 +4127,7 @@ UINT8 AICountNearbyOperationalFriends(SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT
 	return ubCount;
 }
 
-// Enemy fireteam coordination. This state is sector-local and intentionally lives
+// Shared enemy/militia fireteam coordination. This state is sector-local and intentionally lives
 // outside SOLDIERTYPE so it does not change the savegame structure.
 #define AI_FIRETEAM_NONE 0
 #define AI_FIRETEAM_TARGET 8
@@ -4138,6 +4138,9 @@ extern UINT32 guiTurnCnt;
 
 static UINT8 gubAIFireteam[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIFireteamIdentity[MAX_NUM_SOLDIERS] = { 0 };
+// Fireteam IDs are globally unique inside the tactical sector. This records
+// which combat team owns each ID so enemy and militia coordination never mix.
+static INT8 gbAIFireteamTeam[256] = { 0 };
 // After a shattered one/two-man element is absorbed into another fireteam, keep
 // that decision sticky for a couple of turns. This prevents the same survivor
 // from immediately converting local isolation into full sector escape before he
@@ -4153,7 +4156,7 @@ static INT16 gsAIFireteamKnownMenInSector = -1;
 
 static BOOLEAN AIEnemyFireteamEligible(SOLDIERTYPE *pSoldier)
 {
-	return pSoldier && pSoldier->bTeam == ENEMY_TEAM && pSoldier->bActive &&
+	return pSoldier && AICombatTeam(pSoldier) && pSoldier->bActive &&
 		pSoldier->bInSector && pSoldier->stats.bLife > 0 &&
 		!(pSoldier->usSoldierFlagMask & SOLDIER_POW);
 }
@@ -4179,9 +4182,6 @@ static void AIResetFireteamsForSector(void)
 		return;
 	}
 
-	// Static tactical state is not serialized. A turn counter rollback normally means
-	// an earlier save was loaded in the same process; rebuild assignments instead of
-	// retaining "future" fireteam state from the abandoned timeline.
 	gsAIFireteamSectorX = gWorldSectorX;
 	gsAIFireteamSectorY = gWorldSectorY;
 	gbAIFireteamSectorZ = gbWorldSectorZ;
@@ -4195,30 +4195,22 @@ static void AIResetFireteamsForSector(void)
 		guiAIFireteamIdentity[i] = 0;
 		guiAIFireteamRejoinUntilTurn[i] = 0;
 	}
+	for (UINT16 i = 0; i < 256; ++i)
+		gbAIFireteamTeam[i] = -1;
 }
 
 static UINT8 AIFireteamCountById(UINT8 ubFireteam, BOOLEAN fReadyOnly)
 {
-	if (ubFireteam == AI_FIRETEAM_NONE)
-		return 0;
-
+	if (ubFireteam == AI_FIRETEAM_NONE) return 0;
 	UINT8 ubCount = 0;
-	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (!AIEnemyFireteamEligible(pFriend) || pFriend->ubID >= MAX_NUM_SOLDIERS ||
 			guiAIFireteamIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
-			gubAIFireteam[pFriend->ubID] != ubFireteam)
-			continue;
-		if (fReadyOnly &&
-			(pFriend->stats.bLife < OKLIFE ||
-			 pFriend->bCollapsed ||
-			 pFriend->bBreathCollapsed ||
-			 (pFriend->usSoldierFlagMask & SOLDIER_POW)))
-		{
-			continue;
-		}
+			gubAIFireteam[pFriend->ubID] != ubFireteam) continue;
+		if (fReadyOnly && (pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed || (pFriend->usSoldierFlagMask & SOLDIER_POW))) continue;
 		++ubCount;
 	}
 	return ubCount;
@@ -4226,24 +4218,18 @@ static UINT8 AIFireteamCountById(UINT8 ubFireteam, BOOLEAN fReadyOnly)
 
 static UINT8 AIFireteamOperationalCountById(UINT8 ubFireteam)
 {
-	if (ubFireteam == AI_FIRETEAM_NONE)
-		return 0;
-
+	if (ubFireteam == AI_FIRETEAM_NONE) return 0;
 	UINT8 ubCount = 0;
-	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (!AIEnemyFireteamEligible(pFriend) || pFriend->ubID >= MAX_NUM_SOLDIERS ||
 			guiAIFireteamIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
-			gubAIFireteam[pFriend->ubID] != ubFireteam ||
-			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
+			gubAIFireteam[pFriend->ubID] != ubFireteam || pFriend->stats.bLife < OKLIFE ||
+			pFriend->bCollapsed || pFriend->bBreathCollapsed ||
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
 			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
-			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend))
-		{
-			continue;
-		}
+			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend)) continue;
 		++ubCount;
 	}
 	return ubCount;
@@ -4252,15 +4238,13 @@ static UINT8 AIFireteamOperationalCountById(UINT8 ubFireteam)
 static INT32 AIFireteamDistanceToSpot(UINT8 ubFireteam, INT32 sSpot)
 {
 	INT32 iBest = 10000;
-	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (!AIEnemyFireteamEligible(pFriend) || pFriend->ubID >= MAX_NUM_SOLDIERS ||
 			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
 			guiAIFireteamIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
-			gubAIFireteam[pFriend->ubID] != ubFireteam)
-			continue;
+			gubAIFireteam[pFriend->ubID] != ubFireteam) continue;
 		iBest = __min(iBest, PythSpacesAway(pFriend->sGridNo, sSpot));
 	}
 	return iBest;
@@ -4269,381 +4253,238 @@ static INT32 AIFireteamDistanceToSpot(UINT8 ubFireteam, INT32 sSpot)
 static void AISeedEnemyFireteams(void)
 {
 	AIResetFireteamsForSector();
-	if (gfAIFireteamsSeeded)
-		return;
+	if (gfAIFireteamsSeeded) return;
 
-	UINT8 ubMembers[MAX_NUM_SOLDIERS];
-	BOOLEAN fAssigned[MAX_NUM_SOLDIERS] = { FALSE };
-	UINT16 usCount = 0;
-	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID && usCount < MAX_NUM_SOLDIERS; ++iCounter)
+	const INT8 bCombatTeams[2] = { ENEMY_TEAM, MILITIA_TEAM };
+	for (UINT8 ubSide = 0; ubSide < 2; ++ubSide)
 	{
-		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
-		if (AIEnemyFireteamEligible(pFriend))
-			ubMembers[usCount++] = pFriend->ubID;
-	}
+		INT8 bTeam = bCombatTeams[ubSide];
+		UINT8 ubMembers[MAX_NUM_SOLDIERS];
+		BOOLEAN fAssigned[MAX_NUM_SOLDIERS] = { FALSE };
+		UINT16 usCount = 0;
 
-	if (usCount == 0)
-	{
-		gfAIFireteamsSeeded = TRUE;
-		return;
-	}
-
-	UINT16 usGroups = (usCount <= 10) ? 1 : (usCount + AI_FIRETEAM_TARGET - 1) / AI_FIRETEAM_TARGET;
-	UINT16 usRemaining = usCount;
-	for (UINT16 usGroup = 0; usGroup < usGroups && usRemaining > 0; ++usGroup)
-	{
-		UINT16 usGroupsLeft = usGroups - usGroup;
-		UINT16 usTarget = (usRemaining + usGroupsLeft - 1) / usGroupsLeft;
-		// A small sector force of ten remains one coherent element; larger forces
-		// are balanced into normal 6-9 man elements.
-		if (usGroups == 1)
-			usTarget = usRemaining;
-		else
-			usTarget = __min((UINT16)AI_FIRETEAM_MAX_NORMAL, usTarget);
-
-		INT16 sSeedIndex = -1;
-		for (UINT16 i = 0; i < usCount; ++i)
-			if (!fAssigned[i]) { sSeedIndex = (INT16)i; break; }
-		if (sSeedIndex < 0)
-			break;
-
-		UINT8 ubFireteam = gubAINextFireteam++;
-		UINT8 ubSeedId = ubMembers[sSeedIndex];
-		SOLDIERTYPE *pSeed = MercPtrs[ubSeedId];
-		BOOLEAN fSeedFixedMission = AIEnemyFixedMissionRole(pSeed);
-		fAssigned[sSeedIndex] = TRUE;
-		gubAIFireteam[ubSeedId] = ubFireteam;
-		guiAIFireteamIdentity[ubSeedId] = pSeed->uiUniqueSoldierIdValue;
-		--usRemaining;
-
-		for (UINT16 usAdded = 1; usAdded < usTarget && usRemaining > 0; ++usAdded)
+		for (UINT16 iCounter = gTacticalStatus.Team[bTeam].bFirstID;
+			iCounter <= gTacticalStatus.Team[bTeam].bLastID && usCount < MAX_NUM_SOLDIERS; ++iCounter)
 		{
-			INT16 sBestIndex = -1;
-			INT32 iBestDistance = 10000;
+			SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+			if (AIEnemyFireteamEligible(pFriend)) ubMembers[usCount++] = pFriend->ubID;
+		}
+		if (usCount == 0) continue;
 
-			BOOLEAN fHasLeader = FALSE;
-			BOOLEAN fHasMedic = FALSE;
-			BOOLEAN fHasMachinegunner = FALSE;
-			BOOLEAN fHasRadio = FALSE;
+		UINT16 usGroups = (usCount <= 10) ? 1 : (usCount + AI_FIRETEAM_TARGET - 1) / AI_FIRETEAM_TARGET;
+		UINT16 usRemaining = usCount;
+		for (UINT16 usGroup = 0; usGroup < usGroups && usRemaining > 0; ++usGroup)
+		{
+			UINT16 usGroupsLeft = usGroups - usGroup;
+			UINT16 usTarget = (usRemaining + usGroupsLeft - 1) / usGroupsLeft;
+			if (usGroups == 1) usTarget = usRemaining;
+			else usTarget = __min((UINT16)AI_FIRETEAM_MAX_NORMAL, usTarget);
 
-			for (UINT16 j = 0; j < usCount; ++j)
+			INT16 sSeedIndex = -1;
+			for (UINT16 i = 0; i < usCount; ++i) if (!fAssigned[i]) { sSeedIndex = (INT16)i; break; }
+			if (sSeedIndex < 0) break;
+
+			UINT8 ubFireteam = gubAINextFireteam++;
+			gbAIFireteamTeam[ubFireteam] = bTeam;
+			UINT8 ubSeedId = ubMembers[sSeedIndex];
+			SOLDIERTYPE *pSeed = MercPtrs[ubSeedId];
+			BOOLEAN fSeedFixedMission = AIEnemyFixedMissionRole(pSeed);
+			fAssigned[sSeedIndex] = TRUE;
+			gubAIFireteam[ubSeedId] = ubFireteam;
+			guiAIFireteamIdentity[ubSeedId] = pSeed->uiUniqueSoldierIdValue;
+			--usRemaining;
+
+			for (UINT16 usAdded = 1; usAdded < usTarget && usRemaining > 0; ++usAdded)
 			{
-				if (!fAssigned[j])
-					continue;
-
-				UINT8 ubAssignedId = ubMembers[j];
-				if (gubAIFireteam[ubAssignedId] != ubFireteam)
-					continue;
-
-				SOLDIERTYPE *pMember = MercPtrs[ubAssignedId];
-				if (!pMember)
-					continue;
-
-				fHasLeader = fHasLeader || AICheckIsOfficer(pMember) || AICheckIsCommander(pMember);
-				fHasMedic = fHasMedic || AICheckIsMedic(pMember);
-				fHasMachinegunner = fHasMachinegunner || AICheckIsMachinegunner(pMember);
-				fHasRadio = fHasRadio || AICheckIsRadioOperator(pMember);
-			}
-
-			for (UINT16 i = 0; i < usCount; ++i)
-			{
-				if (fAssigned[i])
-					continue;
-
-				SOLDIERTYPE *pCandidate = MercPtrs[ubMembers[i]];
-				if (!pCandidate)
-					continue;
-
-				// Grow from the current fireteam footprint rather than measuring
-				// every new member only from the original seed. This keeps the
-				// element spatially connected even on irregular deployments.
-				INT32 iCandidateDistance = 10000;
+				INT16 sBestIndex = -1;
+				INT32 iBestDistance = 10000;
+				BOOLEAN fHasLeader = FALSE, fHasMedic = FALSE, fHasMachinegunner = FALSE, fHasRadio = FALSE;
 
 				for (UINT16 j = 0; j < usCount; ++j)
 				{
-					if (!fAssigned[j])
-						continue;
-
+					if (!fAssigned[j]) continue;
 					UINT8 ubAssignedId = ubMembers[j];
-					if (gubAIFireteam[ubAssignedId] != ubFireteam)
-						continue;
-
+					if (gubAIFireteam[ubAssignedId] != ubFireteam) continue;
 					SOLDIERTYPE *pMember = MercPtrs[ubAssignedId];
-					if (!pMember)
-						continue;
-
-					INT32 iDistance = PythSpacesAway(
-						pMember->sGridNo, pCandidate->sGridNo);
-
-					// Same-elevation neighbours are preferred. A roof/ground
-					// combination is still possible when no better cluster fit exists.
-					if (pMember->pathing.bLevel != pCandidate->pathing.bLevel)
-						iDistance += __max(6, DAY_VISION_RANGE / 3);
-
-					iCandidateDistance = __min(iCandidateDistance, iDistance);
+					if (!pMember) continue;
+					fHasLeader = fHasLeader || AICheckIsOfficer(pMember) || AICheckIsCommander(pMember);
+					fHasMedic = fHasMedic || AICheckIsMedic(pMember);
+					fHasMachinegunner = fHasMachinegunner || AICheckIsMachinegunner(pMember);
+					fHasRadio = fHasRadio || AICheckIsRadioOperator(pMember);
 				}
 
-				// Soft role balancing: if two candidates are similarly close, prefer
-				// the one that adds a missing support capability. The penalty is
-				// intentionally small so geography remains the primary grouping rule.
-				INT32 iRolePenalty = 0;
-
-				// Keep fixed defenders and mobile responders coherent when geography gives
-				// us a reasonable choice. This is deliberately softer than distance so a
-				// nearby sentry is not assigned to a remote static group merely by role.
-				if (AIEnemyFixedMissionRole(pCandidate) != fSeedFixedMission)
-					iRolePenalty += 8;
-
-				if (fHasLeader && (AICheckIsOfficer(pCandidate) || AICheckIsCommander(pCandidate)))
-					iRolePenalty += 4;
-				if (fHasMedic && AICheckIsMedic(pCandidate))
-					iRolePenalty += 4;
-				if (fHasMachinegunner && AICheckIsMachinegunner(pCandidate))
-					iRolePenalty += 4;
-				if (fHasRadio && AICheckIsRadioOperator(pCandidate))
-					iRolePenalty += 4;
-
-				iCandidateDistance += __min(12, iRolePenalty);
-
-				if (iCandidateDistance < iBestDistance)
+				for (UINT16 i = 0; i < usCount; ++i)
 				{
-					iBestDistance = iCandidateDistance;
-					sBestIndex = (INT16)i;
+					if (fAssigned[i]) continue;
+					SOLDIERTYPE *pCandidate = MercPtrs[ubMembers[i]];
+					if (!pCandidate) continue;
+					INT32 iCandidateDistance = 10000;
+					for (UINT16 j = 0; j < usCount; ++j)
+					{
+						if (!fAssigned[j]) continue;
+						UINT8 ubAssignedId = ubMembers[j];
+						if (gubAIFireteam[ubAssignedId] != ubFireteam) continue;
+						SOLDIERTYPE *pMember = MercPtrs[ubAssignedId];
+						if (!pMember) continue;
+						INT32 iDistance = PythSpacesAway(pMember->sGridNo, pCandidate->sGridNo);
+						if (pMember->pathing.bLevel != pCandidate->pathing.bLevel) iDistance += __max(6, DAY_VISION_RANGE / 3);
+						iCandidateDistance = __min(iCandidateDistance, iDistance);
+					}
+
+					INT32 iRolePenalty = 0;
+					if (AIEnemyFixedMissionRole(pCandidate) != fSeedFixedMission) iRolePenalty += 8;
+					if (fHasLeader && (AICheckIsOfficer(pCandidate) || AICheckIsCommander(pCandidate))) iRolePenalty += 4;
+					if (fHasMedic && AICheckIsMedic(pCandidate)) iRolePenalty += 4;
+					if (fHasMachinegunner && AICheckIsMachinegunner(pCandidate)) iRolePenalty += 4;
+					if (fHasRadio && AICheckIsRadioOperator(pCandidate)) iRolePenalty += 4;
+					iCandidateDistance += __min(12, iRolePenalty);
+					if (iCandidateDistance < iBestDistance) { iBestDistance = iCandidateDistance; sBestIndex = (INT16)i; }
 				}
+				if (sBestIndex < 0) break;
+				UINT8 ubId = ubMembers[sBestIndex];
+				fAssigned[sBestIndex] = TRUE;
+				gubAIFireteam[ubId] = ubFireteam;
+				guiAIFireteamIdentity[ubId] = MercPtrs[ubId]->uiUniqueSoldierIdValue;
+				--usRemaining;
 			}
-
-			if (sBestIndex < 0)
-				break;
-
-			UINT8 ubId = ubMembers[sBestIndex];
-			fAssigned[sBestIndex] = TRUE;
-			gubAIFireteam[ubId] = ubFireteam;
-			guiAIFireteamIdentity[ubId] = MercPtrs[ubId]->uiUniqueSoldierIdValue;
-			--usRemaining;
 		}
 	}
+
 	gfAIFireteamsSeeded = TRUE;
+	gsAIFireteamKnownMenInSector = gTacticalStatus.Team[ENEMY_TEAM].bMenInSector +
+		gTacticalStatus.Team[MILITIA_TEAM].bMenInSector;
 }
 
 static INT32 AIFireteamJoinDistance(UINT8 ubFireteam, SOLDIERTYPE *pCandidate)
 {
-	if (ubFireteam == AI_FIRETEAM_NONE || !pCandidate)
-		return 10000;
-
+	if (ubFireteam == AI_FIRETEAM_NONE || !pCandidate || gbAIFireteamTeam[ubFireteam] != pCandidate->bTeam) return 10000;
 	INT32 iBest = 10000;
-
-	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
-		if (!AIEnemyFireteamEligible(pFriend) ||
-			pFriend->ubID >= MAX_NUM_SOLDIERS ||
+		if (!AIEnemyFireteamEligible(pFriend) || pFriend->ubID >= MAX_NUM_SOLDIERS ||
 			guiAIFireteamIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
-			gubAIFireteam[pFriend->ubID] != ubFireteam)
-		{
-			continue;
-		}
-
+			gubAIFireteam[pFriend->ubID] != ubFireteam) continue;
 		INT32 iDistance = PythSpacesAway(pFriend->sGridNo, pCandidate->sGridNo);
-
-		if (pFriend->pathing.bLevel != pCandidate->pathing.bLevel)
-			iDistance += __max(6, DAY_VISION_RANGE / 3);
-
+		if (pFriend->pathing.bLevel != pCandidate->pathing.bLevel) iDistance += __max(6, DAY_VISION_RANGE / 3);
 		iBest = __min(iBest, iDistance);
 	}
-
 	return iBest;
 }
 
 static INT32 AIFireteamRoleOverlapPenalty(UINT8 ubFireteam, SOLDIERTYPE *pCandidate)
 {
-	if (ubFireteam == AI_FIRETEAM_NONE || !pCandidate)
-		return 0;
-
-	BOOLEAN fHasLeader = FALSE;
-	BOOLEAN fHasMedic = FALSE;
-	BOOLEAN fHasMachinegunner = FALSE;
-	BOOLEAN fHasRadio = FALSE;
-
-	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	if (ubFireteam == AI_FIRETEAM_NONE || !pCandidate || gbAIFireteamTeam[ubFireteam] != pCandidate->bTeam) return 10000;
+	BOOLEAN fHasLeader = FALSE, fHasMedic = FALSE, fHasMachinegunner = FALSE, fHasRadio = FALSE;
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
 	{
 		SOLDIERTYPE *pMember = MercPtrs[iCounter];
-		if (!AIEnemyFireteamEligible(pMember) ||
-			pMember->ubID >= MAX_NUM_SOLDIERS ||
+		if (!AIEnemyFireteamEligible(pMember) || pMember->ubID >= MAX_NUM_SOLDIERS ||
 			guiAIFireteamIdentity[pMember->ubID] != pMember->uiUniqueSoldierIdValue ||
-			gubAIFireteam[pMember->ubID] != ubFireteam)
-		{
-			continue;
-		}
-
+			gubAIFireteam[pMember->ubID] != ubFireteam) continue;
 		fHasLeader = fHasLeader || AICheckIsOfficer(pMember) || AICheckIsCommander(pMember);
 		fHasMedic = fHasMedic || AICheckIsMedic(pMember);
 		fHasMachinegunner = fHasMachinegunner || AICheckIsMachinegunner(pMember);
 		fHasRadio = fHasRadio || AICheckIsRadioOperator(pMember);
 	}
-
 	INT32 iPenalty = 0;
-	if (fHasLeader && (AICheckIsOfficer(pCandidate) || AICheckIsCommander(pCandidate)))
-		iPenalty += 4;
-	if (fHasMedic && AICheckIsMedic(pCandidate))
-		iPenalty += 4;
-	if (fHasMachinegunner && AICheckIsMachinegunner(pCandidate))
-		iPenalty += 4;
-	if (fHasRadio && AICheckIsRadioOperator(pCandidate))
-		iPenalty += 4;
-
+	if (fHasLeader && (AICheckIsOfficer(pCandidate) || AICheckIsCommander(pCandidate))) iPenalty += 4;
+	if (fHasMedic && AICheckIsMedic(pCandidate)) iPenalty += 4;
+	if (fHasMachinegunner && AICheckIsMachinegunner(pCandidate)) iPenalty += 4;
+	if (fHasRadio && AICheckIsRadioOperator(pCandidate)) iPenalty += 4;
 	return __min(12, iPenalty);
 }
 
 static INT32 AIFireteamMissionRolePenalty(UINT8 ubFireteam, SOLDIERTYPE *pCandidate)
 {
-	if (ubFireteam == AI_FIRETEAM_NONE || !pCandidate)
-		return 0;
-
-	UINT8 ubFixed = 0;
-	UINT8 ubMobile = 0;
-	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	if (ubFireteam == AI_FIRETEAM_NONE || !pCandidate || gbAIFireteamTeam[ubFireteam] != pCandidate->bTeam) return 10000;
+	UINT8 ubFixed = 0, ubMobile = 0;
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
 	{
 		SOLDIERTYPE *pMember = MercPtrs[iCounter];
-		if (!AIEnemyFireteamEligible(pMember) ||
-			pMember->ubID >= MAX_NUM_SOLDIERS ||
+		if (!AIEnemyFireteamEligible(pMember) || pMember->ubID >= MAX_NUM_SOLDIERS ||
 			guiAIFireteamIdentity[pMember->ubID] != pMember->uiUniqueSoldierIdValue ||
-			gubAIFireteam[pMember->ubID] != ubFireteam)
-		{
-			continue;
-		}
-
-		if (AIEnemyFixedMissionRole(pMember))
-			++ubFixed;
-		else
-			++ubMobile;
+			gubAIFireteam[pMember->ubID] != ubFireteam) continue;
+		if (AIEnemyFixedMissionRole(pMember)) ++ubFixed; else ++ubMobile;
 	}
-
-	if (ubFixed == 0 && ubMobile == 0)
-		return 0;
-
+	if (ubFixed == 0 && ubMobile == 0) return 0;
 	BOOLEAN fCandidateFixed = AIEnemyFixedMissionRole(pCandidate);
-	if (fCandidateFixed && ubMobile > ubFixed)
-		return 8;
-	if (!fCandidateFixed && ubFixed > ubMobile)
-		return 8;
-
+	if (fCandidateFixed && ubMobile > ubFixed) return 8;
+	if (!fCandidateFixed && ubFixed > ubMobile) return 8;
 	return 0;
 }
 
 static void AIEnsureEnemyFireteams(void)
 {
 	AISeedEnemyFireteams();
-	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
 	{
 		SOLDIERTYPE *pSoldier = MercPtrs[iCounter];
-		if (!AIEnemyFireteamEligible(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
-			continue;
+		if (!AIEnemyFireteamEligible(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS) continue;
 		if (guiAIFireteamIdentity[pSoldier->ubID] == pSoldier->uiUniqueSoldierIdValue &&
-			gubAIFireteam[pSoldier->ubID] != AI_FIRETEAM_NONE)
-			continue;
-
+			gubAIFireteam[pSoldier->ubID] != AI_FIRETEAM_NONE) continue;
 		UINT8 ubBest = AI_FIRETEAM_NONE;
 		INT32 iBest = 10000;
 		for (UINT8 ubTeam = 1; ubTeam < gubAINextFireteam; ++ubTeam)
 		{
-			if (AIFireteamCountById(ubTeam, FALSE) >= AI_FIRETEAM_MAX_NORMAL)
-				continue;
+			if (gbAIFireteamTeam[ubTeam] != pSoldier->bTeam) continue;
+			if (AIFireteamCountById(ubTeam, FALSE) >= AI_FIRETEAM_MAX_NORMAL) continue;
 			INT32 iDistance = AIFireteamJoinDistance(ubTeam, pSoldier);
 			iDistance += AIFireteamRoleOverlapPenalty(ubTeam, pSoldier);
 			iDistance += AIFireteamMissionRolePenalty(ubTeam, pSoldier);
 			if (iDistance < iBest) { iBest = iDistance; ubBest = ubTeam; }
 		}
-		if (ubBest == AI_FIRETEAM_NONE)
-			ubBest = gubAINextFireteam++;
+		if (ubBest == AI_FIRETEAM_NONE) { ubBest = gubAINextFireteam++; gbAIFireteamTeam[ubBest] = pSoldier->bTeam; }
 		gubAIFireteam[pSoldier->ubID] = ubBest;
 		guiAIFireteamIdentity[pSoldier->ubID] = pSoldier->uiUniqueSoldierIdValue;
 	}
-	gsAIFireteamKnownMenInSector = gTacticalStatus.Team[ENEMY_TEAM].bMenInSector;
+	gsAIFireteamKnownMenInSector = gTacticalStatus.Team[ENEMY_TEAM].bMenInSector +
+		gTacticalStatus.Team[MILITIA_TEAM].bMenInSector;
 }
 
 static BOOLEAN AIFireteamPredominantlyFixed(UINT8 ubFireteam)
 {
-	UINT8 ubFixed = 0;
-	UINT8 ubMobile = 0;
-
-	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	UINT8 ubFixed = 0, ubMobile = 0;
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
 	{
 		SOLDIERTYPE *pMember = MercPtrs[iCounter];
-		if (!AIEnemyFireteamEligible(pMember) ||
-			pMember->ubID >= MAX_NUM_SOLDIERS ||
+		if (!AIEnemyFireteamEligible(pMember) || pMember->ubID >= MAX_NUM_SOLDIERS ||
 			guiAIFireteamIdentity[pMember->ubID] != pMember->uiUniqueSoldierIdValue ||
-			gubAIFireteam[pMember->ubID] != ubFireteam ||
-			pMember->stats.bLife < OKLIFE ||
-			pMember->bCollapsed ||
-			pMember->bBreathCollapsed)
-		{
-			continue;
-		}
-
-		if (AIEnemyFixedMissionRole(pMember))
-			++ubFixed;
-		else
-			++ubMobile;
+			gubAIFireteam[pMember->ubID] != ubFireteam || pMember->stats.bLife < OKLIFE ||
+			pMember->bCollapsed || pMember->bBreathCollapsed) continue;
+		if (AIEnemyFixedMissionRole(pMember)) ++ubFixed; else ++ubMobile;
 	}
-
 	return ubFixed > ubMobile;
 }
 
 static INT32 AIFireteamMergeDistance(UINT8 ubFirst, UINT8 ubSecond, SOLDIERTYPE *pJoiningSoldier)
 {
+	if (ubFirst == AI_FIRETEAM_NONE || ubSecond == AI_FIRETEAM_NONE ||
+		gbAIFireteamTeam[ubFirst] != gbAIFireteamTeam[ubSecond]) return 10000;
 	INT32 iBest = 10000;
-
-	for (UINT16 i = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		i <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++i)
+	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
 	{
 		SOLDIERTYPE *pFirst = MercPtrs[i];
 		BOOLEAN fJoiningLead = (pFirst == pJoiningSoldier);
-		if (!AIEnemyFireteamEligible(pFirst) ||
-			pFirst->ubID >= MAX_NUM_SOLDIERS ||
+		if (!AIEnemyFireteamEligible(pFirst) || pFirst->ubID >= MAX_NUM_SOLDIERS ||
 			guiAIFireteamIdentity[pFirst->ubID] != pFirst->uiUniqueSoldierIdValue ||
-			gubAIFireteam[pFirst->ubID] != ubFirst ||
-			pFirst->stats.bLife < OKLIFE ||
-			pFirst->bCollapsed ||
-			pFirst->bBreathCollapsed ||
-			(pFirst->usSoldierFlagMask & SOLDIER_POW) ||
+			gubAIFireteam[pFirst->ubID] != ubFirst || pFirst->stats.bLife < OKLIFE ||
+			pFirst->bCollapsed || pFirst->bBreathCollapsed || (pFirst->usSoldierFlagMask & SOLDIER_POW) ||
 			(pFirst->flags.uiStatusFlags & SOLDIER_COWERING) ||
-			(!fJoiningLead && (AIDisengagementActive(pFirst) || AIEscapeActive(pFirst))))
-		{
-			continue;
-		}
-
-		for (UINT16 j = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-			j <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++j)
+			(!fJoiningLead && (AIDisengagementActive(pFirst) || AIEscapeActive(pFirst)))) continue;
+		for (UINT16 j = 0; j < MAX_NUM_SOLDIERS; ++j)
 		{
 			SOLDIERTYPE *pSecond = MercPtrs[j];
-			if (!AIEnemyFireteamEligible(pSecond) ||
-				pSecond->ubID >= MAX_NUM_SOLDIERS ||
+			if (!AIEnemyFireteamEligible(pSecond) || pSecond->ubID >= MAX_NUM_SOLDIERS ||
 				guiAIFireteamIdentity[pSecond->ubID] != pSecond->uiUniqueSoldierIdValue ||
-				gubAIFireteam[pSecond->ubID] != ubSecond ||
-				pSecond->stats.bLife < OKLIFE ||
-				pSecond->bCollapsed ||
-				pSecond->bBreathCollapsed ||
-				(pSecond->usSoldierFlagMask & SOLDIER_POW) ||
-				(pSecond->flags.uiStatusFlags & SOLDIER_COWERING) ||
-				AIDisengagementActive(pSecond) || AIEscapeActive(pSecond))
-			{
-				continue;
-			}
-
+				gubAIFireteam[pSecond->ubID] != ubSecond || pSecond->stats.bLife < OKLIFE ||
+				pSecond->bCollapsed || pSecond->bBreathCollapsed || (pSecond->usSoldierFlagMask & SOLDIER_POW) ||
+				(pSecond->flags.uiStatusFlags & SOLDIER_COWERING) || AIDisengagementActive(pSecond) || AIEscapeActive(pSecond)) continue;
 			INT32 iDistance = PythSpacesAway(pFirst->sGridNo, pSecond->sGridNo);
-			if (pFirst->pathing.bLevel != pSecond->pathing.bLevel)
-				iDistance += __max(6, DAY_VISION_RANGE / 3);
-
+			if (pFirst->pathing.bLevel != pSecond->pathing.bLevel) iDistance += __max(6, DAY_VISION_RANGE / 3);
 			iBest = __min(iBest, iDistance);
 		}
 	}
-
 	return iBest;
 }
 
@@ -4672,6 +4513,8 @@ static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 
 	for (UINT8 ubTeam = 1; ubTeam < gubAINextFireteam; ++ubTeam)
 	{
+		if (gbAIFireteamTeam[ubTeam] != pSoldier->bTeam)
+			continue;
 		UINT8 ubTargetReady = AIFireteamOperationalCountById(ubTeam);
 		if (ubTeam == ubOld || ubTargetReady == 0)
 			continue;
@@ -4706,8 +4549,7 @@ static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 		return FALSE;
 
 	UINT32 uiRejoinUntil = guiTurnCnt + 3;
-	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (AIEnemyFireteamEligible(pFriend) && pFriend->ubID < MAX_NUM_SOLDIERS &&
@@ -4732,21 +4574,13 @@ static BOOLEAN AIRecentlyReattachedFireteamRemnant(SOLDIERTYPE *pSoldier)
 
 UINT8 AIFireteamId(SOLDIERTYPE *pSoldier)
 {
-	if (!AIEnemyFireteamEligible(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
-		return AI_FIRETEAM_NONE;
-
+	if (!AIEnemyFireteamEligible(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS) return AI_FIRETEAM_NONE;
 	AIResetFireteamsForSector();
-
-	// Fast path: most AI queries happen many times inside nested scoring loops.
-	// Do not rescan the entire enemy team when this soldier already has a valid
-	// assignment for the current sector/timeline.
+	INT16 sKnownCombatMen = gTacticalStatus.Team[ENEMY_TEAM].bMenInSector +
+		gTacticalStatus.Team[MILITIA_TEAM].bMenInSector;
 	if (guiAIFireteamIdentity[pSoldier->ubID] == pSoldier->uiUniqueSoldierIdValue &&
 		gubAIFireteam[pSoldier->ubID] != AI_FIRETEAM_NONE &&
-		gsAIFireteamKnownMenInSector == gTacticalStatus.Team[ENEMY_TEAM].bMenInSector)
-	{
-		return gubAIFireteam[pSoldier->ubID];
-	}
-
+		gsAIFireteamKnownMenInSector == sKnownCombatMen) return gubAIFireteam[pSoldier->ubID];
 	AIEnsureEnemyFireteams();
 	return gubAIFireteam[pSoldier->ubID];
 }
@@ -4758,40 +4592,27 @@ UINT8 AIFireteamAliveCount(SOLDIERTYPE *pSoldier)
 
 UINT8 AIFireteamCombatReadyCount(SOLDIERTYPE *pSoldier)
 {
-	if (!AIEnemyFireteamEligible(pSoldier))
-		return 0;
-
+	if (!AIEnemyFireteamEligible(pSoldier)) return 0;
 	UINT8 ubFireteam = AIFireteamId(pSoldier);
-	if (ubFireteam == AI_FIRETEAM_NONE)
-		return 0;
-
+	if (ubFireteam == AI_FIRETEAM_NONE) return 0;
 	UINT8 ubCount = 0;
-	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (!AIEnemyFireteamEligible(pFriend) || pFriend->ubID >= MAX_NUM_SOLDIERS ||
 			guiAIFireteamIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
-			gubAIFireteam[pFriend->ubID] != ubFireteam ||
-			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
-			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
-			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
-			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend))
-		{
-			continue;
-		}
+			gubAIFireteam[pFriend->ubID] != ubFireteam || pFriend->stats.bLife < OKLIFE ||
+			pFriend->bCollapsed || pFriend->bBreathCollapsed || (pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) || AIDisengagementActive(pFriend) || AIEscapeActive(pFriend)) continue;
 		++ubCount;
 	}
-
 	return ubCount;
 }
 
 BOOLEAN AISameFireteam(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend)
 {
-	if (!pSoldier || !pFriend || pSoldier->bTeam != pFriend->bTeam)
-		return FALSE;
-	if (pSoldier->bTeam != ENEMY_TEAM)
-		return TRUE;
+	if (!pSoldier || !pFriend || pSoldier->bTeam != pFriend->bTeam) return FALSE;
+	if (!AICombatTeam(pSoldier)) return TRUE;
 	UINT8 ubMine = AIFireteamId(pSoldier);
 	return ubMine != AI_FIRETEAM_NONE && ubMine == AIFireteamId(pFriend);
 }
@@ -5004,8 +4825,7 @@ static BOOLEAN AIFireteamCommittedElsewhere(UINT8 ubFireteam, INT32 sContactSpot
 	if (ubFireteam == AI_FIRETEAM_NONE || TileIsOutOfBounds(sContactSpot))
 		return FALSE;
 
-	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (!AIEnemyFireteamEligible(pFriend) || pFriend->ubID >= MAX_NUM_SOLDIERS ||
@@ -5028,8 +4848,7 @@ static UINT8 AIFireteamDeployableCountById(UINT8 ubFireteam, INT32 sContactSpot)
 		return 0;
 
 	UINT8 ubCount = 0;
-	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (!AIEnemyResponderEligible(pFriend) ||
@@ -5050,8 +4869,7 @@ static INT32 AIFireteamDeployableDistanceToSpot(UINT8 ubFireteam, INT32 sSpot)
 		return 10000;
 
 	INT32 iBest = 10000;
-	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (!AIEnemyResponderEligible(pFriend) ||
@@ -5089,7 +4907,7 @@ BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, U
 
 	for (UINT8 ubTeam = 1; ubTeam < gubAINextFireteam; ++ubTeam)
 	{
-		if (ubTeam == ubMine)
+		if (ubTeam == ubMine || gbAIFireteamTeam[ubTeam] != pSoldier->bTeam)
 			continue;
 
 		UINT8 ubReady = AIFireteamDeployableCountById(ubTeam, sContactSpot);
@@ -5171,8 +4989,7 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	SOLDIERTYPE *pAnchor = NULL;
 	INT32 iBest = 10000;
 	BOOLEAN fEngagedAnchor = FALSE;
-	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
 		if (!pFriend || pFriend == pSoldier || !AIEnemyFireteamEligible(pFriend) ||
@@ -7560,7 +7377,7 @@ static INT32 AIBoundedElementJitter(SOLDIERTYPE *pSoldier, UINT32 uiSalt, INT32 
 	// non-enemy combatants) so every soldier evaluating the same contact this turn
 	// receives the same one/two/three-mover limit.
 	UINT32 uiElement = (UINT32)(pSoldier->bTeam + 1);
-	if (pSoldier->bTeam == ENEMY_TEAM)
+	if (AICombatTeam(pSoldier))
 	{
 		UINT8 ubFireteam = AIFireteamId(pSoldier);
 		if (ubFireteam != AI_FIRETEAM_NONE)
