@@ -375,6 +375,11 @@ UINT8 DoReinforcementAsPendingMilitia( INT16 sMapX, INT16 sMapY, UINT8 *pubRank 
 
 void AddPossiblePendingMilitiaToBattle()
 {
+	// Preserve a reset request that predates this reinforcement transaction.
+	// Recursive reinforcement insertion may set the flag for changes it handles
+	// immediately; the outermost call restores the state that existed on entry.
+	BOOLEAN fStrategicChangeFlagOnEntry = gfStrategicMilitiaChangesMade;
+
 	UINT8 ubSlots;
 	UINT8 ubNumElites, ubNumRegulars, ubNumGreens;
 	static UINT8 ubPredefinedInsertionCode = 255;
@@ -480,7 +485,7 @@ void AddPossiblePendingMilitiaToBattle()
 		if( ubPredefinedInsertionCode != 255 )
 		{
 			AddPossiblePendingMilitiaToBattle();
-			gfStrategicMilitiaChangesMade = FALSE; // Handled them here
+			gfStrategicMilitiaChangesMade = fStrategicChangeFlagOnEntry; // reinforcement changes handled here; preserve older deferred reset
 		}
 	}
 }
