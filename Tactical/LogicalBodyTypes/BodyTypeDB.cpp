@@ -106,7 +106,7 @@ namespace LogicalBodyTypes {
 					data->filter = FilterDB::Instance().FindFilter(aFilter);
 					if (data->filter == NULL) throw XMLParseException("Unknown filter specified!", name, data->pParser);
 				}
-				if (aPalette != NULL && strcmp(aFilter, "") != 0 && strcmp(aFilter, "default") != 0) {
+				if (aPalette != NULL && strcmp(aPalette, "") != 0 && strcmp(aPalette, "default") != 0) {
 					data->paletteTable = PaletteDB::Instance().FindPaletteTable(aPalette);
 					if (data->paletteTable == NULL) throw XMLParseException("Unknown palette specified!", name, data->pParser);
 				}
@@ -574,7 +574,8 @@ namespace LogicalBodyTypes {
 			FOCUSED_STAB,
 			HTH_KICK,
 			FOCUSED_HTH_KICK,
-			LONG_JUMP,		);
+			LONG_JUMP
+		);
 
 		/*****************************************
 		  Animation states

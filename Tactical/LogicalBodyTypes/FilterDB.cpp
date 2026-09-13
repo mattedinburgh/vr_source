@@ -271,7 +271,7 @@ namespace LogicalBodyTypes {
 		/*****************************************
 		  Filter enum criterion types
 		******************************************/
-		LOGBT_ENUMDB_ADD("IntegerFilterCriterionTypes", 32,
+		LOGBT_ENUMDB_ADD("IntegerFilterCriterionTypes", 33,
 			Filter::REQ_HELMETPOS,
 			Filter::REQ_VESTPOS,
 			Filter::REQ_LEGPOS,
@@ -303,20 +303,22 @@ namespace LogicalBodyTypes {
 			Filter::REQ_VEST_AMOR_PROTECTION,
 			Filter::REQ_VEST_AMOR_COVERAGE,
 			Filter::REQ_HELMET_AMOR_PROTECTION,
-			Filter::REQ_HELMET_AMOR_COVERAGE
+			Filter::REQ_HELMET_AMOR_COVERAGE,
+			Filter::REQ_WEARING_BACKPACK
 		);
 
 		/*****************************************
 		  Filter enum criterion types
 		******************************************/
-		LOGBT_ENUMDB_ADD("EnumFilterCriterionTypes", 7,
+		LOGBT_ENUMDB_ADD("EnumFilterCriterionTypes", 8,
 			Filter::REQ_SEX,
 			Filter::REQ_MERC_TYPE,
 			Filter::REQ_SOLDIER_CLASS,
 			Filter::REQ_CIVILIANGROUP,
 			Filter::REQ_BODYTYPE,
 			Filter::REQ_WEAPON_CLASS,
-			Filter::REQ_WEAPON_TYPE
+			Filter::REQ_WEAPON_TYPE,
+			Filter::REQ_LEFT_WEAPON_TYPE
 		);
 
 		/*****************************************
@@ -335,7 +337,7 @@ namespace LogicalBodyTypes {
 		/*****************************************
 		  SOLDIER_CLASS
 		******************************************/
-	LOGBT_ENUMDB_ADD("SOLDIER_CLASS", SOLDIER_CLASS_MAX,
+	LOGBT_ENUMDB_ADD("SOLDIER_CLASS", 13,
 			SOLDIER_CLASS_NONE,
 			SOLDIER_CLASS_ADMINISTRATOR,
 			SOLDIER_CLASS_ELITE,
@@ -362,7 +364,7 @@ namespace LogicalBodyTypes {
 		/*****************************************
 		  SoldierBodyTypes
 		******************************************/
-		LOGBT_ENUMDB_ADD("BODYTYPE", TOTALBODYTYPES,
+		LOGBT_ENUMDB_ADD("BODYTYPE", 29,
 			REGMALE,
 			BIGMALE,
 			STOCKYMALE,
@@ -397,7 +399,7 @@ namespace LogicalBodyTypes {
 		/*****************************************
 		  Civilian Groups
 		******************************************/
-		LOGBT_ENUMDB_ADD("CIVILIANGROUP", NUM_CIV_GROUPS,
+		LOGBT_ENUMDB_ADD("CIVILIANGROUP", 255,
 			NON_CIV_GROUP,
 			REBEL_CIV_GROUP,
 			KINGPIN_CIV_GROUP,
@@ -658,7 +660,7 @@ namespace LogicalBodyTypes {
 		/*****************************************
 		  Weapon Class
 		******************************************/
-		LOGBT_ENUMDB_ADD("WEAPON_CLASS", NUM_WEAPON_CLASSES,
+		LOGBT_ENUMDB_ADD("WEAPON_CLASS", 8,
 			NOGUNCLASS,
 			HANDGUNCLASS,
 			SMGCLASS,
@@ -672,7 +674,7 @@ namespace LogicalBodyTypes {
 		/*****************************************
 		  Weapon Type
 		******************************************/
-	LOGBT_ENUMDB_ADD("WEAPON_TYPE", GUN_TYPES_MAX,
+	LOGBT_ENUMDB_ADD("WEAPON_TYPE", 9,
 			NOT_GUN,
 			GUN_PISTOL,
 			GUN_M_PISTOL,

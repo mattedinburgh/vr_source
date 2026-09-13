@@ -2715,7 +2715,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 								if (fMerc && pSoldier != NULL && fRenderTile && !fHiddenTile && !(uiFlags & TILES_DIRTY) && gbPixelDepth == 16 &&
 									(uiRowFlags == TILES_DYNAMIC_MERCS || uiRowFlags == TILES_DYNAMIC_HIGHMERCS || uiRowFlags == TILES_DYNAMIC_STRUCT_MERCS))
 								{
-									RenderVengeanceLobotEquipment(pDestBuf, uiDestPitchBYTES, pSoldier, sXPos, sYPos, sZLevel, usImageIndex, pShadeTable, fZBlitter, fObscuredBlitter);
+									RenderVengeanceLobotEquipment(pDestBuf, uiDestPitchBYTES, pSoldier, sXPos, sYPos, sZLevel, usImageIndex, pShadeTable, pNode->ubShadeLevel, fZBlitter, fObscuredBlitter);
 								}
 
 								// RENDR APS ONTOP OF PLANNED MERC GUY
