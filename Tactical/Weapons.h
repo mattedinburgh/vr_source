@@ -594,6 +594,12 @@ typedef struct
 
 	FLOAT fMuzzleSway;
 	FLOAT fRange;
+	FLOAT fRawBasicAperture;
+	FLOAT fIronAperture;
+	FLOAT fLaserAperture;
+	FLOAT fLaserEffectPercent;
+	INT16 sLaserRange;
+	INT8 bLaserLightLevel;
 	FLOAT fBasicAperture;
 	FLOAT fDistanceAperture;
 	FLOAT fMaxAperture;
