@@ -2982,21 +2982,26 @@ INT32 CalcManThreatValue( SOLDIERTYPE *pEnemy, INT32 sMyGrid, UINT8 ubReduceForC
 		iThreatValue -= pEnemy->aiData.bShock;
 	}
 
-	// if I have a specifically defined spot where I'm at (sometime I don't!)	
-	if (!TileIsOutOfBounds(sMyGrid))
+	// Facing and last-target direction are live visual cues, not team-radio knowledge.
+	// Only a soldier who personally sees this opponent may react to where the weapon
+	// is pointed / where that opponent has just fired. This prevents stale contacts
+	// from behaving as if they can read the player's current aim cone.
+	BOOLEAN fPersonallyObservesThreatState =
+		pMe && pEnemy &&
+		PersonalKnowledge(pMe, pEnemy->ubID) == SEEN_CURRENTLY &&
+		LOS_Raised(pMe, pEnemy, CALC_FROM_ALL_DIRS) > 0;
+
+	if (!TileIsOutOfBounds(sMyGrid) && fPersonallyObservesThreatState)
 	{
-		// ADD 10% if man's already been shooting at me
 		if (pEnemy->sLastTarget == sMyGrid)
 		{
 			iThreatValue += (iThreatValue / 10);
 		}
-		else
+		else if (pEnemy->ubDirection ==
+			atan8(CenterX(pEnemy->sGridNo), CenterY(pEnemy->sGridNo),
+				CenterX(sMyGrid), CenterY(sMyGrid)))
 		{
-			// ADD 5% if man's already facing me
-			if (pEnemy->ubDirection == atan8(CenterX(pEnemy->sGridNo),CenterY(pEnemy->sGridNo),CenterX(sMyGrid),CenterY(sMyGrid)))
-			{
-				iThreatValue += (iThreatValue / 20);
-			}
+			iThreatValue += (iThreatValue / 20);
 		}
 	}
 
@@ -6266,6 +6271,13 @@ static UINT32 guiAIDisengageTurnStamp[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIDisengageIdentity[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIDisengageStartTurn[MAX_NUM_SOLDIERS] = { 0 };
 
+
+// Ordinary tactical fallback is a one-time positional concession per soldier per
+// sector fight. True disengagement/escape remains separate and may still continue
+// when morale has genuinely collapsed.
+static UINT8 gubAITacticalFallbackUsed[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAITacticalFallbackIdentity[MAX_NUM_SOLDIERS] = { 0 };
+
 static UINT8 gubAIRecoveryStreak[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIRecoveryTurnStamp[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIRecoveryIdentity[MAX_NUM_SOLDIERS] = { 0 };
@@ -6314,6 +6326,9 @@ void AIResetRetreatCoordinationStateForLoad(void)
 		guiAIDisengageIdentity[i] = 0;
 		guiAIDisengageStartTurn[i] = 0;
 
+		gubAITacticalFallbackUsed[i] = 0;
+		guiAITacticalFallbackIdentity[i] = 0;
+
 		gubAIRecoveryStreak[i] = 0;
 		guiAIRecoveryTurnStamp[i] = 0;
 		guiAIRecoveryIdentity[i] = 0;
@@ -6341,6 +6356,8 @@ static void AIMaintainDisengagementTimeline(void)
 			guiAIDisengageTurnStamp[i] = 0;
 			guiAIDisengageIdentity[i] = 0;
 			guiAIDisengageStartTurn[i] = 0;
+			gubAITacticalFallbackUsed[i] = 0;
+			guiAITacticalFallbackIdentity[i] = 0;
 			gubAIRecoveryStreak[i] = 0;
 			guiAIRecoveryTurnStamp[i] = 0;
 			guiAIRecoveryIdentity[i] = 0;
@@ -6351,6 +6368,28 @@ static void AIMaintainDisengagementTimeline(void)
 	gsAIDisengageSectorY = gWorldSectorY;
 	gbAIDisengageSectorZ = gbWorldSectorZ;
 	guiAIDisengageLastTurnStamp = uiTurnStamp;
+}
+
+BOOLEAN AIHasUsedTacticalFallback(SOLDIERTYPE *pSoldier)
+{
+	AIMaintainDisengagementTimeline();
+
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return FALSE;
+
+	return guiAITacticalFallbackIdentity[pSoldier->ubID] == pSoldier->uiUniqueSoldierIdValue &&
+		gubAITacticalFallbackUsed[pSoldier->ubID] != 0;
+}
+
+void AIRegisterTacticalFallback(SOLDIERTYPE *pSoldier)
+{
+	AIMaintainDisengagementTimeline();
+
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return;
+
+	guiAITacticalFallbackIdentity[pSoldier->ubID] = pSoldier->uiUniqueSoldierIdValue;
+	gubAITacticalFallbackUsed[pSoldier->ubID] = 1;
 }
 
 BOOLEAN AIDisengagementActive(SOLDIERTYPE *pSoldier)
@@ -6872,6 +6911,7 @@ BOOLEAN AIKnownRouteExposureAcceptable(
 BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier)
 {
 	if (!AICombatTeam(pSoldier) || pSoldier->IsZombie() ||
+		AIHasUsedTacticalFallback(pSoldier) ||
 		pSoldier->aiData.bOrders == STATIONARY || AIShouldAvoidAdvance(pSoldier))
 	{
 		return FALSE;
@@ -6945,16 +6985,23 @@ BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier)
 	if (!fConcreteFallbackNeed)
 		return FALSE;
 
-	// Generic fallback is deliberately harder to trigger than normal seek/advance.
-	// Aggressive/SEEKENEMY troops require still stronger evidence before yielding ground.
+	// Balanced fallback gate: normal troops keep fighting from workable positions,
+	// while combined exposure/risk can still justify one positional concession.
 	INT32 iThreshold = (bSituation == AI_BATTLE_WINNING) ? 5 : 4;
 	if (pSoldier->aiData.bAttitude == AGGRESSIVE ||
 		pSoldier->aiData.bAttitude == ATTACKSLAYONLY)
 	{
 		++iThreshold;
 	}
-	if (pSoldier->aiData.bOrders == SEEKENEMY)
+
+	// SEEKENEMY already biases ordinary RED logic toward closing. Add resistance to
+	// fallback only when the soldier is currently safe; exposed/high-risk seekers
+	// must still be allowed to make their single sensible bound back to cover.
+	if (pSoldier->aiData.bOrders == SEEKENEMY &&
+		!fExposed && iPersonalRisk < iRiskTolerance)
+	{
 		++iThreshold;
+	}
 
 	return (iPressure >= iThreshold);
 }
@@ -7917,10 +7964,78 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 		AILocalStress(pSoldier) < 25);
 }
 
+static INT32 AIVisibleTargetNCTHQuality(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
+{
+	if (!pSoldier || TileIsOutOfBounds(sTargetSpot) || !AICheckHasGun(pSoldier))
+		return -1;
+
+	SOLDIERTYPE *pTarget = NULL;
+	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
+	{
+		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
+		if (!pOpponent || pOpponent == pSoldier ||
+			CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pSoldier->bSide == pOpponent->bSide)
+		{
+			continue;
+		}
+
+		if (PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0 &&
+			KnownLocation(pSoldier, pOpponent->ubID) == sTargetSpot)
+		{
+			pTarget = pOpponent;
+			break;
+		}
+	}
+
+	// Never query live target state from a stale/team-only contact.
+	if (!pTarget)
+		return -1;
+
+	UINT16 usOldAttackingWeapon = pSoldier->usAttackingWeapon;
+	INT8 bOldScopeMode = pSoldier->bScopeMode;
+	INT8 bOldWeaponMode = pSoldier->bWeaponMode;
+	UINT8 ubOldAttackingHand = pSoldier->ubAttackingHand;
+
+	pSoldier->ubAttackingHand = HANDPOS;
+	pSoldier->usAttackingWeapon = pSoldier->inv[HANDPOS].usItem;
+	pSoldier->bWeaponMode = WM_NORMAL;
+	pSoldier->bScopeMode = USE_BEST_SCOPE;
+
+	INT16 sMinAttackAP = MinAPsToAttack(pSoldier, sTargetSpot, ADDTURNCOST, 0, TRUE);
+	INT32 iBestQuality = 0;
+	if (sMinAttackAP > 0 && sMinAttackAP < pSoldier->bActionPoints)
+	{
+		INT8 bAimLevels = CalcAimingLevelsAvailableWithAP(
+			pSoldier, sTargetSpot, (INT8)__max(0, pSoldier->bActionPoints - sMinAttackAP));
+
+		UINT8 ubDirection = AIDirection(pSoldier->sGridNo, sTargetSpot);
+		if (pSoldier->InternalIsValidStance(ubDirection, ANIM_STAND))
+			iBestQuality = __max(iBestQuality, (INT32)AICalcChanceToHitGun(
+				pSoldier, sTargetSpot, bAimLevels, AIM_SHOT_TORSO,
+				pTarget->pathing.bLevel, STANDING));
+		if (pSoldier->InternalIsValidStance(ubDirection, ANIM_CROUCH))
+			iBestQuality = __max(iBestQuality, (INT32)AICalcChanceToHitGun(
+				pSoldier, sTargetSpot, bAimLevels, AIM_SHOT_TORSO,
+				pTarget->pathing.bLevel, CROUCHING));
+		if (pSoldier->InternalIsValidStance(ubDirection, ANIM_PRONE))
+			iBestQuality = __max(iBestQuality, (INT32)AICalcChanceToHitGun(
+				pSoldier, sTargetSpot, bAimLevels, AIM_SHOT_TORSO,
+				pTarget->pathing.bLevel, PRONE));
+	}
+
+	pSoldier->usAttackingWeapon = usOldAttackingWeapon;
+	pSoldier->bScopeMode = bOldScopeMode;
+	pSoldier->bWeaponMode = bOldWeaponMode;
+	pSoldier->ubAttackingHand = ubOldAttackingHand;
+
+	return iBestQuality;
+}
+
 // Range-aware movement preference. Positive values mean closing distance is useful;
-// negative values mean a scoped/long-range soldier is already too close for the
-// role his current weapon is best suited to. Weapon range is converted to tiles
-// to match the rest of the tactical AI distance calculations.
+// negative values mean a scoped/long-range soldier is too close. Nominal weapon
+// range is only an outer limit: NCTH practical hit quality defines the useful band.
 INT8 AIEngagementRangeModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 {
 	if (!pSoldier || !AICheckHasGun(pSoldier))
@@ -7937,7 +8052,6 @@ INT8 AIEngagementRangeModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	FLOAT dScope = AIGunScopeMagFactor(pSoldier);
 	INT32 iPreferredMinRange = 0;
 
-	// Dedicated long-range roles should preserve substantially more standoff.
 	if (AICheckIsSniper(pSoldier))
 		iPreferredMinRange = __max(12, iGunRange / 3);
 	else if (AICheckIsMarksman(pSoldier))
@@ -7947,7 +8061,6 @@ INT8 AIEngagementRangeModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	else if (dScope >= 2.0f)
 		iPreferredMinRange = 6;
 
-	// Never demand a minimum range that consumes most of the weapon's usable range.
 	if (iPreferredMinRange > 0)
 		iPreferredMinRange = __min(iPreferredMinRange, __max(6, iGunRange / 2));
 
@@ -7959,11 +8072,34 @@ INT8 AIEngagementRangeModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 			return -2;
 	}
 
-	// Closing distance is useful only when the target is genuinely outside the
-	// current gun's effective range. Being inside range is not a reason to rush.
+	// For a personally visible target, use the same NCTH estimator as attack logic.
+	// A shot can therefore be 'inside range' yet still tell the soldier to close.
+	INT32 iNCTHQuality = AIVisibleTargetNCTHQuality(pSoldier, sTargetSpot);
+	if (iNCTHQuality >= 0)
+	{
+		if (iNCTHQuality < 10 && iDistance > __max(5, iPreferredMinRange))
+			return 2;
+		if (iNCTHQuality < 22 && iDistance > __max(5, iPreferredMinRange))
+			return 1;
+		if (iNCTHQuality >= 35)
+			return 0;
+	}
+
+	// For stale/team-only contacts, do not inspect hidden target state. Estimate a
+	// practical band from shooter skill, optics and nominal range instead.
+	INT32 iPracticalPercent = 65 + __max(0, __min(20,
+		((INT32)EffectiveMarksmanship(pSoldier) - 50) / 2));
+	if (dScope >= 4.0f) iPracticalPercent += 10;
+	else if (dScope >= 2.0f) iPracticalPercent += 5;
+	if (AICheckIsSniper(pSoldier)) iPracticalPercent += 5;
+	iPracticalPercent = __max(60, __min(95, iPracticalPercent));
+	INT32 iPracticalRange = __max(5, iGunRange * iPracticalPercent / 100);
+
 	if (iDistance > iGunRange + iGunRange / 4)
 		return 2;
-	if (iDistance > iGunRange)
+	if (iDistance > iPracticalRange + __max(2, iPracticalRange / 5))
+		return 2;
+	if (iDistance > iPracticalRange)
 		return 1;
 
 	return 0;
