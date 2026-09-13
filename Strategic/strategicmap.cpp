@@ -136,6 +136,8 @@
 
 #include "Map Screen Interface Map Inventory.h"	// added by Flugente
 
+#include <vector>
+
 //forward declarations of common classes to eliminate includes
 class OBJECTTYPE;
 class SOLDIERTYPE;
@@ -6873,6 +6875,193 @@ void CrippledVersionFailureToLoadMapCallBack( UINT8 bExitValue )
 	}
 }
 #endif
+// ---------------------------------------------------------------------------
+// Enemy Generals / strategic command layer
+//
+// This fork predates 1.13's StrategicMapElement::usFlags. Reusing two bytes
+// from the existing bPadding[] preserves the exact persisted struct size and
+// therefore keeps existing save games compatible.
+// ---------------------------------------------------------------------------
+static const UINT8 VR_GENERAL_STATE_BYTE = 18;
+static const UINT8 VR_GENERAL_INIT_BYTE  = 19;
+static const UINT8 VR_GENERAL_PRESENT    = 0x01;
+static const UINT8 VR_GENERAL_KNOWN      = 0x02;
+static const INT8  VR_GENERAL_INIT_MAGIC = 0x5D;
+
+static UINT32 VRStrategicIndex(INT16 x, INT16 y)
+{
+	return CALCULATE_STRATEGIC_INDEX(x, y);
+}
+
+static BOOLEAN VREligibleGeneralSector(INT16 x, INT16 y, INT8 town)
+{
+	if (x < 1 || y < 1 || x >= MAP_WORLD_X - 1 || y >= MAP_WORLD_Y - 1)
+		return FALSE;
+	UINT32 idx = VRStrategicIndex(x, y);
+	if (StrategicMap[idx].bNameId != town || !StrategicMap[idx].fEnemyControlled)
+		return FALSE;
+	UINT8 sid = SECTOR(x, y);
+	return (SectorInfo[sid].ubNumAdmins + SectorInfo[sid].ubNumTroops + SectorInfo[sid].ubNumElites) > 0;
+}
+
+static void VRPlaceGeneralInSector(INT16 x, INT16 y)
+{
+	UINT32 idx = VRStrategicIndex(x, y);
+	StrategicMap[idx].bPadding[VR_GENERAL_STATE_BYTE] |= VR_GENERAL_PRESENT;
+	StrategicMap[idx].bPadding[VR_GENERAL_STATE_BYTE] &= ~VR_GENERAL_KNOWN;
+
+	// A General is represented tactically by one elite plus his escort. Cap instead
+	// of wrapping the old UINT8 population field.
+	UINT8 sid = SECTOR(x, y);
+	INT32 add = 1 + (INT32)gGameExternalOptions.usEnemyGeneralsBodyGuardsNumber;
+	SectorInfo[sid].ubNumElites = (UINT8)min(255, (INT32)SectorInfo[sid].ubNumElites + add);
+}
+
+void EnsureEnemyGeneralsInitialised()
+{
+	if (!gGameExternalOptions.fEnemyRoles || !gGameExternalOptions.fEnemyGenerals)
+		return;
+
+	// StrategicMap[0] is outside the playable 1..16 map and is ideal for the
+	// persistent initialization marker. Old saves contain zero here and are migrated
+	// once, automatically, the first time this feature is used.
+	if (StrategicMap[0].bPadding[VR_GENERAL_INIT_BYTE] == VR_GENERAL_INIT_MAGIC)
+		return;
+	StrategicMap[0].bPadding[VR_GENERAL_INIT_BYTE] = VR_GENERAL_INIT_MAGIC;
+
+	std::vector<INT8> towns;
+	for (INT8 town = FIRST_TOWN; town <= NUM_TOWNS; ++town)
+	{
+		if (town == SAN_MONA || town == MEDUNA || GetTownSectorSize(town) < 2)
+			continue;
+		BOOLEAN eligible = FALSE;
+		for (INT16 x = 1; x < MAP_WORLD_X - 1 && !eligible; ++x)
+			for (INT16 y = 1; y < MAP_WORLD_Y - 1 && !eligible; ++y)
+				eligible = VREligibleGeneralSector(x, y, town);
+		if (eligible)
+			towns.push_back(town);
+	}
+
+	UINT8 wanted = gGameExternalOptions.usEnemyGeneralsNumber;
+	while (wanted && !towns.empty())
+	{
+		UINT32 townpos = Random((UINT32)towns.size());
+		INT8 town = towns[townpos];
+		towns.erase(towns.begin() + townpos);
+
+		std::vector<UINT16> candidates;
+		for (INT16 x = 1; x < MAP_WORLD_X - 1; ++x)
+			for (INT16 y = 1; y < MAP_WORLD_Y - 1; ++y)
+				if (VREligibleGeneralSector(x, y, town))
+					candidates.push_back((UINT16)VRStrategicIndex(x, y));
+
+		if (!candidates.empty())
+		{
+			UINT16 idx = candidates[Random((UINT32)candidates.size())];
+			VRPlaceGeneralInSector(GET_X_FROM_STRATEGIC_INDEX(idx), GET_Y_FROM_STRATEGIC_INDEX(idx));
+			--wanted;
+		}
+	}
+
+	// If Arulco has fewer suitable occupied towns than requested, place the remainder
+	// in distinct Meduna sectors. This preserves a finite command staff without
+	// manufacturing generals in wilderness sectors.
+	while (wanted)
+	{
+		std::vector<UINT16> meduna;
+		for (INT16 x = 1; x < MAP_WORLD_X - 1; ++x)
+			for (INT16 y = 1; y < MAP_WORLD_Y - 1; ++y)
+			{
+				UINT32 idx = VRStrategicIndex(x, y);
+				if (VREligibleGeneralSector(x, y, MEDUNA) && !(StrategicMap[idx].bPadding[VR_GENERAL_STATE_BYTE] & VR_GENERAL_PRESENT))
+					meduna.push_back((UINT16)idx);
+			}
+		if (meduna.empty())
+			break;
+		UINT16 idx = meduna[Random((UINT32)meduna.size())];
+		VRPlaceGeneralInSector(GET_X_FROM_STRATEGIC_INDEX(idx), GET_Y_FROM_STRATEGIC_INDEX(idx));
+		--wanted;
+	}
+}
+
+BOOLEAN SectorHasEnemyGeneral(INT16 sMapX, INT16 sMapY)
+{
+	EnsureEnemyGeneralsInitialised();
+	if (sMapX < 1 || sMapY < 1 || sMapX >= MAP_WORLD_X - 1 || sMapY >= MAP_WORLD_Y - 1)
+		return FALSE;
+	return (StrategicMap[VRStrategicIndex(sMapX, sMapY)].bPadding[VR_GENERAL_STATE_BYTE] & VR_GENERAL_PRESENT) != 0;
+}
+
+BOOLEAN PlayerKnowsEnemyGeneral(INT16 sMapX, INT16 sMapY)
+{
+	EnsureEnemyGeneralsInitialised();
+	if (sMapX < 1 || sMapY < 1 || sMapX >= MAP_WORLD_X - 1 || sMapY >= MAP_WORLD_Y - 1)
+		return FALSE;
+	return (StrategicMap[VRStrategicIndex(sMapX, sMapY)].bPadding[VR_GENERAL_STATE_BYTE] & VR_GENERAL_KNOWN) != 0;
+}
+
+UINT8 CountActiveEnemyGenerals()
+{
+	EnsureEnemyGeneralsInitialised();
+	UINT8 count = 0;
+	for (INT16 x = 1; x < MAP_WORLD_X - 1; ++x)
+		for (INT16 y = 1; y < MAP_WORLD_Y - 1; ++y)
+			if (StrategicMap[VRStrategicIndex(x, y)].bPadding[VR_GENERAL_STATE_BYTE] & VR_GENERAL_PRESENT)
+				++count;
+	return count;
+}
+
+BOOLEAN RevealRandomEnemyGeneral(UINT16& usSector)
+{
+	EnsureEnemyGeneralsInitialised();
+	std::vector<UINT16> unknown;
+	for (INT16 x = 1; x < MAP_WORLD_X - 1; ++x)
+		for (INT16 y = 1; y < MAP_WORLD_Y - 1; ++y)
+		{
+			UINT32 idx = VRStrategicIndex(x, y);
+			INT8 state = StrategicMap[idx].bPadding[VR_GENERAL_STATE_BYTE];
+			if ((state & VR_GENERAL_PRESENT) && !(state & VR_GENERAL_KNOWN))
+				unknown.push_back((UINT16)idx);
+		}
+	if (unknown.empty())
+		return FALSE;
+
+	UINT16 idx = unknown[Random((UINT32)unknown.size())];
+	StrategicMap[idx].bPadding[VR_GENERAL_STATE_BYTE] |= VR_GENERAL_KNOWN;
+	usSector = SECTOR(GET_X_FROM_STRATEGIC_INDEX(idx), GET_Y_FROM_STRATEGIC_INDEX(idx));
+	return TRUE;
+}
+
+void RemoveEnemyGeneral(INT16 sMapX, INT16 sMapY)
+{
+	if (sMapX < 1 || sMapY < 1 || sMapX >= MAP_WORLD_X - 1 || sMapY >= MAP_WORLD_Y - 1)
+		return;
+	StrategicMap[VRStrategicIndex(sMapX, sMapY)].bPadding[VR_GENERAL_STATE_BYTE] &= ~(VR_GENERAL_PRESENT | VR_GENERAL_KNOWN);
+}
+
+BOOLEAN RelocateEnemyGeneralToMeduna(INT16 sMapX, INT16 sMapY)
+{
+	EnsureEnemyGeneralsInitialised();
+	if (!SectorHasEnemyGeneral(sMapX, sMapY))
+		return FALSE;
+
+	std::vector<UINT16> candidates;
+	for (INT16 x = 1; x < MAP_WORLD_X - 1; ++x)
+		for (INT16 y = 1; y < MAP_WORLD_Y - 1; ++y)
+		{
+			UINT32 idx = VRStrategicIndex(x, y);
+			if (VREligibleGeneralSector(x, y, MEDUNA) && !(StrategicMap[idx].bPadding[VR_GENERAL_STATE_BYTE] & VR_GENERAL_PRESENT))
+				candidates.push_back((UINT16)idx);
+		}
+	if (candidates.empty())
+		return FALSE;
+
+	RemoveEnemyGeneral(sMapX, sMapY);
+	UINT16 idx = candidates[Random((UINT32)candidates.size())];
+	VRPlaceGeneralInSector(GET_X_FROM_STRATEGIC_INDEX(idx), GET_Y_FROM_STRATEGIC_INDEX(idx));
+	return TRUE;
+}
+
 BOOLEAN EscapeDirectionIsValid( INT8 * pbDirection )
 {
 	UINT8 ubSectorID = SECTOR( gWorldSectorX, gWorldSectorY );
