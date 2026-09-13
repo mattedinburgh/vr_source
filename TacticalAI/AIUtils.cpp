@@ -9262,7 +9262,12 @@ UINT32 CountSuspicionValue( SOLDIERTYPE *pSoldier )
 	UINT32		uiLoop;
 	SOLDIERTYPE *pOpponent;
 	UINT32		uiValue;
-	UINT32		uiTotalValue = 0;
+	// Covert suspicion is observer-driven, but dozens of witnesses should not act like a psychic hive mind.
+	// Keep the four strongest observer contributions and combine them with diminishing weight.
+	UINT32		uiBestValue = 0;
+	UINT32		uiSecondValue = 0;
+	UINT32		uiThirdValue = 0;
+	UINT32		uiFourthValue = 0;
 
 	CHECKF( pSoldier );
 
@@ -9394,34 +9399,36 @@ UINT32 CountSuspicionValue( SOLDIERTYPE *pSoldier )
 			// -----------------------------------------------------------------------------------------------------
 			// multipliers
 
-			// bonus if observing soldier sees more than one covert soldier
-			//uiValue = uiValue * (200 - 100 / max(1, CountSeenCovertOpponents(pOpponent))) / 100;
-			uiValue = uiValue * max(1, CountSeenCovertOpponents(pOpponent));
+			// Seeing several disguised people together is suspicious, but scale it with diminishing returns.
+			// 1 spy = 100%, 2 = 150%, 3+ = 200% instead of multiplying linearly by the whole group.
+			UINT8 ubSeenCovert = min(3, max(1, CountSeenCovertOpponents(pOpponent)));
+			uiValue = uiValue * (100 + 50 * (ubSeenCovert - 1)) / 100;
 
-			// bonus depending on number of army men already killed
+			// Recent casualties make guards more wary, but do not let this become an unbounded multiplier.
 			if( gTacticalStatus.ubArmyGuysKilled > 0 )
 			{
-				uiValue = uiValue *(UINT32) sqrt((DOUBLE) gTacticalStatus.ubArmyGuysKilled);
+				UINT32 uiCasualtyPercent = min(200, 100 + (UINT32)(10.0 * sqrt((DOUBLE)gTacticalStatus.ubArmyGuysKilled)));
+				uiValue = uiValue * uiCasualtyPercent / 100;
 			}			
 
-			// bonus for suspicious movement mode
+			// Suspicious movement matters, but should build suspicion instead of doubling every stacked modifier.
 			if ( pSoldier->bStealthMode || 
 				gAnimControl[ pSoldier->usAnimState ].ubEndHeight != ANIM_STAND ||
 				pSoldier->usAnimState == RUNNING )
 			{
-				uiValue = uiValue * 2;
-			}			
-
-			// soldier spies cause more suspicion (this can be compensated by skill)
-			if( pSoldier->usSoldierFlagMask & SOLDIER_COVERT_SOLDIER )
-			{
-				uiValue = uiValue * 2;
+				uiValue = uiValue * 3 / 2;
 			}
 
-			// increase if spy is civilian and alert is raised
+			// Soldier disguises invite more scrutiny than civilian disguises.
+			if( pSoldier->usSoldierFlagMask & SOLDIER_COVERT_SOLDIER )
+			{
+				uiValue = uiValue * 3 / 2;
+			}
+
+			// Civilians are especially suspicious during a raised alert, but not four times more suspicious instantly.
 			if( pSoldier->usSoldierFlagMask & SOLDIER_COVERT_CIV && pOpponent->aiData.bAlertStatus >= STATUS_RED )
 			{
-				uiValue = uiValue * 4;
+				uiValue = uiValue * 2;
 			}
 
 			// bonus if weapon raised
@@ -9430,8 +9437,9 @@ UINT32 CountSuspicionValue( SOLDIERTYPE *pSoldier )
 				uiValue = uiValue * 2;
 			}
 
-			// bonus from uniform type (admin - 1, regular - 2, elite - 3)
-			uiValue = uiValue * pSoldier->UniformLevel();
+			// Higher-rank uniforms are harder to impersonate convincingly, but avoid a raw x2/x3 multiplier.
+			UINT8 ubUniformLevel = max(1, pSoldier->UniformLevel());
+			uiValue = uiValue * (100 + 25 * (ubUniformLevel - 1)) / 100;
 
 			// -----------------------------------------------------------------------------------------------------
 			// some modifiers can reduce suspicion level
@@ -9464,12 +9472,33 @@ UINT32 CountSuspicionValue( SOLDIERTYPE *pSoldier )
 			}
 
 			// -----------------------------------------------------------------------------------------------------
-
-			uiTotalValue += uiValue;
+			// Insert this observer into the four strongest contributions.
+			if ( uiValue >= uiBestValue )
+			{
+				uiFourthValue = uiThirdValue;
+				uiThirdValue = uiSecondValue;
+				uiSecondValue = uiBestValue;
+				uiBestValue = uiValue;
+			}
+			else if ( uiValue >= uiSecondValue )
+			{
+				uiFourthValue = uiThirdValue;
+				uiThirdValue = uiSecondValue;
+				uiSecondValue = uiValue;
+			}
+			else if ( uiValue >= uiThirdValue )
+			{
+				uiFourthValue = uiThirdValue;
+				uiThirdValue = uiValue;
+			}
+			else if ( uiValue > uiFourthValue )
+			{
+				uiFourthValue = uiValue;
+			}
 		}
 	}
 
-	return uiTotalValue;
+	return uiBestValue + uiSecondValue / 2 + uiThirdValue / 4 + uiFourthValue / 8;
 }
 
 BOOLEAN EnemySeenSoldierRecently( SOLDIERTYPE *pSoldier, UINT8 ubMax, BOOLEAN fOnlyAlerted )
