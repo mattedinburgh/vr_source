@@ -10217,6 +10217,9 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 		if (!pFriend || !pFriend->bActive || !pFriend->bInSector || pFriend->stats.bLife <= 0)
 			continue;
 
+		if (!AIResponderKnowsCasualty(pSoldier, pFriend))
+			continue;
+
 		if (InSmokeNearby(pFriend->sGridNo, pFriend->pathing.bLevel))
 			continue;
 
