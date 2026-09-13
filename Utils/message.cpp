@@ -27,6 +27,11 @@
 	#include "sgp_logger.h"
 #endif
 
+#include "weapons.h"
+#include "overhead.h"
+#include "mousesystem.h"
+#include "Cursors.h"
+
 typedef struct
 {
 	UINT32	uiFont;
@@ -364,6 +369,518 @@ void ClearDisplayedListOfTacticalStrings( void )
 
 
 
+
+////////////////////////////////////////////////////////////////////////////////
+// Vengeance persistent tactical battle log + clickable NCTH shot inspector.
+////////////////////////////////////////////////////////////////////////////////
+
+#define BATTLE_LOG_MAX_ENTRIES 128
+#define BATTLE_LOG_HEADER_H 18
+#define BATTLE_LOG_RESIZE_GRIP 12
+#define BATTLE_LOG_INSPECTOR_H 154
+
+typedef struct
+{
+	UINT32 uiSequence;
+	CHAR16 zText[256];
+	UINT16 usColor;
+	BOOLEAN fClickable;
+	INT32 iBullet;
+	NCTH_SHOT_DIAGNOSTIC ncth;
+} BATTLE_LOG_ENTRY;
+
+static BATTLE_LOG_ENTRY gBattleLogEntries[BATTLE_LOG_MAX_ENTRIES];
+static UINT32 guiBattleLogSequence = 0;
+static UINT16 gusBattleLogScrollOffset = 0;
+
+static BOOLEAN gfBattleLogVisible = TRUE;
+static BOOLEAN gfBattleLogRegionsCreated = FALSE;
+static BOOLEAN gfBattleLogDragging = FALSE;
+static BOOLEAN gfBattleLogResizing = FALSE;
+static BOOLEAN gfBattleLogInspectorVisible = FALSE;
+
+static INT16 gsBattleLogX = 6;
+static INT16 gsBattleLogY = -1;
+static INT16 gsBattleLogW = 470;
+static INT16 gsBattleLogH = 124;
+
+static INT16 gsBattleLogStartMouseX = 0;
+static INT16 gsBattleLogStartMouseY = 0;
+static INT16 gsBattleLogStartX = 0;
+static INT16 gsBattleLogStartY = 0;
+static INT16 gsBattleLogStartW = 0;
+static INT16 gsBattleLogStartH = 0;
+
+static INT32 giBattleLogOverlay = -1;
+static MOUSE_REGION gBattleLogHeaderRegion;
+static MOUSE_REGION gBattleLogContentRegion;
+static MOUSE_REGION gBattleLogResizeRegion;
+static NCTH_SHOT_DIAGNOSTIC gBattleLogInspectorDiagnostic;
+
+static void BattleLogRebuildOverlay( void );
+static void BattleLogUpdateRegions( void );
+
+static UINT32 BattleLogOldestSequence( void )
+{
+	if ( guiBattleLogSequence > BATTLE_LOG_MAX_ENTRIES )
+		return guiBattleLogSequence - BATTLE_LOG_MAX_ENTRIES + 1;
+	return guiBattleLogSequence ? 1 : 0;
+}
+
+static BATTLE_LOG_ENTRY* BattleLogEntryBySequence( UINT32 uiSequence )
+{
+	if ( uiSequence == 0 || uiSequence > guiBattleLogSequence || uiSequence < BattleLogOldestSequence() )
+		return NULL;
+
+	BATTLE_LOG_ENTRY *pEntry = &gBattleLogEntries[(uiSequence - 1) % BATTLE_LOG_MAX_ENTRIES];
+	if ( pEntry->uiSequence != uiSequence )
+		return NULL;
+	return pEntry;
+}
+
+static INT16 BattleLogLineHeight( void )
+{
+	return (INT16)(GetFontHeight( TINYFONT1 ) + 1);
+}
+
+static UINT16 BattleLogVisibleRows( void )
+{
+	INT16 usable = gsBattleLogH - BATTLE_LOG_HEADER_H - 5;
+	INT16 lineH = BattleLogLineHeight();
+	return (UINT16)__max( 1, usable / __max(1, lineH) );
+}
+
+static UINT32 BattleLogFirstVisibleSequence( UINT32 *pEndExclusive )
+{
+	UINT32 oldest = BattleLogOldestSequence();
+	UINT32 endExclusive = guiBattleLogSequence + 1;
+	UINT32 available;
+
+	if ( endExclusive <= oldest )
+	{
+		if ( pEndExclusive ) *pEndExclusive = endExclusive;
+		return 0;
+	}
+
+	available = endExclusive - oldest;
+	UINT32 maxOffset = available > 0 ? available - 1 : 0;
+	if ( gusBattleLogScrollOffset > maxOffset )
+		gusBattleLogScrollOffset = (UINT16)maxOffset;
+
+	endExclusive -= gusBattleLogScrollOffset;
+	UINT32 rows = BattleLogVisibleRows();
+	UINT32 first = endExclusive > rows ? endExclusive - rows : oldest;
+	if ( first < oldest ) first = oldest;
+
+	if ( pEndExclusive ) *pEndExclusive = endExclusive;
+	return first;
+}
+
+static void BattleLogClampGeometry( void )
+{
+	gsBattleLogW = __max( 320, __min( gsBattleLogW, (INT16)__min(720, SCREEN_WIDTH - 8) ) );
+	gsBattleLogH = __max( 82, __min( gsBattleLogH, (INT16)__min(300, SCREEN_HEIGHT - 8) ) );
+
+	if ( gsBattleLogY < 0 )
+		gsBattleLogY = (INT16)__max( 2, SCREEN_HEIGHT - gsBattleLogH - 4 );
+
+	gsBattleLogX = __max( 2, __min( gsBattleLogX, (INT16)(SCREEN_WIDTH - gsBattleLogW - 2) ) );
+	gsBattleLogY = __max( 2, __min( gsBattleLogY, (INT16)(SCREEN_HEIGHT - gsBattleLogH - 2) ) );
+}
+
+static void BattleLogMoveCallback( MOUSE_REGION *pRegion, INT32 iReason )
+{
+	// Live geometry is committed on button-up. Mouse grab keeps the interaction
+	// stable even when the cursor leaves the original header/grip.
+}
+
+static void BattleLogHeaderCallback( MOUSE_REGION *pRegion, INT32 iReason )
+{
+	if ( iReason & MSYS_CALLBACK_REASON_LBUTTON_DWN )
+	{
+		gfBattleLogDragging = TRUE;
+		gsBattleLogStartMouseX = pRegion->MouseXPos;
+		gsBattleLogStartMouseY = pRegion->MouseYPos;
+		gsBattleLogStartX = gsBattleLogX;
+		gsBattleLogStartY = gsBattleLogY;
+		MSYS_GrabMouse( pRegion );
+	}
+	else if ( iReason & MSYS_CALLBACK_REASON_LBUTTON_UP )
+	{
+		if ( gfBattleLogDragging )
+		{
+			gsBattleLogX = (INT16)(gsBattleLogStartX + pRegion->MouseXPos - gsBattleLogStartMouseX);
+			gsBattleLogY = (INT16)(gsBattleLogStartY + pRegion->MouseYPos - gsBattleLogStartMouseY);
+			gfBattleLogDragging = FALSE;
+			MSYS_ReleaseMouse( pRegion );
+			BattleLogClampGeometry();
+			BattleLogUpdateRegions();
+			BattleLogRebuildOverlay();
+		}
+	}
+	else if ( iReason & MSYS_CALLBACK_REASON_RBUTTON_UP )
+	{
+		gfBattleLogVisible = FALSE;
+		BattleLogRebuildOverlay();
+	}
+}
+
+static void BattleLogResizeCallback( MOUSE_REGION *pRegion, INT32 iReason )
+{
+	if ( iReason & MSYS_CALLBACK_REASON_LBUTTON_DWN )
+	{
+		gfBattleLogResizing = TRUE;
+		gsBattleLogStartMouseX = pRegion->MouseXPos;
+		gsBattleLogStartMouseY = pRegion->MouseYPos;
+		gsBattleLogStartW = gsBattleLogW;
+		gsBattleLogStartH = gsBattleLogH;
+		MSYS_GrabMouse( pRegion );
+	}
+	else if ( iReason & MSYS_CALLBACK_REASON_LBUTTON_UP )
+	{
+		if ( gfBattleLogResizing )
+		{
+			gsBattleLogW = (INT16)(gsBattleLogStartW + pRegion->MouseXPos - gsBattleLogStartMouseX);
+			gsBattleLogH = (INT16)(gsBattleLogStartH + pRegion->MouseYPos - gsBattleLogStartMouseY);
+			gfBattleLogResizing = FALSE;
+			MSYS_ReleaseMouse( pRegion );
+			BattleLogClampGeometry();
+			BattleLogUpdateRegions();
+			BattleLogRebuildOverlay();
+		}
+	}
+}
+
+static void BattleLogContentCallback( MOUSE_REGION *pRegion, INT32 iReason )
+{
+	UINT32 endExclusive = 0;
+	UINT32 first = BattleLogFirstVisibleSequence( &endExclusive );
+	INT16 lineH = BattleLogLineHeight();
+
+	if ( iReason & MSYS_CALLBACK_REASON_WHEEL_UP )
+	{
+		UINT32 oldest = BattleLogOldestSequence();
+		UINT32 available = guiBattleLogSequence >= oldest ? guiBattleLogSequence - oldest + 1 : 0;
+		UINT32 maxOffset = available > 0 ? available - 1 : 0;
+		gusBattleLogScrollOffset = (UINT16)__min( maxOffset, (UINT32)gusBattleLogScrollOffset + 3 );
+		BattleLogRebuildOverlay();
+		return;
+	}
+	if ( iReason & MSYS_CALLBACK_REASON_WHEEL_DOWN )
+	{
+		gusBattleLogScrollOffset = gusBattleLogScrollOffset > 3 ? gusBattleLogScrollOffset - 3 : 0;
+		BattleLogRebuildOverlay();
+		return;
+	}
+	if ( iReason & MSYS_CALLBACK_REASON_RBUTTON_UP )
+	{
+		if ( gfBattleLogInspectorVisible )
+		{
+			gfBattleLogInspectorVisible = FALSE;
+			BattleLogRebuildOverlay();
+		}
+		return;
+	}
+	if ( !(iReason & MSYS_CALLBACK_REASON_LBUTTON_UP) || first == 0 )
+		return;
+
+	INT16 row = (INT16)((pRegion->MouseYPos - (gsBattleLogY + BATTLE_LOG_HEADER_H + 2)) / __max(1, lineH));
+	if ( row < 0 )
+		return;
+
+	UINT32 seq = first + row;
+	if ( seq >= endExclusive )
+		return;
+
+	BATTLE_LOG_ENTRY *pEntry = BattleLogEntryBySequence( seq );
+	if ( pEntry && pEntry->fClickable )
+	{
+		gBattleLogInspectorDiagnostic = pEntry->ncth;
+		gfBattleLogInspectorVisible = TRUE;
+		BattleLogRebuildOverlay();
+	}
+}
+
+static void BattleLogUpdateRegions( void )
+{
+	if ( !gfBattleLogRegionsCreated )
+		return;
+
+	gBattleLogHeaderRegion.RegionTopLeftX = gsBattleLogX;
+	gBattleLogHeaderRegion.RegionTopLeftY = gsBattleLogY;
+	gBattleLogHeaderRegion.RegionBottomRightX = gsBattleLogX + gsBattleLogW;
+	gBattleLogHeaderRegion.RegionBottomRightY = gsBattleLogY + BATTLE_LOG_HEADER_H;
+
+	gBattleLogContentRegion.RegionTopLeftX = gsBattleLogX;
+	gBattleLogContentRegion.RegionTopLeftY = gsBattleLogY + BATTLE_LOG_HEADER_H;
+	gBattleLogContentRegion.RegionBottomRightX = gsBattleLogX + gsBattleLogW;
+	gBattleLogContentRegion.RegionBottomRightY = gsBattleLogY + gsBattleLogH - BATTLE_LOG_RESIZE_GRIP;
+
+	gBattleLogResizeRegion.RegionTopLeftX = gsBattleLogX + gsBattleLogW - BATTLE_LOG_RESIZE_GRIP;
+	gBattleLogResizeRegion.RegionTopLeftY = gsBattleLogY + gsBattleLogH - BATTLE_LOG_RESIZE_GRIP;
+	gBattleLogResizeRegion.RegionBottomRightX = gsBattleLogX + gsBattleLogW;
+	gBattleLogResizeRegion.RegionBottomRightY = gsBattleLogY + gsBattleLogH;
+
+	RefreshMouseRegions();
+}
+
+static void BattleLogCreateRegions( void )
+{
+	if ( gfBattleLogRegionsCreated )
+		return;
+
+	MSYS_DefineRegion( &gBattleLogContentRegion, gsBattleLogX, gsBattleLogY + BATTLE_LOG_HEADER_H,
+		gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH - BATTLE_LOG_RESIZE_GRIP,
+		MSYS_PRIORITY_HIGH, CURSOR_NORMAL, MSYS_NO_CALLBACK, BattleLogContentCallback );
+	MSYS_AddRegion( &gBattleLogContentRegion );
+
+	MSYS_DefineRegion( &gBattleLogHeaderRegion, gsBattleLogX, gsBattleLogY,
+		gsBattleLogX + gsBattleLogW, gsBattleLogY + BATTLE_LOG_HEADER_H,
+		MSYS_PRIORITY_HIGHEST - 2, CURSOR_NORMAL, BattleLogMoveCallback, BattleLogHeaderCallback );
+	MSYS_AddRegion( &gBattleLogHeaderRegion );
+
+	MSYS_DefineRegion( &gBattleLogResizeRegion, gsBattleLogX + gsBattleLogW - BATTLE_LOG_RESIZE_GRIP,
+		gsBattleLogY + gsBattleLogH - BATTLE_LOG_RESIZE_GRIP, gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH,
+		MSYS_PRIORITY_HIGHEST - 1, CURSOR_NORMAL, BattleLogMoveCallback, BattleLogResizeCallback );
+	MSYS_AddRegion( &gBattleLogResizeRegion );
+
+	gfBattleLogRegionsCreated = TRUE;
+}
+
+static void BattleLogRemoveRegions( void )
+{
+	if ( !gfBattleLogRegionsCreated )
+		return;
+	MSYS_RemoveRegion( &gBattleLogResizeRegion );
+	MSYS_RemoveRegion( &gBattleLogHeaderRegion );
+	MSYS_RemoveRegion( &gBattleLogContentRegion );
+	gfBattleLogRegionsCreated = FALSE;
+}
+
+static void BattleLogPrintInspectorLine( INT16 x, INT16 y, UINT16 color, STR16 text )
+{
+	SetFontForeground( color );
+	mprintf( x, y, text );
+}
+
+static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
+{
+	if ( !gfBattleLogVisible )
+		return;
+
+	BattleLogClampGeometry();
+
+	UINT16 border = Get16BPPColor( FROMRGB( 68, 82, 92 ) );
+	UINT16 borderHi = Get16BPPColor( FROMRGB( 120, 138, 146 ) );
+	UINT16 bg = Get16BPPColor( FROMRGB( 11, 16, 20 ) );
+	UINT16 header = Get16BPPColor( FROMRGB( 31, 43, 50 ) );
+
+	ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, gsBattleLogX, gsBattleLogY, gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH, bg );
+	ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, gsBattleLogX, gsBattleLogY, gsBattleLogX + gsBattleLogW, gsBattleLogY + BATTLE_LOG_HEADER_H, header );
+	ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, gsBattleLogX, gsBattleLogY, gsBattleLogX + gsBattleLogW, gsBattleLogY + 1, borderHi );
+	ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, gsBattleLogX, gsBattleLogY + gsBattleLogH - 1, gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH, border );
+	ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, gsBattleLogX, gsBattleLogY, gsBattleLogX + 1, gsBattleLogY + gsBattleLogH, borderHi );
+	ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, gsBattleLogX + gsBattleLogW - 1, gsBattleLogY, gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH, border );
+
+	SetFont( TINYFONT1 );
+	SetFontBackground( FONT_MCOLOR_BLACK );
+	SetFontShadow( DEFAULT_SHADOW );
+	SetFontForeground( FONT_MCOLOR_WHITE );
+	mprintf( gsBattleLogX + 6, gsBattleLogY + 4, L"BATTLE LOG" );
+	SetFontForeground( FONT_MCOLOR_LTGRAY );
+	mprintf( gsBattleLogX + 82, gsBattleLogY + 4, L"ALL  |  COMBAT  |  SQUAD  |  RADIO" );
+	mprintf( gsBattleLogX + gsBattleLogW - 26, gsBattleLogY + 4, L"::" );
+
+	UINT32 endExclusive = 0;
+	UINT32 seq = BattleLogFirstVisibleSequence( &endExclusive );
+	INT16 lineH = BattleLogLineHeight();
+	INT16 y = gsBattleLogY + BATTLE_LOG_HEADER_H + 2;
+	while ( seq && seq < endExclusive && y < gsBattleLogY + gsBattleLogH - BATTLE_LOG_RESIZE_GRIP )
+	{
+		BATTLE_LOG_ENTRY *pEntry = BattleLogEntryBySequence( seq );
+		if ( pEntry )
+		{
+			SetFontForeground( pEntry->usColor );
+			mprintf( gsBattleLogX + 6, y, pEntry->zText );
+		}
+		seq++;
+		y += lineH;
+	}
+
+	// Resize grip.
+	SetFontForeground( FONT_MCOLOR_LTGRAY );
+	mprintf( gsBattleLogX + gsBattleLogW - 12, gsBattleLogY + gsBattleLogH - 10, L"//" );
+
+	if ( gfBattleLogInspectorVisible )
+	{
+		NCTH_SHOT_DIAGNOSTIC &d = gBattleLogInspectorDiagnostic;
+		INT16 ix = gsBattleLogX;
+		INT16 iy = (INT16)__max( 2, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 3 );
+		INT16 iw = gsBattleLogW;
+		CHAR16 z[256];
+
+		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, ix, iy, ix + iw, iy + BATTLE_LOG_INSPECTOR_H, bg );
+		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, ix, iy, ix + iw, iy + BATTLE_LOG_HEADER_H, header );
+		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, ix, iy, ix + iw, iy + 1, borderHi );
+		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, ix, iy, ix + 1, iy + BATTLE_LOG_INSPECTOR_H, borderHi );
+		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, ix + iw - 1, iy, ix + iw, iy + BATTLE_LOG_INSPECTOR_H, border );
+		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, ix, iy + BATTLE_LOG_INSPECTOR_H - 1, ix + iw, iy + BATTLE_LOG_INSPECTOR_H, border );
+
+		SetFontForeground( FONT_MCOLOR_LTYELLOW );
+		mprintf( ix + 6, iy + 4, L"SHOT INSPECTOR - MISS" );
+
+		INT16 sy = iy + BATTLE_LOG_HEADER_H + 3;
+		swprintf( z, L"Aim %d | range %.1f tiles | final CTH %.1f | muzzle sway %.1f",
+			d.ubAimTime, d.fRange / (FLOAT)CELL_X_SIZE, d.fFinalChance, d.fMuzzleSway );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
+
+		swprintf( z, L"Base: attributes %.1f  flat %+0.1f  -> %.1f", d.fBaseAttribute, d.fFlatBase, d.fBaseChance );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGREEN, z ); sy += lineH;
+
+		swprintf( z, L"Base modifiers: effects %+0.1f%%  weapon %+0.1f%%  target %+0.1f%%  gear %+0.1f%%",
+			d.fBaseEffect, d.fBaseWeapon, d.fBaseTarget, d.fGearAim );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
+
+		swprintf( z, L"Aim: cap %.1f  points +%.1f  modifier %+0.1f%%  trait %+0.1f%%",
+			d.fAimCap, d.fAimPoints, d.fAimModifier, d.fTraitModifier );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGREEN, z ); sy += lineH;
+
+		swprintf( z, L"Target/visibility: target %+0.1f%%  visibility %+0.1f%%  scope %+0.1f%%  spotter %+0.1f%%",
+			d.fAimTarget, d.fVisibility, d.fScopePenalty, d.fSpotter );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
+
+		swprintf( z, L"Optics: %.2fx raw / %.2fx effective | aperture %.2f -> %.2f",
+			d.fMagFactor, d.fEffectiveMagFactor, d.fMaxAperture, d.fFinalAperture );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
+
+		swprintf( z, L"Physical shot: muzzle X %+0.2f Y %+0.2f | weapon deviation %.2f",
+			d.fMuzzleOffsetX, d.fMuzzleOffsetY, d.fBulletDeviation );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTYELLOW, z ); sy += lineH;
+
+		swprintf( z, L"Final offset: X %+0.2f  Y %+0.2f | aperture quality %d%%",
+			d.fShotOffsetX, d.fShotOffsetY, d.sApertureRatio );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTRED, z ); sy += lineH;
+
+		// Player-readable dominant factor. The raw values above remain available
+		// so the explanation never hides the actual NCTH calculation.
+		const CHAR16 *why = L"random dispersion / final trajectory";
+		FLOAT worst = 0.0f;
+		if ( d.fBaseWeapon < worst ) { worst = d.fBaseWeapon; why = L"weapon handling / base weapon penalty"; }
+		if ( d.fAimWeapon < worst ) { worst = d.fAimWeapon; why = L"weapon handling while aiming"; }
+		if ( d.fAimTarget < worst ) { worst = d.fAimTarget; why = L"target movement / stance / target difficulty"; }
+		if ( d.fVisibility < worst ) { worst = d.fVisibility; why = L"visibility / intervening obstruction penalty"; }
+		if ( d.fScopePenalty < worst ) { worst = d.fScopePenalty; why = L"scope used inside its efficient range"; }
+		if ( d.fBaseEffect < worst ) { worst = d.fBaseEffect; why = L"shooter condition: shock, injury, fatigue or morale"; }
+		swprintf( z, L"Dominant accuracy factor: %s (%+.1f)", why, worst );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTYELLOW, z );
+	}
+
+	InvalidateRegion( gsBattleLogX, __max(0, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 4),
+		gsBattleLogX + gsBattleLogW + 1, gsBattleLogY + gsBattleLogH + 1 );
+}
+
+static void BattleLogRebuildOverlay( void )
+{
+	if ( giBattleLogOverlay != -1 )
+	{
+		RemoveVideoOverlay( giBattleLogOverlay );
+		giBattleLogOverlay = -1;
+	}
+
+	if ( !gfBattleLogVisible || guiCurrentScreen != GAME_SCREEN )
+		return;
+
+	BattleLogClampGeometry();
+
+	VIDEO_OVERLAY_DESC d;
+	memset( &d, 0, sizeof(d) );
+	d.sLeft = gsBattleLogX;
+	d.sTop = gfBattleLogInspectorVisible ? (INT16)__max(2, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 3) : gsBattleLogY;
+	d.sRight = gsBattleLogX + gsBattleLogW + 1;
+	d.sBottom = gsBattleLogY + gsBattleLogH + 1;
+	d.sX = d.sLeft;
+	d.sY = d.sTop;
+	d.BltCallback = BlitBattleLog;
+	giBattleLogOverlay = RegisterVideoOverlay( 0, &d );
+}
+
+static void BattleLogEnsureUI( void )
+{
+	if ( !gfBattleLogVisible )
+		return;
+	BattleLogClampGeometry();
+	BattleLogCreateRegions();
+	if ( giBattleLogOverlay == -1 )
+		BattleLogRebuildOverlay();
+}
+
+static void BattleLogDestroyUI( void )
+{
+	BattleLogRemoveRegions();
+	if ( giBattleLogOverlay != -1 )
+	{
+		RemoveVideoOverlay( giBattleLogOverlay );
+		giBattleLogOverlay = -1;
+	}
+}
+
+void BattleLogSetVisible( BOOLEAN fVisible )
+{
+	gfBattleLogVisible = fVisible;
+	if ( fVisible )
+	{
+		BattleLogEnsureUI();
+		BattleLogRebuildOverlay();
+	}
+	else
+		BattleLogDestroyUI();
+}
+
+void BattleLogAddText( UINT16 usColor, STR16 pString )
+{
+	if ( pString == NULL || pString[0] == 0 )
+		return;
+
+	guiBattleLogSequence++;
+	BATTLE_LOG_ENTRY *pEntry = &gBattleLogEntries[(guiBattleLogSequence - 1) % BATTLE_LOG_MAX_ENTRIES];
+	memset( pEntry, 0, sizeof(*pEntry) );
+	pEntry->uiSequence = guiBattleLogSequence;
+	pEntry->usColor = usColor;
+	pEntry->iBullet = -1;
+	swprintf( pEntry->zText, L"[%02d:%02d] %s", guiHour, guiMin, pString );
+	gusBattleLogScrollOffset = 0;
+
+	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
+		BattleLogRebuildOverlay();
+}
+
+void BattleLogAddNCTHMiss( INT32 iBullet )
+{
+	NCTH_SHOT_DIAGNOSTIC d;
+	if ( !NCTHGetBulletDiagnostic( iBullet, &d ) )
+		return;
+
+	guiBattleLogSequence++;
+	BATTLE_LOG_ENTRY *pEntry = &gBattleLogEntries[(guiBattleLogSequence - 1) % BATTLE_LOG_MAX_ENTRIES];
+	memset( pEntry, 0, sizeof(*pEntry) );
+	pEntry->uiSequence = guiBattleLogSequence;
+	pEntry->usColor = FONT_MCOLOR_LTRED;
+	pEntry->fClickable = TRUE;
+	pEntry->iBullet = iBullet;
+	pEntry->ncth = d;
+
+	STR16 pName = L"Merc";
+	if ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] )
+		pName = MercPtrs[d.ubShooterID]->GetName();
+
+	swprintf( pEntry->zText, L"[%02d:%02d] MISS - %s - CTH %.0f  [click for why]",
+		guiHour, guiMin, pName, d.fFinalChance );
+	gusBattleLogScrollOffset = 0;
+
+	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
+		BattleLogRebuildOverlay();
+}
+
 void ScrollString( )
 {
 	UINT32 suiTimer=0;
@@ -381,6 +898,11 @@ void ScrollString( )
 
 	// might have pop up text timer
 	HandleLastQuotePopUpTimer( );
+
+	if ( guiCurrentScreen == GAME_SCREEN )
+		BattleLogEnsureUI();
+	else
+		BattleLogDestroyUI();
 
 	if( guiCurrentScreen == MAP_SCREEN )
 	{
@@ -669,6 +1191,9 @@ void ScreenMsg( UINT16 usColor, UINT8 ubPriority, STR16 pStringA, ...)
 		va_start(argptr, pStringA);
 		vswprintf(DestString, pStringA, argptr);
 		va_end(argptr);
+
+		if ( guiCurrentScreen == GAME_SCREEN && ubPriority != MSG_DEBUG && ubPriority != MSG_TESTVERSION && ubPriority != MSG_BETAVERSION )
+			BattleLogAddText( usColor, DestString );
 
 		// pass onto tactical message and mapscreen message
 		DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("ScreenMsg start: %s", DestString));
