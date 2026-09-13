@@ -2622,7 +2622,7 @@ void RemoveAutoResolveInterface( BOOLEAN fDeleteForGood )
 		for ( INT32 iMerc = 0; iMerc < gpAR->ubMercs; ++iMerc )
 		{
 			if ( gpMercs[iMerc].pSoldier &&
-				gpMercs[iMerc].pSoldier->stats.bLife >= OKLIFE &&
+				gpMercs[iMerc].pSoldier->stats.bLife > 0 &&
 				!(gpMercs[iMerc].uiFlags & (CELL_RETREATED | CELL_RETREATING)) )
 			{
 				fMercVictoryLoot = TRUE;
