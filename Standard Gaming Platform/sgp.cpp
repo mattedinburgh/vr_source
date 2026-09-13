@@ -36,6 +36,7 @@
 #include "GameSettings.h"
 #include "input.h"
 #include "zmouse.h"
+#include "ExceptionHandling.h"
 
 #include <vfs/Aspects/vfs_settings.h>
 #include <vfs/Core/vfs.h>
@@ -998,6 +999,8 @@ void ShutdownStandardGamingPlatform(void)
 	if(vfslog) delete vfslog;
 	vfs::CVirtualFileSystem::shutdownVFS();
 	vfs::ObjectAllocator::clear();
+
+	BlackBoxShutdown();
 }
 
 #ifdef USE_VFS
@@ -1117,6 +1120,9 @@ int PASCAL HandledWinMain(HINSTANCE hInstance,	HINSTANCE hPrevInstance, LPSTR pC
 	MSG				Message;
 	HWND			hPrevInstanceWindow;
 	UINT32			uiTimer = 0;
+
+	BlackBoxInitialize();
+	BlackBoxEvent( "ENGINE", "HandledWinMain begin" );
 
 
 
