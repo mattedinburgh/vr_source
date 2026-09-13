@@ -9359,36 +9359,52 @@ static void AIApplyTacticalPreferenceVariation(SOLDIERTYPE *pSoldier,
 		gbAITacticalHideBias[ubID] = 0;
 		gbAITacticalWatchBias[ubID] = 0;
 
-		// One bounded tactical inclination per turn. Existing morale, orders,
-		// personality, danger and hard safety checks remain more important.
-		switch (PreRandom(7))
+		UINT8 ubReadyTeam = AIFireteamCombatReadyCount(pSoldier);
+		BOOLEAN fSmallTeam = ubReadyTeam >= 2 && ubReadyTeam <= 5;
+
+		if (fSmallTeam)
 		{
-		case 0: // push
-			gbAITacticalSeekBias[ubID] = 2;
-			gbAITacticalHideBias[ubID] = -1;
-			break;
-		case 1: // cautious hold
-			gbAITacticalSeekBias[ubID] = -1;
-			gbAITacticalHideBias[ubID] = 2;
-			break;
-		case 2: // overwatch
-			gbAITacticalSeekBias[ubID] = -1;
-			gbAITacticalWatchBias[ubID] = 2;
-			break;
-		case 3: // support
-			gbAITacticalHelpBias[ubID] = 2;
-			gbAITacticalSeekBias[ubID] = -1;
-			break;
-		case 4: // active defence
-			gbAITacticalHideBias[ubID] = 1;
-			gbAITacticalWatchBias[ubID] = 1;
-			break;
-		case 5: // manoeuvre
-			gbAITacticalSeekBias[ubID] = 1;
-			gbAITacticalWatchBias[ubID] = 1;
-			break;
-		default: // balanced
-			break;
+			// A small remnant must behave like one plan, not five unrelated random rolls.
+			// Assign a simple role from current weapon, mobility, wounds and stress.
+			INT32 sRoleTarget = ClosestKnownOpponent(pSoldier, NULL, NULL);
+			INT32 iSupportScore = AISupportRoleScore(pSoldier, sRoleTarget);
+			INT32 iManeuverScore = AIManeuverRoleScore(pSoldier, sRoleTarget);
+
+			if (iSupportScore >= iManeuverScore + 12)
+			{
+				gbAITacticalSeekBias[ubID] = -2;
+				gbAITacticalHelpBias[ubID] = 2;
+				gbAITacticalWatchBias[ubID] = 2;
+			}
+			else if (iManeuverScore >= iSupportScore + 12)
+			{
+				gbAITacticalSeekBias[ubID] = 2;
+				gbAITacticalWatchBias[ubID] = 1;
+				if (!pSoldier->aiData.bUnderFire)
+					gbAITacticalHideBias[ubID] = -1;
+			}
+			else
+			{
+				// General riflemen stay useful to the local plan instead of inventing
+				// a private mission: modest support/overwatch, no artificial passivity.
+				gbAITacticalHelpBias[ubID] = 1;
+				gbAITacticalWatchBias[ubID] = 1;
+			}
+		}
+		else
+		{
+			// Larger formations retain bounded unpredictability so battles do not become
+			// scripted. Morale, orders, danger and hard safety checks remain dominant.
+			switch (PreRandom(7))
+			{
+			case 0: gbAITacticalSeekBias[ubID] = 2; gbAITacticalHideBias[ubID] = -1; break;
+			case 1: gbAITacticalSeekBias[ubID] = -1; gbAITacticalHideBias[ubID] = 2; break;
+			case 2: gbAITacticalSeekBias[ubID] = -1; gbAITacticalWatchBias[ubID] = 2; break;
+			case 3: gbAITacticalHelpBias[ubID] = 2; gbAITacticalSeekBias[ubID] = -1; break;
+			case 4: gbAITacticalHideBias[ubID] = 1; gbAITacticalWatchBias[ubID] = 1; break;
+			case 5: gbAITacticalSeekBias[ubID] = 1; gbAITacticalWatchBias[ubID] = 1; break;
+			default: break;
+			}
 		}
 
 		// Under direct fire the random layer must never manufacture reckless
