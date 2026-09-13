@@ -5107,6 +5107,14 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (!CheckNPCDestination(pSoldier, pSoldier->aiData.usActionData))
 		return AI_ACTION_NONE;
 
+	if (fCautiousMove &&
+		!AIKnownRouteExposureAcceptable(
+			pSoldier, pSoldier->aiData.usActionData, AI_ACTION_SEEK_FRIEND,
+			120, 60, 80))
+	{
+		return AI_ACTION_NONE;
+	}
+
 	if (fCautiousMove)
 	{
 		UINT16 usCurrentExposure = AIKnownThreatExposure(
@@ -6289,6 +6297,78 @@ UINT16 AIKnownThreatExposure(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 	}
 
 	return (UINT16)__min((UINT32)65535, uiExposure);
+}
+
+BOOLEAN AIKnownRouteExposureAcceptable(
+	SOLDIERTYPE *pSoldier, INT32 sDestination, INT8 bAction,
+	UINT16 usPeakIncrease, UINT16 usUncoveredIncrease, UINT16 usAverageIncrease)
+{
+	if (!pSoldier || TileIsOutOfBounds(sDestination) ||
+		sDestination == pSoldier->sGridNo)
+	{
+		return FALSE;
+	}
+
+	INT32 iPathSteps = FindBestPath(
+		pSoldier, sDestination, pSoldier->pathing.bLevel,
+		DetermineMovementMode(pSoldier, bAction), NO_COPYROUTE, 0);
+	if (iPathSteps <= 0 || !guiPathingData)
+		return FALSE;
+
+	UINT16 usCurrentExposure = AIKnownThreatExposure(
+		pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+	UINT32 uiExposureTotal = 0;
+	UINT8 ubSamples = 0;
+	INT32 sRouteSpot = pSoldier->sGridNo;
+	INT32 iPathLimit = __min(iPathSteps, (INT32)MAX_PATH_DATA_LENGTH);
+
+	for (INT32 iStep = 0; iStep < iPathLimit; ++iStep)
+	{
+		INT32 sNext = NewGridNo(
+			sRouteSpot, DirectionInc((UINT8)guiPathingData[iStep]));
+		if (sNext == sRouteSpot || TileIsOutOfBounds(sNext))
+			return FALSE;
+
+		sRouteSpot = sNext;
+		INT32 iStepNo = iStep + 1;
+		BOOLEAN fSample =
+			(iStepNo == __max(1, iPathLimit / 3)) ||
+			(iStepNo == __max(1, (iPathLimit * 2) / 3)) ||
+			(iStepNo == iPathLimit);
+
+		if (!fSample)
+			continue;
+
+		if (InGas(pSoldier, sRouteSpot) ||
+			RedSmokeDanger(sRouteSpot, pSoldier->pathing.bLevel) ||
+			FindBombNearby(pSoldier, sRouteSpot, BOMB_DETECTION_RANGE))
+		{
+			return FALSE;
+		}
+
+		UINT16 usExposure = AIKnownThreatExposure(
+			pSoldier, sRouteSpot, pSoldier->pathing.bLevel);
+		uiExposureTotal += usExposure;
+		++ubSamples;
+
+		if (usExposure > usCurrentExposure + usPeakIncrease)
+			return FALSE;
+
+		if (usExposure > usCurrentExposure + usUncoveredIncrease &&
+			!InSmokeNearby(sRouteSpot, pSoldier->pathing.bLevel) &&
+			!SightCoverAtSpot(pSoldier, sRouteSpot, FALSE))
+		{
+			return FALSE;
+		}
+	}
+
+	if (ubSamples > 0 &&
+		uiExposureTotal / ubSamples > (UINT32)usCurrentExposure + usAverageIncrease)
+	{
+		return FALSE;
+	}
+
+	return TRUE;
 }
 
 BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier)
