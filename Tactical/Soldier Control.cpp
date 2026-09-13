@@ -9748,6 +9748,24 @@ BOOLEAN IsBleedoutCasualty( SOLDIERTYPE *pSoldier )
 	return FALSE;
 }
 
+// Player/AI extraction is useful for more than the special lethal-wound bleedout
+// state. Ordinary JA2 knock-outs and low-life collapses are living casualties too.
+// Keep the existing method names for save/source compatibility, but use this broader
+// predicate wherever we decide whether somebody may be moved.
+static BOOLEAN IsCarryableLivingCasualty( SOLDIERTYPE *pSoldier )
+{
+	if ( !pSoldier || !pSoldier->bActive || !pSoldier->bInSector ||
+		pSoldier->stats.bLife <= 0 || (pSoldier->flags.uiStatusFlags & SOLDIER_DEAD) )
+	{
+		return FALSE;
+	}
+
+	if ( IsBleedoutCasualty( pSoldier ) )
+		return TRUE;
+
+	return ( pSoldier->bCollapsed || pSoldier->stats.bLife < OKLIFE );
+}
+
 
 // Transient rescue-drag state. 0 means no target; otherwise target soldier ID + 1.
 // Keeping this outside SOLDIERTYPE avoids any additional savegame-layout changes.
@@ -10042,7 +10060,7 @@ BOOLEAN SOLDIERTYPE::IsDraggingBleedoutCasualty( void )
 	SOLDIERTYPE *pCasualty = MercPtrs[ this->ubDraggedCasualtyID ];
 	if ( !pCasualty || !pCasualty->bActive || !pCasualty->bInSector ||
 		pCasualty->ubDraggedByID != this->ubID || pCasualty->bTeam != this->bTeam ||
-		pCasualty->pathing.bLevel != this->pathing.bLevel || !IsBleedoutCasualty( pCasualty ) )
+		pCasualty->pathing.bLevel != this->pathing.bLevel || !IsCarryableLivingCasualty( pCasualty ) )
 		return FALSE;
 
 	return TRUE;
@@ -10056,7 +10074,7 @@ BOOLEAN SOLDIERTYPE::CanDragBleedoutCasualty( SOLDIERTYPE *pCasualty )
 		return FALSE;
 
 	if ( !pCasualty->bActive || !pCasualty->bInSector || pCasualty->bTeam != this->bTeam ||
-		pCasualty->pathing.bLevel != this->pathing.bLevel || !IsBleedoutCasualty( pCasualty ) ||
+		pCasualty->pathing.bLevel != this->pathing.bLevel || !IsCarryableLivingCasualty( pCasualty ) ||
 		pCasualty->ubServiceCount > 0 || SpacesAway( this->sGridNo, pCasualty->sGridNo ) != 1 )
 		return FALSE;
 
@@ -10096,6 +10114,18 @@ BOOLEAN SOLDIERTYPE::StartDraggingBleedoutCasualty( SOLDIERTYPE *pCasualty, BOOL
 
 	this->ubDraggedCasualtyID = pCasualty->ubID;
 	pCasualty->ubDraggedByID = this->ubID;
+
+	// Lifting/dragging a special bleed-out casualty stabilizes them, but never
+	// revives them into combat. Ordinary unconscious casualties keep their normal
+	// JA2 recovery state.
+	if ( pCasualty->ubBleedoutState == BLEEDOUT_ACTIVE )
+	{
+		pCasualty->ubBleedoutState = BLEEDOUT_STABILIZED;
+		pCasualty->ubBleedoutTurns = 0;
+		pCasualty->bBleeding = 0;
+		pCasualty->bCollapsed = TRUE;
+	}
+
 	this->usUIMovementMode = WALKING;
 	return TRUE;
 }
