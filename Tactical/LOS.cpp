@@ -7706,7 +7706,7 @@ void AdjustTargetCenterPoint( SOLDIERTYPE *pShooter, INT32 iTargetGridNo, FLOAT 
 		// Iron sights / 1x sights get their configured aperture bonus when not firing from the hip.
 		if ( iMagFactor <= 1.0 && !pShooter->IsValidAlternativeFireMode( pShooter->aiData.bAimTime, iTargetGridNo ) )
 		{
-			iBasicAperture = iBasicAperture * (FLOAT)( (100 - gGameCTHConstants.IRON_SIGHT_PERFORMANCE_BONUS) / 100.0f);
+			iBasicAperture = iBasicAperture * (FLOAT)( (100 - gGameCTHConstants.IRON_SIGHT_PERFORMANCE_BONUS) / 100);
 		}
 
 		fIronAperture = iBasicAperture;
