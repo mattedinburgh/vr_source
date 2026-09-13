@@ -12,6 +12,9 @@ void ResetMilitia();
 void HandleMilitiaPromotions();
 
 extern BOOLEAN gfStrategicMilitiaChangesMade;
+// TRUE only while ResetMilitia() recreates tactical militia from preserved inventories.
+// Sector-inventory selection must be suppressed during that recreation.
+extern BOOLEAN gfMilitiaTacticalResetInProgress;
 
 extern INT32 ghMilitiaControlBox;
 //extern INT32 ghTalkToAllBox;
