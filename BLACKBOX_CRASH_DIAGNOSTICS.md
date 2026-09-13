@@ -1,69 +1,127 @@
 # Vengeance Crash Black Box
 
 Vengeance now has an always-on crash **flight recorder** layered on top of the existing
-exception report and Windows minidump system. It is intentionally independent of VFS/FileMan
-for its own durable journal, so it remains useful when the file layer itself is failing.
+exception report and Windows minidump system. Recorder **v3** is intentionally independent
+of VFS/FileMan for its durable journal and has an additional watchdog path that does not
+take the normal recorder lock.
+
+The design goal is aggressive diagnostics without making ordinary gameplay dependent on
+constant disk I/O.
 
 ## Files produced
 
-- `BlackBox_LastRun.log` — durable milestones from the current run. Important events are
-  written and flushed immediately.
-- `BlackBox_PreviousRun.log` — the immediately previous run.
-- `BlackBox_PreviousRun_2.log` through `BlackBox_PreviousRun_4.log` — older retained runs,
-  so restarting after a CTD does not immediately destroy the only useful timeline.
+- `BlackBox_LastRun.log` — durable milestones from the current run.
+- `BlackBox_PreviousRun.log` through `BlackBox_PreviousRun_4.log` — retained earlier runs.
+- `BlackBox_Hang_LastRun.log` — watchdog evidence when the main game loop stops responding.
+- `BlackBox_Hang_PreviousRun.log` through `BlackBox_Hang_PreviousRun_4.log` — retained hang evidence.
 - `Crash Report_DD_MM_YYYY___HH_MM_SS.txt` — text crash report containing the recorder
-  snapshot, subsystem states, checkpoint history, durable history, registers and stack data.
+  snapshot, first-chance exception feed, subsystem states, checkpoint history, durable
+  history, registers and stack data.
 - `Vengeance-Crash-<PID>-<TID>-YYYYMMDD-HHMMSS.dmp` — Windows minidump captured before
   the more complex text/stack reporting work.
 
-## Recorder v2 event format
+## Recorder v3 event format
 
-Durable events now carry enough information to correlate work across threads and time:
+Durable events carry enough information to correlate work across threads and time:
 
 ```
 [15:48:39.524] [+22466ms] [#000123] [T45932] [B1] ASSET REQUEST: TILESETS\50\B1_T_SAND1.STI
 ```
 
-Each event contains:
+Each event contains wall-clock time, process-relative uptime, sequence, Windows thread ID,
+subsystem/category and message.
 
-- wall-clock time;
-- process-relative uptime;
-- monotonically increasing event sequence;
-- Windows thread ID;
-- subsystem/category;
-- message.
-
-The in-memory recorder keeps the latest **1,024 durable events**.
+The in-memory recorder now keeps the latest **4,096 durable events**.
 
 ## High-frequency checkpoint history
 
-`BlackBoxCheckpoint()` is still memory-only, so it can be used in hot paths without a disk
-flush. It no longer stores only one overwritten string.
+`BlackBoxCheckpoint()` is memory-only and is safe for hot diagnostic paths.
 
-Recorder v2 keeps:
+Recorder v3 keeps:
 
 - the latest global checkpoint;
-- the latest **1,024 high-frequency checkpoints** as a circular history;
+- the latest **4,096 high-frequency checkpoints** as a circular history;
 - the latest checkpoint independently for up to **32 subsystems**.
 
-This means a MAP checkpoint no longer destroys the most recent AI, SAVE, VFS, B1 or UI state.
+Existing map, AI, save/load, VFS, B1/remaster and UI callers automatically benefit from the
+larger history.
 
-Current high-frequency instrumentation includes detailed map-loader state and tactical AI
-state. Existing callers automatically benefit from the new checkpoint history without needing
-to be rewritten.
+## Main-loop heartbeat and hang watchdog
+
+`GameLoop()` now sends one cheap lock-free heartbeat every loop iteration.
+
+The watchdog runs on a separate thread. Once gameplay has started, if the main thread stops
+producing heartbeats for **8 seconds**, the watchdog writes independent evidence to
+`BlackBox_Hang_LastRun.log`. A continued hang produces another breadcrumb every 15 seconds.
+
+This is deliberately separate from the normal `BlackBoxEvent()` lock. If the main thread
+deadlocks while holding the recorder lock, the watchdog can still preserve:
+
+- how long the main thread has been stalled;
+- main-thread ID;
+- last heartbeat sequence;
+- last known screen;
+- latest semantic checkpoint.
+
+When a stalled main loop eventually resumes, the normal durable timeline also receives a
+`STALL` event with the measured gap.
+
+## First-chance structured-exception feed
+
+Recorder v3 installs a Windows vectored exception handler for fatal-class structured
+exceptions. It records the fault **before** normal exception dispatch has a chance to mask
+or transform it.
+
+Tracked classes include:
+
+- access violations;
+- illegal/privileged instructions;
+- stack overflow;
+- heap corruption;
+- stack-buffer-overrun / fast-fail status;
+- in-page errors;
+- array bounds and datatype alignment faults;
+- integer/floating divide-by-zero;
+- invalid handles and integer overflow.
+
+The exception handler never takes the normal recorder lock and never performs normal log
+I/O. It publishes compact evidence into a **256-slot lock-free emergency ring**. If the
+game recovers, the next normal heartbeat drains those records into the durable log. If the
+game crashes, the raw emergency ring is written directly into the crash report.
+
+Normal C++ exceptions and debugger breakpoint/single-step exceptions are intentionally not
+treated as fatal-class first-chance errors to avoid useless noise.
+
+## Health / leak telemetry
+
+Once per second, the main loop stores a memory-only `HEALTH` checkpoint containing:
+
+- heartbeat number and screen;
+- inter-heartbeat gap;
+- process handle count;
+- GDI object count;
+- USER object count;
+- Windows memory pressure and available physical memory.
+
+Every 30 seconds the same class of health data is written as a durable event. This makes
+slow handle/GDI leaks and memory-pressure problems visible without per-frame disk writes.
 
 ## Failure feeds
 
-The black box now receives dedicated evidence for:
+The black box receives dedicated evidence for:
 
 - engine startup and clean shutdown;
 - screen transitions;
+- global engine errors and their message text;
 - save/load lifecycle;
 - map load phases and map metadata;
 - B1/remaster asset visibility and STI/JSD loading stages;
 - VFS errors;
 - assertion failures;
-- top-level fatal C++/VFS/standard exceptions.
+- top-level fatal C++/VFS/standard exceptions;
+- fatal-class first-chance structured exceptions;
+- main-loop stalls and recoveries;
+- periodic process-health state.
 
 ## Crash snapshot
 
@@ -77,18 +135,20 @@ Before stack walking, the text crash report records a semantic snapshot includin
 - physical/pagefile memory pressure;
 - executable path and current working directory;
 - recorder health counters;
+- watchdog/main-loop heartbeat age and last screen;
+- recent first-chance critical exceptions;
 - latest global checkpoint;
 - latest checkpoint for every active subsystem;
 - high-frequency checkpoint timeline;
 - durable event timeline.
 
-The recorder deliberately does **not** acquire its critical section while dumping crash
+The recorder deliberately does **not** acquire its main critical section while dumping crash
 evidence. If the original fault occurred while a logger held that lock, attempting to acquire
 it in the crash handler could deadlock and destroy the evidence.
 
 ## B1/remaster diagnostics
 
-B1 asset loading now reports distinct stages such as:
+B1 asset loading reports distinct stages such as:
 
 ```
 ASSET EXISTS
@@ -118,13 +178,15 @@ while the recorder preserves the exact reason for the fallback.
 
 ## Crash-ticket procedure
 
-For a reproducible CTD, attach all files that exist from this list:
+For a reproducible CTD or hang, attach all files that exist from this list:
 
 1. newest `Crash Report_*.txt`;
 2. matching `Vengeance-Crash-*.dmp`;
 3. `BlackBox_LastRun.log`;
-4. `BlackBox_PreviousRun.log` if the game has already been restarted;
-5. older `BlackBox_PreviousRun_*.log` files when the failure happened several launches ago.
+4. `BlackBox_Hang_LastRun.log` when present;
+5. `BlackBox_PreviousRun.log` and/or `BlackBox_Hang_PreviousRun.log` if the game has
+   already been restarted;
+6. older retained run files when the failure happened several launches ago.
 
 For a non-crashing failure, `BlackBox_LastRun.log` is usually enough to reconstruct the
-durable timeline; a later crash report additionally contains the in-memory checkpoint history.
+durable timeline. For a freeze/hang, the independent hang log is particularly important.
