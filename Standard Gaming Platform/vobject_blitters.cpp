@@ -10086,7 +10086,7 @@ BlitDone:
 	254 are shaded instead of blitted.
 
 **********************************************************************************************/
-BOOLEAN Blt8BPPDataTo16BPPBufferTransShadowClip( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion, UINT16 *p16BPPPalette )
+BOOLEAN Blt8BPPDataTo16BPPBufferTransShadowClip( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion, UINT16 *p16BPPPalette, BOOLEAN fIgnoreShadows )
 {
 	UINT32 uiOffset;
 	UINT32 usHeight, usWidth, Unblitted;
@@ -10263,6 +10263,10 @@ BlitNTL1:
 		cmp		al, 254
 		jne		BlitNTL3
 
+		mov		al, fIgnoreShadows
+		cmp		al, 0
+		jne		BlitNTL2
+
 		mov		ax, [edi]
 		mov		ax, ShadeTable[eax*2]
 		mov		[edi], ax
@@ -10333,7 +10337,7 @@ BlitDone:
 	NOT updated.
 
 **********************************************************************************************/
-BOOLEAN Blt8BPPDataTo16BPPBufferTransShadowZNBClip( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion, UINT16 *p16BPPPalette )
+BOOLEAN Blt8BPPDataTo16BPPBufferTransShadowZNBClip( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion, UINT16 *p16BPPPalette, BOOLEAN fIgnoreShadows )
 {
 	UINT32 uiOffset;
 	UINT32 usHeight, usWidth, Unblitted;
@@ -10521,6 +10525,10 @@ BlitNTL1:
 		cmp		ax, usZValue
 		jae		BlitNTL2
 
+		mov		al, fIgnoreShadows
+		cmp		al, 0
+		jne		BlitNTL2
+
 		mov		ax, [edi]
 		mov		ax, ShadeTable[eax*2]
 		mov		[edi], ax
@@ -10595,7 +10603,7 @@ BlitDone:
 	NOT updated.
 
 **********************************************************************************************/
-BOOLEAN Blt8BPPDataTo16BPPBufferTransShadowZNBObscuredClip( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion, UINT16 *p16BPPPalette )
+BOOLEAN Blt8BPPDataTo16BPPBufferTransShadowZNBObscuredClip( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion, UINT16 *p16BPPPalette, BOOLEAN fIgnoreShadows )
 {
 	UINT32 uiOffset;
 	UINT32 usHeight, usWidth, Unblitted, uiLineFlag;
@@ -10783,6 +10791,10 @@ BlitNTL1:
 		mov		ax, [ebx]
 		cmp		ax, usZValue
 		jae		BlitNTL2
+
+		mov		al, fIgnoreShadows
+		cmp		al, 0
+		jne		BlitNTL2
 
 		mov		ax, [edi]
 		mov		ax, ShadeTable[eax*2]
