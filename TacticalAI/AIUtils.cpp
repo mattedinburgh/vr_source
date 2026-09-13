@@ -8000,7 +8000,8 @@ INT32 ClosestSeenLastTurnOpponent(SOLDIERTYPE *pSoldier, INT32 * psGridNo, INT8 
 			continue;
 		}
 
-		if (*pbPersOL == SEEN_CURRENTLY)
+		if (*pbPersOL == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0)
 		{
 			if (!ValidOpponent(pSoldier, pOpponent))
 				continue;
