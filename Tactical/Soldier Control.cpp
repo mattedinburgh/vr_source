@@ -9752,7 +9752,7 @@ BOOLEAN IsBleedoutCasualty( SOLDIERTYPE *pSoldier )
 // state. Ordinary JA2 knock-outs and low-life collapses are living casualties too.
 // Keep the existing method names for save/source compatibility, but use this broader
 // predicate wherever we decide whether somebody may be moved.
-static BOOLEAN IsCarryableLivingCasualty( SOLDIERTYPE *pSoldier )
+BOOLEAN IsCarryableLivingCasualty( SOLDIERTYPE *pSoldier )
 {
 	if ( !pSoldier || !pSoldier->bActive || !pSoldier->bInSector ||
 		pSoldier->stats.bLife <= 0 || (pSoldier->flags.uiStatusFlags & SOLDIER_DEAD) )
