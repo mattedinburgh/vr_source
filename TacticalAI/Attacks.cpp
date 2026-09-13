@@ -964,8 +964,12 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			UINT8 ubSaturation = AITargetSaturation(pSoldier, sTarget);
 			if (ubSaturation > 0)
 			{
-				INT32 iPenaltyPercent = 15 * ubSaturation;
+				UINT8 ubReadyTeam = AIFireteamCombatReadyCount(pSoldier);
+				BOOLEAN fSmallUnitFocus = ubReadyTeam >= 2 && ubReadyTeam <= 5;
+				INT32 iPenaltyPercent = (fSmallUnitFocus ? 6 : 15) * ubSaturation;
 
+				// A small remnant deliberately concentrates enough rifles to win the local
+				// exchange. Once the target is visibly disabled, immediately spread fire.
 				// Do not waste several shooters finishing an already disabled opponent.
 				if (fDirectVisualContact && (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed || pOpponent->bBreathCollapsed))
 					iPenaltyPercent = 30 * ubSaturation;
