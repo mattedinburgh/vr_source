@@ -5440,7 +5440,6 @@ UINT8 AILocalRoutPressure(SOLDIERTYPE *pSoldier)
 			pFriend->bCollapsed ||
 			pFriend->bBreathCollapsed ||
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
-			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 			pFriend->pathing.bLevel != pSoldier->pathing.bLevel ||
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > iRadius)
 		{
@@ -5450,6 +5449,7 @@ UINT8 AILocalRoutPressure(SOLDIERTYPE *pSoldier)
 		BOOLEAN fEscaping = AIEscapeEstablishedForRout(pFriend);
 		BOOLEAN fDisengaging = AIDisengagementEstablishedForRout(pFriend);
 		BOOLEAN fRunningAway = (pFriend->aiData.bAction == AI_ACTION_RUN_AWAY);
+		BOOLEAN fCowering = (pFriend->flags.uiStatusFlags & SOLDIER_COWERING) != 0;
 		BOOLEAN fLeader = AICheckIsOfficer(pFriend) || AICheckIsCommander(pFriend);
 		BOOLEAN fEstablishedBreak = fEscaping || fDisengaging;
 
@@ -5461,6 +5461,8 @@ UINT8 AILocalRoutPressure(SOLDIERTYPE *pSoldier)
 			iPressure += 20;
 		else if (fRunningAway)
 			iPressure += 15;
+		else if (fCowering)
+			iPressure += 12;
 
 		if (fEstablishedBreak)
 			++ubEstablishedBreakers;
@@ -5474,7 +5476,7 @@ UINT8 AILocalRoutPressure(SOLDIERTYPE *pSoldier)
 		}
 		// A nearby leader who is still holding together can slow a cascade, but
 		// cannot erase several nearby soldiers already breaking contact.
-		else if (fLeader && !pFriend->aiData.bUnderFire)
+		else if (fLeader && !fCowering && !pFriend->aiData.bUnderFire)
 		{
 			iPressure -= 15;
 			fStableLeader = TRUE;
