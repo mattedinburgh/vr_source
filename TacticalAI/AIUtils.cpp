@@ -9545,6 +9545,8 @@ UINT8 CountFriendsLastAttackHit(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 sDis
 			!pFriend->bCollapsed &&
 			!pFriend->bBreathCollapsed &&
 			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
+			!(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) &&
+			!AIDisengagementActive(pFriend) && !AIEscapeActive(pFriend) &&
 			pFriend->aiData.bOrders > ONGUARD &&
 			PythSpacesAway(sGridNo, pFriend->sGridNo) <= sDistance &&
 			(pFriend->LastAttackHit() || pFriend->usSoldierFlagMask2 & SOLDIER_SUCCESSFUL_ATTACK || pFriend->LastTargetSuppressed()))
