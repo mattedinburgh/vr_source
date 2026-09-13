@@ -429,7 +429,7 @@ static BOOLEAN AIMedicalResponderReady( SOLDIERTYPE *pSoldier )
 // act on a casualty he can directly see, one close enough to hear/notice, or a
 // nearby member of his own fireteam whose status is plausibly shared by the element.
 // This prevents medics from detecting cross-element casualties through walls/smoke.
-static BOOLEAN AIResponderKnowsCasualty( SOLDIERTYPE *pResponder, SOLDIERTYPE *pPatient )
+BOOLEAN AIResponderKnowsCasualty( SOLDIERTYPE *pResponder, SOLDIERTYPE *pPatient )
 {
 	if ( !pResponder || !pPatient || pResponder->bTeam != pPatient->bTeam )
 		return FALSE;
