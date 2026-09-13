@@ -1,4 +1,6 @@
 #include "builddefines.h"
+#include "LogicalBodyTypes/BodyTypeDB.h"
+#include "LogicalBodyTypes/Layers.h"
 
 #ifdef PRECOMPILEDHEADERS
 	#include "TileEngine All.h"
@@ -775,6 +777,94 @@ void RenderSetShadows(BOOLEAN fShadows)
 }
 
 
+
+// LOBOT_VR_EQUIPMENT_OVERLAY
+static BOOLEAN IsVengeanceLobotEquipmentLayer(const char* id)
+{
+	if (id == NULL) return FALSE;
+	return
+		strcmp(id, "vest") == 0 ||
+		strcmp(id, "legrig") == 0 ||
+		strcmp(id, "legrig_left") == 0 ||
+		strcmp(id, "knees") == 0 ||
+		strcmp(id, "backpack") == 0 ||
+		strcmp(id, "gun") == 0 ||
+		strcmp(id, "gunleft") == 0 ||
+		strcmp(id, "facegear") == 0 ||
+		strcmp(id, "helmet") == 0;
+}
+
+static void RenderVengeanceLobotEquipment(
+	UINT8* pDestBuf,
+	UINT32 uiDestPitchBYTES,
+	SOLDIERTYPE* pSoldier,
+	INT16 sXPos,
+	INT16 sYPos,
+	UINT16 sZLevel,
+	UINT16 usImageIndex,
+	UINT16* pShadeTable,
+	BOOLEAN fZBlitter,
+	BOOLEAN fObscuredBlitter)
+{
+	using namespace LogicalBodyTypes;
+
+	if (pDestBuf == NULL || pSoldier == NULL || pShadeTable == NULL || Layers::Instance().GetCount() == 0)
+		return;
+
+	BodyType* bt = BodyTypeDB::Instance().Find(pSoldier);
+	if (bt == NULL)
+		return;
+
+	Layers::LayerGraphIterator layerIter = Layers::Instance().GetIterator(pSoldier->bMovementDirection);
+	Layers::LayerGraphIterator layerEnd = Layers::Instance().GetIterationEnd(pSoldier->bMovementDirection);
+
+	for (; layerIter != layerEnd; ++layerIter)
+	{
+		const Layers::LayerProperties* props = bt->GetLayerProperties(layerIter->index);
+		if (props == NULL || !props->render || !IsVengeanceLobotEquipmentLayer(props->identifier))
+			continue;
+
+		BodyType::LogicalSurfaceType* logicalSurface = bt->GetLogicalSurfaceType(layerIter->index, pSoldier);
+		if (logicalSurface == NULL || logicalSurface->physicalSurfaceType == NULL)
+			continue;
+
+		HVOBJECT hLayer = logicalSurface->physicalSurfaceType->hVideoObject;
+		if (hLayer == NULL || usImageIndex >= hLayer->usNumberOfObjects)
+			continue;
+
+		UINT16* pLayerShade = pShadeTable;
+		BOOLEAN clipped = BltIsClippedOrOffScreen(hLayer, sXPos, sYPos, usImageIndex, &gClippingRect);
+
+		if (clipped == TRUE)
+		{
+			if (fZBlitter)
+			{
+				if (fObscuredBlitter)
+					Blt8BPPDataTo16BPPBufferTransShadowZNBObscuredClip((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hLayer, sXPos, sYPos, usImageIndex, &gClippingRect, pLayerShade);
+				else
+					Blt8BPPDataTo16BPPBufferTransShadowZNBClip((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hLayer, sXPos, sYPos, usImageIndex, &gClippingRect, pLayerShade);
+			}
+			else
+			{
+				Blt8BPPDataTo16BPPBufferTransShadowClip((UINT16*)pDestBuf, uiDestPitchBYTES, hLayer, sXPos, sYPos, usImageIndex, &gClippingRect, pLayerShade);
+			}
+		}
+		else if (clipped == FALSE)
+		{
+			if (fZBlitter)
+			{
+				if (fObscuredBlitter)
+					Blt8BPPDataTo16BPPBufferTransShadowZNBObscured((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hLayer, sXPos, sYPos, usImageIndex, pLayerShade);
+				else
+					Blt8BPPDataTo16BPPBufferTransShadowZNB((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hLayer, sXPos, sYPos, usImageIndex, pLayerShade);
+			}
+			else
+			{
+				Blt8BPPDataTo16BPPBufferTransShadow((UINT16*)pDestBuf, uiDestPitchBYTES, hLayer, sXPos, sYPos, usImageIndex, pLayerShade);
+			}
+		}
+	}
+}
 
 void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT32 iStartPointX_S, INT32 iStartPointY_S, INT32 iEndXS, INT32 iEndYS, UINT8 ubNumLevels, UINT32 *puiLevels, UINT16 *psLevelIDs )
 {
@@ -2619,6 +2709,13 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 													Blt8BPPDataTo8BPPBufferTransparent((UINT16*)pDestBuf, uiDestPitchBYTES, hVObject, sXPos, sYPos, usImageIndex);
 										}
 									}
+								}
+
+								// LOBOT_VR_DRAW_EQUIPMENT
+								if (fMerc && pSoldier != NULL && fRenderTile && !fHiddenTile && !(uiFlags & TILES_DIRTY) && gbPixelDepth == 16 &&
+									(uiRowFlags == TILES_DYNAMIC_MERCS || uiRowFlags == TILES_DYNAMIC_HIGHMERCS || uiRowFlags == TILES_DYNAMIC_STRUCT_MERCS))
+								{
+									RenderVengeanceLobotEquipment(pDestBuf, uiDestPitchBYTES, pSoldier, sXPos, sYPos, sZLevel, usImageIndex, pShadeTable, fZBlitter, fObscuredBlitter);
 								}
 
 								// RENDR APS ONTOP OF PLANNED MERC GUY
