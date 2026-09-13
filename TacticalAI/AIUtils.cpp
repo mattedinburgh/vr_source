@@ -6457,10 +6457,12 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 		AIClearEscapeState(pSoldier);
 		return FALSE;
 	}
-	// A remnant that has just successfully joined a functioning enemy element gets
-	// a short stabilization window. Otherwise the same casualty/rout snapshot can
-	// immediately recreate disengagement on the very next sub-decision.
-	if (pSoldier->bTeam == ENEMY_TEAM && AIRecentlyReattachedFireteamRemnant(pSoldier))
+	// A remnant that has just successfully joined a functioning element gets a short
+	// stabilization window. Otherwise the same casualty/rout snapshot can immediately
+	// recreate disengagement on the next sub-decision. Never cancel a player-forced
+	// militia Retreat merely because that soldier reattached shortly beforehand.
+	if (AIRecentlyReattachedFireteamRemnant(pSoldier) &&
+		!AIForcedDisengagementActive(pSoldier))
 	{
 		gubAIDisengageTurns[ubID] = 0;
 		gubAIForcedDisengageTurns[ubID] = 0;
