@@ -813,8 +813,10 @@ void HandleMurderOfCivilian( SOLDIERTYPE *pSoldier, BOOLEAN fIntentional )
 		}
 	}
 
-	// if player didn't do it
-	if( bKillerTeam != OUR_TEAM )
+	// Enemy-caused civilian deaths are explicitly attributed to the enemy. Do not
+	// randomly transfer enemy collateral to the player. Keep the legacy uncertainty
+	// model for other non-player causes where responsibility can genuinely be unclear.
+	if( bKillerTeam != OUR_TEAM && bKillerTeam != ENEMY_TEAM )
 	{
 		// If the murder is not fully witnessed, there's a chance of player being blamed for it even if it's not his fault
 		switch (bSeenState)
@@ -868,29 +870,21 @@ void HandleMurderOfCivilian( SOLDIERTYPE *pSoldier, BOOLEAN fIntentional )
 			break;
 
 		case ENEMY_TEAM:
-			// check whose sector this is
+			// Enemy collateral belongs to the enemy. In an enemy-controlled town it can
+			// still strengthen anti-regime sentiment. In a player-controlled town it is
+			// loyalty-neutral rather than being charged to the player.
 			if( StrategicMap[( pSoldier->sSectorX ) + ( MAP_WORLD_X * ( pSoldier->sSectorY ) )].fEnemyControlled == TRUE )
 			{
-				// enemy soldiers... in enemy controlled sector.	Gain loyalty
 				fIncrement = TRUE;
-
-				// debug message
-				ScreenMsg( MSG_FONT_RED, MSG_DEBUG, L"Enemy soldiers murdered a civilian. Town loyalty increases");
+				ScreenMsg( MSG_FONT_RED, MSG_DEBUG, L"Enemy soldiers killed a civilian. Town loyalty increases." );
 			}
 			else
 			{
-				// reduce, we're expected to provide some protection, but not miracles
-				iLoyaltyChange *= REDUCTION_FOR_MURDER_OF_INNOCENT_BY_ENEMY_IN_OUR_SECTOR;
-				iLoyaltyChange /= 100;
-
-				// lose loyalty
+				iLoyaltyChange = 0;
 				fIncrement = FALSE;
-
-				// debug message
-				ScreenMsg( MSG_FONT_RED, MSG_DEBUG, L"Town holds you responsible for murder by enemy.");
+				ScreenMsg( MSG_FONT_RED, MSG_DEBUG, L"Enemy soldiers killed a civilian. No player loyalty penalty." );
 			}
 			break;
-
 		case MILITIA_TEAM:
 			// the rebels did it... check if are they on our side
 			if( CheckFact( FACT_REBELS_HATE_PLAYER, 0 ) == FALSE )
