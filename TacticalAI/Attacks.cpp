@@ -211,15 +211,13 @@ static UINT8 AIKnownShotChanceToGetThrough(SOLDIERTYPE *pSoldier, SOLDIERTYPE *p
 // human opponent. Stale contacts are never tested here: callers pass TRUE only
 // when current contact makes current life/collapse state legitimate knowledge.
 static BOOLEAN AIShouldAvoidFinishingDownedTarget(
-	SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent, BOOLEAN fCurrentContact)
+	SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent, BOOLEAN fDirectVisualContact)
 {
-	if (!pSoldier || !pOpponent || !fCurrentContact || !AICombatTeam(pSoldier))
+	if (!pSoldier || !pOpponent || !fDirectVisualContact || !AICombatTeam(pSoldier))
 		return FALSE;
 
-	// Exact incapacitation state is legitimate only when this shooter personally
-	// sees the target, not merely because another teammate has a current sighting.
-	if (PersonalKnowledge(pSoldier, pOpponent->ubID) != SEEN_CURRENTLY)
-		return FALSE;
+	// Caller already verified personal current knowledge with a fresh LOS test.
+	// Never re-authorize hidden casualty state from cached opponent-list data.
 
 	// Preserve explicitly scripted killer behaviour and non-human threats.
 	if (pSoldier->aiData.bAttitude == ATTACKSLAYONLY ||
@@ -240,14 +238,12 @@ static BOOLEAN AIShouldAvoidFinishingDownedTarget(
 // currently see the opponent administering aid.  A hidden doctor/medic skill is
 // not legitimate tactical knowledge.
 static BOOLEAN AIObservedActiveMedicalTreatment(
-	SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent, BOOLEAN fCurrentContact)
+	SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent, BOOLEAN fDirectVisualContact)
 {
-	if (!pSoldier || !pOpponent || !fCurrentContact || !AICombatTeam(pSoldier))
+	if (!pSoldier || !pOpponent || !fDirectVisualContact || !AICombatTeam(pSoldier))
 		return FALSE;
 
-	// Medical activity has to be directly observable by this shooter.
-	if (PersonalKnowledge(pSoldier, pOpponent->ubID) != SEEN_CURRENTLY)
-		return FALSE;
+	// Caller already combined personal current knowledge with a fresh LOS test.
 
 	if (pSoldier->aiData.bAttitude == ATTACKSLAYONLY ||
 		pOpponent->IsZombie() ||
@@ -355,7 +351,8 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			continue;
 
 		BOOLEAN fThreatStateKnown =
-			PersonalKnowledge(pSoldier, pThreat->ubID) == SEEN_CURRENTLY;
+			PersonalKnowledge(pSoldier, pThreat->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pThreat, CALC_FROM_ALL_DIRS) > 0;
 		if (fThreatStateKnown &&
 			(!ValidOpponent(pSoldier, pThreat) ||
 			 IsBleedoutCasualty(pThreat) ||
@@ -908,7 +905,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		// A personally observed cowering opponent is a lower immediate threat, but
 		// not immune: self-defence or lack of better targets can still justify fire.
 		if (AICombatTeam(pSoldier) &&
-			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			fDirectVisualContact &&
 			(pOpponent->flags.uiStatusFlags & SOLDIER_COWERING) &&
 			pSoldier->ubPreviousAttackerID != pOpponent->ubID &&
 			pSoldier->ubNextToPreviousAttackerID != pOpponent->ubID)
