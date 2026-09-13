@@ -129,10 +129,11 @@ FLOAT CalcNewChanceToHitAimSpecialBonus(SOLDIERTYPE *pSoldier);
 FLOAT CalcNewChanceToHitAimTargetBonus(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pTarget, INT32 sGridNo, INT32 iRange, UINT8 ubAimPos, BOOLEAN fCantSeeTarget);
 FLOAT CalcNewChanceToHitAimTraitBonus(SOLDIERTYPE *pSoldier, FLOAT fAimCap, FLOAT fDifference, INT32 sGridNo, INT16 ubAimTime, FLOAT fScopeMagFactor, UINT32 uiBestScopeRange);
 
-INT32 HTHImpact( SOLDIERTYPE * pSoldier, SOLDIERTYPE * pTarget, INT32 iHitBy, BOOLEAN fBladeAttack, MELEE_DIAGNOSTIC *pDiagnostic = NULL );
+INT32 HTHImpact( SOLDIERTYPE * pSoldier, SOLDIERTYPE * pTarget, INT32 iHitBy, BOOLEAN fBladeAttack );
 
 BOOLEAN gfNextShotKills = FALSE;
 BOOLEAN gfReportHitChances = FALSE;
+static MELEE_DIAGNOSTIC *gpMeleeDiagnosticCapture = NULL;
 
 // HEADROCK HAM B2.5:Using this boolean to tell the CTH formula that it is being called by UseGun(), rather than
 // by other functions. This is mostly to assist the new Tracer Fire system...
@@ -3285,7 +3286,9 @@ BOOLEAN UseBlade( SOLDIERTYPE *pSoldier , INT32 sTargetGridNo )
 			meleeDiag.sHitChance = (INT16)iHitChance;
 			meleeDiag.sRoll = (INT16)iDiceRoll;
 			meleeDiag.sHitMargin = (INT16)(iHitChance - iDiceRoll);
-			iImpact = HTHImpact( pSoldier, pTargetSoldier, (iHitChance - iDiceRoll), TRUE, &meleeDiag );
+			gpMeleeDiagnosticCapture = &meleeDiag;
+			iImpact = HTHImpact( pSoldier, pTargetSoldier, (iHitChance - iDiceRoll), TRUE );
+			gpMeleeDiagnosticCapture = NULL;
 
 			// Flugente: check for underbarrel weapons and use that object if necessary (think of bayonets)
 			OBJECTTYPE* pObj = pSoldier->GetUsedWeapon( &pSoldier->inv[pSoldier->ubAttackingHand] );
@@ -4103,7 +4106,9 @@ BOOLEAN UseHandToHand( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo, BOOLEAN fStea
 				meleeDiag.sHitChance = (INT16)iHitChance;
 				meleeDiag.sRoll = (INT16)iDiceRoll;
 				meleeDiag.sHitMargin = (INT16)(meleeDiag.sHitChance - iDiceRoll);
-				iImpact = HTHImpact( pSoldier, pTargetSoldier, (iHitChance - iDiceRoll), FALSE, &meleeDiag );
+				gpMeleeDiagnosticCapture = &meleeDiag;
+				iImpact = HTHImpact( pSoldier, pTargetSoldier, (iHitChance - iDiceRoll), FALSE );
+				gpMeleeDiagnosticCapture = NULL;
 				meleeDiag.sWeaponConditionPercent = 100;
 				meleeDiag.sAfterCondition = (INT16)iImpact;
 				meleeDiag.sAfterHitLocation = (INT16)iImpact;
@@ -8873,8 +8878,10 @@ INT32 BulletImpact( SOLDIERTYPE *pFirer, BULLET *pBullet, SOLDIERTYPE * pTarget,
 	return( iImpact );
 }
 
-INT32 HTHImpact( SOLDIERTYPE * pSoldier, SOLDIERTYPE * pTarget, INT32 iHitBy, BOOLEAN fBladeAttack, MELEE_DIAGNOSTIC *pDiagnostic )
+INT32 HTHImpact( SOLDIERTYPE * pSoldier, SOLDIERTYPE * pTarget, INT32 iHitBy, BOOLEAN fBladeAttack )
 {
+	MELEE_DIAGNOSTIC *pDiagnostic = gpMeleeDiagnosticCapture;
+
 	////////////////////////////////////////////
 	// SANDRO - this all was somehow messed up
 	////////////////////////////////////////////
