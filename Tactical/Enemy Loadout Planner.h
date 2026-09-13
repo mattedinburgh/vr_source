@@ -115,6 +115,14 @@ struct ENEMY_ATTACHMENT_PACKAGE
 	UINT16 usItem[ENEMY_LOADOUT_MAX_ATTACHMENTS];
 };
 
+struct ENEMY_LOADOUT_ASSIGNMENT_STATE
+{
+	ENEMY_LOADOUT_BATCH Remaining;
+	UINT8 ubNextAdminCell;
+	UINT8 ubNextRegularCell;
+	UINT8 ubNextEliteCell;
+};
+
 struct ENEMY_LOADOUT_PLAN
 {
 	ENEMY_LOADOUT_ROLE Role;
@@ -211,6 +219,31 @@ ENEMY_LOADOUT_ROLE ChooseEnemyLoadoutRole(
 void RecordEnemyLoadoutRole(
 	ENEMY_SQUAD_LOADOUT_STATE *pState,
 	ENEMY_LOADOUT_ROLE Role);
+
+// Creates a consumable copy of a planned batch.  Role-ticket consumption is
+// deterministic and does not consume game RNG.
+void InitEnemyLoadoutAssignmentState(
+	ENEMY_LOADOUT_ASSIGNMENT_STATE *pAssignment,
+	const ENEMY_LOADOUT_BATCH *pBatch);
+
+// Dispenses the next preplanned role ticket for a soldier class and identifies
+// the equipment cell it belongs to.  The original batch remains unchanged.
+BOOLEAN ConsumeEnemyLoadoutRoleTicket(
+	ENEMY_LOADOUT_ASSIGNMENT_STATE *pAssignment,
+	INT8 bSoldierClass,
+	UINT8 *pubCell,
+	ENEMY_LOADOUT_ROLE *pRole);
+
+// Convenience wrapper: consumes a ticket and builds its loadout intent.
+BOOLEAN ConsumeEnemyLoadoutPlan(
+	ENEMY_LOADOUT_ASSIGNMENT_STATE *pAssignment,
+	INT8 bSoldierClass,
+	INT8 bExpLevel,
+	UINT8 ubProgress,
+	INT8 bEquipmentRating,
+	BOOLEAN fNight,
+	UINT8 *pubCell,
+	ENEMY_LOADOUT_PLAN *pPlan);
 
 // Converts a role + progression into LBE, ammunition and attachment intent.
 void BuildEnemyLoadoutPlan(
