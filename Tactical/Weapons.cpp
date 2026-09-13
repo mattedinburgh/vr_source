@@ -155,6 +155,15 @@ void NCTHBeginShotDiagnostic( SOLDIERTYPE *pShooter, INT32 sTargetGridNo, UINT8 
 	gNCTHWorkingDiagnostic.ubVolleyShot = pShooter ? pShooter->bDoBurst : 0;
 	gNCTHWorkingDiagnostic.usWeapon = usWeapon;
 	gNCTHWorkingDiagnostic.sTargetGridNo = sTargetGridNo;
+	if ( pShooter )
+	{
+		gNCTHWorkingDiagnostic.bExperience = EffectiveExpLevel( pShooter );
+		gNCTHWorkingDiagnostic.bMarksmanship = EffectiveMarksmanship( pShooter );
+		gNCTHWorkingDiagnostic.bDexterity = EffectiveDexterity( pShooter, FALSE );
+		gNCTHWorkingDiagnostic.bWisdom = EffectiveWisdom( pShooter );
+		gNCTHWorkingDiagnostic.bBreath = pShooter->bBreath;
+		gNCTHWorkingDiagnostic.bShock = pShooter->aiData.bShock;
+	}
 }
 
 void NCTHRegisterBulletDiagnostic( INT32 iBullet, UINT8 ubVolleyShot )
@@ -5605,6 +5614,12 @@ if (UsingNewCTHSystem())
 	fGunDifficulty *= (FLOAT)(100 / APBPConstants[AP_MAXIMUM]); // Adjust for 100AP/25AP
 	FLOAT fGunBaseDifficulty = fGunDifficulty;
 	FLOAT fGunAimDifficulty = fGunDifficulty;
+	if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+	{
+		gNCTHWorkingDiagnostic.ubModifiedHandling = ubModifiedHandling;
+		gNCTHWorkingDiagnostic.fGunBaseDifficulty = fGunBaseDifficulty;
+		gNCTHWorkingDiagnostic.fGunAimDifficulty = fGunAimDifficulty;
+	}
 	
 	// get bonus from weapon handling
 	FLOAT fBaseWeapon = CalcNewChanceToHitBaseWeaponBonus(pSoldier, sGridNo, ubAimTime, fGunBaseDifficulty, stance);
