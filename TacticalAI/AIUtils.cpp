@@ -4511,7 +4511,7 @@ static INT32 AIFireteamRoleOverlapPenalty(UINT8 ubFireteam, SOLDIERTYPE *pCandid
 		fHasRadio = fHasRadio || AICheckIsRadioOperator(pMember);
 	}
 	INT32 iPenalty = 0;
-	if (fHasLeader && (AICheckIsOfficer(pCandidate) || AICheckIsCommander(pCandidate))) iPenalty += 4;
+	if (fHasLeader && AICheckIsLeader(pCandidate)) iPenalty += 4;
 	if (fHasMedic && AICheckIsMedic(pCandidate)) iPenalty += 4;
 	if (fHasMachinegunner && AICheckIsMachinegunner(pCandidate)) iPenalty += 4;
 	if (fHasRadio && AICheckIsRadioOperator(pCandidate)) iPenalty += 4;
@@ -9650,25 +9650,23 @@ UINT8 AIGetCommandRank(SOLDIERTYPE *pSoldier)
 	if (!pSoldier || !AICombatTeam(pSoldier))
 		return AI_RANK_NONE;
 
-	// 1.13's visible EnemyRank.xml is experience-level based. Keep the same ladder
-	// as the stable baseline so the UI and AI agree about what a rank means.
-	UINT8 ubRank = (UINT8)__max(1, __min(10, (INT32)pSoldier->stats.bExpLevel));
-	UINT8 ubLeaderTraits = NUM_SKILL_TRAITS(pSoldier, SQUADLEADER_NT);
+	if (pSoldier->bTeam == ENEMY_TEAM)
+	{
+		// Assign formal roles against the complete current roster, not creation order.
+		EnsureEnemyCommandRoles();
 
-	// Explicit leadership traits remain authoritative. This preserves old Vengeance
-	// role assignment while allowing ordinary experienced soldiers to form a real
-	// chain of command even when the generator did not assign Squadleader.
-	if (ubLeaderTraits >= 2)
-		ubRank = __max((UINT8)AI_RANK_MAJOR, ubRank);
-	else if (ubLeaderTraits == 1)
-		ubRank = __max((UINT8)AI_RANK_LIEUTENANT, ubRank);
+		if (pSoldier->usSoldierFlagMask & SOLDIER_VIP)
+			return AI_RANK_GENERAL;
 
-	// Generic tactical troops top out at Colonel in 1.13. Reserve General for the
-	// rare case of a top-level soldier explicitly generated as a senior commander.
-	if (ubLeaderTraits >= 2 && pSoldier->stats.bExpLevel >= 10)
-		return AI_RANK_GENERAL;
+		if (pSoldier->usSoldierFlagMask & SOLDIER_ENEMY_OFFICER)
+			return NUM_SKILL_TRAITS(pSoldier, SQUADLEADER_NT) > 1 ? AI_RANK_CAPTAIN : AI_RANK_LIEUTENANT;
+	}
 
-	return ubRank;
+	// Experience-based EnemyRank.xml names are useful as an NCO ladder, but a high
+	// experience level alone must never create a Lieutenant/Major/Colonel command role.
+	// Formal officers are assigned above; ordinary veterans top out at Staff Sergeant.
+	return (UINT8)__max((INT32)AI_RANK_RECRUIT,
+		__min((INT32)AI_RANK_STAFF_SERGEANT, (INT32)pSoldier->stats.bExpLevel));
 }
 
 UINT8 AICommandAuthority(SOLDIERTYPE *pSoldier)
@@ -9696,15 +9694,15 @@ BOOLEAN AICheckIsNCO(SOLDIERTYPE *pSoldier)
 
 BOOLEAN AICheckIsLeader(SOLDIERTYPE *pSoldier)
 {
-	// Corporals/specialists are useful succession candidates, but a fireteam receives
-	// full command support from a Sergeant or above. Explicit Squadleader is already
-	// promoted to officer rank by AIGetCommandRank().
 	return AICommandAuthority(pSoldier) >= 2;
 }
 
 BOOLEAN AICheckIsOfficer(SOLDIERTYPE *pSoldier)
 {
-	return AIGetCommandRank(pSoldier) >= AI_RANK_LIEUTENANT;
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return FALSE;
+	EnsureEnemyCommandRoles();
+	return (pSoldier->usSoldierFlagMask & (SOLDIER_ENEMY_OFFICER | SOLDIER_VIP)) != 0;
 }
 
 BOOLEAN AICheckIsGLOperator(SOLDIERTYPE *pSoldier)
@@ -9742,7 +9740,10 @@ BOOLEAN AICheckIsGLOperator(SOLDIERTYPE *pSoldier)
 
 BOOLEAN AICheckIsCommander(SOLDIERTYPE *pSoldier)
 {
-	return AIGetCommandRank(pSoldier) >= AI_RANK_MAJOR;
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return FALSE;
+	UINT8 rank = AIGetCommandRank(pSoldier);
+	return rank == AI_RANK_GENERAL || rank == AI_RANK_CAPTAIN;
 }
 
 BOOLEAN AICheckIsMachinegunner(SOLDIERTYPE *pSoldier)
