@@ -8904,7 +8904,9 @@ BOOLEAN GuyKnowsEnemyPosition( SOLDIERTYPE * pSoldier )
 		}
 
 		// Only a current contact may disappear because of its live engine state.
-		if (bKnowledge == SEEN_CURRENTLY && !ValidOpponent(pSoldier, pOpponent))
+		if (PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0 &&
+			!ValidOpponent(pSoldier, pOpponent))
 			continue;
 
 		if (!TileIsOutOfBounds(KnownLocation(pSoldier, pOpponent->ubID)))
@@ -10407,7 +10409,9 @@ UINT8 CountKnownEnemiesInDirection(SOLDIERTYPE *pSoldier, UINT8 ubDirection, INT
 			continue;
 		}
 
-		if (bKnowledge == SEEN_CURRENTLY && !ValidOpponent(pSoldier, pOpponent))
+		if (PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0 &&
+			!ValidOpponent(pSoldier, pOpponent))
 		{
 			continue;
 		}
