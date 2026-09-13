@@ -407,7 +407,7 @@ std::string FindBestFittingLoadscreenFilename(const std::string& baseName, SCREE
 // depending on OS directory enumeration or on SectorLoadscreens.xml limits.
 static const INT32 REAL_CONFLICT_POOL_COUNT = 9;
 static const UINT32 REAL_CONFLICT_MAX_FILES_PER_POOL = 500;
-static const UINT32 REAL_CONFLICT_RECENT_HISTORY = 32;
+static const UINT32 REAL_CONFLICT_RECENT_HISTORY = 200;
 
 static const CHAR8* gRealConflictPoolCodes[REAL_CONFLICT_POOL_COUNT] =
 {
