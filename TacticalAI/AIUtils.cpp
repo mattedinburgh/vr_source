@@ -4259,28 +4259,38 @@ static UINT8 AIFireteamOperationalCountById(UINT8 ubFireteam)
 	return ubCount;
 }
 
+static BOOLEAN AIFireteamRegroupableMember(SOLDIERTYPE *pMember)
+{
+	return AIEnemyFireteamEligible(pMember) && pMember->ubID < MAX_NUM_SOLDIERS &&
+		pMember->stats.bLife >= OKLIFE && !pMember->bCollapsed && !pMember->bBreathCollapsed &&
+		!(pMember->usSoldierFlagMask & SOLDIER_POW);
+}
+
+static UINT8 AIFireteamRegroupableCountById(UINT8 ubFireteam)
+{
+	if (ubFireteam == AI_FIRETEAM_NONE)
+		return 0;
+
+	UINT8 ubCount = 0;
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
+	{
+		SOLDIERTYPE *pMember = MercPtrs[iCounter];
+		if (!AIFireteamRegroupableMember(pMember) ||
+			guiAIFireteamIdentity[pMember->ubID] != pMember->uiUniqueSoldierIdValue ||
+			gubAIFireteam[pMember->ubID] != ubFireteam)
+		{
+			continue;
+		}
+		++ubCount;
+	}
+	return ubCount;
+}
 static UINT8 AIFireteamRegroupingStrength(SOLDIERTYPE *pSoldier)
 {
 	if (!AIEnemyFireteamEligible(pSoldier))
 		return 0;
 
-	UINT8 ubFireteam = AIFireteamId(pSoldier);
-	if (ubFireteam == AI_FIRETEAM_NONE)
-		return 0;
-
-	UINT8 ubCount = AIFireteamOperationalCountById(ubFireteam);
-	// A soldier may already carry break-contact intent from the previous decision.
-	// Count that caller as part of the remnant it is trying to rejoin, while other
-	// retreating/cowering members remain excluded from operational strength.
-	if ((AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier)) &&
-		pSoldier->stats.bLife >= OKLIFE && !pSoldier->bCollapsed && !pSoldier->bBreathCollapsed &&
-		!(pSoldier->usSoldierFlagMask & SOLDIER_POW) &&
-		!(pSoldier->flags.uiStatusFlags & SOLDIER_COWERING))
-	{
-		++ubCount;
-	}
-
-	return ubCount;
+	return AIFireteamRegroupableCountById(AIFireteamId(pSoldier));
 }
 
 static INT32 AIFireteamDistanceToSpot(UINT8 ubFireteam, INT32 sSpot)
@@ -4544,8 +4554,8 @@ static UINT8 AISelectFireteamRemnantDestination(SOLDIERTYPE *pSoldier, UINT8 *pu
 		return AI_FIRETEAM_NONE;
 
 	UINT8 ubOld = AIFireteamId(pSoldier);
-	UINT8 ubReady = AIFireteamRegroupingStrength(pSoldier);
-	if (ubOld == AI_FIRETEAM_NONE || ubReady == 0 || ubReady > 2)
+	UINT8 ubRegroupable = AIFireteamRegroupingStrength(pSoldier);
+	if (ubOld == AI_FIRETEAM_NONE || ubRegroupable == 0 || ubRegroupable > 2)
 		return AI_FIRETEAM_NONE;
 
 	UINT8 ubBest = AI_FIRETEAM_NONE;
@@ -4554,14 +4564,19 @@ static UINT8 AISelectFireteamRemnantDestination(SOLDIERTYPE *pSoldier, UINT8 *pu
 
 	for (UINT8 ubTeam = 1; ubTeam < gubAINextFireteam; ++ubTeam)
 	{
-		if (gbAIFireteamTeam[ubTeam] != pSoldier->bTeam)
-			continue;
-		UINT8 ubTargetReady = AIFireteamOperationalCountById(ubTeam);
-		if (ubTeam == ubOld || ubTargetReady == 0)
+		if (gbAIFireteamTeam[ubTeam] != pSoldier->bTeam || ubTeam == ubOld)
 			continue;
 
-		if (ubTargetReady + ubReady < 3 ||
-			ubTargetReady + ubReady > AI_FIRETEAM_MAX_MERGED)
+		UINT8 ubTargetOperational = AIFireteamOperationalCountById(ubTeam);
+		UINT8 ubTargetRegroupable = AIFireteamRegroupableCountById(ubTeam);
+		if (ubTargetOperational == 0 || ubTargetRegroupable == 0)
+			continue;
+
+		// Capacity is based on all conscious/movable members, not just the ones who
+		// happen to be calm and fighting this exact turn. This prevents a suppressed
+		// six-man element from looking like a one-man team and producing a huge merge.
+		if (ubTargetRegroupable + ubRegroupable < 3 ||
+			ubTargetRegroupable + ubRegroupable > AI_FIRETEAM_MAX_MERGED)
 		{
 			continue;
 		}
@@ -4601,7 +4616,7 @@ static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
-		if (AIEnemyFireteamEligible(pFriend) && pFriend->ubID < MAX_NUM_SOLDIERS &&
+		if (AIFireteamRegroupableMember(pFriend) &&
 			guiAIFireteamIdentity[pFriend->ubID] == pFriend->uiUniqueSoldierIdValue &&
 			gubAIFireteam[pFriend->ubID] == ubOld)
 		{
@@ -4609,18 +4624,8 @@ static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 			guiAIFireteamRejoinUntilTurn[pFriend->ubID] = uiRejoinUntil;
 
 			// Reattachment supersedes an old break-contact/sector-flight decision.
-			// Without clearing these states, a soldier could be assigned to the new
-			// element yet continue executing the stale escape behaviour on his next turn.
 			AIClearDisengagementState(pFriend);
 			AIClearEscapeState(pFriend);
-
-			if (pFriend->bTeam == ENEMY_TEAM &&
-				pFriend->ubProfile == NO_PROFILE &&
-				pFriend->ubQuoteActionID >= QUOTE_ACTION_ID_TRAVERSE_EAST &&
-				pFriend->ubQuoteActionID <= QUOTE_ACTION_ID_TRAVERSE_NORTH)
-			{
-				pFriend->ubQuoteActionID = 0;
-			}
 		}
 	}
 	return TRUE;
