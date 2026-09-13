@@ -6894,6 +6894,9 @@ L_NEWAIM:
 					!TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
 					PythSpacesAway(pSoldier->aiData.usActionData, BestAttack.sTarget) < PythSpacesAway(pSoldier->sGridNo, BestAttack.sTarget) &&
 					LocationToLocationLineOfSightTest( pSoldier->aiData.usActionData, pSoldier->pathing.bLevel, BestAttack.sTarget, BestAttack.bTargetLevel, TRUE, CALC_FROM_ALL_DIRS ) &&
+					AIKnownRouteExposureAcceptable(
+						pSoldier, pSoldier->aiData.usActionData,
+						AI_ACTION_GET_CLOSER, 140, 70, 90) &&
 					AIAdvanceHasMutualSupport(pSoldier, pSoldier->aiData.usActionData, BestAttack.sTarget, BestAttack.bTargetLevel))
 				{
 					return( AI_ACTION_GET_CLOSER );
