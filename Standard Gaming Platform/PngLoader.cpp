@@ -760,6 +760,7 @@ bool LoadJPCFileToImage(HIMAGE hImage, UINT16 fContents)
 	}
 
 	bool bHasPalette = false;
+	bool bTrueColor = false;
 	std::vector<vfs::IBaseFile*>::iterator fit = vFiles.begin();
 	if(vFiles.size() == 1)
 	{
@@ -822,8 +823,6 @@ bool LoadJPCFileToImage(HIMAGE hImage, UINT16 fContents)
 		};
 
 		std::vector<TrueColorFrame> trueColorFrames;
-		bool bTrueColor = false;
-
 		for(int findex = 0; fit != vFiles.end(); ++fit, ++findex)
 		{
 			if(*fit == NULL)
