@@ -10394,6 +10394,7 @@ void HandleTakeDamageDeath( SOLDIERTYPE *pSoldier, UINT8 bOldLife, UINT8 ubReaso
 // Battlefield casualty audio
 // -----------------------------------------------------------------------------
 static UINT32 guiLastBattlefieldMedicCall = 0;
+static UINT32 guiLastEnemyBattlefieldReaction = 0;
 
 static BOOLEAN CanUseBattlefieldCasualtyVoice( SOLDIERTYPE *pSoldier )
 {
@@ -10428,6 +10429,82 @@ static SOLDIERTYPE *FindNearbyGenericMedicCaller( SOLDIERTYPE *pCasualty )
 		}
 	}
 	return pBest;
+}
+
+static BOOLEAN IsGenericEnemyArmyVoice( SOLDIERTYPE *pSoldier, BOOLEAN fRequireCombatCapable )
+{
+	if ( !pSoldier || !pSoldier->bActive || !pSoldier->bInSector )
+		return FALSE;
+	if ( pSoldier->flags.uiStatusFlags & ( SOLDIER_VEHICLE | SOLDIER_ROBOT | SOLDIER_MONSTER ) )
+		return FALSE;
+	if ( pSoldier->bTeam != ENEMY_TEAM || pSoldier->ubProfile != NO_PROFILE ||
+		!SOLDIER_CLASS_ENEMY( pSoldier->ubSoldierClass ) )
+		return FALSE;
+	if ( fRequireCombatCapable && ( pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ) )
+		return FALSE;
+	return TRUE;
+}
+
+static SOLDIERTYPE *FindNearbyEnemyArmyReactionCaller( SOLDIERTYPE *pSubject, INT16 sMaxDistance )
+{
+	SOLDIERTYPE *pBest = NULL;
+	INT16 sBestDistance = sMaxDistance + 1;
+	if ( !pSubject )
+		return NULL;
+
+	for ( INT32 cnt = 0; cnt < TOTAL_SOLDIERS; ++cnt )
+	{
+		SOLDIERTYPE *pOther = Menptr + cnt;
+		if ( pOther == pSubject || !IsGenericEnemyArmyVoice( pOther, TRUE ) ||
+			pOther->pathing.bLevel != pSubject->pathing.bLevel ||
+			pOther->bDeafenedCounter > 0 )
+			continue;
+
+		INT16 sDistance = PythSpacesAway( pOther->sGridNo, pSubject->sGridNo );
+		if ( sDistance <= sMaxDistance && sDistance < sBestDistance )
+		{
+			sBestDistance = sDistance;
+			pBest = pOther;
+		}
+	}
+	return pBest;
+}
+
+static void MaybePlayEnemyCasualtyReaction( SOLDIERTYPE *pCasualty, UINT32 uiNow )
+{
+	if ( !IsGenericEnemyArmyVoice( pCasualty, FALSE ) || pCasualty->stats.bLife <= 0 )
+		return;
+
+	// The wounded soldier already receives the native Spanish GOT_HIT_* taunt.
+	// Add only a nearby-team reaction here, using the semantically safe ALERT bank.
+	if ( ( uiNow - guiLastEnemyBattlefieldReaction ) <= 6500 || Random( 100 ) >= 50 )
+		return;
+
+	SOLDIERTYPE *pCaller = FindNearbyEnemyArmyReactionCaller( pCasualty, 14 );
+	if ( pCaller )
+	{
+		PossiblyStartEnemyTaunt( pCaller, TAUNT_ALERT );
+		guiLastEnemyBattlefieldReaction = uiNow;
+	}
+}
+
+// Called from the death-animation path.  This deliberately reuses the Spanish
+// Army ALERT bank until dedicated MAN_DOWN / MEDIC / HELP recordings exist.
+void BattlefieldVoiceNotifyEnemyManDown( SOLDIERTYPE *pDeadSoldier )
+{
+	if ( !IsGenericEnemyArmyVoice( pDeadSoldier, FALSE ) || pDeadSoldier->stats.bLife > 0 )
+		return;
+
+	UINT32 uiNow = GetJA2Clock();
+	if ( ( uiNow - guiLastEnemyBattlefieldReaction ) <= 6500 || Random( 100 ) >= 65 )
+		return;
+
+	SOLDIERTYPE *pCaller = FindNearbyEnemyArmyReactionCaller( pDeadSoldier, 16 );
+	if ( pCaller )
+	{
+		PossiblyStartEnemyTaunt( pCaller, TAUNT_ALERT );
+		guiLastEnemyBattlefieldReaction = uiNow;
+	}
 }
 
 static void MaybePlayBattlefieldCasualtyAudio( SOLDIERTYPE *pCasualty, INT8 bOldLife )
@@ -10466,6 +10543,11 @@ static void MaybePlayBattlefieldCasualtyAudio( SOLDIERTYPE *pCasualty, INT8 bOld
 		if ( pCaller && pCaller->DoMercBattleSound( BATTLE_SOUND_MEDIC ) )
 			guiLastBattlefieldMedicCall = uiNow;
 	}
+
+	// Enemy Army uses only its Spanish voice-taunt bank.  The casualty's native
+	// GOT_HIT_* taunt already supplies the personal reaction; this adds a nearby
+	// teammate response without introducing English battle-sound assets.
+	MaybePlayEnemyCasualtyReaction( pCasualty, uiNow );
 
 	// Nonfatal agony reuses DYING/BADx_DIE but does not consume the real death cue.
 	if ( Random( 100 ) < 70 )
