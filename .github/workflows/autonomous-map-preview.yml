@@ -112,8 +112,8 @@ jobs:
       - name: Prepare Vengeance render sandbox
         shell: powershell
         run: |
-          $gameRoot = 'C:\\VENGENCE\\Jagged Alliance 2'
-          $sandbox = 'C:\\VENGENCE\\JA2_RENDER_SANDBOX'
+          $gameRoot = 'C:\VENGENCE\Jagged Alliance 2'
+          $sandbox = 'C:\VENGENCE\JA2_RENDER_SANDBOX'
           $gamedir = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
           if (-not (Test-Path (Join-Path $gameRoot 'JA2_EN_Release.exe'))) { throw "Live JA2 game root not found: $gameRoot" }
 
@@ -131,7 +131,7 @@ jobs:
           $global:LASTEXITCODE = 0
 
           # Use the Vengeance editor identity and the actual Vengeance data stack.
-          $builtEditor = Join-Path $env:GITHUB_WORKSPACE 'bin\\VS2013\\MapEditor_EN_Release.exe'
+          $builtEditor = Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\MapEditor_EN_Release.exe'
           $editor = Join-Path $sandbox 'MapEditor_Vengeance.exe'
           Copy-Item -Force $builtEditor $editor
 
@@ -141,11 +141,11 @@ jobs:
           if (-not (Test-Path $vfsIni)) { throw "Missing Vengeance VFS config: $vfsIni" }
 
           $ja2Text = [System.IO.File]::ReadAllText($ja2Ini)
-          if ($ja2Text -notmatch '(?im)^\\s*VFS_CONFIG_INI\\s*=\\s*vfs_config\\.Vengeance\\.ini\\s*$') {
+          if ($ja2Text -notmatch '(?im)^\s*VFS_CONFIG_INI\s*=\s*vfs_config\.Vengeance\.ini\s*$') {
             throw 'Ja2.ini is not configured for vfs_config.Vengeance.ini.'
           }
           # Windowed sandbox only; the live installation is never modified.
-          $ja2Text = [regex]::Replace($ja2Text, '(?im)^\\s*SCREEN_MODE_WINDOWED\\s*=\\s*\\d+\\s*$', 'SCREEN_MODE_WINDOWED = 1')
+          $ja2Text = [regex]::Replace($ja2Text, '(?im)^\s*SCREEN_MODE_WINDOWED\s*=\s*\d+\s*$', 'SCREEN_MODE_WINDOWED = 1')
           [System.IO.File]::WriteAllText($ja2Ini, $ja2Text, (New-Object System.Text.UTF8Encoding($false)))
 
           $required = @('Data','Data-1.13','Data-Vengeance','Data-AIMv53','Data-Maps-Tiles','Data-PCM','Data-UI','Data-Weapon-Sounds','Data-Voice-Taunts','Data-Music')
@@ -160,7 +160,7 @@ jobs:
           $ddrawIni = Join-Path $sandbox 'ddraw.ini'
           if (Test-Path $ddrawIni) {
             $ddraw = [System.IO.File]::ReadAllText($ddrawIni)
-            $ddraw = [regex]::Replace($ddraw, '(?ims)^\\[MapEditor_Vengeance\\]\\s*.*?(?=^\\[|\\z)', '')
+            $ddraw = [regex]::Replace($ddraw, '(?ims)^\[MapEditor_Vengeance\]\s*.*?(?=^\[|\z)', '')
             $profileLines = @(
               '',
               '[MapEditor_Vengeance]',
@@ -188,7 +188,7 @@ jobs:
       - name: Render A3 through Vengeance MapEditor
         shell: powershell
         run: |
-          $sandbox = 'C:\\VENGENCE\\JA2_RENDER_SANDBOX'
+          $sandbox = 'C:\VENGENCE\JA2_RENDER_SANDBOX'
           $editor = Join-Path $sandbox 'MapEditor_Vengeance.exe'
           $previewDir = Join-Path $sandbox 'MAP_PREVIEWS'
           $statusFile = Join-Path $previewDir 'mapshot_status.txt'
@@ -248,7 +248,7 @@ jobs:
           if (-not (Test-Path $bmp)) {
             Write-Host '--- VENGEANCE RENDER DIAGNOSTICS ---'
             Get-ChildItem $sandbox -Recurse -File -ErrorAction SilentlyContinue |
-              Where-Object { $_.Name -match '(mapshot|blackbox|error|exception|debug|vfs|crash).*\\.(txt|log)$' } |
+              Where-Object { $_.Name -match '(mapshot|blackbox|error|exception|debug|vfs|crash).*\.(txt|log)$' } |
               Sort-Object LastWriteTime -Descending |
               Select-Object -First 40 FullName, Length, LastWriteTime |
               Format-Table -AutoSize
@@ -260,7 +260,7 @@ jobs:
           }
 
           Add-Type -AssemblyName System.Drawing
-          $outDir = Join-Path $env:GITHUB_WORKSPACE 'MapPreviews\\Auto'
+          $outDir = Join-Path $env:GITHUB_WORKSPACE 'MapPreviews\Auto'
           New-Item -ItemType Directory -Force -Path $outDir | Out-Null
           $png = Join-Path $outDir 'A3_latest.png'
           $img = [System.Drawing.Image]::FromFile($bmp)
