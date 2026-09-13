@@ -649,6 +649,113 @@ static UINT8 DetermineSectorVisualProfile( const STR8 pFilename )
 	return SECTOR_VISUAL_DEFAULT;
 }
 
+static UINT32 B1VisualHash( UINT32 value )
+{
+	value ^= value >> 16;
+	value *= 0x7feb352d;
+	value ^= value >> 15;
+	value *= 0x846ca68b;
+	value ^= value >> 16;
+	return value;
+}
+
+static BOOLEAN B1GridHasNeighbourStructure( INT32 sGridNo )
+{
+	if ( sGridNo < 0 || sGridNo >= WORLD_MAX )
+		return FALSE;
+
+	const INT32 sColumn = sGridNo % WORLD_COLS;
+	if ( sColumn > 0 && gpWorldLevelData[ sGridNo - 1 ].pStructHead != NULL )
+		return TRUE;
+	if ( sColumn + 1 < WORLD_COLS && gpWorldLevelData[ sGridNo + 1 ].pStructHead != NULL )
+		return TRUE;
+	if ( sGridNo >= WORLD_COLS && gpWorldLevelData[ sGridNo - WORLD_COLS ].pStructHead != NULL )
+		return TRUE;
+	if ( sGridNo + WORLD_COLS < WORLD_MAX && gpWorldLevelData[ sGridNo + WORLD_COLS ].pStructHead != NULL )
+		return TRUE;
+
+	return FALSE;
+}
+
+static void DressB1OilRigEnvironment( void )
+{
+	if ( gubSectorVisualProfile != SECTOR_VISUAL_ORONEGRO_OIL_RIG || gpWorldLevelData == NULL )
+		return;
+
+	UINT32 uiAdded = 0;
+
+	// Purely visual dressing. These are object-layer debris sprites with no
+	// structure/JSD insertion, so they do not alter cover, pathing, LOS,
+	// penetration, destructibility or the authored B1.dat.
+	for ( INT32 sGridNo = 0; sGridNo < WORLD_MAX && uiAdded < 120; ++sGridNo )
+	{
+		MAP_ELEMENT *pMap = &gpWorldLevelData[ sGridNo ];
+		if ( pMap->pLandHead == NULL )
+			continue;
+
+		// Never clutter roofs, occupied structural cells or already-decorated cells.
+		if ( pMap->pStructHead != NULL || pMap->pRoofHead != NULL ||
+			 pMap->pOnRoofHead != NULL || pMap->pObjectHead != NULL )
+			continue;
+
+		UINT32 uiLandType = 0;
+		if ( !GetTileType( pMap->pLandHead->usIndex, &uiLandType ) )
+			continue;
+
+		const BOOLEAN fHardstanding =
+			( uiLandType == ROADPIECES ) ||
+			( uiLandType >= FIRSTFLOOR && uiLandType <= LASTFLOOR );
+		const BOOLEAN fOpenGround =
+			( uiLandType >= FIRSTTEXTURE && uiLandType <= SEVENTHTEXTURE );
+
+		if ( !fHardstanding && !fOpenGround )
+			continue;
+
+		const BOOLEAN fNearStructure = B1GridHasNeighbourStructure( sGridNo );
+		const UINT32 uiHash = B1VisualHash( (UINT32)sGridNo ^ 0xB10F11u );
+
+		// Litter naturally accumulates beside buildings/loading areas. Keep the
+		// wider apron much cleaner so tactical readability is not compromised.
+		if ( fNearStructure )
+		{
+			if ( (uiHash % 59) != 0 )
+				continue;
+		}
+		else
+		{
+			if ( (uiHash % 307) != 0 )
+				continue;
+		}
+
+		UINT32 uiDebrisType;
+		switch ( (uiHash >> 8) & 3 )
+		{
+			case 0: uiDebrisType = DEBRISSAND; break; // Oil_Debris: industrial rubbish
+			case 1: uiDebrisType = DEBRISMISC; break;
+			case 2: uiDebrisType = DEBRISWOOD; break;
+			default: uiDebrisType = DEBRISROCKS; break;
+		}
+
+		UINT16 usTileIndex = NO_TILE;
+		const UINT16 usSubIndex = (UINT16)( 1 + ((uiHash >> 12) % 10) );
+		if ( !GetTileIndexFromTypeSubIndex( uiDebrisType, usSubIndex, &usTileIndex ) ||
+			 usTileIndex == NO_TILE || usTileIndex >= giNumberOfTiles )
+			continue;
+
+		LEVELNODE *pNode = AddObjectToTail( sGridNo, usTileIndex );
+		if ( pNode != NULL )
+		{
+			pNode->ubShadeLevel = LightGetAmbient();
+			pNode->ubNaturalShadeLevel = pNode->ubShadeLevel;
+			++uiAdded;
+		}
+	}
+
+	CHAR8 zDressing[96];
+	sprintf( zDressing, "visual litter objects=%lu non-structural", uiAdded );
+	TraceB1RemasterLoad( "ENVIRONMENT DRESSING", zDressing );
+}
+
 static BOOLEAN IsSectorVisualShadowType( UINT32 ubType )
 {
 	if ( ubType == FIRSTCLIFFSHADOW ||
@@ -4054,7 +4161,14 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 #endif
 	// ATE: Not while updating maps!
 	if(guiCurrentScreen != MAPUTILITY_SCREEN)
+	{
 		GenerateBuildings();
+
+		// Layer deterministic, non-structural environmental storytelling over the
+		// authored oil-rig map without touching B1.dat or any destruction geometry.
+		if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
+			DressB1OilRigEnvironment();
+	}
 	RenderProgressBar(0, 100);
 	DequeueAllKeyBoardEvents();
 	// Remove this rather large chunk of memory from the system now!
