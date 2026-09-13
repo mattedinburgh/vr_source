@@ -160,7 +160,10 @@ BOOLEAN gfWaitingForInput = FALSE;
 // static enemy counters, bypassing GroupArrivedAtSector(). Queue that destination
 // so defenders cannot silently coexist with the escaped force.
 static BOOLEAN gfPendingEnemyRetreatConflict[ MAP_WORLD_X ][ MAP_WORLD_Y ] = { FALSE };
-static BOOLEAN gfEnemyRetreatLockedSector[ MAP_WORLD_X ][ MAP_WORLD_Y ] = { FALSE };
+
+// Preserve the pursuit encounter classification while CheckConditionsForBattle()
+// builds PBI. Without this, the generic battle check resets it to NO_ENCOUNTER_CODE.
+static BOOLEAN gfPreserveRetreatConflictEncounterCode = FALSE;
 
 //Player grouping functions
 //.........................
@@ -1076,7 +1079,7 @@ BOOLEAN CheckConditionsForBattle( GROUP *pGroup )
 		}
 	}
 
-	if( !DidGameJustStart() )
+	if( !DidGameJustStart() && !gfPreserveRetreatConflictEncounterCode )
 	{
 		gubEnemyEncounterCode = NO_ENCOUNTER_CODE;
 	}
@@ -4538,7 +4541,7 @@ void QueueEnemyRetreatConflict( UINT8 ubSectorX, UINT8 ubSectorY )
 		return;
 
 	gfPendingEnemyRetreatConflict[ ubSectorX ][ ubSectorY ] = TRUE;
-	gfEnemyRetreatLockedSector[ ubSectorX ][ ubSectorY ] = TRUE;
+	SectorInfo[ SECTOR( ubSectorX, ubSectorY ) ].uiFlags |= SF_ENEMY_RETREAT_LOCKED;
 }
 
 BOOLEAN EnemyRetreatLockedInSector( UINT8 ubSectorX, UINT8 ubSectorY )
@@ -4547,7 +4550,19 @@ BOOLEAN EnemyRetreatLockedInSector( UINT8 ubSectorX, UINT8 ubSectorY )
 		ubSectorY < 1 || ubSectorY >= MAP_WORLD_Y - 1 )
 		return FALSE;
 
-	return gfEnemyRetreatLockedSector[ ubSectorX ][ ubSectorY ];
+	SECTORINFO *pSector = &SectorInfo[ SECTOR( ubSectorX, ubSectorY ) ];
+	if( !(pSector->uiFlags & SF_ENEMY_RETREAT_LOCKED) )
+		return FALSE;
+
+	// If the force vanished through some other strategic resolution, remove stale
+	// pursuit state before it can affect a later unrelated enemy force.
+	if( NumEnemiesInSector( ubSectorX, ubSectorY ) <= 0 )
+	{
+		pSector->uiFlags &= ~SF_ENEMY_RETREAT_LOCKED;
+		return FALSE;
+	}
+
+	return TRUE;
 }
 
 void ClearEnemyRetreatLockInSector( UINT8 ubSectorX, UINT8 ubSectorY )
@@ -4556,7 +4571,7 @@ void ClearEnemyRetreatLockInSector( UINT8 ubSectorX, UINT8 ubSectorY )
 		ubSectorY < 1 || ubSectorY >= MAP_WORLD_Y - 1 )
 		return;
 
-	gfEnemyRetreatLockedSector[ ubSectorX ][ ubSectorY ] = FALSE;
+	SectorInfo[ SECTOR( ubSectorX, ubSectorY ) ].uiFlags &= ~SF_ENEMY_RETREAT_LOCKED;
 }
 
 BOOLEAN ProcessNextEnemyRetreatConflict( void )
@@ -4578,7 +4593,7 @@ BOOLEAN ProcessNextEnemyRetreatConflict( void )
 			{
 				// The escaped force no longer exists; do not poison a future unrelated battle.
 				gfPendingEnemyRetreatConflict[ ubX ][ ubY ] = FALSE;
-				gfEnemyRetreatLockedSector[ ubX ][ ubY ] = FALSE;
+				SectorInfo[ SECTOR( ubX, ubY ) ].uiFlags &= ~SF_ENEMY_RETREAT_LOCKED;
 				continue;
 			}
 
@@ -4596,15 +4611,23 @@ BOOLEAN ProcessNextEnemyRetreatConflict( void )
 
 			if( fMercsPresent && pPlayerGroup )
 			{
-				// Use the normal PBI path: player may fight tactically or autoresolve,
-				// and militia already present in the sector joins normally.
-				if( CheckConditionsForBattle( pPlayerGroup ) )
+				// Escaped enemies are the attackers. Keep ENEMY_INVASION_CODE through
+				// PBI construction so mercs + militia get Fight OR Autoresolve, with
+				// the correct autoresolve encounter rules.
+				gubEnemyEncounterCode = ENEMY_INVASION_CODE;
+				gfPreserveRetreatConflictEncounterCode = TRUE;
+				BOOLEAN fBattleStarted = CheckConditionsForBattle( pPlayerGroup );
+				gfPreserveRetreatConflictEncounterCode = FALSE;
+
+				if( fBattleStarted )
 				{
 					gfPendingEnemyRetreatConflict[ ubX ][ ubY ] = FALSE;
 					return TRUE;
 				}
 
-				// Simultaneous-arrival logic may deliberately defer PBI.
+				// A simultaneous-arrival path may defer the battle. Keep the pursuit
+				// queued, but don't leak the special encounter code elsewhere.
+				gubEnemyEncounterCode = NO_ENCOUNTER_CODE;
 				return FALSE;
 			}
 
