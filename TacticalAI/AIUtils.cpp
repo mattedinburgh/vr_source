@@ -4266,6 +4266,38 @@ static BOOLEAN AIEnemyFireteamEligible(SOLDIERTYPE *pSoldier)
 		!(pSoldier->usSoldierFlagMask & SOLDIER_POW);
 }
 
+// When only a handful of operational fighters remain, treat them as one local
+// tactical element. This shares team-state/formation logic only; opponent
+// knowledge remains bounded by the existing personal/public knowledge checks.
+static UINT8 AICombatTeamOperationalCount(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || !AICombatTeam(pSoldier))
+		return 0;
+
+	UINT8 ubCount = 0;
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend))
+		{
+			continue;
+		}
+		++ubCount;
+	}
+	return ubCount;
+}
+
+static BOOLEAN AISmallUnitTeamMode(SOLDIERTYPE *pSoldier)
+{
+	UINT8 ubOperational = AICombatTeamOperationalCount(pSoldier);
+	return ubOperational >= 2 && ubOperational <= 5;
+}
+
 static BOOLEAN AIEnemyFixedMissionRole(SOLDIERTYPE *pSoldier)
 {
 	return pSoldier &&
@@ -4963,6 +4995,8 @@ UINT8 AIFireteamAliveCount(SOLDIERTYPE *pSoldier)
 UINT8 AIFireteamCombatReadyCount(SOLDIERTYPE *pSoldier)
 {
 	if (!AIEnemyFireteamEligible(pSoldier)) return 0;
+	if (AISmallUnitTeamMode(pSoldier))
+		return AICombatTeamOperationalCount(pSoldier);
 	UINT8 ubFireteam = AIFireteamId(pSoldier);
 	if (ubFireteam == AI_FIRETEAM_NONE) return 0;
 	UINT8 ubCount = 0;
@@ -4983,6 +5017,15 @@ BOOLEAN AISameFireteam(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend)
 {
 	if (!pSoldier || !pFriend || pSoldier->bTeam != pFriend->bTeam) return FALSE;
 	if (!AICombatTeam(pSoldier)) return TRUE;
+
+	// Two to five remaining fighters stop acting like unrelated mini-squads.
+	// This affects support/cohesion only; it does not donate hidden enemy knowledge.
+	if (AISmallUnitTeamMode(pSoldier) && pFriend->bActive && pFriend->bInSector &&
+		pFriend->stats.bLife > 0 && !(pFriend->usSoldierFlagMask & SOLDIER_POW))
+	{
+		return TRUE;
+	}
+
 	UINT8 ubMine = AIFireteamId(pSoldier);
 	return ubMine != AI_FIRETEAM_NONE && ubMine == AIFireteamId(pFriend);
 }
@@ -7252,6 +7295,9 @@ BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier)
 BOOLEAN AIAllowsComplexManeuver(SOLDIERTYPE *pSoldier)
 {
 	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM) return TRUE;
+	// Basic tactical competence is universal when a force is down to a small team.
+	// Experience still controls the more elaborate choices inside those systems.
+	if (AISmallUnitTeamMode(pSoldier)) return TRUE;
 	switch (AIGetDoctrineProfile(pSoldier))
 	{
 	case AI_DOCTRINE_SECURITY: return FALSE;
