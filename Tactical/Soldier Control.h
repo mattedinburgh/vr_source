@@ -395,6 +395,10 @@ enum
 
 #define SOLDIER_BATTLE_PARTICIPATION		0x01000000	//16777216	// campaign stats: soldier took part in this battle
 #define SOLDIER_RAISED_REDALERT				0x02000000	//33554432	// this (AI) soldier has raised red alert. Don't allow him to do so again this turn - either it already worked, or the signal is blocked
+#define SOLDIER_ENEMY_OFFICER				0x04000000	//67108864	// formal enemy officer (Lieutenant/Captain)
+// 0x08000000 intentionally left free for forward compatibility with newer 1.13.
+#define SOLDIER_VIP							0x10000000	//268435456	// enemy General / strategic VIP
+#define SOLDIER_BODYGUARD					0x20000000	//536870912	// assigned protector of an enemy General
 /*#define PLAYER_NET_3_LVL_3		0x04000000	//67108864
 #define PLAYER_NET_4_LVL_3		0x08000000	//134217728
 
