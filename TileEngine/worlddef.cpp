@@ -822,7 +822,32 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 	}
 
 	if ( fSectorReplacementRequested )
+	{
+		// Never allow a remaster STI to be silently truncated to the engine's tile-slot cap.
+		// A mismatched file is a broken B1 package and must fail visibly.
+		if ( TileSurf->vo == NULL || TileSurf->vo->usNumberOfObjects > gNumTilesPerType[ ubType ] )
+		{
+			UINT16 usObjects = ( TileSurf->vo != NULL ) ? TileSurf->vo->usNumberOfObjects : 0;
+			DeleteTileSurface( TileSurf );
+			FatalError( "B1 remaster asset has invalid frame count: %s (%u frames, engine capacity %u)",
+				cAdjustedFile, usObjects, gNumTilesPerType[ ubType ] );
+			return( FALSE );
+		}
+
+		// B1.dat currently references shoreline/depth transition frames up to these values.
+		// Reject under-filled water files too, rather than letting map tile references resolve incorrectly.
+		if ( ( ubType == REGWATERTEXTURE && TileSurf->vo->usNumberOfObjects < 44 ) ||
+			 ( ubType == DEEPWATERTEXTURE && TileSurf->vo->usNumberOfObjects < 35 ) )
+		{
+			UINT16 usObjects = TileSurf->vo->usNumberOfObjects;
+			DeleteTileSurface( TileSurf );
+			FatalError( "B1 remaster water asset is missing required transition frames: %s (%u frames)",
+				cAdjustedFile, usObjects );
+			return( FALSE );
+		}
+
 		fSectorReplacementLoaded = TRUE;
+	}
 
 	TileSurf->fType							= ubType;
 
