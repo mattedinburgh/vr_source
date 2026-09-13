@@ -5005,6 +5005,10 @@ void SOLDIERTYPE::SetSoldierGridNo( INT32 sNewGridNo, BOOLEAN fForceRemove )
 
 void SOLDIERTYPE::EVENT_FireSoldierWeapon( INT32 sTargetGridNo )
 {
+	// Offensive actions require the rescuer to release the casualty first.
+	if ( this->IsDraggingBleedoutCasualty() )
+		this->StopDraggingBleedoutCasualty();
+
 	INT16 sTargetXPos, sTargetYPos;
 	BOOLEAN		fDoFireRightAway = FALSE;
 
@@ -12517,6 +12521,10 @@ void SOLDIERTYPE::EVENT_SoldierBeginGiveItem( void )
 
 void SOLDIERTYPE::EVENT_SoldierBeginBladeAttack( INT32 sGridNo, UINT8 ubDirection )
 {
+	// Offensive actions require the rescuer to release the casualty first.
+	if ( this->IsDraggingBleedoutCasualty() )
+		this->StopDraggingBleedoutCasualty();
+
 	SOLDIERTYPE *pTSoldier;
 	//UINT32 uiMercFlags;
 	UINT16 usSoldierIndex;
@@ -12718,6 +12726,10 @@ void SOLDIERTYPE::EVENT_SoldierBeginBladeAttack( INT32 sGridNo, UINT8 ubDirectio
 
 void SOLDIERTYPE::EVENT_SoldierBeginPunchAttack( INT32 sGridNo, UINT8 ubDirection )
 {
+	// Offensive actions require the rescuer to release the casualty first.
+	if ( this->IsDraggingBleedoutCasualty() )
+		this->StopDraggingBleedoutCasualty();
+
 	BOOLEAN			fMartialArtist = FALSE;
 	SOLDIERTYPE *pTSoldier;
 	//UINT32 uiMercFlags;
@@ -13028,6 +13040,10 @@ void SOLDIERTYPE::EVENT_SoldierBeginPunchAttack( INT32 sGridNo, UINT8 ubDirectio
 
 void SOLDIERTYPE::EVENT_SoldierBeginKnifeThrowAttack( INT32 sGridNo, UINT8 ubDirection )
 {
+	// Offensive actions require the rescuer to release the casualty first.
+	if ( this->IsDraggingBleedoutCasualty() )
+		this->StopDraggingBleedoutCasualty();
+
 	// Increment the number of people busy doing stuff because of an attack
 	//if ( (gTacticalStatus.uiFlags & TURNBASED) && (gTacticalStatus.uiFlags & INCOMBAT) )
 	//{
