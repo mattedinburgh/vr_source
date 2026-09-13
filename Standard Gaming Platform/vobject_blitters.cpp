@@ -334,6 +334,16 @@ BOOLEAN BltTrueColorDataTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, 
 			ubGreen = TrueColorScaleChannel(ubGreen, usShadeScale);
 			ubBlue = TrueColorScaleChannel(ubBlue, usShadeScale);
 
+			// Dither the source colour before alpha compositing. This makes the
+			// dither contribution fade with transparency instead of adding
+			// full-strength checkerboard noise to nearly transparent pixels.
+			// Do not dither full-black shade level 15 back above black.
+			if(hSrcVObject->ubBitDepth == 32 && usShadeScale != 0 &&
+				(ubRed != 0 || ubGreen != 0 || ubBlue != 0))
+			{
+				TrueColorApplyRGB565Dither(&ubRed, &ubGreen, &ubBlue, iSourceX, iSourceY);
+			}
+
 			if(ubAlpha < 255)
 			{
 				const UINT32 uiDestRGB = GetRGBColor(*pDest);
@@ -344,13 +354,6 @@ BOOLEAN BltTrueColorDataTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, 
 				ubRed = (UINT8)(((UINT32)ubRed * ubAlpha + (UINT32)ubDestRed * uiInvAlpha + 127) / 255);
 				ubGreen = (UINT8)(((UINT32)ubGreen * ubAlpha + (UINT32)ubDestGreen * uiInvAlpha + 127) / 255);
 				ubBlue = (UINT8)(((UINT32)ubBlue * ubAlpha + (UINT32)ubDestBlue * uiInvAlpha + 127) / 255);
-			}
-
-			// Only dither genuine 32-bit source art. A 16-bit source has already
-			// been quantized to RGB565 and should remain bit-stable.
-			if(hSrcVObject->ubBitDepth == 32)
-			{
-				TrueColorApplyRGB565Dither(&ubRed, &ubGreen, &ubBlue, iSourceX, iSourceY);
 			}
 
 			*pDest = Get16BPPColor(FROMRGB(ubRed, ubGreen, ubBlue));
