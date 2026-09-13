@@ -66,6 +66,45 @@ static void MapPreviewPutLE32( UINT8 *p, UINT32 v )
 	p[3] = (UINT8)((v >> 24) & 0xff);
 }
 
+static BOOLEAN GetMapPreviewDirectory( CHAR8 *pOutDir, UINT32 uiOutSize )
+{
+	if ( pOutDir == NULL || uiOutSize < 32 )
+		return FALSE;
+
+	CHAR8 zExePath[MAX_PATH];
+	DWORD dwLen = GetModuleFileNameA( NULL, zExePath, MAX_PATH );
+	if ( dwLen == 0 || dwLen >= MAX_PATH )
+		return FALSE;
+
+	CHAR8 *pSlash = strrchr( zExePath, '\\' );
+	if ( pSlash == NULL )
+		return FALSE;
+	*pSlash = 0;
+
+	_snprintf( pOutDir, uiOutSize - 1, "%s\\MAP_PREVIEWS", zExePath );
+	pOutDir[uiOutSize - 1] = 0;
+	CreateDirectoryA( pOutDir, NULL );
+	return TRUE;
+}
+
+static void MapPreviewWriteStatus( const STR8 pText )
+{
+	CHAR8 zPreviewDir[MAX_PATH + 32];
+	if ( !GetMapPreviewDirectory( zPreviewDir, sizeof(zPreviewDir) ) )
+		return;
+
+	CHAR8 zStatus[MAX_PATH + 64];
+	_snprintf( zStatus, sizeof(zStatus) - 1, "%s\\mapshot_status.txt", zPreviewDir );
+	zStatus[sizeof(zStatus) - 1] = 0;
+
+	FILE *fp = fopen( zStatus, "a" );
+	if ( fp )
+	{
+		fprintf( fp, "%s\n", pText ? pText : "" );
+		fclose( fp );
+	}
+}
+
 // Export the engine's full overhead render before it is crushed down to the
 // 88x44 radar image. BMP is deliberately used here: no additional image codec
 // or dependency is needed in the legacy VS2013 editor build.
@@ -73,34 +112,46 @@ static BOOLEAN SaveEngineMapPreviewBMP( const STR8 pMapFilename, UINT32 uiSurfac
 	UINT16 usWidth, UINT16 usHeight )
 {
 	if ( pMapFilename == NULL || usWidth == 0 || usHeight == 0 )
-		return FALSE;
-
-	CHAR8 zBase[260];
-	strncpy( zBase, pMapFilename, sizeof(zBase) - 1 );
-	zBase[ sizeof(zBase) - 1 ] = 0;
-	for ( INT32 i = (INT32)strlen(zBase) - 1; i >= 0; --i )
 	{
-		if ( zBase[i] == '.' )
-		{
-			zBase[i] = 0;
-			break;
-		}
-		if ( zBase[i] == '\\' || zBase[i] == '/' )
-			break;
+		MapPreviewWriteStatus( "SAVE_FAIL invalid arguments" );
+		return FALSE;
 	}
 
-	CHAR8 zPreviewDir[260];
-	sprintf( zPreviewDir, "MAP_PREVIEWS" );
-	if ( !DirectoryExists( zPreviewDir ) )
-		MakeFileManDirectory( zPreviewDir );
+	// Keep only the file name. GetFileFirst() implementations are allowed to
+	// return either a leaf name or a relative path.
+	const CHAR8 *pLeaf = pMapFilename;
+	const CHAR8 *pBackslash = strrchr( pMapFilename, '\\' );
+	const CHAR8 *pSlash = strrchr( pMapFilename, '/' );
+	if ( pBackslash && pBackslash + 1 > pLeaf )
+		pLeaf = pBackslash + 1;
+	if ( pSlash && pSlash + 1 > pLeaf )
+		pLeaf = pSlash + 1;
 
-	CHAR8 zOutput[320];
-	sprintf( zOutput, "MAP_PREVIEWS\\%s_overview.bmp", zBase );
+	CHAR8 zBase[260];
+	strncpy( zBase, pLeaf, sizeof(zBase) - 1 );
+	zBase[ sizeof(zBase) - 1 ] = 0;
+	CHAR8 *pDot = strrchr( zBase, '.' );
+	if ( pDot )
+		*pDot = 0;
+
+	CHAR8 zPreviewDir[MAX_PATH + 32];
+	if ( !GetMapPreviewDirectory( zPreviewDir, sizeof(zPreviewDir) ) )
+	{
+		MapPreviewWriteStatus( "SAVE_FAIL cannot resolve executable preview directory" );
+		return FALSE;
+	}
+
+	CHAR8 zOutput[MAX_PATH + 320];
+	_snprintf( zOutput, sizeof(zOutput) - 1, "%s\\%s_overview.bmp", zPreviewDir, zBase );
+	zOutput[sizeof(zOutput) - 1] = 0;
 
 	UINT32 uiPitchBytes = 0;
 	UINT16 *pSrc = (UINT16*)LockVideoSurface( uiSurface, &uiPitchBytes );
 	if ( pSrc == NULL )
+	{
+		MapPreviewWriteStatus( "SAVE_FAIL LockVideoSurface returned NULL" );
 		return FALSE;
+	}
 
 	const UINT32 uiRowBytes = ( (UINT32)usWidth * 3u + 3u ) & ~3u;
 	const UINT32 uiImageBytes = uiRowBytes * (UINT32)usHeight;
@@ -110,6 +161,7 @@ static BOOLEAN SaveEngineMapPreviewBMP( const STR8 pMapFilename, UINT32 uiSurfac
 	if ( fp == NULL )
 	{
 		UnLockVideoSurface( uiSurface );
+		MapPreviewWriteStatus( "SAVE_FAIL fopen output BMP" );
 		return FALSE;
 	}
 
@@ -127,16 +179,24 @@ static BOOLEAN SaveEngineMapPreviewBMP( const STR8 pMapFilename, UINT32 uiSurfac
 	MapPreviewPutLE32( &header[34], uiImageBytes );
 	MapPreviewPutLE32( &header[38], 2835 );
 	MapPreviewPutLE32( &header[42], 2835 );
-	fwrite( header, 1, sizeof(header), fp );
+	if ( fwrite( header, 1, sizeof(header), fp ) != sizeof(header) )
+	{
+		fclose( fp );
+		UnLockVideoSurface( uiSurface );
+		MapPreviewWriteStatus( "SAVE_FAIL BMP header write" );
+		return FALSE;
+	}
 
 	UINT8 *pRow = (UINT8*)MemAlloc( uiRowBytes );
 	if ( pRow == NULL )
 	{
 		fclose( fp );
 		UnLockVideoSurface( uiSurface );
+		MapPreviewWriteStatus( "SAVE_FAIL row allocation" );
 		return FALSE;
 	}
 
+	BOOLEAN fWriteOK = TRUE;
 	for ( INT32 y = (INT32)usHeight - 1; y >= 0; --y )
 	{
 		memset( pRow, 0, uiRowBytes );
@@ -148,13 +208,19 @@ static BOOLEAN SaveEngineMapPreviewBMP( const STR8 pMapFilename, UINT32 uiSurfac
 			pRow[x * 3 + 1] = (UINT8)SGPGetGValue( uiRGB );
 			pRow[x * 3 + 2] = (UINT8)SGPGetRValue( uiRGB );
 		}
-		fwrite( pRow, 1, uiRowBytes, fp );
+		if ( fwrite( pRow, 1, uiRowBytes, fp ) != uiRowBytes )
+		{
+			fWriteOK = FALSE;
+			break;
+		}
 	}
 
 	MemFree( pRow );
 	fclose( fp );
 	UnLockVideoSurface( uiSurface );
-	return TRUE;
+
+	MapPreviewWriteStatus( fWriteOK ? "SAVE_OK engine overview BMP written" : "SAVE_FAIL BMP pixel write" );
+	return fWriteOK;
 }
 
 void GenerateAllMapsInit(void)
@@ -176,27 +242,43 @@ BOOLEAN GenerateSingleMapPreviewInit( STR8 pMapFile )
 {
 	GETFILESTRUCT FileInfo;
 	CHAR8 zMapPath[320];
+	CHAR8 zMapName[260];
 
 	TrashFDlgList( FileList );
 	FileList = FListNode = NULL;
 	gfMapPreviewCaptureMode = TRUE;
+	MapPreviewWriteStatus( "INIT mapshot requested" );
 
 	if ( pMapFile == NULL || pMapFile[0] == 0 )
 	{
 		gfMapPreviewCaptureMode = FALSE;
+		MapPreviewWriteStatus( "INIT_FAIL empty map name" );
 		return FALSE;
 	}
 
-	sprintf( zMapPath, "MAPS\\%s", pMapFile );
+	// Accept extra command-line switches after the file name, e.g.
+	// -MAPSHOT=A3.dat /WINDOW /NOSOUND.
+	UINT32 i = 0;
+	while ( pMapFile[i] && pMapFile[i] != ' ' && pMapFile[i] != '\t' && i < sizeof(zMapName) - 1 )
+	{
+		zMapName[i] = pMapFile[i];
+		++i;
+	}
+	zMapName[i] = 0;
+
+	_snprintf( zMapPath, sizeof(zMapPath) - 1, "MAPS\\%s", zMapName );
+	zMapPath[sizeof(zMapPath) - 1] = 0;
 	if ( !GetFileFirst( zMapPath, &FileInfo ) )
 	{
 		gfMapPreviewCaptureMode = FALSE;
+		MapPreviewWriteStatus( "INIT_FAIL map not found through VFS" );
 		return FALSE;
 	}
 
 	FileList = AddToFDlgList( FileList, &FileInfo );
 	GetFileClose( &FileInfo );
 	FListNode = FileList;
+	MapPreviewWriteStatus( FListNode ? "INIT_OK map queued" : "INIT_FAIL map queue empty" );
 	return ( FListNode != NULL );
 }
 
@@ -334,9 +416,21 @@ UINT32 MapUtilScreenHandle(void)
 
 	// Preserve the full engine-rendered sector for visual QA before radar-map
 	// downsampling destroys the detail we need to inspect.
-	SaveEngineMapPreviewBMP( zFilename, guiBigMap,
+	const BOOLEAN fPreviewSaved = SaveEngineMapPreviewBMP( zFilename, guiBigMap,
 		(UINT16)(640 * WORLD_COLS / OLD_WORLD_COLS),
 		(UINT16)(320 * WORLD_ROWS / OLD_WORLD_ROWS) );
+
+	// MAPSHOT is a single-purpose automation path. Do not spend another pass
+	// generating/quantizing the tiny radar STI; stop immediately after the
+	// full engine overview is on disk. The workflow validates the file itself.
+	if ( gfMapPreviewCaptureMode )
+	{
+		TrashOverheadMap();
+		FListNode = NULL;
+		gfProgramIsRunning = FALSE;
+		MapPreviewWriteStatus( fPreviewSaved ? "DONE success" : "DONE failure" );
+		return MAPUTILITY_SCREEN;
+	}
 
 	TrashOverheadMap();
 	// OK, NOW PROCESS OVERHEAD MAP ( SHOULD BE ON THE FRAMEBUFFER )
