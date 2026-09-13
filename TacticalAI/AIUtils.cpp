@@ -4224,6 +4224,31 @@ static UINT8 AIFireteamCountById(UINT8 ubFireteam, BOOLEAN fReadyOnly)
 	return ubCount;
 }
 
+static UINT8 AIFireteamOperationalCountById(UINT8 ubFireteam)
+{
+	if (ubFireteam == AI_FIRETEAM_NONE)
+		return 0;
+
+	UINT8 ubCount = 0;
+	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!AIEnemyFireteamEligible(pFriend) || pFriend->ubID >= MAX_NUM_SOLDIERS ||
+			guiAIFireteamIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
+			gubAIFireteam[pFriend->ubID] != ubFireteam ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend))
+		{
+			continue;
+		}
+		++ubCount;
+	}
+	return ubCount;
+}
+
 static INT32 AIFireteamDistanceToSpot(UINT8 ubFireteam, INT32 sSpot)
 {
 	INT32 iBest = 10000;
@@ -4584,7 +4609,10 @@ static INT32 AIFireteamMergeDistance(UINT8 ubFirst, UINT8 ubSecond)
 			gubAIFireteam[pFirst->ubID] != ubFirst ||
 			pFirst->stats.bLife < OKLIFE ||
 			pFirst->bCollapsed ||
-			pFirst->bBreathCollapsed)
+			pFirst->bBreathCollapsed ||
+			(pFirst->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFirst->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			AIDisengagementActive(pFirst) || AIEscapeActive(pFirst))
 		{
 			continue;
 		}
@@ -4599,7 +4627,10 @@ static INT32 AIFireteamMergeDistance(UINT8 ubFirst, UINT8 ubSecond)
 				gubAIFireteam[pSecond->ubID] != ubSecond ||
 				pSecond->stats.bLife < OKLIFE ||
 				pSecond->bCollapsed ||
-				pSecond->bBreathCollapsed)
+				pSecond->bBreathCollapsed ||
+				(pSecond->usSoldierFlagMask & SOLDIER_POW) ||
+				(pSecond->flags.uiStatusFlags & SOLDIER_COWERING) ||
+				AIDisengagementActive(pSecond) || AIEscapeActive(pSecond))
 			{
 				continue;
 			}
@@ -4620,7 +4651,7 @@ static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 	if (!AIEnemyFireteamEligible(pSoldier))
 		return FALSE;
 	UINT8 ubOld = AIFireteamId(pSoldier);
-	UINT8 ubReady = AIFireteamCountById(ubOld, TRUE);
+	UINT8 ubReady = AIFireteamOperationalCountById(ubOld);
 	if (ubReady == 0 || ubReady > 2)
 		return FALSE;
 
@@ -4630,7 +4661,7 @@ static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 
 	for (UINT8 ubTeam = 1; ubTeam < gubAINextFireteam; ++ubTeam)
 	{
-		UINT8 ubTargetReady = AIFireteamCountById(ubTeam, TRUE);
+		UINT8 ubTargetReady = AIFireteamOperationalCountById(ubTeam);
 		if (ubTeam == ubOld || ubTargetReady == 0)
 			continue;
 
