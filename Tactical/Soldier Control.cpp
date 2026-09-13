@@ -5809,6 +5809,41 @@ UINT16 PickSoldierReadyAnimation( SOLDIERTYPE *pSoldier, BOOLEAN fEndReady, BOOL
 	return( INVALID_ANIMATION );
 }
 
+// VR enhanced gore: spawn one directional animated spray layer.  The direction is
+// the exit direction (away from the attacker), and ubOffsetPercent pushes later
+// spray layers farther behind the victim without creating persistent decals.
+static void SpawnVRDirectionalGoreSpray( SOLDIERTYPE *pSoldier, const CHAR8 *zFilename, UINT8 ubSprayDirection, INT16 sZ, INT16 sDelay, UINT8 ubOffsetPercent )
+{
+	if ( pSoldier == NULL || pSoldier->bVisible == -1 || !GridNoOnScreen( pSoldier->sGridNo ) )
+		return;
+
+	ANITILE_PARAMS AniParams;
+	memset( &AniParams, 0, sizeof( ANITILE_PARAMS ) );
+	AniParams.sGridNo = pSoldier->sGridNo;
+	AniParams.ubLevelID = ANI_TOPMOST_LEVEL;
+	AniParams.sDelay = sDelay;
+	AniParams.sStartFrame = 0;
+	AniParams.uiFlags = ANITILE_CACHEDTILE | ANITILE_FORWARD | ANITILE_NOZBLITTER | ANITILE_USE_DIRECTION_FOR_START_FRAME;
+	AniParams.uiUserData3 = ubSprayDirection;
+	ConvertGridNoToCenterCellXY( pSoldier->sGridNo, &AniParams.sX, &AniParams.sY );
+	AniParams.sZ = sZ;
+
+	if ( ubOffsetPercent > 0 )
+	{
+		INT32 sRearGridNo = NewGridNo( pSoldier->sGridNo, DirectionInc( ubSprayDirection ) );
+		if ( !TileIsOutOfBounds( sRearGridNo ) && sRearGridNo != pSoldier->sGridNo )
+		{
+			INT16 sRearX, sRearY;
+			ConvertGridNoToCenterCellXY( sRearGridNo, &sRearX, &sRearY );
+			AniParams.sX = (INT16)( AniParams.sX + ( ( sRearX - AniParams.sX ) * ubOffsetPercent ) / 100 );
+			AniParams.sY = (INT16)( AniParams.sY + ( ( sRearY - AniParams.sY ) * ubOffsetPercent ) / 100 );
+		}
+	}
+
+	strcpy( AniParams.zCachedFile, zFilename );
+	CreateAnimationTile( &AniParams );
+}
+
 // 0verhaul:  These routines are obsolete.  Just call ReduceAttackBusyCount to reduce the ABC or
 // FreeUpAttacker to abort the current action.
 // extern SOLDIERTYPE * FreeUpAttackerGivenTarget( UINT8 ubID, UINT8 ubTargetID );
@@ -6177,16 +6212,17 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 	// DEDUCT LIFE
 	ubCombinedLoss = this->SoldierTakeDamage( ANIM_CROUCH, sDamage, poisondamage, sBreathLoss, ubReason, this->ubAttackerID, NOWHERE, FALSE, TRUE );
 
-	// VR enhanced gore: every damaging conventional gunshot produces an immediate
-	// visible blood splash, including 1 HP hits. This impact effect is deliberately
-	// independent of the legacy Blood & Gore option; the option still controls the
-	// engine's persistent floor-blood rendering.
+	// VR directional gore: every conventional gunshot doing at least 1 HP of damage
+	// creates an animated exit spray behind the victim. No probability roll is used
+	// in this first brutal baseline; balance can be added after visual testing.
 	if ( ubReason == TAKE_DAMAGE_GUNFIRE &&
 		sDamage >= 1 &&
 		this->bInSector &&
 		!( this->flags.uiStatusFlags & ( SOLDIER_VEHICLE | SOLDIER_ROBOT ) ) )
 	{
 		UINT8 ubBloodStrength = 3;
+		UINT8 ubSprayDirection = gOppositeDirection[ (UINT8)bDirection ];
+		INT16 sGoreZ = 30;
 
 		if ( sDamage >= 30 )
 			ubBloodStrength = MAXBLOODQUANTITY;
@@ -6197,36 +6233,35 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 		else if ( sDamage >= 12 )
 			ubBloodStrength = 4;
 
-		// Retain persistent blood for users with the normal Blood & Gore option enabled.
+		// Keep the normal persistent blood system as aftermath, but the visible hit
+		// feedback now comes from animated directional spray rather than decals.
 		DropBlood( this, ubBloodStrength, this->bVisible );
 
-		// Immediate impact animation. Use a purpose-built red splash instead of the
-		// legacy SPRAY.STI, which is only a tiny grey impact/spark effect.
-		if ( this->bVisible != -1 && GridNoOnScreen( this->sGridNo ) )
+		if ( ubHitLocation == AIM_SHOT_HEAD )
+			sGoreZ = 50;
+		else if ( ubHitLocation == AIM_SHOT_LEGS )
+			sGoreZ = 14;
+
+		if ( gAnimControl[ this->usAnimState ].ubEndHeight == ANIM_CROUCH && sGoreZ > 30 )
+			sGoreZ = 30;
+		else if ( gAnimControl[ this->usAnimState ].ubEndHeight == ANIM_PRONE )
+			sGoreZ = 10;
+
+		if ( ubHitLocation == AIM_SHOT_HEAD || sDamage >= 18 )
 		{
-			ANITILE_PARAMS AniParams;
-			memset( &AniParams, 0, sizeof( ANITILE_PARAMS ) );
-			AniParams.sGridNo = this->sGridNo;
-			AniParams.ubLevelID = ANI_TOPMOST_LEVEL;
-			AniParams.sDelay = 55;
-			AniParams.sStartFrame = 0;
-			AniParams.uiFlags = ANITILE_CACHEDTILE | ANITILE_FORWARD | ANITILE_NOZBLITTER;
-			ConvertGridNoToCenterCellXY( this->sGridNo, &AniParams.sX, &AniParams.sY );
-
-			// Put the splash at approximately the struck body region.
-			AniParams.sZ = 28;
-			if ( ubHitLocation == AIM_SHOT_HEAD )
-				AniParams.sZ = 48;
-			else if ( ubHitLocation == AIM_SHOT_LEGS )
-				AniParams.sZ = 12;
-
-			if ( gAnimControl[ this->usAnimState ].ubEndHeight == ANIM_CROUCH )
-				AniParams.sZ = __min( AniParams.sZ, (INT16)28 );
-			else if ( gAnimControl[ this->usAnimState ].ubEndHeight == ANIM_PRONE )
-				AniParams.sZ = 10;
-
-			strcpy( AniParams.zCachedFile, "TILECACHE\\VR_BLOOD_IMPACT.STI" );
-			CreateAnimationTile( &AniParams );
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubSprayDirection, sGoreZ, 42, 0 );
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubSprayDirection, (INT16)( sGoreZ - 3 ), 50, 30 );
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 6 ), 58, 55 );
+		}
+		else if ( sDamage >= 8 )
+		{
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubSprayDirection, sGoreZ, 46, 0 );
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 4 ), 55, 38 );
+		}
+		else
+		{
+			// Even a one-point wound gets a clearly visible exit spray.
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, sGoreZ, 48, 0 );
 		}
 	}
 
