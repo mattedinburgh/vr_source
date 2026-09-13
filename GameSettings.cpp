@@ -1623,6 +1623,17 @@ void LoadGameExternalOptions()
 
 	//################# Tactical Weather Settings ##################
 
+	// Advanced weather modernization. It is deliberately OFF by default so this
+	// branch remains safe to build without changing legacy campaign behaviour.
+	gGameExternalOptions.gfEnableAdvancedWeather					= iniReader.ReadBoolean("Tactical Weather Settings","ENABLE_ADVANCED_WEATHER",FALSE);
+	gGameExternalOptions.gfEnableLocalWeather						= iniReader.ReadBoolean("Tactical Weather Settings","ENABLE_LOCAL_WEATHER",TRUE);
+	gGameExternalOptions.gfEnableWeatherAIEffects					= iniReader.ReadBoolean("Tactical Weather Settings","ENABLE_WEATHER_AI_EFFECTS",TRUE);
+	gGameExternalOptions.gfEnableWeatherSmokeEffects				= iniReader.ReadBoolean("Tactical Weather Settings","ENABLE_WEATHER_SMOKE_EFFECTS",TRUE);
+	gGameExternalOptions.gfEnableWeatherWeaponEffects			= iniReader.ReadBoolean("Tactical Weather Settings","ENABLE_WEATHER_WEAPON_EFFECTS",TRUE);
+	gGameExternalOptions.gfEnableFog								= iniReader.ReadBoolean("Tactical Weather Settings","ENABLE_FOG",TRUE);
+	gGameExternalOptions.gfEnableDustStorms						= iniReader.ReadBoolean("Tactical Weather Settings","ENABLE_DUST_STORMS",FALSE);
+	gGameExternalOptions.uiAdvancedWeatherUpdateMinutes			= iniReader.ReadInteger("Tactical Weather Settings","ADVANCED_WEATHER_UPDATE_MINUTES",10, 1, 60);
+
 	gGameExternalOptions.ubVisDistDecreasePerRainIntensity				= iniReader.ReadInteger("Tactical Weather Settings","VISUAL_DISTANCE_DECREASE_PER_RAIN_INTENSITY",30, 0, 100);
 
 	// Rain settings
