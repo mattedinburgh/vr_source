@@ -402,7 +402,7 @@ static BOOLEAN gfBattleLogInspectorVisible = FALSE;
 
 static INT16 gsBattleLogX = 6;
 static INT16 gsBattleLogY = -1;
-static INT16 gsBattleLogW = 380;
+static INT16 gsBattleLogW = 330;
 static INT16 gsBattleLogH = 108;
 
 static INT16 gsBattleLogStartMouseX = 0;
@@ -485,11 +485,19 @@ static UINT32 BattleLogFirstVisibleSequence( UINT32 *pEndExclusive )
 
 static void BattleLogClampGeometry( void )
 {
-	gsBattleLogW = __max( 320, __min( gsBattleLogW, (INT16)__min(720, SCREEN_WIDTH - 8) ) );
+	gsBattleLogW = __max( 220, __min( gsBattleLogW, (INT16)__min(720, SCREEN_WIDTH - 8) ) );
 	gsBattleLogH = __max( 82, __min( gsBattleLogH, (INT16)__min(300, SCREEN_HEIGHT - 8) ) );
 
 	if ( gsBattleLogY < 0 )
-		gsBattleLogY = (INT16)__max( 2, SCREEN_HEIGHT - gsBattleLogH - 4 );
+	{
+		// Prefer the lower-left widescreen strip created by the right-aligned HUD.
+		// On narrower resolutions, where that strip is too small, sit directly
+		// above the tactical interface instead of covering merc portraits.
+		if ( INTERFACE_START_X >= gsBattleLogX + gsBattleLogW + 6 )
+			gsBattleLogY = (INT16)__max( 2, SCREEN_HEIGHT - gsBattleLogH - 4 );
+		else
+			gsBattleLogY = (INT16)__max( 2, INTERFACE_START_Y - gsBattleLogH - 4 );
+	}
 
 	gsBattleLogX = __max( 2, __min( gsBattleLogX, (INT16)(SCREEN_WIDTH - gsBattleLogW - 2) ) );
 	gsBattleLogY = __max( 2, __min( gsBattleLogY, (INT16)(SCREEN_HEIGHT - gsBattleLogH - 2) ) );
