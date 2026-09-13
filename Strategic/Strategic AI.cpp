@@ -3272,19 +3272,26 @@ void EvaluateQueenSituation()
 	// This can increase the decision intervals by up to 500 extra minutes (> 8 hrs)
 	uiOffset = max( 100 - giRequestPoints, 0);
 	uiOffset = uiOffset + Random( uiOffset * 4 );
+
+	// 1.13 intent: living Generals represent operational planning capacity. Their
+	// effect is strategic only; eliminating them makes the Queen react more slowly.
+	FLOAT dGeneralDecisionFactor = 1.0f;
+	if (gGameExternalOptions.fEnemyRoles && gGameExternalOptions.fEnemyGenerals)
+		dGeneralDecisionFactor = max(0.5f, 1.0f - CountActiveEnemyGenerals() * gGameExternalOptions.fEnemyGeneralStrategicDecisionSpeedBonus);
+
 	switch( gGameOptions.ubDifficultyLevel )
 	{
 		case DIF_LEVEL_EASY:
-			uiOffset += gGameExternalOptions.ubEasyTimeEvaluateInMinutes + Random( gGameExternalOptions.ubEasyTimeEvaluateVariance );
+			uiOffset += (UINT32)(dGeneralDecisionFactor * (gGameExternalOptions.ubEasyTimeEvaluateInMinutes + Random( gGameExternalOptions.ubEasyTimeEvaluateVariance )));
 			break;
 		case DIF_LEVEL_MEDIUM:
-			uiOffset += gGameExternalOptions.ubNormalTimeEvaluateInMinutes + Random( gGameExternalOptions.ubNormalTimeEvaluateVariance );
+			uiOffset += (UINT32)(dGeneralDecisionFactor * (gGameExternalOptions.ubNormalTimeEvaluateInMinutes + Random( gGameExternalOptions.ubNormalTimeEvaluateVariance )));
 			break;
 		case DIF_LEVEL_HARD:
-			uiOffset += gGameExternalOptions.ubHardTimeEvaluateInMinutes + Random( gGameExternalOptions.ubHardTimeEvaluateVariance );
+			uiOffset += (UINT32)(dGeneralDecisionFactor * (gGameExternalOptions.ubHardTimeEvaluateInMinutes + Random( gGameExternalOptions.ubHardTimeEvaluateVariance )));
 			break;
 		case DIF_LEVEL_INSANE:
-			uiOffset += gGameExternalOptions.ubInsaneTimeEvaluateInMinutes + Random( gGameExternalOptions.ubInsaneTimeEvaluateVariance );
+			uiOffset += (UINT32)(dGeneralDecisionFactor * (gGameExternalOptions.ubInsaneTimeEvaluateInMinutes + Random( gGameExternalOptions.ubInsaneTimeEvaluateVariance )));
 			break;
 	}
 
