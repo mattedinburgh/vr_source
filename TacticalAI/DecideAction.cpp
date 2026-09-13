@@ -1306,7 +1306,8 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 			if( ubPerson != NOBODY &&
 				pSoldier->pathing.bLevel == MercPtrs[ubPerson]->pathing.bLevel &&
 				pSoldier->CanInspect( MercPtrs[ubPerson] ) &&
-				Random(100) < MercPtrs[ubPerson]->SuspicionPercent() )
+				MercPtrs[ubPerson]->SuspicionPercent() >= 50 &&
+				Random(100) < (MercPtrs[ubPerson]->SuspicionPercent() - 25) )
 			{
 				UINT8 ubFriendsNearby = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE/4);
 				UINT8 ubSoldierDifficulty = SoldierDifficultyLevel(pSoldier);				
@@ -1317,8 +1318,9 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 				if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
 				{
 					// sevenfm: raise alert first if this soldier is not the person who raised alert last
-					// chance to raise alert 30%
-					if( pSoldier->bActionPoints >= APBPConstants[AP_RADIO] &&
+					// only escalate locally suspicious behaviour once suspicion is high; investigation comes first
+					if( MercPtrs[ubPerson]->SuspicionPercent() >= 75 &&
+						pSoldier->bActionPoints >= APBPConstants[AP_RADIO] &&
 						gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1 &&
 						pSoldier->ubID != gTacticalStatus.Team[pSoldier->bTeam].ubLastMercToRadio &&
 						ubFriendsNearby < 1 + ubSoldierDifficulty &&
@@ -2030,7 +2032,8 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 			if( ubPerson != NOBODY &&
 				pSoldier->pathing.bLevel == MercPtrs[ubPerson]->pathing.bLevel &&
 				pSoldier->CanInspect( MercPtrs[ubPerson] ) &&
-				Random(100) < MercPtrs[ubPerson]->SuspicionPercent() )
+				MercPtrs[ubPerson]->SuspicionPercent() >= 50 &&
+				Random(100) < (MercPtrs[ubPerson]->SuspicionPercent() - 25) )
 			{
 				UINT8 ubFriendsNearby = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE/4);
 				UINT8 ubSoldierDifficulty = SoldierDifficultyLevel(pSoldier);				
@@ -2041,8 +2044,9 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 				if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
 				{
 					// sevenfm: raise alert first if this soldier is not the person who raised alert last
-					// chance to raise alert 30%
-					if( pSoldier->bActionPoints >= APBPConstants[AP_RADIO] &&
+					// only escalate locally suspicious behaviour once suspicion is high; investigation comes first
+					if( MercPtrs[ubPerson]->SuspicionPercent() >= 75 &&
+						pSoldier->bActionPoints >= APBPConstants[AP_RADIO] &&
 						gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1 &&
 						pSoldier->ubID != gTacticalStatus.Team[pSoldier->bTeam].ubLastMercToRadio &&
 						ubFriendsNearby < 1 + ubSoldierDifficulty &&
