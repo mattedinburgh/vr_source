@@ -7963,7 +7963,8 @@ UINT8 AITargetSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 			pFriend->bCollapsed ||
 			pFriend->bBreathCollapsed ||
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
-			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING))
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend))
 		{
 			continue;
 		}
