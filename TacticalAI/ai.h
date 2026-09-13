@@ -313,6 +313,7 @@ enum
 };
 
 BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier);
+UINT8 AICountNearbyOperationalFriends(SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDistance);
 UINT8 AIGetDoctrineProfile(SOLDIERTYPE *pSoldier);
 BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier);
 BOOLEAN AIAllowsComplexManeuver(SOLDIERTYPE *pSoldier);
