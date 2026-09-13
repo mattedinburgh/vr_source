@@ -112,23 +112,61 @@ jobs:
       - name: Prepare Vengeance render sandbox
         shell: powershell
         run: |
+          $ErrorActionPreference = 'Stop'
           $gameRoot = 'C:\VENGENCE\Jagged Alliance 2'
           $sandbox = "C:\VENGENCE\JA2_RENDER_SANDBOX_$env:GITHUB_RUN_ID"
           $gamedir = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
           if (-not (Test-Path (Join-Path $gameRoot 'JA2_EN_Release.exe'))) { throw "Live JA2 game root not found: $gameRoot" }
 
-          New-Item -ItemType Directory -Force -Path $sandbox | Out-Null
-          & robocopy $gameRoot $sandbox /MIR /R:1 /W:1 /XD (Join-Path $gameRoot '00000') (Join-Path $gameRoot 'Profiles') (Join-Path $gameRoot 'MAP_PREVIEWS') (Join-Path $gameRoot '.git') (Join-Path $gameRoot 'FORK') (Join-Path $gameRoot 'build') (Join-Path $gameRoot 'lib') (Join-Path $gameRoot '.vs') /XF '*.log' 'MapEditor_Vengeance.exe' 'JA2_EN_Release.exe' '*.pdb'
-          $rc = $LASTEXITCODE
-          if ($rc -gt 7) { throw "Sandbox refresh failed: robocopy $rc" }
-          Write-Host "Sandbox refresh robocopy exit code $rc (0-7 = success)."
-          $global:LASTEXITCODE = 0
+          function Remove-SandboxSafely {
+            param([Parameter(Mandatory=$true)][string]$Path)
+            if (-not (Test-Path $Path)) { return }
 
-          & robocopy (Join-Path $gamedir 'Data-Maps-Tiles') (Join-Path $sandbox 'Data-Maps-Tiles') /MIR /R:1 /W:1
-          $rc = $LASTEXITCODE
-          if ($rc -gt 7) { throw "Map asset overlay failed: robocopy $rc" }
-          Write-Host "Map asset overlay robocopy exit code $rc (0-7 = success)."
-          $global:LASTEXITCODE = 0
+            # Never recurse into data-layer junctions. Remove the reparse points first,
+            # then delete only the genuinely local sandbox files/directories.
+            Get-ChildItem -LiteralPath $Path -Force -Directory -ErrorAction SilentlyContinue |
+              Where-Object { ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 } |
+              ForEach-Object {
+                Write-Host "Removing sandbox junction: $($_.FullName)"
+                cmd /c rmdir "$($_.FullName)"
+                if ($LASTEXITCODE -ne 0) { throw "Could not remove sandbox junction: $($_.FullName)" }
+              }
+
+            Remove-Item -LiteralPath $Path -Recurse -Force
+          }
+
+          Remove-SandboxSafely -Path $sandbox
+          New-Item -ItemType Directory -Force -Path $sandbox | Out-Null
+
+          # Copy only root files (DLLs, INIs, renderer files, etc.). The multi-gigabyte
+          # immutable game data directories are exposed through NTFS junctions below.
+          Get-ChildItem -LiteralPath $gameRoot -Force -File | ForEach-Object {
+            if ($_.Name -notlike '*.log' -and $_.Name -notlike '*.pdb' -and
+                $_.Name -ne 'JA2_EN_Release.exe' -and $_.Name -ne 'MapEditor_Vengeance.exe') {
+              Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $sandbox $_.Name) -Force
+            }
+          }
+
+          $excludedDirs = @(
+            '00000', 'Profiles', 'MAP_PREVIEWS', '.git', 'FORK',
+            'build', 'lib', '.vs', 'Data-Maps-Tiles'
+          )
+
+          Get-ChildItem -LiteralPath $gameRoot -Force -Directory | ForEach-Object {
+            if ($excludedDirs -contains $_.Name) { return }
+            $link = Join-Path $sandbox $_.Name
+            Write-Host "Junction: $link -> $($_.FullName)"
+            New-Item -ItemType Junction -Path $link -Target $_.FullName | Out-Null
+          }
+
+          # Use the freshly fetched vr_gamedir map/tile layer, not the possibly stale
+          # live Data-Maps-Tiles directory. It is disposable, so pass 2 may safely
+          # overlay A3_REMASTERED.dat there without touching the live installation.
+          $mapLayer = Join-Path $gamedir 'Data-Maps-Tiles'
+          if (-not (Test-Path (Join-Path $mapLayer 'maps\A3.dat'))) {
+            throw "Fresh vr_gamedir map layer is incomplete: $mapLayer"
+          }
+          New-Item -ItemType Junction -Path (Join-Path $sandbox 'Data-Maps-Tiles') -Target $mapLayer | Out-Null
 
           # Use the Vengeance editor identity and the actual Vengeance data stack.
           $builtEditor = Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\MapEditor_EN_Release.exe'
@@ -151,13 +189,12 @@ jobs:
           # The Vengeance VFS always mounts a writable UserProf. Keep the live
           # profile isolated, but provide an empty writable profile in the sandbox.
           $profileRoot = Join-Path $sandbox 'Profiles\UserProfile_Vengeance'
-          if (Test-Path $profileRoot) { Remove-Item -Recurse -Force $profileRoot }
           New-Item -ItemType Directory -Force -Path $profileRoot | Out-Null
 
           $required = @('Data','Data-1.13','Data-Vengeance','Data-AIMv53','Data-Maps-Tiles','Data-PCM','Data-UI','Data-Weapon-Sounds','Data-Voice-Taunts','Data-Music','Profiles\UserProfile_Vengeance')
           foreach ($dir in $required) {
-            $path = Join-Path $sandbox $dir
-            if (-not (Test-Path $path)) { throw "Vengeance data layer missing from sandbox: $path" }
+            $requiredPath = Join-Path $sandbox $dir
+            if (-not (Test-Path $requiredPath)) { throw "Vengeance data layer missing from sandbox: $requiredPath" }
           }
 
           # cnc-ddraw defaults to OpenGL/fullscreen. For unattended editor capture,
@@ -184,12 +221,10 @@ jobs:
 
           $previewDir = Join-Path $sandbox 'MAP_PREVIEWS'
           New-Item -ItemType Directory -Force -Path $previewDir | Out-Null
-          Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $previewDir 'A3_overview.bmp')
-          Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $previewDir 'A3_REMASTERED_overview.bmp')
-          Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $previewDir 'mapshot_status.txt')
-          Write-Host 'Vengeance render sandbox ready.'
+          Write-Host 'Vengeance render sandbox ready (junction-backed; live data remains read-only).'
           Write-Host "Editor: $editor"
           Write-Host "VFS: $vfsIni"
+          Write-Host "Map layer: $mapLayer"
           exit 0
 
       - name: Bake and render A3 through Vengeance MapEditor
@@ -381,3 +416,23 @@ jobs:
             Start-Sleep -Seconds ($attempt * 2)
           }
           throw 'Could not publish A3 preview after 5 attempts.'
+      - name: Remove render sandbox
+        if: always()
+        shell: powershell
+        run: |
+          $sandbox = "C:\VENGENCE\JA2_RENDER_SANDBOX_$env:GITHUB_RUN_ID"
+          if (-not (Test-Path $sandbox)) { exit 0 }
+
+          Get-ChildItem -LiteralPath $sandbox -Force -Directory -ErrorAction SilentlyContinue |
+            Where-Object { ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 } |
+            ForEach-Object {
+              cmd /c rmdir "$($_.FullName)"
+              if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Could not remove junction: $($_.FullName)"
+                $global:LASTEXITCODE = 0
+              }
+            }
+
+          Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue
+          Write-Host "Removed render sandbox: $sandbox"
+
