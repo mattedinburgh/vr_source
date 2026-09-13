@@ -135,8 +135,9 @@ void TownMilitiaTrainingCompleted( SOLDIERTYPE *pTrainer, INT16 sMapX, INT16 sMa
 	}
 
 
-	// force tactical to update militia status
-	gfStrategicMilitiaChangesMade = FALSE;
+	// Preserve any tactical militia rebuild already pending for the loaded sector.
+	// Training changes below may set the same flag again; ResetMilitia() decides
+	// whether it is safe to apply immediately or must remain deferred.
 
 	// ok, so what do we do with all this training?	Well, in order of decreasing priority:
 	// 1) If there's room in training sector, create new GREEN militia guys there
