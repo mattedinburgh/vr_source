@@ -660,6 +660,12 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_DEFAULT || pTileSurf == NULL || pTileSurf->vo == NULL )
 		return;
 
+	// B1's base terrain/water is already remastered in replacement STI assets; avoid
+	// applying the runtime palette pass a second time. Architecture still receives the mild profile.
+	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG &&
+		 ubType >= FIRSTTEXTURE && ubType <= DEEPWATERTEXTURE )
+		return;
+
 	// Restrict grading to tactical-world art. Never recolour UI/item tiles or dedicated shadow sprites.
 	if ( ubType >= FIRSTSWITCHES || IsSectorVisualShadowType( ubType ) )
 		return;
@@ -742,8 +748,27 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 	// Adjust flag for same as default used...
 	gbSameAsDefaultSurfaceUsed[ ubType ] = FALSE;
 
+	// B1 Oronegro oil-rig remaster: use sector-specific visual assets while keeping
+	// the map DAT, tile indices and all JSD/structure physics exactly unchanged.
+	STR8 pLoadFilename = cFilename;
+	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG && ubTilesetID == 50 )
+	{
+		switch ( ubType )
+		{
+			case FIRSTTEXTURE:     pLoadFilename = "B1_T_SAND1.STI"; break;
+			case SECONDTEXTURE:    pLoadFilename = "B1_T_SAND3.STI"; break;
+			case THIRDTEXTURE:     pLoadFilename = "B1_TRPGRAS4.STI"; break;
+			case FOURTHTEXTURE:    pLoadFilename = "B1_TRPGRAS3.STI"; break;
+			case FIFTHTEXTURE:     pLoadFilename = "B1_TRPGRAS2.STI"; break;
+			case SIXTHTEXTURE:     pLoadFilename = "B1_TRPGRAS.STI"; break;
+			case SEVENTHTEXTURE:   pLoadFilename = "B1_T_TRAIL.STI"; break;
+			case REGWATERTEXTURE:  pLoadFilename = "B1_TR_WATER.STI"; break;
+			case DEEPWATERTEXTURE: pLoadFilename = "B1_TRWATER2.STI"; break;
+		}
+	}
+
 	// Adjust for BPP
-	FilenameForBPP(cFilename, cFileBPP);
+	FilenameForBPP(pLoadFilename, cFileBPP);
 
 	if ( !fGetFromRoot )
 	{
