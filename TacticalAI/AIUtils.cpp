@@ -5740,6 +5740,7 @@ static UINT8 gubAIEscapeIntent[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIEscapeIdentity[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIEscapeStartTurn[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIEscapeLastTurnStamp = 0;
+static UINT8 gubAICompletedEnemyEscapes = 0;
 static INT16 gsAIEscapeSectorX = -1;
 static INT16 gsAIEscapeSectorY = -1;
 static INT8 gbAIEscapeSectorZ = -1;
@@ -5747,9 +5748,13 @@ static INT8 gbAIEscapeSectorZ = -1;
 #define AI_ESCAPE_NORMAL_LIMIT 2
 #define AI_ESCAPE_ABSOLUTE_LIMIT 3
 
+static void AIMaintainEscapeTimeline(void);
+
 static UINT8 AICountCommittedEnemyEscapes(SOLDIERTYPE *pExclude)
 {
-	UINT8 ubCount = 0;
+	AIMaintainEscapeTimeline();
+
+	UINT8 ubCount = gubAICompletedEnemyEscapes;
 	for (UINT16 ubID = 0; ubID < MAX_NUM_SOLDIERS; ++ubID)
 	{
 		if (pExclude && ubID == pExclude->ubID)
@@ -5757,10 +5762,19 @@ static UINT8 AICountCommittedEnemyEscapes(SOLDIERTYPE *pExclude)
 		if (gubAIEscapeIntent[ubID] == 0 || guiAIEscapeIdentity[ubID] == 0)
 			continue;
 
-		// Count the committed state itself, not whether a tactical soldier object is
-		// still active/in-sector. A runner who already traversed off-map therefore
-		// continues to occupy one of this battle's scarce escape slots.
-		++ubCount;
+		// Only a live, matching in-sector soldier occupies an active escape ticket.
+		// Completed traversals are counted separately, so dead runners and reused
+		// tactical slots cannot permanently consume or accidentally erase the quota.
+		SOLDIERTYPE *pRunner = MercPtrs[ubID];
+		if (!pRunner || pRunner->bTeam != ENEMY_TEAM || !pRunner->bActive ||
+			!pRunner->bInSector || pRunner->stats.bLife <= 0 ||
+			pRunner->uiUniqueSoldierIdValue != guiAIEscapeIdentity[ubID])
+		{
+			continue;
+		}
+
+		if (ubCount < 255)
+			++ubCount;
 	}
 	return ubCount;
 }
@@ -5811,6 +5825,7 @@ static void AIMaintainEscapeTimeline(void)
 			guiAIEscapeIdentity[i] = 0;
 			guiAIEscapeStartTurn[i] = 0;
 		}
+		gubAICompletedEnemyEscapes = 0;
 	}
 
 	gsAIEscapeSectorX = gWorldSectorX;
@@ -5851,6 +5866,29 @@ BOOLEAN AIEscapeActive(SOLDIERTYPE *pSoldier)
 
 	return (pSoldier->aiData.bAlertStatus >= STATUS_RED &&
 		gubAIEscapeIntent[pSoldier->ubID] != 0);
+}
+
+void AIRegisterEnemyEscapeTraversal(SOLDIERTYPE *pSoldier)
+{
+	AIMaintainEscapeTimeline();
+
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return;
+
+	UINT8 ubID = pSoldier->ubID;
+	if (gubAIEscapeIntent[ubID] == 0 ||
+		guiAIEscapeIdentity[ubID] != pSoldier->uiUniqueSoldierIdValue)
+	{
+		return;
+	}
+
+	if (gubAICompletedEnemyEscapes < AI_ESCAPE_ABSOLUTE_LIMIT)
+		++gubAICompletedEnemyEscapes;
+
+	// The completed counter now owns this quota slot. Clear the per-soldier ticket
+	// before TacticalRemoveSoldier can free/reuse the tactical ID.
+	gubAIEscapeIntent[ubID] = 0;
+	guiAIEscapeStartTurn[ubID] = 0;
 }
 
 static INT8 AIProfessionalismModifier(SOLDIERTYPE *pSoldier);
