@@ -662,13 +662,9 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_DEFAULT || pTileSurf == NULL || pTileSurf->vo == NULL )
 		return;
 
-	// B1's base terrain/water is already remastered in replacement STI assets; avoid
-	// applying the runtime palette pass a second time. Architecture still receives the mild profile.
-	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG &&
-		 fSectorReplacementLoaded &&
-		 ( (ubType >= FIRSTTEXTURE && ubType <= DEEPWATERTEXTURE) ||
-		   ubType == ROADPIECES ||
-		   (ubType >= FIRSTFLOOR && ubType <= FOURTHFLOOR) ) )
+	// B1 replacement art already carries its final palette/detail treatment. Do not
+	// grade it a second time; non-replaced B1 art can still receive the mild sector profile.
+	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG && fSectorReplacementLoaded )
 		return;
 
 	// Restrict grading to tactical-world art. Never recolour UI/item tiles or dedicated shadow sprites.
@@ -777,6 +773,14 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 			case SECONDFLOOR:      pLoadFilename = "B1_P-FLOOR3.STI"; break;
 			case THIRDFLOOR:       pLoadFilename = "B1_WELFLOR1.STI"; break;
 			case FOURTHFLOOR:      pLoadFilename = "B1_WELFLOR2.STI"; break;
+			case THIRDOSTRUCT:     pLoadFilename = "B1_GRASS1.STI"; break;
+			case FIRSTWALL:        pLoadFilename = "B1_BUILD_36.STI"; break;
+			case SECONDWALL:       pLoadFilename = "B1_BUILD_31.STI"; break;
+			case THIRDWALL:        pLoadFilename = "B1_BUILD_40.STI"; break;
+			case FOURTHWALL:       pLoadFilename = "B1_BUILD_35.STI"; break;
+			case FIRSTROOF:        pLoadFilename = "B1_W-ROOF2.sti"; break;
+			case FIRSTONROOF:      pLoadFilename = "B1_Rooffan.sti"; break;
+			case SECONDONROOF:     pLoadFilename = "B1_Oil_OROOF.sti"; break;
 		}
 	}
 
