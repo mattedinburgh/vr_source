@@ -2280,6 +2280,13 @@ static BOOLEAN PlaySharedBattlefieldReaction( SOLDIERTYPE *pCiv, TAUNTTYPE iTaun
 			ubSharedChance = 35;
 			break;
 
+		case TAUNT_GOT_HIT_BLOODLOSS:
+			zChoices[0] = "medic";
+			zChoices[1] = "cover_me";
+			ubChoiceCount = 2;
+			ubSharedChance = 35;
+			break;
+
 		case TAUNT_GOT_HIT_EXPLOSION:
 		case TAUNT_GOT_HIT_STRUCTURE_EXPLOSION:
 		case TAUNT_GOT_HIT_FALLROOF:
