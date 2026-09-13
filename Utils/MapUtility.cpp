@@ -182,11 +182,17 @@ BOOLEAN GenerateSingleMapPreviewInit( STR8 pMapFile )
 	gfMapPreviewCaptureMode = TRUE;
 
 	if ( pMapFile == NULL || pMapFile[0] == 0 )
+	{
+		gfMapPreviewCaptureMode = FALSE;
 		return FALSE;
+	}
 
 	sprintf( zMapPath, "MAPS\\%s", pMapFile );
 	if ( !GetFileFirst( zMapPath, &FileInfo ) )
+	{
+		gfMapPreviewCaptureMode = FALSE;
 		return FALSE;
+	}
 
 	FileList = AddToFDlgList( FileList, &FileInfo );
 	GetFileClose( &FileInfo );
