@@ -2751,19 +2751,15 @@ void GetKeyboardInput( UINT32 *puiNewEvent )
 				break;
 
 			case '\\':
-				// 1.13-style contextual interaction: break an intact window first;
-				// otherwise start/stop dragging an adjacent living downed teammate.
+				// Contextual rescue/window interaction. Rescue has priority when a living
+				// incapacitated teammate is adjacent; otherwise use the same key for an
+				// intact breakable window.
 				if ( gusSelectedSoldier != NOBODY )
 				{
 					SOLDIERTYPE *pSoldier = MercPtrs[ gusSelectedSoldier ];
 					if ( pSoldier )
 					{
-						if ( pSoldier->CanBreakWindow() )
-						{
-							if ( EnoughPoints( pSoldier, GetAPsToBreakWindow( pSoldier, TRUE ), BP_USE_CROWBAR, TRUE ) )
-								pSoldier->BreakWindow();
-						}
-						else if ( pSoldier->IsDraggingBleedoutCasualty() )
+						if ( pSoldier->IsDraggingBleedoutCasualty() )
 						{
 							pSoldier->StopDraggingBleedoutCasualty();
 							ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, L"%s puts the casualty down.", pSoldier->GetName() );
@@ -2798,6 +2794,11 @@ void GetKeyboardInput( UINT32 *puiNewEvent )
 								{
 									ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, L"%s cannot move %s right now (check AP).", pSoldier->GetName(), pCasualty->GetName() );
 								}
+							}
+							else if ( pSoldier->CanBreakWindow() )
+							{
+								if ( EnoughPoints( pSoldier, GetAPsToBreakWindow( pSoldier, TRUE ), BP_USE_CROWBAR, TRUE ) )
+									pSoldier->BreakWindow();
 							}
 							else
 							{
