@@ -4701,7 +4701,12 @@ void CheckTossGrenadeSpecial(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 					sClosestOpponentPathCost = PlotPath(pSoldier, sEnemySpot, FALSE, FALSE, FALSE, RUNNING, 0, FALSE, 0);
 					sClosestOpponentDistance = PythSpacesAway(pSoldier->sGridNo, sEnemySpot);
 					sClosestOpponentStraightPathCost = sClosestOpponentDistance * (APBPConstants[AP_MOVEMENT_FLAT] + APBPConstants[AP_MODIFIER_RUN]);
-					sObstaclePercent = min(100, 100 * abs(sClosestOpponentPathCost - sClosestOpponentStraightPathCost) / sClosestOpponentStraightPathCost);
+					// Same-grid contacts can exist on another elevation. Avoid dividing by
+					// zero when deriving the path-obstruction percentage in that case.
+					if (sClosestOpponentStraightPathCost > 0)
+						sObstaclePercent = min(100, 100 * abs(sClosestOpponentPathCost - sClosestOpponentStraightPathCost) / sClosestOpponentStraightPathCost);
+					else
+						sObstaclePercent = 0;
 				}
 				//ScreenMsg(FONT_ORANGE, MSG_INTERFACE, L"[%d] enemy %d level %d path cost %d distance %d straight cost %d", pSoldier->ubID, sEnemySpot, bEnemyLevel, sClosestOpponentPathCost, sClosestOpponentDistance, sClosestOpponentStraightPathCost);
 
@@ -4830,6 +4835,12 @@ void CheckTossGrenadeSpecial(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 						// found possible throw spot
 						if (iValue > iBestValue)
 						{
+							// Special-purpose obstacle/corpse throws bypass CalcBestThrow(), so
+							// apply the same local fireteam commitment check here explicitly.
+							// One committed explosive is enough for the same two-tile work area.
+							if (AIRecentTossSaturation(pSoldier, sSpot, bLevel) > 0)
+								continue;
+
 							CheckTossAt(pSoldier, pBestThrow, sSpot, bLevel, NOBODY);
 
 							/*if (ubType == EXPLOSV_NORMAL || ubType == EXPLOSV_BURNABLEGAS)
