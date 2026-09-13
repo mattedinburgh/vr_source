@@ -6209,7 +6209,7 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 			AniParams.sX = CenterX( this->sGridNo );
 			AniParams.sY = CenterY( this->sGridNo );
 			AniParams.sZ = 0;
-			strcpy( AniParams.zCachedFile, "TILECACHE\\\\SPRAY.STI" );
+			strcpy( AniParams.zCachedFile, "TILECACHE\\SPRAY.STI" );
 			CreateAnimationTile( &AniParams );
 		}
 	}
