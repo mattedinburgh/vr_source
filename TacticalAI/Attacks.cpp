@@ -1252,6 +1252,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 		{
 			return;	// no shells, can't fire the MORTAR
 		}
+		usGrenade = pSoldier->inv[bPayloadPocket].usItem;
 		ubSafetyMargin = (UINT8)Explosive[ Item[ pSoldier->inv[bPayloadPocket].usItem ].ubClassIndex ].ubRadius;
 	}
 	// if he's got a GL in his hand, make sure he has some type of GRENADE avail.
@@ -1307,6 +1308,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 			{
 				return;	// no ammo, can't fire
 			}
+			usGrenade = pSoldier->inv[bPayloadPocket].usItem;
 			ubSafetyMargin = (UINT8)Explosive[ Item[ pSoldier->inv[bPayloadPocket].usItem ].ubClassIndex ].ubRadius;
 		}
 	}
@@ -1322,6 +1324,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 		{
 			return;	// no ammo, can't fire
 		}
+		usGrenade = pSoldier->inv[bPayloadPocket].usItem;
 		ubSafetyMargin = (UINT8)Explosive[ Item[ pSoldier->inv[bPayloadPocket].usItem ].ubClassIndex ].ubRadius;
 	}
 	else
@@ -4910,7 +4913,7 @@ void CheckTossGrenadeAt(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow, INT32 sTa
 		}
 
 		// get the minimum cost to attack with this tossable item
-		ubMinAPcost = MinAPsToAttack(pSoldier, pSoldier->sGridNo, DONTADDTURNCOST, 0);
+		ubMinAPcost = MinAPsToAttack(pSoldier, sTargetSpot, ADDTURNCOST, 0);
 		//DebugShot(pSoldier, String("min APs to attack %d", ubMinAPcost));
 
 		// if we can afford the minimum AP cost to throw this tossable item
