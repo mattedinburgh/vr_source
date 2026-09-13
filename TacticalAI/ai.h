@@ -371,6 +371,7 @@ BOOLEAN AIEscapeActive(SOLDIERTYPE *pSoldier);
 void AIRegisterEnemyEscapeTraversal(SOLDIERTYPE *pSoldier);
 void AIResetRetreatCoordinationStateForLoad(void);
 void AIResetEscapePlanStateForLoad(void);
+void AIResetDecisionCoordinationStateForLoad(void);
 BOOLEAN AIShouldStartEscape(SOLDIERTYPE *pSoldier);
 BOOLEAN AIShouldStartDisengagement(SOLDIERTYPE *pSoldier);
 BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier);
