@@ -195,6 +195,131 @@ BOOLEAN Blt32BPPTo16BPPTransClip(UINT16 *pDest, UINT32 uiDestPitch, UINT32 *pSrc
 	return (TRUE);
 }
 
+static UINT16 TrueColorShadeScale(UINT8 ubShadeLevel)
+{
+	// Match the standard JA2 palette shade factors used by CreateObjectPaletteTables.
+	// Level 4 is neutral. Level 0 is a special glow palette for indexed objects, so
+	// true-colour map art treats it as neutral rather than introducing a false tint.
+	static const UINT16 usScale[16] =
+	{
+		255, 293, 281, 268, 255, 195, 165, 135,
+		105, 75, 45, 36, 27, 18, 9, 0
+	};
+	return usScale[(ubShadeLevel < 16) ? ubShadeLevel : 15];
+}
+
+static UINT8 TrueColorScaleChannel(UINT8 ubChannel, UINT16 usScale)
+{
+	UINT32 uiValue = ((UINT32)ubChannel * (UINT32)usScale + 127) / 255;
+	return (UINT8)((uiValue > 255) ? 255 : uiValue);
+}
+
+BOOLEAN BltTrueColorDataTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue,
+	HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion,
+	UINT8 ubShadeLevel, BOOLEAN fZTest, BOOLEAN fZWrite)
+{
+	Assert(pBuffer != NULL);
+	Assert(hSrcVObject != NULL);
+
+	if(hSrcVObject->ubBitDepth != 16 && hSrcVObject->ubBitDepth != 32)
+		return FALSE;
+	if(usIndex >= hSrcVObject->usNumberOf16BPPObjects)
+		return FALSE;
+
+	SixteenBPPObjectInfo *pObject = &hSrcVObject->p16BPPObject[usIndex];
+	if(pObject->p16BPPData == NULL || pObject->usWidth == 0 || pObject->usHeight == 0)
+		return FALSE;
+
+	INT32 iDestLeft = iX + pObject->sOffsetX;
+	INT32 iDestTop = iY + pObject->sOffsetY;
+	INT32 iClipLeft = clipregion ? clipregion->iLeft : ClippingRect.iLeft;
+	INT32 iClipTop = clipregion ? clipregion->iTop : ClippingRect.iTop;
+	INT32 iClipRight = clipregion ? clipregion->iRight : ClippingRect.iRight;
+	INT32 iClipBottom = clipregion ? clipregion->iBottom : ClippingRect.iBottom;
+
+	INT32 iDrawLeft = __max(iDestLeft, iClipLeft);
+	INT32 iDrawTop = __max(iDestTop, iClipTop);
+	INT32 iDrawRight = __min(iDestLeft + (INT32)pObject->usWidth, iClipRight + 1);
+	INT32 iDrawBottom = __min(iDestTop + (INT32)pObject->usHeight, iClipBottom + 1);
+
+	if(iDrawLeft >= iDrawRight || iDrawTop >= iDrawBottom)
+		return TRUE;
+
+	const UINT16 usShadeScale = TrueColorShadeScale(ubShadeLevel);
+	const INT32 iSourceStartX = iDrawLeft - iDestLeft;
+	const INT32 iSourceStartY = iDrawTop - iDestTop;
+
+	for(INT32 y = iDrawTop; y < iDrawBottom; ++y)
+	{
+		UINT16 *pDest = (UINT16*)((UINT8*)pBuffer + ((UINT32)y * uiDestPitchBYTES)) + iDrawLeft;
+		UINT16 *pZ = pZBuffer ? ((UINT16*)((UINT8*)pZBuffer + ((UINT32)y * uiDestPitchBYTES)) + iDrawLeft) : NULL;
+		const INT32 iSourceY = iSourceStartY + (y - iDrawTop);
+
+		for(INT32 x = iDrawLeft; x < iDrawRight; ++x, ++pDest)
+		{
+			const INT32 iSourceX = iSourceStartX + (x - iDrawLeft);
+			UINT8 ubRed, ubGreen, ubBlue, ubAlpha;
+
+			if(hSrcVObject->ubBitDepth == 32)
+			{
+				const UINT8 *pSrc = (const UINT8*)pObject->p16BPPData +
+					(((UINT32)iSourceY * pObject->usWidth + (UINT32)iSourceX) * 4);
+				ubRed = pSrc[0];
+				ubGreen = pSrc[1];
+				ubBlue = pSrc[2];
+				ubAlpha = pSrc[3];
+			}
+			else
+			{
+				const UINT16 usSource = pObject->p16BPPData[(UINT32)iSourceY * pObject->usWidth + (UINT32)iSourceX];
+				const UINT32 uiRGB = GetRGBColor(usSource);
+				ubRed = (UINT8)(uiRGB & 0xFF);
+				ubGreen = (UINT8)((uiRGB >> 8) & 0xFF);
+				ubBlue = (UINT8)((uiRGB >> 16) & 0xFF);
+				ubAlpha = 255;
+			}
+
+			if(ubAlpha == 0)
+			{
+				if(pZ) ++pZ;
+				continue;
+			}
+
+			if(fZTest && pZ != NULL && usZValue < *pZ)
+			{
+				++pZ;
+				continue;
+			}
+
+			ubRed = TrueColorScaleChannel(ubRed, usShadeScale);
+			ubGreen = TrueColorScaleChannel(ubGreen, usShadeScale);
+			ubBlue = TrueColorScaleChannel(ubBlue, usShadeScale);
+
+			if(ubAlpha < 255)
+			{
+				const UINT32 uiDestRGB = GetRGBColor(*pDest);
+				const UINT32 uiInvAlpha = 255 - ubAlpha;
+				const UINT8 ubDestRed = (UINT8)(uiDestRGB & 0xFF);
+				const UINT8 ubDestGreen = (UINT8)((uiDestRGB >> 8) & 0xFF);
+				const UINT8 ubDestBlue = (UINT8)((uiDestRGB >> 16) & 0xFF);
+				ubRed = (UINT8)(((UINT32)ubRed * ubAlpha + (UINT32)ubDestRed * uiInvAlpha + 127) / 255);
+				ubGreen = (UINT8)(((UINT32)ubGreen * ubAlpha + (UINT32)ubDestGreen * uiInvAlpha + 127) / 255);
+				ubBlue = (UINT8)(((UINT32)ubBlue * ubAlpha + (UINT32)ubDestBlue * uiInvAlpha + 127) / 255);
+			}
+
+			*pDest = Get16BPPColor(FROMRGB(ubRed, ubGreen, ubBlue));
+			if(pZ != NULL)
+			{
+				if(fZWrite)
+					*pZ = usZValue;
+				++pZ;
+			}
+		}
+	}
+
+	return TRUE;
+}
+
 BOOLEAN Blt32BPPTo16BPPTransShadow(UINT16 *pDst, UINT32 uiDstPitch, UINT32 *pSrc, UINT32 uiSrcPitch, INT32 iDstXPos, INT32 iDstYPos, INT32 iSrcXPos, INT32 iSrcYPos, UINT32 uiWidth, UINT32 uiHeight)
 {
 	UINT32 *pSrcPtr;
