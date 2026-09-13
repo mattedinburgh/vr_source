@@ -821,9 +821,13 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 		else if ( (ubType >= FIRSTWALL && ubType <= LASTDOOR) ||
 				  (ubType >= FIRSTROOF && ubType <= LASTSLANTROOF) )
 		{
-			// Architecture remains readable and slightly weathered without changing any structure data.
-			contrastPercent += 2;
-			saturationPercent -= 2;
+			// B1 oil-rig architecture: stronger weathering and material separation,
+			// palette-only so authored JSD/collision/destruction remain unchanged.
+			saturationPercent = 94;
+			contrastPercent = 116;
+			redBias = 4;
+			greenBias = 1;
+			blueBias = -4;
 		}
 	}
 	else if ( (ubType >= FIRSTWALL && ubType <= LASTDOOR) ||
