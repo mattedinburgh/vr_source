@@ -1452,7 +1452,9 @@ void InitOldInventorySystem( )
 	else
 		INTERFACE_WIDTH			= 1024;
 
-	INTERFACE_START_X		= (SCREEN_WIDTH - INTERFACE_WIDTH)/2;
+	// Vengeance widescreen layout: keep old-inventory HUD aligned with the
+	// new-inventory HUD so the freed lower-left battle-log strip is stable.
+	INTERFACE_START_X		= (SCREEN_WIDTH - INTERFACE_WIDTH);
 	INTERFACE_HEIGHT		= 120;
 	INV_INTERFACE_HEIGHT	= 140;
 	INTERFACE_START_Y		= ( SCREEN_HEIGHT - INTERFACE_HEIGHT );
