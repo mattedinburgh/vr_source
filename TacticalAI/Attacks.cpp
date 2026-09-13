@@ -2221,7 +2221,8 @@ void CalcBestStab(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestStab, BOOLEAN fBladeAt
 		// Melee needs an exact current contact. Legacy Vengeance allowed a target
 		// merely seen earlier this turn, then path-tested and attacked his hidden live
 		// grid. If contact is lost, pursuit belongs to movement/search AI instead.
-		if (PersonalKnowledge(pSoldier, pOpponent->ubID) != SEEN_CURRENTLY)
+		if (PersonalKnowledge(pSoldier, pOpponent->ubID) != SEEN_CURRENTLY ||
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) <= 0)
 		{
 			continue;
 		}
@@ -2460,7 +2461,8 @@ void CalcTentacleAttack(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestStab )
 			continue;			// next merc
 
 		// if this opponent is not currently in sight (ignore known but unseen!)
-		if (pSoldier->aiData.bOppList[pOpponent->ubID] != SEEN_CURRENTLY)
+		if (pSoldier->aiData.bOppList[pOpponent->ubID] != SEEN_CURRENTLY ||
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) <= 0)
 			continue;			// next merc
 
 		// if this opponent is not on the same level
