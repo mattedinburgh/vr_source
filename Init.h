@@ -1,6 +1,14 @@
 #ifndef _INIT_H
 #define _INIT_H
 
+#include "LogicalBodyTypes/BodyTypeDB.h"
+#include "LogicalBodyTypes/Layers.h"
+#include "LogicalBodyTypes/AbstractXMLLoader.h"
+#include "LogicalBodyTypes/SurfaceDB.h"
+#include "LogicalBodyTypes/FilterDB.h"
+#include "LogicalBodyTypes/EnumeratorDB.h"
+#include "LogicalBodyTypes/PaletteDB.h"
+
 UINT32 InitializeJA2( );
 void ShutdownJA2( );
 
