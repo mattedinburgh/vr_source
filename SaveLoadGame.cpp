@@ -3307,8 +3307,15 @@ BOOLEAN SaveGame( int ubSaveGameID, STR16 pGameDesc )
 	
 	CHAR16	zString[128];
 
-	if( ubSaveGameID > NUM_SAVE_GAMES || ubSaveGameID == EARLIST_SPECIAL_SAVE )
+	// Reserved special save IDs (247-249) intentionally live below NUM_SAVE_GAMES.
+	// In particular SAVE__ASSERTION_FAILURE == EARLIST_SPECIAL_SAVE == 247, so
+	// rejecting EARLIST_SPECIAL_SAVE here makes assertion autosaves impossible.
+	if( ubSaveGameID < 0 || ubSaveGameID >= NUM_SAVE_GAMES )
+	{
+		BlackBoxCheckpoint( "SAVE", "operation=SAVE slot=%d phase=REJECT_INVALID_SLOT", ubSaveGameID );
+		BlackBoxEvent( "SAVE", "SaveGame rejected invalid slot=%d NUM_SAVE_GAMES=%d", ubSaveGameID, NUM_SAVE_GAMES );
 		return( FALSE );
+	}
 	alreadySaving = true;
 
 	//clear out the save game header
