@@ -33,6 +33,7 @@
 #include "Cursors.h"
 #include "Isometric Utils.h"
 #include "Animation Control.h"
+#include "Text.h"
 
 typedef struct
 {
@@ -379,7 +380,7 @@ void ClearDisplayedListOfTacticalStrings( void )
 #define BATTLE_LOG_MAX_ENTRIES 128
 #define BATTLE_LOG_HEADER_H 18
 #define BATTLE_LOG_RESIZE_GRIP 12
-#define BATTLE_LOG_INSPECTOR_H 268
+#define BATTLE_LOG_INSPECTOR_H 280
 
 #define BATTLELOG_OUTCOME_NONE    0
 #define BATTLELOG_OUTCOME_MISS    1
@@ -866,6 +867,13 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		else
 			swprintf( z, L"%s -> %s", pShooterName, pTargetName );
 
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
+
+		const CHAR16 *pWeaponName = L"unknown weapon";
+		if ( d.usWeapon < MAXITEMS && ShortItemNames[d.usWeapon][0] != 0 )
+			pWeaponName = ShortItemNames[d.usWeapon];
+
+		swprintf( z, L"Weapon: %s [item %d]", pWeaponName, d.usWeapon );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
 
 		swprintf( z, L"Aim %d | round %d | range %.1f tiles | NCTH %.1f | muzzle sway %.1f",
