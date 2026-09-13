@@ -448,7 +448,7 @@ static void ScanRealConflictPool(INT32 iPool)
 		CHAR8 szPath[260];
 		sprintf(
 			szPath,
-			"LOADSCREENS\\\\RealConflict\\\\%s\\\\%s_%03u_1920x1080.png",
+			"LOADSCREENS\\RealConflict\\%s\\%s_%03u_1920x1080.png",
 			gRealConflictPoolCodes[iPool],
 			gRealConflictPoolCodes[iPool],
 			uiSeq);
