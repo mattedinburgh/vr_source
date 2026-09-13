@@ -1506,6 +1506,215 @@ UINT16 SelectBestEnemyLBEForPlan(
 	return usBestItem;
 }
 
+static BOOLEAN EnemyAttachmentPackageContains(
+	const ENEMY_ATTACHMENT_PACKAGE *pPackage,
+	UINT16 usItem)
+{
+	if ( !pPackage || usItem == 0 )
+		return FALSE;
+
+	for (UINT8 i = 0; i < pPackage->ubCount; ++i)
+	{
+		if ( pPackage->usItem[i] == usItem )
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
+static BOOLEAN TryAddEnemyAttachmentToPackage(
+	ENEMY_ATTACHMENT_PACKAGE *pPackage,
+	OBJECTTYPE *pWeapon,
+	UINT16 usAttachment)
+{
+	OBJECTTYPE TempAttachment;
+
+	if ( !pPackage || !pWeapon || usAttachment == 0 ||
+		 pPackage->ubCount >= ENEMY_LOADOUT_MAX_ATTACHMENTS )
+	{
+		return FALSE;
+	}
+
+	if ( EnemyAttachmentPackageContains(pPackage, usAttachment) )
+		return FALSE;
+
+	if ( !ValidItemAttachmentSlot(pWeapon, usAttachment, TRUE, FALSE) )
+		return FALSE;
+
+	if ( !CreateItem(usAttachment, 100, &TempAttachment) )
+		return FALSE;
+
+	if ( !pWeapon->AttachObject(NULL, &TempAttachment, FALSE) )
+		return FALSE;
+
+	pPackage->usItem[pPackage->ubCount++] = usAttachment;
+	return TRUE;
+}
+
+static UINT16 SelectBestCompatibleEnemyAttachment(
+	const ENEMY_ATTACHMENT_PACKAGE *pPackage,
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	INT8 bSoldierClass,
+	OBJECTTYPE *pWeapon,
+	UINT16 usBaseItem,
+	UINT8 ubItemChoiceType,
+	UINT8 ubMaxCoolness,
+	BOOLEAN fRejectScopeMode)
+{
+	INT8 bPoolClass;
+	const ARMY_GUN_CHOICE_TYPE *pPool;
+	UINT16 usBestItem = 0;
+	INT32 iBestScore = -10000;
+	UINT8 ubBestCoolness = 255;
+
+	if ( !pPackage || !pPlan || !pWeapon || usBaseItem == 0 )
+		return 0;
+
+	if ( ubItemChoiceType != SCOPE && ubItemChoiceType != ATTACHMENTS )
+		return 0;
+
+	bPoolClass = EnemyLoadoutPoolClass(bSoldierClass);
+	pPool = &gArmyItemChoices[bPoolClass][ubItemChoiceType];
+
+	for (UINT8 i = 0; i < pPool->ubChoices && i < 50; ++i)
+	{
+		INT16 sPoolItem = pPool->bItemNo[i];
+		UINT16 usCandidate;
+		INT32 iScore;
+		UINT8 ubCoolness;
+
+		if ( sPoolItem <= 0 )
+			continue;
+
+		usCandidate = (UINT16)sPoolItem;
+
+		if ( EnemyAttachmentPackageContains(pPackage, usCandidate) ||
+			 EnemyAttachmentIsDefaultOnBaseItem(usBaseItem, usCandidate) )
+		{
+			continue;
+		}
+
+		if ( fRejectScopeMode &&
+			 (Item[usCandidate].nasAttachmentClass & AC_SCOPE_MODE) )
+		{
+			continue;
+		}
+
+		if ( !ValidItemAttachmentSlot(pWeapon, usCandidate, TRUE, FALSE) )
+			continue;
+
+		iScore = ScoreEnemyAttachmentForPlan(
+			pPlan,
+			usBaseItem,
+			usCandidate,
+			ubMaxCoolness);
+
+		if ( iScore <= -10000 )
+			continue;
+
+		ubCoolness = Item[usCandidate].ubCoolness;
+
+		if ( iScore > iBestScore ||
+			 (iScore == iBestScore && ubCoolness < ubBestCoolness) )
+		{
+			iBestScore = iScore;
+			ubBestCoolness = ubCoolness;
+			usBestItem = usCandidate;
+		}
+	}
+
+	return usBestItem;
+}
+
+void BuildBestEnemyAttachmentPackageForPlan(
+	ENEMY_ATTACHMENT_PACKAGE *pPackage,
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	INT8 bSoldierClass,
+	UINT16 usBaseItem,
+	UINT8 ubMaxCoolness)
+{
+	OBJECTTYPE TempWeapon;
+	UINT8 ubBudget;
+	BOOLEAN fOpticSelected = FALSE;
+
+	if ( !pPackage )
+		return;
+
+	memset(pPackage, 0, sizeof(ENEMY_ATTACHMENT_PACKAGE));
+
+	if ( !pPlan || usBaseItem == 0 || !IsWeapon(usBaseItem) )
+		return;
+
+	if ( !CreateItem(usBaseItem, 100, &TempWeapon) )
+		return;
+
+	ubBudget = __min(
+		(UINT8)ENEMY_LOADOUT_MAX_ATTACHMENTS,
+		pPlan->ubAttachmentMaximum);
+
+	if ( ubBudget == 0 )
+		return;
+
+	// Pick at most one deliberate optic first.  General attachments are then
+	// evaluated against the weapon with that optic already installed.
+	if ( pPlan->OpticProfile != ENEMY_OPTIC_IRONS )
+	{
+		UINT16 usOptic = SelectBestCompatibleEnemyAttachment(
+			pPackage,
+			pPlan,
+			bSoldierClass,
+			&TempWeapon,
+			usBaseItem,
+			SCOPE,
+			ubMaxCoolness,
+			FALSE);
+
+		if ( usOptic &&
+			 ScoreEnemyAttachmentForPlan(pPlan, usBaseItem, usOptic, ubMaxCoolness) >= 15 &&
+			 TryAddEnemyAttachmentToPackage(pPackage, &TempWeapon, usOptic) )
+		{
+			fOpticSelected = TRUE;
+		}
+	}
+
+	while ( pPackage->ubCount < ubBudget )
+	{
+		UINT16 usCandidate = SelectBestCompatibleEnemyAttachment(
+			pPackage,
+			pPlan,
+			bSoldierClass,
+			&TempWeapon,
+			usBaseItem,
+			ATTACHMENTS,
+			ubMaxCoolness,
+			fOpticSelected);
+
+		if ( usCandidate == 0 )
+			break;
+
+		// Do not fill slots with marginal accessories simply to hit the budget.
+		if ( ScoreEnemyAttachmentForPlan(
+				pPlan,
+				usBaseItem,
+				usCandidate,
+				ubMaxCoolness) < 15 )
+		{
+			break;
+		}
+
+		if ( !TryAddEnemyAttachmentToPackage(
+				pPackage,
+				&TempWeapon,
+				usCandidate) )
+		{
+			break;
+		}
+
+		if ( Item[usCandidate].nasAttachmentClass & AC_SCOPE_MODE )
+			fOpticSelected = TRUE;
+	}
+}
+
 void BuildBestEnemyLBEPackageForPlan(
 	ENEMY_LBE_PACKAGE *pPackage,
 	const ENEMY_LOADOUT_PLAN *pPlan,
