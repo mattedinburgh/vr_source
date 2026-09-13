@@ -4800,7 +4800,8 @@ static BOOLEAN AIPersonallyConfirmedNonThreat(
 	SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent)
 {
 	if (!pSoldier || !pOpponent ||
-		PersonalKnowledge(pSoldier, pOpponent->ubID) != SEEN_CURRENTLY)
+		PersonalKnowledge(pSoldier, pOpponent->ubID) != SEEN_CURRENTLY ||
+		LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) <= 0)
 	{
 		return FALSE;
 	}
@@ -5431,6 +5432,7 @@ UINT16 AIPerceivedEnemyStrength(SOLDIERTYPE *pSoldier)
 		// he may recover or be revived, but he should not count like an active rifleman.
 		// Public/stale contacts keep their normal uncertainty weight.
 		if (PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0 &&
 			IS_MERC_BODY_TYPE(pOpponent) &&
 			!pOpponent->IsZombie() &&
 			(pOpponent->stats.bLife < OKLIFE ||
@@ -8261,7 +8263,8 @@ static BOOLEAN AIKnownThreatHasSightToSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, B
 		}
 
 		const BOOLEAN fThreatStateKnown =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY);
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
+			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
 
 		if (fThreatStateKnown && !ValidOpponent(pSoldier, pOpponent))
 			continue;
@@ -8453,7 +8456,8 @@ BOOLEAN CheckDangerousDirection(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		}
 
 		const BOOLEAN fThreatStateKnown =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY);
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
+			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
 
 		if (fThreatStateKnown &&
 			(!ValidOpponent(pSoldier, pOpponent) || pOpponent->IsUnconscious() || pOpponent->IsEmptyVehicle()))
@@ -9588,7 +9592,8 @@ BOOLEAN LastTargetCollapsed( SOLDIERTYPE *pSoldier )
 
 	// Current collapse state is legitimate only if this soldier still personally
 	// sees the occupant of the last-target tile. Otherwise the old tile is merely memory.
-	if (PersonalKnowledge(pSoldier, ubTarget) != SEEN_CURRENTLY)
+	if (PersonalKnowledge(pSoldier, ubTarget) != SEEN_CURRENTLY ||
+		LOS_Raised(pSoldier, MercPtrs[ubTarget], CALC_FROM_ALL_DIRS) <= 0)
 		return FALSE;
 
 	if( MercPtrs[ubTarget]->stats.bLife < OKLIFE ||
@@ -9626,7 +9631,8 @@ BOOLEAN LastTargetSuppressed( SOLDIERTYPE *pSoldier )
 
 	// Suppression/cowering is visible state, not something inferred through an
 	// old target tile after contact has been lost.
-	if (PersonalKnowledge(pSoldier, ubTarget) != SEEN_CURRENTLY)
+	if (PersonalKnowledge(pSoldier, ubTarget) != SEEN_CURRENTLY ||
+		LOS_Raised(pSoldier, MercPtrs[ubTarget], CALC_FROM_ALL_DIRS) <= 0)
 		return FALSE;
 
 	if( CoweringShockLevel(MercPtrs[ubTarget]) )
@@ -10026,7 +10032,8 @@ BOOLEAN AnyCoverAtSpot( SOLDIERTYPE *pSoldier, INT32 sSpot )
 		}
 
 		const BOOLEAN fThreatStateKnown =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY);
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
+			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
 		if (fThreatStateKnown && !ValidOpponent(pSoldier, pOpponent))
 			continue;
 
@@ -10302,6 +10309,7 @@ UINT8 CountPublicKnownEnemies( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDis
 		// If this soldier personally sees the target right now, live state is known
 		// and may invalidate the threat. Team-only knowledge does not grant that.
 		if (PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0 &&
 			(!ValidOpponent(pSoldier, pOpponent) ||
 			 pOpponent->IsUnconscious() ||
 			 (pOpponent->usSoldierFlagMask & SOLDIER_POW)))
@@ -11729,7 +11737,8 @@ BOOLEAN EnemyCanAttackSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 			continue;
 
 		const BOOLEAN fThreatStateKnown =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY);
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
+			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
 
 		INT32 iAttackRange;
 		if (fThreatStateKnown)
