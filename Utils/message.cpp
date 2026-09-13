@@ -697,6 +697,7 @@ static void BattleLogHeaderCallback( MOUSE_REGION *pRegion, INT32 iReason )
 		if ( gfBattleLogInspectorVisible )
 		{
 			gfBattleLogInspectorVisible = FALSE;
+			gubBattleLogInspectorMode = BATTLELOG_INSPECTOR_NONE;
 			guiBattleLogInspectorSequence = 0;
 			BattleLogUpdateRegions();
 			BattleLogRebuildOverlay();
@@ -815,7 +816,11 @@ static void BattleLogContentCallback( MOUSE_REGION *pRegion, INT32 iReason )
 		}
 		else
 		{
-			gBattleLogInspectorDiagnostic = pEntry->ncth;
+			if ( ubRequestedMode == BATTLELOG_INSPECTOR_DAMAGE )
+				gBattleLogInspectorDamageDiagnostic = pEntry->damage;
+			else
+				gBattleLogInspectorDiagnostic = pEntry->ncth;
+			gubBattleLogInspectorMode = ubRequestedMode;
 			gubBattleLogInspectorOutcome = pEntry->ubOutcome;
 			gubBattleLogInspectorActualTargetID = pEntry->ubActualTargetID;
 			gubBattleLogInspectorBlockReason = pEntry->ubBlockReason;
