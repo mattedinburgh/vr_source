@@ -134,7 +134,12 @@ enum SectorVisualProfile
 	SECTOR_VISUAL_DEFAULT = 0,
 	SECTOR_VISUAL_ORONEGRO_TOWN,
 	SECTOR_VISUAL_A3_FARM,
-	SECTOR_VISUAL_ORONEGRO_OIL_RIG
+	SECTOR_VISUAL_ORONEGRO_OIL_RIG,
+	SECTOR_VISUAL_SAN_MONA_C5_STRIP,
+	SECTOR_VISUAL_SAN_MONA_C6_EAST,
+	SECTOR_VISUAL_SAN_MONA_D4_MINE,
+	SECTOR_VISUAL_SAN_MONA_D5_KINGPIN,
+	SECTOR_VISUAL_SAN_MONA_UNDERGROUND
 };
 
 static UINT8 gubSectorVisualProfile = SECTOR_VISUAL_DEFAULT;
@@ -644,6 +649,26 @@ static void TraceA3FarmLoad( const STR8 pStage, const STR8 pDetail )
 		pSafeDetail[0] != '\0' ? ": " : "", pSafeDetail );
 }
 
+static BOOLEAN IsSanMonaVisualProfile( void )
+{
+	return gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C5_STRIP ||
+		gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C6_EAST ||
+		gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D4_MINE ||
+		gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D5_KINGPIN ||
+		gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_UNDERGROUND;
+}
+
+static void TraceSanMonaLoad( const STR8 pStage, const STR8 pDetail )
+{
+	const STR8 pSafeStage = ( pStage != NULL ) ? pStage : "";
+	const STR8 pSafeDetail = ( pDetail != NULL ) ? pDetail : "";
+
+	BlackBoxCheckpoint( "SAN_MONA", "%s%s%s", pSafeStage,
+		pSafeDetail[0] != '\0' ? ": " : "", pSafeDetail );
+	BlackBoxEvent( "SAN_MONA", "%s%s%s", pSafeStage,
+		pSafeDetail[0] != '\0' ? ": " : "", pSafeDetail );
+}
+
 static UINT8 DetermineSectorVisualProfile( const STR8 pFilename )
 {
 	if ( pFilename == NULL )
@@ -659,6 +684,20 @@ static UINT8 DetermineSectorVisualProfile( const STR8 pFilename )
 
 	if ( _stricmp( pFilename, "B1.dat" ) == 0 )
 		return SECTOR_VISUAL_ORONEGRO_OIL_RIG;
+
+	// San Mona is deliberately split into distinct visual districts.  The four
+	// surface maps and the D4/D5 underground route keep their authored geometry,
+	// NPC placements, civilian groups, doors, exits and quest state unchanged.
+	if ( _stricmp( pFilename, "C5.dat" ) == 0 )
+		return SECTOR_VISUAL_SAN_MONA_C5_STRIP;
+	if ( _stricmp( pFilename, "C6.dat" ) == 0 )
+		return SECTOR_VISUAL_SAN_MONA_C6_EAST;
+	if ( _stricmp( pFilename, "D4.dat" ) == 0 )
+		return SECTOR_VISUAL_SAN_MONA_D4_MINE;
+	if ( _stricmp( pFilename, "D5.dat" ) == 0 )
+		return SECTOR_VISUAL_SAN_MONA_D5_KINGPIN;
+	if ( _stricmp( pFilename, "D4_B1.dat" ) == 0 || _stricmp( pFilename, "D5_B1.dat" ) == 0 )
+		return SECTOR_VISUAL_SAN_MONA_UNDERGROUND;
 
 	return SECTOR_VISUAL_DEFAULT;
 }
@@ -900,6 +939,130 @@ static void EnsureA3FarmCowPlacements( void )
 	TraceA3FarmLoad( "COWS", zCows );
 }
 
+static void DressSanMonaEnvironment( void )
+{
+	if ( !IsSanMonaVisualProfile() || gpWorldLevelData == NULL )
+		return;
+
+	UINT32 uiStreetClutter = 0;
+	UINT32 uiVenueClutter = 0;
+	UINT32 uiEdgeDetail = 0;
+	UINT32 uiMineDecay = 0;
+
+	UINT32 uiSeed = 0x5A4D4F4Eu;
+	switch ( gubSectorVisualProfile )
+	{
+		case SECTOR_VISUAL_SAN_MONA_C5_STRIP:       uiSeed ^= 0xC50051u; break;
+		case SECTOR_VISUAL_SAN_MONA_C6_EAST:        uiSeed ^= 0xC60061u; break;
+		case SECTOR_VISUAL_SAN_MONA_D4_MINE:        uiSeed ^= 0xD40041u; break;
+		case SECTOR_VISUAL_SAN_MONA_D5_KINGPIN:     uiSeed ^= 0xD50051u; break;
+		case SECTOR_VISUAL_SAN_MONA_UNDERGROUND:    uiSeed ^= 0xD4B151u; break;
+		default: break;
+	}
+
+	for ( INT32 sGridNo = 0; sGridNo < WORLD_MAX; ++sGridNo )
+	{
+		MAP_ELEMENT *pMap = &gpWorldLevelData[ sGridNo ];
+		if ( pMap->pLandHead == NULL || pMap->pRoofHead != NULL || pMap->pOnRoofHead != NULL )
+			continue;
+
+		UINT32 uiLandType = 0;
+		if ( !GetTileType( pMap->pLandHead->usIndex, &uiLandType ) )
+			continue;
+
+		const BOOLEAN fRoad = B1GridHasObjectType( sGridNo, ROADPIECES );
+		const BOOLEAN fNearRoad = B1GridHasNeighbourObjectType( sGridNo, ROADPIECES );
+		const BOOLEAN fFloor = ( uiLandType >= FIRSTFLOOR && uiLandType <= LASTFLOOR );
+		const BOOLEAN fOpenGround = ( uiLandType >= FIRSTTEXTURE && uiLandType <= SEVENTHTEXTURE );
+		const BOOLEAN fNearStructure = B1GridHasNeighbourStructure( sGridNo );
+		const BOOLEAN fOccupiedStructure = ( pMap->pStructHead != NULL );
+		if ( fOccupiedStructure )
+			continue;
+
+		const UINT32 uiHash = B1VisualHash( (UINT32)sGridNo ^ uiSeed );
+		UINT32 uiType = DEBRISMISC;
+		UINT16 usSubIndex = 0;
+
+		if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C5_STRIP )
+		{
+			// C5: Tony/Hans, Shady Lady and bars - dense, lived-in vice strip.
+			if ( (fRoad || fNearRoad) && ((uiHash >> 3) % 31) == 0 )
+			{
+				uiType = ((uiHash >> 19) & 1) ? DEBRISMISC : DEBRIS2MISC;
+				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 7 );
+				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiStreetClutter;
+			}
+			else if ( fNearStructure && (fFloor || fOpenGround) && ((uiHash >> 8) % 23) == 0 )
+			{
+				uiType = ((uiHash >> 21) & 1) ? DEBRISWOOD : DEBRISSAND;
+				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 11 );
+				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiVenueClutter;
+			}
+		}
+		else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C6_EAST )
+		{
+			// C6: Angel and the bar - still lawless, but cleaner and more residential/commercial.
+			if ( fNearStructure && fOpenGround && ((uiHash >> 7) % 79) == 0 )
+			{
+				uiType = ((uiHash >> 20) & 1) ? DEBRISWEEDS : DEBRISGRASS;
+				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 10 );
+				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiEdgeDetail;
+			}
+			else if ( fNearRoad && ((uiHash >> 9) % 113) == 0 )
+			{
+				uiType = DEBRISMISC;
+				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 13 );
+				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiStreetClutter;
+			}
+		}
+		else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D5_KINGPIN )
+		{
+			// D5: boxing club + Kingpin compound. Controlled, expensive and intimidating, not a dump.
+			if ( fNearStructure && (fFloor || fOpenGround) && ((uiHash >> 6) % 47) == 0 )
+			{
+				uiType = ((uiHash >> 22) & 1) ? DEBRISWOOD : DEBRISMISC;
+				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 12 );
+				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiVenueClutter;
+			}
+			else if ( fNearRoad && ((uiHash >> 10) % 127) == 0 )
+			{
+				usSubIndex = A3FarmVisualSubIndex( DEBRISSAND, uiHash >> 15 );
+				if ( usSubIndex && B1AddVisualDecoration( sGridNo, DEBRISSAND, usSubIndex ) ) ++uiEdgeDetail;
+			}
+		}
+		else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D4_MINE )
+		{
+			// D4: abandoned mine / stash approach - dry rubble, timber and scrub.
+			if ( (fNearStructure || fNearRoad) && (fOpenGround || fFloor) && ((uiHash >> 5) % 29) == 0 )
+			{
+				uiType = ((uiHash >> 20) & 1) ? DEBRISROCKS : DEBRISWOOD;
+				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 9 );
+				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiMineDecay;
+			}
+			else if ( fOpenGround && ((uiHash >> 11) % 83) == 0 )
+			{
+				usSubIndex = A3FarmVisualSubIndex( DEBRISWEEDS, uiHash >> 14 );
+				if ( usSubIndex && B1AddVisualDecoration( sGridNo, DEBRISWEEDS, usSubIndex ) ) ++uiEdgeDetail;
+			}
+		}
+		else
+		{
+			// D4_B1/D5_B1: only sparse visual debris; never touch exits, stash, rooms or geometry.
+			if ( fFloor && ((uiHash >> 6) % 71) == 0 )
+			{
+				uiType = ((uiHash >> 18) & 1) ? DEBRISROCKS : DEBRISMISC;
+				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 12 );
+				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiMineDecay;
+			}
+		}
+	}
+
+	CHAR8 zDressing[192];
+	sprintf( zDressing, "street=%lu venue=%lu edge=%lu mine=%lu visual-only; authored NPC/quest geometry preserved",
+		uiStreetClutter, uiVenueClutter, uiEdgeDetail, uiMineDecay );
+	TraceSanMonaLoad( "ENVIRONMENT DRESSING", zDressing );
+}
+
 static void DressB1OilRigEnvironment( void )
 {
 	if ( gubSectorVisualProfile != SECTOR_VISUAL_ORONEGRO_OIL_RIG || gpWorldLevelData == NULL )
@@ -1139,7 +1302,81 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 	const BOOLEAN fB1Interior = fB1Profile && ( ubType >= FIRSTISTRUCT && ubType <= FIRSTCISTRUCT );
 	const BOOLEAN fB1Decal = fB1Profile && ( ubType >= FIRSTWALLDECAL && ubType <= EIGTHWALLDECAL );
 
-	if ( fA3Profile )
+	const BOOLEAN fSanMonaProfile = IsSanMonaVisualProfile();
+	const BOOLEAN fSMTerrain = fSanMonaProfile && ( ubType >= FIRSTTEXTURE && ubType <= SEVENTHTEXTURE );
+	const BOOLEAN fSMGreenTerrain = fSanMonaProfile && ( ubType >= THIRDTEXTURE && ubType <= SIXTHTEXTURE );
+	const BOOLEAN fSMVegetation = fSanMonaProfile &&
+		( (ubType >= FIRSTOSTRUCT && ubType <= SEVENTHOSTRUCT) ||
+		  ubType == FIRSTFULLSTRUCT || ubType == SECONDFULLSTRUCT );
+	const BOOLEAN fSMWall = fSanMonaProfile && ( ubType >= FIRSTWALL && ubType <= LASTDOOR );
+	const BOOLEAN fSMRoof = fSanMonaProfile && ( ubType >= FIRSTROOF && ubType <= LASTSLANTROOF );
+	const BOOLEAN fSMFloor = fSanMonaProfile && ( ubType >= FIRSTFLOOR && ubType <= LASTFLOOR );
+	const BOOLEAN fSMRoad = fSanMonaProfile && ( (ubType >= FIRSTROAD && ubType <= LASTROAD) || ubType == ROADPIECES );
+	const BOOLEAN fSMInterior = fSanMonaProfile && ( ubType >= FIRSTISTRUCT && ubType <= FIRSTCISTRUCT );
+	const BOOLEAN fSMDebris = fSanMonaProfile &&
+		( ubType == DEBRISROCKS || ubType == DEBRISWOOD || ubType == DEBRISSAND ||
+		  ubType == DEBRISWEEDS || ubType == DEBRISGRASS || ubType == DEBRISMISC ||
+		  ubType == DEBRIS2MISC );
+
+	if ( fSanMonaProfile )
+	{
+		// All San Mona districts share hard sun and a lawless, hand-built visual language,
+		// but each map gets its own material grade instead of one city-wide filter.
+		if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C5_STRIP )
+		{
+			saturationPercent = 112; contrastPercent = 118; redBias = 7; greenBias = 2; blueBias = -5;
+		}
+		else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C6_EAST )
+		{
+			saturationPercent = 108; contrastPercent = 112; redBias = 5; greenBias = 4; blueBias = -3;
+		}
+		else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D4_MINE )
+		{
+			saturationPercent = 96; contrastPercent = 120; redBias = 8; greenBias = 2; blueBias = -8;
+		}
+		else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D5_KINGPIN )
+		{
+			saturationPercent = 105; contrastPercent = 122; redBias = 7; greenBias = 2; blueBias = -6;
+		}
+		else
+		{
+			saturationPercent = 88; contrastPercent = 118; redBias = -1; greenBias = 2; blueBias = 3;
+		}
+
+		if ( fSMRoad )
+		{
+			saturationPercent -= 8; contrastPercent += 5; redBias -= 2; greenBias -= 2; blueBias -= 1;
+		}
+		else if ( fSMWall )
+		{
+			contrastPercent += 3; redBias += 3; blueBias -= 2;
+		}
+		else if ( fSMRoof )
+		{
+			contrastPercent += 5; redBias += 4; greenBias -= 1; blueBias -= 3;
+		}
+		else if ( fSMFloor )
+		{
+			saturationPercent -= 7; contrastPercent += 3; blueBias -= 2;
+		}
+		else if ( fSMVegetation || fSMGreenTerrain )
+		{
+			saturationPercent += 7; greenBias += 7; redBias -= 3; blueBias -= 2;
+		}
+		else if ( fSMTerrain )
+		{
+			redBias += 4; greenBias += 2; blueBias -= 4;
+		}
+		else if ( fSMInterior )
+		{
+			saturationPercent -= 3; contrastPercent += 2;
+		}
+		else if ( fSMDebris )
+		{
+			contrastPercent += 4; redBias += 3; blueBias -= 3;
+		}
+	}
+	else if ( fA3Profile )
 	{
 		// A3 tropical-farm hero pass: humid growth, warm soil, faded buildings and
 		// weathered roofs.  Geometry and all tactical structure data remain authored.
@@ -1368,7 +1605,39 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 		INT32 outG = GradeSectorVisualComponent( g, luma, saturationPercent, contrastPercent, greenBias );
 		INT32 outB = GradeSectorVisualComponent( b, luma, saturationPercent, contrastPercent, blueBias );
 
-		if ( fA3Profile )
+		if ( fSanMonaProfile )
+		{
+			// High-resolution tactical view benefits from stronger material separation:
+			// cool dirty shadows, sun-warmed highlights, and distinct vegetation/stone.
+			if ( luma < 86 )
+			{
+				const INT32 depth = 86 - luma;
+				outR -= 2 + depth / 24;
+				outG -= 1 + depth / 32;
+				outB += (gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_UNDERGROUND) ? (4 + depth / 18) : (2 + depth / 28);
+			}
+			else if ( luma > 172 )
+			{
+				const INT32 light = luma - 172;
+				outR += 3 + light / 22;
+				outG += 2 + light / 30;
+				if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C6_EAST ) outG += 2;
+			}
+
+			if ( fSMVegetation || fSMGreenTerrain )
+			{
+				outR -= 1; outG += 3; outB -= 1;
+			}
+			else if ( fSMRoad || fSMFloor )
+			{
+				outR -= 1; outG -= 1;
+			}
+			else if ( fSMWall || fSMRoof || fSMDebris )
+			{
+				outR += 2; outB -= 2;
+			}
+		}
+		else if ( fA3Profile )
 		{
 			if ( luma < 82 )
 			{
@@ -4138,6 +4407,11 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		TraceB1RemasterLoad( "BEGIN", puiFilename );
 		TraceB1RemasterLoad( "VISUAL PROFILE", "hero-v4 authored-textures tropical-industrial" );
 	}
+	if ( IsSanMonaVisualProfile() )
+	{
+		TraceSanMonaLoad( "BEGIN", puiFilename );
+		TraceSanMonaLoad( "VISUAL PROFILE", "district-specific lawless-city hero pass; authored quests/NPCs/geometry preserved" );
+	}
 
 #ifdef JA2TESTVERSION
 	uiStartTime = GetJA2Clock();
@@ -4587,6 +4861,9 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM )
 			DressA3FarmEnvironment();
 
+		if ( IsSanMonaVisualProfile() )
+			DressSanMonaEnvironment();
+
 		// Layer deterministic, non-structural environmental storytelling over the
 		// authored oil-rig map without touching B1.dat or any destruction geometry.
 		if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
@@ -4603,6 +4880,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		TraceA3FarmLoad( "WORLD OK", "" );
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
 		TraceB1RemasterLoad( "WORLD OK", "" );
+	if ( IsSanMonaVisualProfile() )
+		TraceSanMonaLoad( "WORLD OK", "" );
 
 	BlackBoxCheckpoint( "MAP", "file=%s phase=COMPLETE", aFilename );
 	BlackBoxEvent( "MAP", "LoadWorld complete file=%s", aFilename );
