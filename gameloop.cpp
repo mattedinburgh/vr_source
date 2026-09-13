@@ -553,6 +553,9 @@ void HandleNewScreenChange( UINT32 uiNewScreen, UINT32 uiOldScreen )
 {
 	BlackBoxEvent( "SCREEN", "transition old=%u new=%u", uiOldScreen, uiNewScreen );
 	BlackBoxCheckpoint( "SCREEN", "old=%u new=%u", uiOldScreen, uiNewScreen );
+	BlackBoxContext( "screen.current", "old=%u new=%u pending=%u previous=%u",
+		uiOldScreen, uiNewScreen, guiPendingScreen, guiPreviousScreen );
+	BlackBoxCounterAdd( "screen.transitions", 1 );
 	//if we are not going into the message box screen, and we didnt just come from it
 	if( ( uiNewScreen != MSG_BOX_SCREEN && uiOldScreen != MSG_BOX_SCREEN && uiNewScreen != MP_CHAT_SCREEN && uiOldScreen != MP_CHAT_SCREEN ) )
 	{
