@@ -25,6 +25,9 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 {
 	// Add tile surface
 	PTILE_IMAGERY	pTileSurf = NULL;
+	const BOOLEAN fTraceB1Asset = ( cFilename != NULL && strstr( cFilename, "B1_" ) != NULL );
+	if ( fTraceB1Asset )
+		TraceB1RemasterLoad( "TILE LOAD BEGIN", cFilename );
 	VOBJECT_DESC	VObjectDesc;
 	HVOBJECT		hVObject;
 	HIMAGE				hImage;
@@ -37,10 +40,14 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 	hImage = CreateImage( cFilename, IMAGE_ALLDATA );
 	if (hImage == NULL)
 	{
+		if ( fTraceB1Asset )
+			TraceB1RemasterLoad( "CREATE IMAGE FAILED", cFilename );
 		// Report error
 		SET_ERROR( "Could not load tile file: %s", cFilename );
 		return( NULL );
 	}
+	if ( fTraceB1Asset )
+		TraceB1RemasterLoad( "CREATE IMAGE OK", cFilename );
 
 	VObjectDesc.fCreateFlags = VOBJECT_CREATE_FROMHIMAGE;
 	VObjectDesc.hImage = hImage;
@@ -49,11 +56,20 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 
 	if ( hVObject == NULL )
 	{
+		if ( fTraceB1Asset )
+			TraceB1RemasterLoad( "CREATE VIDEO OBJECT FAILED", cFilename );
 		// Report error
 		SET_ERROR( "Could not load tile file: %s", cFilename );
 		// Video Object will set error conition.]
 		DestroyImage( hImage );
 		return( NULL );
+	}
+	if ( fTraceB1Asset )
+	{
+		CHAR8 zB1VideoInfo[192];
+		sprintf( zB1VideoInfo, "%s objects=%u bitDepth=%u", cFilename,
+			hVObject->usNumberOfObjects, hVObject->ubBitDepth );
+		TraceB1RemasterLoad( "CREATE VIDEO OBJECT OK", zB1VideoInfo );
 	}
 
 	// Load structure data, if any.
@@ -70,27 +86,46 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 		strcat( cStructureFilename, "." );
 	}
 	strcat( cStructureFilename, STRUCTURE_FILE_EXTENSION );
-	if (FileExists( cStructureFilename ))
+	const BOOLEAN fStructureExists = FileExists( cStructureFilename );
+	if ( fTraceB1Asset )
+		TraceB1RemasterLoad( fStructureExists ? "JSD FOUND" : "JSD NOT PRESENT", cStructureFilename );
+	if ( fStructureExists )
 	{
 		pStructureFileRef = LoadStructureFile( cStructureFilename );
 		if (pStructureFileRef == NULL || hVObject->usNumberOfObjects != pStructureFileRef->usNumberOfStructures)
 		{
+			if ( fTraceB1Asset )
+			{
+				CHAR8 zB1StructError[224];
+				sprintf( zB1StructError, "%s imageObjects=%u structures=%u ref=%s",
+					cStructureFilename,
+					hVObject->usNumberOfObjects,
+					pStructureFileRef != NULL ? pStructureFileRef->usNumberOfStructures : 0,
+					pStructureFileRef != NULL ? "ok" : "null" );
+				TraceB1RemasterLoad( "JSD LOAD/COUNT FAILED", zB1StructError );
+			}
 			DestroyImage( hImage );
 			DeleteVideoObject( hVObject );
 			SET_ERROR(	"Structure file error: %s", cStructureFilename );
 			return( NULL );
 		}
 
+		if ( fTraceB1Asset )
+			TraceB1RemasterLoad( "JSD LOAD OK", cStructureFilename );
 		DebugMsg( TOPIC_JA2, DBG_LEVEL_3, cStructureFilename );
 
 		fOk = AddZStripInfoToVObject( hVObject, pStructureFileRef, FALSE, 0 );
 		if (fOk == FALSE)
 		{
+			if ( fTraceB1Asset )
+				TraceB1RemasterLoad( "ZSTRIP FAILED", cStructureFilename );
 			DestroyImage( hImage );
 			DeleteVideoObject( hVObject );
 			SET_ERROR(	"ZStrip creation error: %s", cStructureFilename );
 			return( NULL );
 		}
+		if ( fTraceB1Asset )
+			TraceB1RemasterLoad( "ZSTRIP OK", cStructureFilename );
 
 	}
 	else
@@ -129,6 +164,9 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 	}
 	// the hImage is no longer needed
 	DestroyImage( hImage );
+
+	if ( fTraceB1Asset )
+		TraceB1RemasterLoad( "TILE LOAD COMPLETE", cFilename );
 
 	return( pTileSurf );
 }
