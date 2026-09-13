@@ -37,6 +37,55 @@ static void SetRoleTarget(ENEMY_ROLE_TARGETS *pTargets, ENEMY_LOADOUT_ROLE Role,
 	pTargets->ubMaximum[Role] = maximum;
 }
 
+static UINT8 CountDesiredSpecialists(const ENEMY_ROLE_TARGETS *pTargets)
+{
+	UINT8 count = 0;
+	UINT8 i;
+
+	for ( i = 0; i < ENEMY_ROLE_MAX; ++i )
+	{
+		if ( i != ENEMY_ROLE_RIFLEMAN )
+			count = (UINT8)(count + pTargets->ubDesired[i]);
+	}
+
+	return count;
+}
+
+static void ProtectRifleCore(ENEMY_ROLE_TARGETS *pTargets, UINT8 ubSquadSize, UINT8 minimumRiflemen)
+{
+	static const ENEMY_LOADOUT_ROLE demotionOrder[] =
+	{
+		ENEMY_ROLE_MEDIC,
+		ENEMY_ROLE_MARKSMAN,
+		ENEMY_ROLE_GRENADIER,
+		ENEMY_ROLE_ASSAULT,
+		ENEMY_ROLE_AUTOMATIC_RIFLEMAN
+	};
+	UINT8 specialistCount;
+	UINT8 i;
+
+	if ( !pTargets )
+		return;
+
+	specialistCount = CountDesiredSpecialists(pTargets);
+
+	for ( i = 0;
+		  i < sizeof(demotionOrder) / sizeof(demotionOrder[0]) &&
+		  specialistCount + minimumRiflemen > ubSquadSize;
+		  ++i )
+	{
+		ENEMY_LOADOUT_ROLE role = demotionOrder[i];
+
+		if ( pTargets->ubDesired[role] > 0 )
+		{
+			pTargets->ubDesired[role]--;
+			specialistCount--;
+			// Maximum is left intact, so the role can still occupy a controlled
+			// optional slot if the final composition has room.
+		}
+	}
+}
+
 void BuildEnemyRoleTargets(
 	ENEMY_ROLE_TARGETS *pTargets,
 	INT8 bSoldierClass,
@@ -188,42 +237,35 @@ void BuildEnemyRoleTargets(
 		0,
 		(ubProgress >= 55 && ubSquadSize >= 10) ? 1 : 0);
 
-	mandatoryRoles =
-		pTargets->ubDesired[ENEMY_ROLE_SQUAD_LEADER] +
-		pTargets->ubDesired[ENEMY_ROLE_AUTOMATIC_RIFLEMAN] +
-		pTargets->ubDesired[ENEMY_ROLE_GRENADIER] +
-		pTargets->ubDesired[ENEMY_ROLE_MARKSMAN] +
-		pTargets->ubDesired[ENEMY_ROLE_ASSAULT] +
-		pTargets->ubDesired[ENEMY_ROLE_MEDIC];
+	// Keep a meaningful rifle core.  30% is a floor.  If a small squad
+	// accumulates too many mandatory specialist roles, lower-priority roles
+	// are demoted back to optional status rather than deleting the rifle core.
+	minimumRiflemen = ClampU8((ubSquadSize * 3 + 9) / 10, 1, ubSquadSize);
+	ProtectRifleCore(pTargets, ubSquadSize, minimumRiflemen);
+	mandatoryRoles = CountDesiredSpecialists(pTargets);
 
 	// Reserve one variable specialist slot once the army is established.
-	// Late elite groups may reserve two.  This creates variation without
-	// producing support-weapon soup.
+	// Late elite groups may reserve two, but never at the expense of the
+	// protected rifle core.
 	if ( ubProgress >= 40 && ubSquadSize >= 8 )
 		optionalSlots = 1;
 	if ( IsEliteEnemy(bSoldierClass) && ubProgress >= 70 && ubSquadSize >= 10 )
 		optionalSlots = 2;
 
-	// Keep a meaningful rifle core.  30% is a floor, not a target; larger
-	// rifle cores naturally occur earlier when fewer specialist roles exist.
-	minimumRiflemen = ClampU8((ubSquadSize * 3 + 9) / 10, 1, ubSquadSize);
+	if ( mandatoryRoles + minimumRiflemen >= ubSquadSize )
+	{
+		optionalSlots = 0;
+	}
+	else if ( mandatoryRoles + minimumRiflemen + optionalSlots > ubSquadSize )
+	{
+		optionalSlots = (UINT8)(ubSquadSize - mandatoryRoles - minimumRiflemen);
+	}
 
-	if ( mandatoryRoles + optionalSlots >= ubSquadSize )
-	{
-		SetRoleTarget(
-			pTargets,
-			ENEMY_ROLE_RIFLEMAN,
-			(UINT8)max((INT32)minimumRiflemen, (INT32)ubSquadSize - mandatoryRoles),
-			ubSquadSize);
-	}
-	else
-	{
-		SetRoleTarget(
-			pTargets,
-			ENEMY_ROLE_RIFLEMAN,
-			(UINT8)max((INT32)minimumRiflemen, (INT32)ubSquadSize - mandatoryRoles - optionalSlots),
-			ubSquadSize);
-	}
+	SetRoleTarget(
+		pTargets,
+		ENEMY_ROLE_RIFLEMAN,
+		(UINT8)(ubSquadSize - mandatoryRoles - optionalSlots),
+		ubSquadSize);
 }
 
 void InitEnemySquadLoadoutState(
