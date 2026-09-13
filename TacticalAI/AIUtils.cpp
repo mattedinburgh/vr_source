@@ -7982,7 +7982,15 @@ UINT8 AITargetSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 			(pFriend->aiData.bAction == AI_ACTION_FIRE_GUN ||
 			 pFriend->aiData.bLastAction == AI_ACTION_FIRE_GUN))
 		{
-			ubSaturation++;
+			// A missed volley does not reserve the target. Spread fire only after this
+			// teammate actually achieved an effect this turn (hit) or the currently
+			// observed target is already collapsed/cowering from the engagement.
+			BOOLEAN fEffectiveFire =
+				(pFriend->usSoldierFlagMask2 & SOLDIER_SUCCESSFUL_ATTACK) != 0 ||
+				pFriend->LastTargetCollapsed() ||
+				pFriend->LastTargetSuppressed();
+			if (fEffectiveFire)
+				ubSaturation++;
 		}
 	}
 
