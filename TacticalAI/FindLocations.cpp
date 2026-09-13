@@ -312,7 +312,9 @@ INT32 CalcCoverValue(SOLDIERTYPE *pMe, INT32 sMyGridNo, INT32 iMyThreat, INT32 i
 	// sevenfm
 	bHisLevel = Threat[uiThreatIndex].bLevel;
 	bMyLevel = pMe->pathing.bLevel;
-	const BOOLEAN fHisStateKnown = (Threat[uiThreatIndex].bPersonalKnowledge == SEEN_CURRENTLY);
+	const BOOLEAN fHisStateKnown =
+		(Threat[uiThreatIndex].bPersonalKnowledge == SEEN_CURRENTLY) &&
+		(LOS_Raised(pMe, pHim, CALC_FROM_ALL_DIRS) > 0);
 	UINT8 ubFriendlyFireChance = 0;
 
 	// THE FOLLOWING STUFF IS *VEERRRY SCAARRRY*, BUT SHOULD WORK.	IF YOU REALLY
@@ -823,7 +825,9 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 		}
 
 		BOOLEAN fCurrentThreat = (*pbPersOL == SEEN_CURRENTLY || *pbPublOL == SEEN_CURRENTLY);
-		BOOLEAN fThreatStateKnown = (*pbPersOL == SEEN_CURRENTLY);
+		BOOLEAN fThreatStateKnown =
+			(*pbPersOL == SEEN_CURRENTLY) &&
+			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
 		// Relation/identity is stable knowledge; live life/sector state is not. A
 		// stale contact remains a possible threat until the knowledge system ages it out.
 		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
