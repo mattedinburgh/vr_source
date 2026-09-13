@@ -49,6 +49,13 @@ enum
 void BlackBoxHeartbeat( DWORD currentScreen );
 void BlackBoxFramePhase( DWORD phase );
 
+// Structured v4 telemetry. These are intentionally fixed-size/no-allocation
+// APIs so they remain predictable in an old 32-bit engine.
+void BlackBoxContext( const char *key, const char *format, ... );
+LONG BlackBoxCounterAdd( const char *name, LONG delta );
+DWORD BlackBoxOperationBegin( const char *subsystem, const char *name );
+void BlackBoxOperationEnd( DWORD token, const char *result );
+
 
 #ifdef __cplusplus
 }
