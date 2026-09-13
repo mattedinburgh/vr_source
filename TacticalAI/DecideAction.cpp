@@ -6130,6 +6130,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		!TANK( pSoldier ) &&
 		!(pSoldier->flags.uiStatusFlags & SOLDIER_VEHICLE) &&
 		!AM_A_ROBOT(pSoldier) &&
+		!AIShouldAvoidAdvance(pSoldier) &&
 		ubBestAttackAction == AI_ACTION_FIRE_GUN &&
 		BestAttack.ubChanceToReallyHit < 30 &&
 		BestAttack.ubChanceToReallyHit > 1 &&
@@ -6171,6 +6172,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		!pSoldier->aiData.bUnderFire &&
 		pSoldier->pathing.bLevel == 0 &&
 		pSoldier->aiData.bOrders == SEEKENEMY &&
+		!AIShouldAvoidAdvance(pSoldier) &&
 		pSoldier->aiData.bAIMorale >= MORALE_CONFIDENT &&
 		RangeChangeDesire(pSoldier) >= 4 &&
 		!TileIsOutOfBounds(sClosestOpponent) &&
