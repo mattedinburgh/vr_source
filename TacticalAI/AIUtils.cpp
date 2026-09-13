@@ -4748,7 +4748,11 @@ static UINT8 AISelectFireteamRemnantDestination(SOLDIERTYPE *pSoldier, UINT8 *pu
 
 static BOOLEAN AICanAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 {
-	return AISelectFireteamRemnantDestination(pSoldier, NULL) != AI_FIRETEAM_NONE;
+	UINT8 ubOld = AI_FIRETEAM_NONE;
+	UINT8 ubBest = AISelectFireteamRemnantDestination(pSoldier, &ubOld);
+	return ubBest != AI_FIRETEAM_NONE &&
+		ubOld != AI_FIRETEAM_NONE &&
+		AIFireteamRemnantDestinationReachable(ubOld, ubBest);
 }
 
 static BOOLEAN AIFireteamRemnantDestinationReachable(UINT8 ubOld, UINT8 ubBest)
