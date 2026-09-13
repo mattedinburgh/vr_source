@@ -1443,6 +1443,43 @@ void BattleLogAddText( UINT16 usColor, STR16 pString )
 	}
 }
 
+void BattleLogAddMeleeHit( UINT8 ubAttackerID, UINT8 ubTargetID, INT16 sDamage )
+{
+	BattleLogCheckSector();
+
+	if ( ubAttackerID == NOBODY || ubTargetID == NOBODY ||
+		MercPtrs[ubAttackerID] == NULL || MercPtrs[ubTargetID] == NULL )
+		return;
+
+	BOOLEAN fAttackerPlayer = ( MercPtrs[ubAttackerID]->bTeam == gbPlayerNum );
+	BOOLEAN fTargetPlayer = ( MercPtrs[ubTargetID]->bTeam == gbPlayerNum );
+	if ( !fAttackerPlayer && !fTargetPlayer )
+		return;
+
+	guiBattleLogSequence++;
+	BATTLE_LOG_ENTRY *pEntry = &gBattleLogEntries[(guiBattleLogSequence - 1) % BATTLE_LOG_MAX_ENTRIES];
+	memset( pEntry, 0, sizeof(*pEntry) );
+	pEntry->uiSequence = guiBattleLogSequence;
+	pEntry->usColor = fAttackerPlayer ? FONT_MCOLOR_LTGREEN : FONT_MCOLOR_LTRED;
+	pEntry->ubOutcome = BATTLELOG_OUTCOME_HIT;
+	pEntry->ubActualTargetID = ubTargetID;
+	pEntry->sDamage = sDamage;
+	pEntry->iBullet = -1;
+
+	const CHAR16 *pAttackerName = MercPtrs[ubAttackerID]->GetName();
+	const CHAR16 *pTargetName = MercPtrs[ubTargetID]->GetName();
+	swprintf( pEntry->zText, L"[%02d:%02d] %s hit %s for %d damage",
+		guiHour, guiMin, pAttackerName, pTargetName, sDamage );
+	gusBattleLogScrollOffset = 0;
+
+	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
+	{
+		BattleLogEnsureUI();
+		InvalidateRegion( gsBattleLogX, gsBattleLogY,
+			gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH );
+	}
+}
+
 void BattleLogAddNCTHMiss( INT32 iBullet )
 {
 	BattleLogCheckSector();
