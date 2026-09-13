@@ -394,6 +394,9 @@ typedef struct
 	UINT16 usColor;
 	BOOLEAN fClickable;
 	UINT8 ubOutcome;
+	UINT8 ubActualTargetID;
+	UINT8 ubBlockReason;
+	INT16 sDamage;
 	INT32 iBullet;
 	NCTH_SHOT_DIAGNOSTIC ncth;
 } BATTLE_LOG_ENTRY;
@@ -426,6 +429,9 @@ static MOUSE_REGION gBattleLogContentRegion;
 static MOUSE_REGION gBattleLogResizeRegion;
 static NCTH_SHOT_DIAGNOSTIC gBattleLogInspectorDiagnostic;
 static UINT8 gubBattleLogInspectorOutcome = BATTLELOG_OUTCOME_NONE;
+static UINT8 gubBattleLogInspectorActualTargetID = NOBODY;
+static UINT8 gubBattleLogInspectorBlockReason = BATTLELOG_BLOCK_STRUCTURE;
+static INT16 gsBattleLogInspectorDamage = 0;
 
 static void BattleLogRebuildOverlay( void );
 static void BattleLogUpdateRegions( void );
@@ -626,6 +632,9 @@ static void BattleLogContentCallback( MOUSE_REGION *pRegion, INT32 iReason )
 	{
 		gBattleLogInspectorDiagnostic = pEntry->ncth;
 		gubBattleLogInspectorOutcome = pEntry->ubOutcome;
+		gubBattleLogInspectorActualTargetID = pEntry->ubActualTargetID;
+		gubBattleLogInspectorBlockReason = pEntry->ubBlockReason;
+		gsBattleLogInspectorDamage = pEntry->sDamage;
 		gfBattleLogInspectorVisible = TRUE;
 		BattleLogRebuildOverlay();
 	}
@@ -829,12 +838,28 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		INT16 sy = iy + BATTLE_LOG_HEADER_H + 3;
 		const CHAR16 *pShooterName = L"unknown";
 		const CHAR16 *pTargetName = L"target";
+		const CHAR16 *pActualTargetName = L"someone";
 		if ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] )
 			pShooterName = MercPtrs[d.ubShooterID]->GetName();
 		if ( d.ubTargetID != NOBODY && MercPtrs[d.ubTargetID] )
 			pTargetName = MercPtrs[d.ubTargetID]->GetName();
+		if ( gubBattleLogInspectorActualTargetID != NOBODY && MercPtrs[gubBattleLogInspectorActualTargetID] )
+			pActualTargetName = MercPtrs[gubBattleLogInspectorActualTargetID]->GetName();
 
-		swprintf( z, L"%s -> %s", pShooterName, pTargetName );
+		if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_INTERCEPT )
+			swprintf( z, L"%s aimed %s -> hit %s | damage %d", pShooterName, pTargetName, pActualTargetName, gsBattleLogInspectorDamage );
+		else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_HIT )
+			swprintf( z, L"%s -> %s | damage %d", pShooterName, pActualTargetName, gsBattleLogInspectorDamage );
+		else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_BLOCKED )
+		{
+			const CHAR16 *pBlock = L"cover/structure";
+			if ( gubBattleLogInspectorBlockReason == BATTLELOG_BLOCK_GROUND ) pBlock = L"ground";
+			else if ( gubBattleLogInspectorBlockReason == BATTLELOG_BLOCK_ROOF ) pBlock = L"roof";
+			swprintf( z, L"%s -> %s | stopped by %s", pShooterName, pTargetName, pBlock );
+		}
+		else
+			swprintf( z, L"%s -> %s", pShooterName, pTargetName );
+
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
 
 		swprintf( z, L"Aim %d | round %d | range %.1f tiles | NCTH %.1f | muzzle sway %.1f",
@@ -1007,6 +1032,7 @@ void BattleLogAddText( UINT16 usColor, STR16 pString )
 	pEntry->uiSequence = guiBattleLogSequence;
 	pEntry->usColor = usColor;
 	pEntry->ubOutcome = BATTLELOG_OUTCOME_NONE;
+	pEntry->ubActualTargetID = NOBODY;
 	pEntry->iBullet = -1;
 
 	// ScreenMsg can carry a 512-character formatted string. Keep the battle-log
@@ -1048,6 +1074,7 @@ void BattleLogAddNCTHMiss( INT32 iBullet )
 	pEntry->usColor = fShooterPlayer ? FONT_MCOLOR_LTRED : FONT_MCOLOR_LTYELLOW;
 	pEntry->fClickable = TRUE;
 	pEntry->ubOutcome = BATTLELOG_OUTCOME_MISS;
+	pEntry->ubActualTargetID = NOBODY;
 	pEntry->iBullet = iBullet;
 	pEntry->ncth = d;
 
@@ -1097,6 +1124,8 @@ void BattleLogAddNCTHBlocked( INT32 iBullet, UINT8 ubReason )
 	pEntry->usColor = FONT_MCOLOR_LTYELLOW;
 	pEntry->fClickable = TRUE;
 	pEntry->ubOutcome = BATTLELOG_OUTCOME_BLOCKED;
+	pEntry->ubActualTargetID = NOBODY;
+	pEntry->ubBlockReason = ubReason;
 	pEntry->iBullet = iBullet;
 	pEntry->ncth = d;
 
@@ -1157,6 +1186,8 @@ void BattleLogAddNCTHHit( INT32 iBullet, UINT8 ubTargetID, INT16 sDamage )
 	pEntry->usColor = fIntendedHit
 		? ( fShooterPlayer ? FONT_MCOLOR_LTGREEN : FONT_MCOLOR_LTRED )
 		: ( fActualTargetPlayer ? FONT_MCOLOR_LTRED : FONT_MCOLOR_LTYELLOW );
+	pEntry->ubActualTargetID = ubTargetID;
+	pEntry->sDamage = sDamage;
 	pEntry->iBullet = iBullet;
 	pEntry->ncth = d;
 
