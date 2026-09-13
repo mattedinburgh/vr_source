@@ -143,6 +143,13 @@ void BlackBoxInitialize( void )
 
 	gBlackBoxInitialized = TRUE;
 	BlackBoxEvent( "ENGINE", "Black box initialized pid=%lu tid=%lu", GetCurrentProcessId(), GetCurrentThreadId() );
+#ifdef _DEBUG
+	BlackBoxEvent( "ENGINE", "buildDate=%s buildTime=%s config=Debug pointerBits=%u recorderVersion=2 eventSlots=%u checkpointSlots=%u",
+		__DATE__, __TIME__, (UINT32)(sizeof(void*) * 8), (UINT32)BLACKBOX_EVENT_SLOTS, (UINT32)BLACKBOX_CHECKPOINT_SLOTS );
+#else
+	BlackBoxEvent( "ENGINE", "buildDate=%s buildTime=%s config=Release pointerBits=%u recorderVersion=2 eventSlots=%u checkpointSlots=%u",
+		__DATE__, __TIME__, (UINT32)(sizeof(void*) * 8), (UINT32)BLACKBOX_EVENT_SLOTS, (UINT32)BLACKBOX_CHECKPOINT_SLOTS );
+#endif
 
 	exePath[0] = 0;
 	if( GetModuleFileNameA( NULL, exePath, MAX_PATH ) > 0 )
