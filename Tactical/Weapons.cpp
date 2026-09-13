@@ -10614,20 +10614,24 @@ UINT32 CalcThrownChanceToHit(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTi
 	//}
 
 	////////////////////////////////////////////////////////////////////////////////////
-	// SANDRO - Bonus CtH for Militia
-	if (pSoldier->ubSoldierClass == SOLDIER_CLASS_GREEN_MILITIA && gGameExternalOptions.sGreenMilitiaCtHBonusPercent != 0)
-		iChance += ((iChance * gGameExternalOptions.sGreenMilitiaCtHBonusPercent) /100);
-	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_REG_MILITIA && gGameExternalOptions.sRegularMilitiaCtHBonusPercent != 0)
-		iChance += ((iChance * gGameExternalOptions.sRegularMilitiaCtHBonusPercent) /100);
-	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA && gGameExternalOptions.sVeteranMilitiaCtHBonusPercent != 0)
-		iChance += ((iChance * gGameExternalOptions.sVeteranMilitiaCtHBonusPercent) /100);
-	// bonus for enemy
-	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ADMINISTRATOR && gGameExternalOptions.sEnemyAdminCtHBonusPercent != 0)
-		iChance += ((iChance * gGameExternalOptions.sEnemyAdminCtHBonusPercent) /100);
-	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ARMY && gGameExternalOptions.sEnemyRegularCtHBonusPercent != 0)
-		iChance += ((iChance * gGameExternalOptions.sEnemyRegularCtHBonusPercent) /100);
-	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE && gGameExternalOptions.sEnemyEliteCtHBonusPercent != 0)
-		iChance += ((iChance * gGameExternalOptions.sEnemyEliteCtHBonusPercent) /100);
+	// Keep thrown/launcher CtH under the same anti-cheat rule as gun NCTH: enemy and
+	// militia combatants earn accuracy from stats, traits, equipment and conditions,
+	// not hidden class-wide percentage multipliers.
+	if ( !AICombatTeam(pSoldier) )
+	{
+		if (pSoldier->ubSoldierClass == SOLDIER_CLASS_GREEN_MILITIA && gGameExternalOptions.sGreenMilitiaCtHBonusPercent != 0)
+			iChance += ((iChance * gGameExternalOptions.sGreenMilitiaCtHBonusPercent) /100);
+		else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_REG_MILITIA && gGameExternalOptions.sRegularMilitiaCtHBonusPercent != 0)
+			iChance += ((iChance * gGameExternalOptions.sRegularMilitiaCtHBonusPercent) /100);
+		else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA && gGameExternalOptions.sVeteranMilitiaCtHBonusPercent != 0)
+			iChance += ((iChance * gGameExternalOptions.sVeteranMilitiaCtHBonusPercent) /100);
+		else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ADMINISTRATOR && gGameExternalOptions.sEnemyAdminCtHBonusPercent != 0)
+			iChance += ((iChance * gGameExternalOptions.sEnemyAdminCtHBonusPercent) /100);
+		else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ARMY && gGameExternalOptions.sEnemyRegularCtHBonusPercent != 0)
+			iChance += ((iChance * gGameExternalOptions.sEnemyRegularCtHBonusPercent) /100);
+		else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE && gGameExternalOptions.sEnemyEliteCtHBonusPercent != 0)
+			iChance += ((iChance * gGameExternalOptions.sEnemyEliteCtHBonusPercent) /100);
+	}
 	//////////////////////////////////////////////////////////////////////////////////////
 
 	// What's with all these defined limits? Let's think out of the box for a minute, shall we?
