@@ -211,6 +211,9 @@ INT32 RecordExceptionInfo( EXCEPTION_POINTERS *pExceptInfo )
 	memcpy( &Record, pExceptInfo->ExceptionRecord , sizeof( EXCEPTION_RECORD ) );
 	memcpy( &Context, pExceptInfo->ContextRecord, sizeof( CONTEXT ) );
 
+	// Capture the binary dump first. Text reporting and stack walking are useful
+	// but are more complex and can fail in a corrupted process.
+	ERCrashDumpExceptionFilterEx( "Vengeance", ".", pExceptInfo );
 
 	//
 	//	Open a file to output the current state of the game
@@ -342,9 +345,6 @@ INT32 RecordExceptionInfo( EXCEPTION_POINTERS *pExceptInfo )
 	//eee
 
 	FileClose( hFile );
-
-	// Generate the minidump that this source already knows how to write.
-	ERCrashDumpExceptionFilterEx( "Vengeance", ".", pExceptInfo );
 
 	return( EXCEPTION_EXECUTE_HANDLER );
 }
@@ -1187,7 +1187,7 @@ static BOOL ERGenerateMiniDump(CHAR *szFileName, PEXCEPTION_POINTERS pExceptionI
 	// Write the dump
 	stInfo.ThreadId = GetCurrentThreadId();
 	stInfo.ExceptionPointers = pExceptionInfo;
-	stInfo.ClientPointers = TRUE;
+	stInfo.ClientPointers = FALSE;
 
 	// We need the SeDebugPrivilege to be able to run MiniDumpWriteDump
 	bPrivilegeEnabled = EREnablePriv(SE_DEBUG_NAME, hImpersonationToken, &tp);
@@ -1227,7 +1227,10 @@ LONG __stdcall ERCrashDumpExceptionFilterEx(const CHAR *pAppName, const CHAR* pP
 	SYSTEMTIME stTime;
 	CHAR pszFilename[MAX_PATH], szPathName[_MAX_PATH], szBuffer[_MAX_PATH];
 	size_t cbFilename = sizeof(pszFilename) / sizeof(pszFilename[0]) - 1;
-	if (!ERLoadImageHlpDLL())
+	// ERLoadImageHlpDLL() also resolves MiniDumpWriteDump. A dump should not
+	// be suppressed merely because an optional stack-symbol function is absent.
+	ERLoadImageHlpDLL();
+	if (!g_MiniDumpWriteDump)
 		return lRet;
 
 	__try
