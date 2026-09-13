@@ -2758,19 +2758,6 @@ BOOLEAN BulletHitMerc( BULLET * pBullet, STRUCTURE * pStructure, BOOLEAN fIntend
 			pTarget->bNumPelletsHitBy++;
 		}
 
-		// Keep successful rounds in the same diagnostic stream as misses. This is
-		// important for balancing NCTH: the player can compare two otherwise
-		// similar shots and see which physical trajectory components changed.
-		// Buckshot is collapsed to the first pellet hit so one trigger pull does
-		// not flood the battle log with near-identical entries.
-		if ( UsingNewCTHSystem() && pBullet->ubFirerID != NOBODY &&
-			 !(pBullet->fFragment) && !(pBullet->usFlags & BULLET_FLAG_BUCKSHOT) )
-		{
-			// The battle-log function filters out AI-vs-AI traffic and keeps only
-			// shots where either the shooter or intended target belongs to the player.
-			BattleLogAddNCTHHit( pBullet->iBullet, pTarget->ubID, (INT16)iDamage );
-		}
-
 		//////////////////////////////////////////////////////////////////////////////////////////////
 		// HEADROCK HAM 4: Experience Gain
 		//
@@ -2835,6 +2822,16 @@ BOOLEAN BulletHitMerc( BULLET * pBullet, STRUCTURE * pStructure, BOOLEAN fIntend
 
 		// accidentally shot
 		pTarget->flags.fIntendedTarget = FALSE;
+	}
+
+	// Keep both intended and intercepted person-hits in the same diagnostic
+	// stream. BattleLogAddNCTHHit compares the actual target to the target stored
+	// in the fired-shot snapshot, so accidental/intervening hits are labelled
+	// separately instead of disappearing from the shot history.
+	if ( UsingNewCTHSystem() && pBullet->ubFirerID != NOBODY &&
+		 !(pBullet->fFragment) && !(pBullet->usFlags & BULLET_FLAG_BUCKSHOT) )
+	{
+		BattleLogAddNCTHHit( pBullet->iBullet, pTarget->ubID, (INT16)iDamage );
 	}
 
 	if ( AmmoTypes[ubAmmoType].monsterSpit )
