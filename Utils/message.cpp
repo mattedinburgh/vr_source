@@ -468,6 +468,16 @@ static INT16 BattleLogInspectorWidth( void )
 	return (INT16)__max( gsBattleLogW, __min( 560, available ) );
 }
 
+static INT16 BattleLogInspectorTop( void )
+{
+	return BattleLogInspectorTop();
+}
+
+static INT16 BattleLogInspectorBottom( void )
+{
+	return (INT16)__min( SCREEN_HEIGHT - 2, BattleLogInspectorTop() + BATTLE_LOG_INSPECTOR_H );
+}
+
 static UINT16 BattleLogVisibleRows( void )
 {
 	INT16 usable = gsBattleLogH - BATTLE_LOG_HEADER_H - 5;
@@ -690,11 +700,11 @@ static void BattleLogUpdateRegions( void )
 	gBattleLogResizeRegion.RegionBottomRightX = gsBattleLogX + gsBattleLogW;
 	gBattleLogResizeRegion.RegionBottomRightY = gsBattleLogY + gsBattleLogH;
 
-	INT16 sInspectorY = (INT16)__max( 2, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 3 );
+	INT16 sInspectorY = BattleLogInspectorTop();
 	gBattleLogInspectorRegion.RegionTopLeftX = gsBattleLogX;
 	gBattleLogInspectorRegion.RegionTopLeftY = sInspectorY;
 	gBattleLogInspectorRegion.RegionBottomRightX = gsBattleLogX + BattleLogInspectorWidth();
-	gBattleLogInspectorRegion.RegionBottomRightY = gsBattleLogY - 3;
+	gBattleLogInspectorRegion.RegionBottomRightY = BattleLogInspectorBottom();
 	if ( gfBattleLogInspectorVisible )
 		MSYS_EnableRegion( &gBattleLogInspectorRegion );
 	else
@@ -723,9 +733,9 @@ static void BattleLogCreateRegions( void )
 		MSYS_PRIORITY_HIGHEST - 1, CURSOR_NORMAL, BattleLogMoveCallback, BattleLogResizeCallback );
 	MSYS_AddRegion( &gBattleLogResizeRegion );
 
-	INT16 sInspectorY = (INT16)__max( 2, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 3 );
+	INT16 sInspectorY = BattleLogInspectorTop();
 	MSYS_DefineRegion( &gBattleLogInspectorRegion, gsBattleLogX, sInspectorY,
-		gsBattleLogX + BattleLogInspectorWidth(), gsBattleLogY - 3,
+		gsBattleLogX + BattleLogInspectorWidth(), BattleLogInspectorBottom(),
 		MSYS_PRIORITY_HIGHEST - 3, CURSOR_NORMAL, MSYS_NO_CALLBACK, BattleLogInspectorCallback );
 	MSYS_AddRegion( &gBattleLogInspectorRegion );
 	if ( !gfBattleLogInspectorVisible )
@@ -806,7 +816,7 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 	// ColorFillVideoSurfaceArea performs its own surface access and must not be
 	// invoked while we already hold the video-surface lock.
 	INT16 inspectorX = gsBattleLogX;
-	INT16 inspectorY = (INT16)__max( 2, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 3 );
+	INT16 inspectorY = BattleLogInspectorTop();
 	INT16 inspectorW = BattleLogInspectorWidth();
 	if ( gfBattleLogInspectorVisible )
 	{
@@ -1064,7 +1074,9 @@ static void BattleLogRebuildOverlay( void )
 	d.sLeft = gsBattleLogX;
 	d.sTop = gfBattleLogInspectorVisible ? (INT16)__max(2, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 3) : gsBattleLogY;
 	d.sRight = gsBattleLogX + ( gfBattleLogInspectorVisible ? BattleLogInspectorWidth() : gsBattleLogW ) + 1;
-	d.sBottom = gsBattleLogY + gsBattleLogH + 1;
+	d.sBottom = gfBattleLogInspectorVisible
+		? (INT16)__max( gsBattleLogY + gsBattleLogH + 1, BattleLogInspectorBottom() + 1 )
+		: gsBattleLogY + gsBattleLogH + 1;
 	d.sX = d.sLeft;
 	d.sY = d.sTop;
 	d.BltCallback = BlitBattleLog;
