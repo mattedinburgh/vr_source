@@ -435,12 +435,14 @@ static BOOLEAN AIAvailableMedicForCasualty( SOLDIERTYPE *pRescuer, SOLDIERTYPE *
 		SOLDIERTYPE *pMedic = MercPtrs[iCounter];
 		if ( pMedic == pPatient || !AIMedicalResponderReady( pMedic ) ||
 			pMedic->pathing.bLevel != pPatient->pathing.bLevel ||
-			!AICheckIsMedic( pMedic ) || FindObjClass( pMedic, IC_MEDKIT ) == NO_SLOT )
+			!AICheckIsMedic( pMedic ) || FindObjClass( pMedic, IC_MEDKIT ) == NO_SLOT ||
+			(pMedic->flags.uiStatusFlags & SOLDIER_COWERING) )
 		{
 			continue;
 		}
 
-		if ( AIDisengagementActive( pMedic ) || AIEscapeActive( pMedic ) || AIShouldStartEscape( pMedic ) )
+		if ( AIDisengagementActive( pMedic ) || AIEscapeActive( pMedic ) || AIShouldStartEscape( pMedic ) ||
+			AIPersonalRisk( pMedic ) > AIPersonalRiskTolerance( pMedic ) )
 			continue;
 
 		if ( PythSpacesAway( pMedic->sGridNo, pPatient->sGridNo ) <= DAY_VISION_RANGE / 2 )
@@ -847,6 +849,21 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 			iUrgency = 55;
 
 		iUrgency += __min((INT32)20, (INT32)pPatient->bBleeding / 2);
+
+		// Bleed-out timer is the decisive urgency signal for an incapacitated casualty.
+		// Non-medic extraction deliberately yields when fewer than four turns remain,
+		// so the medic must strongly prioritize those patients instead of treating the
+		// timer as equivalent to ordinary low-life bleeding.
+		if (IsBleedoutCasualty(pPatient) && pPatient->ubBleedoutState == BLEEDOUT_ACTIVE)
+		{
+			if (pPatient->ubBleedoutTurns <= 2)
+				iUrgency += 70;
+			else if (pPatient->ubBleedoutTurns <= 4)
+				iUrgency += 50;
+			else if (pPatient->ubBleedoutTurns <= 6)
+				iUrgency += 25;
+		}
+
 		if (pPatient->aiData.bUnderFire)
 			iUrgency += 10;
 
@@ -909,7 +926,7 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 			}
 		}
 
-		UINT8 ubSupport = CountNearbyFriends(pSoldier, pPatient->sGridNo, DAY_VISION_RANGE / 4);
+		UINT8 ubSupport = AICountNearbyOperationalFriends(pSoldier, pPatient->sGridNo, DAY_VISION_RANGE / 4);
 		BOOLEAN fDestinationAttackable =
 			(AIKnownThreatExposure(pSoldier, sApproachGrid, pSoldier->pathing.bLevel) > 0);
 		BOOLEAN fDestinationCovered = AnyCoverAtSpot(pSoldier, sApproachGrid);
