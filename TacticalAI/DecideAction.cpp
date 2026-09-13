@@ -5422,8 +5422,10 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				pSoldier->aiData.usActionData = FindRetreatSpot(pSoldier);
 				if (TileIsOutOfBounds(pSoldier->aiData.usActionData))
 					pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, sClosestOpponent, AI_ACTION_WITHDRAW);
-				if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
-				{
+				if (!TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
+	AIKnownRouteExposureAcceptable(
+		pSoldier, pSoldier->aiData.usActionData,
+		AI_ACTION_WITHDRAW, 200, 110, 130)){
 					return(AI_ACTION_WITHDRAW);
 				}
 			}
