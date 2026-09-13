@@ -2915,6 +2915,27 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			return bDisperseAction;
 	}
 
+	// In RED state there is no direct close contact. A viable casualty response should
+	// therefore outrank opportunistic sniper/mortar/support actions.
+	if (AICombatTeam(pSoldier) && AICheckIsMedic(pSoldier))
+	{
+		INT8 bMedicCasualtyAction = DecideCombatCasualtyResponse(pSoldier, ubCanMove);
+		if (bMedicCasualtyAction != AI_ACTION_NONE)
+			return bMedicCasualtyAction;
+	}
+	if (AICombatTeam(pSoldier))
+	{
+		INT8 bSelfAidAction = DecideEmergencySelfAid(pSoldier);
+		if (bSelfAidAction != AI_ACTION_NONE)
+			return bSelfAidAction;
+	}
+	if (AICombatTeam(pSoldier) && !AICheckIsMedic(pSoldier))
+	{
+		INT8 bCasualtyAction = DecideCombatCasualtyResponse(pSoldier, ubCanMove);
+		if (bCasualtyAction != AI_ACTION_NONE)
+			return bCasualtyAction;
+	}
+
 	// If we don't have a gun, enemy combatants may scavenge one when the local
 	// situation makes that movement reasonable. Militia never loot ground/sector
 	// items during a fight; they fight with the equipment they entered with.
@@ -3530,23 +3551,6 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 		if (bFallbackAction != AI_ACTION_NONE)
 			return bFallbackAction;
 	}
-	// A medic gets first refusal on a viable battlefield casualty before self-aid.
-	// The rescue routine already rejects the attempt if his own risk is too high.
-	if (AICombatTeam(pSoldier) && AICheckIsMedic(pSoldier))
-	{
-		INT8 bMedicCasualtyAction = DecideCombatCasualtyResponse(pSoldier, ubCanMove);
-		if (bMedicCasualtyAction != AI_ACTION_NONE)
-			return bMedicCasualtyAction;
-	}
-
-	// A badly bleeding soldier stabilizes himself if no viable medic rescue pre-empted it.
-	if (AICombatTeam(pSoldier))
-	{
-		INT8 bSelfAidAction = DecideEmergencySelfAid(pSoldier);
-		if (bSelfAidAction != AI_ACTION_NONE)
-			return bSelfAidAction;
-	}
-
 
 	// Tactical self-preservation: withdraw when this soldier's personal danger
 	// exceeds what his personality and morale are willing to tolerate.
@@ -3575,14 +3579,7 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 		}
 	}
 
-	// Shared casualty policy: extraction first, then medic rescue or adjacent buddy aid.
-	// The underlying routines retain their own route-exposure and personal-risk gates.
-	if (AICombatTeam(pSoldier) && !AICheckIsMedic(pSoldier))
-	{
-		INT8 bCasualtyAction = DecideCombatCasualtyResponse(pSoldier, ubCanMove);
-		if (bCasualtyAction != AI_ACTION_NONE)
-			return bCasualtyAction;
-	}
+
 // WDS DEBUG - this will make all enemies run away (to test retreating into occupied sector bugs)
 //	pSoldier->aiData.bAIMorale = MORALE_HOPELESS;
 
