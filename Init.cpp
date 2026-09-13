@@ -408,17 +408,22 @@ BOOLEAN LoadExternalGameplayData(STR directoryName)
 	strcat(fileName, LBEPOCKETFILENAME);
 	SGP_THROW_IFFALSE(ReadInLBEPocketStats(fileName,FALSE),LBEPOCKETFILENAME);
 
-	// 1.13 Logical Body Types: tactical clothing/armour/equipment layers.
-	// Vengeance is single-player here, so load the same layer databases unconditionally.
+	// 1.13 Logical Body Types: visible tactical armour overlays.
+	// Keep this optional until the matching STI asset pack has been deployed.
+	// The marker is created only after the deployment script verifies every referenced surface.
+	if ( FileExists( "Anims\\LOBOT\\VR_EQUIPMENT.READY" ) )
 	{
 		using namespace LogicalBodyTypes;
 		CHAR8 errorBuf[512] = "Failed loading LogicalBodyTypes external data!";
 
 		SGP_THROW_IFFALSE(Layers::Instance().LoadFromFile(directoryName, LBT_LAYERSFILENAME, errorBuf), errorBuf);
-		SGP_THROW_IFFALSE(PaletteDB::Instance().LoadFromFile(directoryName, LBT_PALETTESFILENAME, errorBuf), errorBuf);
 		SGP_THROW_IFFALSE(SurfaceDB::Instance().LoadFromFile(directoryName, LBT_ANIMSURFACESFILENAME, errorBuf), errorBuf);
 		SGP_THROW_IFFALSE(FilterDB::Instance().LoadFromFile(directoryName, LBT_FILTERSFILENAME, errorBuf), errorBuf);
 		SGP_THROW_IFFALSE(BodyTypeDB::Instance().LoadFromFile(directoryName, LBT_BODYTYPESFILENAME, errorBuf), errorBuf);
+	}
+	else
+	{
+		DebugMsg( TOPIC_JA2, DBG_LEVEL_3, "LOBOT visible-equipment assets not deployed; tactical armour overlays disabled." );
 	}
 
 
