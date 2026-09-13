@@ -834,6 +834,8 @@ typedef struct
 	FLOAT uShotHeadPenalty;
 	FLOAT fShotHeadMultiplier;
 	INT16 iPenaltyShootUnSeen;
+	// JA2 1.13-style switch: unseen remembered/reported contacts are not valid direct-fire targets by default.
+	BOOLEAN fAIShootUnseen;
 	BOOLEAN fNoStandingAnimAdjustInCombat;	// Flugente: in turnbased combat, do not adjust animation after arriving at target location
 
 	//Inventory AP Weight Divisor
