@@ -114,6 +114,9 @@
     <ClInclude Include="InterfaceItemImages.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Enemy Loadout Planner.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="Inventory Choosing.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -366,6 +369,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="InterfaceItemImages.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Enemy Loadout Planner.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Inventory Choosing.cpp">
