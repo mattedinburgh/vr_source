@@ -3540,8 +3540,16 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 		if (bFallbackAction != AI_ACTION_NONE)
 			return bFallbackAction;
 	}
-	// A badly bleeding soldier stabilizes himself first if contact has broken and
-	// his current position is protected enough to spend AP on first aid.
+	// A medic gets first refusal on a viable battlefield casualty before self-aid.
+	// The rescue routine already rejects the attempt if his own risk is too high.
+	if (AICombatTeam(pSoldier) && AICheckIsMedic(pSoldier))
+	{
+		INT8 bMedicCasualtyAction = DecideCombatCasualtyResponse(pSoldier, ubCanMove);
+		if (bMedicCasualtyAction != AI_ACTION_NONE)
+			return bMedicCasualtyAction;
+	}
+
+	// A badly bleeding soldier stabilizes himself if no viable medic rescue pre-empted it.
 	if (AICombatTeam(pSoldier))
 	{
 		INT8 bSelfAidAction = DecideEmergencySelfAid(pSoldier);
@@ -3579,7 +3587,7 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 
 	// Shared casualty policy: extraction first, then medic rescue or adjacent buddy aid.
 	// The underlying routines retain their own route-exposure and personal-risk gates.
-	if (AICombatTeam(pSoldier))
+	if (AICombatTeam(pSoldier) && !AICheckIsMedic(pSoldier))
 	{
 		INT8 bCasualtyAction = DecideCombatCasualtyResponse(pSoldier, ubCanMove);
 		if (bCasualtyAction != AI_ACTION_NONE)
@@ -5321,7 +5329,15 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				if (bFallbackAction != AI_ACTION_NONE)
 					return bFallbackAction;
 			}
-			// A badly bleeding soldier stabilizes himself first during a protected lull.
+			// Medics first attempt a safe casualty response; their rescue routine already
+			// refuses suicidal runs, allowing self-aid to follow when necessary.
+			if (AICombatTeam(pSoldier) && AICheckIsMedic(pSoldier))
+			{
+				INT8 bMedicCasualtyAction = DecideCombatCasualtyResponse(pSoldier, ubCanMove);
+				if (bMedicCasualtyAction != AI_ACTION_NONE)
+					return bMedicCasualtyAction;
+			}
+
 			if (AICombatTeam(pSoldier))
 			{
 				INT8 bSelfAidAction = DecideEmergencySelfAid(pSoldier);
@@ -5356,7 +5372,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 
 			// Use the same casualty-response priority as RED so alert-state changes do
 			// not silently reorder evacuation, medic rescue and adjacent buddy aid.
-			if (AICombatTeam(pSoldier))
+			if (AICombatTeam(pSoldier) && !AICheckIsMedic(pSoldier))
 			{
 				INT8 bCasualtyAction = DecideCombatCasualtyResponse(pSoldier, ubCanMove);
 				if (bCasualtyAction != AI_ACTION_NONE)
