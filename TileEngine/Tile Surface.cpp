@@ -16,6 +16,8 @@
 	#include "Fileman.h"
 #endif
 
+#include "ExceptionHandling.h"
+
 
 TILE_IMAGERY				*gTileSurfaceArray[ NUMBEROFTILETYPES ];
 UINT8								gbDefaultSurfaceUsed[ NUMBEROFTILETYPES ];
@@ -42,6 +44,7 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 	{
 		if ( fTraceB1Asset )
 			TraceB1RemasterLoad( "CREATE IMAGE FAILED", cFilename );
+		BlackBoxEvent( "ASSET", "tile image load failed file=%s", cFilename != NULL ? cFilename : "(null)" );
 		// Report error
 		SET_ERROR( "Could not load tile file: %s", cFilename );
 		return( NULL );
