@@ -16770,6 +16770,16 @@ void		SOLDIERTYPE::SpySelfTest()
 		ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, szCovertTextStr[STR_COVERT_TEST_OK], this->GetName() );
 	else
 		ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, szCovertTextStr[STR_COVERT_TEST_FAIL], this->GetName() );
+
+	UINT8 ubSuspicion = SuspicionPercent();
+	if ( ubSuspicion < 25 )
+		ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, L"Suspicion: %d%% (low).", ubSuspicion );
+	else if ( ubSuspicion < 50 )
+		ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, L"Suspicion: %d%% (noticed).", ubSuspicion );
+	else if ( ubSuspicion < 75 )
+		ScreenMsg( FONT_ORANGE, MSG_INTERFACE, L"Suspicion: %d%% (investigation likely).", ubSuspicion );
+	else
+		ScreenMsg( FONT_ORANGE, MSG_INTERFACE, L"Suspicion: %d%% (critical).", ubSuspicion );
 }
 
 // can we process prisoners in this sector?
