@@ -6172,6 +6172,16 @@ void ExitCombatMode( )
         HandleStrategicTurnImplicationsOfExitingCombatMode();
     }
 
+    // A militia rebuild may have been deferred while combat was active so that
+    // sector-issued equipment was not lost when tactical militia were removed.
+    // Retry here: ResetMilitia() has its own hostile-sector guard, so a temporary
+    // return to realtime leaves the request pending, while a genuinely cleared
+    // sector performs the safe rebuild immediately.
+    if ( gfStrategicMilitiaChangesMade )
+    {
+        ResetMilitia();
+    }
+
     // Make sure next opplist decay DOES happen right after we go to RT
     // since this would be the same as what would happen at the end of the turn
     gTacticalStatus.uiTimeSinceLastOpplistDecay = __max( 0, GetWorldTotalSeconds() - TIME_BETWEEN_RT_OPPLIST_DECAYS );
