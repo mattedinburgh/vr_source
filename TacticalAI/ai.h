@@ -368,6 +368,7 @@ BOOLEAN AIForcedDisengagementActive(SOLDIERTYPE *pSoldier);
 void AIForceDisengagementState(SOLDIERTYPE *pSoldier, UINT8 ubTurns);
 void AIClearDisengagementState(SOLDIERTYPE *pSoldier);
 BOOLEAN AIEscapeActive(SOLDIERTYPE *pSoldier);
+void AIRegisterEnemyEscapeTraversal(SOLDIERTYPE *pSoldier);
 BOOLEAN AIShouldStartEscape(SOLDIERTYPE *pSoldier);
 BOOLEAN AIShouldStartDisengagement(SOLDIERTYPE *pSoldier);
 BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier);
