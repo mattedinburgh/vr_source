@@ -732,6 +732,41 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 	SetVideoObjectPalette( pObject, palette );
 }
 
+static BOOLEAN ValidateB1MapTileReference( UINT8 ubType, UINT16 usSubIndex, INT32 sGridNo, const STR8 pLayerName )
+{
+	if ( gubSectorVisualProfile != SECTOR_VISUAL_ORONEGRO_OIL_RIG )
+		return TRUE;
+
+	if ( ubType >= NUMBEROFTILETYPES )
+	{
+		FatalError( "B1 remaster map contains invalid tile type %u in %s layer at grid %d", ubType, pLayerName, sGridNo );
+		return FALSE;
+	}
+
+	if ( usSubIndex == 0 || usSubIndex > gNumTilesPerType[ ubType ] )
+	{
+		FatalError( "B1 remaster map tile is outside engine capacity: type %u subindex %u in %s layer at grid %d (capacity %u)",
+			ubType, usSubIndex, pLayerName, sGridNo, gNumTilesPerType[ ubType ] );
+		return FALSE;
+	}
+
+	PTILE_IMAGERY pSurface = gTileSurfaceArray[ ubType ];
+	if ( pSurface == NULL || pSurface->vo == NULL )
+	{
+		FatalError( "B1 remaster map references an unloaded tile surface: type %u in %s layer at grid %d", ubType, pLayerName, sGridNo );
+		return FALSE;
+	}
+
+	if ( usSubIndex > pSurface->vo->usNumberOfObjects )
+	{
+		FatalError( "B1 remaster map references missing STI frame: type %u subindex %u in %s layer at grid %d (asset has %u frames)",
+			ubType, usSubIndex, pLayerName, sGridNo, pSurface->vo->usNumberOfObjects );
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
 BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLEAN fGetFromRoot )
 {
 	// Add tile surface
@@ -823,26 +858,10 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 
 	if ( fSectorReplacementRequested )
 	{
-		// Never allow a remaster STI to be silently truncated to the engine's tile-slot cap.
-		// A mismatched file is a broken B1 package and must fail visibly.
-		if ( TileSurf->vo == NULL || TileSurf->vo->usNumberOfObjects > gNumTilesPerType[ ubType ] )
+		if ( TileSurf->vo == NULL || TileSurf->vo->usNumberOfObjects == 0 )
 		{
-			UINT16 usObjects = ( TileSurf->vo != NULL ) ? TileSurf->vo->usNumberOfObjects : 0;
 			DeleteTileSurface( TileSurf );
-			FatalError( "B1 remaster asset has invalid frame count: %s (%u frames, engine capacity %u)",
-				cAdjustedFile, usObjects, gNumTilesPerType[ ubType ] );
-			return( FALSE );
-		}
-
-		// B1.dat currently references shoreline/depth transition frames up to these values.
-		// Reject under-filled water files too, rather than letting map tile references resolve incorrectly.
-		if ( ( ubType == REGWATERTEXTURE && TileSurf->vo->usNumberOfObjects < 44 ) ||
-			 ( ubType == DEEPWATERTEXTURE && TileSurf->vo->usNumberOfObjects < 35 ) )
-		{
-			UINT16 usObjects = TileSurf->vo->usNumberOfObjects;
-			DeleteTileSurface( TileSurf );
-			FatalError( "B1 remaster water asset is missing required transition frames: %s (%u frames)",
-				cAdjustedFile, usObjects );
+			FatalError( "B1 remaster asset loaded without usable frames: %s", cAdjustedFile );
 			return( FALSE );
 		}
 
@@ -3300,6 +3319,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		{
 			LOADDATA(&ubType, pBuffer, sizeof(UINT8));
 			LOADDATA(&ubSubIndex, pBuffer, sizeof(UINT8));
+			if ( !ValidateB1MapTileReference( ubType, ubSubIndex, cnt, "land" ) )
+				return( FALSE );
 			// Get tile index
 			GetTileIndexFromTypeSubIndex(ubType, ubSubIndex, &usTileIndex);
 			// Add layer
@@ -3320,6 +3341,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 			LOADDATA(&usTypeSubIndex, pBuffer, sizeof(UINT16));
 			if(ubType >= FIRSTPOINTERS)
 				continue;
+			if ( !ValidateB1MapTileReference( ubType, usTypeSubIndex, cnt, "object" ) )
+				return( FALSE );
 			// Get tile index
 			GetTileIndexFromTypeSubIndex(ubType, usTypeSubIndex, &usTileIndex);
 			// Add layer
@@ -3337,6 +3360,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		{
 			LOADDATA(&ubType, pBuffer, sizeof(UINT8));
 			LOADDATA(&ubSubIndex, pBuffer, sizeof(UINT8));
+			if ( !ValidateB1MapTileReference( ubType, ubSubIndex, cnt, "struct" ) )
+				return( FALSE );
 			// Get tile index
 			GetTileIndexFromTypeSubIndex(ubType, ubSubIndex, &usTileIndex);
 			if(ubMinorMapVersion <= 25)
@@ -3359,6 +3384,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		{
 			LOADDATA(&ubType, pBuffer, sizeof(UINT8));
 			LOADDATA(&ubSubIndex, pBuffer, sizeof(UINT8));
+			if ( !ValidateB1MapTileReference( ubType, ubSubIndex, cnt, "shadow" ) )
+				return( FALSE );
 			// Get tile index
 			GetTileIndexFromTypeSubIndex(ubType, ubSubIndex, &usTileIndex);
 			// Add layer
@@ -3375,6 +3402,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		{
 			LOADDATA(&ubType, pBuffer, sizeof(UINT8));
 			LOADDATA(&ubSubIndex, pBuffer, sizeof(UINT8));
+			if ( !ValidateB1MapTileReference( ubType, ubSubIndex, cnt, "roof" ) )
+				return( FALSE );
 			// Get tile index
 			GetTileIndexFromTypeSubIndex(ubType, ubSubIndex, &usTileIndex);
 			// Add layer
@@ -3391,6 +3420,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		{
 			LOADDATA(&ubType, pBuffer, sizeof(UINT8));
 			LOADDATA(&ubSubIndex, pBuffer, sizeof(UINT8));
+			if ( !ValidateB1MapTileReference( ubType, ubSubIndex, cnt, "on-roof" ) )
+				return( FALSE );
 			// Get tile index
 			GetTileIndexFromTypeSubIndex(ubType, ubSubIndex, &usTileIndex);
 			// Add layer
