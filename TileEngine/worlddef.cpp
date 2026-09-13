@@ -1201,16 +1201,36 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 		sprintf( cAdjustedFile, "TILESETS\\50\\%s", cFileBPP );
 		TraceB1RemasterLoad( "ASSET REQUEST", cAdjustedFile );
 
-		const BOOLEAN fReplacementVisible = FileExists( cAdjustedFile );
+		// A true-colour .b1tc sibling is a complete visual replacement for the
+		// requested STI.  The STI pathname remains the logical map/JSD identity, so
+		// pre-load validation must accept either the legacy B1 STI or its B1TC sibling.
+		CHAR8 cTrueColorFile[128];
+		strncpy( cTrueColorFile, cAdjustedFile, sizeof(cTrueColorFile) - 1 );
+		cTrueColorFile[ sizeof(cTrueColorFile) - 1 ] = 0;
+		CHAR8 *pB1Extension = strrchr( cTrueColorFile, '.' );
+		if ( pB1Extension != NULL )
+			strcpy( pB1Extension + 1, "b1tc" );
+		else
+			strcat( cTrueColorFile, ".b1tc" );
+
+		const BOOLEAN fLegacyReplacementVisible = FileExists( cAdjustedFile );
+		const BOOLEAN fTrueColorReplacementVisible = FileExists( cTrueColorFile );
+		const BOOLEAN fReplacementVisible = fLegacyReplacementVisible || fTrueColorReplacementVisible;
+
 		if ( fReplacementVisible )
 		{
-			CHAR8 zB1VisibleAsset[192];
-			sprintf( zB1VisibleAsset, "%s bytes=%lu", cAdjustedFile, FileSize( cAdjustedFile ) );
-			TraceB1RemasterLoad( "ASSET EXISTS", zB1VisibleAsset );
+			CHAR8 zB1VisibleAsset[256];
+			if ( fTrueColorReplacementVisible )
+				sprintf( zB1VisibleAsset, "%s trueColor=%s bytes=%lu", cAdjustedFile, cTrueColorFile, FileSize( cTrueColorFile ) );
+			else
+				sprintf( zB1VisibleAsset, "%s bytes=%lu", cAdjustedFile, FileSize( cAdjustedFile ) );
+			TraceB1RemasterLoad( fTrueColorReplacementVisible ? "TRUECOLOR ASSET EXISTS" : "ASSET EXISTS", zB1VisibleAsset );
 		}
 		else
 		{
-			TraceB1RemasterLoad( "ASSET MISSING", cAdjustedFile );
+			CHAR8 zB1MissingAsset[256];
+			sprintf( zB1MissingAsset, "sti=%s b1tc=%s", cAdjustedFile, cTrueColorFile );
+			TraceB1RemasterLoad( "ASSET MISSING", zB1MissingAsset );
 		}
 
 		if ( !fReplacementVisible )
