@@ -107,6 +107,14 @@ struct ENEMY_LBE_PACKAGE
 	UINT16 usBackpack;
 };
 
+#define ENEMY_LOADOUT_MAX_ATTACHMENTS 4
+
+struct ENEMY_ATTACHMENT_PACKAGE
+{
+	UINT8 ubCount;
+	UINT16 usItem[ENEMY_LOADOUT_MAX_ATTACHMENTS];
+};
+
 struct ENEMY_LOADOUT_PLAN
 {
 	ENEMY_LOADOUT_ROLE Role;
@@ -250,6 +258,16 @@ void BuildBestEnemyLBEPackageForPlan(
 	ENEMY_LBE_PACKAGE *pPackage,
 	const ENEMY_LOADOUT_PLAN *pPlan,
 	INT8 bSoldierClass,
+	UINT8 ubMaxCoolness);
+
+// Builds a compatible attachment package on a temporary weapon object.  The
+// package respects the role budget and does not fill slots merely because they
+// exist.  This remains an audit/planning helper until explicitly integrated.
+void BuildBestEnemyAttachmentPackageForPlan(
+	ENEMY_ATTACHMENT_PACKAGE *pPackage,
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	INT8 bSoldierClass,
+	UINT16 usBaseItem,
 	UINT8 ubMaxCoolness);
 
 const char *EnemyLoadoutRoleName(ENEMY_LOADOUT_ROLE Role);
