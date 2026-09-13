@@ -5,7 +5,7 @@ on:
     branches:
       - install/all-2026-09-12
     paths:
-      - 'MapPreviewTrigger/**'
+      - 'MapPreviewTrigger/A3_RENDER.txt'
       - '.github/workflows/autonomous-map-preview.yml'
   workflow_dispatch:
 
@@ -18,9 +18,8 @@ concurrency:
 
 jobs:
   render-a3:
-    if: github.actor != 'github-actions[bot]'
     runs-on: [self-hosted, Windows, X64, ja2-render]
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Check out vr_source
@@ -29,16 +28,59 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 1
 
-      - name: Check out A3 gamedir assets
-        uses: actions/checkout@v4
-        with:
-          repository: mattedinburgh/vr_gamedir
-          ref: install/all-2026-09-12
-          path: _vr_gamedir
-          fetch-depth: 1
-          sparse-checkout: |
-            Data-Maps-Tiles
-          sparse-checkout-cone-mode: true
+      - name: Locate Git on render PC
+        id: git
+        shell: powershell
+        run: |
+          $git = $null
+          $cmd = Get-Command git.exe -ErrorAction SilentlyContinue
+          if ($cmd) { $git = $cmd.Source }
+          if (-not $git) {
+            $git = Get-ChildItem "$env:LOCALAPPDATA\GitHubDesktop" -Recurse -Filter git.exe -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\resources\\app\\git\\cmd\\git\.exe$' } |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $git -or -not (Test-Path $git)) { throw 'Git could not be found on the render PC.' }
+          "path=$git" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Using Git: $git"
+          & $git --version
+
+      - name: Fetch only map assets from vr_gamedir
+        id: gamedir
+        shell: powershell
+        run: |
+          $git = '${{ steps.git.outputs.path }}'
+          $gamedir = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
+          if (Test-Path $gamedir) { Remove-Item -Recurse -Force $gamedir }
+          & $git -c core.longpaths=true clone --depth 1 --single-branch --branch install/all-2026-09-12 --filter=blob:none --no-checkout https://github.com/mattedinburgh/vr_gamedir.git $gamedir
+          if ($LASTEXITCODE -ne 0) { throw "Partial clone failed with exit code $LASTEXITCODE" }
+          & $git -C $gamedir sparse-checkout init --cone
+          if ($LASTEXITCODE -ne 0) { throw "sparse-checkout init failed with exit code $LASTEXITCODE" }
+          & $git -C $gamedir sparse-checkout set Data-Maps-Tiles
+          if ($LASTEXITCODE -ne 0) { throw "sparse-checkout set failed with exit code $LASTEXITCODE" }
+          & $git -C $gamedir checkout install/all-2026-09-12
+          if ($LASTEXITCODE -ne 0) { throw "gamedir checkout failed with exit code $LASTEXITCODE" }
+          $sha = (& $git -C $gamedir rev-parse HEAD).Trim()
+          $a3 = Join-Path $gamedir 'Data-Maps-Tiles\maps\A3.dat'
+          if (-not (Test-Path $a3)) { throw "A3.dat was not materialised: $a3" }
+          "sha=$sha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "vr_gamedir SHA: $sha"
+
+      - name: Retarget VS2013 projects to v120
+        shell: powershell
+        run: |
+          $changed = 0
+          Get-ChildItem $env:GITHUB_WORKSPACE -Recurse -Filter '*.vcxproj' -File | ForEach-Object {
+            $path = $_.FullName
+            $text = [System.IO.File]::ReadAllText($path)
+            $newText = $text.Replace('<PlatformToolset>v120_xp</PlatformToolset>', '<PlatformToolset>v120</PlatformToolset>')
+            if ($newText -ne $text) {
+              [System.IO.File]::WriteAllText($path, $newText, (New-Object System.Text.UTF8Encoding($false)))
+              $changed++
+            }
+          }
+          Write-Host "Retargeted $changed project file(s) to v120."
 
       - name: Find MSBuild
         id: msbuild
@@ -48,9 +90,7 @@ jobs:
             'C:\Program Files (x86)\MSBuild\12.0\Bin\MSBuild.exe',
             'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe',
             'C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe',
-            'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe',
-            'C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\MSBuild.exe',
-            'C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\MSBuild\Current\Bin\MSBuild.exe'
+            'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe'
           )
           $msbuild = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $msbuild) {
@@ -74,23 +114,15 @@ jobs:
         run: |
           $gameRoot = 'C:\VENGENCE\Jagged Alliance 2'
           $sandbox = 'C:\VENGENCE\JA2_RENDER_SANDBOX'
-          if (-not (Test-Path (Join-Path $gameRoot 'JA2_EN_Release.exe'))) {
-            throw "Live JA2 game root not found: $gameRoot"
-          }
-
-          if (-not (Test-Path $sandbox)) {
-            New-Item -ItemType Directory -Force -Path $sandbox | Out-Null
-            & robocopy $gameRoot $sandbox /E /R:1 /W:1 /XD (Join-Path $gameRoot '00000') (Join-Path $gameRoot 'Profiles') (Join-Path $gameRoot 'MAP_PREVIEWS') /XF '*.log'
-            if ($LASTEXITCODE -gt 7) { throw "Initial sandbox copy failed: robocopy $LASTEXITCODE" }
-          }
-
           $gamedir = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
-          & robocopy $gamedir $sandbox /E /R:1 /W:1 /XD '.git' '.github' 'MapPreviews'
-          if ($LASTEXITCODE -gt 7) { throw "Gamedir overlay failed: robocopy $LASTEXITCODE" }
-
+          if (-not (Test-Path (Join-Path $gameRoot 'JA2_EN_Release.exe'))) { throw "Live JA2 game root not found: $gameRoot" }
+          New-Item -ItemType Directory -Force -Path $sandbox | Out-Null
+          & robocopy $gameRoot $sandbox /MIR /R:1 /W:1 /XD (Join-Path $gameRoot '00000') (Join-Path $gameRoot 'Profiles') (Join-Path $gameRoot 'MAP_PREVIEWS') /XF '*.log'
+          if ($LASTEXITCODE -gt 7) { throw "Sandbox refresh failed: robocopy $LASTEXITCODE" }
+          & robocopy (Join-Path $gamedir 'Data-Maps-Tiles') (Join-Path $sandbox 'Data-Maps-Tiles') /MIR /R:1 /W:1
+          if ($LASTEXITCODE -gt 7) { throw "Map asset overlay failed: robocopy $LASTEXITCODE" }
           $editor = Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\MapEditor_EN_Release.exe'
           Copy-Item -Force $editor (Join-Path $sandbox 'MapEditor_EN_Release.exe')
-
           $previewDir = Join-Path $sandbox 'MAP_PREVIEWS'
           New-Item -ItemType Directory -Force -Path $previewDir | Out-Null
           Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $previewDir 'A3_overview.bmp')
@@ -101,36 +133,28 @@ jobs:
           $sandbox = 'C:\VENGENCE\JA2_RENDER_SANDBOX'
           $editor = Join-Path $sandbox 'MapEditor_EN_Release.exe'
           $p = Start-Process -FilePath $editor -ArgumentList '-MAPSHOT=A3.dat' -WorkingDirectory $sandbox -PassThru
-          if (-not $p.WaitForExit(180000)) {
+          if (-not $p.WaitForExit(600000)) {
             try { $p.Kill() } catch {}
-            throw 'MapEditor MAPSHOT timed out after 180 seconds.'
+            throw 'MapEditor MAPSHOT timed out after 600 seconds.'
           }
           if ($p.ExitCode -ne 0) { throw "MapEditor exited with code $($p.ExitCode)" }
-
           $bmp = Join-Path $sandbox 'MAP_PREVIEWS\A3_overview.bmp'
           if (-not (Test-Path $bmp)) { throw "A3 preview not produced: $bmp" }
-
           Add-Type -AssemblyName System.Drawing
           $outDir = Join-Path $env:GITHUB_WORKSPACE 'MapPreviews\Auto'
           New-Item -ItemType Directory -Force -Path $outDir | Out-Null
           $png = Join-Path $outDir 'A3_latest.png'
           $img = [System.Drawing.Image]::FromFile($bmp)
-          try {
-            $img.Save($png, [System.Drawing.Imaging.ImageFormat]::Png)
-          } finally {
-            $img.Dispose()
-          }
-
-          $srcSha = '${{ github.sha }}'
-          $gamedirSha = (git -C (Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir') rev-parse HEAD).Trim()
+          try { $img.Save($png, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $img.Dispose() }
           @{
             sector = 'A3'
-            source_sha = $srcSha
-            gamedir_sha = $gamedirSha
+            source_sha = '${{ github.sha }}'
+            gamedir_sha = '${{ steps.gamedir.outputs.sha }}'
             generated_utc = (Get-Date).ToUniversalTime().ToString('o')
             renderer = 'JA2 MapEditor -MAPSHOT'
             sandbox = $sandbox
           } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $outDir 'A3_latest.json')
+          Write-Host "A3 preview created: $png"
 
       - name: Upload render artifact
         uses: actions/upload-artifact@v4
@@ -142,21 +166,23 @@ jobs:
           retention-days: 14
 
       - name: Publish latest preview to repository
-        shell: bash
+        shell: powershell
         run: |
-          git add MapPreviews/Auto/A3_latest.png MapPreviews/Auto/A3_latest.json
-          if git diff --cached --quiet; then
-            echo "Preview is unchanged."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Update autonomous A3 engine preview"
-          for attempt in 1 2 3 4 5; do
-            git pull --rebase origin install/all-2026-09-12
-            if git push origin HEAD:install/all-2026-09-12; then
-              exit 0
-            fi
-            sleep $((attempt * 2))
-          done
-          exit 1
+          $git = '${{ steps.git.outputs.path }}'
+          & $git add MapPreviews/Auto/A3_latest.png MapPreviews/Auto/A3_latest.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) { Write-Host 'Preview is unchanged.'; exit 0 }
+          & $git config user.name 'github-actions[bot]'
+          & $git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          & $git commit -m 'Update autonomous A3 engine preview'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          for ($attempt = 1; $attempt -le 5; $attempt++) {
+            & $git pull --rebase origin install/all-2026-09-12
+            if ($LASTEXITCODE -eq 0) {
+              & $git push origin HEAD:install/all-2026-09-12
+              if ($LASTEXITCODE -eq 0) { exit 0 }
+            }
+            Start-Sleep -Seconds ($attempt * 2)
+          }
+          throw 'Could not publish A3 preview after 5 attempts.'
