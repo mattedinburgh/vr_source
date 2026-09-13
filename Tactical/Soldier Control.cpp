@@ -6033,6 +6033,9 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	else if ( ubHitLocation == AIM_SHOT_TORSO && Random( 100 ) < 70 )
 		ubVariant = (UINT8)( 20 + Random( 5 ) );
 
+	DebugMsg( TOPIC_JA2, DBG_LEVEL_3, String( "VR_FATAL variant=%u soldier=%u hitloc=%u damage=%d height=%u incomingDir=%u",
+		ubVariant, pSoldier->ubID, ubHitLocation, sDamage, ubHeight, ubIncomingDirection ) );
+
 	// Prone and crouched mercs use stance-safe death states, while still receiving
 	// all thirty gore packages. This keeps the 30-way visual test active in every stance.
 	if ( ubHeight == ANIM_PRONE || ubHeight == ANIM_CROUCH )
