@@ -1,4 +1,5 @@
 #include "builddefines.h"
+#include "Message.h"
 
 #ifdef PRECOMPILEDHEADERS
 #include "TileEngine All.h"
