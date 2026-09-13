@@ -446,16 +446,34 @@ static void ScanRealConflictPool(INT32 iPool)
 
 	for (UINT32 uiSeq = 1; uiSeq <= REAL_CONFLICT_MAX_FILES_PER_POOL; ++uiSeq)
 	{
-		CHAR8 szPath[260];
+		CHAR8 szFlatPath[260];
+		CHAR8 szNestedPath[260];
+
+		// Prefer a flat file directly inside Loadscreens. That directory is
+		// already used by Vengeance and is therefore the least ambiguous VFS path.
+		// DEPLOY_LOADING_SCREENS.ps1 writes RC_<pool>_<seq> files there.
 		sprintf(
-			szPath,
-			"LOADSCREENS\\RealConflict\\%s\\%s_%03u_1920x1080.png",
+			szFlatPath,
+			"Loadscreens\\RC_%s_%03u_1920x1080.png",
+			gRealConflictPoolCodes[iPool],
+			uiSeq);
+
+		if (FileExists(szFlatPath))
+		{
+			gRealConflictPoolFiles[iPool].push_back(szFlatPath);
+			continue;
+		}
+
+		// Compatibility fallback for earlier deployments.
+		sprintf(
+			szNestedPath,
+			"Loadscreens\\RealConflict\\%s\\%s_%03u_1920x1080.png",
 			gRealConflictPoolCodes[iPool],
 			gRealConflictPoolCodes[iPool],
 			uiSeq);
 
-		if (FileExists(szPath))
-			gRealConflictPoolFiles[iPool].push_back(szPath);
+		if (FileExists(szNestedPath))
+			gRealConflictPoolFiles[iPool].push_back(szNestedPath);
 	}
 }
 
@@ -707,7 +725,7 @@ void DisplayLoadScreenWithID( UINT8 ubLoadScreenID )
 	static BOOLEAN fLoggedDocumentarySelectorRevision = FALSE;
 	if (!fLoggedDocumentarySelectorRevision)
 	{
-		BlackBoxEvent("LOADSCREEN", "selector_revision=2026-09-13-v3");
+		BlackBoxEvent("LOADSCREEN", "selector_revision=2026-09-13-v4-flat");
 		fLoggedDocumentarySelectorRevision = TRUE;
 	}
 
