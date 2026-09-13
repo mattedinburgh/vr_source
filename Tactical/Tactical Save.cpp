@@ -1269,6 +1269,8 @@ void HandleAllReachAbleItemsInTheSector( INT16 sSectorX, INT16 sSectorY, INT8 bS
 BOOLEAN LoadCurrentSectorsInformationFromTempItemsFile()
 {
 	BOOLEAN fUsedTempFile = FALSE;
+	const BOOLEAN fTraceB1Temp = ( gWorldSectorX == 1 && gWorldSectorY == MAP_ROW_B && gbWorldSectorZ == 0 );
+	if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: BEGIN", "" );
 
 	//
 	// Load in the sectors ITems
@@ -1288,8 +1290,13 @@ BOOLEAN LoadCurrentSectorsInformationFromTempItemsFile()
 			//If there is a file, load in the Items array
 			if( DoesTempFileExistsForMap( SF_ITEM_TEMP_FILE_EXISTS, gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) )
 			{
+				if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: ITEMS BEGIN", "" );
 				if( !LoadAndAddWorldItemsFromTempFile( gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) )
+				{
+					if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: ITEMS FAILED", "" );
 					return( FALSE );
+				}
+				if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: ITEMS OK", "" );
 			}
 
 			gfWasInMeanwhile = FALSE;
@@ -1303,48 +1310,78 @@ BOOLEAN LoadCurrentSectorsInformationFromTempItemsFile()
 	if( DoesTempFileExistsForMap( SF_ITEM_TEMP_FILE_EXISTS, gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) )
 	{
 		fUsedTempFile = TRUE;
+		if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: ITEMS BEGIN", "" );
 		if( !LoadAndAddWorldItemsFromTempFile( gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) )
+		{
+			if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: ITEMS FAILED", "" );
 			return( FALSE );
+		}
+		if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: ITEMS OK", "" );
 	}
 
 	//If there is a rotting corpse temp file, load the data from the temp file
 	if( DoesTempFileExistsForMap( SF_ROTTING_CORPSE_TEMP_FILE_EXISTS, gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) )
 	{
 		fUsedTempFile = TRUE;
+		if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: CORPSES BEGIN", "" );
 		if( !LoadRottingCorpsesFromTempCorpseFile( gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) )
+		{
+			if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: CORPSES FAILED", "" );
 			return( FALSE );
+		}
+		if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: CORPSES OK", "" );
 	}
 
 	//If there is a map modifications file, load the data from the temp file
 	if( DoesTempFileExistsForMap( SF_MAP_MODIFICATIONS_TEMP_FILE_EXISTS, gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) )
 	{
 		fUsedTempFile = TRUE;
+		if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: MAP CHANGES BEGIN", "" );
 		if( !LoadAllMapChangesFromMapTempFileAndApplyThem( ) )
+		{
+			if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: MAP CHANGES FAILED", "" );
 			return( FALSE );
+		}
+		if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: MAP CHANGES OK", "" );
 	}
 
 	//if there is a door table temp file, load the data from the temp file
 	if( DoesTempFileExistsForMap( SF_DOOR_TABLE_TEMP_FILES_EXISTS, gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) )
 	{
 		fUsedTempFile = TRUE;
+		if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: DOOR TABLE BEGIN", "" );
 		if( !LoadDoorTableFromDoorTableTempFile( ) )
+		{
+			if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: DOOR TABLE FAILED", "" );
 			return( FALSE );
+		}
+		if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: DOOR TABLE OK", "" );
 	}
 
 	//if there is a revealed status temp file, load the data from the temp file
 	if( DoesTempFileExistsForMap( SF_REVEALED_STATUS_TEMP_FILE_EXISTS, gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) )
 	{
 		fUsedTempFile = TRUE;
+		if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: REVEALED BEGIN", "" );
 		if( !LoadRevealedStatusArrayFromRevealedTempFile( ) )
+		{
+			if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: REVEALED FAILED", "" );
 			return( FALSE );
+		}
+		if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: REVEALED OK", "" );
 	}
 
 	//if there is a door status temp file, load the data from the temp file
 	if( DoesTempFileExistsForMap( SF_DOOR_STATUS_TEMP_FILE_EXISTS, gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) )
 	{
 		fUsedTempFile = TRUE;
+		if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: DOOR STATUS BEGIN", "" );
 		if( !LoadDoorStatusArrayFromDoorStatusTempFile( ) )
+		{
+			if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: DOOR STATUS FAILED", "" );
 			return( FALSE );
+		}
+		if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: DOOR STATUS OK", "" );
 	}
 
 
@@ -1354,8 +1391,13 @@ BOOLEAN LoadCurrentSectorsInformationFromTempItemsFile()
 		if( DoesTempFileExistsForMap( SF_ENEMY_PRESERVED_TEMP_FILE_EXISTS, gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) )
 		{
 			fUsedTempFile = TRUE;
+			if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: LEGACY ENEMIES BEGIN", "" );
 			if( !LoadEnemySoldiersFromTempFile( ) )
+			{
+				if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: LEGACY ENEMIES FAILED", "" );
 				return( FALSE );
+			}
+			if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: LEGACY ENEMIES OK", "" );
 		}
 	}
 
@@ -1365,47 +1407,73 @@ BOOLEAN LoadCurrentSectorsInformationFromTempItemsFile()
 		if( DoesTempFileExistsForMap( SF_ENEMY_PRESERVED_TEMP_FILE_EXISTS, gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) )
 		{
 			fUsedTempFile = TRUE;
+			if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: ENEMIES BEGIN", "" );
 			if( !NewWayOfLoadingEnemySoldiersFromTempFile( ) )
+			{
+				if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: ENEMIES FAILED", "" );
 				return( FALSE );
+			}
+			if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: ENEMIES OK", "" );
 		}
 
 		if( DoesTempFileExistsForMap( SF_CIV_PRESERVED_TEMP_FILE_EXISTS, gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) )
 		{
 			fUsedTempFile = TRUE;
+			if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: CIVILIANS BEGIN", "" );
 			if( !NewWayOfLoadingCiviliansFromTempFile( ) )
+			{
+				if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: CIVILIANS FAILED", "" );
 				return( FALSE );
+			}
+			if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: CIVILIANS OK", "" );
 		}
 	}
 
 	if( DoesTempFileExistsForMap( SF_SMOKE_EFFECTS_TEMP_FILE_EXISTS, gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) )
 	{
 		fUsedTempFile = TRUE;
+		if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: SMOKE BEGIN", "" );
 		if( !LoadSmokeEffectsFromMapTempFile( gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) )
+		{
+			if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: SMOKE FAILED", "" );
 			return( FALSE );
+		}
+		if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: SMOKE OK", "" );
 	}
 
 	if( DoesTempFileExistsForMap( SF_LIGHTING_EFFECTS_TEMP_FILE_EXISTS, gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) )
 	{
 		fUsedTempFile = TRUE;
+		if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: LIGHTS BEGIN", "" );
 		if( !LoadLightEffectsFromMapTempFile( gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) )
+		{
+			if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: LIGHTS FAILED", "" );
 			return( FALSE );
+		}
+		if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: LIGHTS OK", "" );
 	}
 
 //ttt
 
 	// Check to see if any npc are in this sector, if so load up some saved data for them
+	if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: NPC PROFILE BEGIN", "" );
 	LoadNPCInformationFromProfileStruct();
+	if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: NPC PROFILE OK", "" );
 
 	//if we are loading a saved game
 //	if( gTacticalStatus.uiFlags & LOADING_SAVED_GAME )
 	{
 		//Init the world since we have modified the map
+		if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: INIT LOADED WORLD BEGIN", "" );
 		InitLoadedWorld();
+		if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: INIT LOADED WORLD OK", "" );
 	}
 
 
 	// Get the last time the player was in the sector
+	if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: LAST VISIT BEGIN", "" );
 	guiTimeCurrentSectorWasLastLoaded = GetLastTimePlayerWasInSector();
+	if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: LAST VISIT OK", "" );
 
 	if( fUsedTempFile )
 	{
@@ -1413,7 +1481,10 @@ BOOLEAN LoadCurrentSectorsInformationFromTempItemsFile()
 	}
 
 
+	if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: STRIP PLACEMENTS BEGIN", "" );
 	StripEnemyDetailedPlacementsIfSectorWasPlayerLiberated();
+	if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: STRIP PLACEMENTS OK", "" );
+	if( fTraceB1Temp ) TraceB1RemasterLoad( "TEMP: COMPLETE", fUsedTempFile ? "used temp state" : "no temp state" );
 
 	return( TRUE );
 }
