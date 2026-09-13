@@ -4474,6 +4474,10 @@ INT8 FireBulletGivenTargetNCTH( SOLDIERTYPE * pFirer, FLOAT dEndX, FLOAT dEndY, 
 		}
 		pBullet = GetBulletPtr( iBullet );
 
+		// Attach the exact NCTH calculation/dispersion snapshot to this bullet id.
+		// For buckshot each pellet intentionally references the same trigger-pull snapshot.
+		NCTHRegisterBulletDiagnostic( iBullet, pFirer->bDoBurst );
+
 		// HEADROCK HAM 4: The HitBy value now holds the ratio between the Distance Aperture and the Final Aperture.
 		// Basically, this represents by how much our shooter has managed to make the shot more accurate than it would
 		// be without any extra aiming or optical equipment. HitBy can now only be positive, and equals 100 when the
@@ -7988,6 +7992,26 @@ void AdjustTargetCenterPoint( SOLDIERTYPE *pShooter, INT32 iTargetGridNo, FLOAT 
 	*dEndX += dSecondDeltaX;
 	*dEndY += dSecondDeltaY;
 	*dEndZ = __max(-127, *dEndZ + (dShotOffsetY * 11.3f)); // Y, which represented up/down offset, is actually the Z axis in 3d game terms...
+
+	// Preserve the exact physical-shot values for the Vengeance shot inspector.
+	// The snapshot is runtime-only and will be copied onto a ring entry once the
+	// concrete bullet id exists in FireBulletGivenTargetNCTH().
+	if ( gNCTHWorkingDiagnostic.fValid && gNCTHWorkingDiagnostic.ubShooterID == pShooter->ubID )
+	{
+		gNCTHWorkingDiagnostic.fRange = d2DDistance;
+		gNCTHWorkingDiagnostic.fBasicAperture = iBasicAperture;
+		gNCTHWorkingDiagnostic.fDistanceAperture = iDistanceAperture;
+		gNCTHWorkingDiagnostic.fMaxAperture = iMaxAperture;
+		gNCTHWorkingDiagnostic.fFinalAperture = iAperture;
+		gNCTHWorkingDiagnostic.fMagFactor = iMagFactor;
+		gNCTHWorkingDiagnostic.fEffectiveMagFactor = fEffectiveMagFactor;
+		gNCTHWorkingDiagnostic.fMuzzleOffsetX = dMuzzleOffsetX;
+		gNCTHWorkingDiagnostic.fMuzzleOffsetY = dMuzzleOffsetY;
+		gNCTHWorkingDiagnostic.fBulletDeviation = iBulletDev;
+		gNCTHWorkingDiagnostic.fShotOffsetX = dShotOffsetX;
+		gNCTHWorkingDiagnostic.fShotOffsetY = dShotOffsetY;
+		gNCTHWorkingDiagnostic.sApertureRatio = *sApertureRatio;
+	}
 
 	// These values are returned to the calling function, in this case UseGunNCTH(). That function then fires the bullet
 	// directly at the intended coordinates.
