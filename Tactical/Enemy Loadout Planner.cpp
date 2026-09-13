@@ -31,6 +31,197 @@ static BOOLEAN IsEliteEnemy(INT8 bSoldierClass)
 	return (bSoldierClass == SOLDIER_CLASS_ELITE);
 }
 
+UINT8 PlanEnemyLoadoutCellSizes(
+	UINT8 ubTotalSoldiers,
+	UINT8 *pubSizes,
+	UINT8 ubCapacity)
+{
+	UINT8 ubMinCells;
+	UINT8 ubMaxCells;
+	UINT8 ubIdealCells;
+	UINT8 ubCells;
+	UINT8 ubBase;
+	UINT8 ubRemainder;
+	UINT8 i;
+
+	if ( ubTotalSoldiers == 0 || !pubSizes || ubCapacity == 0 )
+		return 0;
+
+	// Very small encounters remain one undersized cell.  Once there are enough
+	// troops for proper elements, enforce the 5-10 range and bias toward 8.
+	if ( ubTotalSoldiers < ENEMY_LOADOUT_TEAM_MIN )
+	{
+		pubSizes[0] = ubTotalSoldiers;
+		return 1;
+	}
+
+	ubMinCells = (UINT8)((ubTotalSoldiers + ENEMY_LOADOUT_TEAM_MAX - 1) / ENEMY_LOADOUT_TEAM_MAX);
+	ubMaxCells = (UINT8)(ubTotalSoldiers / ENEMY_LOADOUT_TEAM_MIN);
+	if ( ubMaxCells == 0 )
+		ubMaxCells = 1;
+
+	ubIdealCells = (UINT8)((ubTotalSoldiers + (ENEMY_LOADOUT_TEAM_TARGET / 2)) / ENEMY_LOADOUT_TEAM_TARGET);
+	if ( ubIdealCells < ubMinCells )
+		ubIdealCells = ubMinCells;
+	if ( ubIdealCells > ubMaxCells )
+		ubIdealCells = ubMaxCells;
+
+	ubCells = ubIdealCells;
+	if ( ubCells > ubCapacity )
+		return 0;
+
+	ubBase = (UINT8)(ubTotalSoldiers / ubCells);
+	ubRemainder = (UINT8)(ubTotalSoldiers % ubCells);
+
+	for ( i = 0; i < ubCells; ++i )
+		pubSizes[i] = (UINT8)(ubBase + (i < ubRemainder ? 1 : 0));
+
+	return ubCells;
+}
+
+INT8 EnemyLoadoutDoctrineClass(
+	UINT8 ubAdmins,
+	UINT8 ubRegulars,
+	UINT8 ubElites)
+{
+	UINT16 ubTotal = (UINT16)ubAdmins + ubRegulars + ubElites;
+
+	if ( ubTotal == 0 )
+		return SOLDIER_CLASS_ADMINISTRATOR;
+
+	// A genuinely elite-majority cell gets elite doctrine.  Otherwise regular
+	// doctrine is used when line troops + elites form the majority.  This keeps
+	// one attached elite/NCO from upgrading an admin-heavy security cell.
+	if ( (UINT16)ubElites * 2 >= ubTotal )
+		return SOLDIER_CLASS_ELITE;
+
+	if ( (UINT16)(ubRegulars + ubElites) * 2 >= ubTotal )
+		return SOLDIER_CLASS_ARMY;
+
+	return SOLDIER_CLASS_ADMINISTRATOR;
+}
+
+static UINT8 EnemyLoadoutCellFilled(const ENEMY_LOADOUT_CELL *pCell)
+{
+	if ( !pCell )
+		return 0;
+
+	return (UINT8)(pCell->ubAdmins + pCell->ubRegulars + pCell->ubElites);
+}
+
+static void AddClassMembersToCells(
+	ENEMY_LOADOUT_BATCH *pBatch,
+	UINT8 ubCount,
+	INT8 bSoldierClass,
+	UINT8 ubStartCell)
+{
+	UINT8 ubCell;
+	UINT8 ubSearches;
+
+	if ( !pBatch || pBatch->ubCellCount == 0 )
+		return;
+
+	ubCell = (UINT8)(ubStartCell % pBatch->ubCellCount);
+
+	while ( ubCount > 0 )
+	{
+		ubSearches = 0;
+		while ( ubSearches < pBatch->ubCellCount &&
+				EnemyLoadoutCellFilled(&pBatch->Cells[ubCell]) >= pBatch->Cells[ubCell].ubSize )
+		{
+			ubCell = (UINT8)((ubCell + 1) % pBatch->ubCellCount);
+			++ubSearches;
+		}
+
+		if ( ubSearches >= pBatch->ubCellCount )
+			return;
+
+		switch ( bSoldierClass )
+		{
+			case SOLDIER_CLASS_ELITE:
+				++pBatch->Cells[ubCell].ubElites;
+				break;
+			case SOLDIER_CLASS_ARMY:
+				++pBatch->Cells[ubCell].ubRegulars;
+				break;
+			case SOLDIER_CLASS_ADMINISTRATOR:
+			default:
+				++pBatch->Cells[ubCell].ubAdmins;
+				break;
+		}
+
+		--ubCount;
+		ubCell = (UINT8)((ubCell + 1) % pBatch->ubCellCount);
+	}
+}
+
+void BuildEnemyLoadoutBatch(
+	ENEMY_LOADOUT_BATCH *pBatch,
+	UINT8 ubAdmins,
+	UINT8 ubRegulars,
+	UINT8 ubElites,
+	UINT8 ubProgress,
+	INT8 bEquipmentRating)
+{
+	UINT16 usTotal;
+	UINT8 ubSizes[ENEMY_LOADOUT_MAX_CELLS];
+	UINT8 i;
+
+	if ( !pBatch )
+		return;
+
+	memset(pBatch, 0, sizeof(ENEMY_LOADOUT_BATCH));
+	memset(ubSizes, 0, sizeof(ubSizes));
+
+	usTotal = (UINT16)ubAdmins + ubRegulars + ubElites;
+	if ( usTotal == 0 )
+		return;
+
+	// Tactical enemy counts are far below 255 in normal play.  Keep the audit
+	// structure bounded and fail closed rather than silently wrapping.
+	if ( usTotal > 255 )
+		return;
+
+	pBatch->ubTotalSoldiers = (UINT8)usTotal;
+	pBatch->ubAdmins = ubAdmins;
+	pBatch->ubRegulars = ubRegulars;
+	pBatch->ubElites = ubElites;
+	pBatch->ubCellCount = PlanEnemyLoadoutCellSizes(
+		pBatch->ubTotalSoldiers,
+		ubSizes,
+		ENEMY_LOADOUT_MAX_CELLS);
+
+	if ( pBatch->ubCellCount == 0 )
+		return;
+
+	for ( i = 0; i < pBatch->ubCellCount; ++i )
+		pBatch->Cells[i].ubSize = ubSizes[i];
+
+	// Spread higher-value personnel first so command/specialist capability is
+	// not accidentally concentrated in one cell merely because of creation
+	// order.  Regulars and admins then fill the same balanced capacities.
+	AddClassMembersToCells(pBatch, ubElites, SOLDIER_CLASS_ELITE, 0);
+	AddClassMembersToCells(pBatch, ubRegulars, SOLDIER_CLASS_ARMY, 0);
+	AddClassMembersToCells(pBatch, ubAdmins, SOLDIER_CLASS_ADMINISTRATOR, 0);
+
+	for ( i = 0; i < pBatch->ubCellCount; ++i )
+	{
+		ENEMY_LOADOUT_CELL *pCell = &pBatch->Cells[i];
+
+		pCell->bDoctrineClass = EnemyLoadoutDoctrineClass(
+			pCell->ubAdmins,
+			pCell->ubRegulars,
+			pCell->ubElites);
+
+		InitEnemySquadLoadoutState(
+			&pCell->State,
+			pCell->bDoctrineClass,
+			pCell->ubSize,
+			ubProgress,
+			bEquipmentRating);
+	}
+}
+
 static void SetRoleTarget(ENEMY_ROLE_TARGETS *pTargets, ENEMY_LOADOUT_ROLE Role, UINT8 desired, UINT8 maximum)
 {
 	pTargets->ubDesired[Role] = desired;
