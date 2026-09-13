@@ -1554,11 +1554,119 @@ void BattleLogAddMeleeHit( const MELEE_DIAGNOSTIC *pDiagnostic )
 	const CHAR16 *pAttackerName = MercPtrs[pDiagnostic->ubAttackerID]->GetName();
 	const CHAR16 *pTargetName = MercPtrs[pDiagnostic->ubTargetID]->GetName();
 	CHAR16 zDamageToken[64];
-	swprintf( zDamageToken, L"%d damage", pDiagnostic->sFinalDamage );
+	swprintf( zDamageToken, L"%d dmg", pDiagnostic->sFinalDamage );
 	swprintf( pEntry->zText, L"[%02d:%02d] %s hit %s for %s",
 		guiHour, guiMin, pAttackerName, pTargetName, zDamageToken );
-	BattleLogSetTokenRange( pEntry, L" hit ", FALSE );
+	BattleLogSetTokenRange( pEntry, L"hit", FALSE );
 	BattleLogSetTokenRange( pEntry, zDamageToken, TRUE );
+	gusBattleLogScrollOffset = 0;
+
+	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
+	{
+		BattleLogEnsureUI();
+		InvalidateRegion( gsBattleLogX, gsBattleLogY,
+			gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH );
+	}
+}
+
+
+void BattleLogAddExplosionEvent( UINT8 ubOwner, UINT16 usItem )
+{
+	BattleLogCheckSector();
+
+	if ( ubOwner == NOBODY || ubOwner >= TOTAL_SOLDIERS || MercPtrs[ubOwner] == NULL ||
+		MercPtrs[ubOwner]->bTeam != gbPlayerNum )
+		return;
+
+	guiBattleLogSequence++;
+	BATTLE_LOG_ENTRY *pEntry = &gBattleLogEntries[(guiBattleLogSequence - 1) % BATTLE_LOG_MAX_ENTRIES];
+	memset( pEntry, 0, sizeof(*pEntry) );
+	pEntry->uiSequence = guiBattleLogSequence;
+	pEntry->usColor = FONT_MCOLOR_LTGREEN;
+	pEntry->ubOutcome = BATTLELOG_OUTCOME_NONE;
+	pEntry->ubActualTargetID = NOBODY;
+	pEntry->iBullet = -1;
+
+	const CHAR16 *pOwnerName = MercPtrs[ubOwner]->GetName();
+	const CHAR16 *pItemName = L"explosive";
+	if ( usItem < MAXITEMS && ShortItemNames[usItem][0] != 0 )
+		pItemName = ShortItemNames[usItem];
+
+	swprintf( pEntry->zText, L"[%02d:%02d] %s's %s detonated",
+		guiHour, guiMin, pOwnerName, pItemName );
+	gusBattleLogScrollOffset = 0;
+
+	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
+	{
+		BattleLogEnsureUI();
+		InvalidateRegion( gsBattleLogX, gsBattleLogY,
+			gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH );
+	}
+}
+
+void BattleLogAddExplosionHit( UINT8 ubOwner, UINT8 ubTargetID, UINT16 usItem, INT16 sDamage, INT16 sBreathDamage )
+{
+	BattleLogCheckSector();
+
+	if ( ubTargetID == NOBODY || ubTargetID >= TOTAL_SOLDIERS || MercPtrs[ubTargetID] == NULL )
+		return;
+
+	BOOLEAN fOwnerPlayer = ( ubOwner != NOBODY && ubOwner < TOTAL_SOLDIERS &&
+		MercPtrs[ubOwner] != NULL && MercPtrs[ubOwner]->bTeam == gbPlayerNum );
+	BOOLEAN fTargetPlayer = ( MercPtrs[ubTargetID]->bTeam == gbPlayerNum );
+	if ( !fOwnerPlayer && !fTargetPlayer )
+		return;
+
+	guiBattleLogSequence++;
+	BATTLE_LOG_ENTRY *pEntry = &gBattleLogEntries[(guiBattleLogSequence - 1) % BATTLE_LOG_MAX_ENTRIES];
+	memset( pEntry, 0, sizeof(*pEntry) );
+	pEntry->uiSequence = guiBattleLogSequence;
+	pEntry->usColor = fTargetPlayer ? FONT_MCOLOR_LTRED :
+		( fOwnerPlayer ? FONT_MCOLOR_LTGREEN : FONT_MCOLOR_LTYELLOW );
+	pEntry->ubOutcome = BATTLELOG_OUTCOME_HIT;
+	pEntry->ubActualTargetID = ubTargetID;
+	pEntry->sDamage = sDamage;
+	pEntry->iBullet = -1;
+
+	const CHAR16 *pOwnerName = NULL;
+	const CHAR16 *pTargetName = MercPtrs[ubTargetID]->GetName();
+	const CHAR16 *pItemName = L"explosion";
+	if ( ubOwner != NOBODY && ubOwner < TOTAL_SOLDIERS && MercPtrs[ubOwner] != NULL )
+		pOwnerName = MercPtrs[ubOwner]->GetName();
+	if ( usItem < MAXITEMS && ShortItemNames[usItem][0] != 0 )
+		pItemName = ShortItemNames[usItem];
+
+	INT16 sEnergyDamage = (INT16)__max( 0, sBreathDamage / 100 );
+	if ( pOwnerName != NULL )
+	{
+		if ( sDamage > 0 && sEnergyDamage > 0 )
+			swprintf( pEntry->zText, L"[%02d:%02d] %s's %s hit %s for %d dmg, %d energy",
+				guiHour, guiMin, pOwnerName, pItemName, pTargetName, sDamage, sEnergyDamage );
+		else if ( sDamage > 0 )
+			swprintf( pEntry->zText, L"[%02d:%02d] %s's %s hit %s for %d dmg",
+				guiHour, guiMin, pOwnerName, pItemName, pTargetName, sDamage );
+		else if ( sEnergyDamage > 0 )
+			swprintf( pEntry->zText, L"[%02d:%02d] %s's %s hit %s for %d energy",
+				guiHour, guiMin, pOwnerName, pItemName, pTargetName, sEnergyDamage );
+		else
+			swprintf( pEntry->zText, L"[%02d:%02d] %s's %s affected %s",
+				guiHour, guiMin, pOwnerName, pItemName, pTargetName );
+	}
+	else
+	{
+		if ( sDamage > 0 && sEnergyDamage > 0 )
+			swprintf( pEntry->zText, L"[%02d:%02d] %s hit %s for %d dmg, %d energy",
+				guiHour, guiMin, pItemName, pTargetName, sDamage, sEnergyDamage );
+		else if ( sDamage > 0 )
+			swprintf( pEntry->zText, L"[%02d:%02d] %s hit %s for %d dmg",
+				guiHour, guiMin, pItemName, pTargetName, sDamage );
+		else if ( sEnergyDamage > 0 )
+			swprintf( pEntry->zText, L"[%02d:%02d] %s hit %s for %d energy",
+				guiHour, guiMin, pItemName, pTargetName, sEnergyDamage );
+		else
+			swprintf( pEntry->zText, L"[%02d:%02d] %s affected %s",
+				guiHour, guiMin, pItemName, pTargetName );
+	}
 	gusBattleLogScrollOffset = 0;
 
 	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
@@ -1601,9 +1709,9 @@ void BattleLogAddNCTHMiss( INT32 iBullet )
 	if ( d.ubTargetID != NOBODY && MercPtrs[d.ubTargetID] )
 		pTargetName = MercPtrs[d.ubTargetID]->GetName();
 
-	swprintf( pEntry->zText, L"[%02d:%02d] %s missed %s [shot info]",
+	swprintf( pEntry->zText, L"[%02d:%02d] %s missed %s",
 		guiHour, guiMin, pName, pTargetName );
-	BattleLogSetTokenRange( pEntry, L"[shot info]", FALSE );
+	BattleLogSetTokenRange( pEntry, L"missed", FALSE );
 	gusBattleLogScrollOffset = 0;
 
 	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
@@ -1660,9 +1768,9 @@ void BattleLogAddNCTHBlocked( INT32 iBullet, UINT8 ubReason )
 	else if ( ubReason == BATTLELOG_BLOCK_ROOF )
 		pBlockReason = L"roof";
 
-	swprintf( pEntry->zText, L"[%02d:%02d] %s shot at %s was blocked by %s [shot info]",
+	swprintf( pEntry->zText, L"[%02d:%02d] %s's shot at %s was blocked by %s",
 		guiHour, guiMin, pName, pTargetName, pBlockReason );
-	BattleLogSetTokenRange( pEntry, L"[shot info]", FALSE );
+	BattleLogSetTokenRange( pEntry, L"shot", FALSE );
 	gusBattleLogScrollOffset = 0;
 
 	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
@@ -1726,27 +1834,23 @@ void BattleLogAddNCTHHit( INT32 iBullet, UINT8 ubTargetID, INT16 sDamage )
 		pEntry->fDamageClickable = TRUE;
 	}
 
+	CHAR16 zDamageToken[64];
+	swprintf( zDamageToken, L"%d dmg", sDamage );
+
 	if ( fIntendedHit )
 	{
-		if ( pEntry->fDamageClickable )
-			swprintf( pEntry->zText, L"[%02d:%02d] %s hit %s for %d damage [shot info] [damage info]",
-				guiHour, guiMin, pName, pActualTargetName, sDamage );
-		else
-			swprintf( pEntry->zText, L"[%02d:%02d] %s hit %s for %d damage [shot info]",
-				guiHour, guiMin, pName, pActualTargetName, sDamage );
+		swprintf( pEntry->zText, L"[%02d:%02d] %s hit %s for %s",
+			guiHour, guiMin, pName, pActualTargetName, zDamageToken );
+		BattleLogSetTokenRange( pEntry, L"hit", FALSE );
 	}
 	else
 	{
-		if ( pEntry->fDamageClickable )
-			swprintf( pEntry->zText, L"[%02d:%02d] %s aimed %s but hit %s for %d damage [shot info] [damage info]",
-				guiHour, guiMin, pName, pIntendedTargetName, pActualTargetName, sDamage );
-		else
-			swprintf( pEntry->zText, L"[%02d:%02d] %s aimed %s but hit %s for %d damage [shot info]",
-				guiHour, guiMin, pName, pIntendedTargetName, pActualTargetName, sDamage );
+		swprintf( pEntry->zText, L"[%02d:%02d] %s missed %s; hit %s for %s",
+			guiHour, guiMin, pName, pIntendedTargetName, pActualTargetName, zDamageToken );
+		BattleLogSetTokenRange( pEntry, L"missed", FALSE );
 	}
-	BattleLogSetTokenRange( pEntry, L"[shot info]", FALSE );
 	if ( pEntry->fDamageClickable )
-		BattleLogSetTokenRange( pEntry, L"[damage info]", TRUE );
+		BattleLogSetTokenRange( pEntry, zDamageToken, TRUE );
 	gusBattleLogScrollOffset = 0;
 
 	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
