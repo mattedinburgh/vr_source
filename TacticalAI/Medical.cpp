@@ -18,6 +18,7 @@
 	// added by SANDRO
 	#include "Soldier Profile.h"
 	#include "GameSettings.h"
+	#include "LOS.h"
 #endif
 
 //forward declarations of common classes to eliminate includes
@@ -424,6 +425,26 @@ static BOOLEAN AIMedicalResponderReady( SOLDIERTYPE *pSoldier )
 		!(pSoldier->usSoldierFlagMask & SOLDIER_POW);
 }
 
+// Friendly casualty awareness is local rather than sector-wide. A responder may
+// act on a casualty he can directly see, one close enough to hear/notice, or a
+// nearby member of his own fireteam whose status is plausibly shared by the element.
+// This prevents medics from detecting cross-element casualties through walls/smoke.
+static BOOLEAN AIResponderKnowsCasualty( SOLDIERTYPE *pResponder, SOLDIERTYPE *pPatient )
+{
+	if ( !pResponder || !pPatient || pResponder->bTeam != pPatient->bTeam )
+		return FALSE;
+
+	INT32 iDistance = PythSpacesAway( pResponder->sGridNo, pPatient->sGridNo );
+	if ( iDistance <= 2 )
+		return TRUE;
+
+	if ( LOS_Raised( pResponder, pPatient, CALC_FROM_ALL_DIRS ) > 0 )
+		return TRUE;
+
+	return AISameFireteam( pResponder, pPatient ) &&
+		iDistance <= DAY_VISION_RANGE / 2;
+}
+
 static BOOLEAN AIAvailableMedicForCasualty( SOLDIERTYPE *pRescuer, SOLDIERTYPE *pPatient )
 {
 	if ( !pRescuer || !pPatient )
@@ -517,6 +538,9 @@ INT8 DecideCombatCasualtyEvacuation( SOLDIERTYPE *pSoldier )
 			(pPatient->usSoldierFlagMask & SOLDIER_POW) ||
 			pPatient->ubBleedoutState != BLEEDOUT_ACTIVE || !IsBleedoutCasualty( pPatient ) ||
 			pPatient->pathing.bLevel != pSoldier->pathing.bLevel || pPatient->ubServiceCount > 0 )
+			continue;
+
+		if ( !AIResponderKnowsCasualty( pSoldier, pPatient ) )
 			continue;
 
 		if ( pPatient->ubBleedoutTurns < 4 )
@@ -835,6 +859,9 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 		{
 			continue;
 		}
+
+		if (!AIResponderKnowsCasualty(pSoldier, pPatient))
+			continue;
 
 		// Do not make the medic chase a casualty while another squadmate is
 		// actively extracting them. Stale links are discarded defensively.
