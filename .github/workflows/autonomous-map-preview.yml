@@ -248,7 +248,13 @@ jobs:
           }
 
           Write-Host '--- FINAL MAPSHOT STATUS ---'
-          if (Test-Path $statusFile) { Get-Content $statusFile } else { Write-Warning "No status file: $statusFile" }
+          $finalStatus = ''
+          if (Test-Path $statusFile) {
+            $finalStatus = (Get-Content $statusFile -Raw -ErrorAction SilentlyContinue).Trim()
+            Write-Host $finalStatus
+          } else {
+            Write-Warning "No status file: $statusFile"
+          }
 
           if (-not (Test-Path $bmp)) {
             Write-Host '--- VENGEANCE RENDER DIAGNOSTICS ---'
@@ -260,8 +266,15 @@ jobs:
             throw "A3 preview not produced: $bmp"
           }
 
-          if (-not $forcedExitAfterSuccess -and $p.HasExited -and $p.ExitCode -ne 0) {
-            throw "MapEditor_Vengeance exited with code $($p.ExitCode)"
+          # Vengeance's editor returns process code 1 after the MAPUTILITY screen
+          # shuts the program down, even when MAPSHOT itself completed correctly.
+          # The authoritative success contract is the engine status + output BMP.
+          if ($p.HasExited -and $p.ExitCode -ne 0) {
+            if ($finalStatus -match 'DONE success') {
+              Write-Warning "MapEditor_Vengeance exited with code $($p.ExitCode) after successful MAPSHOT; accepting engine result."
+            } else {
+              throw "MapEditor_Vengeance exited with code $($p.ExitCode) before successful MAPSHOT"
+            }
           }
 
           Add-Type -AssemblyName System.Drawing
@@ -275,6 +288,17 @@ jobs:
             Copy-Item -Force $statusFile (Join-Path $outDir 'A3_mapshot_status.txt')
           }
 
+          # Current MAPSHOT source bakes the dressed in-memory sector through
+          # native SaveWorld() into the isolated Vengeance writable profile.
+          $baked = Get-ChildItem $sandbox -Recurse -File -Filter 'A3_REMASTERED.dat' -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $baked) {
+            throw 'MAPSHOT reported success but A3_REMASTERED.dat was not found in the Vengeance sandbox.'
+          }
+          Copy-Item -Force $baked.FullName (Join-Path $outDir 'A3_REMASTERED.dat')
+          Write-Host "A3 baked map captured: $($baked.FullName) ($($baked.Length) bytes)"
+
           @{
             sector = 'A3'
             source_sha = '${{ github.sha }}'
@@ -284,6 +308,7 @@ jobs:
             editor = 'MapEditor_Vengeance.exe'
             vfs = 'vfs_config.Vengeance.ini'
             sandbox = $sandbox
+            baked_map_bytes = $baked.Length
             forced_exit_after_success = $forcedExitAfterSuccess
           } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $outDir 'A3_latest.json')
           Write-Host "A3 preview created: $png"
@@ -296,6 +321,7 @@ jobs:
             MapPreviews/Auto/A3_latest.png
             MapPreviews/Auto/A3_latest.json
             MapPreviews/Auto/A3_mapshot_status.txt
+            MapPreviews/Auto/A3_REMASTERED.dat
           if-no-files-found: error
           retention-days: 14
 
