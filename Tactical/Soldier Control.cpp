@@ -6003,8 +6003,24 @@ static BOOLEAN HandleVRCinematicGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 u
 	if ( !( Item[ usWeaponIndex ].usItemClass & IC_GUN ) || sDamage < 1 || pSoldier->MercInWater() )
 		return FALSE;
 
-	if ( gAnimControl[ pSoldier->usAnimState ].ubEndHeight != ANIM_STAND )
+	UINT8 ubCurrentHeight = gAnimControl[ pSoldier->usAnimState ].ubEndHeight;
+
+	// TEMP demo coverage for every stance. These use JA2's existing stance-safe
+	// hit/fall states so crouched/prone targets also visibly demonstrate a reaction.
+	if ( ubCurrentHeight == ANIM_CROUCH )
+	{
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_CROUCH, 0, FALSE );
+		return TRUE;
+	}
+	else if ( ubCurrentHeight == ANIM_PRONE )
+	{
+		pSoldier->EVENT_InitNewSoldierAnim( PRONE_LAY_FROMHIT, 0, FALSE );
+		return TRUE;
+	}
+	else if ( ubCurrentHeight != ANIM_STAND )
+	{
 		return FALSE;
+	}
 
 	UINT8 ubIncomingDirection = (UINT8)( bDirection % NUM_WORLD_DIRECTIONS );
 	UINT8 ubOriginalDirection = pSoldier->ubDirection;
