@@ -10,12 +10,13 @@ $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $GameRoot = Split-Path -Parent $ScriptRoot
 $DataRoot = Join-Path $GameRoot "Data-Vengeance"
 $TableRoot = Join-Path $DataRoot "TableData\LogicalBodyTypes"
+$PaletteRoot = Join-Path $DataRoot "Palettes"
 $AnimRoot = Join-Path $DataRoot "Anims\LOBOT"
 $Marker = Join-Path $AnimRoot "VR_EQUIPMENT.READY"
 
 # Pin the matching Vengeance LOBOT catalog too. Source + catalog + upstream art
 # must form one reproducible deployment set.
-$VrRef = "c0b69f2834d94c6c7614b17ad3443bc272555306"
+$VrRef = "e2c9caa9a1f1b63c04d3633fd26b1af5d254eaf8"
 $VrRaw = "https://raw.githubusercontent.com/mattedinburgh/vr_gamedir/$VrRef/Data-Vengeance/TableData/LogicalBodyTypes"
 # Pin the external art revision so the same Vengeance commit always resolves the
 # same filenames and bytes. Do not deploy against a moving upstream master.
@@ -33,6 +34,7 @@ if (-not (Test-Path $GameRoot -PathType Container)) {
 }
 
 New-Item -ItemType Directory -Force -Path $TableRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $PaletteRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $AnimRoot | Out-Null
 
 # Never leave a stale marker behind if deployment is interrupted.
@@ -42,6 +44,7 @@ if (Test-Path $Marker) {
 
 $configFiles = @(
     "Layers.xml",
+    "Palettes.xml",
     "Filters.xml",
     "LogicalBodyTypes.xml",
     "AnimationSurfaces.xml",
@@ -128,6 +131,32 @@ foreach ($relative in $configFiles) {
     $urlRel = $relative.Replace("\", "/")
     $destination = Join-Path $TableRoot $relative
     Get-UrlFile -Url "$VrRaw/$urlRel" -Destination $destination
+}
+
+# LOBOT LayerProp palette attributes are not cosmetic metadata: 1.13 uses
+# these palette tables to recolour equipment sprites.  Without them the raw
+# STI colours (typically orange/brown debug-looking tones) are rendered.
+$paletteFiles = @(
+    "Hats.stp",
+    "guns_universal.stp",
+    "guns_AK.stp",
+    "guns_universal_v2.stp",
+    "guns_v2_paletteswap.act",
+    "grayscale.act",
+    "WoodlandCamo.act",
+    "UrbanlandCamo.act",
+    "DesertlandCamo.act",
+    "BlueHats.act",
+    "GreenHats.act",
+    "swat_blue.act",
+    "guns_v2_paletteswap_wood_to_dark.act",
+    "Hats_guardian_vest.act",
+    "guns_universal_v2_tan_fix.act"
+)
+
+Write-Host "Refreshing 1.13 LOBOT palette tables..."
+foreach ($palette in $paletteFiles) {
+    Get-UrlFile -Url "$UpstreamRaw/Palettes/$palette" -Destination (Join-Path $PaletteRoot $palette)
 }
 
 $surfaceCatalogs = @(
@@ -291,6 +320,17 @@ if ($pending.Count -gt 0) {
 Write-Host "Verifying deployed assets..."
 $missing = New-Object System.Collections.ArrayList
 $totalBytes = [int64]0
+$paletteBytes = [int64]0
+
+foreach ($palette in $paletteFiles) {
+    $palettePath = Join-Path $PaletteRoot $palette
+    if (-not (Test-Path $palettePath) -or (Get-Item $palettePath).Length -eq 0) {
+        [void]$missing.Add("Palettes\$palette")
+    }
+    else {
+        $paletteBytes += (Get-Item $palettePath).Length
+    }
+}
 foreach ($relative in $assetPaths) {
     $destination = Join-Path $DataRoot $relative
     if (-not (Test-Path $destination) -or (Get-Item $destination).Length -eq 0) {
@@ -317,7 +357,9 @@ Catalog: mattedinburgh/vr_gamedir $VrRef
 Source: 1dot13/gamedir $UpstreamRef Data/Anims/LOBOT art
 Mode: overlay-only (native Vengeance body + 1.13 helmet/vest armour layers)
 Assets: $($assetPaths.Count)
-Bytes: $totalBytes
+AssetBytes: $totalBytes
+Palettes: $($paletteFiles.Count)
+PaletteBytes: $paletteBytes
 "@
 [System.IO.File]::WriteAllText($Marker, $markerText, [System.Text.Encoding]::ASCII)
 
@@ -325,8 +367,9 @@ Write-Host ""
 Write-Host ("Pinned Vengeance catalog      : {0}" -f $VrRef)
 Write-Host ("Pinned upstream revision      : {0}" -f $UpstreamRef)
 Write-Host "VISIBLE EQUIPMENT ASSETS VERIFIED"
-Write-Host ("Files : {0}" -f $assetPaths.Count)
-Write-Host ("Size  : {0:N1} MiB" -f ($totalBytes / 1MB))
+Write-Host ("Files    : {0}" -f $assetPaths.Count)
+Write-Host ("Palettes : {0}" -f $paletteFiles.Count)
+Write-Host ("Size     : {0:N1} MiB" -f (($totalBytes + $paletteBytes) / 1MB))
 Write-Host "Marker: $Marker"
 Write-Host ""
 Write-Host "Rebuild/run the current install/all-2026-09-12 source. Helmets and torso armour are now eligible for tactical rendering."
