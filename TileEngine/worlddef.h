@@ -333,6 +333,10 @@ extern UINT32		gSurfaceMemUsage;
 
 extern CHAR8		gzLastLoadedFile[ 260 ];
 
+// Engine-driven map preview mode. Allows MapUtility to execute the same runtime
+// visual dressing passes as tactical play so exported previews match the modded sector.
+extern BOOLEAN		gfMapPreviewCaptureMode;
+
 extern INT16		gsRecompileAreaTop;
 extern INT16		gsRecompileAreaLeft;
 extern INT16		gsRecompileAreaRight;
