@@ -137,7 +137,7 @@ bool SurfaceCache::LoadSurface(AnimationSurfaceType* animSurfaceType, STRUCTURE_
 	animSurfaceType->hVideoObject = hVObject;
 	// Determine if we have a problem with #frames + directions ( ie mismatch )
 	if ((animSurfaceType->uiNumDirections * animSurfaceType->uiNumFramesPerDir ) != animSurfaceType->hVideoObject->usNumberOfObjects) {
-		AnimDebugMsg(String("Surface Database: WARNING!!! Surface %d has #frames mismatch.", usSurfaceIndex));
+		AnimDebugMsg(String("LOBOT: WARNING: animation surface frame/direction mismatch for %s", sFilename));
 	}
 	return true;
 }

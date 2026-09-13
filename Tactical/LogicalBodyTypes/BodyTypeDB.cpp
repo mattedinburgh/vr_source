@@ -216,7 +216,7 @@ namespace LogicalBodyTypes {
 		/*****************************************
 		  Animation states
 		******************************************/
-		LOGBT_ENUMDB_ADD("AnimationStates", NUMANIMATIONSTATES,
+		LOGBT_ENUMDB_ADD("AnimationStates", 360,
 			WALKING,
 			STANDING,
 			KNEEL_DOWN,
@@ -579,7 +579,7 @@ namespace LogicalBodyTypes {
 		/*****************************************
 		  Animation states
 		******************************************/
-		LOGBT_ENUMDB_ADD("AnimationSurfaces", NUMANIMATIONSURFACETYPES,
+		LOGBT_ENUMDB_ADD("AnimationSurfaces", 467,
 			RGMBASICWALKING,
 			RGMSTANDING,
 			RGMCROUCHING,
