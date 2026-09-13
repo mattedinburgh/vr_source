@@ -470,7 +470,7 @@ static INT16 BattleLogInspectorWidth( void )
 
 static INT16 BattleLogInspectorTop( void )
 {
-	return BattleLogInspectorTop();
+	return (INT16)__max( 2, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 3 );
 }
 
 static INT16 BattleLogInspectorBottom( void )
@@ -1051,9 +1051,12 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 	gpBattleLogDestBuf = NULL;
 	guiBattleLogDestPitchBYTES = 0;
 
-	InvalidateRegion( gsBattleLogX, __max(0, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 4),
+	InvalidateRegion( gsBattleLogX,
+		gfBattleLogInspectorVisible ? BattleLogInspectorTop() : gsBattleLogY,
 		gsBattleLogX + ( gfBattleLogInspectorVisible ? BattleLogInspectorWidth() : gsBattleLogW ) + 1,
-		gsBattleLogY + gsBattleLogH + 1 );
+		gfBattleLogInspectorVisible
+			? (INT16)__max( gsBattleLogY + gsBattleLogH + 1, BattleLogInspectorBottom() + 1 )
+			: gsBattleLogY + gsBattleLogH + 1 );
 }
 
 static void BattleLogRebuildOverlay( void )
@@ -1072,7 +1075,7 @@ static void BattleLogRebuildOverlay( void )
 	VIDEO_OVERLAY_DESC d;
 	memset( &d, 0, sizeof(d) );
 	d.sLeft = gsBattleLogX;
-	d.sTop = gfBattleLogInspectorVisible ? (INT16)__max(2, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 3) : gsBattleLogY;
+	d.sTop = gfBattleLogInspectorVisible ? BattleLogInspectorTop() : gsBattleLogY;
 	d.sRight = gsBattleLogX + ( gfBattleLogInspectorVisible ? BattleLogInspectorWidth() : gsBattleLogW ) + 1;
 	d.sBottom = gfBattleLogInspectorVisible
 		? (INT16)__max( gsBattleLogY + gsBattleLogH + 1, BattleLogInspectorBottom() + 1 )
