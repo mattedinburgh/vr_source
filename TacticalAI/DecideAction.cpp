@@ -5422,10 +5422,11 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				pSoldier->aiData.usActionData = FindRetreatSpot(pSoldier);
 				if (TileIsOutOfBounds(pSoldier->aiData.usActionData))
 					pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, sClosestOpponent, AI_ACTION_WITHDRAW);
-				if (!TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
-	AIKnownRouteExposureAcceptable(
-		pSoldier, pSoldier->aiData.usActionData,
-		AI_ACTION_WITHDRAW, 200, 110, 130)){
+								if (!TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
+					AIKnownRouteExposureAcceptable(
+						pSoldier, pSoldier->aiData.usActionData,
+						AI_ACTION_WITHDRAW, 200, 110, 130))
+				{
 					return(AI_ACTION_WITHDRAW);
 				}
 			}
@@ -5463,7 +5464,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		////////////////////////////////////////////////////////////////////////////
 
 		// if we're desperately short on breath (it's OK if we're in water, though!)
-		if (bInGas || (pSoldier->bBreath < 5))
+		if (!bInGas && (pSoldier->bBreath < 5))
 		{
 			// if soldier has enough APs left to move at least 1 square's worth
 			if (ubCanMove)
