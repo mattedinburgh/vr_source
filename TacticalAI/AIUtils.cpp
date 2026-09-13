@@ -1866,10 +1866,14 @@ INT32 ClosestUnDisguisedPC( SOLDIERTYPE *pSoldier, INT32 * psDistance )
 
 		sDist = PythSpacesAway(pSoldier->sGridNo,pTargetSoldier->sGridNo);
 
-		// if this PC is not visible to the soldier, then add a penalty to the distance
-		// so that we weight in favour of visible mercs
-		if ( pTargetSoldier->bTeam != pSoldier->bTeam && pSoldier->aiData.bOppList[ ubLoop ] != SEEN_CURRENTLY )
+		// This helper returns the target's live tile, so cached visibility is not enough.
+		// Smoke/cover must immediately prevent use of the hidden current position.
+		if (pTargetSoldier->bTeam != pSoldier->bTeam &&
+			(pSoldier->aiData.bOppList[ubLoop] != SEEN_CURRENTLY ||
+			 LOS_Raised(pSoldier, pTargetSoldier, CALC_FROM_ALL_DIRS) <= 0))
+		{
 			continue;
+		}
 
 		if (sDist < sMinDist)
 		{
