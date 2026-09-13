@@ -799,7 +799,16 @@ static void BattleLogContentCallback( MOUSE_REGION *pRegion, INT32 iReason )
 	BATTLE_LOG_ENTRY *pEntry = BattleLogEntryBySequence( seq );
 	if ( pEntry )
 	{
-		if ( gfBattleLogInspectorVisible && guiBattleLogInspectorSequence == seq )
+		INT16 sRelativeX = (INT16)(pRegion->MouseXPos - (gsBattleLogX + 6));
+		UINT8 ubRequestedMode = BATTLELOG_INSPECTOR_NONE;
+		if ( pEntry->fDamageClickable && sRelativeX >= pEntry->sDamageClickStart && sRelativeX <= pEntry->sDamageClickEnd )
+			ubRequestedMode = BATTLELOG_INSPECTOR_DAMAGE;
+		else if ( pEntry->fClickable && sRelativeX >= pEntry->sShotClickStart && sRelativeX <= pEntry->sShotClickEnd )
+			ubRequestedMode = BATTLELOG_INSPECTOR_SHOT;
+		if ( ubRequestedMode == BATTLELOG_INSPECTOR_NONE )
+			return;
+
+		if ( gfBattleLogInspectorVisible && guiBattleLogInspectorSequence == seq && gubBattleLogInspectorMode == ubRequestedMode )
 		{
 			gfBattleLogInspectorVisible = FALSE;
 			guiBattleLogInspectorSequence = 0;
