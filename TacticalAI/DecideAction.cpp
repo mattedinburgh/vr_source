@@ -3594,8 +3594,7 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 		ubCanMove &&
 		pSoldier->aiData.bOrders != STATIONARY &&
 		pSoldier->stats.bLife >= OKLIFE &&
-		pSoldier->aiData.bAIMorale != MORALE_HOPELESS &&
-		AIPersonalRisk(pSoldier) > AIPersonalRiskTolerance(pSoldier) &&
+				AIPersonalRisk(pSoldier) > AIPersonalRiskTolerance(pSoldier) &&
 		(pSoldier->aiData.bUnderFire ||
 		 !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
 		 AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0))
@@ -3618,9 +3617,9 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 //	pSoldier->aiData.bAIMorale = MORALE_HOPELESS;
 
 	// if a guy is feeling REALLY discouraged, he may continue to run like hell
-	if ((pSoldier->aiData.bAIMorale == MORALE_HOPELESS) && ubCanMove)
+	if ((pSoldier->aiData.bAIMorale == MORALE_HOPELESS) && ubCanMove && !AICombatTeam(pSoldier))
 	{
-		DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"decideactionred: run away");
+		DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"decideactionred: legacy non-combat run away");
 		////////////////////////////////////////////////////////////////////////
 		// RUN AWAY TO SPOT FARTHEST FROM KNOWN THREATS (ONLY IF MORALE HOPELESS)
 		////////////////////////////////////////////////////////////////////////
@@ -4736,9 +4735,9 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 		if (pSoldier->aiData.bUnderFire)
 		{
 			// sevenfm: only run away if morale is hopeless
-			if (pSoldier->aiData.bAIMorale == MORALE_HOPELESS)
+			if (pSoldier->aiData.bAIMorale == MORALE_HOPELESS && !AICombatTeam(pSoldier))
 			{
-				// look for best place to RUN AWAY to (farthest from the closest threat)
+				// Legacy panic movement is retained for non-combat actors only.
 				pSoldier->aiData.usActionData = FindSpotMaxDistFromOpponents(pSoldier);
 				
 				if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
@@ -5383,8 +5382,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				ubCanMove &&
 				pSoldier->aiData.bOrders != STATIONARY &&
 				pSoldier->stats.bLife >= OKLIFE &&
-				pSoldier->aiData.bAIMorale != MORALE_HOPELESS &&
-				AIPersonalRisk(pSoldier) > AIPersonalRiskTolerance(pSoldier) &&
+								AIPersonalRisk(pSoldier) > AIPersonalRiskTolerance(pSoldier) &&
 				(pSoldier->aiData.bUnderFire ||
 				 !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
 				 AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0) &&
