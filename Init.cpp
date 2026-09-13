@@ -408,6 +408,20 @@ BOOLEAN LoadExternalGameplayData(STR directoryName)
 	strcat(fileName, LBEPOCKETFILENAME);
 	SGP_THROW_IFFALSE(ReadInLBEPocketStats(fileName,FALSE),LBEPOCKETFILENAME);
 
+	// 1.13 Logical Body Types: tactical clothing/armour/equipment layers.
+	// Vengeance is single-player here, so load the same layer databases unconditionally.
+	{
+		using namespace LogicalBodyTypes;
+		CHAR8 errorBuf[512] = "Failed loading LogicalBodyTypes external data!";
+
+		SGP_THROW_IFFALSE(Layers::Instance().LoadFromFile(directoryName, LBT_LAYERSFILENAME, errorBuf), errorBuf);
+		SGP_THROW_IFFALSE(PaletteDB::Instance().LoadFromFile(directoryName, LBT_PALETTESFILENAME, errorBuf), errorBuf);
+		SGP_THROW_IFFALSE(SurfaceDB::Instance().LoadFromFile(directoryName, LBT_ANIMSURFACESFILENAME, errorBuf), errorBuf);
+		SGP_THROW_IFFALSE(FilterDB::Instance().LoadFromFile(directoryName, LBT_FILTERSFILENAME, errorBuf), errorBuf);
+		SGP_THROW_IFFALSE(BodyTypeDB::Instance().LoadFromFile(directoryName, LBT_BODYTYPESFILENAME, errorBuf), errorBuf);
+	}
+
+
 #ifndef ENGLISH
 	AddLanguagePrefix(fileName);
 	if ( FileExists(fileName) )
