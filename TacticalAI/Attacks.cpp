@@ -1411,8 +1411,12 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 			continue;
 		}
 
-		const BOOLEAN fCurrentContact = (bPersOL == SEEN_CURRENTLY || bPublOL == SEEN_CURRENTLY);
-		const BOOLEAN fPersonalStateKnown = (bPersOL == SEEN_CURRENTLY);
+		const BOOLEAN fDirectVisualContact =
+			(bPersOL == SEEN_CURRENTLY) &&
+			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
+		const BOOLEAN fCurrentTeamReport = (bPublOL == SEEN_CURRENTLY);
+		const BOOLEAN fCurrentContact = fDirectVisualContact || fCurrentTeamReport;
+		const BOOLEAN fPersonalStateKnown = fDirectVisualContact;
 
 		// Relation/identity filters are safe for remembered contacts. Mutable hidden
 		// state (death, leaving the sector, empty vehicle) is only trusted when the
@@ -1481,7 +1485,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 		// Do not infer hidden health changes from stale contacts. When the target
 		// is currently visible, human AI also avoids deliberately finishing a downed
 		// opponent with explosives.
-		if (AIShouldAvoidFinishingDownedTarget(pSoldier, pOpponent, fCurrentContact))
+		if (AIShouldAvoidFinishingDownedTarget(pSoldier, pOpponent, fDirectVisualContact))
 		{
 			continue;
 		}
