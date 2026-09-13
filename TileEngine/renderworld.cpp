@@ -4482,6 +4482,64 @@ BOOLEAN Blt8BPPDataTo16BPPBufferTransZIncClip( UINT16 *pBuffer, UINT32 uiDestPit
 	Assert( hSrcVObject != NULL );
 	Assert( pBuffer != NULL );
 
+	// True-colour tile objects keep ETRLE metadata for dimensions/offsets, but
+	// their pixels live in p16BPPObject rather than pPixData.  The legacy
+	// redundancy scanner below decodes 8-bit ETRLE bytes and will dereference
+	// a NULL/invalid pPixData pointer for 16/32 BPP tiles.
+	if( hSrcVObject->ubBitDepth == 16 || hSrcVObject->ubBitDepth == 32 )
+	{
+		if( pZBuffer == NULL || hSrcVObject->p16BPPObject == NULL ||
+			usIndex >= hSrcVObject->usNumberOf16BPPObjects )
+		{
+			// If the object is malformed, never mark it redundant. Rendering it is
+			// safer than incorrectly culling it.
+			return(FALSE);
+		}
+
+		SixteenBPPObjectInfo *pObject = &(hSrcVObject->p16BPPObject[ usIndex ]);
+		if( pObject->p16BPPData == NULL || pObject->usWidth == 0 || pObject->usHeight == 0 )
+		{
+			return(FALSE);
+		}
+
+		const INT32 iLeft = iX + pObject->sOffsetX;
+		const INT32 iTop  = iY + pObject->sOffsetY;
+		if( iLeft < 0 || iTop < 0 )
+		{
+			return(FALSE);
+		}
+
+		const UINT8 *pSource32 = (const UINT8*)pObject->p16BPPData;
+		for( UINT32 y = 0; y < pObject->usHeight; ++y )
+		{
+			UINT16 *pZ = (UINT16*)((UINT8*)pZBuffer +
+				(uiDestPitchBYTES * (iTop + (INT32)y))) + iLeft;
+
+			for( UINT32 x = 0; x < pObject->usWidth; ++x )
+			{
+				// 32 BPP B1TC uses RGBA. Fully transparent pixels do not
+				// participate in visibility/redundancy decisions.
+				if( hSrcVObject->ubBitDepth == 32 )
+				{
+					const UINT8 ubAlpha = pSource32[((y * pObject->usWidth + x) * 4) + 3];
+					if( ubAlpha == 0 )
+					{
+						continue;
+					}
+				}
+
+				// Match the legacy test below: a source pixel is visible if its
+				// Z is in front of the existing Z-buffer value.
+				if( usZValue > pZ[x] )
+				{
+					return(FALSE);
+				}
+			}
+		}
+
+		return(TRUE);
+	}
+
 	// Get Offsets from Index into structure
 	pTrav = &(hSrcVObject->pETRLEObject[ usIndex ] );
 	usHeight				= (UINT32)pTrav->usHeight;
