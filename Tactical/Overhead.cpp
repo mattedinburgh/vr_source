@@ -3906,6 +3906,14 @@ void HandleNPCTeamMemberDeath( SOLDIERTYPE *pSoldierOld )
     HandleWhenCertainPercentageOfEnemiesDie();  //ja25 ub
 #endif
 
+    // A killed General is a persistent strategic loss, just like a captured one.
+    // Remove the command target before Queen AI processes the tactical casualty so
+    // the next sector load cannot simply promote a replacement General here.
+    if (pSoldierOld->bTeam == ENEMY_TEAM && (pSoldierOld->usSoldierFlagMask & SOLDIER_VIP))
+    {
+        RemoveEnemyGeneral(gWorldSectorX, gWorldSectorY);
+    }
+
     //The queen AI layer must process the event by subtracting forces, etc.
     ProcessQueenCmdImplicationsOfDeath( pSoldierOld );
 #ifdef JA2UB
