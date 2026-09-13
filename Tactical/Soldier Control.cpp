@@ -16327,8 +16327,12 @@ BOOLEAN		SOLDIERTYPE::SeemsLegit( UINT8 ubObserverID, BOOLEAN fShowResult )
 	if ( gbWorldSectorZ > 0 )
 		ubSectorData = __max( ubSectorData, 2 );
 
-	// sevenfm: always uncover if seriously bleeding
-	if ( this->bBleeding > MIN_BLEEDING_THRESHOLD )
+	// Serious bleeding is an obvious tell only at close visual range. At longer distances it feeds
+	// the continuous suspicion system instead of magically identifying the spy.
+	if ( ubObserverID != this->ubID &&
+		this->bBleeding > MIN_BLEEDING_THRESHOLD &&
+		pSoldier->aiData.bOppList[this->ubID] == SEEN_CURRENTLY &&
+		PythSpacesAway(this->sGridNo, pSoldier->sGridNo) <= max(2, gSkillTraitValues.sCOCloseDetectionRange) )
 	{
 		if(fShowResult) ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, szCovertTextStr[STR_COVERT_BLEEDING], this->GetName() );
 		return FALSE;
