@@ -4929,7 +4929,20 @@ void RestCharacter( SOLDIERTYPE *pSoldier )
 	// They will not provide such bonus if the merc is already using a bed in a facility.
 	if ( GetSoldierFacilityAssignmentIndex( pSoldier ) != FAC_PATIENT && GetSoldierFacilityAssignmentIndex( pSoldier ) != FAC_REST )
 	{
-		bDivisor = ( bDivisor * 100 ) / ( 100 + GetInventorySleepModifier( pSoldier ) );
+		UINT8 ubInventorySleepModifier = GetInventorySleepModifier( pSoldier );
+
+		// Sleeping rough should be meaningfully worse than using proper sleep gear.
+		// With no bed/facility and no sleep-modifying item, actual sleep is only 80% efficient.
+		// A standard sleeping bag has SleepModifier 20, so it provides 120% efficiency:
+		// roughly 50% more recovery per hour than sleeping on bare ground.
+		if ( pSoldier->flags.fMercAsleep && ubInventorySleepModifier == 0 )
+		{
+			bDivisor = ( bDivisor * 100 ) / 80;
+		}
+		else
+		{
+			bDivisor = ( bDivisor * 100 ) / ( 100 + ubInventorySleepModifier );
+		}
 	}
 
 	// silversurfer: I moved all modifiers above this point because we don't want anybody to rest faster or slower than the already extreme thresholds.
