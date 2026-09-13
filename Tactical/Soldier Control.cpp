@@ -5860,10 +5860,40 @@ static void SpawnVRDirectionalGoreSpray( SOLDIERTYPE *pSoldier, const CHAR8 *zFi
 }
 
 
+static void SpawnVRBloodGroundDecal( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubSprayDirection, const CHAR8 *zFilename )
+{
+	if ( pSoldier == NULL || pSoldier->bVisible == -1 || pSoldier->pathing.bLevel != 0 || TileIsOutOfBounds( sGridNo ) )
+		return;
+
+	if ( !FileExists( zFilename ) )
+		return;
+
+	ANITILE_PARAMS AniParams;
+	memset( &AniParams, 0, sizeof( ANITILE_PARAMS ) );
+	AniParams.sGridNo = sGridNo;
+	AniParams.ubLevelID = ANI_OBJECT_LEVEL;
+	AniParams.sDelay = 0;
+	AniParams.sStartFrame = 0;
+	AniParams.uiFlags = ANITILE_CACHEDTILE | ANITILE_PAUSED | ANITILE_USE_DIRECTION_FOR_START_FRAME;
+	AniParams.uiUserData3 = ubSprayDirection;
+	ConvertGridNoToCenterCellXY( sGridNo, &AniParams.sX, &AniParams.sY );
+	AniParams.sZ = 0;
+	strcpy( AniParams.zCachedFile, zFilename );
+	CreateAnimationTile( &AniParams );
+}
+
+
 static void DropVRDirectionalBloodTrail( SOLDIERTYPE *pSoldier, UINT8 ubSprayDirection, UINT8 ubInitialStrength, UINT8 ubMaxTiles )
 {
 	if ( pSoldier == NULL || !pSoldier->bInSector || TileIsOutOfBounds( pSoldier->sGridNo ) || ubMaxTiles == 0 )
 		return;
+
+	// Research-shaped fallout: dense close to origin, then rapidly thinning with
+	// distance. This avoids the old solid red stripe / bucket-pour appearance.
+	static const UINT8 aubCentralChance[ 6 ] = { 100, 90, 74, 55, 36, 20 };
+	static const UINT8 aubSideChance[ 6 ]    = {  72, 58, 43, 30, 18,  9 };
+	if ( ubMaxTiles > 6 )
+		ubMaxTiles = 6;
 
 	UINT8 ubType = 0;
 	if ( pSoldier->flags.uiStatusFlags & SOLDIER_MONSTER )
@@ -5872,22 +5902,41 @@ static void DropVRDirectionalBloodTrail( SOLDIERTYPE *pSoldier, UINT8 ubSprayDir
 	INT32 sTrailGridNo = pSoldier->sGridNo;
 	for ( UINT8 ubStep = 1; ubStep <= ubMaxTiles; ++ubStep )
 	{
+		if ( gubWorldMovementCosts[ sTrailGridNo ][ ubSprayDirection ][ pSoldier->pathing.bLevel ] >= TRAVELCOST_BLOCKED )
+			break;
+
 		INT32 sNextGridNo = NewGridNo( sTrailGridNo, DirectionInc( ubSprayDirection ) );
 		if ( TileIsOutOfBounds( sNextGridNo ) || sNextGridNo == sTrailGridNo )
 			break;
 
 		sTrailGridNo = sNextGridNo;
-		UINT8 ubStrength = ( ubInitialStrength > ubStep ) ? (UINT8)( ubInitialStrength - ubStep ) : 1;
-		InternalDropBlood( sTrailGridNo, pSoldier->pathing.bLevel, ubType, ubStrength, pSoldier->bVisible );
+		UINT8 ubIndex = (UINT8)( ubStep - 1 );
+		UINT8 ubStrength = (UINT8)__max( 1, ( ubInitialStrength * ( ubMaxTiles - ubStep + 1 ) ) / ubMaxTiles );
+		ubStrength = __min( ubStrength, (UINT8)3 );
 
-		// Sprinkler-style side droplets: progressively weaker flecks beside the main
-		// exit line, alternating left/right so the trail is not a solid red stripe.
-		UINT8 ubSideDirection = (UINT8)( ( ubSprayDirection + ( ( ubStep & 1 ) ? 1 : 7 ) ) % NUM_WORLD_DIRECTIONS );
-		INT32 sSideGridNo = NewGridNo( sTrailGridNo, DirectionInc( ubSideDirection ) );
-		if ( !TileIsOutOfBounds( sSideGridNo ) && sSideGridNo != sTrailGridNo )
+		const CHAR8 *zDecal = ( ubStep <= 2 ) ? "TILECACHE\\VR_BLOOD_DECAL_NEAR.STI" :
+			( ubStep <= 4 ) ? "TILECACHE\\VR_BLOOD_DECAL_MID.STI" :
+			"TILECACHE\\VR_BLOOD_DECAL_FAR.STI";
+
+		if ( Random( 100 ) < aubCentralChance[ ubIndex ] )
 		{
-			UINT8 ubSideStrength = ( ubStrength > 2 ) ? (UINT8)( ubStrength - 2 ) : 1;
-			InternalDropBlood( sSideGridNo, pSoldier->pathing.bLevel, ubType, ubSideStrength, pSoldier->bVisible );
+			InternalDropBlood( sTrailGridNo, pSoldier->pathing.bLevel, ubType, ubStrength, pSoldier->bVisible );
+			SpawnVRBloodGroundDecal( pSoldier, sTrailGridNo, ubSprayDirection, zDecal );
+		}
+
+		// Satellite drops widen the cone, but their probability falls faster than the
+		// centreline. Alternate sides to prevent a repetitive checkerboard pattern.
+		if ( Random( 100 ) < aubSideChance[ ubIndex ] )
+		{
+			UINT8 ubSideDirection = (UINT8)( ( ubSprayDirection + ( ( ubStep & 1 ) ? 1 : 7 ) ) % NUM_WORLD_DIRECTIONS );
+			INT32 sSideGridNo = NewGridNo( sTrailGridNo, DirectionInc( ubSideDirection ) );
+			if ( !TileIsOutOfBounds( sSideGridNo ) && sSideGridNo != sTrailGridNo )
+			{
+				UINT8 ubSideStrength = ( ubStrength > 1 ) ? (UINT8)( ubStrength - 1 ) : 1;
+				InternalDropBlood( sSideGridNo, pSoldier->pathing.bLevel, ubType, ubSideStrength, pSoldier->bVisible );
+				SpawnVRBloodGroundDecal( pSoldier, sSideGridNo, ubSprayDirection,
+					( ubStep <= 2 ) ? "TILECACHE\\VR_BLOOD_DECAL_MID.STI" : "TILECACHE\\VR_BLOOD_DECAL_FAR.STI" );
+			}
 		}
 	}
 }
@@ -6397,20 +6446,20 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 	// DEDUCT LIFE
 	ubCombinedLoss = this->SoldierTakeDamage( ANIM_CROUCH, sDamage, poisondamage, sBreathLoss, ubReason, this->ubAttackerID, NOWHERE, FALSE, TRUE );
 
-	// VR extreme-gore test baseline: every conventional gunshot doing at least 1 HP
-	// gets maximal visual gore. This deliberately does NOT modify actual HP damage.
-	// The purpose of this pass is to establish the upper visual bound before scaling.
+	// VR research-based extreme gore: preserve the user's intentionally bloody test
+	// baseline, but distribute it as discrete projected droplets rather than a filled fan.
 	if ( ubReason == TAKE_DAMAGE_GUNFIRE &&
 		sDamage >= 1 &&
 		this->bInSector &&
 		!( this->flags.uiStatusFlags & ( SOLDIER_VEHICLE | SOLDIER_ROBOT ) ) )
 	{
-		UINT8 ubSprayDirection = gOppositeDirection[ (UINT8)( bDirection % NUM_WORLD_DIRECTIONS ) ];
+		UINT8 ubIncomingDirection = (UINT8)( bDirection % NUM_WORLD_DIRECTIONS );
+		UINT8 ubSprayDirection = gOppositeDirection[ ubIncomingDirection ];
 		INT16 sGoreZ = 30;
 
-		// Maximum local aftermath plus a six-tile fading exit trail.
+		// Dense local stain, then forward-spatter fallout that thins with distance.
 		DropBlood( this, MAXBLOODQUANTITY, this->bVisible );
-		DropVRDirectionalBloodTrail( this, ubSprayDirection, MAXBLOODQUANTITY, 6 );
+		DropVRDirectionalBloodTrail( this, ubSprayDirection, 5, 6 );
 
 		if ( ubHitLocation == AIM_SHOT_HEAD )
 			sGoreZ = 50;
@@ -6422,16 +6471,34 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 		else if ( gAnimControl[ this->usAnimState ].ubEndHeight == ANIM_PRONE )
 			sGoreZ = 10;
 
-		// Sprinkler, not a bucket: four separated high-velocity droplet curtains,
-		// progressively farther and lower behind the exit wound.
-		SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubSprayDirection, sGoreZ, 32, 0 );
-		SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubSprayDirection, (INT16)( sGoreZ - 3 ), 38, 42 );
-		SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubSprayDirection, (INT16)( sGoreZ - 7 ), 45, 88 );
-		SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 11 ), 53, 145 );
+		// High-energy forward spatter is a mist/droplet cone. Forward volume dominates;
+		// a smaller entry-side backspatter is added for medium/heavy hits.
+		if ( ubHitLocation == AIM_SHOT_HEAD || sDamage >= 18 )
+		{
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubSprayDirection, sGoreZ, 31, 0 );
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubSprayDirection, (INT16)( sGoreZ - 4 ), 39, 55 );
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 9 ), 48, 120 );
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, (INT16)( sGoreZ - 2 ), 44, 0 );
+			DropVRDirectionalBloodTrail( this, ubIncomingDirection, 2, 2 );
+		}
+		else if ( sDamage >= 8 )
+		{
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubSprayDirection, sGoreZ, 34, 0 );
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 5 ), 43, 78 );
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, (INT16)( sGoreZ - 2 ), 48, 0 );
+		}
+		else
+		{
+			// A 1 HP hit still reads clearly, but as droplets rather than a bucket splash.
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, sGoreZ, 36, 0 );
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 4 ), 46, 55 );
+			if ( Random( 100 ) < 35 )
+				SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, (INT16)( sGoreZ - 2 ), 50, 0 );
+		}
 
-		// Every hit also throws visible tissue fragments for this deliberately extreme
-		// test baseline. Actual limb-loss variants remain handled by the fatal system.
-		SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubSprayDirection, (INT16)( sGoreZ - 2 ), 39, 24 );
+		// Tissue fragments belong to severe/fatal trauma, not every 1 HP scratch.
+		if ( sDamage >= 18 || this->stats.bLife == 0 )
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubSprayDirection, (INT16)( sGoreZ - 3 ), 40, 26 );
 	}
 
 	// ATE: OK, Let's check our ASSIGNMENT state,
