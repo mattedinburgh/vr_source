@@ -1431,7 +1431,6 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 							ResetMilitiaCommandQueue( pTMilitiaSoldier );
 							AIClearDisengagementState( pTMilitiaSoldier );
 							pTMilitiaSoldier->aiData.bOrders = SEEKENEMY;
-							pTMilitiaSoldier->aiData.bAttitude = AGGRESSIVE;
 							pTMilitiaSoldier->usUIMovementMode = RUNNING;
 
 							if ( GetSoldier( &pSoldier, gusSelectedSoldier )  )
@@ -1466,7 +1465,6 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 							ResetMilitiaCommandQueue( pTMilitiaSoldier );
 							AIClearDisengagementState( pTMilitiaSoldier );
 							pTMilitiaSoldier->aiData.bOrders = STATIONARY;
-							pTMilitiaSoldier->aiData.bAttitude = DEFENSIVE;
 							// sevenfm: set this spot as original point
 							pTMilitiaSoldier->aiData.sPatrolGrid[0] = pTMilitiaSoldier->sGridNo;
 						}
@@ -1495,7 +1493,6 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 
 							ResetMilitiaCommandQueue( pTMilitiaSoldier );
 							pTMilitiaSoldier->aiData.bOrders = FARPATROL;
-							pTMilitiaSoldier->aiData.bAttitude = DEFENSIVE;
 							AIForceDisengagementState( pTMilitiaSoldier, 4 );
 							pTMilitiaSoldier->usUIMovementMode = RUNNING;
 
@@ -1562,8 +1559,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 								{
 									// Rally to a distinct nearby position, then hold it.
 									pTMilitiaSoldier->aiData.bOrders = STATIONARY;
-									pTMilitiaSoldier->aiData.bAttitude = DEFENSIVE;
-									pTMilitiaSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
+											pTMilitiaSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
 									pTMilitiaSoldier->aiData.sPendingActionData2 = sActionGridNo;
 									pTMilitiaSoldier->aiData.ubPendingActionAnimCount = 0;
 									pTMilitiaSoldier->usUIMovementMode = RUNNING;
@@ -1643,8 +1639,6 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 							INT16 sActionGridNo;
 							INT32 iDummy;						
 
-							// sevenfm: make soldier defensive to take cover instead of attacking
-							pTMilitiaSoldier->aiData.bAttitude = DEFENSIVE;
 							// Keep the militia soldier's actual morale. A player cover order is a tactical
 							// instruction, not a morale-state rewrite.
 
@@ -1701,7 +1695,6 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 								ResetMilitiaCommandQueue( pTeamSoldier );
 								AIClearDisengagementState( pTeamSoldier );
 								pTeamSoldier->aiData.bOrders = SEEKENEMY;
-								pTeamSoldier->aiData.bAttitude = AGGRESSIVE;
 								pTeamSoldier->usUIMovementMode = RUNNING;
 							}
 						}
@@ -1736,7 +1729,6 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 								ResetMilitiaCommandQueue( pTeamSoldier );
 								AIClearDisengagementState( pTeamSoldier );
 								pTeamSoldier->aiData.bOrders = STATIONARY;
-								pTeamSoldier->aiData.bAttitude = DEFENSIVE;
 								// sevenfm: set this spot as original point
 								pTeamSoldier->aiData.sPatrolGrid[0] = pTeamSoldier->sGridNo;
 							}
@@ -1772,7 +1764,6 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 							{
 								ResetMilitiaCommandQueue( pTeamSoldier );
 								pTeamSoldier->aiData.bOrders = FARPATROL;
-								pTeamSoldier->aiData.bAttitude = DEFENSIVE;
 								AIForceDisengagementState( pTeamSoldier, 4 );
 								pTeamSoldier->usUIMovementMode = RUNNING;
 
@@ -1850,8 +1841,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 								if ( !TileIsOutOfBounds(sActionGridNo) )
 								{
 									pTeamSoldier->aiData.bOrders = STATIONARY;
-									pTeamSoldier->aiData.bAttitude = DEFENSIVE;
-									pTeamSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
+										pTeamSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
 									pTeamSoldier->aiData.sPendingActionData2 = sActionGridNo;
 									pTeamSoldier->aiData.ubPendingActionAnimCount = 0;
 									pTeamSoldier->usUIMovementMode = RUNNING;
@@ -1894,8 +1884,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 								{
 									// A spread order is a local defensive reposition, not a sector-wide patrol.
 									pTeamSoldier->aiData.bOrders = STATIONARY;
-									pTeamSoldier->aiData.bAttitude = DEFENSIVE;
-									pTeamSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
+										pTeamSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
 									pTeamSoldier->aiData.sPendingActionData2 = sActionGridNo;
 									pTeamSoldier->aiData.ubPendingActionAnimCount = 0;
 									pTeamSoldier->usUIMovementMode = RUNNING;
@@ -2005,8 +1994,6 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 						{
 							if ( (pTeamSoldier->bActive) && (pTeamSoldier->bInSector) && (pTeamSoldier->stats.bLife >= OKLIFE) )
 							{
-								// sevenfm: make soldier defensive to take cover instead of attacking
-								pTeamSoldier->aiData.bAttitude = DEFENSIVE;
 								// Keep actual morale; the explicit player order already tells the AI to prioritize cover.
 
 								// See if we can get there
