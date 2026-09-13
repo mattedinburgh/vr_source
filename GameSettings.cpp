@@ -1651,6 +1651,22 @@ void LoadGameExternalOptions()
 	gGameExternalOptions.ubOverheatThermometerRedOffset					= iniReader.ReadInteger("Tactical Weapon Overheating Settings","OVERHEATING_DISPLAY_THERMOMETER_RED_OFFSET", 100, 0, 255);
 	gGameExternalOptions.iCooldownModificatorLonelyBarrel			    = iniReader.ReadFloat  ("Tactical Weapon Overheating Settings","OVERHEATING_COOLDOWN_MODIFICATOR_LONELYBARREL", 1.15f, 1.0f, 10.0f);
 		
+	//################# Tactical Enemy Role Settings ##################
+	// 1.13 officer/general roles. Vengeance keeps tactical command effects local
+	// while generals retain their strategic campaign effect.
+	gGameExternalOptions.fEnemyRoles = iniReader.ReadBoolean("Tactical Enemy Role Settings", "ENEMYROLES", TRUE);
+	gGameExternalOptions.fEnemyOfficers = iniReader.ReadBoolean("Tactical Enemy Role Settings", "ENEMY_OFFICERS", TRUE);
+	gGameExternalOptions.usEnemyOfficersPerTeamSize = iniReader.ReadInteger("Tactical Enemy Role Settings", "ENEMY_OFFICERS_REQUIREDTEAMSIZE", 10, 1, 64);
+	gGameExternalOptions.usEnemyOfficersMax = iniReader.ReadInteger("Tactical Enemy Role Settings", "ENEMY_OFFICERS_MAX", 4, 1, 10);
+	gGameExternalOptions.sEnemyOfficerSuppressionResistanceBonus = iniReader.ReadInteger("Tactical Enemy Role Settings", "ENEMY_OFFICERS_SUPPRESSION_RESISTANCE_BONUS", 10, 0, 50);
+	gGameExternalOptions.dEnemyOfficerMoraleModifier = iniReader.ReadFloat("Tactical Enemy Role Settings", "ENEMY_OFFICERS_MORALE_MODIFIER", 0.10f, 0.0f, 1.0f);
+	gGameExternalOptions.dEnemyOfficerSurrenderStrengthBonus = iniReader.ReadFloat("Tactical Enemy Role Settings", "ENEMY_OFFICERS_SURRENDERSTRENGTHBONUS", 0.10f, 0.0f, 1.0f);
+	gGameExternalOptions.fEnemyGenerals = iniReader.ReadBoolean("Tactical Enemy Role Settings", "ENEMY_GENERALS", TRUE);
+	gGameExternalOptions.usEnemyGeneralsNumber = iniReader.ReadInteger("Tactical Enemy Role Settings", "ENEMY_GENERALS_NUMBER", 5, 1, 10);
+	gGameExternalOptions.usEnemyGeneralsBodyGuardsNumber = iniReader.ReadInteger("Tactical Enemy Role Settings", "ENEMY_GENERALS_BODYGUARDS_NUMBER", 4, 0, 10);
+	gGameExternalOptions.fEnemyGeneralStrategicDecisionSpeedBonus = iniReader.ReadFloat("Tactical Enemy Role Settings", "ENEMY_GENERALS_STRATEGIC_DECISION_SPEEDBONUS", 0.05f, 0.0f, 0.10f);
+	gGameExternalOptions.fEnemyGeneralStrategicMovementSpeedBonus = iniReader.ReadFloat("Tactical Enemy Role Settings", "ENEMY_GENERALS_STRATEGIC_MOVEMENT_SPEEDBONUS", 0.03f, 0.0f, 0.10f);
+
 	//################# Tactical Zombie Settings ##################
 	gGameExternalOptions.sZombieRiseBehaviour							= iniReader.ReadInteger("Tactical Zombie Settings", "ZOMBIE_RISE_BEHAVIOUR", 0, 0, 3);
 	gGameExternalOptions.fZombieSpawnWaves								= iniReader.ReadInteger("Tactical Zombie Settings", "ZOMBIE_SPAWN_WAVES", FALSE);
