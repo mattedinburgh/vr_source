@@ -34,7 +34,20 @@ void BlackBoxCheckpoint( const char *subsystem, const char *format, ... );
 // Call once per main-loop iteration. This is intentionally cheap: it updates
 // lock-free heartbeat state every frame and only emits health diagnostics at
 // throttled intervals.
+enum
+{
+	BLACKBOX_PHASE_UNKNOWN = 0,
+	BLACKBOX_PHASE_FRAME_BEGIN,
+	BLACKBOX_PHASE_INPUT,
+	BLACKBOX_PHASE_SCREEN_HANDLER,
+	BLACKBOX_PHASE_RENDER,
+	BLACKBOX_PHASE_CLOCK,
+	BLACKBOX_PHASE_NETWORK,
+	BLACKBOX_PHASE_FRAME_END
+};
+
 void BlackBoxHeartbeat( DWORD currentScreen );
+void BlackBoxFramePhase( DWORD phase );
 
 
 #ifdef __cplusplus
