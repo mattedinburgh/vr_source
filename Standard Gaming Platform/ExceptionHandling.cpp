@@ -85,9 +85,25 @@ static HANDLE gBlackBoxWatchdogStopEvent = NULL;
 static volatile LONG gBlackBoxHeartbeatSequence = 0;
 static volatile LONG gBlackBoxHeartbeatTick = 0;
 static volatile LONG gBlackBoxHeartbeatScreen = -1;
+static volatile LONG gBlackBoxFramePhase = BLACKBOX_PHASE_UNKNOWN;
 static DWORD gBlackBoxMainThreadId = 0;
 static DWORD gBlackBoxLastHealthCheckpointTick = 0;
 static DWORD gBlackBoxLastHealthEventTick = 0;
+
+static const char *BlackBoxPhaseName( LONG phase )
+{
+	switch( phase )
+	{
+		case BLACKBOX_PHASE_FRAME_BEGIN: return "FRAME_BEGIN";
+		case BLACKBOX_PHASE_INPUT: return "INPUT";
+		case BLACKBOX_PHASE_SCREEN_HANDLER: return "SCREEN_HANDLER";
+		case BLACKBOX_PHASE_RENDER: return "RENDER";
+		case BLACKBOX_PHASE_CLOCK: return "CLOCK";
+		case BLACKBOX_PHASE_NETWORK: return "NETWORK";
+		case BLACKBOX_PHASE_FRAME_END: return "FRAME_END";
+		default: return "UNKNOWN";
+	}
+}
 
 static BOOL BlackBoxIsInterestingException( DWORD code )
 {
@@ -213,9 +229,9 @@ static void BlackBoxWriteHangEvidence( DWORD elapsedMs, LONG heartbeatSequence, 
 	BlackBoxFormatTime( timestamp, sizeof( timestamp ) );
 	lstrcpynA( checkpoint, gBlackBoxCheckpoint, BLACKBOX_CHECKPOINT_CHARS );
 	_snprintf( line, sizeof( line ) - 1,
-		"[%s] [+%lums] [WATCHDOG] main-thread stall elapsedMs=%lu mainTid=%lu heartbeat=%ld screen=%ld latest=%s\r\n",
+		"[%s] [+%lums] [WATCHDOG] main-thread stall elapsedMs=%lu mainTid=%lu heartbeat=%ld screen=%ld phase=%s(%ld) latest=%s\r\n",
 		timestamp, BlackBoxUptimeMs(), elapsedMs, gBlackBoxMainThreadId,
-		heartbeatSequence, currentScreen, checkpoint );
+		heartbeatSequence, currentScreen, BlackBoxPhaseName( gBlackBoxFramePhase ), gBlackBoxFramePhase, checkpoint );
 	line[ sizeof( line ) - 1 ] = 0;
 
 	hFile = CreateFileA(
@@ -329,6 +345,7 @@ void BlackBoxInitialize( void )
 	gBlackBoxHeartbeatSequence = 0;
 	gBlackBoxHeartbeatTick = (LONG)gBlackBoxStartTick;
 	gBlackBoxHeartbeatScreen = -1;
+	gBlackBoxFramePhase = BLACKBOX_PHASE_UNKNOWN;
 	gBlackBoxMainThreadId = GetCurrentThreadId();
 	gBlackBoxLastHealthCheckpointTick = gBlackBoxStartTick;
 	gBlackBoxLastHealthEventTick = gBlackBoxStartTick;
@@ -530,6 +547,14 @@ void BlackBoxCheckpoint( const char *subsystem, const char *format, ... )
 	LeaveCriticalSection( &gBlackBoxLock );
 }
 
+void BlackBoxFramePhase( DWORD phase )
+{
+	if( !gBlackBoxInitialized )
+		return;
+
+	InterlockedExchange( &gBlackBoxFramePhase, (LONG)phase );
+}
+
 void BlackBoxHeartbeat( DWORD currentScreen )
 {
 	DWORD now;
@@ -572,16 +597,16 @@ void BlackBoxHeartbeat( DWORD currentScreen )
 		userObjects = GetGuiResources( GetCurrentProcess(), GR_USEROBJECTS );
 
 		BlackBoxCheckpoint( "HEALTH",
-			"heartbeat=%ld screen=%lu gapMs=%lu handles=%lu gdi=%lu user=%lu memLoad=%lu availPhysMB=%lu",
-			heartbeatSequence, currentScreen, gapMs, handles, gdiObjects, userObjects,
+			"heartbeat=%ld screen=%lu phase=%s gapMs=%lu handles=%lu gdi=%lu user=%lu memLoad=%lu availPhysMB=%lu",
+			heartbeatSequence, currentScreen, BlackBoxPhaseName( gBlackBoxFramePhase ), gapMs, handles, gdiObjects, userObjects,
 			memoryStatus.dwMemoryLoad, memoryStatus.dwAvailPhys / (1024 * 1024) );
 		gBlackBoxLastHealthCheckpointTick = now;
 
 		if( ( now - gBlackBoxLastHealthEventTick ) >= BLACKBOX_HEALTH_EVENT_MS )
 		{
 			BlackBoxEvent( "HEALTH",
-				"heartbeat=%ld screen=%lu handles=%lu gdi=%lu user=%lu memLoad=%lu availPhysMB=%lu availPageMB=%lu",
-				heartbeatSequence, currentScreen, handles, gdiObjects, userObjects,
+				"heartbeat=%ld screen=%lu phase=%s handles=%lu gdi=%lu user=%lu memLoad=%lu availPhysMB=%lu availPageMB=%lu",
+				heartbeatSequence, currentScreen, BlackBoxPhaseName( gBlackBoxFramePhase ), handles, gdiObjects, userObjects,
 				memoryStatus.dwMemoryLoad,
 				memoryStatus.dwAvailPhys / (1024 * 1024),
 				memoryStatus.dwAvailPageFile / (1024 * 1024) );
@@ -840,8 +865,9 @@ static void BlackBoxDumpToCrashReport( HWFILE hFile, const EXCEPTION_RECORD *pRe
 		gBlackBoxEventSequence, gBlackBoxCheckpointSequence, gBlackBoxExceptionSequence,
 		gBlackBoxHeartbeatSequence, gBlackBoxDiskWriteFailures, gBlackBoxFlushFailures,
 		gBlackBoxFile != INVALID_HANDLE_VALUE ? "yes" : "no" );
-	ErrorLog( hFile, "Main-loop heartbeat: mainTid=%lu lastTick=%lu lastScreen=%ld ageMs=%lu watchdog=%s\r\n",
+	ErrorLog( hFile, "Main-loop heartbeat: mainTid=%lu lastTick=%lu lastScreen=%ld phase=%s(%ld) ageMs=%lu watchdog=%s\r\n",
 		gBlackBoxMainThreadId, (DWORD)gBlackBoxHeartbeatTick, gBlackBoxHeartbeatScreen,
+		BlackBoxPhaseName( gBlackBoxFramePhase ), gBlackBoxFramePhase,
 		GetTickCount() - (DWORD)gBlackBoxHeartbeatTick,
 		gBlackBoxWatchdogThread != NULL ? "running" : "not-running" );
 	ErrorLog( hFile, "Memory: load=%lu%% totalPhysMB=%lu availPhysMB=%lu totalPageMB=%lu availPageMB=%lu\r\n",
