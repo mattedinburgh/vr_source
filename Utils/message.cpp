@@ -426,6 +426,10 @@ static BOOLEAN gfBattleLogRegionsCreated = FALSE;
 static BOOLEAN gfBattleLogDragging = FALSE;
 static BOOLEAN gfBattleLogResizing = FALSE;
 static BOOLEAN gfBattleLogInspectorVisible = FALSE;
+// Region refreshes must be deferred until we are outside the mouse callback stack.
+// RefreshMouseRegions() immediately redispatches the current MSYS action, including
+// a still-active LBUTTON_UP, which otherwise recursively re-enters log clicks.
+static BOOLEAN gfBattleLogMouseRefreshPending = FALSE;
 
 static INT16 gsBattleLogX = 6;
 static INT16 gsBattleLogY = -1;
@@ -863,14 +867,13 @@ static void BattleLogUpdateRegions( void )
 	else
 		MSYS_DisableRegion( &gBattleLogInspectorRegion );
 
-	// Do not force a mouse-region rescan from inside the grabbed region's
-	// movement callback. RefreshMouseRegions() synchronously dispatches a MOVE
-	// callback; while dragging/resizing that re-enters BattleLogMoveCallback(),
-	// which rebuilds the overlay and refreshes again until the stack overflows.
-	// The region coordinates above are already current and the mouse grab keeps
-	// delivering movement to this region. A full refresh is safe on button-up.
-	if ( !gfBattleLogDragging && !gfBattleLogResizing )
-		RefreshMouseRegions();
+	// Never call RefreshMouseRegions() synchronously from a battle-log callback.
+	// MSYS_UpdateMouseRegion() invokes ButtonCallback before clearing the current
+	// button-action bits. A synchronous refresh from LBUTTON_UP therefore sees
+	// the same LBUTTON_UP again and recursively re-enters BattleLogContentCallback
+	// until the stack overflows. Defer the rescan to ScrollString(), i.e. the next
+	// normal tactical update after the callback has unwound.
+	gfBattleLogMouseRefreshPending = TRUE;
 }
 
 static void BattleLogCreateRegions( void )
@@ -1335,6 +1338,7 @@ static void BattleLogEnsureUI( void )
 static void BattleLogDestroyUI( void )
 {
 	BattleLogRemoveRegions();
+	gfBattleLogMouseRefreshPending = FALSE;
 	if ( giBattleLogOverlay != -1 )
 	{
 		RemoveVideoOverlay( giBattleLogOverlay );
@@ -1420,9 +1424,9 @@ void BattleLogAddNCTHMiss( INT32 iBullet )
 	if ( d.ubTargetID != NOBODY && MercPtrs[d.ubTargetID] )
 		pTargetName = MercPtrs[d.ubTargetID]->GetName();
 
-	swprintf( pEntry->zText, L"[%02d:%02d] %s missed %s",
+	swprintf( pEntry->zText, L"[%02d:%02d] %s missed %s [shot info]",
 		guiHour, guiMin, pName, pTargetName );
-	BattleLogSetTokenRange( pEntry, L"missed", FALSE );
+	BattleLogSetTokenRange( pEntry, L"[shot info]", FALSE );
 	gusBattleLogScrollOffset = 0;
 
 	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
@@ -1479,9 +1483,9 @@ void BattleLogAddNCTHBlocked( INT32 iBullet, UINT8 ubReason )
 	else if ( ubReason == BATTLELOG_BLOCK_ROOF )
 		pBlockReason = L"roof";
 
-	swprintf( pEntry->zText, L"[%02d:%02d] %s shot at %s was blocked by %s",
+	swprintf( pEntry->zText, L"[%02d:%02d] %s shot at %s was blocked by %s [shot info]",
 		guiHour, guiMin, pName, pTargetName, pBlockReason );
-	BattleLogSetTokenRange( pEntry, L"blocked", FALSE );
+	BattleLogSetTokenRange( pEntry, L"[shot info]", FALSE );
 	gusBattleLogScrollOffset = 0;
 
 	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
@@ -1545,22 +1549,27 @@ void BattleLogAddNCTHHit( INT32 iBullet, UINT8 ubTargetID, INT16 sDamage )
 		pEntry->fDamageClickable = TRUE;
 	}
 
-	CHAR16 zDamageToken[64];
-	swprintf( zDamageToken, L"%d damage", sDamage );
-
 	if ( fIntendedHit )
 	{
-		swprintf( pEntry->zText, L"[%02d:%02d] %s hit %s for %s",
-			guiHour, guiMin, pName, pActualTargetName, zDamageToken );
+		if ( pEntry->fDamageClickable )
+			swprintf( pEntry->zText, L"[%02d:%02d] %s hit %s for %d damage [shot info] [damage info]",
+				guiHour, guiMin, pName, pActualTargetName, sDamage );
+		else
+			swprintf( pEntry->zText, L"[%02d:%02d] %s hit %s for %d damage [shot info]",
+				guiHour, guiMin, pName, pActualTargetName, sDamage );
 	}
 	else
 	{
-		swprintf( pEntry->zText, L"[%02d:%02d] %s aimed %s but hit %s for %s",
-			guiHour, guiMin, pName, pIntendedTargetName, pActualTargetName, zDamageToken );
+		if ( pEntry->fDamageClickable )
+			swprintf( pEntry->zText, L"[%02d:%02d] %s aimed %s but hit %s for %d damage [shot info] [damage info]",
+				guiHour, guiMin, pName, pIntendedTargetName, pActualTargetName, sDamage );
+		else
+			swprintf( pEntry->zText, L"[%02d:%02d] %s aimed %s but hit %s for %d damage [shot info]",
+				guiHour, guiMin, pName, pIntendedTargetName, pActualTargetName, sDamage );
 	}
-	BattleLogSetTokenRange( pEntry, L"hit", FALSE );
+	BattleLogSetTokenRange( pEntry, L"[shot info]", FALSE );
 	if ( pEntry->fDamageClickable )
-		BattleLogSetTokenRange( pEntry, zDamageToken, TRUE );
+		BattleLogSetTokenRange( pEntry, L"[damage info]", TRUE );
 	gusBattleLogScrollOffset = 0;
 
 	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
@@ -1585,6 +1594,15 @@ void ScrollString( )
 
 	// UPDATE TIMER
 	suiTimer=GetJA2Clock();
+
+	// Mouse-region rescans are intentionally deferred out of battle-log callbacks.
+	// Clear the pending flag before refreshing so any harmless region update caused
+	// by the rescan can schedule, rather than recurse into, a later refresh.
+	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogMouseRefreshPending )
+	{
+		gfBattleLogMouseRefreshPending = FALSE;
+		RefreshMouseRegions();
+	}
 
 	// might have pop up text timer
 	HandleLastQuotePopUpTimer( );
