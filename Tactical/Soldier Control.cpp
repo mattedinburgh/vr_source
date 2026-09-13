@@ -4497,6 +4497,12 @@ void SOLDIERTYPE::EVENT_InternalSetSoldierPosition( FLOAT dNewXPos, FLOAT dNewYP
 {
 	INT32 sNewGridNo;
 
+	// Keep the pre-update drag state/grid so the casualty can visually follow the
+	// rescuer within a tile, as in current 1.13. SetSoldierGridNo() still owns the
+	// actual tile transition and occupancy update.
+	BOOLEAN fWasDraggingCasualty = this->IsDraggingBleedoutCasualty();
+	INT32 sDragOldGridNo = this->sGridNo;
+
 	// Not if we're dead!
 	if ( ( this->flags.uiStatusFlags & SOLDIER_DEAD ) )
 	{
@@ -4532,6 +4538,36 @@ void SOLDIERTYPE::EVENT_InternalSetSoldierPosition( FLOAT dNewXPos, FLOAT dNewYP
 
 	this->SetSoldierGridNo( sNewGridNo, fForceRemove );
 
+	// Smooth visual following. On a grid transition SetSoldierGridNo() has already
+	// pulled the casualty onto the tile just vacated; here we mirror the rescuer's
+	// within-tile offset so the casualty does not visibly jump center-to-center.
+	if ( fWasDraggingCasualty && this->IsDraggingBleedoutCasualty() )
+	{
+		SOLDIERTYPE *pCasualty = MercPtrs[ this->ubDraggedCasualtyID ];
+		if ( pCasualty && !TileIsOutOfBounds( this->sGridNo ) )
+		{
+			INT16 sRescuerBaseX = 0;
+			INT16 sRescuerBaseY = 0;
+			ConvertGridNoToCenterCellXY( this->sGridNo, &sRescuerBaseX, &sRescuerBaseY );
+
+			FLOAT dOffsetX = this->dXPos - (FLOAT)sRescuerBaseX;
+			FLOAT dOffsetY = this->dYPos - (FLOAT)sRescuerBaseY;
+
+			INT32 sFollowGridNo = (this->sGridNo != sDragOldGridNo) ? sDragOldGridNo : pCasualty->sGridNo;
+			if ( !TileIsOutOfBounds( sFollowGridNo ) )
+			{
+				INT16 sCasualtyBaseX = 0;
+				INT16 sCasualtyBaseY = 0;
+				ConvertGridNoToCenterCellXY( sFollowGridNo, &sCasualtyBaseX, &sCasualtyBaseY );
+
+				pCasualty->ubDirection = this->ubDirection;
+				pCasualty->EVENT_InternalSetSoldierPosition(
+					(FLOAT)sCasualtyBaseX + dOffsetX,
+					(FLOAT)sCasualtyBaseY + dOffsetY,
+					FALSE, FALSE, FALSE );
+			}
+		}
+	}
 
 	if ( !( this->flags.uiStatusFlags & ( SOLDIER_DRIVER | SOLDIER_PASSENGER ) ) )
 	{
