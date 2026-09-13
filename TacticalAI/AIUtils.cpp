@@ -5821,6 +5821,24 @@ void AIForceDisengagementState(SOLDIERTYPE *pSoldier, UINT8 ubTurns)
 	AIResetRecoveryStreak(pSoldier);
 }
 
+void AIClearDisengagementState(SOLDIERTYPE *pSoldier)
+{
+	AIMaintainDisengagementTimeline();
+
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return;
+
+	UINT8 ubID = pSoldier->ubID;
+	if (guiAIDisengageIdentity[ubID] == pSoldier->uiUniqueSoldierIdValue)
+	{
+		gubAIDisengageTurns[ubID] = 0;
+		guiAIDisengageTurnStamp[ubID] = 0;
+		guiAIDisengageStartTurn[ubID] = 0;
+	}
+
+	AIResetRecoveryStreak(pSoldier);
+}
+
 static BOOLEAN AIHasNearbyStableLeader(SOLDIERTYPE *pSoldier)
 {
 	if (!AICombatTeam(pSoldier))
