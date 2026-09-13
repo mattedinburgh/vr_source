@@ -77,6 +77,12 @@
 
 #include "ub_config.h"
 
+#include "LogicalBodyTypes/Layers.h"
+#include "LogicalBodyTypes/PaletteDB.h"
+#include "LogicalBodyTypes/SurfaceDB.h"
+#include "LogicalBodyTypes/FilterDB.h"
+#include "LogicalBodyTypes/BodyTypeDB.h"
+
 
 #include "Civ Quotes.h"
 #include "LuaInitNPCs.h"
@@ -407,6 +413,27 @@ BOOLEAN LoadExternalGameplayData(STR directoryName)
 	strcpy(fileName, directoryName);
 	strcat(fileName, LBEPOCKETFILENAME);
 	SGP_THROW_IFFALSE(ReadInLBEPocketStats(fileName,FALSE),LBEPOCKETFILENAME);
+
+	// LOBOT: load visible-equipment layers only when the data pack is installed.
+	// Failure is deliberately non-fatal: unsupported/missing LOBOT data falls back
+	// to the original Vengeance tactical sprite renderer.
+	{
+		CHAR8 lbtProbe[MAX_PATH + 1];
+		strcpy(lbtProbe, directoryName);
+		strcat(lbtProbe, LBT_LAYERSFILENAME);
+		if (FileExists(lbtProbe))
+		{
+			using namespace LogicalBodyTypes;
+			BOOLEAN fLbtOk = TRUE;
+			fLbtOk = fLbtOk && Layers::Instance().LoadFromFile(directoryName, LBT_LAYERSFILENAME);
+			fLbtOk = fLbtOk && PaletteDB::Instance().LoadFromFile(directoryName, LBT_PALETTESFILENAME);
+			fLbtOk = fLbtOk && SurfaceDB::Instance().LoadFromFile(directoryName, LBT_ANIMSURFACESFILENAME);
+			fLbtOk = fLbtOk && FilterDB::Instance().LoadFromFile(directoryName, LBT_FILTERSFILENAME);
+			fLbtOk = fLbtOk && BodyTypeDB::Instance().LoadFromFile(directoryName, LBT_BODYTYPESFILENAME);
+			if (!fLbtOk)
+				DebugMsg(TOPIC_JA2, DBG_LEVEL_1, "LOBOT: data load incomplete; legacy tactical sprites remain available.");
+		}
+	}
 
 #ifndef ENGLISH
 	AddLanguagePrefix(fileName);

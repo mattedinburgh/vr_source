@@ -76,6 +76,13 @@ typedef PARSE_STAGE;
 #define LBEPOCKETFILENAME						"Items\\Pockets.xml"
 #define LBEPOCKETPOPUPFILENAME					"Items\\PocketPopups.xml"
 
+// Logical Body Types (LOBOT): visible tactical equipment layers
+#define LBT_LAYERSFILENAME						"LogicalBodyTypes\\Layers.xml"
+#define LBT_PALETTESFILENAME					"LogicalBodyTypes\\Palettes.xml"
+#define LBT_ANIMSURFACESFILENAME				"LogicalBodyTypes\\AnimationSurfaces.xml"
+#define LBT_FILTERSFILENAME						"LogicalBodyTypes\\Filters.xml"
+#define LBT_BODYTYPESFILENAME					"LogicalBodyTypes\\LogicalBodyTypes.xml"
+
 #define	ENEMYGUNCHOICESFILENAME					"Inventory\\EnemyGunChoices.xml"	// default selection
 #define	GUNCHOICESFILENAME_ENEMY_ADMIN			"Inventory\\GunChoices_Enemy_Admin.xml"
 #define	GUNCHOICESFILENAME_ENEMY_REGULAR		"Inventory\\GunChoices_Enemy_Regular.xml"
