@@ -68,6 +68,7 @@ namespace ImageFileType
 			_ext_map["sti"]    = STCI_FILE_READER;
 			_ext_map["png"]    = PNG_FILE_READER;
 			_ext_map["jpc.7z"] = JPC_FILE_READER;
+			_ext_map["b1tc"]  = B1TC_FILE_READER;
 			inited = true;
 		}
 		ExtMap_t::const_iterator cit = _ext_map.find(ext);
@@ -88,6 +89,18 @@ namespace ImageFileType
 			filename += ".pcx";
 		}
 		int reader_type = map(ext);
+
+		// Optional true-colour sibling for a legacy STI. The STI name remains
+		// the map/JSD identity while only the pixels are replaced.
+		if(reader_type == STCI_FILE_READER)
+		{
+			vfs::String trueColorFile = filename.substr(0, pos+1).append("b1tc");
+			if(getVFS()->fileExists(trueColorFile))
+			{
+				filename = trueColorFile.utf8();
+				return B1TC_FILE_READER;
+			}
+		}
 
 		/*
 		 * if DEFAULT, then just check existance of file
@@ -325,6 +338,153 @@ BOOLEAN ReleaseImageData( HIMAGE hImage, UINT16 fContents )
 	return( TRUE );
 }
 
+static UINT16 B1TCReadU16( const UINT8 *pData )
+{
+	return (UINT16)( pData[0] | ((UINT16)pData[1] << 8) );
+}
+
+static UINT32 B1TCReadU32( const UINT8 *pData )
+{
+	return (UINT32)pData[0] |
+		((UINT32)pData[1] << 8) |
+		((UINT32)pData[2] << 16) |
+		((UINT32)pData[3] << 24);
+}
+
+static BOOLEAN LoadB1TCFileToImage( HIMAGE hImage, UINT16 fContents )
+{
+	HWFILE hFile = FileOpen( hImage->ImageFile, FILE_ACCESS_READ );
+	if( !hFile )
+		return FALSE;
+
+	const UINT32 uiFileSize = FileGetSize( hFile );
+	if( uiFileSize < 8 )
+	{
+		FileClose( hFile );
+		return FALSE;
+	}
+
+	UINT8 *pFileData = (UINT8*)MemAlloc( uiFileSize );
+	if( pFileData == NULL )
+	{
+		FileClose( hFile );
+		return FALSE;
+	}
+
+	UINT32 uiBytesRead = 0;
+	const BOOLEAN fRead = FileRead( hFile, pFileData, uiFileSize, &uiBytesRead );
+	FileClose( hFile );
+	if( !fRead || uiBytesRead != uiFileSize )
+	{
+		MemFree( pFileData );
+		return FALSE;
+	}
+
+	if( memcmp( pFileData, "B1TC", 4 ) != 0 )
+	{
+		MemFree( pFileData );
+		return FALSE;
+	}
+
+	const UINT16 usVersion = B1TCReadU16( pFileData + 4 );
+	const UINT16 usFrameCount = B1TCReadU16( pFileData + 6 );
+	if( usVersion != 1 || usFrameCount == 0 )
+	{
+		MemFree( pFileData );
+		return FALSE;
+	}
+
+	const UINT32 uiDirectorySize = 8 + (UINT32)usFrameCount * 16;
+	if( uiDirectorySize > uiFileSize )
+	{
+		MemFree( pFileData );
+		return FALSE;
+	}
+
+	hImage->pETRLEObject = (ETRLEObject*)MemAlloc( sizeof(ETRLEObject) * usFrameCount );
+	if( hImage->pETRLEObject == NULL )
+	{
+		MemFree( pFileData );
+		return FALSE;
+	}
+	memset( hImage->pETRLEObject, 0, sizeof(ETRLEObject) * usFrameCount );
+
+	UINT32 uiTotalPixelBytes = 0;
+	UINT16 usMaxWidth = 0;
+	UINT16 usMaxHeight = 0;
+
+	for( UINT16 i = 0; i < usFrameCount; ++i )
+	{
+		const UINT8 *pEntry = pFileData + 8 + (UINT32)i * 16;
+		const INT16 sOffsetX = (INT16)B1TCReadU16( pEntry + 0 );
+		const INT16 sOffsetY = (INT16)B1TCReadU16( pEntry + 2 );
+		const UINT16 usWidth = B1TCReadU16( pEntry + 4 );
+		const UINT16 usHeight = B1TCReadU16( pEntry + 6 );
+		const UINT32 uiSourceOffset = B1TCReadU32( pEntry + 8 );
+		const UINT32 uiDataLength = B1TCReadU32( pEntry + 12 );
+		const UINT32 uiExpectedLength = (UINT32)usWidth * (UINT32)usHeight * 4;
+
+		if( usWidth == 0 || usHeight == 0 || uiDataLength != uiExpectedLength ||
+			uiSourceOffset < uiDirectorySize || uiSourceOffset > uiFileSize ||
+			uiDataLength > uiFileSize - uiSourceOffset )
+		{
+			MemFree( hImage->pETRLEObject );
+			hImage->pETRLEObject = NULL;
+			MemFree( pFileData );
+			return FALSE;
+		}
+
+		ETRLEObject *pObject = &hImage->pETRLEObject[i];
+		pObject->sOffsetX = sOffsetX;
+		pObject->sOffsetY = sOffsetY;
+		pObject->usWidth = usWidth;
+		pObject->usHeight = usHeight;
+		pObject->uiDataOffset = uiTotalPixelBytes;
+		pObject->uiDataLength = uiDataLength;
+
+		if( usWidth > usMaxWidth ) usMaxWidth = usWidth;
+		if( usHeight > usMaxHeight ) usMaxHeight = usHeight;
+		if( uiTotalPixelBytes > 0xFFFFFFFFu - uiDataLength )
+		{
+			MemFree( hImage->pETRLEObject );
+			hImage->pETRLEObject = NULL;
+			MemFree( pFileData );
+			return FALSE;
+		}
+		uiTotalPixelBytes += uiDataLength;
+	}
+
+	hImage->p32BPPData = (UINT32*)MemAlloc( uiTotalPixelBytes );
+	if( hImage->p32BPPData == NULL )
+	{
+		MemFree( hImage->pETRLEObject );
+		hImage->pETRLEObject = NULL;
+		MemFree( pFileData );
+		return FALSE;
+	}
+
+	for( UINT16 i = 0; i < usFrameCount; ++i )
+	{
+		const UINT8 *pEntry = pFileData + 8 + (UINT32)i * 16;
+		const UINT32 uiSourceOffset = B1TCReadU32( pEntry + 8 );
+		const UINT32 uiDataLength = B1TCReadU32( pEntry + 12 );
+		memcpy( (UINT8*)hImage->p32BPPData + hImage->pETRLEObject[i].uiDataOffset,
+			pFileData + uiSourceOffset, uiDataLength );
+	}
+
+	MemFree( pFileData );
+	hImage->usNumberOfObjects = usFrameCount;
+	hImage->usWidth = usMaxWidth;
+	hImage->usHeight = usMaxHeight;
+	hImage->ubBitDepth = 32;
+	hImage->uiSizePixData = uiTotalPixelBytes;
+	hImage->pPalette = NULL;
+	hImage->pui16BPPPalette = NULL;
+	hImage->fFlags |= IMAGE_BITMAPDATA;
+	return TRUE;
+}
+
+
 BOOLEAN LoadImageData( HIMAGE hImage, UINT16 fContents )
 {
 	BOOLEAN fReturnVal = FALSE;
@@ -354,6 +514,10 @@ BOOLEAN LoadImageData( HIMAGE hImage, UINT16 fContents )
 
 		case JPC_FILE_READER:
 			fReturnVal = LoadJPCFileToImage( hImage, fContents );
+			break;
+
+		case B1TC_FILE_READER:
+			fReturnVal = LoadB1TCFileToImage( hImage, fContents );
 			break;
 		
 		default:
