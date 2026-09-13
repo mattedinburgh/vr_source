@@ -276,7 +276,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 	UINT32 uiLoop;
 	INT32 iAttackValue, iThreatValue, iHitRate, iBestHitRate, iPercentBetter, iEstDamage, iTrueLastTarget;
 	UINT16 usTrueState, usTurningCost, usRaiseGunCost;
-	INT16 sAimTime, ubMinAPcost, ubRawAPCost, sBestAPcost, ubChanceToHit, ubBestAimTime, ubChanceToGetThrough, ubBestChanceToGetThrough, ubFriendlyFireChance, ubBestFriendlyFireChance, ubBestChanceToHit, sStanceAPcost;
+	INT16 sAimTime, ubMinAPcost, ubRawAPCost, sBestAPcost, ubChanceToHit, ubBestAimTime, ubChanceToGetThrough, ubBestChanceToGetThrough, ubFriendlyFireChance, ubNeutralFireChance, ubBestFriendlyFireChance, ubBestChanceToHit, sStanceAPcost;
 	INT16 sAimAPCost;
 	BOOLEAN fAddingTurningCost, fAddingRaiseGunCost;
 	BOOLEAN fBestTargetStateKnown = FALSE;
@@ -609,10 +609,24 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 						gUnderFire.Clear();
 						gUnderFire.Enable();
 						ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fDirectVisualContact);
-						ubFriendlyFireChance = gUnderFire.Chance(pSoldier->bTeam, pSoldier->bSide, TRUE);
+
+						// Distinguish own troops from neutral civilians. Enemy soldiers remain
+						// strongly averse to shooting comrades, but civilians no longer veto an
+						// otherwise sound shot. Player/militia AI retains strict neutral protection.
+						UINT8 ubTrueFriendlyFireChance =
+							gUnderFire.Chance(pSoldier->bTeam, pSoldier->bSide, FALSE);
+						UINT8 ubAlliedOrNeutralFireChance =
+							gUnderFire.Chance(pSoldier->bTeam, pSoldier->bSide, TRUE);
+						ubNeutralFireChance =
+							(ubAlliedOrNeutralFireChance > ubTrueFriendlyFireChance) ?
+							ubAlliedOrNeutralFireChance : 0;
+						ubFriendlyFireChance =
+							(pSoldier->bTeam == ENEMY_TEAM) ?
+							ubTrueFriendlyFireChance : ubAlliedOrNeutralFireChance;
 						gUnderFire.Disable();
 
-						// sevenfm: only use this stance if we can hit target and cannot hit friends
+						// Own troops retain the normal hard safety threshold. Enemy shooters treat
+						// neutral civilians as a modest collateral-risk penalty below instead.
 						if (ubChanceToGetThrough > 0 && ubFriendlyFireChance <= MIN_CHANCE_TO_ACCIDENTALLY_HIT_SOMEONE)
 						{
 							for (sAimTime = 0; sAimTime <= ubMaxPossibleAimTime; sAimTime++)
@@ -620,6 +634,23 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 								ubChanceToHit = AICalcChanceToHitGun(pSoldier, sTarget, sAimTime, AIM_SHOT_TORSO, bLevel, STANDING);
 								sAimAPCost = CalcAPCostForAiming(pSoldier, sTarget, (INT8)sAimTime);
 								iHitRate = ubChanceToHit * (pSoldier->bActionPoints - (ubMinAPcost - ubRawAPCost)) / (ubRawAPCost + sAimAPCost);
+
+
+								// Enemy doctrine: civilians in the line of fire are collateral risk, not
+
+								// protected friendlies. Even extreme civilian exposure reduces shot value by
+
+								// at most 20%, so a good combat shot will usually still be taken.
+
+								if (pSoldier->bTeam == ENEMY_TEAM && ubNeutralFireChance > 0)
+
+								{
+
+									INT32 iCivilianRiskPenalty = __min(20, (INT32)ubNeutralFireChance / 5);
+
+									iHitRate = iHitRate * (100 - iCivilianRiskPenalty) / 100;
+
+								}
 
 								// Preserve a small tactical AP reserve when exposed or under fire.
 								// Existing hit-rate math already optimizes shots-per-AP; this adds
@@ -697,10 +728,24 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 						gUnderFire.Clear();
 						gUnderFire.Enable();
 						ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fDirectVisualContact);
-						ubFriendlyFireChance = gUnderFire.Chance(pSoldier->bTeam, pSoldier->bSide, TRUE);
+
+						// Distinguish own troops from neutral civilians. Enemy soldiers remain
+						// strongly averse to shooting comrades, but civilians no longer veto an
+						// otherwise sound shot. Player/militia AI retains strict neutral protection.
+						UINT8 ubTrueFriendlyFireChance =
+							gUnderFire.Chance(pSoldier->bTeam, pSoldier->bSide, FALSE);
+						UINT8 ubAlliedOrNeutralFireChance =
+							gUnderFire.Chance(pSoldier->bTeam, pSoldier->bSide, TRUE);
+						ubNeutralFireChance =
+							(ubAlliedOrNeutralFireChance > ubTrueFriendlyFireChance) ?
+							ubAlliedOrNeutralFireChance : 0;
+						ubFriendlyFireChance =
+							(pSoldier->bTeam == ENEMY_TEAM) ?
+							ubTrueFriendlyFireChance : ubAlliedOrNeutralFireChance;
 						gUnderFire.Disable();
 
-						// sevenfm: only use this stance if we can hit target and cannot hit friends
+						// Own troops retain the normal hard safety threshold. Enemy shooters treat
+						// neutral civilians as a modest collateral-risk penalty below instead.
 						if (ubChanceToGetThrough > 0 && ubFriendlyFireChance <= MIN_CHANCE_TO_ACCIDENTALLY_HIT_SOMEONE)
 						{
 							for (sAimTime = 0; sAimTime <= ubMaxPossibleAimTime; sAimTime++)
@@ -708,6 +753,23 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 								ubChanceToHit = AICalcChanceToHitGun(pSoldier, sTarget, sAimTime, AIM_SHOT_TORSO, bLevel, CROUCHING);
 								sAimAPCost = CalcAPCostForAiming(pSoldier, sTarget, (INT8)sAimTime);
 								iHitRate = ubChanceToHit * (pSoldier->bActionPoints - (ubMinAPcost - ubRawAPCost)) / (ubRawAPCost + sAimAPCost);
+
+
+								// Enemy doctrine: civilians in the line of fire are collateral risk, not
+
+								// protected friendlies. Even extreme civilian exposure reduces shot value by
+
+								// at most 20%, so a good combat shot will usually still be taken.
+
+								if (pSoldier->bTeam == ENEMY_TEAM && ubNeutralFireChance > 0)
+
+								{
+
+									INT32 iCivilianRiskPenalty = __min(20, (INT32)ubNeutralFireChance / 5);
+
+									iHitRate = iHitRate * (100 - iCivilianRiskPenalty) / 100;
+
+								}
 
 								// Preserve a small tactical AP reserve when exposed or under fire.
 								// Existing hit-rate math already optimizes shots-per-AP; this adds
@@ -778,10 +840,24 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 						gUnderFire.Clear();
 						gUnderFire.Enable();
 						ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fDirectVisualContact);
-						ubFriendlyFireChance = gUnderFire.Chance(pSoldier->bTeam, pSoldier->bSide, TRUE);
+
+						// Distinguish own troops from neutral civilians. Enemy soldiers remain
+						// strongly averse to shooting comrades, but civilians no longer veto an
+						// otherwise sound shot. Player/militia AI retains strict neutral protection.
+						UINT8 ubTrueFriendlyFireChance =
+							gUnderFire.Chance(pSoldier->bTeam, pSoldier->bSide, FALSE);
+						UINT8 ubAlliedOrNeutralFireChance =
+							gUnderFire.Chance(pSoldier->bTeam, pSoldier->bSide, TRUE);
+						ubNeutralFireChance =
+							(ubAlliedOrNeutralFireChance > ubTrueFriendlyFireChance) ?
+							ubAlliedOrNeutralFireChance : 0;
+						ubFriendlyFireChance =
+							(pSoldier->bTeam == ENEMY_TEAM) ?
+							ubTrueFriendlyFireChance : ubAlliedOrNeutralFireChance;
 						gUnderFire.Disable();
 
-						// sevenfm: only use this stance if we can hit target and cannot hit friends
+						// Own troops retain the normal hard safety threshold. Enemy shooters treat
+						// neutral civilians as a modest collateral-risk penalty below instead.
 						if (ubChanceToGetThrough > 0 && ubFriendlyFireChance <= MIN_CHANCE_TO_ACCIDENTALLY_HIT_SOMEONE)
 						{
 							for (sAimTime = 0; sAimTime <= ubMaxPossibleAimTime; sAimTime++)
@@ -789,6 +865,23 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 								ubChanceToHit = AICalcChanceToHitGun(pSoldier, sTarget, sAimTime, AIM_SHOT_TORSO, bLevel, PRONE);
 								sAimAPCost = CalcAPCostForAiming(pSoldier, sTarget, (INT8)sAimTime);
 								iHitRate = ubChanceToHit * (pSoldier->bActionPoints - (ubMinAPcost - ubRawAPCost)) / (ubRawAPCost + sAimAPCost);
+
+
+								// Enemy doctrine: civilians in the line of fire are collateral risk, not
+
+								// protected friendlies. Even extreme civilian exposure reduces shot value by
+
+								// at most 20%, so a good combat shot will usually still be taken.
+
+								if (pSoldier->bTeam == ENEMY_TEAM && ubNeutralFireChance > 0)
+
+								{
+
+									INT32 iCivilianRiskPenalty = __min(20, (INT32)ubNeutralFireChance / 5);
+
+									iHitRate = iHitRate * (100 - iCivilianRiskPenalty) / 100;
+
+								}
 
 								// Preserve a small tactical AP reserve when exposed or under fire.
 								// Existing hit-rate math already optimizes shots-per-AP; this adds
