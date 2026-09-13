@@ -9397,10 +9397,10 @@ UINT32 CountSuspicionValue( SOLDIERTYPE *pSoldier )
 			}
 			// bonus if soldier is carrying item with sight bonus in main hand
 			if( pSoldier->inv[HANDPOS].exists() &&
-				Item[ pSoldier->inv[HANDPOS].usItem ].dayvisionrangebonus > 0 || 
-				Item[ pSoldier->inv[HANDPOS].usItem ].brightlightvisionrangebonus > 0 || 
-				Item[ pSoldier->inv[HANDPOS].usItem ].nightvisionrangebonus > 0 || 
-				Item[ pSoldier->inv[HANDPOS].usItem ].cavevisionrangebonus > 0 )
+				( Item[ pSoldier->inv[HANDPOS].usItem ].dayvisionrangebonus > 0 || 
+				  Item[ pSoldier->inv[HANDPOS].usItem ].brightlightvisionrangebonus > 0 || 
+				  Item[ pSoldier->inv[HANDPOS].usItem ].nightvisionrangebonus > 0 || 
+				  Item[ pSoldier->inv[HANDPOS].usItem ].cavevisionrangebonus > 0 ) )
 			{
 				uiValue += 2;
 			}
