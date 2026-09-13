@@ -1043,6 +1043,17 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 	// sevenfm: initialize data
 	pSoldier->bWeaponMode = WM_NORMAL;
 
+	// A player-issued militia Retreat is authoritative even after contact is lost
+	// and alert status falls back to GREEN. Continue the forced disengagement before
+	// ordinary patrol/schedule logic can replace it.
+	if (pSoldier->bTeam == MILITIA_TEAM && AIForcedDisengagementActive(pSoldier))
+	{
+		INT8 bForcedRetreat = DecideDisengagementAction(
+			pSoldier, pSoldier->bActionPoints >= MinPtsToMove(pSoldier));
+		if (bForcedRetreat != AI_ACTION_NONE)
+			return bForcedRetreat;
+	}
+
 	BOOLEAN fCivilian = (PTR_CIVILIAN && (pSoldier->ubCivilianGroup == NON_CIV_GROUP || pSoldier->aiData.bNeutral || (pSoldier->ubBodyType >= FATCIV && pSoldier->ubBodyType <= CRIPPLECIV) ) );
 	BOOLEAN fCivilianOrMilitia = PTR_CIV_OR_MILITIA;
 
@@ -1828,6 +1839,16 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 
 	// sevenfm: initialize data
 	pSoldier->bWeaponMode = WM_NORMAL;
+
+	// Do not let loss of visual contact cancel a manual militia Retreat. Resolve
+	// the forced withdrawal before radio/investigation behaviour in YELLOW.
+	if (pSoldier->bTeam == MILITIA_TEAM && AIForcedDisengagementActive(pSoldier))
+	{
+		INT8 bForcedRetreat = DecideDisengagementAction(
+			pSoldier, pSoldier->bActionPoints >= MinPtsToMove(pSoldier));
+		if (bForcedRetreat != AI_ACTION_NONE)
+			return bForcedRetreat;
+	}
 
 	bInWater = DeepWater( pSoldier->sGridNo, pSoldier->pathing.bLevel );
 	bInGas = InGas( pSoldier, pSoldier->sGridNo );
