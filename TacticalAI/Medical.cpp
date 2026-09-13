@@ -655,7 +655,7 @@ INT8 DecideCombatCasualtyEvacuation( SOLDIERTYPE *pSoldier )
 	return AI_ACTION_GET_CLOSER;
 }
 
-// Combat medic behaviour for enemy AI.  Unlike autobandage, this runs during a
+// Combat medic behaviour for enemy and militia AI. Unlike autobandage, this runs during a
 // firefight and therefore refuses rescues that would expose the medic to excessive risk.
 // The decision is re-evaluated every turn, so a medic can wait for suppression/smoke
 // instead of committing to a suicidal run.
@@ -841,13 +841,13 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 	// Security medics provide local first aid rather than assault-rescue. Ordinary
 	// uncommanded line medics are somewhat more cautious; veterans/elites keep the
 	// full existing rescue envelope.
-	if (pSoldier->bTeam == ENEMY_TEAM && ubDoctrine == AI_DOCTRINE_SECURITY)
+	if (AICombatTeam(pSoldier) && ubDoctrine == AI_DOCTRINE_SECURITY)
 	{
 		iMaxRescueDistance = __max(4, DAY_VISION_RANGE / 4);
 		iMaxPathExposure = 16;
 		iMinRescueValue = 28;
 	}
-	else if (pSoldier->bTeam == ENEMY_TEAM && ubDoctrine == AI_DOCTRINE_LINE && !fCommanded)
+	else if (AICombatTeam(pSoldier) && ubDoctrine == AI_DOCTRINE_LINE && !fCommanded)
 	{
 		iMaxRescueDistance = __max(6, DAY_VISION_RANGE / 3);
 		iMaxPathExposure = 22;
@@ -909,10 +909,10 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 		BOOLEAN fSameElement = AISameFireteam(pSoldier, pPatient);
 		INT32 iPatientDistance = PythSpacesAway(pSoldier->sGridNo, pPatient->sGridNo);
 
-		// Enemy medics primarily serve their own fireteam. Cross-element rescues remain
+		// Combat medics primarily serve their own fireteam. Cross-element rescues remain
 		// possible when the casualty is nearby or genuinely critical.
 		if (!fSameElement &&
-			pSoldier->bTeam == ENEMY_TEAM &&
+			AICombatTeam(pSoldier) &&
 			pPatient->stats.bLife >= OKLIFE &&
 			iPatientDistance > TACTICAL_RANGE / 3)
 		{
@@ -921,7 +921,7 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 
 		if (fSameElement)
 			iUrgency += 15;
-		else if (pSoldier->bTeam == ENEMY_TEAM)
+		else if (AICombatTeam(pSoldier))
 			iUrgency -= 10;
 
 		UINT8 ubDirection = 0;
