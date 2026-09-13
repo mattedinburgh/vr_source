@@ -2084,7 +2084,41 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 								}
 								else
 								{
-									if(gbPixelDepth==16)
+									if(gbPixelDepth==16 && (hVObject->ubBitDepth == 16 || hVObject->ubBitDepth == 32))
+									{
+										// True-colour map imagery keeps the existing 16-bit framebuffer and
+										// Z-buffer.  Legacy indexed objects never enter this path.
+										BltTrueColorDataTo16BPPBuffer(
+											(UINT16*)pDestBuf,
+											uiDestPitchBYTES,
+											fZBlitter ? gpZBuffer : NULL,
+											sZLevel,
+											hVObject,
+											sXPos, sYPos,
+											usImageIndex,
+											&gClippingRect,
+											pNode->ubShadeLevel,
+											fZBlitter,
+											fZWrite);
+
+										if ( (uiLevelNodeFlags & LEVELNODE_UPDATESAVEBUFFERONCE ) )
+										{
+											pSaveBuf = LockVideoSurface(guiSAVEBUFFER, &uiSaveBufferPitchBYTES );
+											BltTrueColorDataTo16BPPBuffer(
+												(UINT16*)pSaveBuf,
+												uiSaveBufferPitchBYTES,
+												NULL, 0,
+												hVObject,
+												sXPos, sYPos,
+												usImageIndex,
+												&gClippingRect,
+												pNode->ubShadeLevel,
+												FALSE, FALSE);
+											UnLockVideoSurface(guiSAVEBUFFER);
+											pNode->uiFlags &= ( ~LEVELNODE_UPDATESAVEBUFFERONCE );
+										}
+									}
+									else if(gbPixelDepth==16)
 									{
 										/*if(fConvertTo16)
 										{
