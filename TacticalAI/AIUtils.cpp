@@ -11566,7 +11566,11 @@ UINT8 CountTeamUnderAttack(INT8 bTeam, INT32 sGridNo, INT16 sDistance)
 
 		if (pFriend &&
 			pFriend->bActive &&
+			pFriend->bInSector &&
 			pFriend->stats.bLife >= OKLIFE &&
+			!pFriend->bCollapsed &&
+			!pFriend->bBreathCollapsed &&
+			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
 			PythSpacesAway(sGridNo, pFriend->sGridNo) <= sDistance &&
 			(pFriend->aiData.bUnderFire || pFriend->aiData.bShock > 0))
 		{
