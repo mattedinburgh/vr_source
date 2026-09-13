@@ -352,6 +352,7 @@ BOOLEAN NewWorld( INT32 nMapRows,  INT32 nMapCols );
 
 BOOLEAN SaveWorld(const STR8 puiFilename, FLOAT dMajorMapVersion=MAJOR_MAP_VERSION, UINT8 ubMinorMapVersion=MINOR_MAP_VERSION);//dnl ch33 150909
 BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion=NULL, UINT8* pMinorMapVersion=NULL);//dnl ch44 290909
+void TraceB1RemasterLoad( const STR8 pStage, const STR8 pDetail );
 
 void CompileWorldMovementCosts(void);//dnl ch56 151009
 void RecompileLocalMovementCosts( INT32 sCentreGridNo );
