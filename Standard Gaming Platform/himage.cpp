@@ -289,8 +289,8 @@ HIMAGE CreateImage( SGPFILENAME ImageFile, UINT16 fContents, ImageFileType::Test
 			}
 		}
 
-		// Avoid leaking the HIMAGE shell when the selected loader rejects a file.
-		ReleaseImageData( hImage, IMAGE_ALLDATA );
+		// Failed loaders are responsible for cleaning their partial payloads. Free
+		// the HIMAGE shell here without assuming their flags/pointers are complete.
 		MemFree( hImage );
 		return( NULL );
 	}
