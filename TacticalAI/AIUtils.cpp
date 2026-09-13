@@ -4102,6 +4102,31 @@ BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier)
 	return pSoldier && (pSoldier->bTeam == ENEMY_TEAM || pSoldier->bTeam == MILITIA_TEAM);
 }
 
+UINT8 AICountNearbyOperationalFriends(SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDistance)
+{
+	if (!pSoldier || TileIsOutOfBounds(sGridNo))
+		return 0;
+
+	UINT8 ubCount = 0;
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend) ||
+			PythSpacesAway(sGridNo, pFriend->sGridNo) > ubDistance)
+		{
+			continue;
+		}
+		++ubCount;
+	}
+
+	return ubCount;
+}
+
 // Enemy fireteam coordination. This state is sector-local and intentionally lives
 // outside SOLDIERTYPE so it does not change the savegame structure.
 #define AI_FIRETEAM_NONE 0
