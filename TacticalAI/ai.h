@@ -351,6 +351,9 @@ BOOLEAN AIShouldAvoidAdvance(SOLDIERTYPE *pSoldier);
 INT8 DecideDisengagementAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
 INT8 DecideEscapeAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
 UINT16 AIKnownThreatExposure(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel);
+BOOLEAN AIKnownRouteExposureAcceptable(SOLDIERTYPE *pSoldier, INT32 sDestination,
+	INT8 bAction, UINT16 usPeakIncrease, UINT16 usUncoveredIncrease,
+	UINT16 usAverageIncrease);
 BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier);
 INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
 INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
