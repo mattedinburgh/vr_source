@@ -9722,6 +9722,19 @@ void RemoveSoldierFromTacticalSector( SOLDIERTYPE *pSoldier, BOOLEAN fAdjustSele
     UINT8   ubID;
     SOLDIERTYPE *pNewSoldier;
 
+    // Register a completed AI sector escape before bInSector/grid state is cleared.
+    // The traversal quote is armed only at a valid map edge by DecideEscapeAction(),
+    // so captures, deaths, scripted removals and ordinary tactical exits are excluded.
+    if (pSoldier &&
+        pSoldier->bTeam == ENEMY_TEAM &&
+        pSoldier->ubProfile == NO_PROFILE &&
+        AIEscapeActive(pSoldier) &&
+        pSoldier->ubQuoteActionID >= QUOTE_ACTION_ID_TRAVERSE_EAST &&
+        pSoldier->ubQuoteActionID <= QUOTE_ACTION_ID_TRAVERSE_NORTH)
+    {
+        AIRegisterEnemyEscapeTraversal(pSoldier);
+    }
+
     // reset merc's opplist
     InitSoldierOppList( pSoldier );
 
