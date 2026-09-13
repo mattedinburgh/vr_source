@@ -7721,6 +7721,7 @@ void AdjustTargetCenterPoint( SOLDIERTYPE *pShooter, INT32 iTargetGridNo, FLOAT 
 			&& ( gGameCTHConstants.LASER_PERFORMANCE_BONUS_HIP + gGameCTHConstants.LASER_PERFORMANCE_BONUS_IRON + gGameCTHConstants.LASER_PERFORMANCE_BONUS_SCOPE != 0) )
 		{
 			INT8 bLightLevel = LightTrueLevel( iTargetGridNo, pShooter->bTargetLevel );
+			bDiagnosticLaserLight = bLightLevel;
 			INT32 iMaxLaserRange = ( sLaserRange * ( 2*bLightLevel + 3*NORMAL_LIGHTLEVEL_NIGHT - 5*NORMAL_LIGHTLEVEL_DAY ) ) / ( 2 * ( NORMAL_LIGHTLEVEL_NIGHT - NORMAL_LIGHTLEVEL_DAY ) );
 
 			if ( iMaxLaserRange > d2DDistance )
@@ -7745,6 +7746,11 @@ void AdjustTargetCenterPoint( SOLDIERTYPE *pShooter, INT32 iTargetGridNo, FLOAT 
 			}
 		}
 	}
+
+	fLaserAperture = iBasicAperture;
+	if ( fIronAperture > 0.0f )
+		fLaserEffectPercent = (1.0f - (fLaserAperture / fIronAperture)) * 100.0f;
+
 	// Next, find out how large the aperture can be around the target, given range. The further the target is, the
 	// larger the aperture can be.
 	iDistanceAperture = iBasicAperture * (d2DDistance / gGameCTHConstants.NORMAL_SHOOTING_DISTANCE);
@@ -8080,6 +8086,12 @@ void AdjustTargetCenterPoint( SOLDIERTYPE *pShooter, INT32 iTargetGridNo, FLOAT 
 	if ( gNCTHWorkingDiagnostic.fValid && gNCTHWorkingDiagnostic.ubShooterID == pShooter->ubID )
 	{
 		gNCTHWorkingDiagnostic.fRange = d2DDistance;
+		gNCTHWorkingDiagnostic.fRawBasicAperture = fRawBasicAperture;
+		gNCTHWorkingDiagnostic.fIronAperture = fIronAperture;
+		gNCTHWorkingDiagnostic.fLaserAperture = fLaserAperture;
+		gNCTHWorkingDiagnostic.fLaserEffectPercent = fLaserEffectPercent;
+		gNCTHWorkingDiagnostic.sLaserRange = sDiagnosticLaserRange;
+		gNCTHWorkingDiagnostic.bLaserLightLevel = bDiagnosticLaserLight;
 		gNCTHWorkingDiagnostic.fBasicAperture = iBasicAperture;
 		gNCTHWorkingDiagnostic.fDistanceAperture = iDistanceAperture;
 		gNCTHWorkingDiagnostic.fMaxAperture = iMaxAperture;
