@@ -33,6 +33,7 @@
 #endif
 
 #include "MilitiaSquads.h"
+#include "AIInternals.h"
 
 //forward declarations of common classes to eliminate includes
 class OBJECTTYPE;
@@ -1493,7 +1494,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 							ResetMilitiaCommandQueue( pTMilitiaSoldier );
 							pTMilitiaSoldier->aiData.bOrders = FARPATROL;
 							AIForceDisengagementState( pTMilitiaSoldier, 4 );
-							pTMilitiaSoldier->usUIMovementMode = RUNNING;
+							pTMilitiaSoldier->usUIMovementMode = DetermineMovementMode( pTMilitiaSoldier, AI_ACTION_RUN_AWAY );
 
 							// set up next action to run away
 							sActionGridNo = FindRetreatSpot( pTMilitiaSoldier );
@@ -1561,7 +1562,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 											pTMilitiaSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
 									pTMilitiaSoldier->aiData.sPendingActionData2 = sActionGridNo;
 									pTMilitiaSoldier->aiData.ubPendingActionAnimCount = 0;
-									pTMilitiaSoldier->usUIMovementMode = RUNNING;
+									pTMilitiaSoldier->usUIMovementMode = DetermineMovementMode( pTMilitiaSoldier, AI_ACTION_SEEK_FRIEND );
 
 									if ( pTMilitiaSoldier->sGridNo != sActionGridNo )
 										SendGetNewSoldierPathEvent( pTMilitiaSoldier, sActionGridNo, pTMilitiaSoldier->usUIMovementMode );
@@ -1653,7 +1654,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 								// SEND PENDING ACTION
 								pTMilitiaSoldier->aiData.sPendingActionData2  = sActionGridNo;
 								pTMilitiaSoldier->aiData.ubPendingActionAnimCount = 0;
-								pTMilitiaSoldier->usUIMovementMode = RUNNING;
+								pTMilitiaSoldier->usUIMovementMode = DetermineMovementMode( pTMilitiaSoldier, AI_ACTION_TAKE_COVER );
 
 								// CHECK IF WE ARE AT THIS GRIDNO NOW
 								if ( pTMilitiaSoldier->sGridNo != sActionGridNo )
@@ -1763,7 +1764,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 								ResetMilitiaCommandQueue( pTeamSoldier );
 								pTeamSoldier->aiData.bOrders = FARPATROL;
 								AIForceDisengagementState( pTeamSoldier, 4 );
-								pTeamSoldier->usUIMovementMode = RUNNING;
+								pTeamSoldier->usUIMovementMode = DetermineMovementMode( pTeamSoldier, AI_ACTION_RUN_AWAY );
 
 								//// set up next action to run away
 								//pTeamSoldier->usNextActionData = FindSpotMaxDistFromOpponents( pTeamSoldier );
@@ -1842,7 +1843,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 										pTeamSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
 									pTeamSoldier->aiData.sPendingActionData2 = sActionGridNo;
 									pTeamSoldier->aiData.ubPendingActionAnimCount = 0;
-									pTeamSoldier->usUIMovementMode = RUNNING;
+									pTeamSoldier->usUIMovementMode = DetermineMovementMode( pTeamSoldier, AI_ACTION_SEEK_FRIEND );
 
 									if ( pTeamSoldier->sGridNo != sActionGridNo )
 										SendGetNewSoldierPathEvent( pTeamSoldier, sActionGridNo, pTeamSoldier->usUIMovementMode );
@@ -1885,7 +1886,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 										pTeamSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
 									pTeamSoldier->aiData.sPendingActionData2 = sActionGridNo;
 									pTeamSoldier->aiData.ubPendingActionAnimCount = 0;
-									pTeamSoldier->usUIMovementMode = RUNNING;
+									pTeamSoldier->usUIMovementMode = DetermineMovementMode( pTeamSoldier, AI_ACTION_TAKE_COVER );
 
 									if ( pTeamSoldier->sGridNo != sActionGridNo )
 									{
@@ -2008,7 +2009,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 									pTeamSoldier->aiData.sPendingActionData2  = sActionGridNo;
 									//pTeamSoldier->bPendingActionData3  = ubDirection;
 									pTeamSoldier->aiData.ubPendingActionAnimCount = 0;
-									pTeamSoldier->usUIMovementMode = RUNNING;
+									pTeamSoldier->usUIMovementMode = DetermineMovementMode( pTeamSoldier, AI_ACTION_TAKE_COVER );
 
 									// CHECK IF WE ARE AT THIS GRIDNO NOW
 									if ( pTeamSoldier->sGridNo != sActionGridNo )
