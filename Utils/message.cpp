@@ -1008,6 +1008,54 @@ void BattleLogAddNCTHMiss( INT32 iBullet )
 	}
 }
 
+
+void BattleLogAddNCTHBlocked( INT32 iBullet, UINT8 ubReason )
+{
+	NCTH_SHOT_DIAGNOSTIC d;
+	if ( !NCTHGetBulletDiagnostic( iBullet, &d ) )
+		return;
+
+	// Only describe a blocked round as a missed merc shot when there actually was
+	// an intended soldier target. Deliberate fire at doors/windows/terrain should
+	// remain ordinary structure interaction, not appear as a shooting failure.
+	if ( d.ubTargetID == NOBODY )
+		return;
+
+	guiBattleLogSequence++;
+	BATTLE_LOG_ENTRY *pEntry = &gBattleLogEntries[(guiBattleLogSequence - 1) % BATTLE_LOG_MAX_ENTRIES];
+	memset( pEntry, 0, sizeof(*pEntry) );
+	pEntry->uiSequence = guiBattleLogSequence;
+	pEntry->usColor = FONT_MCOLOR_LTYELLOW;
+	pEntry->fClickable = TRUE;
+	pEntry->iBullet = iBullet;
+	pEntry->ncth = d;
+
+	const CHAR16 *pName = L"Merc";
+	const CHAR16 *pTargetName = L"target";
+	const CHAR16 *pBlockReason = L"cover/structure";
+
+	if ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] )
+		pName = MercPtrs[d.ubShooterID]->GetName();
+	if ( d.ubTargetID != NOBODY && MercPtrs[d.ubTargetID] )
+		pTargetName = MercPtrs[d.ubTargetID]->GetName();
+
+	if ( ubReason == BATTLELOG_BLOCK_GROUND )
+		pBlockReason = L"ground";
+	else if ( ubReason == BATTLELOG_BLOCK_ROOF )
+		pBlockReason = L"roof";
+
+	swprintf( pEntry->zText, L"[%02d:%02d] BLOCKED - %s -> %s - %s - NCTH %.0f  [click]",
+		guiHour, guiMin, pName, pTargetName, pBlockReason, d.fFinalChance );
+	gusBattleLogScrollOffset = 0;
+
+	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
+	{
+		BattleLogEnsureUI();
+		InvalidateRegion( gsBattleLogX, gsBattleLogY,
+			gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH );
+	}
+}
+
 void ScrollString( )
 {
 	UINT32 suiTimer=0;
