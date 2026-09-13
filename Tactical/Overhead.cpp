@@ -10742,7 +10742,10 @@ UINT8 HighestEnemyOfficerNearSoldier(SOLDIERTYPE* pTarget, INT16 sRadius)
 	{
 		SOLDIERTYPE* pLeader = MercPtrs[i];
 		if (!pLeader || !pLeader->bActive || !pLeader->bInSector || pLeader->stats.bLife < OKLIFE ||
-			pLeader->bCollapsed || (pLeader->usSoldierFlagMask & SOLDIER_POW) ||
+			pLeader->bCollapsed || pLeader->bBreathCollapsed ||
+			(pLeader->usSoldierFlagMask & SOLDIER_POW) ||
+			(pLeader->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			AIDisengagementActive(pLeader) || AIEscapeActive(pLeader) ||
 			pLeader->pathing.bLevel != pTarget->pathing.bLevel)
 			continue;
 		if (PythSpacesAway(pTarget->sGridNo, pLeader->sGridNo) > sRadius)
