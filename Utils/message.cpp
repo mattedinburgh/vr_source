@@ -813,10 +813,16 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 
 		const CHAR16 *pOutcomeTitle = L"SHOT INSPECTOR";
 		UINT16 usOutcomeColor = FONT_MCOLOR_LTYELLOW;
+		BOOLEAN fInspectorShooterPlayer = ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] &&
+			MercPtrs[d.ubShooterID]->bTeam == gbPlayerNum );
+		BOOLEAN fInspectorActualTargetPlayer = ( gubBattleLogInspectorActualTargetID != NOBODY &&
+			MercPtrs[gubBattleLogInspectorActualTargetID] &&
+			MercPtrs[gubBattleLogInspectorActualTargetID]->bTeam == gbPlayerNum );
+
 		if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_HIT )
 		{
 			pOutcomeTitle = L"SHOT INSPECTOR - HIT";
-			usOutcomeColor = FONT_MCOLOR_LTGREEN;
+			usOutcomeColor = fInspectorShooterPlayer ? FONT_MCOLOR_LTGREEN : FONT_MCOLOR_LTRED;
 		}
 		else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_BLOCKED )
 		{
@@ -826,12 +832,12 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_INTERCEPT )
 		{
 			pOutcomeTitle = L"SHOT INSPECTOR - HIT OTHER";
-			usOutcomeColor = FONT_MCOLOR_LTYELLOW;
+			usOutcomeColor = fInspectorActualTargetPlayer ? FONT_MCOLOR_LTRED : FONT_MCOLOR_LTYELLOW;
 		}
 		else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_MISS )
 		{
 			pOutcomeTitle = L"SHOT INSPECTOR - MISS";
-			usOutcomeColor = FONT_MCOLOR_LTRED;
+			usOutcomeColor = fInspectorShooterPlayer ? FONT_MCOLOR_LTRED : FONT_MCOLOR_LTYELLOW;
 		}
 		BattleLogPrintInspectorLine( ix + 6, iy + 4, usOutcomeColor, (STR16)pOutcomeTitle );
 
