@@ -4411,6 +4411,20 @@ BOOLEAN SOLDIERTYPE::EVENT_InitNewSoldierAnim( UINT16 usNewState, UINT16 usStart
 		}
 	}
 
+	// Covert actors remain temporarily overt after visibly suspicious actions. This prevents
+	// instant re-legitimisation as soon as an attack/lockpick/bomb animation finishes.
+	if ( this->usSoldierFlagMask & (SOLDIER_COVERT_CIV | SOLDIER_COVERT_SOLDIER) )
+	{
+		UINT16 usOvertAPDuration = GetSuspiciousAnimationAPDuration( this->usAnimState );
+		if ( usOvertAPDuration > 0 )
+		{
+			this->usSoldierFlagMask |= SOLDIER_COVERT_TEMPORARY_OVERT;
+			this->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_SECONDS] =
+				GetWorldTotalSeconds() + max(1, usOvertAPDuration / 25);
+			this->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_APS] = usOvertAPDuration;
+		}
+	}
+
 	// If our own guy...
 	if ( this->bTeam == gbPlayerNum )
 	{
@@ -16267,49 +16281,25 @@ BOOLEAN		SOLDIERTYPE::SeemsLegit( UINT8 ubObserverID, BOOLEAN fShowResult )
 		return FALSE;
 	}
 
-	// if we are in a suspicious activity: not covert
-	if ( this->usAnimState == NINJA_SPINKICK || 
-		this->usAnimState == NINJA_PUNCH ||
-		this->usAnimState == NINJA_LOWKICK ||
-		this->usAnimState == PUNCH_LOW ||
-		this->usAnimState == DECAPITATE ||
-		this->usAnimState == CROWBAR_ATTACK ||
-		this->usAnimState == THROW_GRENADE_STANCE ||
-		this->usAnimState == SHOOT_ROCKET_CROUCHED ||
-		this->usAnimState == LOB_GRENADE_STANCE ||
-		this->usAnimState == THROW_KNIFE ||
-		this->usAnimState == CUTTING_FENCE ||
-		this->usAnimState == HELIDROP ||
-		this->usAnimState == THROW_KNIFE_SP_BM ||
-		this->usAnimState == DODGE_ONE ||
-		this->usAnimState == SLICE ||
-		this->usAnimState == STAB ||
-		this->usAnimState == CROUCH_STAB ||
-		this->usAnimState == PUNCH ||
-		this->usAnimState == PUNCH_BREATH ||
-		this->usAnimState == KICK_DOOR ||
-		this->usAnimState == PLANT_BOMB ||
-		this->usAnimState == USE_REMOTE ||
-		this->usAnimState == STEAL_ITEM ||
-		this->usAnimState == SHOOT_ROCKET ||
-		this->usAnimState == TAKE_BLOOD_FROM_CORPSE ||
-		this->usAnimState == PICK_LOCK ||
-		this->usAnimState == LOCKPICK_CROUCHED ||
-		this->usAnimState == STEAL_ITEM_CROUCHED ||
-		this->usAnimState == JUMPWINDOWS ||
-		this->usAnimState == FOCUSED_PUNCH ||
-		this->usAnimState == FOCUSED_STAB ||
-		this->usAnimState == HTH_KICK ||
-		this->usAnimState == FOCUSED_HTH_KICK ||
-		this->usAnimState == LONG_JUMP ||
-		this->usAnimState == LOB_GRENADE_STANCE ||
-		this->usAnimState == THROW_ITEM ||
-		this->usAnimState == LOB_ITEM ||
-		this->usAnimState == THROW_ITEM_CROUCHED )
+	// Recently overt behaviour remains dangerous for a short time even after the animation ends.
+	// Self-test deliberately ignores this transient state so the player can still inspect the disguise itself.
+	if ( ubObserverID != this->ubID && (this->usSoldierFlagMask & SOLDIER_COVERT_TEMPORARY_OVERT) )
 	{
-		if(fShowResult) ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, szCovertTextStr[STR_COVERT_ACTIVITIES], this->GetName() );
-		return FALSE;
+		if ( this->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_APS] == 0 ||
+			GetWorldTotalSeconds() >= this->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_SECONDS] )
+		{
+			this->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_SECONDS] = 0;
+			this->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_APS] = 0;
+			this->usSoldierFlagMask &= ~SOLDIER_COVERT_TEMPORARY_OVERT;
+		}
+		else
+		{
+			if ( fShowResult )
+				ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, szCovertTextStr[STR_COVERT_ACTIVITIES], this->GetName() );
+			return FALSE;
+		}
 	}
+
 	// Assassins use the same disguise rules as other covert actors. Their advantage should come from
 	// good cover and behaviour, not blanket immunity to equipment, corpse and inspection checks.
 
@@ -23171,6 +23161,64 @@ UINT16	GridNoSpotterCTHBonus( SOLDIERTYPE* pSniper, INT32 sGridNo, UINT bTeam)
 	bestvalue = min( gGameExternalOptions.usSpotterMaxCTHBoost, max(0, bestvalue ) );
 
 	return bestvalue;
+}
+
+// Return how long a suspicious animation leaves a covert actor temporarily overt.
+// Ordinary inventory handling is intentionally excluded: VR's continuous suspicion system already
+// handles visible gear/backpacks without making every pickup/drop an instant cover failure.
+UINT16 GetSuspiciousAnimationAPDuration( UINT16 usAnimation )
+{
+	switch ( usAnimation )
+	{
+	case NINJA_PUNCH:
+	case NINJA_LOWKICK:
+	case PUNCH_LOW:
+	case CROWBAR_ATTACK:
+	case DODGE_ONE:
+	case SLICE:
+	case STAB:
+	case CROUCH_STAB:
+	case PUNCH:
+	case PUNCH_BREATH:
+	case KICK_DOOR:
+	case FOCUSED_PUNCH:
+	case FOCUSED_STAB:
+	case HTH_KICK:
+	case FOCUSED_HTH_KICK:
+		return 60;
+
+	case THROW_GRENADE_STANCE:
+	case LOB_GRENADE_STANCE:
+	case THROW_KNIFE:
+	case THROW_KNIFE_SP_BM:
+	case THROW_ITEM:
+	case LOB_ITEM:
+	case THROW_ITEM_CROUCHED:
+		return 50;
+
+	case DECAPITATE:
+	case TAKE_BLOOD_FROM_CORPSE:
+	case PLANT_BOMB:
+	case USE_REMOTE:
+	case STEAL_ITEM:
+	case PICK_LOCK:
+	case LOCKPICK_CROUCHED:
+	case STEAL_ITEM_CROUCHED:
+		return 50;
+
+	case SHOOT_ROCKET_CROUCHED:
+	case SHOOT_ROCKET:
+	case HELIDROP:
+	case NINJA_SPINKICK:
+		return 100;
+
+	case CUTTING_FENCE:
+	case JUMPWINDOWS:
+	case LONG_JUMP:
+		return 60;
+	}
+
+	return 0;
 }
 
 void SetDamageDisplayCounter(SOLDIERTYPE* pSoldier)
