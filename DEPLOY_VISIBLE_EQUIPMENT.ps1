@@ -15,7 +15,7 @@ $Marker = Join-Path $AnimRoot "VR_EQUIPMENT.READY"
 
 $VrBranch = "install/all-2026-09-12"
 $VrRaw = "https://raw.githubusercontent.com/mattedinburgh/vr_gamedir/$VrBranch/Data-Vengeance/TableData/LogicalBodyTypes"
-$UpstreamRaw = "https://raw.githubusercontent.com/1dot13/source/master/gamedir/Base"
+$UpstreamRaw = "https://raw.githubusercontent.com/1dot13/gamedir/master/Data"
 
 Write-Host "Vengeance visible-equipment deployment"
 Write-Host "Source repo : $ScriptRoot"
@@ -218,7 +218,7 @@ if ($missing.Count -gt 0) {
 
 $markerText = @"
 Vengeance Reloaded visible tactical equipment
-Source: 1dot13/source master LOBOT art
+Source: 1dot13/gamedir master Data/Anims/LOBOT art
 Mode: overlay-only (native Vengeance body + 1.13 helmet/vest armour layers)
 Assets: $($assetPaths.Count)
 Bytes: $totalBytes
