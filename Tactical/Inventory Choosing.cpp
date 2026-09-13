@@ -4157,13 +4157,17 @@ void TakeMilitiaEquipmentfromSector( INT16 sMapX, INT16 sMapY, INT8 sMapZ, SOLDI
 		return;
 
 	// Never consume sector inventory while the source sector is contested.
-	// This is the authoritative guard: callers may also avoid this routine, but
-	// reinforcements, militia resets, equipment moves, or future call sites cannot
-	// drain the player's stash during hostile contact.
-	if ( ( gTacticalStatus.uiFlags & INCOMBAT ) ||
-		 gTacticalStatus.fEnemyInSector ||
-		 NumHostilesInSector( sMapX, sMapY, sMapZ ) > 0 ||
-		 ( sMapX == gWorldSectorX && sMapY == gWorldSectorY && sMapZ == gbWorldSectorZ && HostileBloodcatsPresent() ) )
+	// Tactical combat flags describe only the currently loaded sector; do not let
+	// a battle elsewhere suppress legitimate militia equipment movement between
+	// unrelated peaceful sectors.
+	BOOLEAN fSourceIsLoadedSector =
+		( sMapX == gWorldSectorX && sMapY == gWorldSectorY && sMapZ == gbWorldSectorZ );
+
+	if ( NumHostilesInSector( sMapX, sMapY, sMapZ ) > 0 ||
+		 ( fSourceIsLoadedSector &&
+		   ( ( gTacticalStatus.uiFlags & INCOMBAT ) ||
+			 gTacticalStatus.fEnemyInSector ||
+			 HostileBloodcatsPresent() ) ) )
 	{
 		return;
 	}
