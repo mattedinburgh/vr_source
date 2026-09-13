@@ -1,6 +1,7 @@
 param(
     [string]$GameRoot = "",
-    [switch]$SkipExe
+    [switch]$SkipExe,
+    [switch]$Launch
 )
 
 $ErrorActionPreference = "Stop"
