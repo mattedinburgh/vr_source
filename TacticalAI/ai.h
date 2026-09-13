@@ -368,6 +368,7 @@ BOOLEAN AIFriendNeedsCoveringFire(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID);
 BOOLEAN AIFriendWithdrawingNeedsCover(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID);
 BOOLEAN AIShouldHoldForWithdrawingFriend(SOLDIERTYPE *pSoldier);
 BOOLEAN AIFriendAdvancingNeedsCover(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID);
+BOOLEAN AIResponderKnowsCasualty(SOLDIERTYPE *pResponder, SOLDIERTYPE *pPatient);
 INT8 DecideCombatCasualtyEvacuation(SOLDIERTYPE *pSoldier);
 INT8 DecideCombatCasualtyResponse(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
 INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier);
