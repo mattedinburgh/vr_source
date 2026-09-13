@@ -6713,8 +6713,12 @@ BOOLEAN LoadSoldierStructure( HWFILE hFile )
 		if ( pSoldier->ubDraggedByID != NOBODY )
 		{
 			SOLDIERTYPE *pRescuer = MercPtrs[ pSoldier->ubDraggedByID ];
-			if ( !pRescuer || pRescuer->ubDraggedCasualtyID != pSoldier->ubID ||
-				!pRescuer->IsDraggingBleedoutCasualty() )
+			if ( pRescuer && pRescuer->ubDraggedCasualtyID == pSoldier->ubID )
+			{
+				if ( !pRescuer->IsDraggingBleedoutCasualty() )
+					pRescuer->StopDraggingBleedoutCasualty();
+			}
+			else
 			{
 				pSoldier->ubDraggedByID = NOBODY;
 			}
