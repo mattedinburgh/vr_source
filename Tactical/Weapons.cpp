@@ -4100,7 +4100,7 @@ BOOLEAN UseHandToHand( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo, BOOLEAN fStea
 				meleeDiag.ubAimLocation = pSoldier->bAimShotLocation;
 				meleeDiag.ubAimTime = pSoldier->aiData.bAimTime;
 				meleeDiag.usWeapon = pSoldier->GetUsedWeaponNumber( &pSoldier->inv[pSoldier->ubAttackingHand] );
-				meleeDiag.sHitChance = (INT16)(AreInMeanwhile() ? 100 : iHitChance);
+				meleeDiag.sHitChance = (INT16)iHitChance;
 				meleeDiag.sRoll = (INT16)iDiceRoll;
 				meleeDiag.sHitMargin = (INT16)(meleeDiag.sHitChance - iDiceRoll);
 				iImpact = HTHImpact( pSoldier, pTargetSoldier, (iHitChance - iDiceRoll), FALSE, &meleeDiag );
