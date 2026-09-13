@@ -1980,6 +1980,12 @@ extern BOOLEAN gfMSResetMilitia;
 
 void DoMilitiaHelpFromAdjacentSectors( INT16 sMapX, INT16 sMapY )
 {
+	// Preserve an older deferred tactical-militia rebuild. This routine clears its
+	// own strategic-change bookkeeping after inserting reinforcements, but it must
+	// not erase a reset that was deferred because another militia change happened
+	// during hostile contact.
+	BOOLEAN fPreviousStrategicChangeFlag = gfStrategicMilitiaChangesMade;
+
 	UINT16 pMoveDir[4][3];
 	UINT8 uiDirNumber = 0;
 	UINT8 x;
@@ -2040,12 +2046,15 @@ void DoMilitiaHelpFromAdjacentSectors( INT16 sMapX, INT16 sMapY )
 		}
 	}
 	
-	gfStrategicMilitiaChangesMade = FALSE;
+	gfStrategicMilitiaChangesMade = fPreviousStrategicChangeFlag;
 }
 
 // Flugente: order sNumber reinforcements from src sector to target sector
 BOOLEAN CallMilitiaReinforcements( INT16 sTargetMapX, INT16 sTargetMapY, INT16 sSrcMapX, INT16 sSrcMapY, UINT16 sNumber )
 {
+	// Do not let this reinforcement transaction erase an older deferred rebuild.
+	BOOLEAN fPreviousStrategicChangeFlag = gfStrategicMilitiaChangesMade;
+
 	UINT8 uiNumGreen = 0, uiNumReg = 0, uiNumElite = 0;
 	SECTORINFO *pSectorInfo = &( SectorInfo[ SECTOR( sTargetMapX, sTargetMapY ) ] );
 
@@ -2137,7 +2146,7 @@ BOOLEAN CallMilitiaReinforcements( INT16 sTargetMapX, INT16 sTargetMapY, INT16 s
 	if ( !wantreinforcements )
 		gTacticalStatus.uiFlags &= ~WANT_MILITIA_REINFORCEMENTS;
 	
-	gfStrategicMilitiaChangesMade = FALSE;
+	gfStrategicMilitiaChangesMade = fPreviousStrategicChangeFlag;
 
 	return TRUE;
 }
