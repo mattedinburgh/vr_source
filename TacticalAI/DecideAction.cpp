@@ -2873,6 +2873,18 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		return AI_ACTION_STOP_COWERING;
 	}
 
+	DebugMsg(TOPIC_JA2, DBG_LEVEL_3, "decideactionred: calculate morale before combat commitment");
+	// Break-contact state must be evaluated before weapon scavenging, long-range
+	// attack setup and sniper/mortar decisions. Otherwise a newly collapsing soldier
+	// can spend the turn on an offensive action before the retreat system runs.
+	pSoldier->aiData.bAIMorale = CalcMorale(pSoldier);
+	if (AICombatTeam(pSoldier))
+	{
+		INT8 bDisengageAction = DecideDisengagementAction(pSoldier, ubCanMove);
+		if (bDisengageAction != AI_ACTION_NONE)
+			return bDisengageAction;
+	}
+
 	// If we don't have a gun, scavenge one only when the local situation makes
 	// that movement reasonable. Enemy and militia use the same combat judgement.
 	if (AICombatTeam(pSoldier) &&
@@ -3465,10 +3477,6 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 	}
 
 
-	DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"decideactionred: calculate morale");
-	// calculate our morale
-	pSoldier->aiData.bAIMorale = CalcMorale(pSoldier);
-
 	// Emergency smoke can create the safe window needed for casualty treatment or
 	// a heavily suppressed soldier's disengagement.
 	if (AICombatTeam(pSoldier))
@@ -3494,14 +3502,6 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 		INT8 bCohesionAction = DecideFireteamCohesionAction(pSoldier, ubCanMove);
 		if (bCohesionAction != AI_ACTION_NONE)
 			return bCohesionAction;
-	}
-
-	// Persistent break-contact intent outranks ordinary fallback.
-	if (AICombatTeam(pSoldier))
-	{
-		INT8 bDisengageAction = DecideDisengagementAction(pSoldier, ubCanMove);
-		if (bDisengageAction != AI_ACTION_NONE)
-			return bDisengageAction;
 	}
 
 	// If the local fight has collapsed, stop initiating attacks into superior known
