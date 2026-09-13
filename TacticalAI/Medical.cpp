@@ -845,7 +845,7 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 	INT32 iBestRescueValue = 0;
 
 	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
-	BOOLEAN fCommanded = AIHasLocalCommandSupport(pSoldier);
+	BOOLEAN fCommanded = (pSoldier->bTeam == ENEMY_TEAM) ? AIHasLocalCommandSupport(pSoldier) : TRUE;
 	INT32 iMaxRescueDistance = DAY_VISION_RANGE / 2;
 	INT32 iMaxPathExposure = 28;
 	INT32 iMinRescueValue = 15;
