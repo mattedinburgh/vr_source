@@ -11117,7 +11117,7 @@ static INT8 DecideMilitiaDefensiveConsolidation(SOLDIERTYPE *pSoldier, BOOLEAN f
 	if (!fBadlyLosing)
 		return AI_ACTION_NONE;
 
-	UINT8 ubCurrentSupport = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4);
+	UINT8 ubCurrentSupport = AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4);
 	UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
 	BOOLEAN fCurrentDefensible =
 		ubCurrentSupport >= 2 &&
@@ -11140,7 +11140,7 @@ static INT8 DecideMilitiaDefensiveConsolidation(SOLDIERTYPE *pSoldier, BOOLEAN f
 		return AI_ACTION_NONE;
 
 	UINT16 usMoveExposure = AIKnownThreatExposure(pSoldier, sMove, pSoldier->pathing.bLevel);
-	UINT8 ubMoveSupport = CountNearbyFriends(pSoldier, sMove, DAY_VISION_RANGE / 4);
+	UINT8 ubMoveSupport = AICountNearbyOperationalFriends(pSoldier, sMove, DAY_VISION_RANGE / 4);
 
 	// Consolidation may accept a small temporary exposure increase if it clearly
 	// buys local support, but never a dramatic run into a known kill zone.
@@ -11218,7 +11218,7 @@ INT8 DecideDisengagementAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	}
 
 	UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
-	INT32 iCurrentSupport = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2);
+	INT32 iCurrentSupport = AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2);
 
 	INT32 sFallback = FindRetreatSpot(pSoldier);
 	if (TileIsOutOfBounds(sFallback))
@@ -11226,7 +11226,7 @@ INT8 DecideDisengagementAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (!TileIsOutOfBounds(sFallback))
 	{
 		UINT16 usFallbackExposure = AIKnownThreatExposure(pSoldier, sFallback, pSoldier->pathing.bLevel);
-		INT32 iFallbackSupport = CountNearbyFriends(pSoldier, sFallback, DAY_VISION_RANGE / 2);
+		INT32 iFallbackSupport = AICountNearbyOperationalFriends(pSoldier, sFallback, DAY_VISION_RANGE / 2);
 		BOOLEAN fCurrentSightCover = SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE);
 		BOOLEAN fFallbackSightCover = SightCoverAtSpot(pSoldier, sFallback, FALSE);
 
@@ -11278,8 +11278,8 @@ INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	BOOLEAN fFallbackSightCover = SightCoverAtSpot(pSoldier, sFallback, FALSE);
 	UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
 	UINT16 usFallbackExposure = AIKnownThreatExposure(pSoldier, sFallback, pSoldier->pathing.bLevel);
-	INT32 iCurrentSupport = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2);
-	INT32 iFallbackSupport = CountNearbyFriends(pSoldier, sFallback, DAY_VISION_RANGE / 2);
+	INT32 iCurrentSupport = AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2);
+	INT32 iFallbackSupport = AICountNearbyOperationalFriends(pSoldier, sFallback, DAY_VISION_RANGE / 2);
 	INT32 iCurrentDistance = PythSpacesAway(pSoldier->sGridNo, sThreat);
 	INT32 iFallbackDistance = PythSpacesAway(sFallback, sThreat);
 
