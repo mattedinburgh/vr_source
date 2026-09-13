@@ -1431,7 +1431,6 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 							ResetMilitiaCommandQueue( pTMilitiaSoldier );
 							AIClearDisengagementState( pTMilitiaSoldier );
 							pTMilitiaSoldier->aiData.bOrders = SEEKENEMY;
-							pTMilitiaSoldier->usUIMovementMode = RUNNING;
 
 							if ( GetSoldier( &pSoldier, gusSelectedSoldier )  )
 							{
@@ -1695,7 +1694,6 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 								ResetMilitiaCommandQueue( pTeamSoldier );
 								AIClearDisengagementState( pTeamSoldier );
 								pTeamSoldier->aiData.bOrders = SEEKENEMY;
-								pTeamSoldier->usUIMovementMode = RUNNING;
 							}
 						}
 
