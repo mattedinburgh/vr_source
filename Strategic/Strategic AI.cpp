@@ -1656,6 +1656,9 @@ void InitStrategicAI()
 		pSector->ubNumTroops = (UINT8)(6 + gGameOptions.ubDifficultyLevel * 2);
 	}
 
+	// Place finite enemy command staff only after all starting garrisons are populated.
+	EnsureEnemyGeneralsInitialised();
+
 	ValidateWeights( 1 );
 }
 
