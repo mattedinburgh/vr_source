@@ -2118,6 +2118,23 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 												fObscuredBlitter,
 												fZWrite);
 										}
+										else if(fShadowBlitter || fIntensityBlitter)
+										{
+											// True-colour shadow/intensity art is an alpha mask over the existing
+											// framebuffer, matching the legacy ShadeTable / IntensityTable behavior.
+											BltTrueColorMaskTo16BPPBuffer(
+												(UINT16*)pDestBuf,
+												uiDestPitchBYTES,
+												fZBlitter ? gpZBuffer : NULL,
+												sZLevel,
+												hVObject,
+												sXPos, sYPos,
+												usImageIndex,
+												&gClippingRect,
+												(fIntensityBlitter && !fShadowBlitter),
+												fZBlitter,
+												fZWrite);
+										}
 										else
 										{
 											BltTrueColorDataTo16BPPBuffer(
@@ -2133,20 +2150,35 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 												fZBlitter,
 												fZWrite);
 										}
-
 										if ( (uiLevelNodeFlags & LEVELNODE_UPDATESAVEBUFFERONCE ) )
 										{
 											pSaveBuf = LockVideoSurface(guiSAVEBUFFER, &uiSaveBufferPitchBYTES );
-											BltTrueColorDataTo16BPPBuffer(
-												(UINT16*)pSaveBuf,
-												uiSaveBufferPitchBYTES,
-												NULL, 0,
-												hVObject,
-												sXPos, sYPos,
-												usImageIndex,
-												&gClippingRect,
-												pNode->ubShadeLevel,
-												FALSE, FALSE);
+											if(fShadowBlitter || fIntensityBlitter)
+											{
+												BltTrueColorMaskTo16BPPBuffer(
+													(UINT16*)pSaveBuf,
+													uiSaveBufferPitchBYTES,
+													NULL, 0,
+													hVObject,
+													sXPos, sYPos,
+													usImageIndex,
+													&gClippingRect,
+													(fIntensityBlitter && !fShadowBlitter),
+													FALSE, FALSE);
+											}
+											else
+											{
+												BltTrueColorDataTo16BPPBuffer(
+													(UINT16*)pSaveBuf,
+													uiSaveBufferPitchBYTES,
+													NULL, 0,
+													hVObject,
+													sXPos, sYPos,
+													usImageIndex,
+													&gClippingRect,
+													pNode->ubShadeLevel,
+													FALSE, FALSE);
+											}
 											UnLockVideoSurface(guiSAVEBUFFER);
 											pNode->uiFlags &= ( ~LEVELNODE_UPDATESAVEBUFFERONCE );
 										}
