@@ -9317,6 +9317,10 @@ void MoveMercFacingDirection( SOLDIERTYPE *pSoldier, BOOLEAN fReverse, FLOAT dMo
 
 void SOLDIERTYPE::BeginSoldierClimbUpRoof( void )
 {
+	// Traversal/vehicle transitions cannot carry a casualty through the animation.
+	if ( this->IsDraggingBleedoutCasualty() )
+		this->StopDraggingBleedoutCasualty();
+
 
 	//CHRISL: Disable climbing up to a roof while wearing a backpack
 	// sevenfm: allow climbing with a backpack
@@ -9389,6 +9393,10 @@ void SOLDIERTYPE::BeginSoldierClimbUpRoof( void )
 
 void SOLDIERTYPE::BeginSoldierClimbFence( void )
 {
+	// Traversal/vehicle transitions cannot carry a casualty through the animation.
+	if ( this->IsDraggingBleedoutCasualty() )
+		this->StopDraggingBleedoutCasualty();
+
 	INT8							bDirection;
 
 	// Make sure we hop the correct fence to follow our path!
@@ -9418,6 +9426,10 @@ void SOLDIERTYPE::BeginSoldierClimbFence( void )
 
 void SOLDIERTYPE::BeginSoldierClimbWindow( void )
 {
+	// Traversal/vehicle transitions cannot carry a casualty through the animation.
+	if ( this->IsDraggingBleedoutCasualty() )
+		this->StopDraggingBleedoutCasualty();
+
 	INT8	bDirection;
 
 	// Make sure we hop the correct fence to follow our path!
@@ -9480,6 +9492,10 @@ void SOLDIERTYPE::BeginSoldierClimbWindow( void )
 
 void SOLDIERTYPE::BeginSoldierClimbWall( void )
 {
+	// Traversal/vehicle transitions cannot carry a casualty through the animation.
+	if ( this->IsDraggingBleedoutCasualty() )
+		this->StopDraggingBleedoutCasualty();
+
 	INT8							bNewDirection;
 	UINT8							ubWhoIsThere;
 
@@ -9517,6 +9533,10 @@ void SOLDIERTYPE::BeginSoldierClimbWall( void )
 
 void SOLDIERTYPE::BeginSoldierClimbWallUp( void )
 {
+	// Traversal/vehicle transitions cannot carry a casualty through the animation.
+	if ( this->IsDraggingBleedoutCasualty() )
+		this->StopDraggingBleedoutCasualty();
+
 	INT8							bNewDirection;
 	UINT8	ubWhoIsThere;
 
@@ -11463,6 +11483,10 @@ BOOLEAN SOLDIERTYPE::CheckSoldierHitRoof( void )
 
 void SOLDIERTYPE::BeginSoldierClimbDownRoof( void )
 {
+	// Traversal/vehicle transitions cannot carry a casualty through the animation.
+	if ( this->IsDraggingBleedoutCasualty() )
+		this->StopDraggingBleedoutCasualty();
+
 	INT8							bNewDirection;
 	UINT8	ubWhoIsThere;
 
@@ -13274,6 +13298,10 @@ void SOLDIERTYPE::EVENT_SoldierBeginFirstAid( INT32 sGridNo, UINT8 ubDirection )
 
 void SOLDIERTYPE::EVENT_SoldierEnterVehicle( INT32 sGridNo, UINT8 ubDirection )
 {
+	// Traversal/vehicle transitions cannot carry a casualty through the animation.
+	if ( this->IsDraggingBleedoutCasualty() )
+		this->StopDraggingBleedoutCasualty();
+
 	SOLDIERTYPE *pTSoldier;
 	UINT32 uiMercFlags;
 	UINT16 usSoldierIndex;
