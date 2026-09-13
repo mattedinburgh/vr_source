@@ -121,7 +121,7 @@ static BOOLEAN MilitiaSpreadDestinationReserved( SOLDIERTYPE *pSoldier, INT32 sS
 			continue;
 		}
 
-		if ( pFriend->aiData.bOrders == FARPATROL &&
+		if ( pFriend->aiData.bOrders == STATIONARY &&
 			pFriend->aiData.bAttitude == DEFENSIVE &&
 			pFriend->aiData.sPendingActionData2 == sSpot )
 		{
@@ -1820,7 +1820,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 								if ( !TileIsOutOfBounds(sActionGridNo) )
 								{
 									// A spread order is a local defensive reposition, not a sector-wide patrol.
-									pTeamSoldier->aiData.bOrders = FARPATROL;
+									pTeamSoldier->aiData.bOrders = STATIONARY;
 									pTeamSoldier->aiData.bAttitude = DEFENSIVE;
 									pTeamSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
 									pTeamSoldier->aiData.sPendingActionData2 = sActionGridNo;
