@@ -14093,7 +14093,7 @@ FLOAT GetScopeModeProjectionFactor( SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj )
 	if ( !UsingNewCTHSystem() || !pObj || !pObj->exists() || Item[pObj->usItem].usItemClass != IC_GUN )
 		return 1.0;
 
-	if ( !gGameExternalOptions.fScopeModes || !pSoldier || pSoldier->bTeam != gbPlayerNum )
+	if ( !gGameExternalOptions.fScopeModes || !pSoldier )
 		return GetProjectionFactor(pObj);
 
 	// Flugente: check for scope mode
