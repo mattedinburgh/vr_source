@@ -482,6 +482,11 @@ INT8 DecideCombatCasualtyEvacuation( SOLDIERTYPE *pSoldier )
 		pSoldier->aiData.bAIMorale == MORALE_HOPELESS )
 		return AI_ACTION_NONE;
 
+	// An explicit stationary/hold assignment outranks a voluntary rescue run.
+	// Adjacent emergency aid is handled separately and remains available.
+	if ( pSoldier->aiData.bOrders == STATIONARY && !pSoldier->IsDraggingBleedoutCasualty() )
+		return AI_ACTION_NONE;
+
 	if ( pSoldier->IsDraggingBleedoutCasualty() )
 	{
 		SOLDIERTYPE *pPatient = MercPtrs[pSoldier->ubDraggedCasualtyID];
@@ -837,6 +842,12 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 	INT32 iMaxRescueDistance = DAY_VISION_RANGE / 2;
 	INT32 iMaxPathExposure = 28;
 	INT32 iMinRescueValue = 15;
+
+	// Stationary/hold medics may treat an adjacent casualty, but do not leave their
+	// assigned position for a roaming rescue. This keeps player militia commands
+	// authoritative while preserving immediate lifesaving aid.
+	if (pSoldier->aiData.bOrders == STATIONARY)
+		iMaxRescueDistance = 1;
 
 	// Security medics provide local first aid rather than assault-rescue. Ordinary
 	// uncommanded line medics are somewhat more cautious; veterans/elites keep the
