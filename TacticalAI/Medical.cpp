@@ -503,6 +503,24 @@ INT8 DecideCombatCasualtyEvacuation( SOLDIERTYPE *pSoldier )
 	if ( iRescuerRisk > AIPersonalRiskTolerance( pSoldier ) )
 		return AI_ACTION_NONE;
 
+	// Preserve scarce tactical roles when an ordinary rifleman can perform the same
+	// extraction. This is a preference, not a prohibition: a truly urgent bleed-out
+	// can still outweigh the role cost and make a specialist perform the rescue.
+	INT32 iRescuerRoleCost = 0;
+	if ( AICheckIsCommander( pSoldier ) )
+		iRescuerRoleCost += 35;
+	else if ( AICheckIsOfficer( pSoldier ) )
+		iRescuerRoleCost += 22;
+	if ( AICheckIsRadioOperator( pSoldier ) )
+		iRescuerRoleCost += 20;
+	if ( AICheckIsMortarOperator( pSoldier ) )
+		iRescuerRoleCost += 25;
+	if ( AICheckIsMachinegunner( pSoldier ) )
+		iRescuerRoleCost += 15;
+	if ( pSoldier->usSoldierFlagMask & SOLDIER_BODYGUARD )
+		iRescuerRoleCost += 12;
+	iRescuerRoleCost = __min( 45, iRescuerRoleCost );
+
 	SOLDIERTYPE *pBestPatient = NULL;
 	INT32 sBestApproachGrid = NOWHERE;
 	INT32 iBestScore = -100000;
@@ -611,7 +629,8 @@ INT8 DecideCombatCasualtyEvacuation( SOLDIERTYPE *pSoldier )
 		if ( fSameElement )
 			iUrgency += 20;
 
-		INT32 iScore = iUrgency - 4 * iDistanceToPatient - iPathExposure - iRescuerRisk / 2;
+		INT32 iScore = iUrgency - 4 * iDistanceToPatient - iPathExposure -
+			iRescuerRisk / 2 - iRescuerRoleCost;
 		if ( iScore > iBestScore )
 		{
 			iBestScore = iScore;
