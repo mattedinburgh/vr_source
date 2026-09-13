@@ -5770,7 +5770,8 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 					// try behind us, see if there's room to move back and we have enough AP to move and fire
 					sCheckGridNo = NewGridNo(pSoldier->sGridNo, DirectionInc(gOppositeDirection[ubOpponentDir]));
 					INT32 iPathCost = EstimatePlotPath(pSoldier, sCheckGridNo, FALSE, FALSE, FALSE, DetermineMovementMode(pSoldier, AI_ACTION_GET_CLOSER), FALSE, FALSE, 0);
-					if (!OKFallDirection(pSoldier, sCheckGridNo, pSoldier->pathing.bLevel, gOppositeDirection[ubOpponentDir], pSoldier->usAnimState) ||
+					if (AIShouldAvoidAdvance(pSoldier) ||
+						!OKFallDirection(pSoldier, sCheckGridNo, pSoldier->pathing.bLevel, gOppositeDirection[ubOpponentDir], pSoldier->usAnimState) ||
 						iPathCost == 0 ||
 						pSoldier->bActionPoints < BestThrow.ubAPCost + GetAPsToLook(pSoldier) + GetAPsCrouch(pSoldier, FALSE) + iPathCost)
 					{
