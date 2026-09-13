@@ -212,10 +212,10 @@ INT32 MostImportantNoiseHeard( SOLDIERTYPE *pSoldier, INT32 *piRetValue, BOOLEAN
 		// Flugente: chance to ignore the noise if the creator is covert
 		if ( pTemp->usSoldierFlagMask & (SOLDIER_COVERT_CIV|SOLDIER_COVERT_SOLDIER) )
 		{
-			// green  AI state: always ignore
-			// yellow AI state: 50% chance to ignore
-			// sevenfm: always ignore noise 
-			if ( pSoldier->aiData.bAlertStatus == STATUS_GREEN || pSoldier->aiData.bAlertStatus == STATUS_YELLOW)
+			// A disguise changes how noise is interpreted; it does not make the spy silent.
+			// Green guards dismiss it, while yellow guards investigate half the time (current 1.13 behaviour).
+			if ( pSoldier->aiData.bAlertStatus == STATUS_GREEN ||
+				(pSoldier->aiData.bAlertStatus == STATUS_YELLOW && Random(2)) )
 			{
 				continue;			// next merc
 			}
