@@ -93,6 +93,10 @@ extern	BOOLEAN	gfTopMessageDirty;
 #define TILES_DOALL							0x02000000
 #define TILES_OBSCURED						0x01000000
 
+// Shared by both the true-colour and legacy multi-Z tile paths. Keep this in
+// file-wide scope: RenderTiles() now needs it before the legacy blitter section.
+#define	Z_STRIP_DELTA_Y					( Z_SUBLAYERS * 10 )
+
 //#define TILES_MERC						0x00000400
 //#define TILES_Z_BLITTER					0x00000200
 //#define TILES_Z_WRITE						0x00000100
@@ -4449,8 +4453,6 @@ void InvalidateWorldRedundency( )
 		gpWorldLevelData[uiCount].uiFlags |= MAPELEMENT_REEVALUATE_REDUNDENCY;
 
 }
-
-#define	Z_STRIP_DELTA_Y  ( Z_SUBLAYERS * 10 )
 
 /**********************************************************************************************
  Blt8BPPDataTo16BPPBufferTransZIncClip
