@@ -4660,6 +4660,36 @@ UINT8 AIFireteamAliveCount(SOLDIERTYPE *pSoldier)
 	return AIFireteamCountById(AIFireteamId(pSoldier), TRUE);
 }
 
+UINT8 AIFireteamCombatReadyCount(SOLDIERTYPE *pSoldier)
+{
+	if (!AIEnemyFireteamEligible(pSoldier))
+		return 0;
+
+	UINT8 ubFireteam = AIFireteamId(pSoldier);
+	if (ubFireteam == AI_FIRETEAM_NONE)
+		return 0;
+
+	UINT8 ubCount = 0;
+	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!AIEnemyFireteamEligible(pFriend) || pFriend->ubID >= MAX_NUM_SOLDIERS ||
+			guiAIFireteamIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
+			gubAIFireteam[pFriend->ubID] != ubFireteam ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend))
+		{
+			continue;
+		}
+		++ubCount;
+	}
+
+	return ubCount;
+}
+
 BOOLEAN AISameFireteam(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend)
 {
 	if (!pSoldier || !pFriend || pSoldier->bTeam != pFriend->bTeam)
