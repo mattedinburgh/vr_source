@@ -1856,10 +1856,10 @@ INT8 ExecuteAction(SOLDIERTYPE *pSoldier)
             break;
 
         case AI_ACTION_PICKUP_ITEM:					 // grab something!
-            // Final safety net: militia do not pick up battlefield/sector items while
-            // hostile contact is active, even if a stale/pending pickup action survived.
-            if ( pSoldier->bTeam == MILITIA_TEAM &&
-                 ( (gTacticalStatus.uiFlags & INCOMBAT) || gTacticalStatus.fEnemyInSector ) )
+            // Final safety net: militia never execute generic tactical pickup actions.
+            // Their equipment is managed by the dedicated militia sector-inventory
+            // system, so stale/queued AI pickups cannot consume player loot.
+            if ( pSoldier->bTeam == MILITIA_TEAM )
             {
                 pSoldier->aiData.bAction = AI_ACTION_NONE;
                 pSoldier->aiData.usActionData = NOWHERE;
