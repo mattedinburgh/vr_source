@@ -670,10 +670,27 @@ static void TraceSanMonaLoad( const STR8 pStage, const STR8 pDetail )
 		pSafeDetail[0] != '\0' ? ": " : "", pSafeDetail );
 }
 
+static const CHAR8 *SectorVisualLeafName( const STR8 pFilename )
+{
+	if ( pFilename == NULL )
+		return "";
+
+	const CHAR8 *pLeaf = pFilename;
+	const CHAR8 *pBackslash = strrchr( pFilename, '\\' );
+	const CHAR8 *pSlash = strrchr( pFilename, '/' );
+	if ( pBackslash != NULL && pBackslash + 1 > pLeaf )
+		pLeaf = pBackslash + 1;
+	if ( pSlash != NULL && pSlash + 1 > pLeaf )
+		pLeaf = pSlash + 1;
+	return pLeaf;
+}
+
 static UINT8 DetermineSectorVisualProfile( const STR8 pFilename )
 {
 	if ( pFilename == NULL )
 		return SECTOR_VISUAL_DEFAULT;
+
+	pFilename = (STR8)SectorVisualLeafName( pFilename );
 
 	// Keep normal A3 gameplay on the original authored sector until the remaster
 	// has passed visual QA.  MAPSHOT is deliberately allowed to activate the farm
@@ -5464,7 +5481,7 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		GenerateBuildings();
 
 		if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM &&
-			 _stricmp( gubFilename, "A3_REMASTERED.dat" ) != 0 )
+			 _stricmp( SectorVisualLeafName( gubFilename ), "A3_REMASTERED.dat" ) != 0 )
 			DressA3FarmEnvironment();
 
 		if ( IsSanMonaVisualProfile() )
