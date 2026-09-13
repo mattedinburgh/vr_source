@@ -704,6 +704,13 @@ static BOOLEAN PickRealConflictLoadscreen(const std::string& legacyImagePath, UI
 //and refreshing the screen with it.
 void DisplayLoadScreenWithID( UINT8 ubLoadScreenID )
 {
+	static BOOLEAN fLoggedDocumentarySelectorRevision = FALSE;
+	if (!fLoggedDocumentarySelectorRevision)
+	{
+		BlackBoxEvent("LOADSCREEN", "selector_revision=2026-09-13-v3");
+		fLoggedDocumentarySelectorRevision = TRUE;
+	}
+
 	VSURFACE_DESC		vs_desc = {};
 	HVSURFACE			hVSurface;
 	UINT32				uiLoadScreen;
