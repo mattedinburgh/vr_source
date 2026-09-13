@@ -1457,6 +1457,13 @@ void BattleLogAddNCTHHit( INT32 iBullet, UINT8 ubTargetID, INT16 sDamage )
 	if ( ubTargetID != NOBODY && MercPtrs[ubTargetID] )
 		pActualTargetName = MercPtrs[ubTargetID]->GetName();
 
+	DAMAGE_DIAGNOSTIC damage;
+	if ( DamageGetBulletDiagnostic( iBullet, &damage ) )
+	{
+		pEntry->damage = damage;
+		pEntry->fDamageClickable = TRUE;
+	}
+
 	if ( fIntendedHit )
 	{
 		const CHAR16 *pOutcome = fShooterPlayer ? L"HIT" : L"ENEMY HIT";
