@@ -713,6 +713,15 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 	const BOOLEAN fB1Road = fB1Profile && ( (ubType >= FIRSTROAD && ubType <= LASTROAD) || ubType == ROADPIECES );
 	const BOOLEAN fB1Terrain = fB1Profile && ( ubType >= FIRSTTEXTURE && ubType <= SEVENTHTEXTURE );
 	const BOOLEAN fB1GreenTerrain = fB1Profile && ( ubType >= THIRDTEXTURE && ubType <= SIXTHTEXTURE );
+	const BOOLEAN fB1Vegetation = fB1Profile &&
+		( (ubType >= FIRSTOSTRUCT && ubType <= SEVENTHOSTRUCT) ||
+		  ubType == FIRSTFULLSTRUCT || ubType == SECONDFULLSTRUCT );
+	const BOOLEAN fB1Machinery = fB1Profile &&
+		( ubType == EIGHTOSTRUCT || ubType == THRIDISTRUCT ||
+		  ubType == FIRSTVEHICLE || ubType == SECONDVEHICLE ||
+		  ubType == TENTHOSTRUCT || ubType == FENCESTRUCT );
+	const BOOLEAN fB1Interior = fB1Profile && ( ubType >= FIRSTISTRUCT && ubType <= FIRSTCISTRUCT );
+	const BOOLEAN fB1Decal = fB1Profile && ( ubType >= FIRSTWALLDECAL && ubType <= FOURTHWALLDECAL );
 
 	if ( fB1Profile )
 	{
@@ -802,6 +811,44 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 			greenBias = 1;
 			blueBias = -10;
 		}
+		else if ( fB1Vegetation )
+		{
+			// Humid coastal tropical growth: deep wet greens, bright sun tips.
+			// The contrast against rust/ochre industrial materials is intentional.
+			saturationPercent = 136;
+			contrastPercent = 134;
+			redBias = -5;
+			greenBias = 17;
+			blueBias = -7;
+		}
+		else if ( fB1Machinery )
+		{
+			// Oil lamps, process plant, cranes and railings: soot-black steel with
+			// oxidised/rusty mids and hard specular-looking highlights.
+			saturationPercent = 116;
+			contrastPercent = 149;
+			redBias = 15;
+			greenBias = 1;
+			blueBias = -16;
+		}
+		else if ( fB1Interior )
+		{
+			// Industrial furniture/crates: dark worn paint, wood and steel.
+			saturationPercent = 98;
+			contrastPercent = 137;
+			redBias = 9;
+			greenBias = 3;
+			blueBias = -10;
+		}
+		else if ( fB1Decal )
+		{
+			// Faded warning paint/signage should remain readable against the facades.
+			saturationPercent = 126;
+			contrastPercent = 138;
+			redBias = 11;
+			greenBias = 5;
+			blueBias = -9;
+		}
 		else if ( ubType == DEBRISROCKS || ubType == DEBRISMISC )
 		{
 			// Bleached concrete, gravel and pale industrial rubble.
@@ -889,11 +936,17 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 				outG -= 3;
 				outB -= 1;
 			}
-			else if ( fB1Roof || fB1OnRoof )
+			else if ( fB1Roof || fB1OnRoof || fB1Machinery )
 			{
 				outR += 5;
 				outG -= 1;
 				outB -= 5;
+			}
+			else if ( fB1Vegetation )
+			{
+				outR -= 4;
+				outG += 6;
+				outB -= 2;
 			}
 		}
 
@@ -919,6 +972,8 @@ static BOOLEAN IsMandatoryB1RemasterType( UINT8 ubType )
 		case SEVENTHTEXTURE:
 		case REGWATERTEXTURE:
 		case DEEPWATERTEXTURE:
+		// B1_GRASS1.JSD is byte-identical to authored GRASS1.JSD.
+		case THIRDOSTRUCT:
 		case ROADPIECES:
 		case FIRSTFLOOR:
 		case SECONDFLOOR:
@@ -994,10 +1049,10 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 	// Adjust flag for same as default used...
 	gbSameAsDefaultSurfaceUsed[ ubType ] = FALSE;
 
-	// B1 Oronegro oil-rig remaster. Terrain, water, roads and floors are remastered.
-	// Audited roof and facade sets are also enabled after their JSD structure data
-	// was confirmed byte-identical to the authored originals. Other structural art
-	// remains authored until its destruction/script/JSD audit is complete.
+	// B1 Oronegro oil-rig remaster. Terrain, water, roads, floors and one audited
+	// vegetation family are remastered. Roof/facade replacements are enabled only
+	// where their JSD structure data is byte-identical to the authored originals.
+	// Other structural art remains authored and receives the runtime hero grade.
 	STR8 pLoadFilename = cFilename;
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG && ubTilesetID == 50 )
 	{
@@ -1012,6 +1067,7 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 			case SEVENTHTEXTURE:   pLoadFilename = "B1_T_TRAIL.STI"; break;
 			case REGWATERTEXTURE:  pLoadFilename = "B1_TR_WATER.STI"; break;
 			case DEEPWATERTEXTURE: pLoadFilename = "B1_TRWATER2.STI"; break;
+			case THIRDOSTRUCT:      pLoadFilename = "B1_GRASS1.STI"; break;
 			case ROADPIECES:       pLoadFilename = "B1_ROADTLE2.STI"; break;
 			case FIRSTFLOOR:       pLoadFilename = "B1_WELFLOR3.STI"; break;
 			case SECONDFLOOR:      pLoadFilename = "B1_P-FLOOR3.STI"; break;
