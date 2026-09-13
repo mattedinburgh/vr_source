@@ -288,6 +288,9 @@ INT32 CalcCoverValue(SOLDIERTYPE *pMe, INT32 sMyGridNo, INT32 iMyThreat, INT32 i
 	INT32	iReductionFactor, iThisScale;
 	INT32	sHisGridNo, sMyRealGridNo = NOWHERE, sHisRealGridNo = NOWHERE;
 	INT8	bHisRealLevel = -1;
+	UINT16 usHisRealAnimState = 0;
+	UINT8 ubHisRealDirection = 0;
+	BOOLEAN fHisStateVirtualized = FALSE;
 	INT16 sTempX, sTempY;
 	FLOAT dMyX, dMyY, dHisX, dHisY;
 	INT8	bHisBestCTGT, bHisActualCTGT, bHisCTGT, bMyCTGT;
@@ -308,6 +311,7 @@ INT32 CalcCoverValue(SOLDIERTYPE *pMe, INT32 sMyGridNo, INT32 iMyThreat, INT32 i
 	// sevenfm
 	bHisLevel = Threat[uiThreatIndex].bLevel;
 	bMyLevel = pMe->pathing.bLevel;
+	const BOOLEAN fHisStateKnown = (Threat[uiThreatIndex].bPersonalKnowledge == SEEN_CURRENTLY);
 	UINT8 ubFriendlyFireChance = 0;
 
 	// THE FOLLOWING STUFF IS *VEERRRY SCAARRRY*, BUT SHOULD WORK.	IF YOU REALLY
@@ -326,6 +330,18 @@ INT32 CalcCoverValue(SOLDIERTYPE *pMe, INT32 sMyGridNo, INT32 iMyThreat, INT32 i
 		pMe->dYPos = (FLOAT) sTempY;
 	}
 
+	// Stale/heard contacts keep their remembered location but must not leak the
+	// hidden live posture/facing into cover geometry. Current personal sight retains
+	// the real state; otherwise use a deterministic neutral standing threat.
+	if (!fHisStateKnown)
+	{
+		usHisRealAnimState = pHim->usAnimState;
+		ubHisRealDirection = pHim->ubDirection;
+		pHim->usAnimState = STANDING;
+		pHim->ubDirection = AIDirection(sHisGridNo, sMyGridNo);
+		fHisStateVirtualized = TRUE;
+	}
+
 	// if this is theoretical, and he's not actually at hisGrid right now
 	if (pHim->sGridNo != sHisGridNo || pHim->pathing.bLevel != bHisLevel)
 	{
@@ -342,7 +358,8 @@ INT32 CalcCoverValue(SOLDIERTYPE *pMe, INT32 sMyGridNo, INT32 iMyThreat, INT32 i
 	}
 
 
-	if (InWaterOrGas(pHim,sHisGridNo))
+	if ((fHisStateKnown && InWaterOrGas(pHim,sHisGridNo)) ||
+		(!fHisStateKnown && Water(sHisGridNo, bHisLevel)))
 	{
 		bHisActualCTGT = 0;
 	}
@@ -438,6 +455,11 @@ INT32 CalcCoverValue(SOLDIERTYPE *pMe, INT32 sMyGridNo, INT32 iMyThreat, INT32 i
 			pHim->pathing.bLevel = bHisRealLevel;
 		pHim->dXPos = dHisX;
 		pHim->dYPos = dHisY;
+	}
+	if (fHisStateVirtualized)
+	{
+		pHim->usAnimState = usHisRealAnimState;
+		pHim->ubDirection = ubHisRealDirection;
 	}
 
 	// sevenfm: special calculations for zombies: zombie is very dangerous at close range
