@@ -924,17 +924,21 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		// toward this opponent or breaking contact from him, a viable shooter values
 		// fire on that threat more highly. Better support weapons get the strongest
 		// preference, but this remains a soft utility bonus rather than a forced shot.
+		BOOLEAN fProtectingPinnedFriend = FALSE;
 		BOOLEAN fCoveringAdvance = FALSE;
 		BOOLEAN fCoveringWithdrawal = FALSE;
 		if (AICombatTeam(pSoldier) && pOpponent && pOpponent->ubID != NOBODY)
 		{
+			fProtectingPinnedFriend = AIFriendNeedsCoveringFire(pSoldier, pOpponent->ubID);
 			fCoveringWithdrawal = AIFriendWithdrawingNeedsCover(pSoldier, pOpponent->ubID);
 			fCoveringAdvance = AIFriendAdvancingNeedsCover(pSoldier, pOpponent->ubID);
 
-			if (fCoveringWithdrawal || fCoveringAdvance)
+			if (fProtectingPinnedFriend || fCoveringWithdrawal || fCoveringAdvance)
 			{
 				INT32 iSupportScore = AISupportRoleScore(pSoldier, sTarget);
-				INT32 iCoverBonus = fCoveringWithdrawal ? 30 : 20;
+				INT32 iCoverBonus =
+					fCoveringWithdrawal ? 30 :
+					(fProtectingPinnedFriend ? 25 : 20);
 
 				if (iSupportScore >= 80)
 					iCoverBonus += 15;
@@ -943,7 +947,8 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 				else if (iSupportScore < 30)
 					iCoverBonus -= 8;
 
-				// Suppression is particularly useful while somebody else is moving.
+				// Suppression is particularly useful when the target is pinning a friend
+				// or while another element is actively moving.
 				if (fSuppression)
 					iCoverBonus += 10;
 
@@ -975,7 +980,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 
 				// Concentrated fire is less wasteful when it is deliberately covering
 				// a teammate's movement or withdrawal.
-				if (fCoveringAdvance || fCoveringWithdrawal)
+				if (fProtectingPinnedFriend || fCoveringAdvance || fCoveringWithdrawal)
 					iPenaltyPercent /= 2;
 				iPenaltyPercent = __min(75, iPenaltyPercent);
 				iAttackValue = iAttackValue * (100 - iPenaltyPercent) / 100;
