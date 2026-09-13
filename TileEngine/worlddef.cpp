@@ -655,7 +655,7 @@ static UINT8 GradeSectorVisualComponent( INT32 component, INT32 luma, INT32 satu
 	return ClampSectorVisualComponent( value );
 }
 
-static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT32 ubType )
+static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT32 ubType, BOOLEAN fSectorReplacementLoaded )
 {
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_DEFAULT || pTileSurf == NULL || pTileSurf->vo == NULL )
 		return;
@@ -663,6 +663,7 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 	// B1's base terrain/water is already remastered in replacement STI assets; avoid
 	// applying the runtime palette pass a second time. Architecture still receives the mild profile.
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG &&
+		 fSectorReplacementLoaded &&
 		 ( (ubType >= FIRSTTEXTURE && ubType <= DEEPWATERTEXTURE) ||
 		   ubType == ROADPIECES ||
 		   (ubType >= FIRSTFLOOR && ubType <= FOURTHFLOOR) ) )
@@ -739,6 +740,8 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 	PTILE_IMAGERY	TileSurf;
 	CHAR8	cFileBPP[128];
 	CHAR8	cAdjustedFile[ 128 ];
+	BOOLEAN	fSectorReplacementRequested = FALSE;
+	BOOLEAN	fSectorReplacementLoaded = FALSE;
 
 	// Delete the surface first!
 	if ( gTileSurfaceArray[ ubType ] != NULL )
@@ -774,6 +777,8 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 		}
 	}
 
+	fSectorReplacementRequested = ( _stricmp( pLoadFilename, cFilename ) != 0 );
+
 	// Adjust for BPP
 	FilenameForBPP(pLoadFilename, cFileBPP);
 
@@ -789,12 +794,31 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 
 	TileSurf = LoadTileSurface( cAdjustedFile );
 
+	// Sector-specific remaster assets are optional. If a replacement STI is absent
+	// from the installed game data, fall back to the authored tileset asset instead
+	// of failing the entire tileset load (and asserting while entering the sector).
+	if ( TileSurf != NULL && fSectorReplacementRequested )
+	{
+		fSectorReplacementLoaded = TRUE;
+	}
+	else if ( TileSurf == NULL && fSectorReplacementRequested )
+	{
+		FilenameForBPP(cFilename, cFileBPP);
+
+		if ( !fGetFromRoot )
+			sprintf( cAdjustedFile, "TILESETS\\%d\\%s", ubTilesetID, cFileBPP );
+		else
+			sprintf( cAdjustedFile, "%s", cFileBPP );
+
+		TileSurf = LoadTileSurface( cAdjustedFile );
+	}
+
 	if ( TileSurf == NULL )
 		return( FALSE );
 
 	TileSurf->fType							= ubType;
 
-	ApplySectorVisualProfileToTileSurface( TileSurf, ubType );
+	ApplySectorVisualProfileToTileSurface( TileSurf, ubType, fSectorReplacementLoaded );
 	SetRaisedObjectFlag( cAdjustedFile, TileSurf );
 
 	gTileSurfaceArray[ ubType ] = TileSurf;
