@@ -141,8 +141,9 @@ static BOOLEAN MilitiaSpreadDestinationReserved( SOLDIERTYPE *pSoldier, INT32 sS
 		}
 
 		if ( pFriend->aiData.bOrders == STATIONARY &&
-			pFriend->aiData.bAttitude == DEFENSIVE &&
-			pFriend->aiData.sPendingActionData2 == sSpot )
+			(pFriend->aiData.sPatrolGrid[0] == sSpot ||
+			 pFriend->aiData.sPendingActionData2 == sSpot ||
+			 pFriend->sGridNo == sSpot) )
 		{
 			return TRUE;
 		}
