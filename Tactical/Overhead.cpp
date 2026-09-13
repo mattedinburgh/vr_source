@@ -10785,6 +10785,28 @@ void EnsureEnemyCommandRoles()
 	if (!gGameExternalOptions.fEnemyRoles || gbWorldSectorZ != 0)
 		return;
 
+	// Role queries happen constantly during tactical AI. They must not regenerate
+	// officers merely because command casualties reduced the live roster. Normalize
+	// on a fresh sector roster or roster growth; preserve saved role flags on load.
+	static INT16 sRoleSectorX = -1;
+	static INT16 sRoleSectorY = -1;
+	static INT8 bRoleSectorZ = -1;
+	static UINT16 usLastObservedEnemyCount = 0;
+	static BOOLEAN fRoleRosterInitialized = FALSE;
+
+	BOOLEAN fRoleSectorChanged =
+		sRoleSectorX != gWorldSectorX ||
+		sRoleSectorY != gWorldSectorY ||
+		bRoleSectorZ != gbWorldSectorZ;
+	if (fRoleSectorChanged)
+	{
+		sRoleSectorX = gWorldSectorX;
+		sRoleSectorY = gWorldSectorY;
+		bRoleSectorZ = gbWorldSectorZ;
+		usLastObservedEnemyCount = 0;
+		fRoleRosterInitialized = FALSE;
+	}
+
 	UINT16 enemyCount = 0;
 	UINT16 officerCount = 0;
 	UINT16 bodyguardCount = 0;
@@ -10799,6 +10821,26 @@ void EnsureEnemyCommandRoles()
 		if (p->usSoldierFlagMask & SOLDIER_BODYGUARD)
 			++bodyguardCount;
 	}
+
+	if (gTacticalStatus.uiFlags & LOADING_SAVED_GAME)
+	{
+		// SOLDIER_VIP/OFFICER/BODYGUARD flags are save-compatible. Do not invent
+		// replacement command staff when loading a battle after casualties.
+		usLastObservedEnemyCount = enemyCount;
+		fRoleRosterInitialized = TRUE;
+		return;
+	}
+
+	if (fRoleRosterInitialized && enemyCount <= usLastObservedEnemyCount)
+	{
+		// Track shrinkage so a later reinforcement increase can be recognized, but
+		// never refill vacancies merely because an officer or bodyguard was lost.
+		usLastObservedEnemyCount = enemyCount;
+		return;
+	}
+
+	usLastObservedEnemyCount = enemyCount;
+	fRoleRosterInitialized = TRUE;
 
 	// General: choose the most suitable surviving soldier only when the strategic
 	// sector actually contains one. This makes the role independent of creation order.
