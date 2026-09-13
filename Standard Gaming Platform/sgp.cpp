@@ -248,6 +248,34 @@ INT32 FAR PASCAL WindowProcedure(HWND hWindow, UINT16 Message, WPARAM wParam, LP
 {
 	static BOOLEAN fRestore = FALSE;
 
+	// Black-box window telemetry: keep resize traffic memory-only, but preserve
+	// lifecycle/display transitions durably. This is especially useful for
+	// Alt-Tab, renderer and resolution-related failures.
+	switch( Message )
+	{
+		case WM_SIZE:
+			BlackBoxCheckpoint( "WINDOW", "WM_SIZE type=%u width=%u height=%u", (UINT32)wParam, (UINT32)LOWORD(lParam), (UINT32)HIWORD(lParam) );
+			break;
+		case WM_ACTIVATEAPP:
+			BlackBoxEvent( "WINDOW", "WM_ACTIVATEAPP active=%u thread=%lu", (UINT32)wParam, (DWORD)lParam );
+			break;
+		case WM_DISPLAYCHANGE:
+			BlackBoxEvent( "WINDOW", "WM_DISPLAYCHANGE bpp=%u width=%u height=%u", (UINT32)wParam, (UINT32)LOWORD(lParam), (UINT32)HIWORD(lParam) );
+			break;
+		case WM_ENTERSIZEMOVE:
+			BlackBoxEvent( "WINDOW", "WM_ENTERSIZEMOVE" );
+			break;
+		case WM_EXITSIZEMOVE:
+			BlackBoxEvent( "WINDOW", "WM_EXITSIZEMOVE" );
+			break;
+		case WM_CLOSE:
+			BlackBoxEvent( "WINDOW", "WM_CLOSE" );
+			break;
+		case WM_DESTROY:
+			BlackBoxEvent( "WINDOW", "WM_DESTROY" );
+			break;
+	}
+
 	if ( Message == WM_USER )
 	{
 		FreeConsole();
