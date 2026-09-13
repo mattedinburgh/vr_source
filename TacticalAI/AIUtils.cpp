@@ -4445,6 +4445,12 @@ static INT32 AIFireteamDistanceToSpot(UINT8 ubFireteam, INT32 sSpot)
 static void AISeedEnemyFireteams(void)
 {
 	AIResetFireteamsForSector();
+
+	// Role normalization belongs at a stable roster/fireteam boundary, not inside
+	// rank queries. This also picks up genuine mid-battle roster growth before a
+	// reinforcement is attached to an element.
+	EnsureEnemyCommandRoles();
+
 	if (gfAIFireteamsSeeded) return;
 
 	const INT8 bCombatTeams[2] = { ENEMY_TEAM, MILITIA_TEAM };
@@ -10067,9 +10073,9 @@ UINT8 AIGetCommandRank(SOLDIERTYPE *pSoldier)
 
 	if (pSoldier->bTeam == ENEMY_TEAM)
 	{
-		// Assign formal roles against the complete current roster, not creation order.
-		EnsureEnemyCommandRoles();
-
+		// Formal role flags are normalized when the sector/fireteam roster is ready.
+		// Rank lookup must remain read-only; otherwise harmless AI queries can assign
+		// officers while soldiers are still being created.
 		if (pSoldier->usSoldierFlagMask & SOLDIER_VIP)
 			return AI_RANK_GENERAL;
 
