@@ -3995,6 +3995,8 @@ UINT8 CountFriendsBetweenMeAndSpotFromSpot(SOLDIERTYPE *pSoldier, INT32 sTargetG
 			!pFriend->bCollapsed &&
 			!pFriend->bBreathCollapsed &&
 			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
+			!(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) &&
+			!AIDisengagementActive(pFriend) && !AIEscapeActive(pFriend) &&
 			pFriend->stats.bLife >= pFriend->stats.bLifeMax / 2 &&
 			pFriend->aiData.bOrders > ONGUARD &&
 			(ubFriendDir == ubMyDir || ubFriendDir == gOneCDirection[ubMyDir] || ubFriendDir == gOneCCDirection[ubMyDir]) &&
@@ -4041,7 +4043,9 @@ UINT8 CountFriendsBlack( SOLDIERTYPE *pSoldier, INT32 sClosestOpponent )
 			pFriend->stats.bLife >= OKLIFE &&
 			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
 			!pFriend->IsCowering() &&
-			!pFriend->IsUnconscious())
+			!pFriend->IsUnconscious() &&
+			!AIDisengagementActive(pFriend) &&
+			!AIEscapeActive(pFriend))
 		{
 			sFriendClosestOpponent = ClosestSeenOpponent( pFriend, NULL, NULL );
 			if(!TileIsOutOfBounds(sFriendClosestOpponent) &&
