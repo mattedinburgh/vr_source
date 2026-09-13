@@ -4392,10 +4392,20 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 									}
 								}
 
+								// A good endpoint is not enough if the approach itself crosses a known
+								// fire lane. Route safety is knowledge-based and intentionally precedes
+								// mutual-support authorization.
+								if (!fAbortSeek && !fSeekClimb &&
+									!AIKnownRouteExposureAcceptable(
+										pSoldier, pSoldier->aiData.usActionData,
+										AI_ACTION_SEEK_OPPONENT, 150, 75, 95))
+								{
+									fAbortSeek = TRUE;
+								}
+
 								// If the final approach would substantially increase exposure,
 								// require a teammate who can independently cover the same known
-								// contact. Unsupported approaches can still convert into flanks
-								// or other RED actions instead of becoming a suicidal straight rush.
+								// contact. Unsupported approaches can still convert into flanks.
 								if (!fAbortSeek &&
 									!fSeekClimb &&
 									!AIAdvanceHasMutualSupport(pSoldier, pSoldier->aiData.usActionData, sClosestDisturbance, bClosestDisturbanceLevel))
@@ -4439,8 +4449,18 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 											pSoldier->aiData.bUnderFire && !GuySawEnemy(pSoldier) ||
 											FindBombNearby(pSoldier, sCautiousMoveSpot, BOMB_DETECTION_RANGE) ||
 											AICorpseWarningKnown(pSoldier, sCautiousMoveSpot, pSoldier->pathing.bLevel) ||
-											EnemyCanAttackSpot(pSoldier, sCautiousMoveSpot, pSoldier->pathing.bLevel) ||
+											AIKnownThreatExposure(pSoldier, sCautiousMoveSpot, pSoldier->pathing.bLevel) >
+												AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel) + 70 ||
 											!SightCoverAtSpot(pSoldier, sCautiousMoveSpot, FALSE)))
+										{
+											fSkipCautiousMove = TRUE;
+										}
+
+										if (!fSkipCautiousMove &&
+											!TileIsOutOfBounds(sCautiousMoveSpot) &&
+											!AIKnownRouteExposureAcceptable(
+												pSoldier, sCautiousMoveSpot,
+												AI_ACTION_SEEK_OPPONENT, 130, 60, 80))
 										{
 											fSkipCautiousMove = TRUE;
 										}
