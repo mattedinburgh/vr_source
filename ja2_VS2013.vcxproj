@@ -338,6 +338,17 @@
       <Project>{ff0a809e-a370-4640-a301-17b76d7a5b4e}</Project>
     </ProjectReference>
   </ItemGroup>
+  <Target Name="DeployVengeanceReleaseToParentGameDir"
+          AfterTargets="Build"
+          Condition="'$(Configuration)|$(Platform)'=='Release|Win32' and Exists('$(SolutionDir)..\vfs_config.Vengeance.ini')">
+    <Message Importance="High"
+             Text="Deploying $(TargetFileName) to detected Vengeance game directory: $(SolutionDir)..\" />
+    <Copy SourceFiles="$(TargetPath)"
+          DestinationFiles="$(SolutionDir)..\$(TargetFileName)"
+          SkipUnchangedFiles="false" />
+    <Message Importance="High"
+             Text="DEPLOYED: $(SolutionDir)..\$(TargetFileName)" />
+  </Target>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
