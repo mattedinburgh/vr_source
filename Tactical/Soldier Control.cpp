@@ -5817,6 +5817,21 @@ static void SpawnVRDirectionalGoreSpray( SOLDIERTYPE *pSoldier, const CHAR8 *zFi
 	if ( pSoldier == NULL || pSoldier->bVisible == -1 || !GridNoOnScreen( pSoldier->sGridNo ) )
 		return;
 
+	// Gore graphics are optional runtime data. Never enter the tile loader with a
+	// missing file: LoadTileSurface() treats that as a fatal runtime error.
+	// The legacy alias lets partially updated installs keep working during rollout.
+	CHAR8 zResolvedFilename[ 100 ];
+	strncpy( zResolvedFilename, zFilename, sizeof( zResolvedFilename ) - 1 );
+	zResolvedFilename[ sizeof( zResolvedFilename ) - 1 ] = '\0';
+
+	if ( !FileExists( zResolvedFilename ) )
+	{
+		if ( FileExists( "TILECACHE\\VR_BLOOD_IMPACT.STI" ) )
+			strcpy( zResolvedFilename, "TILECACHE\\VR_BLOOD_IMPACT.STI" );
+		else
+			return;
+	}
+
 	ANITILE_PARAMS AniParams;
 	memset( &AniParams, 0, sizeof( ANITILE_PARAMS ) );
 	AniParams.sGridNo = pSoldier->sGridNo;
@@ -5840,7 +5855,7 @@ static void SpawnVRDirectionalGoreSpray( SOLDIERTYPE *pSoldier, const CHAR8 *zFi
 		}
 	}
 
-	strcpy( AniParams.zCachedFile, zFilename );
+	strcpy( AniParams.zCachedFile, zResolvedFilename );
 	CreateAnimationTile( &AniParams );
 }
 
