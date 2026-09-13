@@ -1,4 +1,10 @@
 #ifndef __XML_H
+
+#define LBT_LAYERSFILENAME						"LogicalBodyTypes/Layers.xml"
+#define LBT_PALETTESFILENAME					"LogicalBodyTypes/Palettes.xml"
+#define LBT_ANIMSURFACESFILENAME				"LogicalBodyTypes/AnimationSurfaces.xml"
+#define LBT_FILTERSFILENAME						"LogicalBodyTypes/Filters.xml"
+#define LBT_BODYTYPESFILENAME					"LogicalBodyTypes/LogicalBodyTypes.xml"
 #define __XML_H
 
 #include "armsdealerinvinit.h"
