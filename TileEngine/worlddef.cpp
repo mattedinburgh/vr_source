@@ -2824,8 +2824,6 @@ BOOLEAN EvaluateWorld(STR8 pSector, UINT8 ubLevel)
 	pBufferHead = pBuffer;
 	FileRead(hfile, pBuffer, uiFileSize, &uiBytesRead);
 	FileClose(hfile);
-	BlackBoxEvent( "MAP", "opened=%s size=%u bytesRead=%u", aFilename, uiFileSize, uiBytesRead );
-	BlackBoxCheckpoint( "MAP", "file=%s phase=FILE_READ offset=0 size=%u", aFilename, uiFileSize );
 	swprintf(str, L"Analyzing map %S", szFilename);
 	if(!gfUpdatingNow)
 		SetRelativeStartAndEndPercentage(0, 0, 100, str);
@@ -3256,6 +3254,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	pBufferHead = pBuffer;
 	FileRead(hfile, pBuffer, uiFileSize, &uiBytesRead);
 	FileClose(hfile);
+	BlackBoxEvent( "MAP", "opened=%s size=%u bytesRead=%u", aFilename, uiFileSize, uiBytesRead );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=FILE_READ offset=0 size=%u", aFilename, uiFileSize );
 
 	// RESET FLAGS FOR OUTDOORS/INDOORS
 	gfBasement = FALSE;
