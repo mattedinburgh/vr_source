@@ -5856,7 +5856,50 @@ static void SpawnVRDirectionalGoreSpray( SOLDIERTYPE *pSoldier, const CHAR8 *zFi
 	}
 
 	strcpy( AniParams.zCachedFile, zResolvedFilename );
-	CreateAnimationTile( &AniParams );
+	ANITILE *pGoreAni = CreateAnimationTile( &AniParams );
+	if ( pGoreAni != NULL && pGoreAni->pLevelNode != NULL )
+	{
+		// Keep blood visibly deeper/darker than the default world palette. The STI
+		// colours stay intact; the engine applies two extra shade steps at render time.
+		pGoreAni->pLevelNode->ubShadeLevel = (UINT8)__min( MAX_SHADE_LEVEL, DEFAULT_SHADE_LEVEL + 2 );
+		pGoreAni->pLevelNode->ubNaturalShadeLevel = pGoreAni->pLevelNode->ubShadeLevel;
+	}
+}
+
+
+// Sprinkler-style blood projection. Many small, delayed droplets travel down the
+// exit vector with slight directional jitter and increasing distance. This deliberately
+// avoids the old single broad "bucket" fan while still allowing extreme volume.
+static void SpawnVRSprinklerGoreBurst( SOLDIERTYPE *pSoldier, UINT8 ubExitDirection, UINT8 ubIncomingDirection, INT16 sZ, BOOLEAN fExtreme )
+{
+	if ( pSoldier == NULL )
+		return;
+
+	static const INT8 abDirJitter[ 9 ] = { 0, 1, -1, 0, 1, -1, 0, 1, -1 };
+	UINT8 ubDroplets = fExtreme ? 9 : 5;
+
+	for ( UINT8 i = 0; i < ubDroplets; ++i )
+	{
+		INT16 sDir = (INT16)ubExitDirection + abDirJitter[ i ];
+		while ( sDir < 0 ) sDir += NUM_WORLD_DIRECTIONS;
+		sDir %= NUM_WORLD_DIRECTIONS;
+
+		INT16 sLayerZ = (INT16)__max( 5, sZ - (INT16)( ( i % 4 ) * 3 ) );
+		UINT8 ubOffset = (UINT8)__min( 120, (INT16)( i * ( fExtreme ? 15 : 12 ) ) );
+		INT16 sDelay = (INT16)( 29 + i * 4 );
+
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", (UINT8)sDir, sLayerZ, sDelay, ubOffset );
+	}
+
+	// Two sparse medium layers add density without turning the burst into a solid fan.
+	if ( fExtreme )
+	{
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, (INT16)__max( 6, sZ - 2 ), 33, 22 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, (INT16)__max( 6, sZ - 7 ), 46, 68 );
+	}
+
+	// Entry-side mist/backspatter is much smaller than the exit-side sprinkler.
+	SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, (INT16)__max( 5, sZ - 3 ), 41, 0 );
 }
 
 
@@ -5881,7 +5924,12 @@ static void SpawnVRBloodGroundDecal( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8
 	ConvertGridNoToCenterCellXY( sGridNo, &AniParams.sX, &AniParams.sY );
 	AniParams.sZ = 0;
 	strcpy( AniParams.zCachedFile, zFilename );
-	CreateAnimationTile( &AniParams );
+	ANITILE *pBloodDecal = CreateAnimationTile( &AniParams );
+	if ( pBloodDecal != NULL && pBloodDecal->pLevelNode != NULL )
+	{
+		pBloodDecal->pLevelNode->ubShadeLevel = (UINT8)__min( MAX_SHADE_LEVEL, DEFAULT_SHADE_LEVEL + 3 );
+		pBloodDecal->pLevelNode->ubNaturalShadeLevel = pBloodDecal->pLevelNode->ubShadeLevel;
+	}
 }
 
 
@@ -6025,6 +6073,15 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	UINT8 ubRightDirection = (UINT8)( ( ubIncomingDirection + 2 ) % NUM_WORLD_DIRECTIONS );
 	UINT8 ubVariant = (UINT8)Random( 30 );
 	UINT8 ubHeight = gAnimControl[ pSoldier->usAnimState ].ubEndHeight;
+	BOOLEAN fHadMomentum = ( ( gAnimControl[ pSoldier->usAnimState ].uiFlags & ANIM_MOVING ) != 0 );
+	UINT8 ubMomentumDirection = pSoldier->ubDirection;
+
+	if ( fHadMomentum && pSoldier->pathing.usPathIndex < pSoldier->pathing.usPathDataSize )
+		ubMomentumDirection = (UINT8)( pSoldier->pathing.usPathingData[ pSoldier->pathing.usPathIndex ] % NUM_WORLD_DIRECTIONS );
+
+	UINT8 ubRagdollBaseDirection = fHadMomentum ? ubMomentumDirection : ubIncomingDirection;
+	UINT8 ubRagdollLeftDirection = (UINT8)( ( ubRagdollBaseDirection + 6 ) % NUM_WORLD_DIRECTIONS );
+	UINT8 ubRagdollRightDirection = (UINT8)( ( ubRagdollBaseDirection + 2 ) % NUM_WORLD_DIRECTIONS );
 
 	// Extreme test baseline: keep all thirty variants reachable, but strongly bias
 	// the gore family toward the actual hit location so head/leg/torso hits read clearly.
@@ -6035,8 +6092,37 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	else if ( ubHitLocation == AIM_SHOT_TORSO && Random( 100 ) < 70 )
 		ubVariant = (UINT8)( 20 + Random( 5 ) );
 
-	DebugMsg( TOPIC_JA2, DBG_LEVEL_3, String( "VR_FATAL variant=%u soldier=%u hitloc=%u damage=%d height=%u incomingDir=%u",
-		ubVariant, pSoldier->ubID, ubHitLocation, sDamage, ubHeight, ubIncomingDirection ) );
+	// Pseudo-ragdoll bias: a moving victim often carries his existing velocity into
+	// the death instead of snapping to a stationary pose. Hit-location gore remains
+	// independent, so this can safely override the body-motion family for testing.
+	if ( fHadMomentum && Random( 100 ) < 65 )
+	{
+		static const UINT8 aubMomentumVariants[ 6 ] = { 0, 2, 3, 4, 27, 28 };
+		ubVariant = aubMomentumVariants[ Random( 6 ) ];
+	}
+
+	DebugMsg( TOPIC_JA2, DBG_LEVEL_3, String( "VR_FATAL variant=%u soldier=%u hitloc=%u damage=%d height=%u incomingDir=%u momentum=%u momentumDir=%u",
+		ubVariant, pSoldier->ubID, ubHitLocation, sDamage, ubHeight, ubIncomingDirection, fHadMomentum ? 1 : 0, ubMomentumDirection ) );
+
+	// Every fatal gunshot is deliberately extreme during this test phase. Use a
+	// sprinkler/mist envelope plus a location-specific tissue layer on every death.
+	INT16 sFatalGoreZ = 32;
+	if ( ubHitLocation == AIM_SHOT_HEAD ) sFatalGoreZ = 50;
+	else if ( ubHitLocation == AIM_SHOT_LEGS ) sFatalGoreZ = 16;
+	if ( ubHeight == ANIM_CROUCH && sFatalGoreZ > 28 ) sFatalGoreZ = 28;
+	else if ( ubHeight == ANIM_PRONE ) sFatalGoreZ = 10;
+
+	DropBlood( pSoldier, MAXBLOODQUANTITY, pSoldier->bVisible );
+	SpawnVRSprinklerGoreBurst( pSoldier, ubExitDirection, ubIncomingDirection, sFatalGoreZ, TRUE );
+	DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 6 );
+	SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubExitDirection, (INT16)__max( 8, sFatalGoreZ - 4 ), 38, 28 );
+
+	if ( ubHitLocation == AIM_SHOT_HEAD )
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_HEAD_GIB.STI", ubExitDirection, sFatalGoreZ, 34, 10 );
+	else if ( ubHitLocation == AIM_SHOT_LEGS )
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_LEG_GIB.STI", ubExitDirection, sFatalGoreZ, 35, 12 );
+	else
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_TORSO_GIB.STI", ubExitDirection, sFatalGoreZ, 35, 12 );
 
 	// Prone and crouched mercs use stance-safe death states, while still receiving
 	// all thirty gore packages. This keeps the 30-way visual test active in every stance.
@@ -6073,7 +6159,7 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 
 		SpawnVRDirectionalGoreSpray( pSoldier, zEffect, ubExitDirection, sZ, (INT16)( 34 + ( ubVariant % 11 ) ), 0 );
 		SpawnVRDirectionalGoreSpray( pSoldier,
-			( ubVariant % 2 ) ? "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI" : "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI",
+			( ubVariant % 2 ) ? "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI" : "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI",
 			ubExitDirection, (INT16)( sZ > 6 ? sZ - 4 : sZ ), (INT16)( 41 + ( ubVariant % 9 ) ), (UINT8)( 20 + ( ubVariant % 4 ) * 15 ) );
 
 		if ( ubVariant % 3 == 0 )
@@ -6095,7 +6181,7 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_FALL_FORWARD.STI", ubExitDirection, 31, 43, 0 );
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, 29, 48, 35 );
 		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 4 );
-		pSoldier->EVENT_SetSoldierDirection( ubIncomingDirection );
+		pSoldier->EVENT_SetSoldierDirection( ubRagdollBaseDirection );
 		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
 		pSoldier->BeginTyingToFall();
 		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
@@ -6114,17 +6200,17 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 		pSoldier->ChangeToFlybackAnimation( ubIncomingDirection );
 		return TRUE;
 
-	case 3: // left-side collapse
+	case 3: // left-side pseudo-ragdoll collapse
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_FALL_LEFT.STI", ubExitDirection, 30, 43, 0 );
-		pSoldier->EVENT_SetSoldierDirection( ubLeftDirection );
+		pSoldier->EVENT_SetSoldierDirection( ubRagdollLeftDirection );
 		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
 		pSoldier->BeginTyingToFall();
 		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
 		return TRUE;
 
-	case 4: // right-side collapse
+	case 4: // right-side pseudo-ragdoll collapse
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_FALL_RIGHT.STI", ubExitDirection, 30, 43, 0 );
-		pSoldier->EVENT_SetSoldierDirection( ubRightDirection );
+		pSoldier->EVENT_SetSoldierDirection( ubRagdollRightDirection );
 		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
 		pSoldier->BeginTyingToFall();
 		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
@@ -6132,7 +6218,7 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 
 	case 5: // head destruction, classic JFK drop
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_HEAD_GIB.STI", ubExitDirection, 51, 34, 0 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubExitDirection, 48, 42, 35 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, 48, 42, 35 );
 		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 6 );
 		pSoldier->EVENT_InitNewSoldierAnim( JFK_HITDEATH, 0, FALSE );
 		return TRUE;
@@ -6205,7 +6291,7 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 
 	case 14: // shoulder/arm hit, one-tile stumble backward
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_ARM_GIB.STI", ubExitDirection, 34, 38, 0 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubExitDirection, 31, 45, 35 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, 31, 45, 35 );
 		pSoldier->ChangeToFallbackAnimation( ubIncomingDirection );
 		return TRUE;
 
@@ -6251,7 +6337,7 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 
 	case 20: // torso chunk, one-tile backward drop
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_TORSO_GIB.STI", ubExitDirection, 31, 34, 0 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubExitDirection, 29, 42, 35 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, 29, 42, 35 );
 		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 5 );
 		pSoldier->ChangeToFallbackAnimation( ubIncomingDirection );
 		return TRUE;
@@ -6259,13 +6345,13 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	case 21: // torso destruction, two-tile flyback
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_TORSO_GIB.STI", ubExitDirection, 32, 32, 0 );
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubExitDirection, 29, 40, 35 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubExitDirection, 28, 48, 65 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, 28, 48, 65 );
 		pSoldier->ChangeToFlybackAnimation( ubIncomingDirection );
 		return TRUE;
 
 	case 22: // torso hit folds victim forward through spray
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_TORSO_GIB.STI", ubExitDirection, 31, 34, 0 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubExitDirection, 28, 44, 40 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, 28, 44, 40 );
 		pSoldier->EVENT_SetSoldierDirection( ubIncomingDirection );
 		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
 		pSoldier->BeginTyingToFall();
@@ -6293,7 +6379,7 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	case 25: // catastrophic full-body dismemberment
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubExitDirection, 34, 30, 0 );
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_TORSO_GIB.STI", ubExitDirection, 31, 37, 30 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubExitDirection, 29, 44, 60 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, 29, 44, 60 );
 		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 6 );
 		if ( gGameSettings.fOptions[ TOPTION_BLOOD_N_GORE ] )
 			pSoldier->EVENT_InitNewSoldierAnim( BODYEXPLODING, 0, FALSE );
@@ -6311,14 +6397,14 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	case 27: // triple-layer backward blast
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_TORSO_GIB.STI", ubExitDirection, 33, 30, 0 );
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubExitDirection, 30, 37, 35 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubExitDirection, 28, 45, 70 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, 28, 45, 70 );
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, 31, 48, 0 );
 		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 6 );
 		pSoldier->ChangeToFlybackAnimation( ubIncomingDirection );
 		return TRUE;
 
 	case 28: // huge mist cone followed by forward collapse
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubExitDirection, 39, 29, 0 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, 39, 29, 0 );
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, 34, 37, 35 );
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubExitDirection, 29, 45, 75 );
 		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 6 );
@@ -6737,34 +6823,16 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 		else if ( gAnimControl[ this->usAnimState ].ubEndHeight == ANIM_PRONE )
 			sGoreZ = 10;
 
-		// High-energy forward spatter is a mist/droplet cone. Forward volume dominates;
-		// a smaller entry-side backspatter is added for medium/heavy hits.
-		if ( ubHitLocation == AIM_SHOT_HEAD || sDamage >= 18 )
+		// Sprinkler, not bucket: project many discrete droplets with small timing and
+		// directional differences. Fatal/severe hits simply increase droplet density.
+		BOOLEAN fExtremeBurst = ( ubHitLocation == AIM_SHOT_HEAD || sDamage >= 18 || this->stats.bLife == 0 );
+		SpawnVRSprinklerGoreBurst( this, ubSprayDirection, ubIncomingDirection, sGoreZ, fExtremeBurst );
+
+		if ( fExtremeBurst )
 		{
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubSprayDirection, sGoreZ, 31, 0 );
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubSprayDirection, (INT16)( sGoreZ - 4 ), 39, 55 );
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 9 ), 48, 120 );
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, (INT16)( sGoreZ - 2 ), 44, 0 );
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubSprayDirection, (INT16)__max( 7, sGoreZ - 3 ), 40, 26 );
 			DropVRDirectionalBloodTrail( this, ubIncomingDirection, 2, 2 );
 		}
-		else if ( sDamage >= 8 )
-		{
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubSprayDirection, sGoreZ, 34, 0 );
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 5 ), 43, 78 );
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, (INT16)( sGoreZ - 2 ), 48, 0 );
-		}
-		else
-		{
-			// A 1 HP hit still reads clearly, but as droplets rather than a bucket splash.
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, sGoreZ, 36, 0 );
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 4 ), 46, 55 );
-			if ( Random( 100 ) < 35 )
-				SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, (INT16)( sGoreZ - 2 ), 50, 0 );
-		}
-
-		// Tissue fragments belong to severe/fatal trauma, not every 1 HP scratch.
-		if ( sDamage >= 18 || this->stats.bLife == 0 )
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubSprayDirection, (INT16)( sGoreZ - 3 ), 40, 26 );
 	}
 
 	// ATE: OK, Let's check our ASSIGNMENT state,
