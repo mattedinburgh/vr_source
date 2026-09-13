@@ -405,7 +405,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		if (fDirectVisualContact && !ValidOpponent(pSoldier, pOpponent))
 			continue;
 
-		if (AIShouldAvoidFinishingDownedTarget(pSoldier, pOpponent, fCurrentContact))
+		if (AIShouldAvoidFinishingDownedTarget(pSoldier, pOpponent, fDirectVisualContact))
 			continue;
 
 		// A downed casualty is no longer an intentional target. Stale-area fire can
@@ -918,7 +918,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 
 		// A visibly active caregiver is a lower-priority deliberate target. This is
 		// hesitation, not immunity: if there is no better threat the AI can still fire.
-		if (AIObservedActiveMedicalTreatment(pSoldier, pOpponent, fCurrentContact))
+		if (AIObservedActiveMedicalTreatment(pSoldier, pOpponent, fDirectVisualContact))
 		{
 			iAttackValue = iAttackValue * 55 / 100;
 		}
