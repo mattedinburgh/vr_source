@@ -2689,6 +2689,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 
 	BOOLEAN fSeekClimb;
 	BOOLEAN fHelpClimb;
+	BOOLEAN fHoldRemoteReserve = FALSE;
 	BOOLEAN fCivilian = (PTR_CIVILIAN && (pSoldier->ubCivilianGroup == NON_CIV_GROUP ||
 		(pSoldier->aiData.bNeutral && gTacticalStatus.fCivGroupHostile[pSoldier->ubCivilianGroup] == CIV_GROUP_NEUTRAL) ||
 		(pSoldier->ubBodyType >= FATCIV && pSoldier->ubBodyType <= CRIPPLECIV) ) );
@@ -3732,6 +3733,7 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 			bClosestDisturbanceLevel = pSoldier->pathing.bLevel;
 		}
 		sClosestFriend = ClosestReachableFriendInTrouble(pSoldier, &fHelpClimb);
+		fHoldRemoteReserve = AIShouldHoldRemoteContactReserve(pSoldier, sClosestDisturbance);
 
 		// sevenfm: avoid light if spot is dangerous
 		if (ubCanMove &&
@@ -3978,10 +3980,15 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 		if (bActionReturned != -1)
 			return bActionReturned;
 
-		// use smoke to cover movement when advancing to enemy
-		bActionReturned = DecideSmokeCoverMovement(pSoldier, sClosestDisturbance);
-		if (bActionReturned != -1)
-			return bActionReturned;		
+		// use smoke to cover movement only for a released/local contact.
+		// Reserve elements stay alert in place instead of spending smoke to join a
+		// remote fight they have not been assigned to reinforce.
+		if (!fHoldRemoteReserve)
+		{
+			bActionReturned = DecideSmokeCoverMovement(pSoldier, sClosestDisturbance);
+			if (bActionReturned != -1)
+				return bActionReturned;
+		}		
 
 		// if we can move at least 1 square's worth
 		// and have more APs than we want to reserve
@@ -4002,8 +4009,10 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 			{
 				bHelpPts = -99;
 			}
-			if (TileIsOutOfBounds(sClosestDisturbance))
+			if (TileIsOutOfBounds(sClosestDisturbance) || fHoldRemoteReserve)
 			{
+				// A remote public contact keeps this element alert, but does not grant
+				// permission to abandon its post once the contact response budget is full.
 				bSeekPts = -99;
 			}
 			if (TileIsOutOfBounds(sClosestOpponent))
