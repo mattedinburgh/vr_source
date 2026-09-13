@@ -1571,14 +1571,14 @@ BOOLEAN InitializeSMPanelCoordsOld()
 	SM_STEALTHMODE_X		= ( 187 + INTERFACE_START_X );
 	SM_STEALTHMODE_Y		= ( 73 + INV_INTERFACE_START_Y );
 
-	SM_DONE_X				=	xResOffset + (xResSize - 97);
-	SM_MAPSCREEN_X			=	xResOffset + (xResSize - 51);
+	SM_DONE_X				=	INTERFACE_START_X + (INTERFACE_WIDTH - 97);
+	SM_MAPSCREEN_X			=	INTERFACE_START_X + (INTERFACE_WIDTH - 51);
 
 //dnl	INTERFACE_CLOCK_X		=	xResOffset + (xResSize - 86);
 //dnl	INTERFACE_CLOCK_Y		= ( 119	+ INV_INTERFACE_START_Y );
-	INTERFACE_CLOCK_X		= xResOffset + (xResSize - 86);
+	INTERFACE_CLOCK_X		= INTERFACE_START_X + (INTERFACE_WIDTH - 86);
 	INTERFACE_CLOCK_Y		= SCREEN_HEIGHT - 24;
-	LOCATION_NAME_X			=	xResOffset + (xResSize - 92);
+	LOCATION_NAME_X			=	INTERFACE_START_X + (INTERFACE_WIDTH - 92);
 	LOCATION_NAME_Y			= ( 65	+ INTERFACE_START_Y	);
 	
 	SM_DONE_Y				= ( 4 + INV_INTERFACE_START_Y );
@@ -1645,7 +1645,7 @@ BOOLEAN InitializeSMPanelCoordsOld()
 	STATS_TEXT_FONT_COLOR	= 5;
 
 	// Keyring	496/106 on Inventory_Bottom_Panel.sti
-	KEYRING_X			= xResOffset + 496;
+	KEYRING_X			= INTERFACE_START_X + 496;
 	KEYRING_Y			= (106 + INV_INTERFACE_START_Y);
 
 	// so we got everything "dynamic" now we just return TRUE
@@ -1931,14 +1931,14 @@ BOOLEAN InitializeSMPanelCoordsNew()
 	SM_DROPPACK_Y			= ( 39 + INV_INTERFACE_START_Y );
 	SM_ZIPPER_X				= ( 590 + INTERFACE_START_X );
 	SM_ZIPPER_Y				= ( 39 + INV_INTERFACE_START_Y );
-	SM_MAPSCREEN_X			= xResOffset + (xResSize - 146);	// 152
-	SM_DONE_X				= xResOffset + (xResSize - 146);	// 152
+	SM_MAPSCREEN_X			= INTERFACE_START_X + (INTERFACE_WIDTH - 146);	// 152
+	SM_DONE_X				= INTERFACE_START_X + (INTERFACE_WIDTH - 146);	// 152
 
 //dnl	INTERFACE_CLOCK_X		= xResOffset + (xResSize - 86);
 //dnl	INTERFACE_CLOCK_Y		= ( 119	+ INV_INTERFACE_START_Y );
 	INTERFACE_CLOCK_X		= xResOffset + (xResSize - 86);
 	INTERFACE_CLOCK_Y		= SCREEN_HEIGHT - 24;
-	LOCATION_NAME_X			= xResOffset + (xResSize - 92);
+	LOCATION_NAME_X			= INTERFACE_START_X + (INTERFACE_WIDTH - 92);
 	LOCATION_NAME_Y			= ( 89	+ INTERFACE_START_Y	);
 
 	SM_DONE_Y				= ( 118 + INV_INTERFACE_START_Y );
@@ -2018,7 +2018,7 @@ BOOLEAN InitializeSMPanelCoordsNew()
 	STATS_TEXT_FONT_COLOR	= 5;
 
 	//Keyring 218/5 on Inventory_Bottom_Panel.sti
-	KEYRING_X			= xResOffset + 219; //209;
+	KEYRING_X			= INTERFACE_START_X + 219; //209;
 	KEYRING_Y			= (5 + INV_INTERFACE_START_Y);
 
 	// so we got everything "dynamic" now we just return TRUE
@@ -4303,7 +4303,7 @@ void SMInvClickCallback( MOUSE_REGION * pRegion, INT32 iReason )
 					inv_interface_start_x = 213;
 				else
 					inv_interface_start_x = 248;
-				InitItemStackPopup( gpSMCurrentMerc, (UINT8)uiHandPos, inv_interface_start_x + xResOffset, INV_INTERFACE_START_Y, invWidth, ( SCREEN_HEIGHT - INV_INTERFACE_START_Y ) );
+				InitItemStackPopup( gpSMCurrentMerc, (UINT8)uiHandPos, inv_interface_start_x + INTERFACE_START_X, INV_INTERFACE_START_Y, invWidth, ( SCREEN_HEIGHT - INV_INTERFACE_START_Y ) );
 
 			}
 		}
@@ -5246,13 +5246,13 @@ BOOLEAN InitializeTEAMPanelCoords( )
 	TM_APPANEL_HEIGHT	= 56;
 	TM_APPANEL_WIDTH	= 16;
 
-	TM_ENDTURN_X				=	xResOffset + (xResSize - 131);
-	TM_ROSTERMODE_X				=	xResOffset + (xResSize - 131);
-	TM_DISK_X					=	xResOffset + (xResSize - 131);
+	TM_ENDTURN_X				=	INTERFACE_START_X + (INTERFACE_WIDTH - 131);
+	TM_ROSTERMODE_X				=	INTERFACE_START_X + (INTERFACE_WIDTH - 131);
+	TM_DISK_X					=	INTERFACE_START_X + (INTERFACE_WIDTH - 131);
 	// CHRISL: New definitions for the team panel clock and location coordinates
-	INTERFACE_CLOCK_TM_X	= xResOffset + (xResSize - 86 );
+	INTERFACE_CLOCK_TM_X	= INTERFACE_START_X + (INTERFACE_WIDTH - 86 );
 	INTERFACE_CLOCK_TM_Y	= ( 96	+ INTERFACE_START_Y );
-	LOCATION_NAME_TM_X		= xResOffset + (xResSize - 92 );
+	LOCATION_NAME_TM_X		= INTERFACE_START_X + (INTERFACE_WIDTH - 92 );
 	LOCATION_NAME_TM_Y		= ( 65	+ INTERFACE_START_Y	);
 		
 	TM_ENDTURN_Y		= ( 9 + INTERFACE_START_Y );
