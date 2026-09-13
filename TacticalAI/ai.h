@@ -375,6 +375,7 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier);
 INT8 DecideEmergencyBuddyAid(SOLDIERTYPE *pSoldier);
 INT8 DecideEmergencySelfAid(SOLDIERTYPE *pSoldier);
 UINT8 CountNearbyFriends( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDistance );
+UINT8 CountNearbyCombatFriends(SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDistance);
 UINT8 CountNearbyNeutrals(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 sDistance);
 UINT8 CountFriendsInDirection(SOLDIERTYPE *pSoldier, UINT8 ubDirection, INT16 sDistance, BOOLEAN fCheckSight);
 UINT8 CountFriendsInDirectionFromSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, UINT8 ubDirection, INT16 sDistance);
