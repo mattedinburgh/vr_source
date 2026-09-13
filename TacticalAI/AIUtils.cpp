@@ -5503,6 +5503,9 @@ static UINT8 gubAIEscapeIntent[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIEscapeIdentity[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIEscapeStartTurn[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIEscapeLastTurnStamp = 0;
+static INT16 gsAIEscapeSectorX = -1;
+static INT16 gsAIEscapeSectorY = -1;
+static INT8 gbAIEscapeSectorZ = -1;
 
 #define AI_ESCAPE_NORMAL_LIMIT 2
 #define AI_ESCAPE_ABSOLUTE_LIMIT 3
@@ -5514,13 +5517,16 @@ static UINT8 AICountActiveEnemyEscapes(SOLDIERTYPE *pExclude)
 		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
-		if (!pFriend || pFriend == pExclude || !pFriend->bActive || !pFriend->bInSector ||
-			pFriend->ubID >= MAX_NUM_SOLDIERS ||
+		if (!pFriend || pFriend == pExclude || pFriend->ubID >= MAX_NUM_SOLDIERS ||
 			guiAIEscapeIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
 			gubAIEscapeIntent[pFriend->ubID] == 0)
 		{
 			continue;
 		}
+
+		// Keep counting a committed runner after he physically traverses off-map.
+		// Otherwise each departure frees a slot and a long rout can leak far more
+		// than the intended two (three only in end-stage collapse) out of one battle.
 		++ubCount;
 	}
 	return ubCount;
@@ -5554,7 +5560,14 @@ static UINT8 AIEscapeIntentLimit(void)
 static void AIMaintainEscapeTimeline(void)
 {
 	UINT32 uiTurnStamp = guiTurnCnt + 1;
-	if (guiAIEscapeLastTurnStamp != 0 && uiTurnStamp < guiAIEscapeLastTurnStamp)
+	BOOLEAN fSectorChanged =
+		gsAIEscapeSectorX != gWorldSectorX ||
+		gsAIEscapeSectorY != gWorldSectorY ||
+		gbAIEscapeSectorZ != gbWorldSectorZ;
+	BOOLEAN fTimelineRollback =
+		guiAIEscapeLastTurnStamp != 0 && uiTurnStamp < guiAIEscapeLastTurnStamp;
+
+	if (fSectorChanged || fTimelineRollback)
 	{
 		for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
 		{
@@ -5563,6 +5576,10 @@ static void AIMaintainEscapeTimeline(void)
 			guiAIEscapeStartTurn[i] = 0;
 		}
 	}
+
+	gsAIEscapeSectorX = gWorldSectorX;
+	gsAIEscapeSectorY = gWorldSectorY;
+	gbAIEscapeSectorZ = gbWorldSectorZ;
 	guiAIEscapeLastTurnStamp = uiTurnStamp;
 }
 
@@ -5768,11 +5785,21 @@ static UINT8 gubAIRecoveryStreak[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIRecoveryTurnStamp[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIRecoveryIdentity[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIDisengageLastTurnStamp = 0;
+static INT16 gsAIDisengageSectorX = -1;
+static INT16 gsAIDisengageSectorY = -1;
+static INT8 gbAIDisengageSectorZ = -1;
 
 static void AIMaintainDisengagementTimeline(void)
 {
 	UINT32 uiTurnStamp = guiTurnCnt + 1;
-	if (guiAIDisengageLastTurnStamp != 0 && uiTurnStamp < guiAIDisengageLastTurnStamp)
+	BOOLEAN fSectorChanged =
+		gsAIDisengageSectorX != gWorldSectorX ||
+		gsAIDisengageSectorY != gWorldSectorY ||
+		gbAIDisengageSectorZ != gbWorldSectorZ;
+	BOOLEAN fTimelineRollback =
+		guiAIDisengageLastTurnStamp != 0 && uiTurnStamp < guiAIDisengageLastTurnStamp;
+
+	if (fSectorChanged || fTimelineRollback)
 	{
 		for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
 		{
@@ -5786,6 +5813,10 @@ static void AIMaintainDisengagementTimeline(void)
 			guiAIRecoveryIdentity[i] = 0;
 		}
 	}
+
+	gsAIDisengageSectorX = gWorldSectorX;
+	gsAIDisengageSectorY = gWorldSectorY;
+	gbAIDisengageSectorZ = gbWorldSectorZ;
 	guiAIDisengageLastTurnStamp = uiTurnStamp;
 }
 
