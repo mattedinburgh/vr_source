@@ -1,0 +1,2 @@
+Visible equipment / LOBOT build validation trigger.
+Purpose: compile the VS2013 solution on the self-hosted JA2 render runner after the armour-overlay port.
