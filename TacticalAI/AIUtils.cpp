@@ -4697,7 +4697,7 @@ static BOOLEAN AIRecentlyReattachedFireteamRemnant(SOLDIERTYPE *pSoldier)
 	// another operational fighter. If that destination fireteam collapses immediately,
 	// release the survivor back to normal disengagement/escape logic rather than
 	// trapping him in a three-turn rejoin state with nobody left to join.
-	return AIFireteamRegroupingStrength(pSoldier) >= 2;
+	return AIFireteamOperationalCountById(AIFireteamId(pSoldier)) >= 2;
 }
 
 UINT8 AIFireteamId(SOLDIERTYPE *pSoldier)
