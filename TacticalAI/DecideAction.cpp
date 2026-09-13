@@ -10902,6 +10902,20 @@ static UINT32 guiAIEscapeBlockedTurnStamp[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIEscapePlanLastTurnStamp = 0;
 extern UINT32 guiTurnCnt;
 
+void AIResetEscapePlanStateForLoad(void)
+{
+	guiAIEscapePlanLastTurnStamp = 0;
+	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
+	{
+		gfAIEscapePlanInitialized[i] = FALSE;
+		guiAIEscapePlanIdentity[i] = 0;
+		gsAIEscapeTarget[i] = NOWHERE;
+		gbAIEscapeDirection[i] = -1;
+		guiAIEscapeNoRouteTurn[i] = 0;
+		gubAIEscapeBlockedTurns[i] = 0;
+		guiAIEscapeBlockedTurnStamp[i] = 0;
+	}
+}
 static void AIMaintainEscapePlanTimeline(void)
 {
 	UINT32 uiTurnStamp = guiTurnCnt + 1;
