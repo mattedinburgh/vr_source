@@ -663,7 +663,9 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 	// B1's base terrain/water is already remastered in replacement STI assets; avoid
 	// applying the runtime palette pass a second time. Architecture still receives the mild profile.
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG &&
-		 ubType >= FIRSTTEXTURE && ubType <= DEEPWATERTEXTURE )
+		 ( (ubType >= FIRSTTEXTURE && ubType <= DEEPWATERTEXTURE) ||
+		   ubType == ROADPIECES ||
+		   (ubType >= FIRSTFLOOR && ubType <= FOURTHFLOOR) ) )
 		return;
 
 	// Restrict grading to tactical-world art. Never recolour UI/item tiles or dedicated shadow sprites.
@@ -764,6 +766,11 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 			case SEVENTHTEXTURE:   pLoadFilename = "B1_T_TRAIL.STI"; break;
 			case REGWATERTEXTURE:  pLoadFilename = "B1_TR_WATER.STI"; break;
 			case DEEPWATERTEXTURE: pLoadFilename = "B1_TRWATER2.STI"; break;
+			case ROADPIECES:       pLoadFilename = "B1_ROADTLE2.STI"; break;
+			case FIRSTFLOOR:       pLoadFilename = "B1_WELFLOR3.STI"; break;
+			case SECONDFLOOR:      pLoadFilename = "B1_P-FLOOR3.STI"; break;
+			case THIRDFLOOR:       pLoadFilename = "B1_WELFLOR1.STI"; break;
+			case FOURTHFLOOR:      pLoadFilename = "B1_WELFLOR2.STI"; break;
 		}
 	}
 
