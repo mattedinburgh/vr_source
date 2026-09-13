@@ -10,9 +10,9 @@
 
 // Experimental enemy equipment planning layer.
 //
-// This module is intentionally not wired into Tactical.vcxproj or
-// GenerateRandomEquipment() yet.  It can therefore be reviewed and tuned
-// without changing live Vengeance behaviour.
+// This module is compiled by the isolated work-branch Tactical project but is
+// intentionally not called by GenerateRandomEquipment() or enemy creation yet.
+// It can therefore be reviewed and tuned without changing live Vengeance behaviour.
 //
 // Design rule:
 //   squad doctrine -> soldier role -> weapon family -> attachments -> LBE/load
@@ -79,6 +79,14 @@ struct ENEMY_LOADOUT_CELL
 	UINT8 ubElites;
 	INT8 bDoctrineClass;
 	ENEMY_SQUAD_LOADOUT_STATE State;
+
+	// Planned role tickets for this cell.  Class-specific counts let the future
+	// creation-context layer hand a coherent role to whichever class is created
+	// next without depending on soldier insertion order.
+	UINT8 ubRoleCount[ENEMY_ROLE_MAX];
+	UINT8 ubAdminRoleCount[ENEMY_ROLE_MAX];
+	UINT8 ubRegularRoleCount[ENEMY_ROLE_MAX];
+	UINT8 ubEliteRoleCount[ENEMY_ROLE_MAX];
 };
 
 struct ENEMY_LOADOUT_BATCH
@@ -136,6 +144,19 @@ void BuildEnemyLoadoutBatch(
 	UINT8 ubElites,
 	UINT8 ubProgress,
 	INT8 bEquipmentRating);
+
+// Fills the role-ticket counts for an already class-balanced cell and maps
+// those tickets back to admin/regular/elite soldiers by suitability.
+void PlanEnemyLoadoutCellRoles(
+	ENEMY_LOADOUT_CELL *pCell,
+	UINT8 ubProgress,
+	INT8 bEquipmentRating);
+
+// Diagnostic score used when assigning a planned role ticket to a soldier
+// class.  Higher is a better doctrinal fit.
+INT16 EnemyRoleClassSuitability(
+	ENEMY_LOADOUT_ROLE Role,
+	INT8 bSoldierClass);
 
 // Returns the doctrine class for a mixed cell.  A token elite should not turn
 // an admin-heavy security element into an elite assault team.
