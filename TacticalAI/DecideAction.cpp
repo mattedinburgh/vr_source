@@ -61,7 +61,8 @@ STR8 gStr8Knowledge[] = { "HEARD_3_TURNS_AGO", "HEARD_2_TURNS_AGO", "HEARD_LAST_
 extern UINT32 guiTurnCnt;
 
 // Contact-local reinforcement pacing. Kept outside SOLDIERTYPE/savegames.
-#define AI_RESPONSE_EPISODES 3
+// Three concurrent contact episodes per combat side.
+#define AI_RESPONSE_EPISODES 6
 #define AI_RESPONSE_QUIET_TURNS 2
 
 typedef struct
