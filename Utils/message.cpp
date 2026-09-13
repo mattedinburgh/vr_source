@@ -378,7 +378,7 @@ void ClearDisplayedListOfTacticalStrings( void )
 #define BATTLE_LOG_MAX_ENTRIES 128
 #define BATTLE_LOG_HEADER_H 18
 #define BATTLE_LOG_RESIZE_GRIP 12
-#define BATTLE_LOG_INSPECTOR_H 178
+#define BATTLE_LOG_INSPECTOR_H 208
 
 typedef struct
 {
@@ -743,16 +743,28 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		swprintf( z, L"Base: attributes %.1f  flat %+0.1f  -> %.1f", d.fBaseAttribute, d.fFlatBase, d.fBaseChance );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGREEN, z ); sy += lineH;
 
-		swprintf( z, L"Base modifiers: effects %+0.1f%%  weapon %+0.1f%%  target %+0.1f%%  gear %+0.1f%%",
-			d.fBaseEffect, d.fBaseWeapon, d.fBaseTarget, d.fGearAim );
+		swprintf( z, L"Base mod: condition %+0.1f%%  weapon %+0.1f%%  target %+0.1f%%",
+			d.fBaseEffect, d.fBaseWeapon, d.fBaseTarget );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
 
-		swprintf( z, L"Aim: cap %.1f  points +%.1f  modifier %+0.1f%%  trait %+0.1f%%",
-			d.fAimCap, d.fAimPoints, d.fAimModifier, d.fTraitModifier );
+		swprintf( z, L"Base extra: gear %+0.1f%%  special %+0.1f%%  total %+0.1f%%",
+			d.fGearAim, d.fBaseSpecial, d.fBaseModifier );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
+
+		swprintf( z, L"Aim cap: attributes %.1f  trait %+0.1f  item-cap %+0.1f  -> %.1f",
+			d.fAimAttribute, d.fAimTraitCap, d.fPercentCap, d.fAimCap );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGREEN, z ); sy += lineH;
 
-		swprintf( z, L"Target/visibility: target %+0.1f%%  visibility %+0.1f%%  scope %+0.1f%%  spotter %+0.1f%%",
-			d.fAimTarget, d.fVisibility, d.fScopePenalty, d.fSpotter );
+		swprintf( z, L"Aim mod: condition %+0.1f%%  weapon %+0.1f%%  special %+0.1f%%",
+			d.fAimEffect, d.fAimWeapon, d.fAimSpecial );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
+
+		swprintf( z, L"Aim extra: trait %+0.1f%%  background %+0.1f%%  spotter %+0.1f%%",
+			d.fTraitModifier, d.fBackground, d.fSpotter );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
+
+		swprintf( z, L"Target: %+0.1f%%  visibility %+0.1f%%  close-scope %+0.1f%% | aim points +%.1f",
+			d.fAimTarget, d.fVisibility, d.fScopePenalty, d.fAimPoints );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
 
 		swprintf( z, L"Optics: %.2fx raw / %.2fx effective | aperture %.2f -> %.2f",
