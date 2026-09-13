@@ -2811,7 +2811,8 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 	INT32 sClosestOpponent = ClosestKnownOpponent(pSoldier, NULL, NULL);
 
 	// if last attack of this soldier hit enemy - increase morale
-	if( pSoldier->aiData.bLastAttackHit )
+	if( pSoldier->aiData.bLastAttackHit ||
+		(pSoldier->usSoldierFlagMask2 & SOLDIER_SUCCESSFUL_ATTACK) )
 	{
 		bMoraleCategory++;
 	}
@@ -2863,7 +2864,10 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 			CountFriendsInDirection(pSoldier, AIDirection(pSoldier->sGridNo, sClosestOpponent), PythSpacesAway(sClosestOpponent, pSoldier->sGridNo), FALSE) ||
 			CountFriendsInDirectionFromSpot(pSoldier, sClosestOpponent, AIDirection(sClosestOpponent, pSoldier->sGridNo), PythSpacesAway(sClosestOpponent, pSoldier->sGridNo)) || 			
 			AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, TACTICAL_RANGE / 2)) &&
-		(AICheckSpecialRole(pSoldier) || pSoldier->aiData.bOrders != SEEKENEMY && !pSoldier->aiData.bLastAttackHit) &&
+		(AICheckSpecialRole(pSoldier) ||
+			pSoldier->aiData.bOrders != SEEKENEMY &&
+			!pSoldier->aiData.bLastAttackHit &&
+			!(pSoldier->usSoldierFlagMask2 & SOLDIER_SUCCESSFUL_ATTACK)) &&
 		AnyCoverAtSpot(pSoldier, pSoldier->sGridNo))
 	{
 		bMoraleCategory = min(bMoraleCategory, MORALE_CONFIDENT);
@@ -6485,7 +6489,9 @@ static UINT8 AIUpdateRecoveryStreak(SOLDIERTYPE *pSoldier, INT8 bSituation,
 		AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) >= 2 ||
 		AIHasNearbyStableLeader(pSoldier) ||
 		(AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) &&
-		 (pSoldier->LastAttackHit() || pSoldier->LastTargetSuppressed()));
+		 (pSoldier->LastAttackHit() ||
+		  (pSoldier->usSoldierFlagMask2 & SOLDIER_SUCCESSFUL_ATTACK) ||
+		  pSoldier->LastTargetSuppressed()));
 
 	if (fStableSituation && fLocalSupport)
 		gubAIRecoveryStreak[ubID] = __min((UINT8)4, (UINT8)(gubAIRecoveryStreak[ubID] + 1));
@@ -6875,7 +6881,8 @@ BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier)
 	// Do not shuffle a soldier who is currently succeeding from a sound position.
 	if (!pSoldier->aiData.bUnderFire &&
 		AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) &&
-		pSoldier->LastAttackHit() &&
+		(pSoldier->LastAttackHit() ||
+		 (pSoldier->usSoldierFlagMask2 & SOLDIER_SUCCESSFUL_ATTACK)) &&
 		AILocalStress(pSoldier) < 25 &&
 		AIEngagementRangeModifier(pSoldier, sThreat) >= 0)
 	{
@@ -6954,7 +6961,8 @@ INT32 AILocalStress(SOLDIERTYPE *pSoldier)
 
 	// Small stabilising effects: success and effective team pressure help, but do
 	// not erase severe suppression, wounds or casualties.
-	if (pSoldier->LastAttackHit())
+	if (pSoldier->LastAttackHit() ||
+		(pSoldier->usSoldierFlagMask2 & SOLDIER_SUCCESSFUL_ATTACK))
 		iStress -= 5;
 	if (pSoldier->LastTargetSuppressed())
 		iStress -= 5;
@@ -8603,7 +8611,8 @@ UINT8 CountNearbyFriendsLastAttackHit( SOLDIERTYPE *pSoldier, INT32 sGridNo, UIN
 			pFriend->aiData.bOrders > ONGUARD &&
 			pFriend->aiData.bOrders != SNIPER &&
 			PythSpacesAway( sGridNo, pFriend->sGridNo ) <= ubDistance &&
-			pFriend->aiData.bLastAttackHit )
+			(pFriend->aiData.bLastAttackHit ||
+			 (pFriend->usSoldierFlagMask2 & SOLDIER_SUCCESSFUL_ATTACK)) )
 		{
 			ubFriendCount++;
 		}
