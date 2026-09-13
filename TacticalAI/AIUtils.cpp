@@ -5550,8 +5550,11 @@ BOOLEAN AILastSurvivorPressure(SOLDIERTYPE *pSoldier)
 		ubKnownFriendlyLosses = __max(ubKnownFriendlyLosses, TeamPercentKilled(ENEMY_TEAM));
 
 	// True last survivors: only one/two combat-capable soldiers remain on the team,
-	// and meaningful friendly losses have actually occurred.
-	if (ubTeamReady <= 2 && ubKnownFriendlyLosses >= 50)
+	// meaningful friendly losses have occurred, and there is no substantial local
+	// allied support. This matters for militia fighting beside visible player mercs.
+	UINT8 ubNearbySupport = AICountNearbyOperationalFriends(
+		pSoldier, pSoldier->sGridNo, TACTICAL_RANGE / 2);
+	if (ubTeamReady <= 2 && ubKnownFriendlyLosses >= 50 && ubNearbySupport <= 1)
 		return TRUE;
 
 	// Local remnant: one/two soldiers in this tactical element, with direct local
