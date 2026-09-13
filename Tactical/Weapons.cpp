@@ -10337,10 +10337,20 @@ UINT32 CalcThrownChanceToHit(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTi
 	INT32 iChance, iMaxRange, iRange;
 	UINT16	usHandItem;
 	INT8 bPenalty, bBandaged;
+	OBJECTTYPE *pMechanicalWeapon = &pSoldier->inv[HANDPOS];
 
 	if ( pSoldier->bWeaponMode == WM_ATTACHED_GL || pSoldier->bWeaponMode == WM_ATTACHED_GL_BURST || pSoldier->bWeaponMode == WM_ATTACHED_GL_AUTO )
 	{
-		usHandItem = GetAttachedGrenadeLauncher (&pSoldier->inv[HANDPOS]);// UNDER_GLAUNCHER;
+		OBJECTTYPE *pAttachedLauncher = FindAttachment_GrenadeLauncher( &pSoldier->inv[HANDPOS] );
+		if ( pAttachedLauncher && pAttachedLauncher->exists() )
+		{
+			pMechanicalWeapon = pAttachedLauncher;
+			usHandItem = pAttachedLauncher->usItem;
+		}
+		else
+		{
+			usHandItem = GetAttachedGrenadeLauncher( &pSoldier->inv[HANDPOS] );
+		}
 	}
 	else
 	{
@@ -10373,7 +10383,7 @@ UINT32 CalcThrownChanceToHit(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTi
 				iChance += gSkillTraitValues.bCtHModifierThrowingKnives; // -15% for untrained mercs
 
 				if ( HAS_SKILL_TRAIT( pSoldier, THROWING_NT ) )
-					iChance += (gSkillTraitValues.ubTHBladesCtHBonus + (gSkillTraitValues.ubTHBladesCtHBonusPerClick * pSoldier->aiData.bAimTime) );
+					iChance += (gSkillTraitValues.ubTHBladesCtHBonus + (gSkillTraitValues.ubTHBladesCtHBonusPerClick * ubAimTime) );
 			}
 			else
 			{
@@ -10397,35 +10407,31 @@ UINT32 CalcThrownChanceToHit(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTi
 		iChance = ( EffectiveDexterity( pSoldier, FALSE ) + EffectiveMarksmanship( pSoldier ) + EffectiveWisdom( pSoldier ) + (pSoldier->stats.bExpLevel * 10) ) / 4;
 
 		////////////////////////////////////////////////////////////////////////////////////////////////
-		// 1.13 alignment: do not give traitless enemy/militia a severe artificial
-		// launcher penalty when the game is configured not to assign them traits.
-		if (pSoldier->bTeam == gbPlayerNum ||
-			(pSoldier->bTeam == ENEMY_TEAM && gGameExternalOptions.fAssignTraitsToEnemy) ||
-			(pSoldier->bTeam == MILITIA_TEAM && gGameExternalOptions.fAssignTraitsToMilitia))
+		// Apply the same untrained launcher/mortar baseline to every side. Enemy and
+		// militia trait-assignment settings decide whether they can receive trait bonuses;
+		// they must not silently remove the underlying handling penalty.
+		if ( gGameOptions.fNewTraitSystem )
 		{
-			if ( gGameOptions.fNewTraitSystem )
+			if ( Item[ usHandItem ].mortar )
 			{
-				if ( Item[ usHandItem ].mortar )
-				{
-					if (HAS_SKILL_TRAIT( pSoldier, HEAVY_WEAPONS_NT ))
-						iChance += gSkillTraitValues.sCtHModifierMortar * max( 0, 100 - gSkillTraitValues.ubHWMortarCtHPenaltyReduction * NUM_SKILL_TRAITS( pSoldier, HEAVY_WEAPONS_NT ) ) / 100;
-					else
-						iChance += gSkillTraitValues.sCtHModifierMortar;
-				}
+				if (HAS_SKILL_TRAIT( pSoldier, HEAVY_WEAPONS_NT ))
+					iChance += gSkillTraitValues.sCtHModifierMortar * max( 0, 100 - gSkillTraitValues.ubHWMortarCtHPenaltyReduction * NUM_SKILL_TRAITS( pSoldier, HEAVY_WEAPONS_NT ) ) / 100;
 				else
-				{
-					iChance += gSkillTraitValues.bCtHModifierGrenadeLaunchers;
-					if (HAS_SKILL_TRAIT( pSoldier, HEAVY_WEAPONS_NT ))
-						iChance += gSkillTraitValues.ubHWBonusCtHGrenadeLaunchers * NUM_SKILL_TRAITS( pSoldier, HEAVY_WEAPONS_NT );
-				}
+					iChance += gSkillTraitValues.sCtHModifierMortar;
 			}
 			else
 			{
-				if ( Item[ usHandItem ].mortar )
-					iChance = iChance / gGameExternalOptions.ubMortarCTHDivisor;
-				if (HAS_SKILL_TRAIT( pSoldier, HEAVY_WEAPS_OT ))
-					iChance += gbSkillTraitBonus[HEAVY_WEAPS_OT] * NUM_SKILL_TRAITS( pSoldier, HEAVY_WEAPS_OT );
+				iChance += gSkillTraitValues.bCtHModifierGrenadeLaunchers;
+				if (HAS_SKILL_TRAIT( pSoldier, HEAVY_WEAPONS_NT ))
+					iChance += gSkillTraitValues.ubHWBonusCtHGrenadeLaunchers * NUM_SKILL_TRAITS( pSoldier, HEAVY_WEAPONS_NT );
 			}
+		}
+		else
+		{
+			if ( Item[ usHandItem ].mortar )
+				iChance = iChance / gGameExternalOptions.ubMortarCTHDivisor;
+			if (HAS_SKILL_TRAIT( pSoldier, HEAVY_WEAPS_OT ))
+				iChance += gbSkillTraitBonus[HEAVY_WEAPS_OT] * NUM_SKILL_TRAITS( pSoldier, HEAVY_WEAPS_OT );
 		}
 		////////////////////////////////////////////////////////////////////////////////////////////////
 	}
@@ -10598,7 +10604,7 @@ UINT32 CalcThrownChanceToHit(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTi
 	// if iChance exists, but it's a mechanical item being used
 	if ((iChance > 0) && (Item[ usHandItem ].usItemClass == IC_LAUNCHER ))
 		// reduce iChance to hit DIRECTLY by the item's working condition
-		iChance = (iChance * WEAPON_STATUS_MOD(pSoldier->inv[HANDPOS][0]->data.objectStatus)) / 100;
+		iChance = (iChance * WEAPON_STATUS_MOD((*pMechanicalWeapon)[0]->data.objectStatus)) / 100;
 
 	// HEADROCK HAM 3.2: External divisor for CTH with mortars, now that they are more prevalent in the battlefield.
 	// SANDRO - moved this up
