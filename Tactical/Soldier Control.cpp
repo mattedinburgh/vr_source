@@ -16797,6 +16797,11 @@ void		SOLDIERTYPE::SpySelfTest()
 				(INT32)this->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_APS] );
 		}
 	}
+
+	if ( this->bBleeding > MIN_BLEEDING_THRESHOLD )
+	{
+		ScreenMsg( FONT_ORANGE, MSG_INTERFACE, L"Warning: visible bleeding can expose this disguise at close range." );
+	}
 }
 
 // can we process prisoners in this sector?
@@ -18135,6 +18140,18 @@ void SOLDIERTYPE::SoldierPropertyUpkeep()
 	// if we are an enemy radio operator, and we are jamming frequencies, there is a slight chance that we set off remote-controlled bombs/defuses!
 	if ( !gSkillTraitValues.fVOJammingBlocksRemoteBombs && gSkillTraitValues.fVOEnemyVOSetsOffRemoteBombs && this->bTeam == ENEMY_TEAM && IsJamming() && Chance(5) )
 		SetOffBombsByFrequency( this->ubID, 1 + Random(8) );
+
+	// Expire temporary covert-overt state even when nobody is currently checking SeemsLegit().
+	if ( this->usSoldierFlagMask & SOLDIER_COVERT_TEMPORARY_OVERT )
+	{
+		if ( this->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_APS] == 0 ||
+			GetWorldTotalSeconds() >= this->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_SECONDS] )
+		{
+			this->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_SECONDS] = 0;
+			this->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_APS] = 0;
+			this->usSoldierFlagMask &= ~SOLDIER_COVERT_TEMPORARY_OVERT;
+		}
+	}
 
 	// effects eventually run out
 	for (UINT8 counter = 0; counter < SOLDIER_COUNTER_MAX; ++counter)
