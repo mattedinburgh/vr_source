@@ -3301,6 +3301,7 @@ void HandleNPCDoAction( UINT8 ubTargetNPC, UINT16 usActionCode, UINT8 ubQuoteNum
 							// cannot duplicate the reward.
 							gMercProfiles[ ubTargetNPC ].iBalance = 0;
 						}
+					}
 				}
 
 				break;
