@@ -7151,9 +7151,35 @@ BOOLEAN AIAllowsComplexManeuver(SOLDIERTYPE *pSoldier)
 	}
 }
 
+static BOOLEAN AIHasOperationalGeneralInSector(void)
+{
+	for (UINT8 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pGeneral = MercPtrs[iCounter];
+		if (!pGeneral || !pGeneral->bActive || !pGeneral->bInSector ||
+			pGeneral->stats.bLife < OKLIFE || pGeneral->bCollapsed || pGeneral->bBreathCollapsed ||
+			(pGeneral->usSoldierFlagMask & SOLDIER_POW) ||
+			!(pGeneral->usSoldierFlagMask & SOLDIER_VIP) ||
+			(pGeneral->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			AIDisengagementActive(pGeneral) || AIEscapeActive(pGeneral))
+		{
+			continue;
+		}
+		return TRUE;
+	}
+	return FALSE;
+}
+
 BOOLEAN AIAllowsIndependentFlank(SOLDIERTYPE *pSoldier)
 {
 	if (!AICombatTeam(pSoldier)) return TRUE;
+	if (pSoldier->bTeam == ENEMY_TEAM &&
+		(pSoldier->usSoldierFlagMask & SOLDIER_BODYGUARD) &&
+		AIHasOperationalGeneralInSector())
+	{
+		return FALSE;
+	}
 	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
 	if (ubDoctrine == AI_DOCTRINE_SECURITY) return FALSE;
 	if (ubDoctrine == AI_DOCTRINE_LINE) return AIHasLocalCommandSupport(pSoldier);
