@@ -678,6 +678,9 @@ static UINT8 DetermineSectorVisualProfile( const STR8 pFilename )
 	// Keep normal A3 gameplay on the original authored sector until the remaster
 	// has passed visual QA.  MAPSHOT is deliberately allowed to activate the farm
 	// profile so we can validate the dormant redesign without risking a live save.
+	if ( _stricmp( pFilename, "A3_REMASTERED.dat" ) == 0 )
+		return SECTOR_VISUAL_A3_FARM;
+
 	if ( _stricmp( pFilename, "A3.dat" ) == 0 )
 	{
 		if ( gfMapPreviewCaptureMode )
@@ -2426,7 +2429,7 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 		}
 	}
 	else if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM &&
-			  ubTilesetID == 38 && !gfMapPreviewCaptureMode )
+			  ubTilesetID == 38 )
 	{
 		ubSectorReplacementTilesetID = 38;
 		switch ( ubType )
@@ -5460,7 +5463,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	{
 		GenerateBuildings();
 
-		if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM )
+		if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM &&
+			 _stricmp( gubFilename, "A3_REMASTERED.dat" ) != 0 )
 			DressA3FarmEnvironment();
 
 		if ( IsSanMonaVisualProfile() )
