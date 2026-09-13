@@ -4246,6 +4246,30 @@ static UINT8 AIFireteamOperationalCountById(UINT8 ubFireteam)
 	return ubCount;
 }
 
+static UINT8 AIFireteamRegroupingStrength(SOLDIERTYPE *pSoldier)
+{
+	if (!AIEnemyFireteamEligible(pSoldier))
+		return 0;
+
+	UINT8 ubFireteam = AIFireteamId(pSoldier);
+	if (ubFireteam == AI_FIRETEAM_NONE)
+		return 0;
+
+	UINT8 ubCount = AIFireteamOperationalCountById(ubFireteam);
+	// A soldier may already carry break-contact intent from the previous decision.
+	// Count that caller as part of the remnant it is trying to rejoin, while other
+	// retreating/cowering members remain excluded from operational strength.
+	if ((AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier)) &&
+		pSoldier->stats.bLife >= OKLIFE && !pSoldier->bCollapsed && !pSoldier->bBreathCollapsed &&
+		!(pSoldier->usSoldierFlagMask & SOLDIER_POW) &&
+		!(pSoldier->flags.uiStatusFlags & SOLDIER_COWERING))
+	{
+		++ubCount;
+	}
+
+	return ubCount;
+}
+
 static INT32 AIFireteamDistanceToSpot(UINT8 ubFireteam, INT32 sSpot)
 {
 	INT32 iBest = 10000;
@@ -4504,17 +4528,7 @@ static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 	if (!AIEnemyFireteamEligible(pSoldier))
 		return FALSE;
 	UINT8 ubOld = AIFireteamId(pSoldier);
-	UINT8 ubReady = AIFireteamOperationalCountById(ubOld);
-	// The soldier asking to reattach may already carry stale disengagement/escape
-	// intent from the previous decision. Count him as part of the regrouping remnant
-	// even though operational-strength helpers correctly discount retreating troops.
-	if ((AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier)) &&
-		pSoldier->stats.bLife >= OKLIFE && !pSoldier->bCollapsed && !pSoldier->bBreathCollapsed &&
-		!(pSoldier->usSoldierFlagMask & SOLDIER_POW) &&
-		!(pSoldier->flags.uiStatusFlags & SOLDIER_COWERING))
-	{
-		++ubReady;
-	}
+	UINT8 ubReady = AIFireteamRegroupingStrength(pSoldier);
 	if (ubReady == 0 || ubReady > 2)
 		return FALSE;
 
@@ -4970,12 +4984,7 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	// A shattered one/two-man element gets first refusal on joining a viable
 	// neighbouring fireteam. Only if no such element exists should ordinary
 	// disengagement/escape logic take over.
-	UINT8 ubBefore = AIFireteamCombatReadyCount(pSoldier);
-	if ((AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier)) &&
-		pSoldier->stats.bLife >= OKLIFE && !pSoldier->bCollapsed && !pSoldier->bBreathCollapsed)
-	{
-		++ubBefore;
-	}
+	UINT8 ubBefore = AIFireteamRegroupingStrength(pSoldier);
 	BOOLEAN fWasRemnant = (ubBefore > 0 && ubBefore <= 2);
 	if (fWasRemnant)
 		AIAbsorbFireteamRemnant(pSoldier);
@@ -5690,7 +5699,7 @@ BOOLEAN AIShouldStartEscape(SOLDIERTYPE *pSoldier)
 	// even considered a sector runner.
 	if (AIRecentlyReattachedFireteamRemnant(pSoldier))
 		return FALSE;
-	if (AIFireteamAliveCount(pSoldier) <= 2 && AIAbsorbFireteamRemnant(pSoldier))
+	if (AIFireteamRegroupingStrength(pSoldier) <= 2 && AIAbsorbFireteamRemnant(pSoldier))
 		return FALSE;
 
 	if (AICountActiveEnemyEscapes(pSoldier) >= AIEscapeIntentLimit())
@@ -5760,7 +5769,7 @@ static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituati
 		// sticky for several turns so it cannot immediately flip back into a rout.
 		if (AIRecentlyReattachedFireteamRemnant(pSoldier))
 			return;
-		if (AIFireteamAliveCount(pSoldier) <= 2 && AIAbsorbFireteamRemnant(pSoldier))
+		if (AIFireteamRegroupingStrength(pSoldier) <= 2 && AIAbsorbFireteamRemnant(pSoldier))
 			return;
 
 		// Escape is deliberately scarce. Once the local force has its two runners
