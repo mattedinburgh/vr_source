@@ -615,12 +615,49 @@ static void BattleLogClampGeometry( void )
 
 static void BattleLogMoveCallback( MOUSE_REGION *pRegion, INT32 iReason )
 {
-	// Live geometry is committed on button-up. Mouse grab keeps the interaction
-	// stable even when the cursor leaves the original header/grip.
+	// Move/resize continuously while the mouse is grabbed. This makes the battle
+	// log behave like a small desktop window instead of jumping only on release.
+	if ( !(iReason & MSYS_CALLBACK_REASON_MOVE) )
+		return;
+
+	BOOLEAN fChanged = FALSE;
+	if ( gfBattleLogDragging )
+	{
+		gsBattleLogX = (INT16)(gsBattleLogStartX + pRegion->MouseXPos - gsBattleLogStartMouseX);
+		gsBattleLogY = (INT16)(gsBattleLogStartY + pRegion->MouseYPos - gsBattleLogStartMouseY);
+		fChanged = TRUE;
+	}
+	else if ( gfBattleLogResizing )
+	{
+		gsBattleLogW = (INT16)(gsBattleLogStartW + pRegion->MouseXPos - gsBattleLogStartMouseX);
+		gsBattleLogH = (INT16)(gsBattleLogStartH + pRegion->MouseYPos - gsBattleLogStartMouseY);
+		fChanged = TRUE;
+	}
+
+	if ( fChanged )
+	{
+		BattleLogClampGeometry();
+		BattleLogRebuildOverlay();
+	}
 }
 
 static void BattleLogHeaderCallback( MOUSE_REGION *pRegion, INT32 iReason )
 {
+	if ( iReason & MSYS_CALLBACK_REASON_LBUTTON_DOUBLECLICK )
+	{
+		// Reset to the preferred lower-left widescreen layout.
+		gfBattleLogDragging = FALSE;
+		gfBattleLogResizing = FALSE;
+		gsBattleLogX = 6;
+		gsBattleLogY = -1;
+		gsBattleLogW = 330;
+		gsBattleLogH = 108;
+		BattleLogClampGeometry();
+		BattleLogUpdateRegions();
+		BattleLogRebuildOverlay();
+		return;
+	}
+
 	if ( iReason & MSYS_CALLBACK_REASON_LBUTTON_DWN )
 	{
 		gfBattleLogDragging = TRUE;
@@ -638,6 +675,16 @@ static void BattleLogHeaderCallback( MOUSE_REGION *pRegion, INT32 iReason )
 			gsBattleLogY = (INT16)(gsBattleLogStartY + pRegion->MouseYPos - gsBattleLogStartMouseY);
 			gfBattleLogDragging = FALSE;
 			MSYS_ReleaseMouse( pRegion );
+			BattleLogClampGeometry();
+			BattleLogUpdateRegions();
+			BattleLogRebuildOverlay();
+		}
+	}
+	else if ( iReason & MSYS_CALLBACK_REASON_LOST_MOUSE )
+	{
+		if ( gfBattleLogDragging )
+		{
+			gfBattleLogDragging = FALSE;
 			BattleLogClampGeometry();
 			BattleLogUpdateRegions();
 			BattleLogRebuildOverlay();
@@ -676,6 +723,16 @@ static void BattleLogResizeCallback( MOUSE_REGION *pRegion, INT32 iReason )
 			gsBattleLogH = (INT16)(gsBattleLogStartH + pRegion->MouseYPos - gsBattleLogStartMouseY);
 			gfBattleLogResizing = FALSE;
 			MSYS_ReleaseMouse( pRegion );
+			BattleLogClampGeometry();
+			BattleLogUpdateRegions();
+			BattleLogRebuildOverlay();
+		}
+	}
+	else if ( iReason & MSYS_CALLBACK_REASON_LOST_MOUSE )
+	{
+		if ( gfBattleLogResizing )
+		{
+			gfBattleLogResizing = FALSE;
 			BattleLogClampGeometry();
 			BattleLogUpdateRegions();
 			BattleLogRebuildOverlay();
@@ -919,7 +976,7 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 	SetFontShadow( DEFAULT_SHADOW );
 	BattleLogPrintInspectorLine( gsBattleLogX + 6, gsBattleLogY + 4, FONT_MCOLOR_WHITE, L"BATTLE LOG" );
 	BattleLogPrintClippedLine( gsBattleLogX + 76, gsBattleLogY + 4, gsBattleLogW - 108,
-		FONT_MCOLOR_LTGRAY, L"drag | wheel | click shot" );
+		FONT_MCOLOR_LTGRAY, L"drag | resize // | wheel | click shot | dblclick reset" );
 	BattleLogPrintInspectorLine( gsBattleLogX + gsBattleLogW - 26, gsBattleLogY + 4, FONT_MCOLOR_LTGRAY, L"::" );
 
 	UINT32 endExclusive = 0;
