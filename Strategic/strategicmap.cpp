@@ -6523,6 +6523,11 @@ BOOLEAN HandleDefiniteUnloadingOfWorld( UINT8 ubUnloadCode )
 
 	//Handle cases for both types of unloading
 	HandleMilitiaStatusInCurrentMapBeforeLoadingNewMap();
+
+	// Any deferred tactical militia rebuild belonged to the world being unloaded.
+	// The next tactical sector will be constructed from strategic militia counts,
+	// so carrying this global flag across maps could rebuild the wrong sector.
+	gfStrategicMilitiaChangesMade = FALSE;
 	return TRUE;
 }
 
