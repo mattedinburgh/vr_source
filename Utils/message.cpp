@@ -379,7 +379,7 @@ void ClearDisplayedListOfTacticalStrings( void )
 #define BATTLE_LOG_MAX_ENTRIES 128
 #define BATTLE_LOG_HEADER_H 18
 #define BATTLE_LOG_RESIZE_GRIP 12
-#define BATTLE_LOG_INSPECTOR_H 208
+#define BATTLE_LOG_INSPECTOR_H 220
 
 #define BATTLELOG_OUTCOME_NONE    0
 #define BATTLELOG_OUTCOME_MISS    1
@@ -821,6 +821,16 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		BattleLogPrintInspectorLine( ix + 6, iy + 4, usOutcomeColor, (STR16)pOutcomeTitle );
 
 		INT16 sy = iy + BATTLE_LOG_HEADER_H + 3;
+		const CHAR16 *pShooterName = L"unknown";
+		const CHAR16 *pTargetName = L"target";
+		if ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] )
+			pShooterName = MercPtrs[d.ubShooterID]->GetName();
+		if ( d.ubTargetID != NOBODY && MercPtrs[d.ubTargetID] )
+			pTargetName = MercPtrs[d.ubTargetID]->GetName();
+
+		swprintf( z, L"%s -> %s", pShooterName, pTargetName );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
+
 		swprintf( z, L"Aim %d | round %d | range %.1f tiles | NCTH %.1f | muzzle sway %.1f",
 			d.ubAimTime, ubRound, d.fRange / (FLOAT)CELL_X_SIZE, d.fFinalChance, d.fMuzzleSway );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
