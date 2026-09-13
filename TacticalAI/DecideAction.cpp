@@ -3688,10 +3688,11 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 	if (gfTurnBasedAI &&
 		AICombatTeam(pSoldier) &&
 		!AIDisengagementActive(pSoldier) &&
+		!AIHasUsedTacticalFallback(pSoldier) &&
 		ubCanMove &&
 		pSoldier->aiData.bOrders != STATIONARY &&
 		pSoldier->stats.bLife >= OKLIFE &&
-				AIPersonalRisk(pSoldier) >= AIPersonalRiskTolerance(pSoldier) + 10 &&
+		AIPersonalRisk(pSoldier) >= AIPersonalRiskTolerance(pSoldier) + 10 &&
 		(pSoldier->aiData.bUnderFire || AILocalStress(pSoldier) >= 45) &&
 		(!AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
 		 AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0))
@@ -3707,6 +3708,7 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 		pSoldier, pSoldier->aiData.usActionData,
 		AI_ACTION_WITHDRAW, 200, 110, 130))
 {
+				AIRegisterTacticalFallback(pSoldier);
 				return(AI_ACTION_WITHDRAW);
 			}
 		}
@@ -5510,12 +5512,13 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			if (gfTurnBasedAI &&
 				AICombatTeam(pSoldier) &&
 				!AIDisengagementActive(pSoldier) &&
+				!AIHasUsedTacticalFallback(pSoldier) &&
 				ubCanMove &&
 				pSoldier->aiData.bOrders != STATIONARY &&
 				pSoldier->stats.bLife >= OKLIFE &&
-								AIPersonalRisk(pSoldier) > AIPersonalRiskTolerance(pSoldier) &&
-				(pSoldier->aiData.bUnderFire ||
-				 !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
+				AIPersonalRisk(pSoldier) >= AIPersonalRiskTolerance(pSoldier) + 10 &&
+				(pSoldier->aiData.bUnderFire || AILocalStress(pSoldier) >= 45) &&
+				(!AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
 				 AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0) &&
 				!TileIsOutOfBounds(sClosestOpponent))
 			{
@@ -5527,6 +5530,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 						pSoldier, pSoldier->aiData.usActionData,
 						AI_ACTION_WITHDRAW, 200, 110, 130))
 				{
+					AIRegisterTacticalFallback(pSoldier);
 					return(AI_ACTION_WITHDRAW);
 				}
 			}
@@ -11617,18 +11621,17 @@ INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (AIEngagementRangeModifier(pSoldier, sThreat) < 0 && iFallbackDistance > iCurrentDistance)
 		iGain += __min((INT32)20, 3 * (iFallbackDistance - iCurrentDistance));
 
-	// A generic step-back must buy a meaningful positional advantage. Under fire
-	// we still permit withdrawal from a genuinely bad tile, but no longer accept
-	// tiny gains that repeatedly pull the whole line backwards.
+	// Middle ground: fallback must buy a real improvement, but exposed/suppressed
+	// troops can still make one sensible bound to cover instead of becoming berserk.
 	INT32 iRequiredGain = (pSoldier->aiData.bUnderFire || !fCurrentCover ||
-		AILocalStress(pSoldier) >= 45) ? 16 : 24;
+		AILocalStress(pSoldier) >= 45) ? 12 : 20;
 	if (pSoldier->aiData.bAttitude == AGGRESSIVE ||
 		pSoldier->aiData.bAttitude == ATTACKSLAYONLY)
 	{
-		iRequiredGain += 6;
-	}
-	if (pSoldier->aiData.bOrders == SEEKENEMY)
 		iRequiredGain += 4;
+	}
+	if (pSoldier->aiData.bOrders == SEEKENEMY && fCurrentCover)
+		iRequiredGain += 2;
 
 	if (iGain < iRequiredGain)
 		return AI_ACTION_NONE;
@@ -11640,6 +11643,7 @@ INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	}
 
 	pSoldier->aiData.usActionData = sFallback;
+	AIRegisterTacticalFallback(pSoldier);
 	return AI_ACTION_WITHDRAW;
 }
 INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
@@ -11655,9 +11659,11 @@ INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (TileIsOutOfBounds(sThreat))
 		return AI_ACTION_NONE;
 
-	// First try an existing bounded tactical withdrawal. This does not flee the
-	// sector; it simply increases separation while preferring cover and support.
-	if (pSoldier->aiData.bOrders != STATIONARY)
+	// A bounded tactical withdrawal is allowed only once. If the player pursues
+	// afterward, this soldier must hold/find cover and fight unless the separate
+	// true escape/rout system has promoted him to sector flight.
+	if (pSoldier->aiData.bOrders != STATIONARY &&
+		!AIHasUsedTacticalFallback(pSoldier))
 	{
 		INT32 sFallback = FindRetreatSpot(pSoldier);
 		if (TileIsOutOfBounds(sFallback))
@@ -11675,6 +11681,7 @@ INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 					pSoldier, sFallback, AI_ACTION_WITHDRAW, 200, 110, 130))
 			{
 				pSoldier->aiData.usActionData = sFallback;
+				AIRegisterTacticalFallback(pSoldier);
 				return AI_ACTION_WITHDRAW;
 			}
 		}
