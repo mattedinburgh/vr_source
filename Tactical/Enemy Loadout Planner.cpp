@@ -44,7 +44,9 @@ void BuildEnemyRoleTargets(
 	UINT8 ubProgress,
 	INT8 bEquipmentRating)
 {
-	UINT8 supportScale;
+	UINT8 mandatoryRoles = 0;
+	UINT8 optionalSlots = 0;
+	UINT8 minimumRiflemen = 0;
 
 	if ( !pTargets )
 		return;
@@ -54,16 +56,46 @@ void BuildEnemyRoleTargets(
 	if ( ubSquadSize == 0 )
 		return;
 
-	// Administrators remain security/irregular troops.  Their late-game
-	// progression should improve competence and limited support equipment,
-	// not turn the whole class into line infantry.
+	// Administrators remain security/irregular troops.  Even late in the
+	// campaign they should not converge on line-infantry specialist density.
 	if ( bSoldierClass == SOLDIER_CLASS_ADMINISTRATOR )
 	{
-		SetRoleTarget(pTargets, ENEMY_ROLE_RIFLEMAN, ubSquadSize, ubSquadSize);
-		SetRoleTarget(pTargets, ENEMY_ROLE_ASSAULT, (ubSquadSize >= 4) ? 1 : 0, (ubSquadSize >= 8) ? 2 : 1);
-		SetRoleTarget(pTargets, ENEMY_ROLE_SQUAD_LEADER, (ubProgress >= 25 && ubSquadSize >= 5) ? 1 : 0, 1);
-		SetRoleTarget(pTargets, ENEMY_ROLE_MARKSMAN, (ubProgress >= 65 && ubSquadSize >= 8) ? 1 : 0, 1);
-		SetRoleTarget(pTargets, ENEMY_ROLE_GRENADIER, (ubProgress >= 55 && ubSquadSize >= 8) ? 1 : 0, 1);
+		SetRoleTarget(
+			pTargets,
+			ENEMY_ROLE_SQUAD_LEADER,
+			(ubProgress >= 25 && ubSquadSize >= 5) ? 1 : 0,
+			1);
+
+		SetRoleTarget(
+			pTargets,
+			ENEMY_ROLE_ASSAULT,
+			(ubProgress >= 20 && ubSquadSize >= 5) ? 1 : 0,
+			(ubSquadSize >= 8) ? 2 : 1);
+
+		// Marksman/grenadier are optional late security-force specialists.
+		SetRoleTarget(
+			pTargets,
+			ENEMY_ROLE_MARKSMAN,
+			0,
+			(ubProgress >= 65 && ubSquadSize >= 8) ? 1 : 0);
+		SetRoleTarget(
+			pTargets,
+			ENEMY_ROLE_GRENADIER,
+			0,
+			(ubProgress >= 55 && ubSquadSize >= 8) ? 1 : 0);
+
+		mandatoryRoles =
+			pTargets->ubDesired[ENEMY_ROLE_SQUAD_LEADER] +
+			pTargets->ubDesired[ENEMY_ROLE_ASSAULT];
+
+		optionalSlots = (ubProgress >= 55 && ubSquadSize >= 8) ? 1 : 0;
+		minimumRiflemen = 1;
+
+		SetRoleTarget(
+			pTargets,
+			ENEMY_ROLE_RIFLEMAN,
+			(UINT8)max((INT32)minimumRiflemen, (INT32)ubSquadSize - mandatoryRoles - optionalSlots),
+			ubSquadSize);
 		return;
 	}
 
@@ -73,91 +105,125 @@ void BuildEnemyRoleTargets(
 		return;
 	}
 
-	// Support density rises mainly through professionalism/progression,
-	// not by replacing every rifle with a more expensive rifle.
-	supportScale = 0;
-	if ( ubProgress >= 20 ) supportScale++;
-	if ( ubProgress >= 40 ) supportScale++;
-	if ( ubProgress >= 60 ) supportScale++;
-	if ( ubProgress >= 80 ) supportScale++;
-	if ( bEquipmentRating >= 3 ) supportScale++;
-	if ( IsEliteEnemy(bSoldierClass) ) supportScale++;
-
-	// Rifleman is the fallback role and has no hard quota pressure.
-	SetRoleTarget(pTargets, ENEMY_ROLE_RIFLEMAN, ubSquadSize, ubSquadSize);
-
-	// Leadership: one leader for a meaningful fireteam/squad.
+	// Core professional roles.  These become normal parts of a squad as the
+	// campaign develops, but we deliberately leave free slots for controlled
+	// variation (AT/radio/sniper/scout) rather than making every support role
+	// mandatory at once.
 	SetRoleTarget(
 		pTargets,
 		ENEMY_ROLE_SQUAD_LEADER,
 		(ubSquadSize >= 5) ? 1 : 0,
 		(ubSquadSize >= 14 && IsEliteEnemy(bSoldierClass)) ? 2 : 1);
 
-	// Automatic rifleman / LMG: roughly one per 5-7 soldiers.
 	SetRoleTarget(
 		pTargets,
 		ENEMY_ROLE_AUTOMATIC_RIFLEMAN,
 		(ubProgress >= 20 && ubSquadSize >= 5) ? 1 : 0,
 		ClampU8((ubSquadSize + 5) / 6, 1, 3));
 
-	// Grenadier: one per 4-6 once organized troops are established.
 	SetRoleTarget(
 		pTargets,
 		ENEMY_ROLE_GRENADIER,
-		(ubProgress >= 25 && ubSquadSize >= 5) ? 1 : 0,
+		(ubProgress >= 30 && ubSquadSize >= 6) ? 1 : 0,
 		ClampU8((ubSquadSize + 4) / 5, 1, 3));
 
-	// Marksman appears before dedicated snipers and remains much more common.
 	SetRoleTarget(
 		pTargets,
 		ENEMY_ROLE_MARKSMAN,
-		(ubProgress >= 35 && ubSquadSize >= 6) ? 1 : 0,
+		(ubProgress >= 40 && ubSquadSize >= 7) ? 1 : 0,
 		ClampU8((ubSquadSize + 7) / 8, 1, 2));
 
 	SetRoleTarget(
 		pTargets,
-		ENEMY_ROLE_SNIPER,
-		(IsEliteEnemy(bSoldierClass) && ubProgress >= 65 && ubSquadSize >= 8) ? 1 : 0,
-		(ubSquadSize >= 16 && IsEliteEnemy(bSoldierClass)) ? 2 : 1);
-
-	// AT is deliberately capped.  Heavy support should be a squad resource,
-	// not an independent random roll on every soldier.
-	SetRoleTarget(
-		pTargets,
-		ENEMY_ROLE_AT_SPECIALIST,
-		(ubProgress >= 40 && ubSquadSize >= 7 && supportScale >= 3) ? 1 : 0,
-		(ubSquadSize >= 14 && ubProgress >= 70) ? 2 : 1);
-
-	// Medics/radio operators represent professionalization.
-	SetRoleTarget(
-		pTargets,
-		ENEMY_ROLE_MEDIC,
-		((ubProgress >= (IsEliteEnemy(bSoldierClass) ? 35 : 45)) && ubSquadSize >= 8) ? 1 : 0,
-		(ubSquadSize >= 16) ? 2 : 1);
-
-	SetRoleTarget(
-		pTargets,
-		ENEMY_ROLE_RADIO_OPERATOR,
-		((ubProgress >= (IsEliteEnemy(bSoldierClass) ? 40 : 50)) && ubSquadSize >= 7) ? 1 : 0,
-		(ubSquadSize >= 16) ? 2 : 1);
-
-	// Scouts/assault troops add controlled variety without consuming the
-	// support-weapon caps.
-	SetRoleTarget(
-		pTargets,
 		ENEMY_ROLE_ASSAULT,
-		(ubProgress >= 15 && ubSquadSize >= 5) ? 1 : 0,
+		(ubProgress >= 20 && ubSquadSize >= 5) ? 1 : 0,
 		ClampU8((ubSquadSize + 6) / 7, 1, 3));
 
 	SetRoleTarget(
 		pTargets,
-		ENEMY_ROLE_SCOUT,
-		(IsEliteEnemy(bSoldierClass) && ubProgress >= 45 && ubSquadSize >= 7) ? 1 : 0,
-		(ubSquadSize >= 14 && IsEliteEnemy(bSoldierClass)) ? 2 : 1);
+		ENEMY_ROLE_MEDIC,
+		((ubProgress >= (IsEliteEnemy(bSoldierClass) ? 40 : 50)) && ubSquadSize >= 9) ? 1 : 0,
+		(ubSquadSize >= 16) ? 2 : 1);
 
-	// Mortars are intentionally not a normal desired role.  They are optional
-	// fire-support assets and should later be allocated at group/sector level.
-	SetRoleTarget(pTargets, ENEMY_ROLE_MORTAR, 0, (ubProgress >= 55 && ubSquadSize >= 10) ? 1 : 0);
+	// Optional roles.  Desired stays zero; the planner can spend reserved
+	// variation slots on these according to availability and caps.
+	SetRoleTarget(
+		pTargets,
+		ENEMY_ROLE_SNIPER,
+		0,
+		(IsEliteEnemy(bSoldierClass) && ubProgress >= 65 && ubSquadSize >= 8)
+			? ((ubSquadSize >= 16) ? 2 : 1)
+			: 0);
+
+	SetRoleTarget(
+		pTargets,
+		ENEMY_ROLE_AT_SPECIALIST,
+		0,
+		(ubProgress >= 40 && ubSquadSize >= 7)
+			? ((ubSquadSize >= 14 && ubProgress >= 70) ? 2 : 1)
+			: 0);
+
+	SetRoleTarget(
+		pTargets,
+		ENEMY_ROLE_RADIO_OPERATOR,
+		0,
+		((ubProgress >= (IsEliteEnemy(bSoldierClass) ? 45 : 55)) && ubSquadSize >= 7)
+			? ((ubSquadSize >= 16) ? 2 : 1)
+			: 0);
+
+	SetRoleTarget(
+		pTargets,
+		ENEMY_ROLE_SCOUT,
+		0,
+		(IsEliteEnemy(bSoldierClass) && ubProgress >= 45 && ubSquadSize >= 7)
+			? ((ubSquadSize >= 14) ? 2 : 1)
+			: 0);
+
+	// Mortar is a sector/group fire-support role, never a normal per-soldier
+	// desired slot.  It stays unavailable to the chooser until that group-level
+	// allocation step is explicitly implemented.
+	SetRoleTarget(
+		pTargets,
+		ENEMY_ROLE_MORTAR,
+		0,
+		(ubProgress >= 55 && ubSquadSize >= 10) ? 1 : 0);
+
+	mandatoryRoles =
+		pTargets->ubDesired[ENEMY_ROLE_SQUAD_LEADER] +
+		pTargets->ubDesired[ENEMY_ROLE_AUTOMATIC_RIFLEMAN] +
+		pTargets->ubDesired[ENEMY_ROLE_GRENADIER] +
+		pTargets->ubDesired[ENEMY_ROLE_MARKSMAN] +
+		pTargets->ubDesired[ENEMY_ROLE_ASSAULT] +
+		pTargets->ubDesired[ENEMY_ROLE_MEDIC];
+
+	// Reserve one variable specialist slot once the army is established.
+	// Late elite groups may reserve two.  This creates variation without
+	// producing support-weapon soup.
+	if ( ubProgress >= 40 && ubSquadSize >= 8 )
+		optionalSlots = 1;
+	if ( IsEliteEnemy(bSoldierClass) && ubProgress >= 70 && ubSquadSize >= 10 )
+		optionalSlots = 2;
+
+	// Keep a meaningful rifle core.  30% is a floor, not a target; larger
+	// rifle cores naturally occur earlier when fewer specialist roles exist.
+	minimumRiflemen = ClampU8((ubSquadSize * 3 + 9) / 10, 1, ubSquadSize);
+
+	if ( mandatoryRoles + optionalSlots >= ubSquadSize )
+	{
+		SetRoleTarget(
+			pTargets,
+			ENEMY_ROLE_RIFLEMAN,
+			(UINT8)max((INT32)minimumRiflemen, (INT32)ubSquadSize - mandatoryRoles),
+			ubSquadSize);
+	}
+	else
+	{
+		SetRoleTarget(
+			pTargets,
+			ENEMY_ROLE_RIFLEMAN,
+			(UINT8)max((INT32)minimumRiflemen, (INT32)ubSquadSize - mandatoryRoles - optionalSlots),
+			ubSquadSize);
+	}
 }
 
 void InitEnemySquadLoadoutState(
