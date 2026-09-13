@@ -5,12 +5,14 @@
 	#include "Enemy Loadout Planner.h"
 	#include "Soldier Control.h"
 	#include "Random.h"
+	#include "Items.h"
+	#include "Item Types.h"
 #endif
 
 #include "Enemy Loadout Planner.h"
 
-// This file is deliberately not part of the build yet.  It is an isolated
-// implementation draft on the work/enemy-loadout-planner branch.
+// Compiled only on the isolated work branch.  Nothing in the live enemy
+// creation/equipment path calls this module yet.
 
 static UINT8 ClampU8(INT32 value, UINT8 minValue, UINT8 maxValue)
 {
@@ -1025,6 +1027,322 @@ void BuildEnemyLoadoutPlan(
 	// because campaign progress is high.
 	if ( bExpLevel < 4 && pPlan->OpticProfile > ENEMY_OPTIC_LOW_POWER )
 		pPlan->OpticProfile = ENEMY_OPTIC_LOW_POWER;
+}
+
+static INT32 ScoreEnemyOpticForPlan(
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	UINT16 usAttachment)
+{
+	UINT64 uiAttachmentClass;
+	FLOAT dMagnification;
+	INT32 iScore = 0;
+
+	if ( !pPlan || usAttachment == 0 )
+		return -10000;
+
+	uiAttachmentClass = Item[usAttachment].nasAttachmentClass;
+	if ( !(uiAttachmentClass & (AC_SCOPE | AC_SIGHT | AC_IRONSIGHT)) )
+		return 0;
+
+	dMagnification = Item[usAttachment].scopemagfactor;
+
+	switch ( pPlan->OpticProfile )
+	{
+		case ENEMY_OPTIC_IRONS:
+			if ( uiAttachmentClass & AC_IRONSIGHT )
+				iScore += 30;
+			if ( uiAttachmentClass & AC_SIGHT )
+				iScore += 5;
+			if ( dMagnification > 1.5f )
+				iScore -= 80;
+			break;
+
+		case ENEMY_OPTIC_CLOSE_COMBAT:
+			if ( Item[usAttachment].speeddot )
+				iScore += 45;
+			if ( uiAttachmentClass & AC_SIGHT )
+				iScore += 25;
+			if ( dMagnification <= 1.5f )
+				iScore += 35;
+			else if ( dMagnification <= 2.25f )
+				iScore += 15;
+			else if ( dMagnification > 3.0f )
+				iScore -= 70;
+			break;
+
+		case ENEMY_OPTIC_LOW_POWER:
+			if ( dMagnification >= 1.5f && dMagnification <= 3.0f )
+				iScore += 55;
+			else if ( dMagnification > 3.0f && dMagnification <= 4.5f )
+				iScore += 20;
+			else if ( dMagnification > 5.0f )
+				iScore -= 55;
+			else if ( Item[usAttachment].speeddot )
+				iScore += 15;
+			break;
+
+		case ENEMY_OPTIC_MARKSMAN:
+			if ( dMagnification >= 3.0f && dMagnification <= 6.5f )
+				iScore += 65;
+			else if ( dMagnification > 6.5f && dMagnification <= 8.0f )
+				iScore += 30;
+			else if ( dMagnification < 2.0f )
+				iScore -= 45;
+			break;
+
+		case ENEMY_OPTIC_SNIPER:
+			if ( dMagnification >= 6.0f && dMagnification <= 10.5f )
+				iScore += 75;
+			else if ( dMagnification >= 4.0f )
+				iScore += 35;
+			else
+				iScore -= 65;
+			break;
+
+		default:
+			break;
+	}
+
+	return iScore;
+}
+
+INT32 ScoreEnemyAttachmentForPlan(
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	UINT16 usBaseItem,
+	UINT16 usAttachment,
+	UINT8 ubMaxCoolness)
+{
+	UINT64 uiAttachmentClass;
+	INT32 iScore = 0;
+	BOOLEAN fSuppressor;
+
+	if ( !pPlan || usBaseItem == 0 || usAttachment == 0 )
+		return -10000;
+
+	if ( !ItemIsLegal(usAttachment) || !ValidAttachment(usAttachment, usBaseItem) )
+		return -10000;
+
+	if ( ubMaxCoolness > 0 && Item[usAttachment].ubCoolness > ubMaxCoolness )
+		return -10000;
+
+	uiAttachmentClass = Item[usAttachment].nasAttachmentClass;
+	fSuppressor = (Item[usAttachment].percentnoisereduction > 0);
+
+	// Suppression devices are a doctrinal choice, not a generic high-coolness
+	// bonus.  Roles that are not allowed one reject it outright.
+	if ( fSuppressor )
+	{
+		if ( !pPlan->fAllowSuppressor )
+			return -10000;
+
+		iScore += 50;
+		if ( pPlan->Role == ENEMY_ROLE_SCOUT || pPlan->Role == ENEMY_ROLE_SNIPER )
+			iScore += 20;
+	}
+
+	iScore += ScoreEnemyOpticForPlan(pPlan, usAttachment);
+
+	if ( uiAttachmentClass & AC_BIPOD )
+	{
+		iScore += pPlan->fPreferBipod ? 50 : 5;
+		if ( pPlan->Role == ENEMY_ROLE_AUTOMATIC_RIFLEMAN ||
+			 pPlan->Role == ENEMY_ROLE_MARKSMAN ||
+			 pPlan->Role == ENEMY_ROLE_SNIPER )
+		{
+			iScore += 15;
+		}
+	}
+
+	if ( uiAttachmentClass & AC_LASER )
+	{
+		iScore += pPlan->fPreferLaser ? 40 : 5;
+		if ( pPlan->OpticProfile == ENEMY_OPTIC_CLOSE_COMBAT )
+			iScore += 10;
+	}
+
+	if ( uiAttachmentClass & (AC_FOREGRIP | AC_STOCK) )
+	{
+		if ( pPlan->Role == ENEMY_ROLE_ASSAULT ||
+			 pPlan->Role == ENEMY_ROLE_AUTOMATIC_RIFLEMAN )
+			iScore += 25;
+		else if ( pPlan->Role == ENEMY_ROLE_RIFLEMAN )
+			iScore += 10;
+	}
+
+	if ( uiAttachmentClass & AC_SLING )
+	{
+		if ( pPlan->LBEProfile == ENEMY_LBE_LIGHT ||
+			 pPlan->Role == ENEMY_ROLE_MEDIC ||
+			 pPlan->Role == ENEMY_ROLE_RADIO_OPERATOR )
+		{
+			iScore += 15;
+		}
+		else
+			iScore += 5;
+	}
+
+	if ( uiAttachmentClass & AC_UNDERBARREL )
+	{
+		if ( pPlan->Role == ENEMY_ROLE_GRENADIER )
+			iScore += 50;
+		else
+			iScore -= 10;
+	}
+
+	// A flash hider has legitimate night value without being treated as a
+	// suppressor.  Full suppressors were handled above.
+	if ( Item[usAttachment].hidemuzzleflash && !fSuppressor )
+	{
+		if ( pPlan->fPreferNightEquipment ||
+			 pPlan->Role == ENEMY_ROLE_SCOUT ||
+			 pPlan->Role == ENEMY_ROLE_SNIPER )
+			iScore += 15;
+		else
+			iScore += 5;
+	}
+
+	// Coolness is a secondary quality signal.  It must never overpower a role
+	// mismatch, which is why it contributes only a few points.
+	iScore += __min((INT32)10, (INT32)Item[usAttachment].ubCoolness);
+
+	return iScore;
+}
+
+INT32 ScoreEnemyLBEForPlan(
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	UINT16 usLBEItem,
+	UINT8 ubMaxCoolness)
+{
+	UINT16 usLBEIndex;
+	const LBETYPE *pLBE;
+	UINT8 ubActivePockets = 0;
+	UINT16 usPocketCapacity = 0;
+	INT32 iScore = 0;
+
+	if ( !pPlan || usLBEItem == 0 )
+		return -10000;
+
+	if ( Item[usLBEItem].usItemClass != IC_LBEGEAR || !ItemIsLegal(usLBEItem) )
+		return -10000;
+
+	if ( ubMaxCoolness > 0 && Item[usLBEItem].ubCoolness > ubMaxCoolness )
+		return -10000;
+
+	usLBEIndex = Item[usLBEItem].ubClassIndex;
+	if ( usLBEIndex >= LoadBearingEquipment.size() )
+		return -10000;
+
+	pLBE = &LoadBearingEquipment[usLBEIndex];
+
+	for (UINT16 i = 0; i < pLBE->lbePocketIndex.size(); ++i)
+	{
+		UINT8 ubPocket = pLBE->lbePocketIndex[i];
+		if ( ubPocket == 0 || ubPocket >= LBEPocketType.size() )
+			continue;
+
+		++ubActivePockets;
+
+		UINT8 ubBestCapacity = 0;
+		for (UINT16 s = 0; s < LBEPocketType[ubPocket].ItemCapacityPerSize.size(); ++s)
+			ubBestCapacity = __max(ubBestCapacity, LBEPocketType[ubPocket].ItemCapacityPerSize[s]);
+
+		usPocketCapacity = (UINT16)__min(
+			(UINT32)255,
+			(UINT32)usPocketCapacity + ubBestCapacity);
+	}
+
+	switch ( pPlan->LBEProfile )
+	{
+		case ENEMY_LBE_LIGHT:
+			if ( pLBE->lbeClass == VEST_PACK ) iScore += 45;
+			else if ( pLBE->lbeClass == THIGH_PACK ) iScore += 30;
+			else if ( pLBE->lbeClass == COMBAT_PACK ) iScore += 5;
+			else if ( pLBE->lbeClass == BACKPACK ) iScore -= 45;
+			break;
+
+		case ENEMY_LBE_STANDARD_RIFLE:
+			if ( pLBE->lbeClass == VEST_PACK ) iScore += 55;
+			else if ( pLBE->lbeClass == THIGH_PACK ) iScore += 25;
+			else if ( pLBE->lbeClass == COMBAT_PACK ) iScore += 10;
+			else if ( pLBE->lbeClass == BACKPACK ) iScore -= 35;
+			break;
+
+		case ENEMY_LBE_ASSAULT:
+			if ( pLBE->lbeClass == VEST_PACK ) iScore += 60;
+			else if ( pLBE->lbeClass == THIGH_PACK ) iScore += 35;
+			else if ( pLBE->lbeClass == COMBAT_PACK ) iScore += 0;
+			else if ( pLBE->lbeClass == BACKPACK ) iScore -= 60;
+			break;
+
+		case ENEMY_LBE_AUTOMATIC:
+			if ( pLBE->lbeClass == VEST_PACK ) iScore += 50;
+			else if ( pLBE->lbeClass == THIGH_PACK ) iScore += 45;
+			else if ( pLBE->lbeClass == COMBAT_PACK ) iScore += 20;
+			else if ( pLBE->lbeClass == BACKPACK ) iScore -= 30;
+			break;
+
+		case ENEMY_LBE_GRENADIER:
+			if ( pLBE->lbeClass == THIGH_PACK ) iScore += 55;
+			else if ( pLBE->lbeClass == VEST_PACK ) iScore += 45;
+			else if ( pLBE->lbeClass == COMBAT_PACK ) iScore += 15;
+			else if ( pLBE->lbeClass == BACKPACK ) iScore -= 35;
+			break;
+
+		case ENEMY_LBE_MEDIC:
+			if ( pLBE->lbeClass == COMBAT_PACK ) iScore += 55;
+			else if ( pLBE->lbeClass == VEST_PACK ) iScore += 40;
+			else if ( pLBE->lbeClass == BACKPACK ) iScore += 25;
+			else if ( pLBE->lbeClass == THIGH_PACK ) iScore += 10;
+			break;
+
+		case ENEMY_LBE_RADIO:
+			if ( pLBE->lbeClass == BACKPACK ) iScore += 55;
+			else if ( pLBE->lbeClass == COMBAT_PACK ) iScore += 50;
+			else if ( pLBE->lbeClass == VEST_PACK ) iScore += 20;
+			break;
+
+		case ENEMY_LBE_HEAVY_SUPPORT:
+			if ( pLBE->lbeClass == BACKPACK ) iScore += 55;
+			else if ( pLBE->lbeClass == COMBAT_PACK ) iScore += 50;
+			else if ( pLBE->lbeClass == THIGH_PACK ) iScore += 25;
+			else if ( pLBE->lbeClass == VEST_PACK ) iScore += 20;
+			break;
+
+		default:
+			break;
+	}
+
+	if ( pLBE->lbeClass == BACKPACK )
+	{
+		if ( pPlan->fUseBackpack )
+			iScore += 25;
+		else
+			iScore -= 80;
+	}
+	else if ( pLBE->lbeClass == COMBAT_PACK && pPlan->fUseBackpack )
+	{
+		iScore += 15;
+	}
+
+	// Capacity matters most for support roles, but no role should select a
+	// gigantic pack solely because it exposes many slots.
+	iScore += __min((INT32)32, (INT32)ubActivePockets * 4);
+	iScore += __min((INT32)24, (INT32)usPocketCapacity / 2);
+	iScore += __min((INT32)20, (INT32)pLBE->lbeAvailableVolume);
+
+	if ( pPlan->LBEProfile == ENEMY_LBE_LIGHT ||
+		 pPlan->LBEProfile == ENEMY_LBE_ASSAULT )
+	{
+		iScore -= (INT32)Item[usLBEItem].ubWeight * 2;
+	}
+	else if ( pPlan->LBEProfile == ENEMY_LBE_STANDARD_RIFLE )
+	{
+		iScore -= (INT32)Item[usLBEItem].ubWeight;
+	}
+
+	iScore += __min((INT32)8, (INT32)Item[usLBEItem].ubCoolness);
+
+	return iScore;
 }
 
 const char *EnemyLoadoutRoleName(ENEMY_LOADOUT_ROLE Role)
