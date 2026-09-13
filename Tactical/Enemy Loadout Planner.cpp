@@ -36,6 +36,10 @@ static BOOLEAN IsEliteEnemy(INT8 bSoldierClass)
 	return (bSoldierClass == SOLDIER_CLASS_ELITE);
 }
 
+// Forward declaration: pool normalization is shared by the role-aware gun,
+// attachment and LBE selectors below.
+static INT8 EnemyLoadoutPoolClass(INT8 bSoldierClass);
+
 UINT8 PlanEnemyLoadoutCellSizes(
 	UINT8 ubTotalSoldiers,
 	UINT8 *pubSizes,
@@ -1489,7 +1493,9 @@ UINT16 SelectBestEnemyGameGunForPlan(
 	{
 		const ARMY_GUN_CHOICE_TYPE *pPool =
 			&gExtendedArmyGunChoices[bPoolClass][bTier];
-		INT8 bTierDistance = (INT8)abs((INT32)bTier - bCenterTier);
+		INT8 bTierDistance = (bTier >= bCenterTier)
+			? (INT8)(bTier - bCenterTier)
+			: (INT8)(bCenterTier - bTier);
 		INT32 iTierPenalty = 0;
 
 		if ( bTier < bCenterTier )
