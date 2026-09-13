@@ -8560,7 +8560,8 @@ UINT32 CountSuspicionValue( SOLDIERTYPE *pSoldier )
 		}
 
 		// check that this opponent sees us
-		if( pOpponent->aiData.bOppList[ pSoldier->ubID ] == SEEN_CURRENTLY || 
+		if( (pOpponent->aiData.bOppList[ pSoldier->ubID ] == SEEN_CURRENTLY &&
+			LOS_Raised(pOpponent, pSoldier, CALC_FROM_ALL_DIRS) > 0) ||
 			pOpponent->aiData.bAlertStatus >= STATUS_RED && 
 			( pOpponent->aiData.bOppList[ pSoldier->ubID ] == SEEN_THIS_TURN || pOpponent->aiData.bOppList[ pSoldier->ubID ] == HEARD_THIS_TURN ) )
 		{
@@ -10170,8 +10171,10 @@ UINT8 CountSeenCovertOpponents( SOLDIERTYPE *pSoldier )
 			for( ubIDLoop = gTacticalStatus.Team[ ubTeamLoop ].bFirstID; ubIDLoop <= gTacticalStatus.Team[ ubTeamLoop ].bLastID; ubIDLoop++ )
 			{
 				// check that opponent is covert and we see him currently
-				if( pSoldier->aiData.bOppList[ubIDLoop] == SEEN_CURRENTLY &&
-					MercPtrs[ubIDLoop]->usSoldierFlagMask & (SOLDIER_COVERT_CIV|SOLDIER_COVERT_SOLDIER) )
+				if( MercPtrs[ubIDLoop] &&
+					pSoldier->aiData.bOppList[ubIDLoop] == SEEN_CURRENTLY &&
+					LOS_Raised(pSoldier, MercPtrs[ubIDLoop], CALC_FROM_ALL_DIRS) > 0 &&
+					(MercPtrs[ubIDLoop]->usSoldierFlagMask & (SOLDIER_COVERT_CIV|SOLDIER_COVERT_SOLDIER)) )
 				{
 					cnt++;
 				}
