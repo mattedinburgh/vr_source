@@ -531,4 +531,77 @@ FLOAT GetOverheatDamageThreshold( OBJECTTYPE *pObj );
 
 BOOLEAN ArtilleryStrike( UINT16 usItem, UINT8 ubOwnerID, UINT32 usStartingGridNo, UINT32 usTargetMapPos );
 
+
+////////////////////////////////////////////////////////////////////////////////
+// Vengeance tactical battle log / NCTH shot inspector.
+//
+// Runtime-only diagnostics.  These values are deliberately NOT added to BULLET
+// or SOLDIERTYPE, so savegame layouts stay unchanged.  One snapshot is captured
+// for the real shot, then copied into a small ring keyed by bullet id.
+typedef struct
+{
+	BOOLEAN fValid;
+	INT32   iBullet;
+
+	UINT8   ubShooterID;
+	UINT8   ubTargetID;
+	UINT8   ubAimTime;
+	UINT8   ubAimPos;
+	UINT8   ubStance;
+	UINT8   ubVolleyShot;
+	UINT16  usWeapon;
+	INT32   sTargetGridNo;
+	INT32   iRange;
+	INT32   iSightRange;
+	BOOLEAN fCantSeeTarget;
+
+	FLOAT fBaseAttribute;
+	FLOAT fFlatBase;
+	FLOAT fBaseEffect;
+	FLOAT fBaseWeapon;
+	FLOAT fBaseSpecial;
+	FLOAT fBaseTarget;
+	FLOAT fGearAim;
+	FLOAT fBaseModifier;
+	FLOAT fBaseChance;
+
+	FLOAT fAimAttribute;
+	FLOAT fAimTraitCap;
+	FLOAT fPercentCap;
+	FLOAT fAimEffect;
+	FLOAT fAimWeapon;
+	FLOAT fAimSpecial;
+	FLOAT fTraitModifier;
+	FLOAT fBackground;
+	FLOAT fSpotter;
+	FLOAT fAimTarget;
+	FLOAT fVisibility;
+	FLOAT fScopePenalty;
+	FLOAT fAimModifier;
+	FLOAT fAimCap;
+	FLOAT fAimPoints;
+	FLOAT fFinalChance;
+
+	FLOAT fMuzzleSway;
+	FLOAT fRange;
+	FLOAT fBasicAperture;
+	FLOAT fDistanceAperture;
+	FLOAT fMaxAperture;
+	FLOAT fFinalAperture;
+	FLOAT fMagFactor;
+	FLOAT fEffectiveMagFactor;
+	FLOAT fMuzzleOffsetX;
+	FLOAT fMuzzleOffsetY;
+	FLOAT fBulletDeviation;
+	FLOAT fShotOffsetX;
+	FLOAT fShotOffsetY;
+	INT16 sApertureRatio;
+} NCTH_SHOT_DIAGNOSTIC;
+
+extern NCTH_SHOT_DIAGNOSTIC gNCTHWorkingDiagnostic;
+
+void NCTHBeginShotDiagnostic( SOLDIERTYPE *pShooter, INT32 sTargetGridNo, UINT8 ubAimTime, UINT8 ubAimPos, UINT16 usWeapon );
+void NCTHRegisterBulletDiagnostic( INT32 iBullet, UINT8 ubVolleyShot );
+BOOLEAN NCTHGetBulletDiagnostic( INT32 iBullet, NCTH_SHOT_DIAGNOSTIC *pOut );
+
 #endif
