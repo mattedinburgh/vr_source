@@ -822,14 +822,67 @@ static UINT16 A3FarmVisualSubIndex( UINT32 uiType, UINT32 uiHash )
 	return (UINT16)( 1 + (uiHash % usCapacity) );
 }
 
+static BOOLEAN A3FarmGridHasNeighbourLandTypeRange( INT32 sGridNo, UINT32 uiFirstType, UINT32 uiLastType )
+{
+	if ( sGridNo < 0 || sGridNo >= WORLD_MAX )
+		return FALSE;
+
+	INT32 sNeighbour[4];
+	UINT8 ubCount = 0;
+	const INT32 sColumn = sGridNo % WORLD_COLS;
+
+	if ( sColumn > 0 ) sNeighbour[ubCount++] = sGridNo - 1;
+	if ( sColumn + 1 < WORLD_COLS ) sNeighbour[ubCount++] = sGridNo + 1;
+	if ( sGridNo >= WORLD_COLS ) sNeighbour[ubCount++] = sGridNo - WORLD_COLS;
+	if ( sGridNo + WORLD_COLS < WORLD_MAX ) sNeighbour[ubCount++] = sGridNo + WORLD_COLS;
+
+	for ( UINT8 i = 0; i < ubCount; ++i )
+	{
+		MAP_ELEMENT *pNeighbour = &gpWorldLevelData[ sNeighbour[i] ];
+		if ( pNeighbour->pLandHead == NULL )
+			continue;
+
+		UINT32 uiType = 0;
+		if ( GetTileType( pNeighbour->pLandHead->usIndex, &uiType ) &&
+			 uiType >= uiFirstType && uiType <= uiLastType )
+			return TRUE;
+	}
+	return FALSE;
+}
+
+static BOOLEAN A3FarmCowGridSafe( INT32 sGridNo )
+{
+	if ( sGridNo < 0 || sGridNo >= WORLD_MAX || gpWorldLevelData == NULL )
+		return FALSE;
+
+	MAP_ELEMENT *pMap = &gpWorldLevelData[ sGridNo ];
+	if ( pMap->pLandHead == NULL || pMap->pStructHead != NULL ||
+		 pMap->pRoofHead != NULL || pMap->pOnRoofHead != NULL )
+		return FALSE;
+
+	UINT32 uiLandType = 0;
+	if ( !GetTileType( pMap->pLandHead->usIndex, &uiLandType ) )
+		return FALSE;
+
+	// Do not place livestock in water, on buildings, or on hard interior floors.
+	if ( uiLandType == REGWATERTEXTURE || uiLandType == DEEPWATERTEXTURE ||
+		 (uiLandType >= FIRSTFLOOR && uiLandType <= LASTFLOOR) )
+		return FALSE;
+
+	return TRUE;
+}
+
 static void DressA3FarmEnvironment( void )
 {
 	if ( gubSectorVisualProfile != SECTOR_VISUAL_A3_FARM || gpWorldLevelData == NULL )
 		return;
 
+	UINT32 uiCropRows = 0;
 	UINT32 uiFieldClutter = 0;
 	UINT32 uiFarmyardClutter = 0;
 	UINT32 uiTrailClutter = 0;
+	UINT32 uiTrailEdges = 0;
+	UINT32 uiWaterEdges = 0;
 
 	for ( INT32 sGridNo = 0; sGridNo < WORLD_MAX; ++sGridNo )
 	{
@@ -849,9 +902,26 @@ static void DressA3FarmEnvironment( void )
 			continue;
 
 		const BOOLEAN fNearStructure = B1GridHasNeighbourStructure( sGridNo );
+		const BOOLEAN fNearTrail = A3FarmGridHasNeighbourLandTypeRange( sGridNo, SEVENTHTEXTURE, SEVENTHTEXTURE );
+		const BOOLEAN fNearWater = A3FarmGridHasNeighbourLandTypeRange( sGridNo, REGWATERTEXTURE, DEEPWATERTEXTURE );
 		const UINT32 uiHash = B1VisualHash( (UINT32)sGridNo ^ 0xA3F47D21u );
+		const INT32 sRow = sGridNo / WORLD_COLS;
+		const INT32 sColumn = sGridNo % WORLD_COLS;
 
-		if ( fOpenFarmGround && ((uiHash >> 5) % (fNearStructure ? 41 : 113)) == 0 )
+		// Broad crop/pasture bands make the sector read as cultivated land at 1080p.
+		// Only sparse object-layer vegetation is added, so LOS/pathing/cover do not change.
+		const BOOLEAN fFieldBand = (((sRow + (sColumn / 14)) % 7) <= 1);
+		if ( fOpenFarmGround && !fNearStructure && !fNearTrail && fFieldBand &&
+			 ((uiHash >> 3) % 19) == 0 )
+		{
+			const UINT32 uiType = ((uiHash >> 18) & 1) ? DEBRISGRASS : DEBRISWEEDS;
+			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 7 );
+			if ( usSubIndex != 0 && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
+				++uiCropRows;
+		}
+
+		// Irregular scrub and trampled field detail breaks up otherwise flat expanses.
+		if ( fOpenFarmGround && ((uiHash >> 5) % (fNearStructure ? 31 : 83)) == 0 )
 		{
 			const UINT32 uiType = ((uiHash >> 19) & 1) ? DEBRISWEEDS : DEBRISGRASS;
 			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 8 );
@@ -859,25 +929,54 @@ static void DressA3FarmEnvironment( void )
 				++uiFieldClutter;
 		}
 
-		if ( fNearStructure && (fOpenFarmGround || fFloor) && ((uiHash >> 9) % 29) == 0 )
+		// Concentrate wood, stone and discarded equipment around the farm compound.
+		if ( fNearStructure && (fOpenFarmGround || fFloor) && ((uiHash >> 9) % 17) == 0 )
 		{
-			const UINT32 uiType = ((uiHash >> 22) & 1) ? DEBRISWOOD : DEBRISMISC;
+			UINT32 uiType = DEBRISMISC;
+			switch ( (uiHash >> 22) % 3 )
+			{
+				case 0: uiType = DEBRISWOOD; break;
+				case 1: uiType = DEBRISROCKS; break;
+				default: uiType = DEBRISMISC; break;
+			}
 			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 12 );
 			if ( usSubIndex != 0 && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
 				++uiFarmyardClutter;
 		}
 
-		if ( fTrail && ((uiHash >> 7) % 37) == 0 )
+		// Rutted, muddy access track: much denser than the first pass so the route
+		// remains visible when the camera is pulled out.
+		if ( fTrail && ((uiHash >> 7) % 11) == 0 )
 		{
-			const UINT16 usSubIndex = A3FarmVisualSubIndex( DEBRISSAND, uiHash >> 15 );
-			if ( usSubIndex != 0 && B1AddVisualDecoration( sGridNo, DEBRISSAND, usSubIndex ) )
+			const UINT32 uiType = ((uiHash >> 21) & 1) ? DEBRISSAND : DEBRISROCKS;
+			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 15 );
+			if ( usSubIndex != 0 && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
 				++uiTrailClutter;
+		}
+
+		// Weeds along the edges of the farm track visually connect the road with fields.
+		if ( fOpenFarmGround && fNearTrail && ((uiHash >> 6) % 13) == 0 )
+		{
+			const UINT32 uiType = ((uiHash >> 20) & 1) ? DEBRISWEEDS : DEBRISGRASS;
+			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 11 );
+			if ( usSubIndex != 0 && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
+				++uiTrailEdges;
+		}
+
+		// A3's campaign metadata marks it as a wet Oronegro sector. Reeds/scrub along
+		// existing water margins reinforce that identity without adding new water tiles.
+		if ( fOpenFarmGround && fNearWater && ((uiHash >> 8) % 9) == 0 )
+		{
+			const UINT32 uiType = ((uiHash >> 23) & 1) ? DEBRISGRASS : DEBRISWEEDS;
+			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 14 );
+			if ( usSubIndex != 0 && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
+				++uiWaterEdges;
 		}
 	}
 
-	CHAR8 zDressing[160];
-	sprintf( zDressing, "field=%lu farmyard=%lu trail=%lu visual-only",
-		uiFieldClutter, uiFarmyardClutter, uiTrailClutter );
+	CHAR8 zDressing[224];
+	sprintf( zDressing, "cropRows=%lu field=%lu farmyard=%lu trail=%lu trailEdges=%lu waterEdges=%lu visual-only",
+		uiCropRows, uiFieldClutter, uiFarmyardClutter, uiTrailClutter, uiTrailEdges, uiWaterEdges );
 	TraceA3FarmLoad( "ENVIRONMENT DRESSING", zDressing );
 }
 
@@ -907,15 +1006,21 @@ static void EnsureA3FarmCowPlacements( void )
 		return;
 	}
 
-	// Verified against current A3.dat: empty, roofless ground north of the eastern compound.
 	const INT32 sCowGridNo[] = { 7450, 7460, 8088, 8100 };
 	const UINT8 ubCowDirection[] = { SOUTHWEST, SOUTHEAST, WEST, NORTHEAST };
 	const UINT16 usDesired = (UINT16)( sizeof(sCowGridNo) / sizeof(sCowGridNo[0]) );
 	const UINT16 usToAdd = (usAvailable < usDesired) ? usAvailable : usDesired;
 
 	UINT16 usAdded = 0;
+	UINT16 usRejected = 0;
 	for ( UINT16 i = 0; i < usToAdd; ++i )
 	{
+		if ( !A3FarmCowGridSafe( sCowGridNo[i] ) )
+		{
+			++usRejected;
+			continue;
+		}
+
 		BASIC_SOLDIERCREATE_STRUCT placement;
 		memset( &placement, 0, sizeof(placement) );
 		placement.fDetailedPlacement = FALSE;
@@ -934,160 +1039,10 @@ static void EnsureA3FarmCowPlacements( void )
 			++usAdded;
 	}
 
-	CHAR8 zCows[96];
-	sprintf( zCows, "added=%u existingCivPlacements=%u", usAdded, usCivilianPlacements );
+	CHAR8 zCows[128];
+	sprintf( zCows, "added=%u rejectedUnsafe=%u existingCivPlacements=%u",
+		usAdded, usRejected, usCivilianPlacements );
 	TraceA3FarmLoad( "COWS", zCows );
-}
-
-static void DressSanMonaEnvironment( void )
-{
-	if ( !IsSanMonaVisualProfile() || gpWorldLevelData == NULL )
-		return;
-
-	UINT32 uiStreetClutter = 0;
-	UINT32 uiVenueClutter = 0;
-	UINT32 uiEdgeDetail = 0;
-	UINT32 uiMineDecay = 0;
-	UINT32 uiRoofDetail = 0;
-
-	UINT32 uiSeed = 0x5A4D4F4Eu;
-	switch ( gubSectorVisualProfile )
-	{
-		case SECTOR_VISUAL_SAN_MONA_C5_STRIP:       uiSeed ^= 0xC50051u; break;
-		case SECTOR_VISUAL_SAN_MONA_C6_EAST:        uiSeed ^= 0xC60061u; break;
-		case SECTOR_VISUAL_SAN_MONA_D4_MINE:        uiSeed ^= 0xD40041u; break;
-		case SECTOR_VISUAL_SAN_MONA_D5_KINGPIN:     uiSeed ^= 0xD50051u; break;
-		case SECTOR_VISUAL_SAN_MONA_UNDERGROUND:    uiSeed ^= 0xD4B151u; break;
-		default: break;
-	}
-
-	for ( INT32 sGridNo = 0; sGridNo < WORLD_MAX; ++sGridNo )
-	{
-		MAP_ELEMENT *pMap = &gpWorldLevelData[ sGridNo ];
-		if ( pMap->pLandHead == NULL )
-			continue;
-
-		const UINT32 uiHash = B1VisualHash( (UINT32)sGridNo ^ uiSeed );
-
-		// Sparse rooftop utility clutter makes the city read at 1920x1080 without
-		// altering roof geometry. AddOnRoofToTail creates only a render node here;
-		// no JSD/collision structure is injected.
-		if ( pMap->pRoofHead != NULL )
-		{
-			if ( pMap->pOnRoofHead == NULL &&
-				 gubSectorVisualProfile != SECTOR_VISUAL_SAN_MONA_UNDERGROUND )
-			{
-				UINT32 uiModulo = 83;
-				if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C5_STRIP ) uiModulo = 43;
-				else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D5_KINGPIN ) uiModulo = 53;
-				else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D4_MINE ) uiModulo = 97;
-
-				if ( ((uiHash >> 4) % uiModulo) == 0 )
-				{
-					const UINT16 usRoofSubIndex = A3FarmVisualSubIndex( FIRSTONROOF, uiHash >> 13 );
-					if ( usRoofSubIndex && B1AddOnRoofVisualDecoration( sGridNo, FIRSTONROOF, usRoofSubIndex ) )
-						++uiRoofDetail;
-				}
-			}
-			continue;
-		}
-		if ( pMap->pOnRoofHead != NULL )
-			continue;
-
-		UINT32 uiLandType = 0;
-		if ( !GetTileType( pMap->pLandHead->usIndex, &uiLandType ) )
-			continue;
-
-		const BOOLEAN fRoad = B1GridHasObjectType( sGridNo, ROADPIECES );
-		const BOOLEAN fNearRoad = B1GridHasNeighbourObjectType( sGridNo, ROADPIECES );
-		const BOOLEAN fFloor = ( uiLandType >= FIRSTFLOOR && uiLandType <= LASTFLOOR );
-		const BOOLEAN fOpenGround = ( uiLandType >= FIRSTTEXTURE && uiLandType <= SEVENTHTEXTURE );
-		const BOOLEAN fNearStructure = B1GridHasNeighbourStructure( sGridNo );
-		const BOOLEAN fOccupiedStructure = ( pMap->pStructHead != NULL );
-		if ( fOccupiedStructure )
-			continue;
-
-		UINT32 uiType = DEBRISMISC;
-		UINT16 usSubIndex = 0;
-
-		if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C5_STRIP )
-		{
-			// C5: Tony/Hans, Shady Lady and bars - dense, lived-in vice strip.
-			if ( (fRoad || fNearRoad) && ((uiHash >> 3) % 31) == 0 )
-			{
-				uiType = ((uiHash >> 19) & 1) ? DEBRISMISC : DEBRIS2MISC;
-				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 7 );
-				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiStreetClutter;
-			}
-			else if ( fNearStructure && (fFloor || fOpenGround) && ((uiHash >> 8) % 23) == 0 )
-			{
-				uiType = ((uiHash >> 21) & 1) ? DEBRISWOOD : DEBRISSAND;
-				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 11 );
-				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiVenueClutter;
-			}
-		}
-		else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C6_EAST )
-		{
-			// C6: Angel and the bar - still lawless, but cleaner and more residential/commercial.
-			if ( fNearStructure && fOpenGround && ((uiHash >> 7) % 79) == 0 )
-			{
-				uiType = ((uiHash >> 20) & 1) ? DEBRISWEEDS : DEBRISGRASS;
-				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 10 );
-				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiEdgeDetail;
-			}
-			else if ( fNearRoad && ((uiHash >> 9) % 113) == 0 )
-			{
-				uiType = DEBRISMISC;
-				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 13 );
-				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiStreetClutter;
-			}
-		}
-		else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D5_KINGPIN )
-		{
-			// D5: boxing club + Kingpin compound. Controlled, expensive and intimidating, not a dump.
-			if ( fNearStructure && (fFloor || fOpenGround) && ((uiHash >> 6) % 47) == 0 )
-			{
-				uiType = ((uiHash >> 22) & 1) ? DEBRISWOOD : DEBRISMISC;
-				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 12 );
-				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiVenueClutter;
-			}
-			else if ( fNearRoad && ((uiHash >> 10) % 127) == 0 )
-			{
-				usSubIndex = A3FarmVisualSubIndex( DEBRISSAND, uiHash >> 15 );
-				if ( usSubIndex && B1AddVisualDecoration( sGridNo, DEBRISSAND, usSubIndex ) ) ++uiEdgeDetail;
-			}
-		}
-		else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D4_MINE )
-		{
-			// D4: abandoned mine / stash approach - dry rubble, timber and scrub.
-			if ( (fNearStructure || fNearRoad) && (fOpenGround || fFloor) && ((uiHash >> 5) % 29) == 0 )
-			{
-				uiType = ((uiHash >> 20) & 1) ? DEBRISROCKS : DEBRISWOOD;
-				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 9 );
-				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiMineDecay;
-			}
-			else if ( fOpenGround && ((uiHash >> 11) % 83) == 0 )
-			{
-				usSubIndex = A3FarmVisualSubIndex( DEBRISWEEDS, uiHash >> 14 );
-				if ( usSubIndex && B1AddVisualDecoration( sGridNo, DEBRISWEEDS, usSubIndex ) ) ++uiEdgeDetail;
-			}
-		}
-		else
-		{
-			// D4_B1/D5_B1: only sparse visual debris; never touch exits, stash, rooms or geometry.
-			if ( fFloor && ((uiHash >> 6) % 71) == 0 )
-			{
-				uiType = ((uiHash >> 18) & 1) ? DEBRISROCKS : DEBRISMISC;
-				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 12 );
-				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiMineDecay;
-			}
-		}
-	}
-
-	CHAR8 zDressing[192];
-	sprintf( zDressing, "street=%lu venue=%lu edge=%lu mine=%lu roof=%lu visual-only; authored NPC/quest geometry preserved",
-		uiStreetClutter, uiVenueClutter, uiEdgeDetail, uiMineDecay, uiRoofDetail );
-	TraceSanMonaLoad( "ENVIRONMENT DRESSING", zDressing );
 }
 
 static void DressB1OilRigEnvironment( void )
