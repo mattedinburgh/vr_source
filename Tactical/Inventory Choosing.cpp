@@ -28,6 +28,7 @@
 // precompiled-header and non-PCH builds.
 #include "Overhead.h"
 #include "Queen Command.h"
+#include "Militia Control.h"
 
 /*
 #define ENEMYAMMODROPRATE       100 //Madd 50      // % of time enemies drop ammunition
@@ -4153,7 +4154,7 @@ void TakeMilitiaEquipmentfromSector( INT16 sMapX, INT16 sMapY, INT8 sMapZ, SOLDI
 	UINT16 usSelectedGunBulletCount = 0;						// how many bullets have we already taken for our selected gun
 	UINT16 usTabooFlag = 0;
 	
-	if ( !gGameExternalOptions.fMilitiaUseSectorInventory || !pp )
+	if ( !gGameExternalOptions.fMilitiaUseSectorInventory || !pp || gfMilitiaTacticalResetInProgress )
 		return;
 
 	// Never consume sector inventory while the source sector is contested.
