@@ -7352,22 +7352,16 @@ L_NEWAIM:
 	// IF THINGS ARE REALLY HOPELESS, OR UNARMED, TRY TO RUN AWAY
 	////////////////////////////////////////////////////////////////////////////
 
-	// if soldier has enough APs left to move at least 1 square's worth
-	//if ( ubCanMove && (pSoldier->bTeam != gbPlayerNum || pSoldier->aiData.fAIFlags & AI_RTP_OPTION_CAN_RETREAT) )
-	if (ubCanMove && pSoldier->bTeam != gbPlayerNum)
+	// Legacy BLACK panic movement is retained for civilians/non-combat actors only.
+	// Combat teams use DecideDisengagementAction()/DecideEscapeAction(), so a soldier
+	// cannot consume his one tactical fallback and then obtain another retreat here.
+	if (ubCanMove && pSoldier->bTeam != gbPlayerNum && !AICombatTeam(pSoldier))
 	{
 		if ((pSoldier->aiData.bAIMorale == MORALE_HOPELESS) || !bCanAttack)
 		{
-			// look for best place to RUN AWAY to (farthest from the closest threat)
-			//pSoldier->aiData.usActionData = RunAway( pSoldier );
 			pSoldier->aiData.usActionData = FindSpotMaxDistFromOpponents(pSoldier);
-			
-			if (!TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
-	(!AICombatTeam(pSoldier) ||
-	 AIKnownRouteExposureAcceptable(
-		 pSoldier, pSoldier->aiData.usActionData,
-		 AI_ACTION_RUN_AWAY, 220, 140, 150)))
-{
+			if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
+			{
 				return(AI_ACTION_RUN_AWAY);
 			}
 		}
