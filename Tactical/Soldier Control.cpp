@@ -6171,6 +6171,31 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 	// DEDUCT LIFE
 	ubCombinedLoss = this->SoldierTakeDamage( ANIM_CROUCH, sDamage, poisondamage, sBreathLoss, ubReason, this->ubAttackerID, NOWHERE, FALSE, TRUE );
 
+	// VR enhanced gore: every damaging conventional gunshot leaves visible blood.
+	// Keep this deterministic for the first balancing pass; probability can be introduced later.
+	// This only changes the existing map blood graphics and does not alter bleeding or damage.
+	if ( ubReason == TAKE_DAMAGE_GUNFIRE &&
+		sDamage > 0 &&
+		gGameSettings.fOptions[ TOPTION_BLOOD_N_GORE ] &&
+		this->bInSector &&
+		!( this->flags.uiStatusFlags & ( SOLDIER_VEHICLE | SOLDIER_ROBOT ) ) )
+	{
+		UINT8 ubBloodStrength = 2;
+
+		if ( sDamage >= 30 )
+			ubBloodStrength = MAXBLOODQUANTITY;
+		else if ( sDamage >= 24 )
+			ubBloodStrength = 6;
+		else if ( sDamage >= 18 )
+			ubBloodStrength = 5;
+		else if ( sDamage >= 12 )
+			ubBloodStrength = 4;
+		else if ( sDamage >= 6 )
+			ubBloodStrength = 3;
+
+		DropBlood( this, ubBloodStrength, this->bVisible );
+	}
+
 	// ATE: OK, Let's check our ASSIGNMENT state,
 	// If anything other than on a squad or guard, make them guard....
 	if ( this->bTeam == gbPlayerNum )
