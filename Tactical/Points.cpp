@@ -400,13 +400,19 @@ INT16 ActionPointCost(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bDir, UINT16 us
 	// Get switch value...
 	sSwitchValue = gubWorldMovementCosts[sGridNo][bDir][pSoldier->pathing.bLevel];
 
-	// Tile cost should not be reduced based on movement mode...
-	if (sSwitchValue == TRAVELCOST_FENCE)
+	// Fence/window traversal has its own animation AP cost and must not inherit
+	// ordinary running/walking, backpack, Athletics, stealth or diagonal modifiers.
+	BOOLEAN fTraversalAnimation =
+		sSwitchValue == TRAVELCOST_FENCE ||
+		sSwitchValue == TRAVELCOST_JUMPABLEWINDOW ||
+		sSwitchValue == TRAVELCOST_JUMPABLEWINDOW_N ||
+		sSwitchValue == TRAVELCOST_JUMPABLEWINDOW_W;
+	if (fTraversalAnimation)
 	{
-		// A casualty cannot be pulled through a fence-jump animation.
+		// A casualty cannot be pulled through a fence/window jump animation.
 		if ( pSoldier->IsDraggingBleedoutCasualty() )
 			return 100;
-		return(sTileCost);
+		return sTileCost;
 	}
 
 	// WANNE.WATER: If our soldier is not on the ground level and the tile is a "water" tile, then simply set the tile to "FLAT_GROUND"
