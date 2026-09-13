@@ -342,23 +342,25 @@ INT16 AdjustMaxSightRangeForEnvEffects( SOLDIERTYPE *pSoldier, INT8 bLightLevel,
 
 	//sNewDist = sDistVisible * gbLightSighting[ 0 ][ bLightLevel ] / 100;
 	sNewDist = sDistVisible * gGameExternalOptions.ubBrightnessVisionMod[ bLightLevel ] / 100;
-	// Adjust it based on weather...
-	if ( guiEnvWeather & ( WEATHER_FORECAST_SHOWERS | WEATHER_FORECAST_THUNDERSHOWERS ) )
+	// Adjust it based on weather. Advanced weather uses a type/intensity query;
+	// legacy Vengeance retains the original rain-intensity calculation verbatim.
+	if ( gGameExternalOptions.gfEnableAdvancedWeather ||
+		( guiEnvWeather & ( WEATHER_FORECAST_SHOWERS | WEATHER_FORECAST_THUNDERSHOWERS ) ) )
 	{
-		//sNewDist = sNewDist * 70 / 100;
-		//rain
-		//Added a feature reducing weather penalty for ranger trait - SANDRO
 		INT16 sWeatherPenalty = 0; // percent vision reduction 0-100%
-		sWeatherPenalty = min( (max( 0, (gGameExternalOptions.ubVisDistDecreasePerRainIntensity * gbCurrentRainIntensity))), 100) ;
+		if ( gGameExternalOptions.gfEnableAdvancedWeather )
+			sWeatherPenalty = WeatherGetVisionPenaltyPercent();
+		else
+			sWeatherPenalty = min( (max( 0, (gGameExternalOptions.ubVisDistDecreasePerRainIntensity * gbCurrentRainIntensity))), 100) ;
+
+		// Preserve the existing Ranger mitigation for both legacy and advanced weather.
 		if( gGameOptions.fNewTraitSystem && HAS_SKILL_TRAIT( pSoldier, RANGER_NT ) )
 		{
 			sWeatherPenalty = (sWeatherPenalty * ( 100 - (gSkillTraitValues.ubRAWeatherPenaltiesReduction * NUM_SKILL_TRAITS( pSoldier, RANGER_NT ))) ) / 100;
-			sWeatherPenalty = min( (max( 0, sWeatherPenalty)), 100 ); // keep it in 0-100 range
+			sWeatherPenalty = min( (max( 0, sWeatherPenalty)), 100 );
 		}
 
 		sNewDist = (sNewDist * ( 100 - sWeatherPenalty )) / 100;
-
-		//end rain
 	}
 
 	//rain
@@ -6371,6 +6373,14 @@ UINT8 CalcEffVolume(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel, UINT8 ubN
 			}
 		}
 
+	}
+
+	// Weather masking operates on effective sound energy, not on the raw source
+	// location. This applies identically to player, militia and enemy listeners.
+	if ( iEffVolume > 0 && gGameExternalOptions.gfEnableAdvancedWeather )
+	{
+		UINT8 ubWeatherHearingPenalty = WeatherGetHearingPenaltyPercent( ubNoiseType );
+		iEffVolume = ( iEffVolume * ( 100 - ubWeatherHearingPenalty ) ) / 100;
 	}
 
 	//NumMessage("effVolume = ",ubEffVolume);
