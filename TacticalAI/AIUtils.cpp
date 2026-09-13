@@ -4189,6 +4189,7 @@ static BOOLEAN AIEnemyFixedMissionRole(SOLDIERTYPE *pSoldier)
 {
 	return pSoldier &&
 		(pSoldier->aiData.bOrders == STATIONARY ||
+		 pSoldier->aiData.bOrders == ONGUARD ||
 		 pSoldier->aiData.bOrders == SNIPER);
 }
 
