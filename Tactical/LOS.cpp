@@ -4474,9 +4474,11 @@ INT8 FireBulletGivenTargetNCTH( SOLDIERTYPE * pFirer, FLOAT dEndX, FLOAT dEndY, 
 		}
 		pBullet = GetBulletPtr( iBullet );
 
-		// Attach the exact NCTH calculation/dispersion snapshot to this bullet id.
+		// Attach the exact NCTH calculation/dispersion snapshot to this real bullet id.
+		// ChanceToGetThrough uses fake bullets; those must never replace a fired-shot diagnostic.
 		// For buckshot each pellet intentionally references the same trigger-pull snapshot.
-		NCTHRegisterBulletDiagnostic( iBullet, pFirer->bDoBurst );
+		if ( !fFake )
+			NCTHRegisterBulletDiagnostic( iBullet, pFirer->bDoBurst );
 
 		// HEADROCK HAM 4: The HitBy value now holds the ratio between the Distance Aperture and the Final Aperture.
 		// Basically, this represents by how much our shooter has managed to make the shot more accurate than it would
