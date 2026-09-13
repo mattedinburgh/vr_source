@@ -6396,7 +6396,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		!TileIsOutOfBounds(sClosestOpponent) &&
 		PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 4 &&
 		(ubBestAttackAction == AI_ACTION_NONE || ubBestAttackAction == AI_ACTION_FIRE_GUN && Random(25) > (UINT8)BestAttack.ubChanceToReallyHit) &&
-		(Chance(10 * SoldierDifficultyLevel(pSoldier) + 10 * (CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10)))) &&
+		(Chance(15 + 15 * SoldierDifficultyLevel(pSoldier) + 10 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10))) &&
 		FindFenceAroundSpot(pSoldier->sGridNo))
 	{
 		CheckTossOpponentFence(pSoldier, &BestThrow);
