@@ -214,6 +214,45 @@ static UINT8 TrueColorScaleChannel(UINT8 ubChannel, UINT16 usScale)
 	return (UINT8)((uiValue > 255) ? 255 : uiValue);
 }
 
+// 4x4 ordered RGB565 dithering for true-colour source art.
+//
+// The tactical framebuffer remains RGB565, so this cannot increase the number of
+// physical framebuffer values beyond 65,536. It preserves substantially more of
+// the source image's apparent colour detail by distributing quantization error
+// spatially instead of rounding every source pixel independently.
+//
+// Source-space coordinates keep the pattern stable while the camera scrolls.
+static UINT8 TrueColorClampByte(INT32 iValue)
+{
+	if(iValue < 0)
+		return 0;
+	if(iValue > 255)
+		return 255;
+	return (UINT8)iValue;
+}
+
+static void TrueColorApplyRGB565Dither(UINT8 *pubRed, UINT8 *pubGreen, UINT8 *pubBlue, INT32 iSourceX, INT32 iSourceY)
+{
+	static const INT8 bayer4x4[4][4] =
+	{
+		{  0,  8,  2, 10 },
+		{ 12,  4, 14,  6 },
+		{  3, 11,  1,  9 },
+		{ 15,  7, 13,  5 }
+	};
+
+	// Center the matrix around zero. RGB565 has about 8-value steps for R/B
+	// and 4-value steps for G. Half-step perturbations preserve average colour
+	// while making gradients and textured terrain look much less quantized.
+	const INT32 iCentered = ((INT32)bayer4x4[iSourceY & 3][iSourceX & 3] * 2) - 15;
+	const INT32 iRedBlueOffset = (iCentered * 4) / 15;
+	const INT32 iGreenOffset = (iCentered * 2) / 15;
+
+	*pubRed = TrueColorClampByte((INT32)*pubRed + iRedBlueOffset);
+	*pubGreen = TrueColorClampByte((INT32)*pubGreen + iGreenOffset);
+	*pubBlue = TrueColorClampByte((INT32)*pubBlue + iRedBlueOffset);
+}
+
 BOOLEAN BltTrueColorDataTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue,
 	HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion,
 	UINT8 ubShadeLevel, BOOLEAN fZTest, BOOLEAN fZWrite)
@@ -305,6 +344,13 @@ BOOLEAN BltTrueColorDataTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, 
 				ubRed = (UINT8)(((UINT32)ubRed * ubAlpha + (UINT32)ubDestRed * uiInvAlpha + 127) / 255);
 				ubGreen = (UINT8)(((UINT32)ubGreen * ubAlpha + (UINT32)ubDestGreen * uiInvAlpha + 127) / 255);
 				ubBlue = (UINT8)(((UINT32)ubBlue * ubAlpha + (UINT32)ubDestBlue * uiInvAlpha + 127) / 255);
+			}
+
+			// Only dither genuine 32-bit source art. A 16-bit source has already
+			// been quantized to RGB565 and should remain bit-stable.
+			if(hSrcVObject->ubBitDepth == 32)
+			{
+				TrueColorApplyRGB565Dither(&ubRed, &ubGreen, &ubBlue, iSourceX, iSourceY);
 			}
 
 			*pDest = Get16BPPColor(FROMRGB(ubRed, ubGreen, ubBlue));
