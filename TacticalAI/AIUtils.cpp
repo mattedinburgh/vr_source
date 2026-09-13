@@ -2754,7 +2754,7 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 	}
 
 	// count friends that flank around the same spot
-	if (CountFriendsFlankSameSpot(pSoldier) == 0)
+	if (CountFriendsFlankSameSpot(pSoldier) > 0)
 	{
 		bMoraleCategory++;
 	}
@@ -7770,6 +7770,8 @@ UINT8 CountFriendsFlankSameSpot(SOLDIERTYPE *pSoldier, INT32 sSpot)
 			!pFriend->bCollapsed &&
 			!pFriend->bBreathCollapsed &&
 			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
+			!(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) &&
+			!AIDisengagementActive(pFriend) && !AIEscapeActive(pFriend) &&
 			pFriend->aiData.bAlertStatus == STATUS_RED &&
 			pFriend->aiData.bOrders > ONGUARD)
 		{
@@ -7807,10 +7809,13 @@ UINT8 CountNearbyFriendsLastAttackHit( SOLDIERTYPE *pSoldier, INT32 sGridNo, UIN
 
 		if (pFriend != pSoldier &&
 			pFriend->bActive &&
+			pFriend->bInSector &&
 			pFriend->stats.bLife >= OKLIFE &&
 			!pFriend->bCollapsed &&
 			!pFriend->bBreathCollapsed &&
 			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
+			!(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) &&
+			!AIDisengagementActive(pFriend) && !AIEscapeActive(pFriend) &&
 			pFriend->aiData.bOrders > ONGUARD &&
 			pFriend->aiData.bOrders != SNIPER &&
 			PythSpacesAway( sGridNo, pFriend->sGridNo ) <= ubDistance &&
