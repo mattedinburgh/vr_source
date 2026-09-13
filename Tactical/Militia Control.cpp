@@ -109,6 +109,85 @@ extern SOLDIERTYPE *pTMilitiaSoldier;
 extern BOOLEAN SoldierCanAffordNewStance( SOLDIERTYPE *pSoldier, UINT8 ubDesiredStance );
 
 
+static BOOLEAN MilitiaSpreadDestinationReserved( SOLDIERTYPE *pSoldier, INT32 sSpot )
+{
+	for ( UINT8 cnt = gTacticalStatus.Team[ MILITIA_TEAM ].bFirstID;
+		cnt <= gTacticalStatus.Team[ MILITIA_TEAM ].bLastID; ++cnt )
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[ cnt ];
+		if ( !pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE )
+		{
+			continue;
+		}
+
+		if ( pFriend->aiData.bOrders == FARPATROL &&
+			pFriend->aiData.bAttitude == DEFENSIVE &&
+			pFriend->aiData.sPendingActionData2 == sSpot )
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+static INT32 FindMilitiaSpreadDestination( SOLDIERTYPE *pSoldier )
+{
+	if ( !pSoldier )
+		return NOWHERE;
+
+	// Reuse the engine's legal random-destination finder, but temporarily constrain
+	// its roaming origin/range to a local five-tile bubble around the militia soldier.
+	// This avoids the old FARPATROL behaviour where "Spread" could send militia
+	// across a large part of the sector.
+	INT8 bOldOrders = pSoldier->aiData.bOrders;
+	INT32 sOldAnchor = pSoldier->aiData.sPatrolGrid[0];
+	pSoldier->aiData.sPatrolGrid[0] = pSoldier->sGridNo;
+	pSoldier->aiData.bOrders = (pSoldier->aiData.bUnderFire || GuySawEnemy( pSoldier )) ? STATIONARY : ONGUARD;
+
+	UINT16 usCurrentExposure = AIKnownThreatExposure( pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel );
+	UINT8 ubCurrentNearby = CountNearbyFriends( pSoldier, pSoldier->sGridNo, 3 );
+	INT32 sBestSpot = NOWHERE;
+	INT32 iBestScore = -100000;
+
+	for ( UINT8 ubTry = 0; ubTry < 18; ++ubTry )
+	{
+		INT32 sCandidate = RandDestWithinRange( pSoldier );
+		if ( TileIsOutOfBounds(sCandidate) || sCandidate == pSoldier->sGridNo )
+			continue;
+
+		INT16 sDistance = PythSpacesAway( pSoldier->sGridNo, sCandidate );
+		if ( sDistance < 2 || sDistance > 6 || MilitiaSpreadDestinationReserved( pSoldier, sCandidate ) )
+			continue;
+
+		UINT16 usExposure = AIKnownThreatExposure( pSoldier, sCandidate, pSoldier->pathing.bLevel );
+		if ( usExposure > usCurrentExposure + 80 )
+			continue;
+
+		UINT8 ubNearby = CountNearbyFriends( pSoldier, sCandidate, 3 );
+		UINT8 ubAdjacent = NumberOfTeamMatesAdjacent( pSoldier, sCandidate );
+
+		INT32 iScore = 22 * ((INT32)ubCurrentNearby - (INT32)ubNearby);
+		iScore -= 18 * ubAdjacent;
+		iScore += AnyCoverAtSpot( pSoldier, sCandidate ) ? 24 : 0;
+		iScore += __min((INT32)18, __max((INT32)-18,
+			((INT32)usCurrentExposure - (INT32)usExposure) / 4));
+		iScore += __min((INT32)6, (INT32)sDistance);
+
+		if ( iScore > iBestScore )
+		{
+			iBestScore = iScore;
+			sBestSpot = sCandidate;
+		}
+	}
+
+	pSoldier->aiData.bOrders = bOldOrders;
+	pSoldier->aiData.sPatrolGrid[0] = sOldAnchor;
+	return sBestSpot;
+}
+
+
 void ResetMilitia()
 {
 	UINT8 ubNumGreen = 0;
@@ -1737,27 +1816,22 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 						{
 							if ( (pTeamSoldier->bActive) && (pTeamSoldier->bInSector) && (pTeamSoldier->stats.bLife >= OKLIFE) )
 							{
-								// sevenfm: change from stationary/patrol etc
-								pTeamSoldier->aiData.bOrders = FARPATROL;
-
-								// See if we can get there
-								sActionGridNo =  RandDestWithinRange( pTeamSoldier );
-								if ( sActionGridNo != -1 )
+								sActionGridNo = FindMilitiaSpreadDestination( pTeamSoldier );
+								if ( !TileIsOutOfBounds(sActionGridNo) )
 								{
-									// SEND PENDING ACTION
-									pTeamSoldier->aiData.sPendingActionData2  = sActionGridNo;
-									//pTeamSoldier->bPendingActionData3  = ubDirection;
+									// A spread order is a local defensive reposition, not a sector-wide patrol.
+									pTeamSoldier->aiData.bOrders = FARPATROL;
+									pTeamSoldier->aiData.bAttitude = DEFENSIVE;
+									pTeamSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
+									pTeamSoldier->aiData.sPendingActionData2 = sActionGridNo;
 									pTeamSoldier->aiData.ubPendingActionAnimCount = 0;
 									pTeamSoldier->usUIMovementMode = RUNNING;
 
-									// CHECK IF WE ARE AT THIS GRIDNO NOW
 									if ( pTeamSoldier->sGridNo != sActionGridNo )
 									{
-										// WALK UP TO DEST FIRST
 										SendGetNewSoldierPathEvent( pTeamSoldier, sActionGridNo, pTeamSoldier->usUIMovementMode );
 									}
 								}
-
 							}
 						}
 
