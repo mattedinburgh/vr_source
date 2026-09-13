@@ -6006,7 +6006,7 @@ static void DropVRDirectionalBloodTrail( SOLDIERTYPE *pSoldier, UINT8 ubSprayDir
 // These deliberately reuse living-safe JA2 hit/fall states rather than death-only
 // animation states. Direction, momentum and damage class create readable variety
 // without adding new savegame fields or bypassing JA2's collision-checked fallbacks.
-static BOOLEAN HandleVRCinematicGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWeaponIndex, INT16 sDamage, UINT16 bDirection )
+static BOOLEAN HandleVRCinematicGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWeaponIndex, INT16 sDamage, UINT16 bDirection, UINT8 ubHitLocation )
 {
 	if ( pSoldier == NULL || pSoldier->stats.bLife <= 0 || pSoldier->ubBodyType >= 4 )
 		return FALSE;
@@ -6033,20 +6033,53 @@ static BOOLEAN HandleVRCinematicGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 u
 	UINT8 ubReaction = 0;
 
 	// Damage-aware families. Light wounds mostly produce flinches/stumbles; medium
-	// wounds add gentle collapses; heavy wounds unlock the checked flyback family.
-	// Running victims use momentum-heavy variants so they do not snap to a stationary pose.
+	// wounds only sometimes put a survivor on the floor; heavy wounds can unlock the
+	// checked flyback family. Running reactions respect both momentum and hit energy.
+	UINT8 ubRoll = (UINT8)Random( 100 );
+
 	if ( fRunning )
-		ubReaction = (UINT8)( 20 + Random( 10 ) );
+	{
+		if ( sDamage <= 7 )
+			ubReaction = ( ubRoll < 55 ) ? (UINT8)( 20 + Random( 3 ) ) : (UINT8)Random( 6 );
+		else if ( sDamage <= 17 )
+			ubReaction = ( ubRoll < 70 ) ? (UINT8)( 20 + Random( 5 ) ) : (UINT8)( 8 + Random( 3 ) );
+		else
+			ubReaction = ( ubRoll < 55 ) ? (UINT8)( 20 + Random( 5 ) ) : (UINT8)( 25 + Random( 5 ) );
+	}
 	else if ( sDamage <= 7 )
+	{
 		ubReaction = (UINT8)Random( 12 );
+	}
 	else if ( sDamage <= 17 )
-		ubReaction = (UINT8)( 6 + Random( 17 ) );
+	{
+		if ( ubRoll < 45 )
+			ubReaction = (UINT8)( 6 + Random( 6 ) );       // upright/stagger
+		else if ( ubRoll < 75 )
+			ubReaction = (UINT8)( 12 + Random( 8 ) );      // soft collapse/fallback
+		else
+			ubReaction = (UINT8)Random( 6 );                // compact flinch
+	}
 	else
-		ubReaction = (UINT8)( 12 + Random( 18 ) );
+	{
+		if ( ubRoll < 30 )
+			ubReaction = (UINT8)( 6 + Random( 6 ) );       // still possible to stay upright
+		else if ( ubRoll < 65 )
+			ubReaction = (UINT8)( 12 + Random( 8 ) );      // soft/normal fall
+		else
+			ubReaction = (UINT8)( 25 + Random( 5 ) );      // hard reaction
+	}
+
+	// Hit-location bias is intentionally modest: it shapes the physical reaction
+	// without overriding the damage-energy family. Leg hits favor loss of balance;
+	// head hits favor rotational flinches; torso hits keep the full mix.
+	if ( !fRunning && ubHitLocation == AIM_SHOT_LEGS && sDamage >= 8 && Random( 100 ) < 35 )
+		ubReaction = (UINT8)( 12 + Random( 8 ) );
+	else if ( !fRunning && ubHitLocation == AIM_SHOT_HEAD && Random( 100 ) < 45 )
+		ubReaction = (UINT8)( 3 + Random( 5 ) );
 
 	DebugMsg( TOPIC_JA2, DBG_LEVEL_3, String(
-		"VR_HIT variant=%u soldier=%u damage=%d running=%u incomingDir=%u momentumDir=%u",
-		ubReaction, pSoldier->ubID, sDamage, fRunning ? 1 : 0, ubIncomingDirection, ubMomentumDirection ) );
+		"VR_HIT variant=%u soldier=%u damage=%d hitloc=%u running=%u incomingDir=%u momentumDir=%u",
+		ubReaction, pSoldier->ubID, sDamage, ubHitLocation, fRunning ? 1 : 0, ubIncomingDirection, ubMomentumDirection ) );
 
 	switch ( ubReaction )
 	{
@@ -7577,7 +7610,7 @@ void SoldierGotHitGunFire( SOLDIERTYPE *pSoldier, UINT16 usWeaponIndex, INT16 sD
 	if ( HandleVRFatalGunshotReaction( pSoldier, usWeaponIndex, sDamage, bDirection, ubHitLocation ) )
 		return;
 
-	if ( HandleVRCinematicGunshotReaction( pSoldier, usWeaponIndex, sDamage, bDirection ) )
+	if ( HandleVRCinematicGunshotReaction( pSoldier, usWeaponIndex, sDamage, bDirection, ubHitLocation ) )
 		return;
 
 	DoGenericHit( pSoldier, ubSpecial, bDirection );
