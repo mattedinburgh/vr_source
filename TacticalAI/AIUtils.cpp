@@ -639,7 +639,7 @@ void NewDest(SOLDIERTYPE *pSoldier, INT32 usGridNo)
 	}
 	else
 	{
-		if ( pSoldier->bTeam == ENEMY_TEAM && pSoldier->aiData.bAlertStatus == STATUS_RED )
+		if ( AICombatTeam(pSoldier) && pSoldier->aiData.bAlertStatus == STATUS_RED )
 		{
 			switch( pSoldier->aiData.bAction )
 			{
@@ -1388,7 +1388,7 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 					// every friendly in the sector, making separated groups share results
 					// without radio or proximity.
 					BOOLEAN fShareClear = TRUE;
-					if (pSoldier->bTeam == ENEMY_TEAM && pOpponent->bTeam == ENEMY_TEAM)
+					if (AICombatTeam(pSoldier) && pOpponent->bTeam == pSoldier->bTeam)
 					{
 						fShareClear = AISameFireteam(pSoldier, pOpponent) ||
 							PythSpacesAway(pSoldier->sGridNo, pOpponent->sGridNo) <= TACTICAL_RANGE / 3;
@@ -2644,7 +2644,7 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 			// Morale support is tactical, not sector-wide. Healthy enemy fireteams
 			// should draw confidence primarily from their own element and nearby
 			// cross-support, rather than from soldiers fighting on the far side of the map.
-			if (pSoldier->bTeam == ENEMY_TEAM && pFriend->bTeam == ENEMY_TEAM &&
+			if (AICombatTeam(pSoldier) && pFriend->bTeam == pSoldier->bTeam &&
 				!AISameFireteam(pSoldier, pFriend) &&
 				ubMyFireteamAlive > 2 &&
 				PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > TACTICAL_RANGE / 2)
@@ -11317,7 +11317,7 @@ BOOLEAN AICheckDefense(SOLDIERTYPE *pSoldier)
 	CHECKF(pSoldier);
 
 	// only for enemy team
-	if (pSoldier->bTeam != ENEMY_TEAM)
+	if (!AICombatTeam(pSoldier))
 	{
 		return FALSE;
 	}
@@ -11387,7 +11387,7 @@ BOOLEAN UseSightCoverAdvance(SOLDIERTYPE *pSoldier)
 		return FALSE;
 	}
 
-	if (pSoldier->bTeam != ENEMY_TEAM)
+	if (!AICombatTeam(pSoldier))
 	{
 		return FALSE;
 	}
@@ -11400,9 +11400,11 @@ BOOLEAN UseSightCoverAdvance(SOLDIERTYPE *pSoldier)
 	switch (pSoldier->ubSoldierClass)
 	{
 	case SOLDIER_CLASS_ELITE:
+	case SOLDIER_CLASS_ELITE_MILITIA:
 		return TRUE;
 		break;
 	case SOLDIER_CLASS_ARMY:
+	case SOLDIER_CLASS_REG_MILITIA:
 		if (pSoldier->aiData.bUnderFire ||
 			pSoldier->aiData.bShock > 0 ||
 			AICheckDefense(pSoldier) ||
@@ -11414,6 +11416,7 @@ BOOLEAN UseSightCoverAdvance(SOLDIERTYPE *pSoldier)
 		}
 		break;
 	case SOLDIER_CLASS_ADMINISTRATOR:
+	case SOLDIER_CLASS_GREEN_MILITIA:
 		if (pSoldier->aiData.bUnderFire ||
 			pSoldier->aiData.bShock > 0 ||
 			AICorpseWarningKnown(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel) ||
