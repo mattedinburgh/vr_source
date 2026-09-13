@@ -732,9 +732,41 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 	SetVideoObjectPalette( pObject, palette );
 }
 
+static BOOLEAN IsMandatoryB1RemasterType( UINT8 ubType )
+{
+	switch ( ubType )
+	{
+		case FIRSTTEXTURE:
+		case SECONDTEXTURE:
+		case THIRDTEXTURE:
+		case FOURTHTEXTURE:
+		case FIFTHTEXTURE:
+		case SIXTHTEXTURE:
+		case SEVENTHTEXTURE:
+		case REGWATERTEXTURE:
+		case DEEPWATERTEXTURE:
+		case ROADPIECES:
+		case FIRSTFLOOR:
+		case SECONDFLOOR:
+		case THIRDFLOOR:
+		case FOURTHFLOOR:
+		case THIRDOSTRUCT:
+		case FIRSTWALL:
+		case SECONDWALL:
+		case THIRDWALL:
+		case FOURTHWALL:
+		case FIRSTROOF:
+		case FIRSTONROOF:
+		case SECONDONROOF:
+			return TRUE;
+		default:
+			return FALSE;
+	}
+}
+
 static BOOLEAN ValidateB1MapTileReference( UINT8 ubType, UINT16 usSubIndex, INT32 sGridNo, const STR8 pLayerName )
 {
-	if ( gubSectorVisualProfile != SECTOR_VISUAL_ORONEGRO_OIL_RIG )
+	if ( gubSectorVisualProfile != SECTOR_VISUAL_ORONEGRO_OIL_RIG || !IsMandatoryB1RemasterType( ubType ) )
 		return TRUE;
 
 	if ( ubType >= NUMBEROFTILETYPES )
