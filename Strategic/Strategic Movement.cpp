@@ -160,6 +160,7 @@ BOOLEAN gfWaitingForInput = FALSE;
 // static enemy counters, bypassing GroupArrivedAtSector(). Queue that destination
 // so defenders cannot silently coexist with the escaped force.
 static BOOLEAN gfPendingEnemyRetreatConflict[ MAP_WORLD_X ][ MAP_WORLD_Y ] = { FALSE };
+static BOOLEAN gfEnemyRetreatLockedSector[ MAP_WORLD_X ][ MAP_WORLD_Y ] = { FALSE };
 
 //Player grouping functions
 //.........................
@@ -4537,6 +4538,25 @@ void QueueEnemyRetreatConflict( UINT8 ubSectorX, UINT8 ubSectorY )
 		return;
 
 	gfPendingEnemyRetreatConflict[ ubSectorX ][ ubSectorY ] = TRUE;
+	gfEnemyRetreatLockedSector[ ubSectorX ][ ubSectorY ] = TRUE;
+}
+
+BOOLEAN EnemyRetreatLockedInSector( UINT8 ubSectorX, UINT8 ubSectorY )
+{
+	if( ubSectorX < 1 || ubSectorX >= MAP_WORLD_X - 1 ||
+		ubSectorY < 1 || ubSectorY >= MAP_WORLD_Y - 1 )
+		return FALSE;
+
+	return gfEnemyRetreatLockedSector[ ubSectorX ][ ubSectorY ];
+}
+
+void ClearEnemyRetreatLockInSector( UINT8 ubSectorX, UINT8 ubSectorY )
+{
+	if( ubSectorX < 1 || ubSectorX >= MAP_WORLD_X - 1 ||
+		ubSectorY < 1 || ubSectorY >= MAP_WORLD_Y - 1 )
+		return;
+
+	gfEnemyRetreatLockedSector[ ubSectorX ][ ubSectorY ] = FALSE;
 }
 
 BOOLEAN ProcessNextEnemyRetreatConflict( void )
