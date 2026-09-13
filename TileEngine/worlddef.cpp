@@ -1069,9 +1069,11 @@ static void DressA3FarmEnvironment( void )
 	if ( gubSectorVisualProfile != SECTOR_VISUAL_A3_FARM || gpWorldLevelData == NULL )
 		return;
 
-	UINT32 uiCropRows = 0, uiFurrows = 0, uiFieldClutter = 0, uiFarmyardClutter = 0;
-	UINT32 uiTrailClutter = 0, uiTrailEdges = 0, uiWaterEdges = 0;
-	UINT32 uiLandmarkDetail = 0, uiRoofDetail = 0;
+	UINT32 uiCropRows = 0, uiCropBlocks = 0, uiFurrows = 0, uiFieldClutter = 0;
+	UINT32 uiFarmyardClutter = 0, uiYardBlocks = 0, uiMudBlocks = 0;
+	UINT32 uiTrailClutter = 0, uiTrailEdges = 0, uiWaterEdges = 0, uiDrainageBlocks = 0;
+	UINT32 uiEdgeBlocks = 0, uiLandmarkBlocks = 0, uiLandmarkDetail = 0, uiRoofDetail = 0;
+	UINT32 uiBlockPieces = 0;
 
 	for ( INT32 sGridNo = 0; sGridNo < WORLD_MAX; ++sGridNo )
 	{
@@ -1120,68 +1122,167 @@ static void DressA3FarmEnvironment( void )
 			default: break;
 		}
 
-		if ( fOpenFarmGround && ubFieldZone != 0 && !fNearStructure && !fNearTrail && fCropMarker )
+		// First place the larger reusable compositions. This makes the farm read as
+		// intentional authored scenery at 1080p instead of random single-tile noise.
+		if ( fOpenFarmGround && ubFieldZone != 0 && !fNearStructure && !fNearTrail &&
+			 !fNearWater && uiCropBlocks < 30 && ((uiHash >> 3) % 97) == 0 )
 		{
-			// Reusable VR_CROP_MASTER uses all ten standard decoration frames:
-			// 1-3 dense/tall, 4-5 medium, 6 sparse, 7 harvested stubble,
-			// 8 trampled, 9 field edge and 10 wet/tall crop.
+			UINT16 usPlaced = 0;
+			switch ( (uiHash >> 18) % 3 )
+			{
+				case 0: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3CropStripA, 4, FALSE ); break;
+				case 1: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3CropStripB, 4, FALSE ); break;
+				default: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3CropPatch, 4, FALSE ); break;
+			}
+			if ( usPlaced )
+			{
+				++uiCropBlocks;
+				uiBlockPieces += usPlaced;
+			}
+		}
+
+		if ( fTrail && uiMudBlocks < 16 && ((uiHash >> 5) % 37) == 0 )
+		{
+			const UINT16 usPlaced = ((uiHash >> 17) & 1)
+				? A3PlaceFarmVisualBlock( sGridNo, gA3MudRun, 3, FALSE )
+				: A3PlaceFarmVisualBlock( sGridNo, gA3MudCorner, 4, FALSE );
+			if ( usPlaced )
+			{
+				++uiMudBlocks;
+				uiBlockPieces += usPlaced;
+			}
+		}
+
+		if ( fOpenFarmGround && fNearWater && uiDrainageBlocks < 14 &&
+			 ((uiHash >> 8) % 43) == 0 )
+		{
+			const UINT16 usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3DrainageRun, 4, FALSE );
+			if ( usPlaced )
+			{
+				++uiDrainageBlocks;
+				uiBlockPieces += usPlaced;
+			}
+		}
+
+		if ( fNearStructure && (fOpenFarmGround || fFloor) && uiYardBlocks < 18 &&
+			 ((uiHash >> 7) % 29) == 0 )
+		{
+			UINT16 usPlaced = 0;
+			switch ( (uiHash >> 20) % 3 )
+			{
+				case 0: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3YardPalletCluster, 4, TRUE ); break;
+				case 1: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3YardToolCluster, 4, TRUE ); break;
+				default: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3TroughCluster, 4, TRUE ); break;
+			}
+			if ( usPlaced )
+			{
+				++uiYardBlocks;
+				uiBlockPieces += usPlaced;
+			}
+		}
+
+		if ( fOpenFarmGround && (fNearTrail || fNearWater) && uiEdgeBlocks < 22 &&
+			 ((uiHash >> 10) % 47) == 0 )
+		{
+			const UINT16 usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3FieldEdge, 4, FALSE );
+			if ( usPlaced )
+			{
+				++uiEdgeBlocks;
+				uiBlockPieces += usPlaced;
+			}
+		}
+
+		if ( fOpenFarmGround && !fNearStructure && uiLandmarkBlocks < 7 &&
+			 ((uiHash >> 12) % 389) == 0 )
+		{
+			UINT16 usPlaced = 0;
+			switch ( (uiHash >> 23) % 5 )
+			{
+				case 0: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3ScarecrowPlot, 5, FALSE ); break;
+				case 1: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3HayCorner, 4, FALSE ); break;
+				case 2: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3WaterTankCorner, 4, FALSE ); break;
+				case 3: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3FarmSignCorner, 3, FALSE ); break;
+				default: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3LeanToCorner, 4, FALSE ); break;
+			}
+			if ( usPlaced )
+			{
+				++uiLandmarkBlocks;
+				uiBlockPieces += usPlaced;
+			}
+		}
+
+		// Reusable VR_CROP_MASTER: all ten directly addressable decoration frames
+		// are true-colour RGBA. Zones deliberately use different density/silhouette
+		// families so the fields are visually distinct.
+		if ( pMap->pObjectHead == NULL && fOpenFarmGround && ubFieldZone != 0 &&
+			 !fNearStructure && !fNearTrail && fCropMarker )
+		{
 			UINT16 usSubIndex = 1;
 			switch ( ubFieldZone )
 			{
-				case 1: usSubIndex = (UINT16)(1 + ((uiHash >> 7) % 3)); break;       // thick mature crop
-				case 2: usSubIndex = (UINT16)(3 + ((uiHash >> 9) % 3)); break;       // medium rows
-				case 3: usSubIndex = (UINT16)(6 + ((uiHash >> 11) % 3)); break;      // sparse/stubble/trampled
-				case 4: usSubIndex = ((uiHash >> 13) & 1) ? 9 : 10; break;           // edge / humid crop
+				case 1: usSubIndex = (UINT16)(1 + ((uiHash >> 7) % 3)); break;       // dense / tall
+				case 2: usSubIndex = (UINT16)(3 + ((uiHash >> 9) % 3)); break;       // medium
+				case 3: usSubIndex = (UINT16)(6 + ((uiHash >> 11) % 3)); break;      // sparse / stubble / trampled
+				case 4: usSubIndex = ((uiHash >> 13) & 1) ? 9 : 10; break;           // field edge / wet tall
 				default: usSubIndex = (UINT16)(1 + ((uiHash >> 7) % 10)); break;
 			}
 
-			PTILE_IMAGERY pCropSurface = gTileSurfaceArray[ SECONDDECORATIONS ];
-			if ( pCropSurface != NULL && pCropSurface->vo != NULL &&
-				 usSubIndex <= gNumTilesPerType[ SECONDDECORATIONS ] &&
-				 usSubIndex <= pCropSurface->vo->usNumberOfObjects &&
+			if ( A3FarmCustomFrameExists( SECONDDECORATIONS, (UINT8)usSubIndex ) &&
 				 B1AddVisualDecoration( sGridNo, SECONDDECORATIONS, usSubIndex ) )
 				++uiCropRows;
 		}
-		else if ( fOpenFarmGround && ubFieldZone != 0 && !fNearStructure && fFurrowMarker )
+		else if ( pMap->pObjectHead == NULL && fOpenFarmGround && ubFieldZone != 0 &&
+				  !fNearStructure && fFurrowMarker )
 		{
 			const UINT16 usSubIndex = A3FarmVisualSubIndex( DEBRISSAND, uiHash >> 10 );
-			if ( usSubIndex && B1AddVisualDecoration( sGridNo, DEBRISSAND, usSubIndex ) ) ++uiFurrows;
+			if ( usSubIndex && B1AddVisualDecoration( sGridNo, DEBRISSAND, usSubIndex ) )
+				++uiFurrows;
 		}
 
-		if ( fOpenFarmGround && ubFieldZone == 0 && ((uiHash >> 5) % (fNearStructure ? 31 : 83)) == 0 )
+		if ( pMap->pObjectHead == NULL && fOpenFarmGround && ubFieldZone == 0 &&
+			 ((uiHash >> 5) % (fNearStructure ? 31 : 83)) == 0 )
 		{
 			const UINT32 uiType = ((uiHash >> 19) & 1) ? DEBRISWEEDS : DEBRISGRASS;
 			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 8 );
-			if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiFieldClutter;
+			if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
+				++uiFieldClutter;
 		}
 
-		if ( fNearStructure && (fOpenFarmGround || fFloor) && ((uiHash >> 9) % 17) == 0 )
+		if ( pMap->pObjectHead == NULL && fNearStructure && (fOpenFarmGround || fFloor) &&
+			 ((uiHash >> 9) % 17) == 0 )
 		{
-			UINT32 uiType = ((uiHash >> 22) % 3 == 0) ? DEBRISWOOD : (((uiHash >> 22) % 3 == 1) ? DEBRISROCKS : DEBRISMISC);
+			UINT32 uiType = ((uiHash >> 22) % 3 == 0) ? DEBRISWOOD :
+				(((uiHash >> 22) % 3 == 1) ? DEBRISROCKS : DEBRISMISC);
 			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 12 );
-			if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiFarmyardClutter;
+			if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
+				++uiFarmyardClutter;
 		}
 
-		if ( fTrail && ((uiHash >> 7) % 11) == 0 )
+		if ( pMap->pObjectHead == NULL && fTrail && ((uiHash >> 7) % 11) == 0 )
 		{
 			const UINT32 uiType = ((uiHash >> 21) & 1) ? DEBRISSAND : DEBRISROCKS;
 			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 15 );
-			if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiTrailClutter;
+			if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
+				++uiTrailClutter;
 		}
-		if ( fOpenFarmGround && fNearTrail && ((uiHash >> 6) % 13) == 0 )
+		if ( pMap->pObjectHead == NULL && fOpenFarmGround && fNearTrail && ((uiHash >> 6) % 13) == 0 )
 		{
 			const UINT32 uiType = ((uiHash >> 20) & 1) ? DEBRISWEEDS : DEBRISGRASS;
 			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 11 );
-			if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiTrailEdges;
+			if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
+				++uiTrailEdges;
 		}
-		if ( fOpenFarmGround && fNearWater && ((uiHash >> 8) % 9) == 0 )
+		if ( pMap->pObjectHead == NULL && fOpenFarmGround && fNearWater && ((uiHash >> 8) % 9) == 0 )
 		{
 			const UINT32 uiType = ((uiHash >> 23) & 1) ? DEBRISGRASS : DEBRISWEEDS;
 			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 14 );
-			if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiWaterEdges;
+			if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
+				++uiWaterEdges;
 		}
 	}
 
+	// Hand-picked authored-safe accent grids still provide recognizable focal
+	// points even if procedural block placement is sparse on a particular map edit.
 	const INT32 sLandmarks[] =
 	{
 		12042,12025,11724,12364,12682,
@@ -1204,7 +1305,8 @@ static void DressA3FarmEnvironment( void )
 			default: uiType = DEBRISSAND; break;
 		}
 		const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 8 );
-		if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiLandmarkDetail;
+		if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
+			++uiLandmarkDetail;
 	}
 
 	const INT32 sRoofDetail[] = {10914,11111,10016,10498,17194,17671,18794,19430};
@@ -1216,13 +1318,17 @@ static void DressA3FarmEnvironment( void )
 		if ( pMap->pRoofHead == NULL || pMap->pOnRoofHead != NULL ) continue;
 		const UINT32 uiHash = B1VisualHash( (UINT32)sGridNo ^ 0xA3BA7A55u );
 		const UINT16 usSubIndex = A3FarmVisualSubIndex( SECONDONROOF, uiHash >> 9 );
-		if ( usSubIndex && B1AddOnRoofVisualDecoration( sGridNo, SECONDONROOF, usSubIndex ) ) ++uiRoofDetail;
+		if ( usSubIndex && B1AddOnRoofVisualDecoration( sGridNo, SECONDONROOF, usSubIndex ) )
+			++uiRoofDetail;
 	}
 
-	CHAR8 zDressing[280];
-	sprintf( zDressing, "cropRows=%lu furrows=%lu field=%lu farmyard=%lu trail=%lu trailEdges=%lu waterEdges=%lu landmarks=%lu roof=%lu",
-		uiCropRows, uiFurrows, uiFieldClutter, uiFarmyardClutter, uiTrailClutter, uiTrailEdges, uiWaterEdges, uiLandmarkDetail, uiRoofDetail );
-	TraceA3FarmLoad( "ENVIRONMENT DRESSING", zDressing );
+	CHAR8 zDressing[384];
+	sprintf( zDressing,
+		"cropRows=%lu cropBlocks=%lu furrows=%lu field=%lu yardSingles=%lu yardBlocks=%lu mudBlocks=%lu drainageBlocks=%lu edgeBlocks=%lu trail=%lu trailEdges=%lu waterEdges=%lu landmarkBlocks=%lu landmarkSingles=%lu roof=%lu blockPieces=%lu",
+		uiCropRows, uiCropBlocks, uiFurrows, uiFieldClutter, uiFarmyardClutter, uiYardBlocks,
+		uiMudBlocks, uiDrainageBlocks, uiEdgeBlocks, uiTrailClutter, uiTrailEdges, uiWaterEdges,
+		uiLandmarkBlocks, uiLandmarkDetail, uiRoofDetail, uiBlockPieces );
+	TraceA3FarmLoad( "FARM BLOCK COMPOSER", zDressing );
 }
 
 static void EnsureA3FarmCowPlacements( void )
