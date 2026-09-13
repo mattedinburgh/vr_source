@@ -808,6 +808,22 @@ bool LoadJPCFileToImage(HIMAGE hImage, UINT16 fContents)
 	}
 	else
 	{
+		// Multi-frame JPC archives historically accepted only paletted PNGs.
+		// Permit true-colour frames as well and normalize RGB/RGBA input to
+		// contiguous 32bpp RGBA data. Region numbering remains identical to
+		// the legacy archive so map/JSD indices do not change.
+		struct TrueColorFrame
+		{
+			std::vector<UINT8> rgba;
+			UINT16 usWidth;
+			UINT16 usHeight;
+			INT16 sOffsetX;
+			INT16 sOffsetY;
+		};
+
+		std::vector<TrueColorFrame> trueColorFrames;
+		bool bTrueColor = false;
+
 		for(int findex = 0; fit != vFiles.end(); ++fit, ++findex)
 		{
 			if(*fit == NULL)
@@ -820,14 +836,14 @@ bool LoadJPCFileToImage(HIMAGE hImage, UINT16 fContents)
 				vfs::CBufferFile oTempFile("");
 				oTempFile.copyToBuffer( *vfs::tReadableFile::cast(*fit) );
 
-//				LoadPngFile lpng( vfs::tReadableFile::cast(*fit) );
 				LoadPngFile lpng( vfs::tReadableFile::cast(&oTempFile) );
-	
+
 				bool bLoadS = lpng.Load();
 				if(bLoadS)
 				{
 					if(lpng.Info()->channels == 1 && lpng.Info()->bit_depth == 8)
 					{
+						SGP_THROW_IFFALSE(!bTrueColor, L"cannot mix paletted and true-colour PNG frames in one JPC");
 						if(!bHasPalette)
 						{
 							SGP_THROW_IFFALSE(lpng.Info()->num_palette == 256, L"size of palette is not 256");
@@ -842,10 +858,37 @@ bool LoadJPCFileToImage(HIMAGE hImage, UINT16 fContents)
 						}
 						image.addImage(&data[0], SIZE, lpng.Info()->width, lpng.Info()->height, lpng.Info()->x_offset, lpng.Info()->y_offset);
 					}
+					else if((lpng.Info()->channels == 3 || lpng.Info()->channels == 4) && lpng.Info()->bit_depth == 8)
+					{
+						SGP_THROW_IFFALSE(!bHasPalette, L"cannot mix paletted and true-colour PNG frames in one JPC");
+						bTrueColor = true;
+
+						TrueColorFrame frame;
+						frame.usWidth = (UINT16)lpng.Info()->width;
+						frame.usHeight = (UINT16)lpng.Info()->height;
+						frame.sOffsetX = (INT16)lpng.Info()->x_offset;
+						frame.sOffsetY = (INT16)lpng.Info()->y_offset;
+						frame.rgba.resize((size_t)frame.usWidth * (size_t)frame.usHeight * 4, 0);
+
+						for(unsigned int y = 0; y < lpng.Info()->height; ++y)
+						{
+							png::png_bytep pSrc = lpng.Rows()[y];
+							UINT8 *pDst = &frame.rgba[(size_t)y * frame.usWidth * 4];
+							for(unsigned int x = 0; x < lpng.Info()->width; ++x)
+							{
+								pDst[x*4+0] = pSrc[x*lpng.Info()->channels+0];
+								pDst[x*4+1] = pSrc[x*lpng.Info()->channels+1];
+								pDst[x*4+2] = pSrc[x*lpng.Info()->channels+2];
+								pDst[x*4+3] = (lpng.Info()->channels == 4) ? pSrc[x*4+3] : 255;
+							}
+						}
+						trueColorFrames.push_back(frame);
+					}
 					else
 					{
 						std::wstringstream wss;
-						wss << L"PNG file '" << (*fit)->getName()() << L" @ " << oFile->getPath()() << L"' is not a paletted image";
+						wss << L"PNG file '" << (*fit)->getName()() << L" @ " << oFile->getPath()()
+							<< L"' has unsupported channels/bit depth";
 						SGP_THROW(wss.str().c_str());
 					}
 				}
@@ -853,12 +896,53 @@ bool LoadJPCFileToImage(HIMAGE hImage, UINT16 fContents)
 			catch(std::exception& ex)
 			{
 				std::wstringstream wss;
-				wss << L"Loading PNG image [" << findex << L"] from file '"	<< oFile->getPath().c_wcs() << L"' failed";
+				wss << L"Loading PNG image [" << findex << L"] from file '" << oFile->getPath().c_wcs() << L"' failed";
 				SGP_RETHROW(wss.str().c_str(), ex);
 			}
 		}
+
+		if(bTrueColor)
+		{
+			SGP_THROW_IFFALSE(!trueColorFrames.empty(), L"true-colour JPC contains no PNG frames");
+
+			hImage->usNumberOfObjects = (UINT16)trueColorFrames.size();
+			hImage->ubBitDepth = 32;
+			hImage->fFlags |= IMAGE_BITMAPDATA;
+			hImage->iFileLoader = -1;
+			hImage->pPalette = NULL;
+			hImage->pui16BPPPalette = NULL;
+			hImage->pETRLEObject = (ETRLEObject*)MemAlloc(sizeof(ETRLEObject) * hImage->usNumberOfObjects);
+			SGP_THROW_IFFALSE(hImage->pETRLEObject != NULL, L"bad alloc");
+			memset(hImage->pETRLEObject, 0, sizeof(ETRLEObject) * hImage->usNumberOfObjects);
+
+			UINT32 uiTotalBytes = 0;
+			for(UINT16 i = 0; i < hImage->usNumberOfObjects; ++i)
+			{
+				uiTotalBytes += (UINT32)trueColorFrames[i].rgba.size();
+				hImage->usWidth = __max(hImage->usWidth, trueColorFrames[i].usWidth);
+				hImage->usHeight = __max(hImage->usHeight, trueColorFrames[i].usHeight);
+			}
+
+			hImage->p32BPPData = (UINT32*)MemAlloc(uiTotalBytes);
+			SGP_THROW_IFFALSE(hImage->p32BPPData != NULL, L"bad alloc");
+
+			UINT32 uiOffset = 0;
+			for(UINT16 i = 0; i < hImage->usNumberOfObjects; ++i)
+			{
+				ETRLEObject *pRegion = &hImage->pETRLEObject[i];
+				pRegion->sOffsetX = trueColorFrames[i].sOffsetX;
+				pRegion->sOffsetY = trueColorFrames[i].sOffsetY;
+				pRegion->usWidth = trueColorFrames[i].usWidth;
+				pRegion->usHeight = trueColorFrames[i].usHeight;
+				pRegion->uiDataOffset = uiOffset;
+				pRegion->uiDataLength = (UINT32)trueColorFrames[i].rgba.size();
+				memcpy((UINT8*)hImage->p32BPPData + uiOffset, &trueColorFrames[i].rgba[0], pRegion->uiDataLength);
+				uiOffset += pRegion->uiDataLength;
+			}
+			hImage->uiSizePixData = uiTotalBytes;
+		}
 	}
-	bool success = image.writeToHIMAGE(hImage);
+	bool success = bTrueColor ? true : image.writeToHIMAGE(hImage);
 	if(appdata_file)
 	{
 		success &= image.readAppDataFromXMLFile(hImage, appdata_file);
