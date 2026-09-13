@@ -3045,6 +3045,21 @@ void BulletHitStructure( BULLET * pBullet, UINT16 usStructureID, INT32 iImpact, 
 	if(is_client)
 		send_hitstruct(&SStructureHit);
 
+	// A stopped NCTH bullet aimed at a soldier is still a miss, but unlike a
+	// clean fly-by it ended because terrain/cover intercepted the trajectory.
+	// Record that distinction before StructureHit removes/frees the bullet.
+	if ( fStopped && pBullet->pFirer != NULL &&
+		 pBullet->pFirer->bTeam == gbPlayerNum && UsingNewCTHSystem() )
+	{
+		UINT8 ubBlockReason = BATTLELOG_BLOCK_STRUCTURE;
+		if ( usStructureID == INVALID_STRUCTURE_ID )
+			ubBlockReason = BATTLELOG_BLOCK_GROUND;
+		else if ( usStructureID == 0 )
+			ubBlockReason = BATTLELOG_BLOCK_ROOF;
+
+		BattleLogAddNCTHBlocked( pBullet->iBullet, ubBlockReason );
+	}
+
 	StructureHit( SStructureHit.iBullet, SStructureHit.usWeaponIndex, SStructureHit.bWeaponStatus, SStructureHit.ubAttackerID, SStructureHit.sXPos, SStructureHit.sYPos, SStructureHit.sZPos, SStructureHit.usStructureID, SStructureHit.iImpact, fStopped );
 }
 
