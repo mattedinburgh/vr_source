@@ -1018,11 +1018,18 @@ void BattleLogAddNCTHMiss( INT32 iBullet )
 	if ( !NCTHGetBulletDiagnostic( iBullet, &d ) )
 		return;
 
+	BOOLEAN fShooterPlayer = ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] &&
+		MercPtrs[d.ubShooterID]->bTeam == gbPlayerNum );
+	BOOLEAN fTargetPlayer = ( d.ubTargetID != NOBODY && MercPtrs[d.ubTargetID] &&
+		MercPtrs[d.ubTargetID]->bTeam == gbPlayerNum );
+	if ( !fShooterPlayer && !fTargetPlayer )
+		return;
+
 	guiBattleLogSequence++;
 	BATTLE_LOG_ENTRY *pEntry = &gBattleLogEntries[(guiBattleLogSequence - 1) % BATTLE_LOG_MAX_ENTRIES];
 	memset( pEntry, 0, sizeof(*pEntry) );
 	pEntry->uiSequence = guiBattleLogSequence;
-	pEntry->usColor = FONT_MCOLOR_LTRED;
+	pEntry->usColor = fShooterPlayer ? FONT_MCOLOR_LTRED : FONT_MCOLOR_LTYELLOW;
 	pEntry->fClickable = TRUE;
 	pEntry->ubOutcome = BATTLELOG_OUTCOME_MISS;
 	pEntry->iBullet = iBullet;
@@ -1057,6 +1064,13 @@ void BattleLogAddNCTHBlocked( INT32 iBullet, UINT8 ubReason )
 	// an intended soldier target. Deliberate fire at doors/windows/terrain should
 	// remain ordinary structure interaction, not appear as a shooting failure.
 	if ( d.ubTargetID == NOBODY )
+		return;
+
+	BOOLEAN fShooterPlayer = ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] &&
+		MercPtrs[d.ubShooterID]->bTeam == gbPlayerNum );
+	BOOLEAN fTargetPlayer = ( d.ubTargetID != NOBODY && MercPtrs[d.ubTargetID] &&
+		MercPtrs[d.ubTargetID]->bTeam == gbPlayerNum );
+	if ( !fShooterPlayer && !fTargetPlayer )
 		return;
 
 	guiBattleLogSequence++;
@@ -1107,11 +1121,18 @@ void BattleLogAddNCTHHit( INT32 iBullet, UINT8 ubTargetID, INT16 sDamage )
 	if ( d.ubTargetID == NOBODY || d.ubTargetID != ubTargetID )
 		return;
 
+	BOOLEAN fShooterPlayer = ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] &&
+		MercPtrs[d.ubShooterID]->bTeam == gbPlayerNum );
+	BOOLEAN fTargetPlayer = ( ubTargetID != NOBODY && MercPtrs[ubTargetID] &&
+		MercPtrs[ubTargetID]->bTeam == gbPlayerNum );
+	if ( !fShooterPlayer && !fTargetPlayer )
+		return;
+
 	guiBattleLogSequence++;
 	BATTLE_LOG_ENTRY *pEntry = &gBattleLogEntries[(guiBattleLogSequence - 1) % BATTLE_LOG_MAX_ENTRIES];
 	memset( pEntry, 0, sizeof(*pEntry) );
 	pEntry->uiSequence = guiBattleLogSequence;
-	pEntry->usColor = FONT_MCOLOR_LTGREEN;
+	pEntry->usColor = fShooterPlayer ? FONT_MCOLOR_LTGREEN : FONT_MCOLOR_LTRED;
 	pEntry->fClickable = TRUE;
 	pEntry->ubOutcome = BATTLELOG_OUTCOME_HIT;
 	pEntry->iBullet = iBullet;
