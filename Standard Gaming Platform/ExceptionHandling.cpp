@@ -28,16 +28,35 @@
 // ---------------------------------------------------------------------------
 // Independent of VFS/FileMan so it remains useful during startup/shutdown
 // and when those systems are involved in a crash.
-#define BLACKBOX_EVENT_SLOTS 256
-#define BLACKBOX_EVENT_CHARS 384
+#define BLACKBOX_EVENT_SLOTS 1024
+#define BLACKBOX_EVENT_CHARS 640
+#define BLACKBOX_CHECKPOINT_SLOTS 1024
 #define BLACKBOX_CHECKPOINT_CHARS 768
+#define BLACKBOX_SUBSYSTEM_SLOTS 32
+#define BLACKBOX_SUBSYSTEM_NAME_CHARS 32
+
+typedef struct
+{
+	CHAR8 name[BLACKBOX_SUBSYSTEM_NAME_CHARS];
+	CHAR8 checkpoint[BLACKBOX_CHECKPOINT_CHARS];
+	LONG sequence;
+	DWORD tick;
+	DWORD threadId;
+} BLACKBOX_SUBSYSTEM_STATE;
 
 static HANDLE gBlackBoxFile = INVALID_HANDLE_VALUE;
 static CRITICAL_SECTION gBlackBoxLock;
 static BOOL gBlackBoxInitialized = FALSE;
+static DWORD gBlackBoxStartTick = 0;
 static LONG gBlackBoxEventSequence = 0;
+static LONG gBlackBoxCheckpointSequence = 0;
+static LONG gBlackBoxDiskWriteFailures = 0;
+static LONG gBlackBoxFlushFailures = 0;
+static LONG gBlackBoxSubsystemCursor = 0;
 static CHAR8 gBlackBoxEvents[BLACKBOX_EVENT_SLOTS][BLACKBOX_EVENT_CHARS];
+static CHAR8 gBlackBoxCheckpoints[BLACKBOX_CHECKPOINT_SLOTS][BLACKBOX_CHECKPOINT_CHARS];
 static CHAR8 gBlackBoxCheckpoint[BLACKBOX_CHECKPOINT_CHARS] = "not initialized";
+static BLACKBOX_SUBSYSTEM_STATE gBlackBoxSubsystems[BLACKBOX_SUBSYSTEM_SLOTS];
 
 static void BlackBoxFormatTime( CHAR8 *buffer, size_t bufferSize )
 {
@@ -48,20 +67,70 @@ static void BlackBoxFormatTime( CHAR8 *buffer, size_t bufferSize )
 	buffer[ bufferSize - 1 ] = 0;
 }
 
+static DWORD BlackBoxUptimeMs( void )
+{
+	return GetTickCount() - gBlackBoxStartTick;
+}
+
+static LONG BlackBoxFindSubsystemSlot( const char *subsystem )
+{
+	LONG i;
+	LONG empty = -1;
+	const char *name = ( subsystem != NULL && subsystem[0] != 0 ) ? subsystem : "?";
+
+	for( i = 0; i < BLACKBOX_SUBSYSTEM_SLOTS; ++i )
+	{
+		if( gBlackBoxSubsystems[i].name[0] == 0 )
+		{
+			if( empty < 0 )
+				empty = i;
+			continue;
+		}
+
+		if( _stricmp( gBlackBoxSubsystems[i].name, name ) == 0 )
+			return i;
+	}
+
+	if( empty >= 0 )
+		return empty;
+
+	i = gBlackBoxSubsystemCursor % BLACKBOX_SUBSYSTEM_SLOTS;
+	++gBlackBoxSubsystemCursor;
+	return i;
+}
+
+static void BlackBoxRotateRunLogs( void )
+{
+	DeleteFileA( "BlackBox_PreviousRun_4.log" );
+	MoveFileExA( "BlackBox_PreviousRun_3.log", "BlackBox_PreviousRun_4.log", MOVEFILE_REPLACE_EXISTING );
+	MoveFileExA( "BlackBox_PreviousRun_2.log", "BlackBox_PreviousRun_3.log", MOVEFILE_REPLACE_EXISTING );
+	MoveFileExA( "BlackBox_PreviousRun.log", "BlackBox_PreviousRun_2.log", MOVEFILE_REPLACE_EXISTING );
+	MoveFileExA( "BlackBox_LastRun.log", "BlackBox_PreviousRun.log", MOVEFILE_REPLACE_EXISTING );
+}
+
 void BlackBoxInitialize( void )
 {
+	CHAR8 exePath[MAX_PATH];
+	CHAR8 cwd[MAX_PATH];
+
 	if( gBlackBoxInitialized )
 		return;
 
 	InitializeCriticalSection( &gBlackBoxLock );
+	gBlackBoxStartTick = GetTickCount();
 	gBlackBoxEventSequence = 0;
+	gBlackBoxCheckpointSequence = 0;
+	gBlackBoxDiskWriteFailures = 0;
+	gBlackBoxFlushFailures = 0;
+	gBlackBoxSubsystemCursor = 0;
 	memset( gBlackBoxEvents, 0, sizeof( gBlackBoxEvents ) );
+	memset( gBlackBoxCheckpoints, 0, sizeof( gBlackBoxCheckpoints ) );
+	memset( gBlackBoxSubsystems, 0, sizeof( gBlackBoxSubsystems ) );
 	lstrcpynA( gBlackBoxCheckpoint, "initialized", BLACKBOX_CHECKPOINT_CHARS );
 
-	// Preserve the prior run before starting a fresh journal. This gives us
-	// evidence even if the textual crash handler itself failed during the CTD.
-	DeleteFileA( "BlackBox_PreviousRun.log" );
-	MoveFileExA( "BlackBox_LastRun.log", "BlackBox_PreviousRun.log", MOVEFILE_REPLACE_EXISTING );
+	// Preserve several prior runs. A user can restart after a CTD without
+	// immediately destroying the only useful timeline.
+	BlackBoxRotateRunLogs();
 
 	gBlackBoxFile = CreateFileA(
 		"BlackBox_LastRun.log",
@@ -74,6 +143,14 @@ void BlackBoxInitialize( void )
 
 	gBlackBoxInitialized = TRUE;
 	BlackBoxEvent( "ENGINE", "Black box initialized pid=%lu tid=%lu", GetCurrentProcessId(), GetCurrentThreadId() );
+
+	exePath[0] = 0;
+	if( GetModuleFileNameA( NULL, exePath, MAX_PATH ) > 0 )
+		BlackBoxEvent( "ENGINE", "exe=%s", exePath );
+
+	cwd[0] = 0;
+	if( GetCurrentDirectoryA( MAX_PATH, cwd ) > 0 )
+		BlackBoxEvent( "ENGINE", "cwd=%s", cwd );
 }
 
 void BlackBoxShutdown( void )
@@ -81,12 +158,15 @@ void BlackBoxShutdown( void )
 	if( !gBlackBoxInitialized )
 		return;
 
-	BlackBoxEvent( "ENGINE", "Clean shutdown" );
+	BlackBoxEvent( "ENGINE", "Clean shutdown uptimeMs=%lu events=%ld checkpoints=%ld diskWriteFailures=%ld flushFailures=%ld",
+		BlackBoxUptimeMs(), gBlackBoxEventSequence, gBlackBoxCheckpointSequence,
+		gBlackBoxDiskWriteFailures, gBlackBoxFlushFailures );
 
 	EnterCriticalSection( &gBlackBoxLock );
 	if( gBlackBoxFile != INVALID_HANDLE_VALUE )
 	{
-		FlushFileBuffers( gBlackBoxFile );
+		if( !FlushFileBuffers( gBlackBoxFile ) )
+			++gBlackBoxFlushFailures;
 		CloseHandle( gBlackBoxFile );
 		gBlackBoxFile = INVALID_HANDLE_VALUE;
 	}
@@ -99,59 +179,101 @@ void BlackBoxShutdown( void )
 void BlackBoxEvent( const char *category, const char *format, ... )
 {
 	CHAR8 timestamp[32];
-	CHAR8 message[256];
+	CHAR8 message[384];
 	CHAR8 line[BLACKBOX_EVENT_CHARS];
 	DWORD bytesWritten = 0;
+	DWORD threadId;
+	DWORD uptime;
+	DWORD length;
+	BOOL writeOk;
 	va_list args;
 	LONG slot;
+	LONG sequence;
 
 	if( !gBlackBoxInitialized )
 		return;
 
 	BlackBoxFormatTime( timestamp, sizeof( timestamp ) );
+	threadId = GetCurrentThreadId();
+	uptime = BlackBoxUptimeMs();
 
 	va_start( args, format );
 	_vsnprintf( message, sizeof( message ) - 1, format, args );
 	va_end( args );
 	message[ sizeof( message ) - 1 ] = 0;
 
-	_snprintf( line, sizeof( line ) - 1, "[%s] [%s] %s\r\n",
-		timestamp, category ? category : "?", message );
+	EnterCriticalSection( &gBlackBoxLock );
+	sequence = gBlackBoxEventSequence + 1;
+	_snprintf( line, sizeof( line ) - 1, "[%s] [+%lums] [#%06ld] [T%lu] [%s] %s\r\n",
+		timestamp, uptime, sequence, threadId, category ? category : "?", message );
 	line[ sizeof( line ) - 1 ] = 0;
 
-	EnterCriticalSection( &gBlackBoxLock );
 	slot = gBlackBoxEventSequence % BLACKBOX_EVENT_SLOTS;
 	lstrcpynA( gBlackBoxEvents[slot], line, BLACKBOX_EVENT_CHARS );
 	++gBlackBoxEventSequence;
 
 	if( gBlackBoxFile != INVALID_HANDLE_VALUE )
 	{
-		WriteFile( gBlackBoxFile, line, (DWORD)strlen( line ), &bytesWritten, NULL );
-		FlushFileBuffers( gBlackBoxFile );
+		length = (DWORD)strlen( line );
+		writeOk = WriteFile( gBlackBoxFile, line, length, &bytesWritten, NULL );
+		if( !writeOk || bytesWritten != length )
+			++gBlackBoxDiskWriteFailures;
+		if( !FlushFileBuffers( gBlackBoxFile ) )
+			++gBlackBoxFlushFailures;
 	}
 	LeaveCriticalSection( &gBlackBoxLock );
 }
 
 void BlackBoxCheckpoint( const char *subsystem, const char *format, ... )
 {
-	CHAR8 message[640];
+	CHAR8 timestamp[32];
+	CHAR8 message[560];
 	CHAR8 checkpoint[BLACKBOX_CHECKPOINT_CHARS];
+	const char *safeSubsystem;
+	DWORD threadId;
+	DWORD uptime;
 	va_list args;
+	LONG slot;
+	LONG subsystemSlot;
+	LONG sequence;
 
 	if( !gBlackBoxInitialized )
 		return;
+
+	safeSubsystem = ( subsystem != NULL && subsystem[0] != 0 ) ? subsystem : "?";
+	BlackBoxFormatTime( timestamp, sizeof( timestamp ) );
+	threadId = GetCurrentThreadId();
+	uptime = BlackBoxUptimeMs();
 
 	va_start( args, format );
 	_vsnprintf( message, sizeof( message ) - 1, format, args );
 	va_end( args );
 	message[ sizeof( message ) - 1 ] = 0;
 
-	_snprintf( checkpoint, sizeof( checkpoint ) - 1, "[%s] %s",
-		subsystem ? subsystem : "?", message );
+	EnterCriticalSection( &gBlackBoxLock );
+	sequence = gBlackBoxCheckpointSequence + 1;
+	_snprintf( checkpoint, sizeof( checkpoint ) - 1,
+		"[%s] [+%lums] [C#%06ld] [T%lu] [%s] %s",
+		timestamp, uptime, sequence, threadId, safeSubsystem, message );
 	checkpoint[ sizeof( checkpoint ) - 1 ] = 0;
 
-	EnterCriticalSection( &gBlackBoxLock );
+	// Keep the legacy single latest checkpoint for quick reading.
 	lstrcpynA( gBlackBoxCheckpoint, checkpoint, BLACKBOX_CHECKPOINT_CHARS );
+
+	// Keep a high-frequency memory-only history as well. Existing hot-path
+	// checkpoint calls automatically become much more useful without disk I/O.
+	slot = gBlackBoxCheckpointSequence % BLACKBOX_CHECKPOINT_SLOTS;
+	lstrcpynA( gBlackBoxCheckpoints[slot], checkpoint, BLACKBOX_CHECKPOINT_CHARS );
+	++gBlackBoxCheckpointSequence;
+
+	// Also retain the latest state independently for each subsystem so a MAP
+	// checkpoint no longer erases the most recent AI/SAVE/UI/B1 context.
+	subsystemSlot = BlackBoxFindSubsystemSlot( safeSubsystem );
+	lstrcpynA( gBlackBoxSubsystems[subsystemSlot].name, safeSubsystem, BLACKBOX_SUBSYSTEM_NAME_CHARS );
+	lstrcpynA( gBlackBoxSubsystems[subsystemSlot].checkpoint, checkpoint, BLACKBOX_CHECKPOINT_CHARS );
+	gBlackBoxSubsystems[subsystemSlot].sequence = sequence;
+	gBlackBoxSubsystems[subsystemSlot].tick = uptime;
+	gBlackBoxSubsystems[subsystemSlot].threadId = threadId;
 	LeaveCriticalSection( &gBlackBoxLock );
 }
 
