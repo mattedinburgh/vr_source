@@ -7978,9 +7978,9 @@ UINT8 AITargetSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		// fire action prevents stale target locations from reserving someone forever.
 		if (!TileIsOutOfBounds(pFriend->sLastTarget) &&
 			PythSpacesAway(pFriend->sLastTarget, sTargetSpot) <= 1 &&
+			pFriend->bActionPoints < pFriend->bInitialActionPoints &&
 			(pFriend->aiData.bAction == AI_ACTION_FIRE_GUN ||
-			 (pFriend->aiData.bLastAction == AI_ACTION_FIRE_GUN &&
-			  pFriend->bActionPoints < pFriend->bInitialActionPoints)))
+			 pFriend->aiData.bLastAction == AI_ACTION_FIRE_GUN))
 		{
 			ubSaturation++;
 		}
