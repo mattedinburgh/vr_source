@@ -24,6 +24,11 @@
 	#include "Drugs and Alcohol.h"
 #endif
 
+// Militia sector-inventory safety: these declarations are required in both
+// precompiled-header and non-PCH builds.
+#include "Overhead.h"
+#include "Queen Command.h"
+
 /*
 #define ENEMYAMMODROPRATE       100 //Madd 50      // % of time enemies drop ammunition
 #define ENEMYGRENADEDROPRATE    100 //Madd 25      // % of time enemies drop grenades
@@ -4148,8 +4153,20 @@ void TakeMilitiaEquipmentfromSector( INT16 sMapX, INT16 sMapY, INT8 sMapZ, SOLDI
 	UINT16 usSelectedGunBulletCount = 0;						// how many bullets have we already taken for our selected gun
 	UINT16 usTabooFlag = 0;
 	
-	if ( !gGameExternalOptions.fMilitiaUseSectorInventory )
+	if ( !gGameExternalOptions.fMilitiaUseSectorInventory || !pp )
 		return;
+
+	// Never consume sector inventory while the source sector is contested.
+	// This is the authoritative guard: callers may also avoid this routine, but
+	// reinforcements, militia resets, equipment moves, or future call sites cannot
+	// drain the player's stash during hostile contact.
+	if ( ( gTacticalStatus.uiFlags & INCOMBAT ) ||
+		 gTacticalStatus.fEnemyInSector ||
+		 NumHostilesInSector( sMapX, sMapY, sMapZ ) > 0 ||
+		 ( sMapX == gWorldSectorX && sMapY == gWorldSectorY && sMapZ == gbWorldSectorZ && HostileBloodcatsPresent() ) )
+	{
+		return;
+	}
 
 	// depending on our bSoldierClass, we may be forbidden from taking items the player has flagged
 	// note that in the current implmentation, items with the WORLD_ITEM_TABOO_FOR_MILITIA_EQ_GREEN-flag will have the higher flags as well, but that might change in the future
