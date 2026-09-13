@@ -691,6 +691,23 @@ static BOOLEAN B1GridHasObjectType( INT32 sGridNo, UINT32 uiWantedType )
 	return FALSE;
 }
 
+static BOOLEAN B1GridHasNeighbourObjectType( INT32 sGridNo, UINT32 uiWantedType )
+{
+	if ( sGridNo < 0 || sGridNo >= WORLD_MAX )
+		return FALSE;
+
+	const INT32 sColumn = sGridNo % WORLD_COLS;
+	if ( sColumn > 0 && B1GridHasObjectType( sGridNo - 1, uiWantedType ) )
+		return TRUE;
+	if ( sColumn + 1 < WORLD_COLS && B1GridHasObjectType( sGridNo + 1, uiWantedType ) )
+		return TRUE;
+	if ( sGridNo >= WORLD_COLS && B1GridHasObjectType( sGridNo - WORLD_COLS, uiWantedType ) )
+		return TRUE;
+	if ( sGridNo + WORLD_COLS < WORLD_MAX && B1GridHasObjectType( sGridNo + WORLD_COLS, uiWantedType ) )
+		return TRUE;
+	return FALSE;
+}
+
 static BOOLEAN B1CustomDecorationFamilyReady( UINT32 uiType )
 {
 	if ( uiType >= NUMBEROFTILETYPES || gTileSurfaceArray[ uiType ] == NULL ||
@@ -720,6 +737,22 @@ static BOOLEAN B1AddVisualDecoration( INT32 sGridNo, UINT32 uiType, UINT16 usSub
 	return TRUE;
 }
 
+static BOOLEAN B1AddOnRoofVisualDecoration( INT32 sGridNo, UINT32 uiType, UINT16 usSubIndex )
+{
+	UINT16 usTileIndex = NO_TILE;
+	if ( !GetTileIndexFromTypeSubIndex( uiType, usSubIndex, &usTileIndex ) ||
+		 usTileIndex == NO_TILE || usTileIndex >= giNumberOfTiles )
+		return FALSE;
+
+	LEVELNODE *pNode = AddOnRoofToTail( sGridNo, usTileIndex );
+	if ( pNode == NULL )
+		return FALSE;
+
+	pNode->ubShadeLevel = LightGetAmbient();
+	pNode->ubNaturalShadeLevel = pNode->ubShadeLevel;
+	return TRUE;
+}
+
 static void DressB1OilRigEnvironment( void )
 {
 	if ( gubSectorVisualProfile != SECTOR_VISUAL_ORONEGRO_OIL_RIG || gpWorldLevelData == NULL )
@@ -731,11 +764,15 @@ static void DressB1OilRigEnvironment( void )
 	const BOOLEAN fRubbleReady = B1CustomDecorationFamilyReady( DEBRISROCKS );
 	const BOOLEAN fPalletsReady = B1CustomDecorationFamilyReady( DEBRISWOOD );
 	const BOOLEAN fJunkReady = B1CustomDecorationFamilyReady( DEBRISMISC );
+	const BOOLEAN fRoofPropsReady = B1CustomDecorationFamilyReady( DEBRISWEEDS );
+	const BOOLEAN fDrainageReady = B1CustomDecorationFamilyReady( DEBRISGRASS );
 
 	UINT32 uiRoadDamage = 0;
 	UINT32 uiRubbish = 0;
 	UINT32 uiBins = 0;
 	UINT32 uiLegacyDebris = 0;
+	UINT32 uiRoofProps = 0;
+	UINT32 uiDrainage = 0;
 
 	// B1.dat uses no SECOND/THIRD/FOURTHDECORATIONS entries. Those three slots
 	// are therefore safe B1-only visual layers: road damage/oil, rubbish and bins.
@@ -744,7 +781,24 @@ static void DressB1OilRigEnvironment( void )
 	for ( INT32 sGridNo = 0; sGridNo < WORLD_MAX; ++sGridNo )
 	{
 		MAP_ELEMENT *pMap = &gpWorldLevelData[ sGridNo ];
-		if ( pMap->pLandHead == NULL || pMap->pRoofHead != NULL || pMap->pOnRoofHead != NULL )
+		if ( pMap->pLandHead == NULL )
+			continue;
+
+		const UINT32 uiHash = B1VisualHash( (UINT32)sGridNo ^ 0xB10F11u );
+
+		// Roofs were another large empty visual field in the 1920x1080 screenshots.
+		// Add sparse lived-in utility detail without any structural/collision data.
+		if ( pMap->pRoofHead != NULL )
+		{
+			if ( pMap->pOnRoofHead == NULL && fRoofPropsReady && ((uiHash >> 4) % 29) == 0 )
+			{
+				const UINT16 usVariant = (UINT16)( 1 + ((uiHash >> 17) % 10) );
+				if ( B1AddOnRoofVisualDecoration( sGridNo, DEBRISWEEDS, usVariant ) )
+					++uiRoofProps;
+			}
+			continue;
+		}
+		if ( pMap->pOnRoofHead != NULL )
 			continue;
 
 		UINT32 uiLandType = 0;
@@ -752,11 +806,11 @@ static void DressB1OilRigEnvironment( void )
 			continue;
 
 		const BOOLEAN fRoad = B1GridHasObjectType( sGridNo, ROADPIECES );
+		const BOOLEAN fNearRoad = B1GridHasNeighbourObjectType( sGridNo, ROADPIECES );
 		const BOOLEAN fFloor = ( uiLandType >= FIRSTFLOOR && uiLandType <= LASTFLOOR );
 		const BOOLEAN fOpenGround = ( uiLandType >= FIRSTTEXTURE && uiLandType <= SEVENTHTEXTURE );
 		const BOOLEAN fNearStructure = B1GridHasNeighbourStructure( sGridNo );
 		const BOOLEAN fOccupiedStructure = ( pMap->pStructHead != NULL );
-		const UINT32 uiHash = B1VisualHash( (UINT32)sGridNo ^ 0xB10F11u );
 
 		// Roads were previously skipped because ROADPIECES live on the object layer.
 		// At 1920x1080 that made the wide road network look almost untouched. Add
@@ -800,6 +854,21 @@ static void DressB1OilRigEnvironment( void )
 				++uiBins;
 		}
 
+		// Poor drainage is a major part of the humid oil-town identity: broken
+		// gutters and oily runoff appear along road edges and service aprons.
+		if ( !fOccupiedStructure && fDrainageReady && (fFloor || fOpenGround || fRoad) )
+		{
+			const BOOLEAN fPlaceDrain =
+				( !fRoad && fNearRoad && ((uiHash >> 7) % 13) == 0 ) ||
+				( fRoad && fNearStructure && ((uiHash >> 9) % 43) == 0 );
+			if ( fPlaceDrain )
+			{
+				const UINT16 usVariant = (UINT16)( 1 + ((uiHash >> 19) % 10) );
+				if ( B1AddVisualDecoration( sGridNo, DEBRISGRASS, usVariant ) )
+					++uiDrainage;
+			}
+		}
+
 		// Purpose-built oil-town clutter fills empty corners: broken concrete,
 		// pallets/boards and tyres/pipes/scrap. These three B1.dat slots were
 		// verified unused by the authored map, so they are safe visual-only families.
@@ -825,10 +894,11 @@ static void DressB1OilRigEnvironment( void )
 	}
 
 	CHAR8 zDressing[192];
-	sprintf( zDressing, "roadDamage=%lu rubbish=%lu bins=%lu customJunk=%lu ready=%d/%d/%d/%d/%d/%d non-structural",
-		uiRoadDamage, uiRubbish, uiBins, uiLegacyDebris,
+	sprintf( zDressing, "roadDamage=%lu rubbish=%lu bins=%lu customJunk=%lu roofProps=%lu drainage=%lu ready=%d/%d/%d/%d/%d/%d/%d/%d non-structural",
+		uiRoadDamage, uiRubbish, uiBins, uiLegacyDebris, uiRoofProps, uiDrainage,
 		fRoadDamageReady ? 1 : 0, fRubbishReady ? 1 : 0, fBinsReady ? 1 : 0,
-		fRubbleReady ? 1 : 0, fPalletsReady ? 1 : 0, fJunkReady ? 1 : 0 );
+		fRubbleReady ? 1 : 0, fPalletsReady ? 1 : 0, fJunkReady ? 1 : 0,
+		fRoofPropsReady ? 1 : 0, fDrainageReady ? 1 : 0 );
 	TraceB1RemasterLoad( "ENVIRONMENT DRESSING", zDressing );
 }
 
@@ -1266,6 +1336,8 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 			case FOURTHDECORATIONS: pLoadFilename = "B1_STREET_BINS.STI"; break;
 			case DEBRISROCKS:       pLoadFilename = "B1_CONCRETE_RUBBLE.STI"; break;
 			case DEBRISWOOD:        pLoadFilename = "B1_WOOD_PALLETS.STI"; break;
+			case DEBRISWEEDS:       pLoadFilename = "B1_ROOF_PROPS.STI"; break;
+			case DEBRISGRASS:       pLoadFilename = "B1_DRAINAGE.STI"; break;
 			case DEBRISMISC:        pLoadFilename = "B1_STREET_JUNK.STI"; break;
 		}
 	}
