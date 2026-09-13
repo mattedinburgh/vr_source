@@ -5836,9 +5836,9 @@ static void SpawnVRDirectionalGoreSpray( SOLDIERTYPE *pSoldier, const CHAR8 *zFi
 	memset( &AniParams, 0, sizeof( ANITILE_PARAMS ) );
 	AniParams.sGridNo = pSoldier->sGridNo;
 	AniParams.ubLevelID = ANI_TOPMOST_LEVEL;
-	// Cinematic test playback: the physical event is fast in reality, but the user
-	// explicitly wants to inspect the spray. Slow only the VR gore tile animation.
-	AniParams.sDelay = ( sDelay > 0 ) ? (INT16)__min( 180, ( sDelay * 7 + 3 ) / 4 ) : 65;
+	// Keep impact spatter brief. Slowing these frames made separate droplets merge
+	// visually into a continuous red fountain, which is exactly what we want to avoid.
+	AniParams.sDelay = ( sDelay > 0 ) ? (INT16)__min( 80, sDelay ) : 32;
 	AniParams.sStartFrame = 0;
 	AniParams.uiFlags = ANITILE_CACHEDTILE | ANITILE_FORWARD | ANITILE_NOZBLITTER | ANITILE_USE_DIRECTION_FOR_START_FRAME;
 	AniParams.uiUserData3 = ubSprayDirection;
@@ -5869,19 +5869,19 @@ static void SpawnVRDirectionalGoreSpray( SOLDIERTYPE *pSoldier, const CHAR8 *zFi
 }
 
 
-// Sprinkler-style blood projection. Forensic gunshot patterns are represented here
-// as many discrete airborne droplets rather than one opaque fan. Most droplets remain
-// close to the projectile axis; only a minority deviate one JA2 direction step because
-// the engine provides eight discrete directions rather than continuous angles.
+// Restrained impact mist. The visual target is a very brief set of projected
+// droplets, not a liquid jet. The entertaining gore comes from rare fatal variants
+// (falls, crumples and dismemberment), not from turning every bullet hit into a fountain.
 static void SpawnVRSprinklerGoreBurst( SOLDIERTYPE *pSoldier, UINT8 ubExitDirection, UINT8 ubIncomingDirection, INT16 sZ, BOOLEAN fExtreme )
 {
 	if ( pSoldier == NULL )
 		return;
 
-	// Centreline dominates. +/-1 direction (45 degrees in JA2) is deliberately rare
-	// so the result reads as projected droplets rather than a broad bucket-shaped fan.
-	static const INT8 abDirJitter[ 12 ] = { 0, 0, 1, 0, 0, -1, 0, 0, 1, 0, 0, -1 };
-	UINT8 ubDroplets = fExtreme ? 12 : 7;
+	// JA2 only gives us eight directions, so keep almost everything on the projectile
+	// axis. Two layers on ordinary hits and three on severe/fatal hits are enough for
+	// a visible sprinkle without merging into a broad opaque fan.
+	static const INT8 abDirJitter[ 3 ] = { 0, 0, 1 };
+	UINT8 ubDroplets = fExtreme ? 3 : 2;
 
 	for ( UINT8 i = 0; i < ubDroplets; ++i )
 	{
@@ -5889,28 +5889,17 @@ static void SpawnVRSprinklerGoreBurst( SOLDIERTYPE *pSoldier, UINT8 ubExitDirect
 		while ( sDir < 0 ) sDir += NUM_WORLD_DIRECTIONS;
 		sDir %= NUM_WORLD_DIRECTIONS;
 
-		// The farther droplets travel, the lower they render: a simple gravity-like
-		// visual arc rather than a perfectly horizontal laser beam of blood.
-		INT16 sLayerZ = (INT16)__max( 4, sZ - (INT16)( ( i * 2 ) / 3 ) );
-		UINT8 ubOffset = (UINT8)__min( 120, (INT16)( i * ( fExtreme ? 10 : 9 ) ) );
-		INT16 sDelay = (INT16)( 34 + i * 5 );
+		INT16 sLayerZ = (INT16)__max( 5, sZ - (INT16)i );
+		UINT8 ubOffset = (UINT8)( i * 12 );
+		INT16 sDelay = (INT16)( 26 + i * 4 );
 
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", (UINT8)sDir, sLayerZ, sDelay, ubOffset );
 	}
 
-	// One denser core close to the wound gives the burst visual weight without
-	// painting a solid cone through the entire trajectory.
-	if ( fExtreme )
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, (INT16)__max( 6, sZ - 2 ), 39, 18 );
-
-	// Backspatter exists against projectile travel, but keep it visibly smaller than
-	// the forward field. Use separated micro-bursts instead of another broad layer.
-	SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, (INT16)__max( 5, sZ - 3 ), 45, 0 );
-	if ( fExtreme )
-	{
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, (INT16)__max( 5, sZ - 6 ), 53, 18 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, (INT16)__max( 5, sZ - 8 ), 61, 32 );
-	}
+	// Backspatter is a small secondary event, not a mandatory second cone.
+	UINT8 ubBackChance = fExtreme ? 55 : 30;
+	if ( Random( 100 ) < ubBackChance )
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, (INT16)__max( 5, sZ - 2 ), 31, 0 );
 }
 
 static void SpawnVRBloodGroundDecal( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubSprayDirection, const CHAR8 *zFilename )
@@ -6315,25 +6304,17 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	DebugMsg( TOPIC_JA2, DBG_LEVEL_3, String( "VR_FATAL variant=%u soldier=%u hitloc=%u damage=%d height=%u incomingDir=%u momentum=%u momentumDir=%u",
 		ubVariant, pSoldier->ubID, ubHitLocation, sDamage, ubHeight, ubIncomingDirection, fHadMomentum ? 1 : 0, ubMomentumDirection ) );
 
-	// Every fatal gunshot is deliberately extreme during this test phase. Use a
-	// sprinkler/mist envelope plus a location-specific tissue layer on every death.
+	// Baseline fatal impact stays restrained. The selected fatal variant below owns
+	// any spectacular tissue/limb effect so we do not stack a generic gib effect on
+	// top of every death before the actual animation even begins.
 	INT16 sFatalGoreZ = 32;
 	if ( ubHitLocation == AIM_SHOT_HEAD ) sFatalGoreZ = 50;
 	else if ( ubHitLocation == AIM_SHOT_LEGS ) sFatalGoreZ = 16;
 	if ( ubHeight == ANIM_CROUCH && sFatalGoreZ > 28 ) sFatalGoreZ = 28;
 	else if ( ubHeight == ANIM_PRONE ) sFatalGoreZ = 10;
 
-	DropBlood( pSoldier, MAXBLOODQUANTITY, pSoldier->bVisible );
+	DropBlood( pSoldier, 2, pSoldier->bVisible );
 	SpawnVRSprinklerGoreBurst( pSoldier, ubExitDirection, ubIncomingDirection, sFatalGoreZ, TRUE );
-	DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 6 );
-	SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubExitDirection, (INT16)__max( 8, sFatalGoreZ - 4 ), 38, 28 );
-
-	if ( ubHitLocation == AIM_SHOT_HEAD )
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_HEAD_GIB.STI", ubExitDirection, sFatalGoreZ, 34, 10 );
-	else if ( ubHitLocation == AIM_SHOT_LEGS )
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_LEG_GIB.STI", ubExitDirection, sFatalGoreZ, 35, 12 );
-	else
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_TORSO_GIB.STI", ubExitDirection, sFatalGoreZ, 35, 12 );
 
 	// Prone and crouched mercs use stance-safe death states, while still receiving
 	// all thirty gore packages. This keeps the 30-way visual test active in every stance.
@@ -7008,10 +6989,12 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 	// DEDUCT LIFE
 	ubCombinedLoss = this->SoldierTakeDamage( ANIM_CROUCH, sDamage, poisondamage, sBreathLoss, ubReason, this->ubAttackerID, NOWHERE, FALSE, TRUE );
 
-	// VR research-based extreme gore: preserve the user's intentionally bloody test
-	// baseline, but distribute it as discrete projected droplets rather than a filled fan.
+	// Ordinary gunshot impacts use a small, fast mist only. Fatal hits are excluded
+	// here because HandleVRCinematicFatalGunshot() owns their visual treatment; this
+	// prevents the old double-stack of hit gore + death gore on the same bullet.
 	if ( ubReason == TAKE_DAMAGE_GUNFIRE &&
 		sDamage >= 1 &&
+		this->stats.bLife > 0 &&
 		this->bInSector &&
 		!( this->flags.uiStatusFlags & ( SOLDIER_VEHICLE | SOLDIER_ROBOT ) ) )
 	{
@@ -7019,9 +7002,9 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 		UINT8 ubSprayDirection = gOppositeDirection[ ubIncomingDirection ];
 		INT16 sGoreZ = 30;
 
-		// Dense local stain, then forward-spatter fallout that thins with distance.
-		DropBlood( this, MAXBLOODQUANTITY, this->bVisible );
-		DropVRDirectionalBloodTrail( this, ubSprayDirection, 5, 6 );
+		// Keep the ground mark local and modest. Do not paint a six-tile red stripe
+		// for every successful hit.
+		DropBlood( this, 1, this->bVisible );
 
 		if ( ubHitLocation == AIM_SHOT_HEAD )
 			sGoreZ = 50;
@@ -7033,16 +7016,8 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 		else if ( gAnimControl[ this->usAnimState ].ubEndHeight == ANIM_PRONE )
 			sGoreZ = 10;
 
-		// Sprinkler, not bucket: project many discrete droplets with small timing and
-		// directional differences. Fatal/severe hits simply increase droplet density.
-		BOOLEAN fExtremeBurst = ( ubHitLocation == AIM_SHOT_HEAD || sDamage >= 18 || this->stats.bLife == 0 );
-		SpawnVRSprinklerGoreBurst( this, ubSprayDirection, ubIncomingDirection, sGoreZ, fExtremeBurst );
-
-		if ( fExtremeBurst )
-		{
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubSprayDirection, (INT16)__max( 7, sGoreZ - 3 ), 40, 26 );
-			DropVRDirectionalBloodTrail( this, ubIncomingDirection, 2, 2 );
-		}
+		BOOLEAN fHeavyImpact = ( ubHitLocation == AIM_SHOT_HEAD || sDamage >= 18 );
+		SpawnVRSprinklerGoreBurst( this, ubSprayDirection, ubIncomingDirection, sGoreZ, fHeavyImpact );
 	}
 
 	// ATE: OK, Let's check our ASSIGNMENT state,
