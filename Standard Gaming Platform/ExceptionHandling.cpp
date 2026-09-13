@@ -16,6 +16,10 @@
 #endif
 
 #include "ExceptionHandling.h"
+#ifdef JA2
+	#include "GameVersion.h"
+#endif
+#include <imagehlp.h>
 #include <stdarg.h>
 #include <string.h>
 
