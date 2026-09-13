@@ -16151,7 +16151,7 @@ BOOLEAN		SOLDIERTYPE::EquipmentTooGood( BOOLEAN fCloselook, BOOLEAN fShowResult 
 						for(INT16 i = 0; i < pObj->ubNumberOfObjects; ++i)				// ... there might be multiple items here (item stack), so for each one ...
 						{
 							// loop over every item and its attachments
-							if ( Item[pObj->usItem].ubCoolness > maxcoolnessallowed )
+							if ( fCloselook && Item[pObj->usItem].ubCoolness > maxcoolnessallowed )
 							{
 								if (fShowResult) ScreenMsg(FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, szCovertTextStr[STR_COVERT_ITEMSTOOGOOD], this->GetName(), Item[pObj->usItem].szItemName, pCountryNames[COUNTRY_NOUN]);
 								return TRUE;
@@ -16165,7 +16165,7 @@ BOOLEAN		SOLDIERTYPE::EquipmentTooGood( BOOLEAN fCloselook, BOOLEAN fShowResult 
 								if ( iter->exists()  )
 								{
 									// loop over every item and its attachments
-									if ( Item[iter->usItem].ubCoolness > maxcoolnessallowed )
+									if ( fCloselook && Item[iter->usItem].ubCoolness > maxcoolnessallowed )
 									{
 										if (fShowResult) ScreenMsg(FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, szCovertTextStr[STR_COVERT_ITEMSTOOGOOD], this->GetName(), Item[iter->usItem].szItemName, pCountryNames[COUNTRY_NOUN]);
 										return TRUE;
@@ -16215,7 +16215,7 @@ BOOLEAN		SOLDIERTYPE::EquipmentTooGood( BOOLEAN fCloselook, BOOLEAN fShowResult 
 							for(INT16 i = 0; i < pObj->ubNumberOfObjects; ++i)				// ... there might be multiple items here (item stack), so for each one ...
 							{
 								// loop over every item and its attachments
-								if ( Item[pObj->usItem].ubCoolness > maxcoolnessallowed )
+								if ( fCloselook && Item[pObj->usItem].ubCoolness > maxcoolnessallowed )
 								{
 									if (fShowResult) ScreenMsg(FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, szCovertTextStr[STR_COVERT_ITEMSTOOGOOD], this->GetName(), Item[pObj->usItem].szItemName, pCountryNames[COUNTRY_NOUN]);
 									return TRUE;
@@ -16229,7 +16229,7 @@ BOOLEAN		SOLDIERTYPE::EquipmentTooGood( BOOLEAN fCloselook, BOOLEAN fShowResult 
 									if ( iter->exists()  )
 									{
 										// loop over every item and its attachments
-										if ( Item[iter->usItem].ubCoolness > maxcoolnessallowed )
+										if ( fCloselook && Item[iter->usItem].ubCoolness > maxcoolnessallowed )
 										{
 											if (fShowResult) ScreenMsg(FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, szCovertTextStr[STR_COVERT_ITEMSTOOGOOD], this->GetName(), Item[iter->usItem].szItemName, pCountryNames[COUNTRY_NOUN]);
 											return TRUE;
