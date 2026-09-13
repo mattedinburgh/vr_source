@@ -1389,7 +1389,8 @@ INT32 FindSpotMaxDistFromOpponents(SOLDIERTYPE *pSoldier)
 		}
 
 		const BOOLEAN fPersonalStateKnown =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY);
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
+			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
 		if (fPersonalStateKnown &&
 			(!ValidOpponent(pSoldier, pOpponent) || pOpponent->IsUnconscious()))
 		{
