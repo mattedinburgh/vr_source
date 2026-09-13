@@ -16310,12 +16310,8 @@ BOOLEAN		SOLDIERTYPE::SeemsLegit( UINT8 ubObserverID, BOOLEAN fShowResult )
 		if(fShowResult) ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, szCovertTextStr[STR_COVERT_ACTIVITIES], this->GetName() );
 		return FALSE;
 	}
-	
-	// sevenfm: assassins are only uncovered when doing suspicious action
-	if (this->IsAssassin())
-	{
-		return TRUE;
-	}
+	// Assassins use the same disguise rules as other covert actors. Their advantage should come from
+	// good cover and behaviour, not blanket immunity to equipment, corpse and inspection checks.
 
 	// if we are trying to dress like a civilian, but aren't successful: not covert
 	if ( this->usSoldierFlagMask & SOLDIER_COVERT_CIV && !(this->LooksLikeACivilian( fShowResult )) )
@@ -16376,7 +16372,7 @@ BOOLEAN		SOLDIERTYPE::SeemsLegit( UINT8 ubObserverID, BOOLEAN fShowResult )
 			pCorpse = &(gRottingCorpse[ cnt ] );
 			
 			if ( pCorpse && pCorpse->fActivated && pCorpse->def.ubAIWarningValue > 0 &&
-				PythSpacesAway( this->sGridNo, pCorpse->def.sGridNo ) < 2 )
+				PythSpacesAway( this->sGridNo, pCorpse->def.sGridNo ) <= max(2, gSkillTraitValues.sCOCloseDetectionRangeSoldierCorpse) )
 			{
 				// check: is this corpse that of an ally of the observing soldier?
 				// a corpse was found near our position. If the soldier observing us can see it, he will be alarmed 
@@ -16393,7 +16389,7 @@ BOOLEAN		SOLDIERTYPE::SeemsLegit( UINT8 ubObserverID, BOOLEAN fShowResult )
 	if ( this->usSoldierFlagMask & SOLDIER_COVERT_SOLDIER )
 	{
 		BOOLEAN fCloseLook = FALSE;
-		if( PythSpacesAway(this->sGridNo, pSoldier->sGridNo) < 2 &&
+		if( PythSpacesAway(this->sGridNo, pSoldier->sGridNo) <= max(1, gSkillTraitValues.sCOCloseDetectionRange) &&
 			pSoldier->aiData.bOppList[this->ubID] == SEEN_CURRENTLY )
 		{
 			fCloseLook = TRUE;
@@ -16419,17 +16415,22 @@ BOOLEAN		SOLDIERTYPE::SeemsLegit( UINT8 ubObserverID, BOOLEAN fShowResult )
 			return FALSE;
 		}
 
-		// if we are disguised as a soldier and alert is raised, we can be uncovered on close look
-		if ( fCloseLook &&
-			//gSkillTraitValues.fCOElitesDetectNextTile &&
-			pSoldier->aiData.bAlertStatus >= STATUS_RED &&
-			(	pSoldier->UniformLevel() > this->UniformLevel() || 
-			pSoldier->UniformLevel() == this->UniformLevel() && EffectiveExpLevel( pSoldier ) > EffectiveExpLevel( this ) ||
-			NUM_SKILL_TRAITS( pSoldier, SQUADLEADER_NT ) > 0 ) 
-			)
+		// If alert is raised, close inspection compares rank and experience. Covert expertise offsets
+		// the observer's experience, bringing this closer to modern 1.13 without discarding VR suspicion.
+		if ( fCloseLook && pSoldier->aiData.bAlertStatus >= STATUS_RED )
 		{
-			if (fShowResult) ScreenMsg(FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, L"%s was uncovered!", this->GetName());
-			return FALSE;
+			UINT8 ubCovertLevel = NUM_SKILL_TRAITS( this, COVERT_NT );
+			BOOLEAN fExperiencedEnough = EffectiveExpLevel( pSoldier ) >= EffectiveExpLevel( this ) + ubCovertLevel;
+			BOOLEAN fOfficer = NUM_SKILL_TRAITS( pSoldier, SQUADLEADER_NT ) > 0;
+			BOOLEAN fHigherRank = pSoldier->UniformLevel() > this->UniformLevel();
+			BOOLEAN fElitePeer = pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE &&
+				pSoldier->UniformLevel() == this->UniformLevel();
+
+			if ( fExperiencedEnough && (fOfficer || fHigherRank || fElitePeer) )
+			{
+				if (fShowResult) ScreenMsg(FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, L"%s was uncovered!", this->GetName());
+				return FALSE;
+			}
 		}		
 
 		// are we targeting a buddy of our observer?
@@ -16443,12 +16444,9 @@ BOOLEAN		SOLDIERTYPE::SeemsLegit( UINT8 ubObserverID, BOOLEAN fShowResult )
 			}
 		}
 
-		// even as a soldier, we will be caught around fresh corpses
-		// assassins will not be uncovered around corpses, as the AI cannot willingly evade them... one could 'ward' against assassins by surrounding yourself with fresh corpses
-		if ( !this->IsAssassin() )
+		// Even a soldier disguise becomes suspicious around a fresh friendly corpse.
+		// Use the configured range and apply this equally to assassins.
 		{
-			// check whether we are around a fresh corpse - this will make us much more suspicious
-			// I deem this necessary, to avoid cheap exploits by nefarious players :-)
 			INT32				cnt;
 			ROTTING_CORPSE *	pCorpse;
 			for ( cnt = 0; cnt < giNumRottingCorpse; ++cnt )
@@ -16456,7 +16454,7 @@ BOOLEAN		SOLDIERTYPE::SeemsLegit( UINT8 ubObserverID, BOOLEAN fShowResult )
 				pCorpse = &(gRottingCorpse[ cnt ] );
 			
 				if ( pCorpse && pCorpse->fActivated && pCorpse->def.ubAIWarningValue > 0 &&
-					PythSpacesAway( this->sGridNo, pCorpse->def.sGridNo ) < 2 )
+					PythSpacesAway( this->sGridNo, pCorpse->def.sGridNo ) <= max(2, gSkillTraitValues.sCOCloseDetectionRangeSoldierCorpse) )
 				{
 					// check: is this corpse that of an ally of the observing soldier?
 					BOOLEAN fCorpseOFAlly = FALSE;
@@ -18178,11 +18176,11 @@ void SOLDIERTYPE::SoldierPropertyUpkeep()
 				// -10% each turn if alert is raised in sector and enemy heard or seen this soldier
 				MultiplySuspicionByPercent( 90 );
 			else if( EnemySeenSoldierRecently(this, SEEN_3_TURNS_AGO, FALSE) )
-				// -25% each turn
-				MultiplySuspicionByPercent( 75 );
+				// retain 80%: guards remember a recently seen suspicious person
+				MultiplySuspicionByPercent( 80 );
 			else
-				// if no one seen us recently (maybe he was killed)
-				MultiplySuspicionByPercent( 25 );
+				// no current observer: cool off steadily, but do not erase suspicion almost instantly
+				MultiplySuspicionByPercent( 65 );
 		}
 
 		if( this->usSoldierFlagMask & ( SOLDIER_COVERT_CIV | SOLDIER_COVERT_SOLDIER ) &&
