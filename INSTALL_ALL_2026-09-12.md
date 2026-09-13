@@ -96,6 +96,12 @@ The following remains deliberately excluded:
 - The recoil auto-weapons divisor uses a backward-compatible read of both the legacy Vengeance key and the newer 1.13 key, intentionally superseding the older single-key implementation.
 - Temporary integration PRs were closed after reconciliation; use only `install/all-2026-09-12`.
 
+## Tactical AI porting freeze
+
+Future upstream JA2 1.13 AI work is governed by `TacticalAI/AI_PORTING_POLICY.md`.
+Correctness, path/AP safety, grenade correctness, crash fixes, performance and
+diagnostics may be reviewed for porting. Tactical doctrine/behaviour changes are
+frozen unless explicitly designed and audited for this Vengeance architecture.
 ## Build gate
 
 There is no repository CI build configured for this branch. A local Windows Visual Studio **Rebuild Solution** is still required before treating the executable as compiler-verified.
