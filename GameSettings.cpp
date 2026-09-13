@@ -1494,6 +1494,8 @@ void LoadGameExternalOptions()
 
 	// Penalty for fire when you don't see enemy (when you see enemy because his see militya or ather merc)
 	gGameExternalOptions.iPenaltyShootUnSeen				= iniReader.ReadInteger("Tactical Interface Settings","SHOOT_UNSEEN_PENALTY",0,0,255);
+	// JA2 1.13 defaults blind fire at unseen contacts to disabled. When enabled, AI may use the knowledge-safe suppression path.
+	gGameExternalOptions.fAIShootUnseen					= iniReader.ReadBoolean("Tactical Interface Settings","AI_SHOOT_UNSEEN", FALSE);
 
 	if (!is_networked)
 		// Flugente: in turnbased combat, do not adjust animation after arriving at target location
