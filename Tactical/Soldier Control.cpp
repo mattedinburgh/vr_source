@@ -5836,7 +5836,9 @@ static void SpawnVRDirectionalGoreSpray( SOLDIERTYPE *pSoldier, const CHAR8 *zFi
 	memset( &AniParams, 0, sizeof( ANITILE_PARAMS ) );
 	AniParams.sGridNo = pSoldier->sGridNo;
 	AniParams.ubLevelID = ANI_TOPMOST_LEVEL;
-	AniParams.sDelay = sDelay;
+	// Cinematic test playback: the physical event is fast in reality, but the user
+	// explicitly wants to inspect the spray. Slow only the VR gore tile animation.
+	AniParams.sDelay = ( sDelay > 0 ) ? (INT16)__min( 180, ( sDelay * 7 + 3 ) / 4 ) : 65;
 	AniParams.sStartFrame = 0;
 	AniParams.uiFlags = ANITILE_CACHEDTILE | ANITILE_FORWARD | ANITILE_NOZBLITTER | ANITILE_USE_DIRECTION_FOR_START_FRAME;
 	AniParams.uiUserData3 = ubSprayDirection;
@@ -5867,16 +5869,19 @@ static void SpawnVRDirectionalGoreSpray( SOLDIERTYPE *pSoldier, const CHAR8 *zFi
 }
 
 
-// Sprinkler-style blood projection. Many small, delayed droplets travel down the
-// exit vector with slight directional jitter and increasing distance. This deliberately
-// avoids the old single broad "bucket" fan while still allowing extreme volume.
+// Sprinkler-style blood projection. Forensic gunshot patterns are represented here
+// as many discrete airborne droplets rather than one opaque fan. Most droplets remain
+// close to the projectile axis; only a minority deviate one JA2 direction step because
+// the engine provides eight discrete directions rather than continuous angles.
 static void SpawnVRSprinklerGoreBurst( SOLDIERTYPE *pSoldier, UINT8 ubExitDirection, UINT8 ubIncomingDirection, INT16 sZ, BOOLEAN fExtreme )
 {
 	if ( pSoldier == NULL )
 		return;
 
-	static const INT8 abDirJitter[ 9 ] = { 0, 1, -1, 0, 1, -1, 0, 1, -1 };
-	UINT8 ubDroplets = fExtreme ? 9 : 5;
+	// Centreline dominates. +/-1 direction (45 degrees in JA2) is deliberately rare
+	// so the result reads as projected droplets rather than a broad bucket-shaped fan.
+	static const INT8 abDirJitter[ 12 ] = { 0, 0, 1, 0, 0, -1, 0, 0, 1, 0, 0, -1 };
+	UINT8 ubDroplets = fExtreme ? 12 : 7;
 
 	for ( UINT8 i = 0; i < ubDroplets; ++i )
 	{
@@ -5884,24 +5889,29 @@ static void SpawnVRSprinklerGoreBurst( SOLDIERTYPE *pSoldier, UINT8 ubExitDirect
 		while ( sDir < 0 ) sDir += NUM_WORLD_DIRECTIONS;
 		sDir %= NUM_WORLD_DIRECTIONS;
 
-		INT16 sLayerZ = (INT16)__max( 5, sZ - (INT16)( ( i % 4 ) * 3 ) );
-		UINT8 ubOffset = (UINT8)__min( 120, (INT16)( i * ( fExtreme ? 15 : 12 ) ) );
-		INT16 sDelay = (INT16)( 29 + i * 4 );
+		// The farther droplets travel, the lower they render: a simple gravity-like
+		// visual arc rather than a perfectly horizontal laser beam of blood.
+		INT16 sLayerZ = (INT16)__max( 4, sZ - (INT16)( ( i * 2 ) / 3 ) );
+		UINT8 ubOffset = (UINT8)__min( 120, (INT16)( i * ( fExtreme ? 10 : 9 ) ) );
+		INT16 sDelay = (INT16)( 34 + i * 5 );
 
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", (UINT8)sDir, sLayerZ, sDelay, ubOffset );
 	}
 
-	// Two sparse medium layers add density without turning the burst into a solid fan.
+	// One denser core close to the wound gives the burst visual weight without
+	// painting a solid cone through the entire trajectory.
+	if ( fExtreme )
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, (INT16)__max( 6, sZ - 2 ), 39, 18 );
+
+	// Backspatter exists against projectile travel, but keep it visibly smaller than
+	// the forward field. Use separated micro-bursts instead of another broad layer.
+	SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, (INT16)__max( 5, sZ - 3 ), 45, 0 );
 	if ( fExtreme )
 	{
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, (INT16)__max( 6, sZ - 2 ), 33, 22 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, (INT16)__max( 6, sZ - 7 ), 46, 68 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, (INT16)__max( 5, sZ - 6 ), 53, 18 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, (INT16)__max( 5, sZ - 8 ), 61, 32 );
 	}
-
-	// Entry-side mist/backspatter is much smaller than the exit-side sprinkler.
-	SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, (INT16)__max( 5, sZ - 3 ), 41, 0 );
 }
-
 
 static void SpawnVRBloodGroundDecal( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubSprayDirection, const CHAR8 *zFilename )
 {
@@ -5940,8 +5950,8 @@ static void DropVRDirectionalBloodTrail( SOLDIERTYPE *pSoldier, UINT8 ubSprayDir
 
 	// Research-shaped fallout: dense close to origin, then rapidly thinning with
 	// distance. This avoids the old solid red stripe / bucket-pour appearance.
-	static const UINT8 aubCentralChance[ 6 ] = { 100, 90, 74, 55, 36, 20 };
-	static const UINT8 aubSideChance[ 6 ]    = {  72, 58, 43, 30, 18,  9 };
+	static const UINT8 aubCentralChance[ 6 ] = { 100, 92, 78, 60, 40, 22 };
+	static const UINT8 aubSideChance[ 6 ]    = {  42, 32, 23, 15,  8,  3 };
 	if ( ubMaxTiles > 6 )
 		ubMaxTiles = 6;
 
@@ -9740,6 +9750,30 @@ void SetSoldierAniSpeed( SOLDIERTYPE *pSoldier )
 	}
 
 	AdjustAniSpeed( pSoldier );
+
+	// VR cinematic fatal-reaction test: slow only visible death/fall playback so the
+	// gore and pseudo-ragdoll motion can be inspected. This is intentional slow-motion,
+	// not a claim about real-time wound physics.
+	if ( pSoldier->stats.bLife == 0 && pSoldier->sAniDelay > 0 )
+	{
+		switch ( pSoldier->usAnimState )
+		{
+		case FLYBACK_HIT:
+		case FALLBACK_HIT_STAND:
+		case FALLFORWARD_FROMHIT_STAND:
+		case FALLFORWARD_FROMHIT_CROUCH:
+		case GENERIC_HIT_DEATH:
+		case FALLBACK_HIT_DEATH:
+		case PRONE_HIT_DEATH:
+		case PRONE_LAY_FROMHIT:
+		case JFK_HITDEATH:
+		case BODYEXPLODING:
+			pSoldier->sAniDelay = (INT16)__min( 1000, ( pSoldier->sAniDelay * 5 + 1 ) / 3 );
+			break;
+		default:
+			break;
+		}
+	}
 
 	// SANDRO - make the spin kick animation a bit faster 
 	if (pSoldier->usAnimState == NINJA_SPINKICK ||
