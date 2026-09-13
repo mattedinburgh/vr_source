@@ -7459,7 +7459,6 @@ for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 			pFriend->bCollapsed ||
 			pFriend->bBreathCollapsed ||
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
-			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE / 2)
 		{
 			continue;
@@ -7467,6 +7466,7 @@ for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 
 		BOOLEAN fFriendInTrouble =
 			pFriend->aiData.bUnderFire ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 			ShockLevelPercent(pFriend) > 30 ||
 			pFriend->stats.bLife < pFriend->stats.bLifeMax / 2 ||
 			AIPersonalRisk(pFriend) > AIPersonalRiskTolerance(pFriend);
