@@ -1101,9 +1101,13 @@ INT16 TeamNoLongerSeesMan( UINT8 ubTeam, SOLDIERTYPE *pOpponent, UINT8 ubExclude
 	if (!pMate->bActive || !pMate->bInSector || (pMate->stats.bLife < OKLIFE))
 	 continue;	// next merc
 
-	// if this teammate currently sees this opponent
-	if (pMate->aiData.bOppList[pOpponent->ubID] == SEEN_CURRENTLY)
-	 return(FALSE);	 // that's all I need to know, get out of here
+	// Cached SEEN_CURRENTLY is not enough after smoke, movement or a door/cover
+	// change. Keep public CURRENT sight only if this teammate still has real LOS.
+	if (pMate->aiData.bOppList[pOpponent->ubID] == SEEN_CURRENTLY &&
+		SoldierToSoldierLineOfSightTest(pMate, pOpponent, TRUE, CALC_FROM_ALL_DIRS))
+	{
+		return(FALSE);
+	}	 // that's all I need to know, get out of here
 	}
 
 /* comm by ddd
