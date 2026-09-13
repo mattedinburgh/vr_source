@@ -9052,6 +9052,8 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 				!AISameFireteam(pSoldier, pFriend) ||
 				pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
 				(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+				(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
+				AIDisengagementActive(pFriend) || AIEscapeActive(pFriend) ||
 				!pFriend->IsFlanking() ||
 				TileIsOutOfBounds(pFriend->lastFlankSpot) ||
 				PythSpacesAway(pFriend->lastFlankSpot, sClosestDisturbance) > TACTICAL_RANGE / 2)
