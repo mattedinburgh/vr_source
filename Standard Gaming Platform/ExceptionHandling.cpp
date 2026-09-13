@@ -17,6 +17,7 @@
 
 #include "ExceptionHandling.h"
 #include <stdarg.h>
+#include <string.h>
 
 // ---------------------------------------------------------------------------
 // Vengeance crash black box
