@@ -10442,6 +10442,16 @@ void PrisonerSurrenderMessageBoxCallBack( UINT8 ubExitValue )
             }
         }
 
+        // Formal officers make an organized force harder to convince to surrender.
+        // This is intentionally sector-wide: surrender is negotiated with the force as a whole.
+        if (gGameExternalOptions.fEnemyRoles && gGameExternalOptions.fEnemyOfficers)
+        {
+            EnsureEnemyCommandRoles();
+            UINT8 officerType = OFFICER_NONE;
+            if (HighestEnemyOfficersInSector(officerType))
+                enemysidestrength = (UINT32)(enemysidestrength * (1.0f + gGameExternalOptions.dEnemyOfficerSurrenderStrengthBonus * officerType));
+        }
+
         // print out values
         if ( gGameExternalOptions.fDisplaySurrenderSValues )
             ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, New113Message[MSG113_SURRENDER_VALUES], playersidestrength, gGameExternalOptions.fSurrenderMultiplier * enemysidestrength );
@@ -10459,6 +10469,11 @@ void PrisonerSurrenderMessageBoxCallBack( UINT8 ubExitValue )
                     // only if not dying, and if not a NPC (Mike...)
                     if( pSoldier->stats.bLife >= OKLIFE && pSoldier->ubProfile == NO_PROFILE )
                     {
+                        // Capturing a General removes his strategic command benefit. He is
+                        // then handled as a high-value officer prisoner by the existing system.
+                        if (pSoldier->usSoldierFlagMask & SOLDIER_VIP)
+                            RemoveEnemyGeneral(gWorldSectorX, gWorldSectorY);
+
                         pSoldier->usSoldierFlagMask |= SOLDIER_POW;
 
                         // Remove as target
