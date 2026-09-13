@@ -6397,6 +6397,48 @@ UINT8 CalcEffVolume(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel, UINT8 ubN
 
 
 
+static UINT32 WeatherNoiseLocalizationHash( UINT32 uiValue )
+{
+	uiValue ^= uiValue >> 16;
+	uiValue *= 0x7feb352d;
+	uiValue ^= uiValue >> 15;
+	uiValue *= 0x846ca68b;
+	uiValue ^= uiValue >> 16;
+	return uiValue;
+}
+
+static INT32 WeatherLocalizeNoiseGridNo( SOLDIERTYPE *pSoldier, INT32 sTrueGridNo, UINT8 ubNoiseMaker, UINT8 ubNoiseType )
+{
+	UINT8 ubRadius = WeatherGetLocalizationErrorRadius( ubNoiseType );
+	UINT32 uiSeed;
+	UINT8 ubDirection;
+	UINT8 ubSteps;
+	UINT8 ubStep;
+	INT32 sLocalizedGridNo = sTrueGridNo;
+
+	if ( ubRadius == 0 || TileIsOutOfBounds( sTrueGridNo ) )
+		return sTrueGridNo;
+
+	// Do not consume JA2's global Random() stream. A listener/source/time tuple gives
+	// stable uncertainty for this event while allowing different soldiers to disagree.
+	uiSeed = WeatherNoiseLocalizationHash( (UINT32)sTrueGridNo ^
+		( (UINT32)pSoldier->ubID << 24 ) ^ ( (UINT32)ubNoiseMaker << 16 ) ^
+		( GetWorldTotalSeconds() / 2 ) );
+	ubDirection = (UINT8)( uiSeed % NUM_WORLD_DIRECTIONS );
+	ubSteps = (UINT8)( 1 + ( ( uiSeed >> 8 ) % ubRadius ) );
+
+	for ( ubStep = 0; ubStep < ubSteps; ++ubStep )
+	{
+		INT32 sNextGridNo = NewGridNo( sLocalizedGridNo, DirectionInc( ubDirection ) );
+		if ( sNextGridNo == sLocalizedGridNo || TileIsOutOfBounds( sNextGridNo ) )
+			break;
+		sLocalizedGridNo = sNextGridNo;
+	}
+
+	return sLocalizedGridNo;
+}
+
+
 void HearNoise(SOLDIERTYPE *pSoldier, UINT8 ubNoiseMaker, INT32 sGridNo, INT8 bLevel, UINT8 ubVolume, UINT8 ubNoiseType, UINT8 *ubSeen)
 {
 	INT16	sNoiseX, sNoiseY;
@@ -6533,6 +6575,7 @@ void HearNoise(SOLDIERTYPE *pSoldier, UINT8 ubNoiseMaker, INT32 sGridNo, INT8 bL
 		}
 		else		 // noise maker still can't be seen
 		{
+			INT32 sLocalizedNoiseGridNo = WeatherLocalizeNoiseGridNo( pSoldier, sGridNo, ubNoiseMaker, ubNoiseType );
 			SetNewSituation( pSoldier ); // re-evaluate situation
 
 			// if noise type was unmistakably that of gunfire
@@ -6548,7 +6591,7 @@ void HearNoise(SOLDIERTYPE *pSoldier, UINT8 ubNoiseMaker, INT32 sGridNo, INT8 bL
 			}
 
 			// remember that the soldier has been heard and his new location
-			UpdatePersonal(pSoldier,ubNoiseMaker,HEARD_THIS_TURN,sGridNo, bLevel);
+			UpdatePersonal(pSoldier,ubNoiseMaker,HEARD_THIS_TURN,sLocalizedNoiseGridNo, bLevel);
 
 			// Public info is not set unless EVERYONE on the team fails to see the
 			// ubNoiseMaker, leaving the 'seen' flag FALSE.	See ProcessNoise().
@@ -6570,14 +6613,14 @@ void HearNoise(SOLDIERTYPE *pSoldier, UINT8 ubNoiseMaker, INT32 sGridNo, INT8 bL
 				PythSpacesAway(pSoldier->sGridNo, sGridNo) <= MAX_VISION_RANGE &&
 				SoldierToVirtualSoldierLineOfSightTest(pSoldier, sGridNo, bLevel, ANIM_STAND, TRUE, NO_DISTANCE_LIMIT))
 			{
-				IncrementWatchedLoc(pSoldier->ubID, sGridNo, bLevel);
+				IncrementWatchedLoc(pSoldier->ubID, sLocalizedNoiseGridNo, bLevel);
 			}
 
 			// CJC: set the noise gridno for the soldier, if appropriate - this is what is looked at by the AI!
 			if (ubVolume >= pSoldier->aiData.ubNoiseVolume)
 			{
 				// yes it is, so remember this noise INSTEAD (old noise is forgotten)
-				pSoldier->aiData.sNoiseGridno = sGridNo;
+				pSoldier->aiData.sNoiseGridno = sLocalizedNoiseGridNo;
 				pSoldier->bNoiseLevel = bLevel;
 
 				// no matter how loud noise was, don't remember it for than 12 turns!
@@ -6687,12 +6730,13 @@ void HearNoise(SOLDIERTYPE *pSoldier, UINT8 ubNoiseMaker, INT32 sGridNo, INT8 bL
 		// looked all his saw was a bunch of rocks lying still
 		if (!bSourceSeen || ((ubNoiseType == NOISE_ROCK_IMPACT) && (bHadToTurn) ) || ubNoiseType == NOISE_SILENT_ALARM )
 		{
+			INT32 sLocalizedMiscNoiseGridNo = WeatherLocalizeNoiseGridNo( pSoldier, sGridNo, ubNoiseMaker, ubNoiseType );
 			// check if the effective volume of this new noise is greater than or at
 			// least equal to the volume of the currently noticed noise stored
 			if (ubVolume >= pSoldier->aiData.ubNoiseVolume)
 			{
 				// yes it is, so remember this noise INSTEAD (old noise is forgotten)
-				pSoldier->aiData.sNoiseGridno = sGridNo;
+				pSoldier->aiData.sNoiseGridno = sLocalizedMiscNoiseGridNo;
 				pSoldier->bNoiseLevel = bLevel;
 
 				// no matter how loud noise was, don't remember it for than 12 turns!
