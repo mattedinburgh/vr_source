@@ -8169,6 +8169,15 @@ INT32 BulletImpact( SOLDIERTYPE *pFirer, BULLET *pBullet, SOLDIERTYPE * pTarget,
 	BOOLEAN fFragment = FALSE;
 	INT32 iTotalArmourProtection=0;
 
+	DAMAGE_DIAGNOSTIC damageDiag;
+	memset( &damageDiag, 0, sizeof(damageDiag) );
+	damageDiag.fValid = ( pBullet != NULL && pBullet->iBullet >= 0 );
+	damageDiag.iBullet = damageDiag.fValid ? pBullet->iBullet : -1;
+	damageDiag.ubShooterID = pFirer ? pFirer->ubID : NOBODY;
+	damageDiag.ubTargetID = pTarget ? pTarget->ubID : NOBODY;
+	damageDiag.ubHitLocation = ubHitLocation;
+	damageDiag.iImpactAtContact = iOrigImpact;
+
 	if (pBullet == NULL && pFirer )
 	{
 		usAttackingWeapon = pFirer->inv[pFirer->ubAttackingHand][0]->data.gun.ubGunAmmoType;
@@ -8180,6 +8189,7 @@ INT32 BulletImpact( SOLDIERTYPE *pFirer, BULLET *pBullet, SOLDIERTYPE * pTarget,
 		sOrigGridNo = pBullet->sOrigGridNo;
 		fFragment = pBullet->fFragment;
 	}
+	damageDiag.usWeapon = usAttackingWeapon;
 
 	INT32					iImpact, iFluke, iBonus, iImpactForCrits = 0;
 	INT8					bStatLoss = 0;
@@ -8189,7 +8199,12 @@ INT32 BulletImpact( SOLDIERTYPE *pFirer, BULLET *pBullet, SOLDIERTYPE * pTarget,
 	{
 		// if bullet does not hits anything other than the head, it doesn't do any damage
 		if ( gGameExternalOptions.fZombieOnlyHeadshotsWork && ubHitLocation != AIM_SHOT_HEAD )
+		{
+			damageDiag.iFinalDamage = 0;
+			if ( damageDiag.fValid )
+				DamageRegisterBulletDiagnostic( damageDiag.iBullet, &damageDiag );
 			return 0;
+		}
 
 		// set a flag if this was a headshot, unset if it wasn't. Thus we can determine if this was a headshot kill (only if life > 0, ignore if already dead)
 		if ( gGameExternalOptions.fZombieOnlyHeadShotsPermanentlyKill && pTarget->stats.bLife > 0 )
@@ -8220,12 +8235,17 @@ INT32 BulletImpact( SOLDIERTYPE *pFirer, BULLET *pBullet, SOLDIERTYPE * pTarget,
 	{
 		ubAmmoType = Explosive[Item[usAttackingWeapon].ubClassIndex].ubFragType;
 	}
+	damageDiag.ubAmmoType = ubAmmoType;
 
 	if ( TANK( pTarget ) )
 	{
 		if ( !AmmoTypes[ubAmmoType].antiTank )
 		{
 			// ping!
+			damageDiag.iImpactBeforeArmour = iOrigImpact;
+			damageDiag.iFinalDamage = 0;
+			if ( damageDiag.fValid )
+				DamageRegisterBulletDiagnostic( damageDiag.iBullet, &damageDiag );
 			return( 0 );
 		}
 	}
@@ -8240,6 +8260,9 @@ INT32 BulletImpact( SOLDIERTYPE *pFirer, BULLET *pBullet, SOLDIERTYPE * pTarget,
 	//NumMessage("Bonus = ",bonus);	
 
 	iOrigImpact = iOrigImpact * (100 + iFluke + iBonus) / 100;
+	damageDiag.iFlukePercent = iFluke;
+	damageDiag.iAccuracyPercent = iBonus;
+	damageDiag.iImpactAfterHitQuality = iOrigImpact;
 
 	// at very long ranges (1.5x maxRange and beyond) impact could go negative
 	if (iOrigImpact < 1)
@@ -8267,6 +8290,8 @@ INT32 BulletImpact( SOLDIERTYPE *pFirer, BULLET *pBullet, SOLDIERTYPE * pTarget,
 		iOrigImpact /= 4;
 	}
 
+	damageDiag.iImpactBeforeArmour = iOrigImpact;
+
 	// sevenfm: store original impact
 	pTarget->iLastBulletImpact += iOrigImpact;
 
@@ -8282,6 +8307,9 @@ INT32 BulletImpact( SOLDIERTYPE *pFirer, BULLET *pBullet, SOLDIERTYPE * pTarget,
 		// sevenfm: store armour protection
 		pTarget->iLastArmourProtection += iTotalArmourProtection;
 	}
+	damageDiag.iArmourProtection = iTotalArmourProtection;
+	damageDiag.iImpactAfterArmour = iImpact;
+	damageDiag.iMinimumDamageFloor = AmmoTypes[ubAmmoType].zeroMinimumDamage ? 0 : ((iOrigImpact + 5) / 10);
 
 	// calc minimum damage
 	if ( AmmoTypes[ubAmmoType].zeroMinimumDamage )
