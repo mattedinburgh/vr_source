@@ -1259,7 +1259,9 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 			continue;
 		}
 
-		BOOLEAN fThreatStateKnown = (*pbPersOL == SEEN_CURRENTLY);
+		BOOLEAN fThreatStateKnown =
+			(*pbPersOL == SEEN_CURRENTLY) &&
+			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
 		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
 			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
 			(gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
@@ -1522,7 +1524,9 @@ INT32 ClosestKnownOpponent(SOLDIERTYPE *pSoldier, INT32 * psGridNo, INT8 * pbLev
 			continue;
 		}
 
-		BOOLEAN fThreatStateKnown = (*pbPersOL == SEEN_CURRENTLY);
+		BOOLEAN fThreatStateKnown =
+			(*pbPersOL == SEEN_CURRENTLY) &&
+			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
 		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
 			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
 			(gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
@@ -2556,7 +2560,9 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 			continue;
 		}
 
-		BOOLEAN fThreatStateKnown = (*pbPersOL == SEEN_CURRENTLY);
+		BOOLEAN fThreatStateKnown =
+			(*pbPersOL == SEEN_CURRENTLY) &&
+			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
 		if (fThreatStateKnown && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
 		{
 			continue;
