@@ -4658,14 +4658,20 @@ static UINT8 AISelectFireteamRemnantDestination(SOLDIERTYPE *pSoldier, UINT8 *pu
 		}
 
 		INT32 iDistance = AIFireteamMergeDistance(ubOld, ubTeam, pSoldier);
-		if (iDistance >= 10000)
+		if (iDistance >= 10000 || iDistance > TACTICAL_RANGE)
+			continue;
+
+		BOOLEAN fTargetFixed = AIFireteamPredominantlyFixed(ubTeam);
+		// A fixed sentry/sniper cannot be reassigned to a mobile element and then
+		// remain stationary while the bookkeeping claims he has rejoined it.
+		if (fOldFixed && !fTargetFixed)
 			continue;
 
 		INT32 iScore = iDistance + AIFireteamRemnantDestinationPenalty(ubTeam);
-		if (AIFireteamPredominantlyFixed(ubTeam) != fOldFixed)
+		if (fTargetFixed != fOldFixed)
 			iScore += 8;
 
-		// Distance remains important, but a nearby panicking element should not beat a
+		// Among local eligible elements, a nearby panicking element should not beat a
 		// slightly farther cohesive team with usable fighters and intact leadership.
 		if (iScore < iBest)
 		{
