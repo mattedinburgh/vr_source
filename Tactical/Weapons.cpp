@@ -190,6 +190,33 @@ BOOLEAN NCTHGetBulletDiagnostic( INT32 iBullet, NCTH_SHOT_DIAGNOSTIC *pOut )
 	return TRUE;
 }
 
+#define DAMAGE_DIAGNOSTIC_RING_SIZE 128
+static DAMAGE_DIAGNOSTIC gDamageDiagnosticRing[DAMAGE_DIAGNOSTIC_RING_SIZE];
+
+void DamageRegisterBulletDiagnostic( INT32 iBullet, const DAMAGE_DIAGNOSTIC *pDiagnostic )
+{
+	if ( iBullet < 0 || pDiagnostic == NULL )
+		return;
+
+	DAMAGE_DIAGNOSTIC &slot = gDamageDiagnosticRing[(UINT32)iBullet % DAMAGE_DIAGNOSTIC_RING_SIZE];
+	slot = *pDiagnostic;
+	slot.fValid = TRUE;
+	slot.iBullet = iBullet;
+}
+
+BOOLEAN DamageGetBulletDiagnostic( INT32 iBullet, DAMAGE_DIAGNOSTIC *pOut )
+{
+	if ( iBullet < 0 || pOut == NULL )
+		return FALSE;
+
+	DAMAGE_DIAGNOSTIC &slot = gDamageDiagnosticRing[(UINT32)iBullet % DAMAGE_DIAGNOSTIC_RING_SIZE];
+	if ( !slot.fValid || slot.iBullet != iBullet )
+		return FALSE;
+
+	*pOut = slot;
+	return TRUE;
+}
+
 //GLOBALS
 
 // TODO: Move strings to extern file
