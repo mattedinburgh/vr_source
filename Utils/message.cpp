@@ -383,8 +383,9 @@ void ClearDisplayedListOfTacticalStrings( void )
 
 #define BATTLELOG_OUTCOME_NONE    0
 #define BATTLELOG_OUTCOME_MISS    1
-#define BATTLELOG_OUTCOME_BLOCKED 2
-#define BATTLELOG_OUTCOME_HIT     3
+#define BATTLELOG_OUTCOME_BLOCKED   2
+#define BATTLELOG_OUTCOME_HIT       3
+#define BATTLELOG_OUTCOME_INTERCEPT 4
 
 typedef struct
 {
@@ -813,6 +814,11 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 			pOutcomeTitle = L"SHOT INSPECTOR - BLOCKED";
 			usOutcomeColor = FONT_MCOLOR_LTYELLOW;
 		}
+		else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_INTERCEPT )
+		{
+			pOutcomeTitle = L"SHOT INSPECTOR - HIT OTHER";
+			usOutcomeColor = FONT_MCOLOR_LTYELLOW;
+		}
 		else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_MISS )
 		{
 			pOutcomeTitle = L"SHOT INSPECTOR - MISS";
@@ -1128,38 +1134,54 @@ void BattleLogAddNCTHHit( INT32 iBullet, UINT8 ubTargetID, INT16 sDamage )
 	if ( !NCTHGetBulletDiagnostic( iBullet, &d ) )
 		return;
 
-	// Keep the comparison set clean: record intended-target hits, not accidental
-	// collateral contacts along the bullet path.
-	if ( d.ubTargetID == NOBODY || d.ubTargetID != ubTargetID )
-		return;
-
+	BOOLEAN fIntendedHit = ( d.ubTargetID != NOBODY && d.ubTargetID == ubTargetID );
 	BOOLEAN fShooterPlayer = ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] &&
 		MercPtrs[d.ubShooterID]->bTeam == gbPlayerNum );
-	BOOLEAN fTargetPlayer = ( ubTargetID != NOBODY && MercPtrs[ubTargetID] &&
+	BOOLEAN fIntendedTargetPlayer = ( d.ubTargetID != NOBODY && MercPtrs[d.ubTargetID] &&
+		MercPtrs[d.ubTargetID]->bTeam == gbPlayerNum );
+	BOOLEAN fActualTargetPlayer = ( ubTargetID != NOBODY && MercPtrs[ubTargetID] &&
 		MercPtrs[ubTargetID]->bTeam == gbPlayerNum );
-	if ( !fShooterPlayer && !fTargetPlayer )
+
+	// Keep AI-vs-AI traffic out of the player's log. If an intended player shot
+	// struck somebody else, keep it: that is exactly the kind of trajectory
+	// outcome the inspector is meant to explain.
+	if ( !fShooterPlayer && !fIntendedTargetPlayer && !fActualTargetPlayer )
 		return;
 
 	guiBattleLogSequence++;
 	BATTLE_LOG_ENTRY *pEntry = &gBattleLogEntries[(guiBattleLogSequence - 1) % BATTLE_LOG_MAX_ENTRIES];
 	memset( pEntry, 0, sizeof(*pEntry) );
 	pEntry->uiSequence = guiBattleLogSequence;
-	pEntry->usColor = fShooterPlayer ? FONT_MCOLOR_LTGREEN : FONT_MCOLOR_LTRED;
 	pEntry->fClickable = TRUE;
-	pEntry->ubOutcome = BATTLELOG_OUTCOME_HIT;
+	pEntry->ubOutcome = fIntendedHit ? BATTLELOG_OUTCOME_HIT : BATTLELOG_OUTCOME_INTERCEPT;
+	pEntry->usColor = fIntendedHit
+		? ( fShooterPlayer ? FONT_MCOLOR_LTGREEN : FONT_MCOLOR_LTRED )
+		: ( fActualTargetPlayer ? FONT_MCOLOR_LTRED : FONT_MCOLOR_LTYELLOW );
 	pEntry->iBullet = iBullet;
 	pEntry->ncth = d;
 
 	const CHAR16 *pName = L"Merc";
-	const CHAR16 *pTargetName = L"target";
+	const CHAR16 *pIntendedTargetName = L"target";
+	const CHAR16 *pActualTargetName = L"someone";
 	if ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] )
 		pName = MercPtrs[d.ubShooterID]->GetName();
+	if ( d.ubTargetID != NOBODY && MercPtrs[d.ubTargetID] )
+		pIntendedTargetName = MercPtrs[d.ubTargetID]->GetName();
 	if ( ubTargetID != NOBODY && MercPtrs[ubTargetID] )
-		pTargetName = MercPtrs[ubTargetID]->GetName();
+		pActualTargetName = MercPtrs[ubTargetID]->GetName();
 
-	const CHAR16 *pOutcome = fShooterPlayer ? L"HIT" : L"ENEMY HIT";
-	swprintf( pEntry->zText, L"[%02d:%02d] %s - %s -> %s - dmg %d - NCTH %.0f  [click]",
-		guiHour, guiMin, pOutcome, pName, pTargetName, sDamage, d.fFinalChance );
+	if ( fIntendedHit )
+	{
+		const CHAR16 *pOutcome = fShooterPlayer ? L"HIT" : L"ENEMY HIT";
+		swprintf( pEntry->zText, L"[%02d:%02d] %s - %s -> %s - dmg %d - NCTH %.0f  [click]",
+			guiHour, guiMin, pOutcome, pName, pActualTargetName, sDamage, d.fFinalChance );
+	}
+	else
+	{
+		const CHAR16 *pOutcome = fShooterPlayer ? L"HIT OTHER" : L"ENEMY HIT OTHER";
+		swprintf( pEntry->zText, L"[%02d:%02d] %s - %s aimed %s, hit %s - dmg %d  [click]",
+			guiHour, guiMin, pOutcome, pName, pIntendedTargetName, pActualTargetName, sDamage );
+	}
 	gusBattleLogScrollOffset = 0;
 
 	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
