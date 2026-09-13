@@ -286,13 +286,34 @@ jobs:
           # in-memory sector as A3_REMASTERED.dat in the isolated writable profile.
           $forcedBakeExit = Invoke-VengeanceMapshot -MapName 'A3.dat' -ExpectedBmp $sourceBmp
 
-          $baked = Get-ChildItem $sandbox -Recurse -File -Filter 'A3_REMASTERED.dat' -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
-          if (-not $baked) {
-            throw 'A3 source MAPSHOT succeeded but the baked A3_REMASTERED.dat was not found in the Vengeance sandbox.'
+          # SaveWorld writes through the VFS writable UserProf. Require that
+          # exact output instead of accepting a pre-existing A3_REMASTERED.dat
+          # from Data-Maps-Tiles (the repository already contains an older bake).
+          $bakedPath = Join-Path $sandbox 'Profiles\UserProfile_Vengeance\MAPS\A3_REMASTERED.dat'
+          if (-not (Test-Path $bakedPath)) {
+            throw "A3 source MAPSHOT succeeded but the fresh VFS bake was not found: $bakedPath"
           }
-          Write-Host "Baked Vengeance A3 map: $($baked.FullName) ($($baked.Length) bytes)"
+          $baked = Get-Item $bakedPath
+          $bakedHash = (Get-FileHash $baked.FullName -Algorithm SHA256).Hash
+          $sourceMap = Join-Path $sandbox 'Data-Maps-Tiles\maps\A3.dat'
+          $sourceHash = (Get-FileHash $sourceMap -Algorithm SHA256).Hash
+          if ($bakedHash -eq $sourceHash) {
+            throw 'Fresh A3_REMASTERED.dat is byte-identical to A3.dat; farm dressing was not persisted.'
+          }
+          Write-Host "Fresh baked Vengeance A3 map: $($baked.FullName) ($($baked.Length) bytes)"
+          Write-Host "A3 source SHA256: $sourceHash"
+          Write-Host "A3 baked  SHA256: $bakedHash"
+
+          # Eliminate VFS precedence ambiguity for validation. The sandbox is a
+          # disposable copy, so overlay the fresh bake onto its Data-Maps-Tiles
+          # A3_REMASTERED.dat as well. Whichever VFS layer wins, pass 2 opens the
+          # exact map produced moments ago.
+          $validationMap = Join-Path $sandbox 'Data-Maps-Tiles\maps\A3_REMASTERED.dat'
+          Copy-Item -Force $baked.FullName $validationMap
+          $validationHash = (Get-FileHash $validationMap -Algorithm SHA256).Hash
+          if ($validationHash -ne $bakedHash) {
+            throw 'Validation A3_REMASTERED.dat hash does not match fresh VFS bake.'
+          }
 
           # Pass 2: reopen the persisted map through the same Vengeance VFS and
           # render the actual baked result. This proves that the output is a valid
