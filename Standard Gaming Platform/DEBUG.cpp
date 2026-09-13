@@ -48,6 +48,7 @@
 #include "SaveLoadGame.h"
 
 #include "debug_util.h"
+#include "ExceptionHandling.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -408,6 +409,16 @@ void _FailMessage(const char* message, unsigned lineNum, const char * functionNa
 	if (alreadyInThisFunction)
 		return;
 	alreadyInThisFunction = true;
+
+	BlackBoxEvent( "ASSERT", "line=%u function=%s file=%s message=%s",
+		lineNum,
+		functionName ? functionName : "?",
+		sourceFileName ? sourceFileName : "?",
+		message ? message : "" );
+	BlackBoxCheckpoint( "ASSERT", "line=%u function=%s file=%s",
+		lineNum,
+		functionName ? functionName : "?",
+		sourceFileName ? sourceFileName : "?" );
 
 	sgp::dumpStackTrace(message);
 
