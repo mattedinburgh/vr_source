@@ -14112,7 +14112,7 @@ FLOAT GetScopeModeProjectionFactor( SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj )
 			if ( IsAttachmentClass(iter->usItem, AC_SCOPE|AC_SIGHT|AC_IRONSIGHT) )
 			{
 				// ignore sight if not using it
-				if ( pSoldier->bScopeMode == USE_ALT_WEAPON_HOLD || iter->usItem != ObjList[pSoldier->bScopeMode]->usItem )
+				if ( pSoldier->bScopeMode == USE_ALT_WEAPON_HOLD || ObjList[pSoldier->bScopeMode] == NULL || iter->usItem != ObjList[pSoldier->bScopeMode]->usItem )
 					continue;
 			}
 
