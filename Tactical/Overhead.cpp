@@ -6839,6 +6839,20 @@ void RemoveCapturedEnemiesFromSectorInfo( INT16 sMapX, INT16 sMapY, INT8 bMapZ )
 		// Make team look for items
 		AllSoldiersLookforItems( TRUE );
 
+		// Preserve non-lethal surrender semantics even when the optional prisoner
+		// management feature is disabled. The tactical soldiers have already been
+		// disarmed/removed above; auto-release them through the existing callback
+		// instead of executing them or opening prison-management UI.
+		if ( !gGameExternalOptions.fAllowPrisonerSystem )
+		{
+			gusPrisonersSpecial = ubNumPrisonerSpecial;
+			gusPrisonersElite = ubNumPrisonerElite;
+			gusPrisonersRegular = ubNumPrisonerTroop;
+			gusPrisonersAdmin = ubNumPrisonerAdmin;
+			PrisonerMessageBoxCallBack( 0 );
+			return;
+		}
+
 		// Get a list of all available prisons, and create a fitting messagebox
 		std::vector<UINT32> prisonsectorvector;
 		if ( GetPlayerControlledPrisonList( prisonsectorvector ) )
@@ -8131,8 +8145,15 @@ BOOLEAN KillIncompacitatedEnemyInSector( )
                     !pTeamSoldier->aiData.bNeutral &&
                     pTeamSoldier->bSide != gbPlayerNum;
 
-                if ( fHostileCasualty && gGameExternalOptions.fAllowPrisonerSystem )
+                if ( fHostileCasualty )
                 {
+                    // Battle-end never executes a casualty protected by the VR
+                    // bleed-out system. Treat the wounded hostile as surrendered:
+                    // stabilize, disarm/remove through the existing POW cleanup, and
+                    // remove him as a tactical target. When the prisoner feature is
+                    // disabled the cleanup path auto-releases these surrendered men
+                    // instead of opening the prisoner UI.
+                    pTeamSoldier->ClearBleedoutDragLinks();
                     pTeamSoldier->bBleeding = 0;
                     pTeamSoldier->ubBleedoutState = BLEEDOUT_STABILIZED;
                     pTeamSoldier->ubBleedoutTurns = 0;
@@ -8141,24 +8162,9 @@ BOOLEAN KillIncompacitatedEnemyInSector( )
                     continue;
                 }
 
-                if ( fHostileCasualty )
-                {
-                    // With the prisoner system disabled there must be no fifth
-                    // post-battle state where a living hostile is left behind after
-                    // victory. Release the temporary rescue protection and fall
-                    // through to the legacy incapacitated-enemy death pipeline below.
-                    // This is especially important in pursuit battles: otherwise the
-                    // retreat lock can be cleared while a hostile survivor remains.
-                    pTeamSoldier->ClearBleedoutDragLinks();
-                    pTeamSoldier->ubBleedoutState = BLEEDOUT_NONE;
-                    pTeamSoldier->ubBleedoutTurns = 0;
-                }
-                else
-                {
-                    // Friendly/militia casualties keep their rescued/incapacitated
-                    // state and recover through the normal post-combat medical rules.
-                    continue;
-                }
+                // Friendly/militia casualties keep their rescued/incapacitated
+                // state and recover through the normal post-combat medical rules.
+                continue;
             }
 
             // Checkf for any more bacguys
