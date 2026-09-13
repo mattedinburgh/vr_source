@@ -18,7 +18,10 @@ constant disk I/O.
   snapshot, first-chance exception feed, subsystem states, checkpoint history, durable
   history, registers and stack data.
 - `Vengeance-Crash-<PID>-<TID>-YYYYMMDD-HHMMSS.dmp` — Windows minidump captured before
-  the more complex text/stack reporting work.
+  the more complex text/stack reporting work. Recorder v3 first tries a richer dump with
+  referenced memory, unloaded modules and additional thread/process metadata, then
+  automatically falls back to the legacy-compatible dump flags if the installed
+  `dbghelp.dll` rejects the enhanced request.
 
 ## Recorder v3 event format
 
@@ -61,7 +64,12 @@ deadlocks while holding the recorder lock, the watchdog can still preserve:
 - main-thread ID;
 - last heartbeat sequence;
 - last known screen;
+- exact frame phase (`INPUT`, `SCREEN_HANDLER`, `RENDER`, `CLOCK`, `NETWORK`, etc.);
 - latest semantic checkpoint.
+
+For an 8+ second stall, the watchdog briefly suspends the main thread, captures its x86
+register context plus a small raw stack window, immediately resumes it, and only then writes
+the evidence to disk. It does not perform symbol handling while the game thread is suspended.
 
 When a stalled main loop eventually resumes, the normal durable timeline also receives a
 `STALL` event with the measured gap.
@@ -91,6 +99,21 @@ game crashes, the raw emergency ring is written directly into the crash report.
 
 Normal C++ exceptions and debugger breakpoint/single-step exceptions are intentionally not
 treated as fatal-class first-chance errors to avoid useless noise.
+
+## Recent user input and window state
+
+Mouse button/repeat/wheel events dequeued by the main loop are stored as memory-only
+`INPUT` checkpoints with coordinates, button state and active screen. This is specifically
+useful for UI crashes that happen immediately after clicking, dragging or resizing an
+in-game control.
+
+Windows lifecycle/display events are also captured:
+
+- window activation / Alt-Tab;
+- display-mode changes;
+- enter/exit OS window resizing;
+- close/destroy;
+- `WM_SIZE` as a memory-only checkpoint.
 
 ## Health / leak telemetry
 
@@ -135,7 +158,8 @@ Before stack walking, the text crash report records a semantic snapshot includin
 - physical/pagefile memory pressure;
 - executable path and current working directory;
 - recorder health counters;
-- watchdog/main-loop heartbeat age and last screen;
+- watchdog/main-loop heartbeat age, last screen and exact frame phase;
+- whether the enhanced or fallback minidump path succeeded;
 - recent first-chance critical exceptions;
 - latest global checkpoint;
 - latest checkpoint for every active subsystem;
