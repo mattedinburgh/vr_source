@@ -1623,6 +1623,9 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 							
 							if (!TileIsOutOfBounds(sActionGridNo))
 							{
+								AIClearDisengagementState( pTMilitiaSoldier );
+								pTMilitiaSoldier->aiData.bOrders = STATIONARY;
+								pTMilitiaSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
 								// SEND PENDING ACTION
 								pTMilitiaSoldier->aiData.sPendingActionData2  = sActionGridNo;
 								pTMilitiaSoldier->aiData.ubPendingActionAnimCount = 0;
@@ -1973,6 +1976,9 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 																
 								if (!TileIsOutOfBounds(sActionGridNo))
 								{
+									AIClearDisengagementState( pTeamSoldier );
+									pTeamSoldier->aiData.bOrders = STATIONARY;
+									pTeamSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
 									// SEND PENDING ACTION
 									pTeamSoldier->aiData.sPendingActionData2  = sActionGridNo;
 									//pTeamSoldier->bPendingActionData3  = ubDirection;
