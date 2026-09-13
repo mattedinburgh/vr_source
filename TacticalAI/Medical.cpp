@@ -440,7 +440,7 @@ static BOOLEAN AIAvailableMedicForCasualty( SOLDIERTYPE *pRescuer, SOLDIERTYPE *
 			continue;
 		}
 
-		if ( AIEscapeActive( pMedic ) || AIShouldStartEscape( pMedic ) )
+		if ( AIDisengagementActive( pMedic ) || AIEscapeActive( pMedic ) || AIShouldStartEscape( pMedic ) )
 			continue;
 
 		if ( PythSpacesAway( pMedic->sGridNo, pPatient->sGridNo ) <= DAY_VISION_RANGE / 2 )
@@ -496,7 +496,7 @@ INT8 DecideCombatCasualtyEvacuation( SOLDIERTYPE *pSoldier )
 		pSoldier->StopDraggingBleedoutCasualty();
 	}
 
-	if ( AICheckIsMedic( pSoldier ) || AIEscapeActive( pSoldier ) || AIShouldStartEscape( pSoldier ) )
+	if ( AICheckIsMedic( pSoldier ) || AIDisengagementActive( pSoldier ) || AIEscapeActive( pSoldier ) || AIShouldStartEscape( pSoldier ) )
 		return AI_ACTION_NONE;
 
 	INT32 iRescuerRisk = AIPersonalRisk( pSoldier );
@@ -771,6 +771,7 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 {
 	if (!AICombatTeam(pSoldier) || !AIMedicalResponderReady(pSoldier) ||
 		!AICheckIsMedic(pSoldier) ||
+		AIDisengagementActive(pSoldier) ||
 		AIEscapeActive(pSoldier) || AIShouldStartEscape(pSoldier) ||
 		pSoldier->aiData.bAIMorale == MORALE_HOPELESS)
 	{
