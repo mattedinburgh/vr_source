@@ -2904,6 +2904,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		FindAIUsableObjClass( pSoldier, IC_GUN ) == ITEM_NOT_FOUND)
 	{
 		BOOLEAN fSafeToScavengeWeapon =
+			!AIShouldAvoidAdvance(pSoldier) &&
 			!pSoldier->aiData.bUnderFire &&
 			(AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
 			 TileIsOutOfBounds(sClosestOpponent) ||
@@ -5524,7 +5525,8 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 					// direct pressure a human soldier first tries another carried weapon/sidearm
 					// instead of running across the battlefield for loose ammunition.
 					if (!AICombatTeam(pSoldier) ||
-						(!pSoldier->aiData.bUnderFire &&
+						(!AIShouldAvoidAdvance(pSoldier) &&
+						 !pSoldier->aiData.bUnderFire &&
 						 (AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
 						  TileIsOutOfBounds(sClosestOpponent) ||
 						  PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 2)))
@@ -5586,7 +5588,8 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 	{
 		BOOLEAN fSafeToScavengeWeapon =
 			!AICombatTeam(pSoldier) ||
-			(!pSoldier->aiData.bUnderFire &&
+			(!AIShouldAvoidAdvance(pSoldier) &&
+			 !pSoldier->aiData.bUnderFire &&
 			 (AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
 			  TileIsOutOfBounds(sClosestOpponent) ||
 			  PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 2));
