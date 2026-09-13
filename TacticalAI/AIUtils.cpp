@@ -5390,6 +5390,7 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 
 	UINT8 ubBefore = AIFireteamRegroupingStrength(pSoldier);
 	BOOLEAN fWasRemnant = (ubBefore > 0 && ubBefore <= 2);
+	BOOLEAN fSmallUnitTeam = AISmallUnitTeamMode(pSoldier);
 	UINT8 ubPlannedTarget = fWasRemnant ?
 		AISelectFireteamRemnantDestination(pSoldier, NULL) : AI_FIRETEAM_NONE;
 	BOOLEAN fRemnantCanReattach = (ubPlannedTarget != AI_FIRETEAM_NONE);
@@ -5419,13 +5420,17 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (pSoldier->bTeam == MILITIA_TEAM && pSoldier->aiData.bOrders == STATIONARY)
 		return AI_ACTION_NONE;
 
-	if ((pSoldier->aiData.bOrders == STATIONARY || pSoldier->aiData.bOrders == SNIPER) &&
+	if ((pSoldier->aiData.bOrders == STATIONARY ||
+		 (pSoldier->aiData.bOrders == SNIPER && !fSmallUnitTeam)) &&
 		!fRemnantCanReattach && !fRecentlyReattached)
 	{
 		return AI_ACTION_NONE;
 	}
 
-	if (!fRecentlyReattached && !fRemnantCanReattach &&
+	// Large elements do not abandon active firing positions just to tidy formation.
+	// For a 2-5 man remnant, however, cohesion is survival: they may close on a
+	// teammate through a safe route even while the local fight is active.
+	if (!fSmallUnitTeam && !fRecentlyReattached && !fRemnantCanReattach &&
 		(pSoldier->aiData.bUnderFire || pSoldier->aiData.bOppCnt > 0 ||
 		 pSoldier->IsFlanking() || GuySawEnemy(pSoldier, SEEN_LAST_TURN)))
 	{
@@ -5476,19 +5481,22 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		}
 	}
 
-	if (!pAnchor || (!fWasRemnant && !fRecentlyReattached && !fEngagedAnchor))
+	if (!pAnchor || (!fSmallUnitTeam && !fWasRemnant && !fRecentlyReattached && !fEngagedAnchor))
 		return AI_ACTION_NONE;
 
-	// If the remnant is already inside the receiving element's local support bubble,
-	// commit the reassignment without inventing a pointless movement action.
-	if (iBest <= __max(8, DAY_VISION_RANGE / 2))
+	INT32 iSupportBubble = fSmallUnitTeam ?
+		__max(6, DAY_VISION_RANGE / 3) : __max(8, DAY_VISION_RANGE / 2);
+
+	// Small remnants keep a tighter mutual-support bubble: separated enough not to
+	// stack on one tile, close enough that no one fights an isolated private battle.
+	if (iBest <= iSupportBubble)
 	{
 		if (fRemnantCanReattach)
 			AIAbsorbFireteamRemnant(pSoldier);
 		return AI_ACTION_NONE;
 	}
 
-	BOOLEAN fCautiousMove = fEngagedAnchor || fRecentlyReattached ||
+	BOOLEAN fCautiousMove = fSmallUnitTeam || fEngagedAnchor || fRecentlyReattached ||
 		fRemnantCanReattach || pSoldier->aiData.bUnderFire || pSoldier->aiData.bOppCnt > 0;
 	INT8 bReserveAP = fCautiousMove ?
 		(GetAPsCrouch(pSoldier, TRUE) + GetAPsToLook(pSoldier)) : 0;
@@ -5521,7 +5529,8 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		UINT16 usMoveExposure = AIKnownThreatExposure(
 			pSoldier, pSoldier->aiData.usActionData, pSoldier->pathing.bLevel);
 
-		UINT16 usAllowedIncrease = (fRecentlyReattached || fRemnantCanReattach) ? 90 : 150;
+		UINT16 usAllowedIncrease = fSmallUnitTeam ? 70 :
+			((fRecentlyReattached || fRemnantCanReattach) ? 90 : 150);
 		if (usMoveExposure > usCurrentExposure + usAllowedIncrease &&
 			!AnyCoverAtSpot(pSoldier, pSoldier->aiData.usActionData))
 		{
