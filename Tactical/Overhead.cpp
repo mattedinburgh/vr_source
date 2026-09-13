@@ -10677,6 +10677,70 @@ BOOLEAN IsProfileInUse(UINT8 usTeam, INT8 aType, UINT16 aNr)
 	return FALSE;
 }
 
+UINT16 HighestEnemyOfficersInSector(UINT8& aType)
+{
+	aType = OFFICER_NONE;
+	UINT16 num = 0;
+
+	for (INT32 i = gTacticalStatus.Team[ENEMY_TEAM].bFirstID; i <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++i)
+	{
+		SOLDIERTYPE* pSoldier = MercPtrs[i];
+		if (!pSoldier || !pSoldier->bActive || !pSoldier->bInSector || pSoldier->stats.bLife <= 0 ||
+			(pSoldier->usSoldierFlagMask & SOLDIER_POW))
+			continue;
+
+		if (pSoldier->usSoldierFlagMask & SOLDIER_VIP)
+		{
+			aType = OFFICER_CAPTAIN;
+			++num;
+		}
+		else if (pSoldier->usSoldierFlagMask & SOLDIER_ENEMY_OFFICER)
+		{
+			aType = max(aType, (UINT8)max(1, min(2, NUM_SKILL_TRAITS(pSoldier, SQUADLEADER_NT))));
+			++num;
+		}
+	}
+
+	return num;
+}
+
+UINT8 HighestEnemyOfficerNearSoldier(SOLDIERTYPE* pTarget, INT16 sRadius)
+{
+	if (!pTarget || pTarget->bTeam != ENEMY_TEAM)
+		return OFFICER_NONE;
+
+	UINT8 type = OFFICER_NONE;
+	for (INT32 i = gTacticalStatus.Team[ENEMY_TEAM].bFirstID; i <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++i)
+	{
+		SOLDIERTYPE* pLeader = MercPtrs[i];
+		if (!pLeader || !pLeader->bActive || !pLeader->bInSector || pLeader->stats.bLife < OKLIFE ||
+			pLeader->bCollapsed || (pLeader->usSoldierFlagMask & SOLDIER_POW) ||
+			pLeader->pathing.bLevel != pTarget->pathing.bLevel)
+			continue;
+		if (PythSpacesAway(pTarget->sGridNo, pLeader->sGridNo) > sRadius)
+			continue;
+
+		if (pLeader->usSoldierFlagMask & SOLDIER_VIP)
+			type = OFFICER_CAPTAIN;
+		else if (pLeader->usSoldierFlagMask & SOLDIER_ENEMY_OFFICER)
+			type = max(type, (UINT8)max(1, min(2, NUM_SKILL_TRAITS(pLeader, SQUADLEADER_NT))));
+	}
+	return type;
+}
+
+UINT16 NumSoldiersWithFlagInSector(UINT8 aTeam, UINT32 aFlag)
+{
+	UINT16 num = 0;
+	for (INT32 i = gTacticalStatus.Team[aTeam].bFirstID; i <= gTacticalStatus.Team[aTeam].bLastID; ++i)
+	{
+		SOLDIERTYPE* pSoldier = MercPtrs[i];
+		if (pSoldier && pSoldier->bActive && pSoldier->bInSector && pSoldier->stats.bLife > 0 &&
+			(pSoldier->usSoldierFlagMask & aFlag))
+			++num;
+	}
+	return num;
+}
+
 UINT16 GetNumberOfPrisoners( SECTORINFO *pSectorInfo, UINT8* apSpecial, UINT8* apElite, UINT8* apRegular, UINT8* apAdmin )
 {
 	if ( !pSectorInfo )
