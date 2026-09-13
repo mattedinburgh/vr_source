@@ -1219,6 +1219,318 @@ void BuildEnemyLoadoutPlan(
 		pPlan->OpticProfile = ENEMY_OPTIC_LOW_POWER;
 }
 
+static BOOLEAN EnemyGameGunHasCompatibleItemChoice(
+	INT8 bSoldierClass,
+	UINT16 usGunItem,
+	UINT8 ubChoiceType,
+	BOOLEAN fRequireNoiseReduction)
+{
+	INT8 bPoolClass = EnemyLoadoutPoolClass(bSoldierClass);
+	const ARMY_GUN_CHOICE_TYPE *pPool;
+
+	if ( usGunItem == 0 || ubChoiceType >= MAX_ITEM_TYPES )
+		return FALSE;
+
+	pPool = &gArmyItemChoices[bPoolClass][ubChoiceType];
+
+	for (UINT8 i = 0; i < pPool->ubChoices && i < 50; ++i)
+	{
+		INT16 sPoolItem = pPool->bItemNo[i];
+		UINT16 usCandidate;
+
+		if ( sPoolItem <= 0 )
+			continue;
+
+		usCandidate = (UINT16)sPoolItem;
+
+		if ( fRequireNoiseReduction &&
+			 Item[usCandidate].percentnoisereduction <= 0 )
+		{
+			continue;
+		}
+
+		if ( ItemIsLegal(usCandidate) &&
+			 ValidAttachment(usCandidate, usGunItem) )
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+INT32 ScoreEnemyGameGunForPlan(
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	INT8 bSoldierClass,
+	UINT16 usGunItem)
+{
+	const WEAPONTYPE *pGun;
+	INT32 iScore = 0;
+	INT32 iRangeScore;
+	INT32 iHandlingScore;
+	INT32 iAutoScore;
+
+	if ( !pPlan || usGunItem == 0 ||
+		 !(Item[usGunItem].usItemClass & IC_GUN) ||
+		 !ItemIsLegal(usGunItem) )
+	{
+		return -10000;
+	}
+
+	pGun = &Weapon[usGunItem];
+
+	iRangeScore = __min((INT32)30, (INT32)pGun->usRange / 50);
+	iHandlingScore = __max((INT32)0, 30 - (INT32)pGun->ubHandling);
+	iAutoScore =
+		__min((INT32)20, (INT32)pGun->bAutofireShotsPerFiveAP * 2) +
+		__min((INT32)10, (INT32)pGun->ubShotsPerBurst);
+
+	// Common quality terms stay deliberately smaller than role/type fit.
+	iScore += (INT32)pGun->nAccuracy * 2;
+	iScore += __min((INT32)12, (INT32)pGun->ubMagSize / 5);
+	iScore += __min((INT32)10, (INT32)Item[usGunItem].ubCoolness);
+
+	switch ( pPlan->Role )
+	{
+		case ENEMY_ROLE_RIFLEMAN:
+			switch ( pGun->ubWeaponType )
+			{
+				case GUN_AS_RIFLE: iScore += 80; break;
+				case GUN_RIFLE: iScore += 70; break;
+				case GUN_SMG: iScore += 35; break;
+				case GUN_SHOTGUN: iScore += 20; break;
+				case GUN_M_PISTOL: iScore += 10; break;
+				case GUN_SN_RIFLE: iScore -= 20; break;
+				case GUN_LMG: iScore -= 35; break;
+				default: iScore -= 25; break;
+			}
+			iScore += iRangeScore;
+			break;
+
+		case ENEMY_ROLE_ASSAULT:
+			switch ( pGun->ubWeaponType )
+			{
+				case GUN_SMG: iScore += 90; break;
+				case GUN_AS_RIFLE: iScore += 80; break;
+				case GUN_SHOTGUN: iScore += 65; break;
+				case GUN_M_PISTOL: iScore += 45; break;
+				case GUN_RIFLE: iScore += 25; break;
+				case GUN_LMG: iScore -= 30; break;
+				case GUN_SN_RIFLE: iScore -= 55; break;
+				default: iScore -= 20; break;
+			}
+			iScore += iHandlingScore * 2;
+			iScore += iAutoScore;
+			break;
+
+		case ENEMY_ROLE_AUTOMATIC_RIFLEMAN:
+			switch ( pGun->ubWeaponType )
+			{
+				case GUN_LMG: iScore += 125; break;
+				case GUN_AS_RIFLE: iScore += 65; break;
+				case GUN_SMG: iScore += 15; break;
+				default: iScore -= 50; break;
+			}
+			iScore += iAutoScore * 2;
+			iScore += __min((INT32)30, (INT32)pGun->ubMagSize / 3);
+			break;
+
+		case ENEMY_ROLE_MARKSMAN:
+			switch ( pGun->ubWeaponType )
+			{
+				case GUN_SN_RIFLE: iScore += 110; break;
+				case GUN_RIFLE: iScore += 90; break;
+				case GUN_AS_RIFLE: iScore += 55; break;
+				default: iScore -= 45; break;
+			}
+			iScore += iRangeScore * 2;
+			iScore += (INT32)pGun->nAccuracy * 3;
+			break;
+
+		case ENEMY_ROLE_SNIPER:
+			switch ( pGun->ubWeaponType )
+			{
+				case GUN_SN_RIFLE: iScore += 150; break;
+				case GUN_RIFLE: iScore += 35; break;
+				default: iScore -= 90; break;
+			}
+			iScore += iRangeScore * 3;
+			iScore += (INT32)pGun->nAccuracy * 4;
+			break;
+
+		case ENEMY_ROLE_GRENADIER:
+			switch ( pGun->ubWeaponType )
+			{
+				case GUN_AS_RIFLE: iScore += 85; break;
+				case GUN_RIFLE: iScore += 60; break;
+				case GUN_SMG: iScore += 35; break;
+				default: iScore -= 30; break;
+			}
+			if ( EnemyGameGunHasCompatibleItemChoice(
+					bSoldierClass,
+					usGunItem,
+					GRENADELAUNCHER,
+					FALSE) )
+			{
+				iScore += 70;
+			}
+			iScore += iHandlingScore;
+			break;
+
+		case ENEMY_ROLE_AT_SPECIALIST:
+			switch ( pGun->ubWeaponType )
+			{
+				case GUN_AS_RIFLE: iScore += 70; break;
+				case GUN_SMG: iScore += 65; break;
+				case GUN_RIFLE: iScore += 50; break;
+				case GUN_M_PISTOL: iScore += 35; break;
+				default: iScore -= 30; break;
+			}
+			iScore += iHandlingScore * 2;
+			if ( pGun->HeavyGun )
+				iScore -= 60;
+			break;
+
+		case ENEMY_ROLE_MEDIC:
+		case ENEMY_ROLE_RADIO_OPERATOR:
+			switch ( pGun->ubWeaponType )
+			{
+				case GUN_SMG: iScore += 85; break;
+				case GUN_AS_RIFLE: iScore += 70; break;
+				case GUN_M_PISTOL: iScore += 45; break;
+				case GUN_RIFLE: iScore += 30; break;
+				default: iScore -= 35; break;
+			}
+			iScore += iHandlingScore * 2;
+			if ( pGun->HeavyGun )
+				iScore -= 70;
+			break;
+
+		case ENEMY_ROLE_SQUAD_LEADER:
+			switch ( pGun->ubWeaponType )
+			{
+				case GUN_AS_RIFLE: iScore += 85; break;
+				case GUN_SMG: iScore += 70; break;
+				case GUN_RIFLE: iScore += 55; break;
+				default: iScore -= 25; break;
+			}
+			iScore += iHandlingScore;
+			iScore += iRangeScore;
+			break;
+
+		case ENEMY_ROLE_SCOUT:
+			switch ( pGun->ubWeaponType )
+			{
+				case GUN_SMG: iScore += 95; break;
+				case GUN_AS_RIFLE: iScore += 80; break;
+				case GUN_M_PISTOL: iScore += 45; break;
+				case GUN_RIFLE: iScore += 30; break;
+				default: iScore -= 40; break;
+			}
+			iScore += iHandlingScore * 2;
+			if ( pPlan->fAllowSuppressor &&
+				 EnemyGameGunHasCompatibleItemChoice(
+					bSoldierClass,
+					usGunItem,
+					ATTACHMENTS,
+					TRUE) )
+			{
+				iScore += 25;
+			}
+			if ( pGun->HeavyGun )
+				iScore -= 80;
+			break;
+
+		case ENEMY_ROLE_MORTAR:
+			switch ( pGun->ubWeaponType )
+			{
+				case GUN_SMG: iScore += 75; break;
+				case GUN_AS_RIFLE: iScore += 60; break;
+				case GUN_RIFLE: iScore += 40; break;
+				default: iScore -= 35; break;
+			}
+			iScore += iHandlingScore * 2;
+			if ( pGun->HeavyGun )
+				iScore -= 70;
+			break;
+
+		default:
+			break;
+	}
+
+	return iScore;
+}
+
+UINT16 SelectBestEnemyGameGunForPlan(
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	INT8 bSoldierClass,
+	INT8 bWeaponClass)
+{
+	INT8 bPoolClass;
+	INT8 bCenterTier;
+	UINT16 usBestItem = 0;
+	INT32 iBestAdjustedScore = -10000;
+	INT8 bBestTierDistance = 127;
+
+	if ( !pPlan || bWeaponClass <= 0 )
+		return 0;
+
+	if ( bWeaponClass > ARMY_GUN_LEVELS )
+		bWeaponClass = ARMY_GUN_LEVELS;
+
+	bPoolClass = EnemyLoadoutPoolClass(bSoldierClass);
+	bCenterTier = (INT8)(bWeaponClass - 1);
+
+	// The authored equipment tier remains the anchor.  Adjacent tiers are only
+	// allowed when their role fit is strong enough to overcome a real penalty.
+	for (INT8 bTier = __max((INT8)0, (INT8)(bCenterTier - 1));
+		 bTier <= __min((INT8)(ARMY_GUN_LEVELS - 1), (INT8)(bCenterTier + 1));
+		 ++bTier)
+	{
+		const ARMY_GUN_CHOICE_TYPE *pPool =
+			&gExtendedArmyGunChoices[bPoolClass][bTier];
+		INT8 bTierDistance = (INT8)abs((INT32)bTier - bCenterTier);
+		INT32 iTierPenalty = 0;
+
+		if ( bTier < bCenterTier )
+			iTierPenalty = 15;
+		else if ( bTier > bCenterTier )
+			iTierPenalty = 35;
+
+		for (UINT8 i = 0; i < pPool->ubChoices && i < 50; ++i)
+		{
+			INT16 sPoolItem = pPool->bItemNo[i];
+			UINT16 usCandidate;
+			INT32 iScore;
+
+			if ( sPoolItem <= 0 )
+				continue;
+
+			usCandidate = (UINT16)sPoolItem;
+			iScore = ScoreEnemyGameGunForPlan(
+				pPlan,
+				bSoldierClass,
+				usCandidate);
+
+			if ( iScore <= -10000 )
+				continue;
+
+			iScore -= iTierPenalty;
+
+			if ( iScore > iBestAdjustedScore ||
+				 (iScore == iBestAdjustedScore &&
+				  bTierDistance < bBestTierDistance) )
+			{
+				iBestAdjustedScore = iScore;
+				bBestTierDistance = bTierDistance;
+				usBestItem = usCandidate;
+			}
+		}
+	}
+
+	return usBestItem;
+}
+
 static INT32 ScoreEnemyOpticForPlan(
 	const ENEMY_LOADOUT_PLAN *pPlan,
 	UINT16 usAttachment)
