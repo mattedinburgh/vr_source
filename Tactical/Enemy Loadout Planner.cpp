@@ -155,6 +155,210 @@ static void AddClassMembersToCells(
 	}
 }
 
+INT16 EnemyRoleClassSuitability(
+	ENEMY_LOADOUT_ROLE Role,
+	INT8 bSoldierClass)
+{
+	switch ( Role )
+	{
+		case ENEMY_ROLE_SQUAD_LEADER:
+			if ( bSoldierClass == SOLDIER_CLASS_ELITE ) return 100;
+			if ( bSoldierClass == SOLDIER_CLASS_ARMY ) return 80;
+			return 35;
+
+		case ENEMY_ROLE_SNIPER:
+			if ( bSoldierClass == SOLDIER_CLASS_ELITE ) return 100;
+			if ( bSoldierClass == SOLDIER_CLASS_ARMY ) return 45;
+			return -100;
+
+		case ENEMY_ROLE_SCOUT:
+			if ( bSoldierClass == SOLDIER_CLASS_ELITE ) return 95;
+			if ( bSoldierClass == SOLDIER_CLASS_ARMY ) return 70;
+			return 25;
+
+		case ENEMY_ROLE_RADIO_OPERATOR:
+			if ( bSoldierClass == SOLDIER_CLASS_ELITE ) return 90;
+			if ( bSoldierClass == SOLDIER_CLASS_ARMY ) return 75;
+			return 10;
+
+		case ENEMY_ROLE_MEDIC:
+			if ( bSoldierClass == SOLDIER_CLASS_ELITE ) return 85;
+			if ( bSoldierClass == SOLDIER_CLASS_ARMY ) return 80;
+			return 15;
+
+		case ENEMY_ROLE_MARKSMAN:
+			if ( bSoldierClass == SOLDIER_CLASS_ELITE ) return 90;
+			if ( bSoldierClass == SOLDIER_CLASS_ARMY ) return 75;
+			return 25;
+
+		case ENEMY_ROLE_AUTOMATIC_RIFLEMAN:
+			if ( bSoldierClass == SOLDIER_CLASS_ARMY ) return 90;
+			if ( bSoldierClass == SOLDIER_CLASS_ELITE ) return 80;
+			return 20;
+
+		case ENEMY_ROLE_GRENADIER:
+			if ( bSoldierClass == SOLDIER_CLASS_ARMY ) return 90;
+			if ( bSoldierClass == SOLDIER_CLASS_ELITE ) return 80;
+			return 25;
+
+		case ENEMY_ROLE_AT_SPECIALIST:
+			if ( bSoldierClass == SOLDIER_CLASS_ARMY ) return 90;
+			if ( bSoldierClass == SOLDIER_CLASS_ELITE ) return 85;
+			return 10;
+
+		case ENEMY_ROLE_MORTAR:
+			if ( bSoldierClass == SOLDIER_CLASS_ARMY ) return 90;
+			if ( bSoldierClass == SOLDIER_CLASS_ELITE ) return 80;
+			return -100;
+
+		case ENEMY_ROLE_ASSAULT:
+			if ( bSoldierClass == SOLDIER_CLASS_ELITE ) return 85;
+			if ( bSoldierClass == SOLDIER_CLASS_ARMY ) return 80;
+			return 55;
+
+		case ENEMY_ROLE_RIFLEMAN:
+		default:
+			// Preserve elite personnel for roles where their training matters.
+			if ( bSoldierClass == SOLDIER_CLASS_ADMINISTRATOR ) return 85;
+			if ( bSoldierClass == SOLDIER_CLASS_ARMY ) return 80;
+			return 60;
+	}
+}
+
+static INT8 EnemyLoadoutNominalExperience(INT8 bDoctrineClass, UINT8 ubProgress)
+{
+	INT8 bExpLevel;
+
+	switch ( bDoctrineClass )
+	{
+		case SOLDIER_CLASS_ELITE:
+			bExpLevel = (INT8)(5 + ubProgress / 25);
+			return (INT8)__min(9, bExpLevel);
+
+		case SOLDIER_CLASS_ARMY:
+			bExpLevel = (INT8)(3 + ubProgress / 25);
+			return (INT8)__min(7, bExpLevel);
+
+		case SOLDIER_CLASS_ADMINISTRATOR:
+		default:
+			bExpLevel = (INT8)(2 + ubProgress / 33);
+			return (INT8)__min(5, bExpLevel);
+	}
+}
+
+static void AssignRoleTicketToBestClass(
+	ENEMY_LOADOUT_CELL *pCell,
+	ENEMY_LOADOUT_ROLE Role,
+	UINT8 *pubAdminsRemaining,
+	UINT8 *pubRegularsRemaining,
+	UINT8 *pubElitesRemaining)
+{
+	INT16 sAdmin = -32767;
+	INT16 sRegular = -32767;
+	INT16 sElite = -32767;
+
+	if ( !pCell )
+		return;
+
+	if ( pubAdminsRemaining && *pubAdminsRemaining > 0 )
+		sAdmin = (INT16)(EnemyRoleClassSuitability(Role, SOLDIER_CLASS_ADMINISTRATOR) + *pubAdminsRemaining);
+	if ( pubRegularsRemaining && *pubRegularsRemaining > 0 )
+		sRegular = (INT16)(EnemyRoleClassSuitability(Role, SOLDIER_CLASS_ARMY) + *pubRegularsRemaining);
+	if ( pubElitesRemaining && *pubElitesRemaining > 0 )
+		sElite = (INT16)(EnemyRoleClassSuitability(Role, SOLDIER_CLASS_ELITE) + *pubElitesRemaining);
+
+	if ( sElite >= sRegular && sElite >= sAdmin && pubElitesRemaining && *pubElitesRemaining > 0 )
+	{
+		++pCell->ubEliteRoleCount[Role];
+		--(*pubElitesRemaining);
+	}
+	else if ( sRegular >= sAdmin && pubRegularsRemaining && *pubRegularsRemaining > 0 )
+	{
+		++pCell->ubRegularRoleCount[Role];
+		--(*pubRegularsRemaining);
+	}
+	else if ( pubAdminsRemaining && *pubAdminsRemaining > 0 )
+	{
+		++pCell->ubAdminRoleCount[Role];
+		--(*pubAdminsRemaining);
+	}
+}
+
+void PlanEnemyLoadoutCellRoles(
+	ENEMY_LOADOUT_CELL *pCell,
+	UINT8 ubProgress,
+	INT8 bEquipmentRating)
+{
+	static const ENEMY_LOADOUT_ROLE roleAssignmentPriority[] =
+	{
+		ENEMY_ROLE_SQUAD_LEADER,
+		ENEMY_ROLE_SNIPER,
+		ENEMY_ROLE_RADIO_OPERATOR,
+		ENEMY_ROLE_MEDIC,
+		ENEMY_ROLE_MARKSMAN,
+		ENEMY_ROLE_AT_SPECIALIST,
+		ENEMY_ROLE_MORTAR,
+		ENEMY_ROLE_AUTOMATIC_RIFLEMAN,
+		ENEMY_ROLE_GRENADIER,
+		ENEMY_ROLE_SCOUT,
+		ENEMY_ROLE_ASSAULT,
+		ENEMY_ROLE_RIFLEMAN
+	};
+	UINT8 ubAdminsRemaining;
+	UINT8 ubRegularsRemaining;
+	UINT8 ubElitesRemaining;
+	INT8 bNominalExp;
+	UINT8 i;
+	UINT8 j;
+
+	if ( !pCell || pCell->ubSize == 0 )
+		return;
+
+	memset(pCell->ubRoleCount, 0, sizeof(pCell->ubRoleCount));
+	memset(pCell->ubAdminRoleCount, 0, sizeof(pCell->ubAdminRoleCount));
+	memset(pCell->ubRegularRoleCount, 0, sizeof(pCell->ubRegularRoleCount));
+	memset(pCell->ubEliteRoleCount, 0, sizeof(pCell->ubEliteRoleCount));
+	memset(pCell->State.ubAssigned, 0, sizeof(pCell->State.ubAssigned));
+	pCell->State.ubAssignedSoldiers = 0;
+
+	bNominalExp = EnemyLoadoutNominalExperience(pCell->bDoctrineClass, ubProgress);
+
+	// First decide the cell's role mix independent of creation order.
+	for ( i = 0; i < pCell->ubSize; ++i )
+	{
+		ENEMY_LOADOUT_ROLE Role = ChooseEnemyLoadoutRole(
+			&pCell->State,
+			pCell->bDoctrineClass,
+			ubProgress,
+			bEquipmentRating,
+			bNominalExp);
+
+		++pCell->ubRoleCount[Role];
+		RecordEnemyLoadoutRole(&pCell->State, Role);
+	}
+
+	// Then map specialist tickets to the most suitable available classes.
+	// Specialized roles are assigned first so elite/regular personnel are not
+	// accidentally consumed as ordinary riflemen merely due to insertion order.
+	ubAdminsRemaining = pCell->ubAdmins;
+	ubRegularsRemaining = pCell->ubRegulars;
+	ubElitesRemaining = pCell->ubElites;
+
+	for ( i = 0; i < sizeof(roleAssignmentPriority) / sizeof(roleAssignmentPriority[0]); ++i )
+	{
+		ENEMY_LOADOUT_ROLE Role = roleAssignmentPriority[i];
+		for ( j = 0; j < pCell->ubRoleCount[Role]; ++j )
+		{
+			AssignRoleTicketToBestClass(
+				pCell,
+				Role,
+				&ubAdminsRemaining,
+				&ubRegularsRemaining,
+				&ubElitesRemaining);
+		}
+	}
+}
+
 void BuildEnemyLoadoutBatch(
 	ENEMY_LOADOUT_BATCH *pBatch,
 	UINT8 ubAdmins,
@@ -217,6 +421,11 @@ void BuildEnemyLoadoutBatch(
 			&pCell->State,
 			pCell->bDoctrineClass,
 			pCell->ubSize,
+			ubProgress,
+			bEquipmentRating);
+
+		PlanEnemyLoadoutCellRoles(
+			pCell,
 			ubProgress,
 			bEquipmentRating);
 	}
