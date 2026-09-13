@@ -5865,7 +5865,9 @@ static void SpawnVRBloodGroundDecal( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8
 	if ( pSoldier == NULL || pSoldier->bVisible == -1 || pSoldier->pathing.bLevel != 0 || TileIsOutOfBounds( sGridNo ) )
 		return;
 
-	if ( !FileExists( zFilename ) )
+	// Legacy FileExists() takes STR (CHAR8*) even though it only needs a filename.
+	// Keep this helper const-correct and bridge the old API at the call site.
+	if ( !FileExists( const_cast<CHAR8 *>( zFilename ) ) )
 		return;
 
 	ANITILE_PARAMS AniParams;
