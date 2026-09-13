@@ -248,9 +248,12 @@ static void TrueColorApplyRGB565Dither(UINT8 *pubRed, UINT8 *pubGreen, UINT8 *pu
 	const INT32 iRedBlueOffset = (iCentered * 4) / 15;
 	const INT32 iGreenOffset = (iCentered * 2) / 15;
 
-	*pubRed = TrueColorClampByte((INT32)*pubRed + iRedBlueOffset);
-	*pubGreen = TrueColorClampByte((INT32)*pubGreen + iGreenOffset);
-	*pubBlue = TrueColorClampByte((INT32)*pubBlue + iRedBlueOffset);
+	if(*pubRed > 0 && *pubRed < 255)
+		*pubRed = TrueColorClampByte((INT32)*pubRed + iRedBlueOffset);
+	if(*pubGreen > 0 && *pubGreen < 255)
+		*pubGreen = TrueColorClampByte((INT32)*pubGreen + iGreenOffset);
+	if(*pubBlue > 0 && *pubBlue < 255)
+		*pubBlue = TrueColorClampByte((INT32)*pubBlue + iRedBlueOffset);
 }
 
 BOOLEAN BltTrueColorDataTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue,
