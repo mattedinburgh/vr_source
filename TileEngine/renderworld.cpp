@@ -1939,12 +1939,12 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 									mprintf_buffer( pDestBuf, uiDestPitchBYTES, TINYFONT1, sX,  sY , L"%d", pNode->uiAPCost );
 									SetFontDestBuffer( FRAME_BUFFER , 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, FALSE );
 								}
-								else if ( ( uiLevelNodeFlags  & LEVELNODE_ERASEZ ) && !( uiFlags&TILES_DIRTY ) )
+								else if ( hVObject->ubBitDepth == 8 && ( uiLevelNodeFlags  & LEVELNODE_ERASEZ ) && !( uiFlags&TILES_DIRTY ) )
 								{
 									Zero8BPPDataTo16BPPBufferTransparent( (UINT16*)pDestBuf, uiDestPitchBYTES, hVObject, sXPos, sYPos, usImageIndex );
 									//Zero8BPPDataTo16BPPBufferTransparent( (UINT16*)gpZBuffer, uiDestPitchBYTES, hVObject, sXPos, sYPos, usImageIndex );
 								}
-								else if ( ( uiLevelNodeFlags  & LEVELNODE_ITEM ) && !( uiFlags&TILES_DIRTY ) )
+								else if ( hVObject->ubBitDepth == 8 && ( uiLevelNodeFlags  & LEVELNODE_ITEM ) && !( uiFlags&TILES_DIRTY ) )
 								{
 										BOOLEAN fZBlit = FALSE;
 
@@ -2029,7 +2029,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 										}
 								}
 								// ATE: Check here for a lot of conditions!
-								else if ( ( ( uiLevelNodeFlags & LEVELNODE_PHYSICSOBJECT ) ) && !( uiFlags&TILES_DIRTY ) )
+								else if ( hVObject->ubBitDepth == 8 && ( ( uiLevelNodeFlags & LEVELNODE_PHYSICSOBJECT ) ) && !( uiFlags&TILES_DIRTY ) )
 								{
 										bItemOutline = TRUE;
 
