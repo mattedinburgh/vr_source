@@ -11189,6 +11189,31 @@ static UINT32 guiMilitiaConsolidationIdentity[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiMilitiaConsolidationUntilTurn[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiMilitiaConsolidationLastTurnStamp = 0;
 
+void AIResetDecisionCoordinationStateForLoad(void)
+{
+	// DecideAction owns several transient caches that deliberately are not serialized.
+	// Reset all of them explicitly so a same-sector, same-turn quickload cannot inherit
+	// response waves, random tactical biases or militia anchors from the abandoned future.
+	AIResetEnemyResponseEpisodes();
+	guiAIEnemyResponseLastTurnStamp = 0;
+
+	guiAITacticalVariationLastTurnStamp = 0;
+	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
+	{
+		guiAITacticalVariationTurn[i] = 0;
+		guiAITacticalVariationIdentity[i] = 0;
+		gbAITacticalSeekBias[i] = 0;
+		gbAITacticalHelpBias[i] = 0;
+		gbAITacticalHideBias[i] = 0;
+		gbAITacticalWatchBias[i] = 0;
+
+		gubMilitiaConsolidationAnchor[i] = NOBODY;
+		guiMilitiaConsolidationIdentity[i] = 0;
+		guiMilitiaConsolidationUntilTurn[i] = 0;
+	}
+	guiMilitiaConsolidationLastTurnStamp = 0;
+}
+
 static BOOLEAN AIValidMilitiaConsolidationAnchor(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend)
 {
 	if (!pSoldier || !pFriend ||
