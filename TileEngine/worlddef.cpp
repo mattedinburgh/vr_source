@@ -710,11 +710,13 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
 	{
-		saturationPercent = 108;
-		contrastPercent = 110;
+		// B1 base treatment for still-authored props/vegetation: slightly less
+		// saturated, stronger local contrast and a mild dusty industrial bias.
+		saturationPercent = 104;
+		contrastPercent = 113;
 		redBias = 3;
 		greenBias = 1;
-		blueBias = -2;
+		blueBias = -3;
 	}
 
 	// Terrain carries most of the perceived improvement: stronger local contrast and less flat colour.
