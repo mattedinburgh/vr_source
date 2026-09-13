@@ -4544,12 +4544,13 @@ static void AISeedEnemyFireteams(void)
 					INT32 iRolePenalty = 0;
 					if (pSeed && (pSeed->usSoldierFlagMask & SOLDIER_VIP))
 					{
-						// Bodyguards are a command-group role. Keep them with the General when
-						// possible without changing AP, accuracy, armour or any combat stat.
+						// The General's bodyguards are structural members of the command group,
+						// not merely nearby soldiers. Make role affinity dominate spawn distance;
+						// cohesion/pathing still governs their actual movement afterwards.
 						if (pCandidate->usSoldierFlagMask & SOLDIER_BODYGUARD)
-							iCandidateDistance = __max(0, iCandidateDistance - 24);
+							iCandidateDistance = __min(iCandidateDistance, 4);
 						else
-							iRolePenalty += 6;
+							iCandidateDistance += 12;
 					}
 					else if (pCandidate->usSoldierFlagMask & SOLDIER_BODYGUARD)
 					{
@@ -4655,9 +4656,9 @@ static void AIEnsureEnemyFireteams(void)
 			INT32 iDistance = AIFireteamJoinDistance(ubTeam, pSoldier);
 			BOOLEAN fGeneralTeam = AIFireteamHasSoldierFlag(ubTeam, SOLDIER_VIP);
 			if (pSoldier->usSoldierFlagMask & SOLDIER_BODYGUARD)
-				iDistance += fGeneralTeam ? -24 : 18;
+				iDistance = fGeneralTeam ? __min(iDistance, 4) : iDistance + 24;
 			else if (fGeneralTeam)
-				iDistance += 6;
+				iDistance += 8;
 			iDistance += AIFireteamRoleOverlapPenalty(ubTeam, pSoldier);
 			iDistance += AIFireteamMissionRolePenalty(ubTeam, pSoldier);
 			if (iDistance < iBest) { iBest = iDistance; ubBest = ubTeam; }
@@ -7303,6 +7304,16 @@ BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier)
 BOOLEAN AIAllowsComplexManeuver(SOLDIERTYPE *pSoldier)
 {
 	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM) return TRUE;
+
+	// A living General commands while subordinates remain. He can still fight,
+	// move, seek cover and use ordinary attacks, but should not become the breach/
+	// utility specialist simply because the fireteam is small.
+	if ((pSoldier->usSoldierFlagMask & SOLDIER_VIP) &&
+		AICombatTeamOperationalCount(pSoldier) > 1)
+	{
+		return FALSE;
+	}
+
 	// Basic tactical competence is universal when a force is down to a small team.
 	// Experience still controls the more elaborate choices inside those systems.
 	if (AISmallUnitTeamMode(pSoldier)) return TRUE;
@@ -7337,6 +7348,15 @@ static BOOLEAN AIHasOperationalGeneralInSector(void)
 BOOLEAN AIAllowsIndependentFlank(SOLDIERTYPE *pSoldier)
 {
 	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM) return TRUE;
+
+	// Keep the General with the command element while there is anybody left to
+	// command. If he is the last operational fighter, normal combat logic resumes.
+	if ((pSoldier->usSoldierFlagMask & SOLDIER_VIP) &&
+		AICombatTeamOperationalCount(pSoldier) > 1)
+	{
+		return FALSE;
+	}
+
 	if (pSoldier->bTeam == ENEMY_TEAM &&
 		(pSoldier->usSoldierFlagMask & SOLDIER_BODYGUARD) &&
 		AIHasOperationalGeneralInSector())
