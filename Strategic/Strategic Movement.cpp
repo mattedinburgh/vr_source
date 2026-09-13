@@ -4576,7 +4576,9 @@ BOOLEAN ProcessNextEnemyRetreatConflict( void )
 
 			if( NumEnemiesInSector( ubX, ubY ) <= 0 )
 			{
+				// The escaped force no longer exists; do not poison a future unrelated battle.
 				gfPendingEnemyRetreatConflict[ ubX ][ ubY ] = FALSE;
+				gfEnemyRetreatLockedSector[ ubX ][ ubY ] = FALSE;
 				continue;
 			}
 
