@@ -348,7 +348,7 @@ void HandleSoldierAI( SOLDIERTYPE *pSoldier ) // FIXME - this function is named 
 	BlackBoxCheckpoint( "AI", "phase=HANDLE sector=%d,%d,%d currentTeam=%u soldier=%u team=%d grid=%d AP=%d life=%d alert=%d action=%d data=%d",
 		gWorldSectorX, gWorldSectorY, gbWorldSectorZ, gTacticalStatus.ubCurrentTeam,
 		pSoldier->ubID, pSoldier->bTeam, pSoldier->sGridNo, pSoldier->bActionPoints,
-		pSoldier->bLife, pSoldier->aiData.bAlertStatus, pSoldier->aiData.bAction, pSoldier->aiData.usActionData );
+		pSoldier->stats.bLife, pSoldier->aiData.bAlertStatus, pSoldier->aiData.bAction, pSoldier->aiData.usActionData );
 	// ATE
 	// Bail if we are engaged in a NPC conversation/ and/or sequence ... or we have a pause because 
 	// we just saw someone... or if there are bombs on the bomb queue
@@ -1791,7 +1791,7 @@ INT8 ExecuteAction(SOLDIERTYPE *pSoldier)
 	BlackBoxCheckpoint( "AI", "phase=EXECUTE sector=%d,%d,%d currentTeam=%u soldier=%u team=%d grid=%d AP=%d life=%d action=%d data=%d",
 		gWorldSectorX, gWorldSectorY, gbWorldSectorZ, gTacticalStatus.ubCurrentTeam,
 		pSoldier->ubID, pSoldier->bTeam, pSoldier->sGridNo, pSoldier->bActionPoints,
-		pSoldier->bLife, pSoldier->aiData.bAction, pSoldier->aiData.usActionData );
+		pSoldier->stats.bLife, pSoldier->aiData.bAction, pSoldier->aiData.usActionData );
 	INT32 iRetCode;
 	//NumMessage("ExecuteAction - Guy#",pSoldier->ubID);
 
