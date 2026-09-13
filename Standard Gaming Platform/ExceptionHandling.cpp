@@ -58,6 +58,11 @@ void BlackBoxInitialize( void )
 	memset( gBlackBoxEvents, 0, sizeof( gBlackBoxEvents ) );
 	lstrcpynA( gBlackBoxCheckpoint, "initialized", BLACKBOX_CHECKPOINT_CHARS );
 
+	// Preserve the prior run before starting a fresh journal. This gives us
+	// evidence even if the textual crash handler itself failed during the CTD.
+	DeleteFileA( "BlackBox_PreviousRun.log" );
+	MoveFileExA( "BlackBox_LastRun.log", "BlackBox_PreviousRun.log", MOVEFILE_REPLACE_EXISTING );
+
 	gBlackBoxFile = CreateFileA(
 		"BlackBox_LastRun.log",
 		GENERIC_WRITE,
@@ -68,7 +73,7 @@ void BlackBoxInitialize( void )
 		NULL );
 
 	gBlackBoxInitialized = TRUE;
-	BlackBoxEvent( "ENGINE", "Black box initialized" );
+	BlackBoxEvent( "ENGINE", "Black box initialized pid=%lu tid=%lu", GetCurrentProcessId(), GetCurrentThreadId() );
 }
 
 void BlackBoxShutdown( void )
