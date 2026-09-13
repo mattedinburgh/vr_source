@@ -16,6 +16,7 @@
 #include <vector>
 #include <cctype>
 #include "strategicmap.h"
+#include "ExceptionHandling.h"
 
 extern HVSURFACE ghFrameBuffer;
 extern BOOLEAN gfSchedulesHosed;
@@ -779,7 +780,16 @@ void DisplayLoadScreenWithID( UINT8 ubLoadScreenID )
 		std::string strImage = FindBestFittingLoadscreenFilename(imagePath, (SCREEN_RESOLUTION)iResolution);
 		std::string documentaryImage;
 		if (PickRealConflictLoadscreen(strImage, ubLoadScreenID, documentaryImage))
+		{
 			strImage = documentaryImage;
+			BlackBoxEvent("LOADSCREEN", "documentary selected id=%u sector=%d,%d,%d path=%s",
+				ubLoadScreenID, requestedX, requestedY, requestedZ, strImage.c_str());
+		}
+		else
+		{
+			BlackBoxEvent("LOADSCREEN", "documentary unavailable id=%u sector=%d,%d,%d legacy=%s",
+				ubLoadScreenID, requestedX, requestedY, requestedZ, strImage.c_str());
+		}
 		strImage.copy(vs_desc.ImageFile, sizeof(vs_desc.ImageFile) - 1);
 	}
 	else
@@ -799,7 +809,16 @@ void DisplayLoadScreenWithID( UINT8 ubLoadScreenID )
 
 		std::string documentaryImage;
 		if (PickRealConflictLoadscreen(strImage, ubLoadScreenID, documentaryImage))
+		{
 			strImage = documentaryImage;
+			BlackBoxEvent("LOADSCREEN", "documentary selected id=%u sector=%d,%d,%d path=%s",
+				ubLoadScreenID, requestedX, requestedY, requestedZ, strImage.c_str());
+		}
+		else
+		{
+			BlackBoxEvent("LOADSCREEN", "documentary unavailable id=%u sector=%d,%d,%d legacy=%s",
+				ubLoadScreenID, requestedX, requestedY, requestedZ, strImage.c_str());
+		}
 
 		strImage.copy(vs_desc.ImageFile, sizeof(vs_desc.ImageFile)-1);
 	}
@@ -821,6 +840,8 @@ void DisplayLoadScreenWithID( UINT8 ubLoadScreenID )
 									
 			//Blit the background image
 			GetVideoSurface(&hVSurface, uiLoadScreen);
+			BlackBoxEvent("LOADSCREEN", "loaded path=%s size=%ux%u depth=%u",
+				vs_desc.ImageFile, hVSurface->usWidth, hVSurface->usHeight, hVSurface->ubBitDepth);
 
 			fLoadingScreenAspectRatio = (FLOAT)hVSurface->usWidth / (FLOAT)hVSurface->usHeight;
 			FLOAT fScreenAspectRatio = (FLOAT)SCREEN_WIDTH / (FLOAT)SCREEN_HEIGHT;
@@ -906,6 +927,8 @@ void DisplayLoadScreenWithID( UINT8 ubLoadScreenID )
 		}
 		else
 		{
+			BlackBoxEvent("LOADSCREEN", "load failed path=%s exists=%d",
+				vs_desc.ImageFile, FileExists(vs_desc.ImageFile) ? 1 : 0);
 			 //Failed to load the file, so use a black screen and print out message.
 			SetFont( FONT10ARIAL );
 			SetFontForeground( FONT_YELLOW );
