@@ -1941,10 +1941,11 @@ INT8 SearchForItems( SOLDIERTYPE * pSoldier, INT8 bReason, UINT16 usItem )
 {
 	DebugMsg(TOPIC_JA2AI,DBG_LEVEL_3,String("SearchForItems"));
 
-	// Militia must not consume ground/sector inventory during tactical combat.
-	// They fight with the equipment they brought into the battle.
-	if ( pSoldier && pSoldier->bTeam == MILITIA_TEAM &&
-		 ( (gTacticalStatus.uiFlags & INCOMBAT) || gTacticalStatus.fEnemyInSector ) )
+	// Militia never use generic tactical scavenging. Sector-issued equipment is
+	// handled by the dedicated militia inventory/restock system outside combat;
+	// allowing SearchForItems() would let them appropriate player loot before,
+	// during, or immediately after a battle.
+	if ( pSoldier && pSoldier->bTeam == MILITIA_TEAM )
 	{
 		return AI_ACTION_NONE;
 	}
