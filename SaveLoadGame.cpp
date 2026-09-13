@@ -146,6 +146,7 @@
 #include "Sys Globals.h"//dnl ch74 201013
 #include "Ambient Control.h"		// added by Flugente for HandleNewSectorAmbience(...)
 #include "Soldier Control.h"
+#include "soldier macros.h"
 
 /////////////////////////////////////////////////////
 //
