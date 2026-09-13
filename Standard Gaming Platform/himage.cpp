@@ -453,13 +453,16 @@ static void B1TCApplyOronegroArtDirection(HIMAGE hImage)
 	const BOOLEAN ground=B1TCArtHas(name,"sand")||B1TCArtHas(name,"trail"), oil=B1TCArtHas(name,"oil_");
 	if(!B1TCArtHas(name,"b1_")&&!oil)return;
 	static const UINT8 fac[5][3]={{188,160,103},{88,147,145},{174,116,106},{118,145,102},{185,180,153}};
+	UINT32 familySeed=2166136261U;
+	for(const CHAR8* s=name;*s;++s) familySeed=(familySeed^(UINT8)B1TCArtLower(*s))*16777619U;
+	const UINT8* familyFacade=fac[familySeed%5];
 
 	for(UINT16 i=0;i<hImage->usNumberOfObjects;++i)
 	{
 		ETRLEObject*o=&hImage->pETRLEObject[i]; if(!o->usWidth||!o->usHeight)continue;
 		UINT8*fr=(UINT8*)hImage->p32BPPData+o->uiDataOffset;
 		UINT32 seed=B1TCArtHash(0xB10A7E00U^(UINT32)i*0x9e3779b9U^(UINT32)strlen(name)*131U);
-		const UINT8*fc=fac[seed%5];
+		const UINT8*fc=familyFacade;
 		INT32 pw=__max(3,(INT32)o->usWidth/5),ph=__max(2,(INT32)o->usHeight/7);
 		INT32 px=o->usWidth>pw?(INT32)((seed>>8)%(o->usWidth-pw)):0,py=o->usHeight>ph?(INT32)((seed>>16)%(o->usHeight-ph)):0;
 		INT32 rx=roof&&o->usWidth>=20?__max(2,(INT32)o->usWidth/12):0,ry=roof&&o->usHeight>=12?__max(1,(INT32)o->usHeight/12):0;
