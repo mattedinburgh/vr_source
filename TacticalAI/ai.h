@@ -324,6 +324,7 @@ INT8 AIDoctrineAnchorModifier(SOLDIERTYPE *pSoldier);
 // deliberately do not alter SOLDIERTYPE/savegame layout.
 UINT8 AIFireteamId(SOLDIERTYPE *pSoldier);
 UINT8 AIFireteamAliveCount(SOLDIERTYPE *pSoldier);
+UINT8 AIFireteamCombatReadyCount(SOLDIERTYPE *pSoldier);
 BOOLEAN AISameFireteam(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend);
 BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, UINT8 ubResponseLimit);
 BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridNo);
