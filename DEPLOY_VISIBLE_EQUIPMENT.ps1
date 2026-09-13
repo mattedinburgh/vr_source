@@ -13,8 +13,10 @@ $TableRoot = Join-Path $DataRoot "TableData\LogicalBodyTypes"
 $AnimRoot = Join-Path $DataRoot "Anims\LOBOT"
 $Marker = Join-Path $AnimRoot "VR_EQUIPMENT.READY"
 
-$VrBranch = "install/all-2026-09-12"
-$VrRaw = "https://raw.githubusercontent.com/mattedinburgh/vr_gamedir/$VrBranch/Data-Vengeance/TableData/LogicalBodyTypes"
+# Pin the matching Vengeance LOBOT catalog too. Source + catalog + upstream art
+# must form one reproducible deployment set.
+$VrRef = "24b04534b4c4ba55b926f63092bfa0461a9ff2b0"
+$VrRaw = "https://raw.githubusercontent.com/mattedinburgh/vr_gamedir/$VrRef/Data-Vengeance/TableData/LogicalBodyTypes"
 # Pin the external art revision so the same Vengeance commit always resolves the
 # same filenames and bytes. Do not deploy against a moving upstream master.
 $UpstreamRef = "bdcf501e6b4db072933357a71f97243b7ab759e1"
@@ -303,6 +305,7 @@ if ($missing.Count -gt 0) {
 
 $markerText = @"
 Vengeance Reloaded visible tactical equipment
+Catalog: mattedinburgh/vr_gamedir $VrRef
 Source: 1dot13/gamedir $UpstreamRef Data/Anims/LOBOT art
 Mode: overlay-only (native Vengeance body + 1.13 helmet/vest armour layers)
 Assets: $($assetPaths.Count)
@@ -311,6 +314,7 @@ Bytes: $totalBytes
 [System.IO.File]::WriteAllText($Marker, $markerText, [System.Text.Encoding]::ASCII)
 
 Write-Host ""
+Write-Host ("Pinned Vengeance catalog      : {0}" -f $VrRef)
 Write-Host ("Pinned upstream revision      : {0}" -f $UpstreamRef)
 Write-Host "VISIBLE EQUIPMENT ASSETS VERIFIED"
 Write-Host ("Files : {0}" -f $assetPaths.Count)
