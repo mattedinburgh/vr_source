@@ -31,6 +31,7 @@
 #include "overhead.h"
 #include "mousesystem.h"
 #include "Cursors.h"
+#include "Isometric Utils.h"
 
 typedef struct
 {
@@ -520,8 +521,7 @@ static void BattleLogHeaderCallback( MOUSE_REGION *pRegion, INT32 iReason )
 	}
 	else if ( iReason & MSYS_CALLBACK_REASON_RBUTTON_UP )
 	{
-		gfBattleLogVisible = FALSE;
-		BattleLogRebuildOverlay();
+		BattleLogSetVisible( FALSE );
 	}
 }
 
@@ -660,7 +660,7 @@ static void BattleLogRemoveRegions( void )
 static void BattleLogPrintInspectorLine( INT16 x, INT16 y, UINT16 color, STR16 text )
 {
 	SetFontForeground( color );
-	mprintf( x, y, text );
+	mprintf( x, y, L"%s", text );
 }
 
 static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
@@ -701,7 +701,7 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		if ( pEntry )
 		{
 			SetFontForeground( pEntry->usColor );
-			mprintf( gsBattleLogX + 6, y, pEntry->zText );
+			mprintf( gsBattleLogX + 6, y, L"%s", pEntry->zText );
 		}
 		seq++;
 		y += lineH;
