@@ -419,6 +419,94 @@ static void B1TCInheritSTIAppData( HIMAGE hImage, UINT16 fContents )
 	ReleaseImageData( &legacyImage, IMAGE_ALLDATA );
 }
 
+
+static UINT32 B1TCArtHash(UINT32 x)
+{
+	x ^= x >> 16; x *= 0x7feb352dU; x ^= x >> 15; x *= 0x846ca68bU; x ^= x >> 16;
+	return x;
+}
+static CHAR8 B1TCArtLower(CHAR8 c) { return (c>='A'&&c<='Z')?(CHAR8)(c-'A'+'a'):c; }
+static BOOLEAN B1TCArtHas(const CHAR8* s,const CHAR8* n)
+{
+	if(!s||!n||!*n) return FALSE;
+	for(;*s;++s){const CHAR8*a=s,*b=n;while(*a&&*b&&B1TCArtLower(*a)==B1TCArtLower(*b)){++a;++b;}if(!*b)return TRUE;}
+	return FALSE;
+}
+static void B1TCArtMix(UINT8* p,UINT8 r,UINT8 g,UINT8 b,UINT32 a)
+{
+	if(a>255)a=255;
+	p[0]=(UINT8)(((UINT32)p[0]*(255-a)+(UINT32)r*a+127)/255);
+	p[1]=(UINT8)(((UINT32)p[1]*(255-a)+(UINT32)g*a+127)/255);
+	p[2]=(UINT8)(((UINT32)p[2]*(255-a)+(UINT32)b*a+127)/255);
+}
+
+// B1/Oronegro art direction: poor, humid Latin-American oil town.
+// Pixel-only transformation: frame geometry, offsets, JSD/collision and map
+// references remain exactly as authored.
+static void B1TCApplyOronegroArtDirection(HIMAGE hImage)
+{
+	if(!hImage||!hImage->p32BPPData||!hImage->pETRLEObject)return;
+	const CHAR8* name=hImage->ImageFile;
+	const BOOLEAN roof=B1TCArtHas(name,"roof"), wall=B1TCArtHas(name,"build_");
+	const BOOLEAN road=B1TCArtHas(name,"road"), floor=B1TCArtHas(name,"floor")||B1TCArtHas(name,"welflor");
+	const BOOLEAN water=B1TCArtHas(name,"water"), grass=B1TCArtHas(name,"grass");
+	const BOOLEAN ground=B1TCArtHas(name,"sand")||B1TCArtHas(name,"trail"), oil=B1TCArtHas(name,"oil_");
+	if(!B1TCArtHas(name,"b1_")&&!oil)return;
+	static const UINT8 fac[5][3]={{188,160,103},{88,147,145},{174,116,106},{118,145,102},{185,180,153}};
+
+	for(UINT16 i=0;i<hImage->usNumberOfObjects;++i)
+	{
+		ETRLEObject*o=&hImage->pETRLEObject[i]; if(!o->usWidth||!o->usHeight)continue;
+		UINT8*fr=(UINT8*)hImage->p32BPPData+o->uiDataOffset;
+		UINT32 seed=B1TCArtHash(0xB10A7E00U^(UINT32)i*0x9e3779b9U^(UINT32)strlen(name)*131U);
+		const UINT8*fc=fac[seed%5];
+		INT32 pw=__max(3,(INT32)o->usWidth/5),ph=__max(2,(INT32)o->usHeight/7);
+		INT32 px=o->usWidth>pw?(INT32)((seed>>8)%(o->usWidth-pw)):0,py=o->usHeight>ph?(INT32)((seed>>16)%(o->usHeight-ph)):0;
+		INT32 rx=roof&&o->usWidth>=20?__max(2,(INT32)o->usWidth/12):0,ry=roof&&o->usHeight>=12?__max(1,(INT32)o->usHeight/12):0;
+		INT32 hx=rx?rx+(INT32)((seed>>5)%__max(1,(INT32)o->usWidth-2*rx)):0,hy=ry?ry+(INT32)((seed>>13)%__max(1,(INT32)o->usHeight-2*ry)):0;
+		BOOLEAN makeHole=roof&&rx&&ry&&(((seed>>3)&3U)==0U);
+		INT32 orx=road?__max(5,(INT32)o->usWidth/6):0,ory=road?__max(3,(INT32)o->usHeight/7):0;
+		INT32 ox=road?(INT32)((seed>>7)%__max(1,(INT32)o->usWidth)):0,oy=road?(INT32)((seed>>15)%__max(1,(INT32)o->usHeight)):0;
+
+		for(UINT16 y=0;y<o->usHeight;++y)for(UINT16 x=0;x<o->usWidth;++x)
+		{
+			UINT8*p=fr+(((UINT32)y*o->usWidth+x)*4); if(!p[3])continue;
+			UINT32 n=B1TCArtHash(seed^(UINT32)(x/3)*73856093U^(UINT32)(y/3)*19349663U);
+			UINT32 q=B1TCArtHash(seed^(UINT32)x*83492791U^(UINT32)y*2654435761U);
+			INT32 mx=__max((INT32)p[0],__max((INT32)p[1],(INT32)p[2])),mn=__min((INT32)p[0],__min((INT32)p[1],(INT32)p[2]));
+			INT32 lum=((INT32)p[0]+p[1]+p[2])/3,sat=mx-mn;
+			if(lum>40)B1TCArtMix(p,191,176,143,8+((n>>24)&15));
+
+			if(wall)
+			{
+				if(lum>48&&sat<105)B1TCArtMix(p,fc[0],fc[1],fc[2],36+((n>>20)&31));
+				UINT32 col=B1TCArtHash(seed^(UINT32)x*2246822519U);
+				if((col&31U)<4U&&y>o->usHeight/5)B1TCArtMix(p,62,72,54,20+(UINT32)y*30/__max(1,(INT32)o->usHeight));
+				if(y>o->usHeight*3/4)B1TCArtMix(p,70,61,47,22);
+				if((n&255U)<13U&&lum>55)B1TCArtMix(p,130,124,105,80);
+			}
+			if(roof)
+			{
+				if((n&255U)<52U&&lum>30)B1TCArtMix(p,146,65,33,78+((n>>8)&47));
+				if(((x+(seed&7U))%9U)<=1U)B1TCArtMix(p,72,64,55,24);
+				if(x>=px&&x<px+pw&&y>=py&&y<py+ph){UINT32 k=(seed>>23)%3;if(k==0)B1TCArtMix(p,92,105,103,115);else if(k==1)B1TCArtMix(p,113,82,61,120);else B1TCArtMix(p,83,109,112,105);}
+				if(makeHole){INT32 dx=(INT32)x-hx,dy=(INT32)y-hy,lhs=dx*dx*ry*ry+dy*dy*rx*rx,rr=rx*rx*ry*ry;if(lhs<rr*2/5&&p[3]>=200){p[3]=0;continue;}if(lhs<rr)B1TCArtMix(p,71,38,26,150);}
+			}
+			if(road)
+			{
+				INT32 dx=(INT32)x-ox,dy=(INT32)y-oy;if(orx&&ory&&dx*dx*ory*ory+dy*dy*orx*orx<orx*orx*ory*ory)B1TCArtMix(p,37,35,30,45+((q>>24)&31));
+				INT32 cx=((INT32)((seed>>2)%__max(1,(INT32)o->usWidth))+((INT32)y*(3+(INT32)((seed>>12)&3U)))/7)%__max(1,(INT32)o->usWidth);
+				if((INT32)x-cx<=1&&(INT32)x-cx>=-1&&(q&7U))B1TCArtMix(p,42,38,33,110);
+			}
+			if(floor){if((n&255U)<30U)B1TCArtMix(p,88,75,58,40);if((q&511U)<8U)B1TCArtMix(p,48,43,36,75);}
+			if(ground){if((n&255U)<80U)B1TCArtMix(p,132,112,78,20+((n>>8)&23));if((n&1023U)<18U)B1TCArtMix(p,69,65,49,55);}
+			if(grass){if((n&3U)==0U)B1TCArtMix(p,93,111,57,28);else if((n&7U)==1U)B1TCArtMix(p,151,133,70,24);}
+			if(water){B1TCArtMix(p,66,82,67,18);if((n&511U)<16U&&lum>50){p[0]=(UINT8)__min(255,(INT32)p[0]+10);p[2]=(UINT8)__min(255,(INT32)p[2]+7);}}
+			if(oil){if((n&255U)<72U)B1TCArtMix(p,119,61,36,70);if((q&255U)<32U)B1TCArtMix(p,42,39,34,65);}
+		}
+	}
+}
+
 static BOOLEAN LoadB1TCFileToImage( HIMAGE hImage, UINT16 fContents )
 {
 	HWFILE hFile = FileOpen( hImage->ImageFile, FILE_ACCESS_READ );
@@ -549,6 +637,7 @@ static BOOLEAN LoadB1TCFileToImage( HIMAGE hImage, UINT16 fContents )
 	hImage->pPalette = NULL;
 	hImage->pui16BPPPalette = NULL;
 	hImage->fFlags |= IMAGE_BITMAPDATA;
+	B1TCApplyOronegroArtDirection( hImage );
 	B1TCInheritSTIAppData( hImage, fContents );
 	return TRUE;
 }
