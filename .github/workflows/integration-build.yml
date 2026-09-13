@@ -18,7 +18,7 @@ on:
 
 concurrency:
   group: vengeance-integration-build
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-release:
