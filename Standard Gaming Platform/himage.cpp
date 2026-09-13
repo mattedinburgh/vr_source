@@ -452,6 +452,14 @@ static void B1TCApplyOronegroArtDirection(HIMAGE hImage)
 	const BOOLEAN water=B1TCArtHas(name,"water"), grass=B1TCArtHas(name,"grass");
 	const BOOLEAN ground=B1TCArtHas(name,"sand")||B1TCArtHas(name,"trail"), oil=B1TCArtHas(name,"oil_");
 	if(!B1TCArtHas(name,"b1_")&&!oil)return;
+
+	// These B1 families now carry bespoke painted pixels in vr_gamedir.
+	// Do not run the earlier procedural weathering layer over them again.
+	if(B1TCArtHas(name,"B1_BUILD_31") || B1TCArtHas(name,"B1_BUILD_35") ||
+		B1TCArtHas(name,"B1_BUILD_36") || B1TCArtHas(name,"B1_BUILD_40") ||
+		B1TCArtHas(name,"B1_W-ROOF2") || B1TCArtHas(name,"B1_Oil_OROOF") ||
+		B1TCArtHas(name,"B1_Rooffan") || B1TCArtHas(name,"B1_ROADTLE2"))
+		return;
 	static const UINT8 fac[5][3]={{188,160,103},{88,147,145},{174,116,106},{118,145,102},{185,180,153}};
 	UINT32 familySeed=2166136261U;
 	for(const CHAR8* s=name;*s;++s) familySeed=(familySeed^(UINT8)B1TCArtLower(*s))*16777619U;
