@@ -2824,6 +2824,8 @@ BOOLEAN EvaluateWorld(STR8 pSector, UINT8 ubLevel)
 	pBufferHead = pBuffer;
 	FileRead(hfile, pBuffer, uiFileSize, &uiBytesRead);
 	FileClose(hfile);
+	BlackBoxEvent( "MAP", "opened=%s size=%u bytesRead=%u", aFilename, uiFileSize, uiBytesRead );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=FILE_READ offset=0 size=%u", aFilename, uiFileSize );
 	swprintf(str, L"Analyzing map %S", szFilename);
 	if(!gfUpdatingNow)
 		SetRelativeStartAndEndPercentage(0, 0, 100, str);
@@ -3217,6 +3219,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	uiLoadWorldStartTime = GetJA2Clock();
 #endif
 
+	BlackBoxEvent( "MAP", "phase=SHADE_TABLES" );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=SHADE_TABLES", puiFilename );
 	LoadShadeTablesFromTextFile();
 
 	// Append exension to filename!
@@ -3239,6 +3243,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 #endif
 	if(!hfile)
 	{
+		BlackBoxEvent( "MAP", "FAILED open file=%s", aFilename );
+		BlackBoxCheckpoint( "MAP", "file=%s phase=OPEN_FAILED", aFilename );
 #ifndef JA2EDITOR
 		SET_ERROR("Could not load map file %S", aFilename);
 #endif
@@ -3272,6 +3278,7 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	LightReset();
 
 	// Read JA2 Version ID
+	BlackBoxCheckpoint( "MAP", "file=%s phase=READ_HEADER offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 	LOADDATA(&dMajorMapVersion, pBuffer, sizeof(FLOAT));
 	LOADDATA(&ubMinorMapVersion, pBuffer, sizeof(UINT8));
 	if(pMajorMapVersion && pMinorMapVersion)//dnl ch79 291113
@@ -3289,6 +3296,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 
 	// Actual world size of the map we loaded!
 	INT32 iWorldSize = iRowSize * iColSize;
+	BlackBoxEvent( "MAP", "file=%s version=%.2f.%u dimensions=%dx%d worldSize=%d", aFilename, dMajorMapVersion, ubMinorMapVersion, iRowSize, iColSize, iWorldSize );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=HEADER_DONE offset=%ld version=%.2f.%u dimensions=%dx%d", aFilename, (long)(pBuffer - pBufferHead), dMajorMapVersion, ubMinorMapVersion, iRowSize, iColSize );
 
 #ifdef JA2EDITOR
 	// TODO.MAP: Make a new checkbox "Lock Rows & Cols". If set, load the map like it is now, with the set ROWS and COLS
@@ -3351,6 +3360,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 #ifdef JA2TESTVERSION
 	uiStartTime = GetJA2Clock();
 #endif
+	BlackBoxEvent( "MAP", "file=%s phase=TILESET tileset=%d offset=%ld", aFilename, iTilesetID, (long)(pBuffer - pBufferHead) );
+	BlackBoxCheckpoint( "MAP", "file=%s phase=TILESET tileset=%d offset=%ld", aFilename, iTilesetID, (long)(pBuffer - pBufferHead) );
 	Assert(LoadMapTileset(iTilesetID));
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
 		TraceB1RemasterLoad( "TILESET OK", "" );
@@ -3370,6 +3381,7 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	}
 
 	// Read height values
+	BlackBoxEvent( "MAP", "file=%s phase=HEIGHTS offset=%ld", aFilename, (long)(pBuffer - pBufferHead) );
 	for(i=0; i<iWorldSize; i++)
 	{
 		gMapTrn.GetTrnCnt(cnt=i);
@@ -3420,6 +3432,7 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		{
 			LOADDATA(&ubType, pBuffer, sizeof(UINT8));
 			LOADDATA(&ubSubIndex, pBuffer, sizeof(UINT8));
+			BlackBoxCheckpoint( "MAP", "file=%s phase=LAND grid=%d entry=%d type=%u sub=%u offset=%ld/%u", aFilename, cnt, cnt2, ubType, ubSubIndex, (long)(pBuffer - pBufferHead), uiFileSize );
 			if ( !ValidateB1MapTileReference( ubType, ubSubIndex, cnt, "land" ) )
 				return( FALSE );
 			// Get tile index
@@ -3445,6 +3458,7 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		{
 			LOADDATA(&ubType, pBuffer, sizeof(UINT8));
 			LOADDATA(&usTypeSubIndex, pBuffer, sizeof(UINT16));
+			BlackBoxCheckpoint( "MAP", "file=%s phase=OBJECT grid=%d entry=%d type=%u sub=%u offset=%ld/%u", aFilename, cnt, cnt2, ubType, usTypeSubIndex, (long)(pBuffer - pBufferHead), uiFileSize );
 			if(ubType >= FIRSTPOINTERS)
 				continue;
 			if ( !ValidateB1MapTileReference( ubType, usTypeSubIndex, cnt, "object" ) )
@@ -3471,6 +3485,7 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		{
 			LOADDATA(&ubType, pBuffer, sizeof(UINT8));
 			LOADDATA(&ubSubIndex, pBuffer, sizeof(UINT8));
+			BlackBoxCheckpoint( "MAP", "file=%s phase=STRUCT grid=%d entry=%d type=%u sub=%u offset=%ld/%u", aFilename, cnt, cnt2, ubType, ubSubIndex, (long)(pBuffer - pBufferHead), uiFileSize );
 			if ( !ValidateB1MapTileReference( ubType, ubSubIndex, cnt, "struct" ) )
 				return( FALSE );
 			// Get tile index
@@ -3500,6 +3515,7 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		{
 			LOADDATA(&ubType, pBuffer, sizeof(UINT8));
 			LOADDATA(&ubSubIndex, pBuffer, sizeof(UINT8));
+			BlackBoxCheckpoint( "MAP", "file=%s phase=SHADOW grid=%d entry=%d type=%u sub=%u offset=%ld/%u", aFilename, cnt, cnt2, ubType, ubSubIndex, (long)(pBuffer - pBufferHead), uiFileSize );
 			if ( !ValidateB1MapTileReference( ubType, ubSubIndex, cnt, "shadow" ) )
 				return( FALSE );
 			// Get tile index
@@ -3523,6 +3539,7 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		{
 			LOADDATA(&ubType, pBuffer, sizeof(UINT8));
 			LOADDATA(&ubSubIndex, pBuffer, sizeof(UINT8));
+			BlackBoxCheckpoint( "MAP", "file=%s phase=ROOF grid=%d entry=%d type=%u sub=%u offset=%ld/%u", aFilename, cnt, cnt2, ubType, ubSubIndex, (long)(pBuffer - pBufferHead), uiFileSize );
 			if ( !ValidateB1MapTileReference( ubType, ubSubIndex, cnt, "roof" ) )
 				return( FALSE );
 			// Get tile index
@@ -3546,6 +3563,7 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		{
 			LOADDATA(&ubType, pBuffer, sizeof(UINT8));
 			LOADDATA(&ubSubIndex, pBuffer, sizeof(UINT8));
+			BlackBoxCheckpoint( "MAP", "file=%s phase=ONROOF grid=%d entry=%d type=%u sub=%u offset=%ld/%u", aFilename, cnt, cnt2, ubType, ubSubIndex, (long)(pBuffer - pBufferHead), uiFileSize );
 			if ( !ValidateB1MapTileReference( ubType, ubSubIndex, cnt, "on-roof" ) )
 				return( FALSE );
 			// Get tile index
