@@ -1938,6 +1938,13 @@ void SoldierHandleDropItem( SOLDIERTYPE *pSoldier )
 
 void HandleSoldierThrowItem( SOLDIERTYPE *pSoldier, INT32 sGridNo )
 {
+	// Armed throws (grenades and other combat throws) require releasing a casualty first.
+	if ( pSoldier && pSoldier->IsDraggingBleedoutCasualty() && pSoldier->pThrowParams &&
+		 pSoldier->pThrowParams->ubActionCode == THROW_ARM_ITEM )
+	{
+		pSoldier->StopDraggingBleedoutCasualty();
+	}
+
 	// Determine what to do
 	UINT8 ubDirection;
 
