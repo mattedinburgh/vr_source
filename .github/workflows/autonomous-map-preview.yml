@@ -151,6 +151,7 @@ jobs:
           # The Vengeance VFS always mounts a writable UserProf. Keep the live
           # profile isolated, but provide an empty writable profile in the sandbox.
           $profileRoot = Join-Path $sandbox 'Profiles\UserProfile_Vengeance'
+          if (Test-Path $profileRoot) { Remove-Item -Recurse -Force $profileRoot }
           New-Item -ItemType Directory -Force -Path $profileRoot | Out-Null
 
           $required = @('Data','Data-1.13','Data-Vengeance','Data-AIMv53','Data-Maps-Tiles','Data-PCM','Data-UI','Data-Weapon-Sounds','Data-Voice-Taunts','Data-Music','Profiles\UserProfile_Vengeance')
@@ -184,134 +185,147 @@ jobs:
           $previewDir = Join-Path $sandbox 'MAP_PREVIEWS'
           New-Item -ItemType Directory -Force -Path $previewDir | Out-Null
           Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $previewDir 'A3_overview.bmp')
+          Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $previewDir 'A3_REMASTERED_overview.bmp')
           Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $previewDir 'mapshot_status.txt')
           Write-Host 'Vengeance render sandbox ready.'
           Write-Host "Editor: $editor"
           Write-Host "VFS: $vfsIni"
           exit 0
 
-      - name: Render A3 through Vengeance MapEditor
+      - name: Bake and render A3 through Vengeance MapEditor
         shell: powershell
         run: |
           $sandbox = 'C:\VENGENCE\JA2_RENDER_SANDBOX'
           $editor = Join-Path $sandbox 'MapEditor_Vengeance.exe'
           $previewDir = Join-Path $sandbox 'MAP_PREVIEWS'
           $statusFile = Join-Path $previewDir 'mapshot_status.txt'
-          $bmp = Join-Path $previewDir 'A3_REMASTERED_overview.bmp'
+          $sourceBmp = Join-Path $previewDir 'A3_overview.bmp'
+          $finalBmp = Join-Path $previewDir 'A3_REMASTERED_overview.bmp'
 
-          Write-Host "Launching Vengeance editor MAPSHOT: $editor -MAPSHOT=A3_REMASTERED.dat"
-          $p = Start-Process -FilePath $editor -ArgumentList '-MAPSHOT=A3_REMASTERED.dat' -WorkingDirectory $sandbox -PassThru
-          $deadline = (Get-Date).AddSeconds(180)
-          $startupDeadline = (Get-Date).AddSeconds(60)
-          $lastStatus = ''
-          $forcedExitAfterSuccess = $false
+          function Invoke-VengeanceMapshot {
+            param(
+              [Parameter(Mandatory=$true)][string]$MapName,
+              [Parameter(Mandatory=$true)][string]$ExpectedBmp
+            )
 
-          while ((Get-Date) -lt $deadline) {
-            $p.Refresh()
-            if ($p.HasExited) { break }
+            Remove-Item -Force -ErrorAction SilentlyContinue $statusFile
+            Remove-Item -Force -ErrorAction SilentlyContinue $ExpectedBmp
 
-            if (Test-Path $statusFile) {
-              $status = (Get-Content $statusFile -Raw -ErrorAction SilentlyContinue).Trim()
-              if ($status -and $status -ne $lastStatus) {
-                Write-Host '--- MAPSHOT STATUS UPDATE ---'
-                Write-Host $status
-                $lastStatus = $status
-              }
+            Write-Host "Launching Vengeance editor MAPSHOT: $editor -MAPSHOT=$MapName"
+            $p = Start-Process -FilePath $editor -ArgumentList "-MAPSHOT=$MapName" -WorkingDirectory $sandbox -PassThru
+            $deadline = (Get-Date).AddSeconds(180)
+            $startupDeadline = (Get-Date).AddSeconds(60)
+            $lastStatus = ''
+            $completed = $false
+            $forcedExitAfterSuccess = $false
 
-              if ($status -match 'DONE success' -and (Test-Path $bmp)) {
-                Write-Host 'MAPSHOT output is complete; allowing engine shutdown.'
-                Start-Sleep -Seconds 5
-                $p.Refresh()
-                if (-not $p.HasExited) {
-                  Write-Warning 'Preview completed but editor did not terminate; stopping it after successful capture.'
-                  try { $p.Kill() } catch {}
-                  try { $p.WaitForExit(10000) | Out-Null } catch {}
-                  $forcedExitAfterSuccess = $true
+            while ((Get-Date) -lt $deadline) {
+              $p.Refresh()
+              if ($p.HasExited) { break }
+
+              if (Test-Path $statusFile) {
+                $status = (Get-Content $statusFile -Raw -ErrorAction SilentlyContinue).Trim()
+                if ($status -and $status -ne $lastStatus) {
+                  Write-Host "--- MAPSHOT STATUS $MapName ---"
+                  Write-Host $status
+                  $lastStatus = $status
                 }
+
+                if ($status -match 'DONE success' -and (Test-Path $ExpectedBmp)) {
+                  $completed = $true
+                  Start-Sleep -Seconds 2
+                  $p.Refresh()
+                  if (-not $p.HasExited) {
+                    Write-Warning "MAPSHOT $MapName completed but editor did not terminate; stopping it after successful capture."
+                    try { $p.Kill() } catch {}
+                    try { $p.WaitForExit(10000) | Out-Null } catch {}
+                    $forcedExitAfterSuccess = $true
+                  }
+                  break
+                }
+              }
+              elseif ((Get-Date) -gt $startupDeadline) {
+                Write-Warning "MAPSHOT $MapName did not reach its initializer within 60 seconds."
                 break
               }
+
+              Start-Sleep -Seconds 2
             }
-            elseif ((Get-Date) -gt $startupDeadline) {
-              Write-Warning 'MAPSHOT did not reach its initializer within 60 seconds.'
+
+            $p.Refresh()
+            if (-not $p.HasExited) {
               try { $p.Kill() } catch {}
               try { $p.WaitForExit(10000) | Out-Null } catch {}
-              break
             }
 
-            Start-Sleep -Seconds 2
-          }
-
-          $p.Refresh()
-          if (-not $p.HasExited) {
-            try { $p.Kill() } catch {}
-            try { $p.WaitForExit(10000) | Out-Null } catch {}
-          }
-
-          Write-Host '--- FINAL MAPSHOT STATUS ---'
-          $finalStatus = ''
-          if (Test-Path $statusFile) {
-            $finalStatus = (Get-Content $statusFile -Raw -ErrorAction SilentlyContinue).Trim()
-            Write-Host $finalStatus
-          } else {
-            Write-Warning "No status file: $statusFile"
-          }
-
-          if (-not (Test-Path $bmp)) {
-            Write-Host '--- VENGEANCE RENDER DIAGNOSTICS ---'
-            Get-ChildItem $sandbox -Recurse -File -ErrorAction SilentlyContinue |
-              Where-Object { $_.Name -match '(mapshot|blackbox|error|exception|debug|vfs|crash).*\.(txt|log)$' } |
-              Sort-Object LastWriteTime -Descending |
-              Select-Object -First 40 FullName, Length, LastWriteTime |
-              Format-Table -AutoSize
-            throw "A3 preview not produced: $bmp"
-          }
-
-          # Vengeance's editor returns process code 1 after the MAPUTILITY screen
-          # shuts the program down, even when MAPSHOT itself completed correctly.
-          # The authoritative success contract is the engine status + output BMP.
-          if ($p.HasExited -and $p.ExitCode -ne 0) {
-            if ($finalStatus -match 'DONE success') {
-              Write-Warning "MapEditor_Vengeance exited with code $($p.ExitCode) after successful MAPSHOT; accepting engine result."
+            $finalStatus = ''
+            if (Test-Path $statusFile) {
+              $finalStatus = (Get-Content $statusFile -Raw -ErrorAction SilentlyContinue).Trim()
+              Write-Host "--- FINAL MAPSHOT STATUS $MapName ---"
+              Write-Host $finalStatus
             } else {
-              throw "MapEditor_Vengeance exited with code $($p.ExitCode) before successful MAPSHOT"
+              Write-Warning "No MAPSHOT status file for $MapName."
             }
+
+            if (-not (Test-Path $ExpectedBmp)) {
+              throw "MAPSHOT $MapName did not produce expected engine preview: $ExpectedBmp"
+            }
+            if ($finalStatus -notmatch 'DONE success') {
+              throw "MAPSHOT $MapName produced a preview but did not report DONE success."
+            }
+
+            if ($p.HasExited -and $p.ExitCode -ne 0) {
+              Write-Warning "MapEditor_Vengeance exited with code $($p.ExitCode) after successful MAPSHOT $MapName; accepting engine result."
+            }
+
+            return $forcedExitAfterSuccess
           }
+
+          # Pass 1: load the authoritative A3.dat through the Vengeance VFS.
+          # MapUtility applies the A3 dressing and SaveWorld() persists that exact
+          # in-memory sector as A3_REMASTERED.dat in the isolated writable profile.
+          $forcedBakeExit = Invoke-VengeanceMapshot -MapName 'A3.dat' -ExpectedBmp $sourceBmp
+
+          $baked = Get-ChildItem $sandbox -Recurse -File -Filter 'A3_REMASTERED.dat' -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $baked) {
+            throw 'A3 source MAPSHOT succeeded but the baked A3_REMASTERED.dat was not found in the Vengeance sandbox.'
+          }
+          Write-Host "Baked Vengeance A3 map: $($baked.FullName) ($($baked.Length) bytes)"
+
+          # Pass 2: reopen the persisted map through the same Vengeance VFS and
+          # render the actual baked result. This proves that the output is a valid
+          # loadable map, not merely a transient dressed in-memory world.
+          $forcedFinalExit = Invoke-VengeanceMapshot -MapName 'A3_REMASTERED.dat' -ExpectedBmp $finalBmp
 
           Add-Type -AssemblyName System.Drawing
           $outDir = Join-Path $env:GITHUB_WORKSPACE 'MapPreviews\Auto'
           New-Item -ItemType Directory -Force -Path $outDir | Out-Null
           $png = Join-Path $outDir 'A3_latest.png'
-          $img = [System.Drawing.Image]::FromFile($bmp)
+          $img = [System.Drawing.Image]::FromFile($finalBmp)
           try { $img.Save($png, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $img.Dispose() }
 
           if (Test-Path $statusFile) {
             Copy-Item -Force $statusFile (Join-Path $outDir 'A3_mapshot_status.txt')
           }
-
-          # Current MAPSHOT source bakes the dressed in-memory sector through
-          # native SaveWorld() into the isolated Vengeance writable profile.
-          $baked = Get-ChildItem $sandbox -Recurse -File -Filter 'A3_REMASTERED.dat' -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
-          if (-not $baked) {
-            throw 'MAPSHOT reported success but A3_REMASTERED.dat was not found in the Vengeance sandbox.'
-          }
           Copy-Item -Force $baked.FullName (Join-Path $outDir 'A3_REMASTERED.dat')
-          Write-Host "A3 baked map captured: $($baked.FullName) ($($baked.Length) bytes)"
 
           @{
             sector = 'A3_REMASTERED'
             source_sha = '${{ github.sha }}'
             gamedir_sha = '${{ steps.gamedir.outputs.sha }}'
             generated_utc = (Get-Date).ToUniversalTime().ToString('o')
-            renderer = 'Vengeance MapEditor MAPSHOT'
+            renderer = 'Vengeance MapEditor two-pass MAPSHOT'
             editor = 'MapEditor_Vengeance.exe'
             vfs = 'vfs_config.Vengeance.ini'
             sandbox = $sandbox
             baked_map_bytes = $baked.Length
-            forced_exit_after_success = $forcedExitAfterSuccess
+            source_pass_forced_exit = $forcedBakeExit
+            final_pass_forced_exit = $forcedFinalExit
           } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $outDir 'A3_latest.json')
-          Write-Host "A3 preview created: $png"
+
+          Write-Host "A3 baked map validated by reload and rendered: $png"
 
       - name: Upload render artifact
         uses: actions/upload-artifact@v4
