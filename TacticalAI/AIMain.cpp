@@ -1855,6 +1855,17 @@ INT8 ExecuteAction(SOLDIERTYPE *pSoldier)
             break;
 
         case AI_ACTION_PICKUP_ITEM:					 // grab something!
+            // Final safety net: militia do not pick up battlefield/sector items while
+            // hostile contact is active, even if a stale/pending pickup action survived.
+            if ( pSoldier->bTeam == MILITIA_TEAM &&
+                 ( (gTacticalStatus.uiFlags & INCOMBAT) || gTacticalStatus.fEnemyInSector ) )
+            {
+                pSoldier->aiData.bAction = AI_ACTION_NONE;
+                pSoldier->aiData.usActionData = NOWHERE;
+                ActionDone( pSoldier );
+                break;
+            }
+
             SoldierPickupItem( pSoldier, pSoldier->aiData.uiPendingActionData1, pSoldier->aiData.usActionData, 0 );
             break;
 
