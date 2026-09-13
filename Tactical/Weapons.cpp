@@ -10009,7 +10009,14 @@ void ShotMiss( UINT8 ubAttackerID, INT32 iBullet )
 		// Player-facing battle log entry. The entry stores the exact runtime NCTH
 		// snapshot keyed to this bullet and can be clicked for the full breakdown.
 		if ( pAttacker->bTeam == gbPlayerNum && UsingNewCTHSystem() )
-			BattleLogAddNCTHMiss( iBullet );
+		{
+			pBullet = GetBulletPtr( iBullet );
+			// Buckshot/spread weapons add pellet-specific offsets after the central
+			// NCTH trajectory is generated. Until those offsets are captured too,
+			// do not label the central snapshot as the exact cause of a pellet miss.
+			if ( pBullet != NULL && !(pBullet->usFlags & BULLET_FLAG_BUCKSHOT) )
+				BattleLogAddNCTHMiss( iBullet );
+		}
 
 		// PLAY SOUND AND FLING DEBRIS
 		// RANDOMIZE SOUND SYSTEM
