@@ -1190,6 +1190,41 @@ static void DressA3FarmEnvironment( void )
 	UINT32 uiWaterEdges = 0, uiLandmarkBlocks = 0, uiLandmarkDetail = 0, uiRoofDetail = 0;
 	UINT32 uiBlockPieces = 0;
 
+	// Hand-directed hero compositions are placed before procedural dressing.
+	// This gives authored landmarks first claim on their footprint, while the
+	// later procedural pass naturally fills around them without overlap.
+	// Anchors were audited directly against the current A3.dat and relocated only
+	// where authored structures/roofs occupied the original footprint.
+	const INT32 sHeroAnchors[] =
+	{
+		7290, 7312, 7928, 7632, 8248, 8591, 10326,
+		10645, 10965, 11285, 12042, 12023, 11724, 12364,
+		12682, 16713, 17680, 17837, 19597, 17199, 19586,
+		19919, 19762, 20238, 20873
+	};
+	for ( UINT16 i = 0; i < (UINT16)(sizeof(sHeroAnchors)/sizeof(sHeroAnchors[0])); ++i )
+	{
+		const INT32 sGridNo = sHeroAnchors[i];
+		if ( !A3FarmVisualGridSafe( sGridNo ) ) continue;
+
+		UINT16 usPlaced = 0;
+		switch ( i % 7 )
+		{
+			case 0: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3CattleStation, 6, FALSE ); break;
+			case 1: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3HayStackLine, 6, FALSE ); break;
+			case 2: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3IrrigationJunction, 5, FALSE ); break;
+			case 3: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3JunkWorkBay, 6, FALSE ); break;
+			case 4: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3ScarecrowPlot, 5, FALSE ); break;
+			case 5: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3HarvestBreak, 6, FALSE ); break;
+			default: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3WaterTankCorner, 4, FALSE ); break;
+		}
+		if ( usPlaced )
+		{
+			++uiLandmarkDetail;
+			uiBlockPieces += usPlaced;
+		}
+	}
+
 	for ( INT32 sGridNo = 0; sGridNo < WORLD_MAX; ++sGridNo )
 	{
 		MAP_ELEMENT *pMap = &gpWorldLevelData[ sGridNo ];
@@ -1440,39 +1475,6 @@ static void DressA3FarmEnvironment( void )
 			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 14 );
 			if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
 				++uiWaterEdges;
-		}
-	}
-
-	// Hand-directed hero anchors make the farm read consistently even when the
-	// authored map happens to have objects occupying some procedural candidates.
-	const INT32 sHeroAnchors[] =
-	{
-		7290, 7312, 7928, 7950, 8248, 8270,
-		10328, 10648, 10968, 11288,
-		12042, 12025, 11724, 12364, 12682,
-		16873, 17680, 18316, 18634, 17199,
-		19271, 19597, 19760, 20078, 20873
-	};
-	for ( UINT16 i = 0; i < (UINT16)(sizeof(sHeroAnchors)/sizeof(sHeroAnchors[0])); ++i )
-	{
-		const INT32 sGridNo = sHeroAnchors[i];
-		if ( !A3FarmVisualGridSafe( sGridNo ) ) continue;
-
-		UINT16 usPlaced = 0;
-		switch ( i % 7 )
-		{
-			case 0: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3CattleStation, 6, FALSE ); break;
-			case 1: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3HayStackLine, 6, FALSE ); break;
-			case 2: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3IrrigationJunction, 5, FALSE ); break;
-			case 3: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3JunkWorkBay, 6, FALSE ); break;
-			case 4: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3ScarecrowPlot, 5, FALSE ); break;
-			case 5: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3HarvestBreak, 6, FALSE ); break;
-			default: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3WaterTankCorner, 4, FALSE ); break;
-		}
-		if ( usPlaced )
-		{
-			++uiLandmarkDetail;
-			uiBlockPieces += usPlaced;
 		}
 	}
 
