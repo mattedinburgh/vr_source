@@ -863,7 +863,14 @@ static void BattleLogUpdateRegions( void )
 	else
 		MSYS_DisableRegion( &gBattleLogInspectorRegion );
 
-	RefreshMouseRegions();
+	// Do not force a mouse-region rescan from inside the grabbed region's
+	// movement callback. RefreshMouseRegions() synchronously dispatches a MOVE
+	// callback; while dragging/resizing that re-enters BattleLogMoveCallback(),
+	// which rebuilds the overlay and refreshes again until the stack overflows.
+	// The region coordinates above are already current and the mouse grab keeps
+	// delivering movement to this region. A full refresh is safe on button-up.
+	if ( !gfBattleLogDragging && !gfBattleLogResizing )
+		RefreshMouseRegions();
 }
 
 static void BattleLogCreateRegions( void )
