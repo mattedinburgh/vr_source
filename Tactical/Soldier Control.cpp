@@ -256,9 +256,11 @@ BATTLESNDS_STRUCT	 gBattleSndsData[] =
 	"punch",		1,				0,			0,		0,		0,
 	"knife",		1,				0,			0,		0,		0,
 	// Casualty sound: reuse the existing per-voice DYING library without marking the soldier dead.
-	"dying",		2,		1,		1,		1,		0,
+	// Do not preload the duplicate key: it is loaded on demand and avoids double-locking "dying".
+	"dying",		2,		0,		1,		1,		0,
 	// Generic battlefield call; named mercs retain their character-specific wounded dialogue.
-	"medic",		2,		1,		1,		1,		0,
+	// The shared medic assets are also loaded on demand rather than through the legacy name-only preloader.
+	"medic",		2,		0,		1,		1,		0,
 };
 
 extern void ReduceAttachmentsOnGunForNonPlayerChars(SOLDIERTYPE *pSoldier, OBJECTTYPE * pObj);
