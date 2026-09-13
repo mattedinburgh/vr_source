@@ -266,6 +266,32 @@ HIMAGE CreateImage( SGPFILENAME ImageFile, UINT16 fContents, ImageFileType::Test
 
 	if ( !LoadImageData( hImage, fContents ) )
 	{
+		// B1TC is an optional pixel replacement. A malformed/incompatible sibling
+		// must never make the authored STI unusable: retry the legacy asset.
+		if ( iFileLoader == B1TC_FILE_READER )
+		{
+			std::string legacyFilename( hImage->ImageFile );
+			const std::string::size_type dot = legacyFilename.find_last_of('.');
+			if ( dot != std::string::npos )
+			{
+				legacyFilename = legacyFilename.substr( 0, dot + 1 ) + "sti";
+				SGPFILENAME legacyImageFile;
+				memset( legacyImageFile, 0, sizeof(legacyImageFile) );
+				strncpy( legacyImageFile, legacyFilename.c_str(), sizeof(legacyImageFile) - 1 );
+				if ( FileExists( legacyImageFile ) )
+				{
+					memset( hImage, 0, sizeof( image_type ) );
+					strncpy( hImage->ImageFile, legacyImageFile, sizeof(hImage->ImageFile) - 1 );
+					hImage->iFileLoader = STCI_FILE_READER;
+					if ( LoadImageData( hImage, fContents ) )
+						return hImage;
+				}
+			}
+		}
+
+		// Avoid leaking the HIMAGE shell when the selected loader rejects a file.
+		ReleaseImageData( hImage, IMAGE_ALLDATA );
+		MemFree( hImage );
 		return( NULL );
 	}
 
