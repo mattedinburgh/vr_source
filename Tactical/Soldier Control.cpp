@@ -6963,6 +6963,16 @@ BOOLEAN SOLDIERTYPE::EVENT_InternalGetNewSoldierPath( INT32 sDestGridNo, UINT16 
 	UINT32	uiDist;
 	UINT16	usAnimState;
 	UINT16	usMoveAnimState = usMovementAnim;
+
+	// Casualty extraction is a walking-only movement state. Enforce it at the
+	// path/animation entry point as well as in AP calculations, so changing the
+	// UI movement mode cannot produce a running/swatting drag animation.
+	if ( this->IsDraggingBleedoutCasualty() )
+	{
+		usMovementAnim = WALKING;
+		usMoveAnimState = WALKING;
+		this->usUIMovementMode = WALKING;
+	}
 	INT32							sMercGridNo;
 	UINT16						usPathingData[ MAX_PATH_LIST_SIZE ];
 	UINT8							ubPathingMaxDirection;
