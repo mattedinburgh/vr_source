@@ -383,6 +383,8 @@ BOOLEAN AIKnownRouteExposureAcceptable(SOLDIERTYPE *pSoldier, INT32 sDestination
 	INT8 bAction, UINT16 usPeakIncrease, UINT16 usUncoveredIncrease,
 	UINT16 usAverageIncrease);
 BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier);
+BOOLEAN AIHasUsedTacticalFallback(SOLDIERTYPE *pSoldier);
+void AIRegisterTacticalFallback(SOLDIERTYPE *pSoldier);
 INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
 INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
 INT32 AILocalStress(SOLDIERTYPE *pSoldier);
