@@ -2200,10 +2200,12 @@ INT32 ClosestReachableFriendInTrouble(SOLDIERTYPE *pSoldier, BOOLEAN * pfClimbin
 		// let a distant firefight pull otherwise coherent enemy elements across the
 		// sector. Healthy fireteams share contact detail inside the element; another
 		// element may receive help only from directly observable/local distress.
+		BOOLEAN fCrossElement = FALSE;
 		BOOLEAN fCrossElementLocalHelp = FALSE;
 		if (AICombatTeam(pSoldier) && pFriend->bTeam == pSoldier->bTeam &&
 			!AISameFireteam(pSoldier, pFriend))
 		{
+			fCrossElement = TRUE;
 			INT32 iFriendDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
 			if (ubMyFireteamReady > 2 &&
 				iFriendDistance > __max(6, DAY_VISION_RANGE / 3))
@@ -2228,10 +2230,15 @@ INT32 ClosestReachableFriendInTrouble(SOLDIERTYPE *pSoldier, BOOLEAN * pfClimbin
 		}
 
 		// Same-fireteam members may coordinate from their shared element picture.
-		// Cross-element help uses only the observable distress gate above.
-		if (!fCrossElementLocalHelp &&
-			!(CountSeenEnemiesLastTurn(pFriend) >
-			  AICountNearbyOperationalFriends(pFriend, pFriend->sGridNo, DAY_VISION_RANGE / 4)))
+		// Cross-element help uses only the observable distress gate above and never
+		// falls through to the other element's private opponent list.
+		if (fCrossElement)
+		{
+			if (!fCrossElementLocalHelp)
+				continue;
+		}
+		else if (!(CountSeenEnemiesLastTurn(pFriend) >
+			AICountNearbyOperationalFriends(pFriend, pFriend->sGridNo, DAY_VISION_RANGE / 4)))
 		{
 			continue;			// next merc
 		}
