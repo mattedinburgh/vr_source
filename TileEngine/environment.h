@@ -42,6 +42,39 @@
 #define		WEATHER_FORECAST_SHOWERS						0x00000010
 #define		WEATHER_FORECAST_THUNDERSHOWERS			0x00000020
 
+// Vengeance advanced weather modernization.
+// Kept separate from the legacy WEATHER_FORECAST bit flags so old code and saves
+// can continue to use the original rain implementation while the new system is disabled.
+typedef enum
+{
+	ADV_WEATHER_CLEAR = 0,
+	ADV_WEATHER_CLOUDY,
+	ADV_WEATHER_DRIZZLE,
+	ADV_WEATHER_RAIN,
+	ADV_WEATHER_HEAVY_RAIN,
+	ADV_WEATHER_THUNDERSTORM,
+	ADV_WEATHER_FOG,
+	ADV_WEATHER_DUST_STORM,
+	ADV_WEATHER_MAX
+} ADVANCED_WEATHER_TYPE;
+
+typedef struct
+{
+	UINT8  ubType;
+	UINT8  ubPrecipitation;	// 0-100
+	UINT8  ubCloudCover;		// 0-100
+	UINT8  ubWindStrength;		// 0-100
+	UINT8  ubWindDirection;	// 0-7, N/NE/E/SE/S/SW/W/NW
+	UINT8  ubFog;				// 0-100
+	UINT8  ubStormEnergy;		// 0-100
+	UINT32 uiStartWorldMinutes;
+	UINT32 uiEndWorldMinutes;
+	UINT32 uiSystemId;
+	UINT32 uiSeed;
+} ADVANCED_WEATHER_STATE;
+
+#define ADVANCED_WEATHER_SECTOR_COUNT 256
+
 // higher is darker, remember
 #define NORMAL_LIGHTLEVEL_NIGHT 12
 #define NORMAL_LIGHTLEVEL_DAY 3
@@ -58,6 +91,18 @@ UINT8 GetTimeOfDayAmbientLightLevel();
 
 void	EnvBeginRainStorm( UINT8 ubIntensity );
 void	EnvEndRainStorm( );
+
+// Advanced weather API. All gameplay-facing functions return neutral values when
+// ENABLE_ADVANCED_WEATHER is FALSE.
+void InitializeAdvancedWeather();
+void AdvancedWeatherUpdateCurrentSector();
+const ADVANCED_WEATHER_STATE* GetAdvancedWeatherStateForSector( UINT8 ubSectorId );
+UINT8 WeatherGetVisionPenaltyPercent();
+UINT8 WeatherGetHearingPenaltyPercent( UINT8 ubNoiseType );
+UINT8 WeatherGetBreathRecoveryPenaltyPercent();
+UINT8 WeatherGetWeaponReliabilityPenalty();
+UINT8 WeatherGetSmokeDecayModifierPercent();
+UINT8 WeatherGetLocalizationErrorRadius( UINT8 ubNoiseType );
 
 
 extern UINT8			gubEnvLightValue;
