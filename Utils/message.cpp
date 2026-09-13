@@ -389,7 +389,7 @@ void ClearDisplayedListOfTacticalStrings( void )
 typedef struct
 {
 	UINT32 uiSequence;
-	CHAR16 zText[256];
+	CHAR16 zText[640];
 	UINT16 usColor;
 	BOOLEAN fClickable;
 	UINT8 ubOutcome;
@@ -992,7 +992,17 @@ void BattleLogAddText( UINT16 usColor, STR16 pString )
 	pEntry->usColor = usColor;
 	pEntry->ubOutcome = BATTLELOG_OUTCOME_NONE;
 	pEntry->iBullet = -1;
-	swprintf( pEntry->zText, L"[%02d:%02d] %s", guiHour, guiMin, pString );
+
+	// ScreenMsg can carry a 512-character formatted string. Keep the battle-log
+	// copy bounded so a long diagnostic or mod message cannot overrun the entry.
+	swprintf( pEntry->zText, L"[%02d:%02d] ", guiHour, guiMin );
+	UINT32 uiPrefixLen = (UINT32)wcslen( pEntry->zText );
+	UINT32 uiCapacity = (UINT32)(sizeof(pEntry->zText) / sizeof(pEntry->zText[0]));
+	if ( uiPrefixLen + 1 < uiCapacity )
+	{
+		wcsncat( pEntry->zText, pString, uiCapacity - uiPrefixLen - 1 );
+		pEntry->zText[uiCapacity - 1] = 0;
+	}
 	gusBattleLogScrollOffset = 0;
 
 	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
