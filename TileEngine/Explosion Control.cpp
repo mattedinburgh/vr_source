@@ -367,6 +367,11 @@ void InternalIgniteExplosion( UINT8 ubOwner, INT16 sX, INT16 sY, INT16 sZ, INT32
 	ExpParams.fLocate	= fLocate;
 	ExpParams.bLevel	= bLevel;
 
+	// Keep player-thrown explosives visible in the battle history even when
+	// nobody is damaged. Per-target blast outcomes are recorded separately.
+	if ( ( Item[ usItem ].usItemClass & IC_EXPLOSV ) && ubOwner != NOBODY )
+		BattleLogAddExplosionEvent( ubOwner, usItem );
+
 	GenerateExplosion( &ExpParams );
 
 	// Flugente: if the explosion occured in a building, this might lower loyalty in town
@@ -1925,6 +1930,11 @@ BOOLEAN DamageSoldierFromBlast( UINT8 ubPerson, UINT8 ubOwner, INT32 sBombGridNo
 	}
 	
 	// OJW - 20091028 - If from a remote client, use unadjusted damage amount
+	// Preserve the resolved event without dumping the full damage pipeline into
+	// the default log. Source, target and outcome stay readable at a glance.
+	BattleLogAddExplosionHit( ubOwner, ubPerson, usItem,
+		(fFromRemoteClient ? sWoundAmt : sNewWoundAmt), sBreathAmt );
+
 	pSoldier->EVENT_SoldierGotHit( usItem, (fFromRemoteClient ? sWoundAmt : sNewWoundAmt) , sBreathAmt, ubDirection, (INT16)uiDist, ubOwner, ubSpecial, ANIM_CROUCH, sSubsequent, sBombGridNo );
 	
 	pSoldier->ubMiscSoldierFlags |= SOLDIER_MISC_HURT_BY_EXPLOSION;
