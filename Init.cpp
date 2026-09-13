@@ -417,9 +417,21 @@ BOOLEAN LoadExternalGameplayData(STR directoryName)
 		CHAR8 errorBuf[512] = "Failed loading LogicalBodyTypes external data!";
 
 		SGP_THROW_IFFALSE(Layers::Instance().LoadFromFile(directoryName, LBT_LAYERSFILENAME, errorBuf), errorBuf);
-		SGP_THROW_IFFALSE(SurfaceDB::Instance().LoadFromFile(directoryName, LBT_ANIMSURFACESFILENAME, errorBuf), errorBuf);
-		SGP_THROW_IFFALSE(FilterDB::Instance().LoadFromFile(directoryName, LBT_FILTERSFILENAME, errorBuf), errorBuf);
-		SGP_THROW_IFFALSE(BodyTypeDB::Instance().LoadFromFile(directoryName, LBT_BODYTYPESFILENAME, errorBuf), errorBuf);
+
+		// Visible-equipment is an optional overlay. A malformed or incomplete
+		// AnimationSurfaces catalog must not prevent Vengeance from starting.
+		// If surface loading fails, skip LBT filters/body mappings for this run;
+		// native Vengeance animation rendering remains active.
+		if ( !SurfaceDB::Instance().LoadFromFile(directoryName, LBT_ANIMSURFACESFILENAME, errorBuf) )
+		{
+			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, errorBuf );
+			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, "LOBOT AnimationSurfaces load failed; visible equipment disabled for this run." );
+		}
+		else
+		{
+			SGP_THROW_IFFALSE(FilterDB::Instance().LoadFromFile(directoryName, LBT_FILTERSFILENAME, errorBuf), errorBuf);
+			SGP_THROW_IFFALSE(BodyTypeDB::Instance().LoadFromFile(directoryName, LBT_BODYTYPESFILENAME, errorBuf), errorBuf);
+		}
 	}
 	else
 	{
