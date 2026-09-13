@@ -27,6 +27,7 @@
 	#include "sgp_logger.h"
 #endif
 
+#include "strategicmap.h"
 #include "weapons.h"
 #include "overhead.h"
 #include "mousesystem.h"
