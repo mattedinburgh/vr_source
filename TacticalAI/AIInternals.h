@@ -206,6 +206,7 @@ void CalcTentacleAttack(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestStab );
 void CheckTossFlankFence(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow);
 void CheckTossOpponentFence(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow);
 void CheckTossAt(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow, INT32 sTargetSpot, INT8 bTargetLevel, UINT8 ubOpponentID);
+UINT8 AIRecentTossSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bTargetLevel);
 void CheckTossGrenadeSpecial(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow);
 void CheckTossGrenadeAt(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow, INT32 sTargetSpot, INT8 bTargetLevel, UINT8 ubGrenadeType);
 
