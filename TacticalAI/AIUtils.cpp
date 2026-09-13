@@ -5247,6 +5247,13 @@ UINT16 AIPerceivedFriendlyStrength(SOLDIERTYPE *pSoldier)
 		if (pFriend->flags.uiStatusFlags & SOLDIER_COWERING)
 			iReadiness = iReadiness * 50 / 100;
 
+		// A soldier breaking contact still has a weapon and can provide some rearward
+		// fire, but should not count like a fully committed rifleman in the force ratio.
+		if (AIEscapeActive(pFriend))
+			iReadiness = iReadiness * 35 / 100;
+		else if (AIDisengagementActive(pFriend))
+			iReadiness = iReadiness * 60 / 100;
+
 		// A conscious soldier still has some local value even when badly degraded,
 		// but never counts like a fresh rifleman merely because bLife >= OKLIFE.
 		uiStrength += (UINT32)__max(20, __min(100, iReadiness));
