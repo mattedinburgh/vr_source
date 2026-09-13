@@ -445,37 +445,6 @@ BOOLEAN AIResponderKnowsCasualty( SOLDIERTYPE *pResponder, SOLDIERTYPE *pPatient
 		iDistance <= DAY_VISION_RANGE / 2;
 }
 
-static BOOLEAN AIAvailableMedicForCasualty( SOLDIERTYPE *pRescuer, SOLDIERTYPE *pPatient )
-{
-	if ( !pRescuer || !pPatient )
-		return FALSE;
-
-	for ( UINT8 iCounter = gTacticalStatus.Team[pRescuer->bTeam].bFirstID;
-		iCounter <= gTacticalStatus.Team[pRescuer->bTeam].bLastID; ++iCounter )
-	{
-		SOLDIERTYPE *pMedic = MercPtrs[iCounter];
-		if ( pMedic == pPatient || !AIMedicalResponderReady( pMedic ) ||
-			pMedic->pathing.bLevel != pPatient->pathing.bLevel ||
-			!AICheckIsMedic( pMedic ) || FindObjClass( pMedic, IC_MEDKIT ) == NO_SLOT ||
-			(pMedic->flags.uiStatusFlags & SOLDIER_COWERING) )
-		{
-			continue;
-		}
-
-		if ( AIDisengagementActive( pMedic ) || AIEscapeActive( pMedic ) || AIShouldStartEscape( pMedic ) ||
-			AIPersonalRisk( pMedic ) > AIPersonalRiskTolerance( pMedic ) )
-			continue;
-
-		if ( AIResponderKnowsCasualty( pMedic, pPatient ) &&
-			PythSpacesAway( pMedic->sGridNo, pPatient->sGridNo ) <= DAY_VISION_RANGE / 2 )
-		{
-			return TRUE;
-		}
-	}
-
-	return FALSE;
-}
-
 // Physical casualty extraction.  Medics retain the existing direct-treatment logic;
 // this routine lets another squadmate pull an exposed casualty into cover so the medic
 // can stabilize them without the entire team making a suicidal rush into the fire lane.
@@ -554,14 +523,20 @@ INT8 DecideCombatCasualtyEvacuation( SOLDIERTYPE *pSoldier )
 		if ( pPatient->ubDraggedByID != NOBODY )
 		{
 			SOLDIERTYPE *pOther = MercPtrs[pPatient->ubDraggedByID];
-			if ( pOther && pOther->ubDraggedCasualtyID == pPatient->ubID )
+			if ( pOther && pOther->ubDraggedCasualtyID == pPatient->ubID &&
+				pOther->IsDraggingBleedoutCasualty() )
+			{
 				continue;
+			}
+
+			if ( pOther && pOther->ubDraggedCasualtyID == pPatient->ubID )
+				pOther->StopDraggingBleedoutCasualty();
 			pPatient->ubDraggedByID = NOBODY;
 		}
 
-		if ( !AIAvailableMedicForCasualty( pSoldier, pPatient ) )
-			continue;
-
+		// Extraction has independent value: active bleed-out is stabilized on
+		// pickup, while any exposed unconscious casualty benefits from being pulled
+		// into cover. Do not require a separate medic merely to authorize the move.
 		INT32 iDistanceToPatient = PythSpacesAway( pSoldier->sGridNo, pPatient->sGridNo );
 		BOOLEAN fSameElement = AISameFireteam( pSoldier, pPatient );
 		if ( !fSameElement && iDistanceToPatient > 3 )
@@ -904,9 +879,8 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 		iUrgency += __min((INT32)20, (INT32)pPatient->bBleeding / 2);
 
 		// Bleed-out timer is the decisive urgency signal for an incapacitated casualty.
-		// Non-medic extraction deliberately yields when fewer than four turns remain,
-		// so the medic must strongly prioritize those patients instead of treating the
-		// timer as equivalent to ordinary low-life bleeding.
+		// Extraction may stabilize an active bleed-out first, but a medic should still
+		// strongly prioritize any untreated critical patient who remains in this pool.
 		if (IsBleedoutCasualty(pPatient) && pPatient->ubBleedoutState == BLEEDOUT_ACTIVE)
 		{
 			if (pPatient->ubBleedoutTurns <= 2)
