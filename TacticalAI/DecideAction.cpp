@@ -3553,7 +3553,7 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 		AIPersonalRisk(pSoldier) > AIPersonalRiskTolerance(pSoldier) &&
 		(pSoldier->aiData.bUnderFire ||
 		 !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
-		 CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0))
+		 AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0))
 	{
 		INT32 sWithdrawalThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
 		if (!TileIsOutOfBounds(sWithdrawalThreat))
@@ -5330,7 +5330,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				AIPersonalRisk(pSoldier) > AIPersonalRiskTolerance(pSoldier) &&
 				(pSoldier->aiData.bUnderFire ||
 				 !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
-				 CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0) &&
+				 AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0) &&
 				!TileIsOutOfBounds(sClosestOpponent))
 			{
 				pSoldier->aiData.usActionData = FindRetreatSpot(pSoldier);
