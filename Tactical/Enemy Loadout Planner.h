@@ -255,6 +255,19 @@ void BuildEnemyLoadoutPlan(
 	INT8 bExpLevel,
 	BOOLEAN fNight);
 
+// JA2-only role-aware gun scoring/selection.  bWeaponClass is the game's
+// existing equipment tier (1..11).  This does not model or instruct real-world
+// weapon use; it only ranks existing in-game item IDs.
+INT32 ScoreEnemyGameGunForPlan(
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	INT8 bSoldierClass,
+	UINT16 usGunItem);
+
+UINT16 SelectBestEnemyGameGunForPlan(
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	INT8 bSoldierClass,
+	INT8 bWeaponClass);
+
 // Deterministic scoring helpers for the future role-aware item selectors.
 // Negative large scores mean "do not use"; no RNG is consumed.
 INT32 ScoreEnemyAttachmentForPlan(
