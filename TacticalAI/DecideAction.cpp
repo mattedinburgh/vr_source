@@ -9540,9 +9540,9 @@ INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 				{
 					return AI_ACTION_FLANK_LEFT;
 				}
-				pSoldier->aiData.usActionData = NOWHERE;
 				else
 				{
+					pSoldier->aiData.usActionData = NOWHERE;
 					// wait for next turn if turnbased
 					if (gfTurnBasedAI &&
 						pSoldier->bActionPoints < pSoldier->bInitialActionPoints)
@@ -9737,9 +9737,9 @@ INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 				{
 					return AI_ACTION_FLANK_RIGHT;
 				}
-				pSoldier->aiData.usActionData = NOWHERE;
 				else
 				{
+					pSoldier->aiData.usActionData = NOWHERE;
 					// wait for next turn if turnbased
 					if (gfTurnBasedAI &&
 						pSoldier->bActionPoints < pSoldier->bInitialActionPoints)
