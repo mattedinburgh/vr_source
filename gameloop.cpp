@@ -72,6 +72,7 @@ extern BOOLEAN gfTacticalPlacementGUIActive;
 extern BOOLEAN gfTacticalPlacementGUIDirty;
 extern BOOLEAN gfValidLocationsChanged;
 extern BOOLEAN	gfInMsgBox;
+extern CHAR8 gzErrorMsg[2048];
 extern BOOLEAN gfInChatBox; // OJW - 20090314 - new chatbox
 extern void InitSightRange(); //lal
 
@@ -250,6 +251,12 @@ void GameLoop(void)
 	POINT		MousePos;
 	UINT32		uiOldScreen=guiCurrentScreen;
 	clock_t		startTime = clock(); // decrease CPU load patch from defrog
+	static BOOLEAN fBlackBoxGlobalErrorReported = FALSE;
+
+	// Recorder v3 heartbeat: one very cheap lock-free update per loop. The
+	// watchdog can now detect a main-thread stall even while this function is
+	// blocked inside a screen handler, renderer, input path or asset load.
+	BlackBoxHeartbeat( guiCurrentScreen );
 
 	if(_LeftButtonDown | _RightButtonDown)//dnl ch77 191113 to prevent memory corruption during resize
 		ResizeWorldItems();
@@ -308,8 +315,18 @@ void GameLoop(void)
 	if ( gfGlobalError )
 	{
 		//DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"GameLoop: global error");
+		if( !fBlackBoxGlobalErrorReported )
+		{
+			BlackBoxEvent( "GLOBAL_ERROR", "screen=%u message=%s", guiCurrentScreen, gzErrorMsg );
+			BlackBoxCheckpoint( "GLOBAL_ERROR", "screen=%u message=%s", guiCurrentScreen, gzErrorMsg );
+			fBlackBoxGlobalErrorReported = TRUE;
+		}
 
 		guiCurrentScreen = ERROR_SCREEN;
+	}
+	else
+	{
+		fBlackBoxGlobalErrorReported = FALSE;
 	}
 
 /*
