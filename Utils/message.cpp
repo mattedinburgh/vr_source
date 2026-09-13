@@ -456,6 +456,8 @@ static UINT8 gubBattleLogInspectorOutcome = BATTLELOG_OUTCOME_NONE;
 static UINT8 gubBattleLogInspectorActualTargetID = NOBODY;
 static UINT8 gubBattleLogInspectorBlockReason = BATTLELOG_BLOCK_STRUCTURE;
 static INT16 gsBattleLogInspectorDamage = 0;
+static UINT32 guiBattleLogHoverSequence = 0;
+static UINT8 gubBattleLogHoverMode = BATTLELOG_INSPECTOR_NONE;
 
 static void BattleLogRebuildOverlay( void );
 static void BattleLogUpdateRegions( void );
@@ -478,6 +480,8 @@ static void BattleLogCheckSector( void )
 	gfBattleLogInspectorVisible = FALSE;
 	gubBattleLogInspectorMode = BATTLELOG_INSPECTOR_NONE;
 	guiBattleLogInspectorSequence = 0;
+	guiBattleLogHoverSequence = 0;
+	gubBattleLogHoverMode = BATTLELOG_INSPECTOR_NONE;
 	gubBattleLogInspectorOutcome = BATTLELOG_OUTCOME_NONE;
 	gubBattleLogInspectorActualTargetID = NOBODY;
 	gsBattleLogInspectorDamage = 0;
@@ -758,83 +762,128 @@ static void BattleLogInspectorCallback( MOUSE_REGION *pRegion, INT32 iReason )
 	}
 }
 
-static void BattleLogContentCallback( MOUSE_REGION *pRegion, INT32 iReason )
+static UINT8 BattleLogHitTestInfoToken( MOUSE_REGION *pRegion, UINT32 *pSequence )
 {
 	UINT32 endExclusive = 0;
 	UINT32 first = BattleLogFirstVisibleSequence( &endExclusive );
-	INT16 lineH = BattleLogLineHeight();
+	if ( pSequence ) *pSequence = 0;
+	if ( first == 0 )
+		return BATTLELOG_INSPECTOR_NONE;
 
+	INT16 lineH = BattleLogLineHeight();
+	INT16 row = (INT16)((pRegion->MouseYPos - (gsBattleLogY + BATTLE_LOG_HEADER_H + 2)) / __max(1, lineH));
+	if ( row < 0 )
+		return BATTLELOG_INSPECTOR_NONE;
+
+	UINT32 seq = first + row;
+	if ( seq >= endExclusive )
+		return BATTLELOG_INSPECTOR_NONE;
+
+	BATTLE_LOG_ENTRY *pEntry = BattleLogEntryBySequence( seq );
+	if ( pEntry == NULL )
+		return BATTLELOG_INSPECTOR_NONE;
+
+	INT16 sRelativeX = (INT16)(pRegion->MouseXPos - (gsBattleLogX + 6));
+	UINT8 ubMode = BATTLELOG_INSPECTOR_NONE;
+	if ( pEntry->fDamageClickable && sRelativeX >= pEntry->sDamageClickStart && sRelativeX <= pEntry->sDamageClickEnd )
+		ubMode = BATTLELOG_INSPECTOR_DAMAGE;
+	else if ( pEntry->fClickable && sRelativeX >= pEntry->sShotClickStart && sRelativeX <= pEntry->sShotClickEnd )
+		ubMode = BATTLELOG_INSPECTOR_SHOT;
+
+	if ( ubMode != BATTLELOG_INSPECTOR_NONE && pSequence )
+		*pSequence = seq;
+	return ubMode;
+}
+
+static void BattleLogShowHoverInspector( UINT32 seq, UINT8 ubRequestedMode )
+{
+	if ( seq == 0 || ubRequestedMode == BATTLELOG_INSPECTOR_NONE )
+	{
+		if ( gfBattleLogInspectorVisible )
+		{
+			gfBattleLogInspectorVisible = FALSE;
+			gubBattleLogInspectorMode = BATTLELOG_INSPECTOR_NONE;
+			guiBattleLogInspectorSequence = 0;
+			guiBattleLogHoverSequence = 0;
+			gubBattleLogHoverMode = BATTLELOG_INSPECTOR_NONE;
+			BattleLogUpdateRegions();
+			BattleLogRebuildOverlay();
+		}
+		return;
+	}
+
+	if ( gfBattleLogInspectorVisible &&
+		 guiBattleLogHoverSequence == seq &&
+		 gubBattleLogHoverMode == ubRequestedMode )
+	{
+		return;
+	}
+
+	BATTLE_LOG_ENTRY *pEntry = BattleLogEntryBySequence( seq );
+	if ( pEntry == NULL )
+		return;
+
+	if ( ubRequestedMode == BATTLELOG_INSPECTOR_DAMAGE )
+		gBattleLogInspectorDamageDiagnostic = pEntry->damage;
+	else
+		gBattleLogInspectorDiagnostic = pEntry->ncth;
+
+	gubBattleLogInspectorMode = ubRequestedMode;
+	gubBattleLogInspectorOutcome = pEntry->ubOutcome;
+	gubBattleLogInspectorActualTargetID = pEntry->ubActualTargetID;
+	gubBattleLogInspectorBlockReason = pEntry->ubBlockReason;
+	gsBattleLogInspectorDamage = pEntry->sDamage;
+	guiBattleLogInspectorSequence = seq;
+	guiBattleLogHoverSequence = seq;
+	gubBattleLogHoverMode = ubRequestedMode;
+	gfBattleLogInspectorVisible = TRUE;
+	BattleLogUpdateRegions();
+	BattleLogRebuildOverlay();
+}
+
+static void BattleLogContentMoveCallback( MOUSE_REGION *pRegion, INT32 iReason )
+{
+	if ( iReason & MSYS_CALLBACK_REASON_LOST_MOUSE )
+	{
+		BattleLogShowHoverInspector( 0, BATTLELOG_INSPECTOR_NONE );
+		return;
+	}
+
+	if ( !(iReason & (MSYS_CALLBACK_REASON_MOVE | MSYS_CALLBACK_REASON_GAIN_MOUSE)) )
+		return;
+
+	UINT32 seq = 0;
+	UINT8 ubMode = BattleLogHitTestInfoToken( pRegion, &seq );
+	BattleLogShowHoverInspector( seq, ubMode );
+}
+
+static void BattleLogContentCallback( MOUSE_REGION *pRegion, INT32 iReason )
+{
 	if ( iReason & MSYS_CALLBACK_REASON_WHEEL_UP )
 	{
 		UINT32 oldest = BattleLogOldestSequence();
 		UINT32 available = guiBattleLogSequence >= oldest ? guiBattleLogSequence - oldest + 1 : 0;
 		UINT32 maxOffset = available > 0 ? available - 1 : 0;
 		gusBattleLogScrollOffset = (UINT16)__min( maxOffset, (UINT32)gusBattleLogScrollOffset + 3 );
+		BattleLogShowHoverInspector( 0, BATTLELOG_INSPECTOR_NONE );
 		InvalidateRegion( gsBattleLogX, gsBattleLogY, gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH );
 		return;
 	}
 	if ( iReason & MSYS_CALLBACK_REASON_WHEEL_DOWN )
 	{
 		gusBattleLogScrollOffset = gusBattleLogScrollOffset > 3 ? gusBattleLogScrollOffset - 3 : 0;
+		BattleLogShowHoverInspector( 0, BATTLELOG_INSPECTOR_NONE );
 		InvalidateRegion( gsBattleLogX, gsBattleLogY, gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH );
 		return;
 	}
 	if ( iReason & MSYS_CALLBACK_REASON_RBUTTON_UP )
 	{
-		if ( gfBattleLogInspectorVisible )
-		{
-			gfBattleLogInspectorVisible = FALSE;
-			guiBattleLogInspectorSequence = 0;
-			BattleLogUpdateRegions();
-			BattleLogRebuildOverlay();
-		}
+		BattleLogShowHoverInspector( 0, BATTLELOG_INSPECTOR_NONE );
 		return;
 	}
-	if ( !(iReason & MSYS_CALLBACK_REASON_LBUTTON_UP) || first == 0 )
-		return;
 
-	INT16 row = (INT16)((pRegion->MouseYPos - (gsBattleLogY + BATTLE_LOG_HEADER_H + 2)) / __max(1, lineH));
-	if ( row < 0 )
-		return;
-
-	UINT32 seq = first + row;
-	if ( seq >= endExclusive )
-		return;
-
-	BATTLE_LOG_ENTRY *pEntry = BattleLogEntryBySequence( seq );
-	if ( pEntry )
-	{
-		INT16 sRelativeX = (INT16)(pRegion->MouseXPos - (gsBattleLogX + 6));
-		UINT8 ubRequestedMode = BATTLELOG_INSPECTOR_NONE;
-		if ( pEntry->fDamageClickable && sRelativeX >= pEntry->sDamageClickStart && sRelativeX <= pEntry->sDamageClickEnd )
-			ubRequestedMode = BATTLELOG_INSPECTOR_DAMAGE;
-		else if ( pEntry->fClickable && sRelativeX >= pEntry->sShotClickStart && sRelativeX <= pEntry->sShotClickEnd )
-			ubRequestedMode = BATTLELOG_INSPECTOR_SHOT;
-		if ( ubRequestedMode == BATTLELOG_INSPECTOR_NONE )
-			return;
-
-		if ( gfBattleLogInspectorVisible && guiBattleLogInspectorSequence == seq && gubBattleLogInspectorMode == ubRequestedMode )
-		{
-			gfBattleLogInspectorVisible = FALSE;
-			guiBattleLogInspectorSequence = 0;
-		}
-		else
-		{
-			if ( ubRequestedMode == BATTLELOG_INSPECTOR_DAMAGE )
-				gBattleLogInspectorDamageDiagnostic = pEntry->damage;
-			else
-				gBattleLogInspectorDiagnostic = pEntry->ncth;
-			gubBattleLogInspectorMode = ubRequestedMode;
-			gubBattleLogInspectorOutcome = pEntry->ubOutcome;
-			gubBattleLogInspectorActualTargetID = pEntry->ubActualTargetID;
-			gubBattleLogInspectorBlockReason = pEntry->ubBlockReason;
-			gsBattleLogInspectorDamage = pEntry->sDamage;
-			guiBattleLogInspectorSequence = seq;
-			gfBattleLogInspectorVisible = TRUE;
-		}
-		BattleLogUpdateRegions();
-		BattleLogRebuildOverlay();
-	}
+	// Information is hover-driven. Left clicks on battle-log rows intentionally
+	// do nothing, eliminating the old click/re-entrant mouse-dispatch crash path.
 }
 
 static void BattleLogUpdateRegions( void )
@@ -883,7 +932,7 @@ static void BattleLogCreateRegions( void )
 
 	MSYS_DefineRegion( &gBattleLogContentRegion, gsBattleLogX, gsBattleLogY + BATTLE_LOG_HEADER_H,
 		gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH - BATTLE_LOG_RESIZE_GRIP,
-		MSYS_PRIORITY_HIGH, CURSOR_NORMAL, MSYS_NO_CALLBACK, BattleLogContentCallback );
+		MSYS_PRIORITY_HIGH, CURSOR_NORMAL, BattleLogContentMoveCallback, BattleLogContentCallback );
 	MSYS_AddRegion( &gBattleLogContentRegion );
 
 	MSYS_DefineRegion( &gBattleLogHeaderRegion, gsBattleLogX, gsBattleLogY,
@@ -1000,7 +1049,7 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 	SetFontShadow( DEFAULT_SHADOW );
 	BattleLogPrintInspectorLine( gsBattleLogX + 6, gsBattleLogY + 4, FONT_MCOLOR_WHITE, L"BATTLE LOG" );
 	BattleLogPrintClippedLine( gsBattleLogX + 76, gsBattleLogY + 4, gsBattleLogW - 108,
-		FONT_MCOLOR_LTGRAY, L"drag | resize // | wheel | click shot | dblclick reset" );
+		FONT_MCOLOR_LTGRAY, L"drag | resize // | wheel | hover info | dblclick reset" );
 	BattleLogPrintInspectorLine( gsBattleLogX + gsBattleLogW - 26, gsBattleLogY + 4, FONT_MCOLOR_LTGRAY, L"::" );
 
 	UINT32 endExclusive = 0;
@@ -1339,6 +1388,8 @@ static void BattleLogDestroyUI( void )
 {
 	BattleLogRemoveRegions();
 	gfBattleLogMouseRefreshPending = FALSE;
+	guiBattleLogHoverSequence = 0;
+	gubBattleLogHoverMode = BATTLELOG_INSPECTOR_NONE;
 	if ( giBattleLogOverlay != -1 )
 	{
 		RemoveVideoOverlay( giBattleLogOverlay );
