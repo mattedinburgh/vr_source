@@ -15,6 +15,136 @@
 #ifdef JA2
 #endif
 
+#include "ExceptionHandling.h"
+#include <stdarg.h>
+
+// ---------------------------------------------------------------------------
+// Vengeance crash black box
+// ---------------------------------------------------------------------------
+// Independent of VFS/FileMan so it remains useful during startup/shutdown
+// and when those systems are involved in a crash.
+#define BLACKBOX_EVENT_SLOTS 256
+#define BLACKBOX_EVENT_CHARS 384
+#define BLACKBOX_CHECKPOINT_CHARS 768
+
+static HANDLE gBlackBoxFile = INVALID_HANDLE_VALUE;
+static CRITICAL_SECTION gBlackBoxLock;
+static BOOL gBlackBoxInitialized = FALSE;
+static LONG gBlackBoxEventSequence = 0;
+static CHAR8 gBlackBoxEvents[BLACKBOX_EVENT_SLOTS][BLACKBOX_EVENT_CHARS];
+static CHAR8 gBlackBoxCheckpoint[BLACKBOX_CHECKPOINT_CHARS] = "not initialized";
+
+static void BlackBoxFormatTime( CHAR8 *buffer, size_t bufferSize )
+{
+	SYSTEMTIME st;
+	GetLocalTime( &st );
+	_snprintf( buffer, bufferSize - 1, "%02u:%02u:%02u.%03u",
+		st.wHour, st.wMinute, st.wSecond, st.wMilliseconds );
+	buffer[ bufferSize - 1 ] = 0;
+}
+
+void BlackBoxInitialize( void )
+{
+	if( gBlackBoxInitialized )
+		return;
+
+	InitializeCriticalSection( &gBlackBoxLock );
+	gBlackBoxEventSequence = 0;
+	memset( gBlackBoxEvents, 0, sizeof( gBlackBoxEvents ) );
+	lstrcpynA( gBlackBoxCheckpoint, "initialized", BLACKBOX_CHECKPOINT_CHARS );
+
+	gBlackBoxFile = CreateFileA(
+		"BlackBox_LastRun.log",
+		GENERIC_WRITE,
+		FILE_SHARE_READ | FILE_SHARE_WRITE,
+		NULL,
+		CREATE_ALWAYS,
+		FILE_ATTRIBUTE_NORMAL,
+		NULL );
+
+	gBlackBoxInitialized = TRUE;
+	BlackBoxEvent( "ENGINE", "Black box initialized" );
+}
+
+void BlackBoxShutdown( void )
+{
+	if( !gBlackBoxInitialized )
+		return;
+
+	BlackBoxEvent( "ENGINE", "Clean shutdown" );
+
+	EnterCriticalSection( &gBlackBoxLock );
+	if( gBlackBoxFile != INVALID_HANDLE_VALUE )
+	{
+		FlushFileBuffers( gBlackBoxFile );
+		CloseHandle( gBlackBoxFile );
+		gBlackBoxFile = INVALID_HANDLE_VALUE;
+	}
+	LeaveCriticalSection( &gBlackBoxLock );
+
+	gBlackBoxInitialized = FALSE;
+	DeleteCriticalSection( &gBlackBoxLock );
+}
+
+void BlackBoxEvent( const char *category, const char *format, ... )
+{
+	CHAR8 timestamp[32];
+	CHAR8 message[256];
+	CHAR8 line[BLACKBOX_EVENT_CHARS];
+	DWORD bytesWritten = 0;
+	va_list args;
+	LONG slot;
+
+	if( !gBlackBoxInitialized )
+		return;
+
+	BlackBoxFormatTime( timestamp, sizeof( timestamp ) );
+
+	va_start( args, format );
+	_vsnprintf( message, sizeof( message ) - 1, format, args );
+	va_end( args );
+	message[ sizeof( message ) - 1 ] = 0;
+
+	_snprintf( line, sizeof( line ) - 1, "[%s] [%s] %s\r\n",
+		timestamp, category ? category : "?", message );
+	line[ sizeof( line ) - 1 ] = 0;
+
+	EnterCriticalSection( &gBlackBoxLock );
+	slot = gBlackBoxEventSequence % BLACKBOX_EVENT_SLOTS;
+	lstrcpynA( gBlackBoxEvents[slot], line, BLACKBOX_EVENT_CHARS );
+	++gBlackBoxEventSequence;
+
+	if( gBlackBoxFile != INVALID_HANDLE_VALUE )
+	{
+		WriteFile( gBlackBoxFile, line, (DWORD)strlen( line ), &bytesWritten, NULL );
+		FlushFileBuffers( gBlackBoxFile );
+	}
+	LeaveCriticalSection( &gBlackBoxLock );
+}
+
+void BlackBoxCheckpoint( const char *subsystem, const char *format, ... )
+{
+	CHAR8 message[640];
+	CHAR8 checkpoint[BLACKBOX_CHECKPOINT_CHARS];
+	va_list args;
+
+	if( !gBlackBoxInitialized )
+		return;
+
+	va_start( args, format );
+	_vsnprintf( message, sizeof( message ) - 1, format, args );
+	va_end( args );
+	message[ sizeof( message ) - 1 ] = 0;
+
+	_snprintf( checkpoint, sizeof( checkpoint ) - 1, "[%s] %s",
+		subsystem ? subsystem : "?", message );
+	checkpoint[ sizeof( checkpoint ) - 1 ] = 0;
+
+	EnterCriticalSection( &gBlackBoxLock );
+	lstrcpynA( gBlackBoxCheckpoint, checkpoint, BLACKBOX_CHECKPOINT_CHARS );
+	LeaveCriticalSection( &gBlackBoxLock );
+}
+
 //If we are to use exception handling
 #ifdef ENABLE_EXCEPTION_HANDLING
 
@@ -30,6 +160,7 @@ const int StackColumns = 8;		// Number of columns in stack dump.
 
 //ppp
 void		ErrorLog(HWFILE LogFile, STR8	Format, ...);
+static void BlackBoxDumpToCrashReport( HWFILE hFile );
 STR			GetExceptionString( DWORD uiExceptionCode );
 void		DisplayRegisters( HWFILE hFile, CONTEXT	*pContext );
 BOOLEAN GetAndDisplayModuleAndSystemInfo( HWFILE hFile, CONTEXT *pContext );
@@ -82,7 +213,7 @@ INT32 RecordExceptionInfo( EXCEPTION_POINTERS *pExceptInfo )
 	sprintf( zDate, "%02d_%02d_%d", SysTime.wDay, SysTime.wMonth, SysTime.wYear );
 
 	//create a time string
-	sprintf( zTime, "%02d_%02d", SysTime.wHour, SysTime.wMinute );
+	sprintf( zTime, "%02d_%02d_%02d", SysTime.wHour, SysTime.wMinute, SysTime.wSecond );
 
 	//create the crash file
 	sprintf( zFileName, "Crash Report_%s___%s.txt", zDate, zTime );
@@ -167,6 +298,12 @@ INT32 RecordExceptionInfo( EXCEPTION_POINTERS *pExceptInfo )
 	ErrorLog( hFile, zNewLine );
 	ErrorLog( hFile, zNewLine );
 
+	// Semantic state is written before stack walking because stack/symbol
+	// handling can itself fail on a badly corrupted process.
+	BlackBoxDumpToCrashReport( hFile );
+	ErrorLog( hFile, zNewLine );
+	ErrorLog( hFile, zNewLine );
+
 	//
 	// Display the current context information
 	//
@@ -195,6 +332,9 @@ INT32 RecordExceptionInfo( EXCEPTION_POINTERS *pExceptInfo )
 	//eee
 
 	FileClose( hFile );
+
+	// Generate the minidump that this source already knows how to write.
+	ERCrashDumpExceptionFilterEx( "Vengeance", ".", pExceptInfo );
 
 	return( EXCEPTION_EXECUTE_HANDLER );
 }
@@ -225,6 +365,31 @@ void ErrorLog( HWFILE hFile, STR8	Format, ...)
 	}
 
 }
+
+static void BlackBoxDumpToCrashReport( HWFILE hFile )
+{
+	LONG sequence;
+	LONG first;
+	LONG i;
+	LONG slot;
+
+	ErrorLog( hFile, "================ VENGEANCE BLACK BOX ================\r\n" );
+	ErrorLog( hFile, "Current checkpoint:\r\n  %s\r\n", gBlackBoxCheckpoint );
+	ErrorLog( hFile, "\r\nRecent durable events (oldest to newest):\r\n" );
+
+	// Never take gBlackBoxLock from the crash handler. If the fault happened
+	// while logging, taking it here could deadlock and destroy the evidence.
+	sequence = gBlackBoxEventSequence;
+	first = sequence > BLACKBOX_EVENT_SLOTS ? sequence - BLACKBOX_EVENT_SLOTS : 0;
+	for( i = first; i < sequence; ++i )
+	{
+		slot = i % BLACKBOX_EVENT_SLOTS;
+		if( gBlackBoxEvents[slot][0] )
+			ErrorLog( hFile, "%s", gBlackBoxEvents[slot] );
+	}
+	ErrorLog( hFile, "=======================================================\r\n" );
+}
+
 
 STR	GetExceptionString( DWORD uiExceptionCode )
 {
@@ -1080,7 +1245,7 @@ LONG __stdcall ERCrashDumpExceptionFilterEx(const CHAR *pAppName, const CHAR* pP
 		// <DumpPath>\<APP>-Crash-<PID>-<TID>-YYYYMMDD-HHMMSS.dmp
 		_snprintf_s(pszFilename, cbFilename, cbFilename, "%s-Crash-%ld-%ld-%04d%02d%02d-%02d%02d%02d", pAppName, GetCurrentProcessId(), GetCurrentThreadId(), stTime.wYear,stTime.wMonth,stTime.wDay,stTime.wHour, stTime.wMinute, stTime.wSecond);
 		lstrcat(szPathName, pszFilename);
-		lstrcpy(szPathName, ".dmp");
+		lstrcat(szPathName, ".dmp");
 
 		// Generate proper mini dump
 		ERGenerateMiniDump(szPathName, pExPtrs);
