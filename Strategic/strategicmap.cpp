@@ -3238,6 +3238,9 @@ BOOLEAN EnterSector( INT16 sSectorX, INT16 sSectorY , INT8 bSectorZ )
 
 
 	GetMapFileName( sSectorX, sSectorY, bSectorZ,  bFilename, TRUE, TRUE );
+	BOOLEAN fTraceB1Remaster = ( _stricmp( bFilename, "B1.dat" ) == 0 );
+	if ( fTraceB1Remaster )
+		TraceB1RemasterLoad( "ENTERSECTOR BEGIN", bFilename );
 
 	//Load the placeholder map if the real map doesn't exist.
 	if( !MapExists((UINT8 *) bFilename ) )
@@ -3264,8 +3267,12 @@ BOOLEAN EnterSector( INT16 sSectorX, INT16 sSectorY , INT8 bSectorZ )
 	//#endif
 	if( !LoadWorld(bFilename) )
 	{
+		if ( fTraceB1Remaster )
+			TraceB1RemasterLoad( "LOADWORLD FAILED", "" );
 		return( FALSE );
 	}
+	if ( fTraceB1Remaster )
+		TraceB1RemasterLoad( "LOADWORLD RETURNED", "" );
 
 	// underground?
 	if( bSectorZ )
@@ -3287,9 +3294,13 @@ BOOLEAN EnterSector( INT16 sSectorX, INT16 sSectorY , INT8 bSectorZ )
 		// Load the current sectors Information From the temporary files
 		if( !LoadCurrentSectorsInformationFromTempItemsFile() )
 		{ //The integrity of the temp files have been compromised.  Boot out of the game after warning message.
+			if ( fTraceB1Remaster )
+				TraceB1RemasterLoad( "TEMP RESTORE FAILED", "" );
 			InitExitGameDialogBecauseFileHackDetected();
 			return TRUE;
 		}
+		if ( fTraceB1Remaster )
+			TraceB1RemasterLoad( "TEMP RESTORE OK", "" );
 	}
 
 	RemoveLoadingScreenProgressBar();
@@ -3297,18 +3308,30 @@ BOOLEAN EnterSector( INT16 sSectorX, INT16 sSectorY , INT8 bSectorZ )
 
 	if( gfEnterTacticalPlacementGUI )
 	{
+		if ( fTraceB1Remaster )
+			TraceB1RemasterLoad( "PLACEMENT GUI BEGIN", "" );
 		SetPendingNewScreen(GAME_SCREEN);
 		InitTacticalPlacementGUI();
+		if ( fTraceB1Remaster )
+			TraceB1RemasterLoad( "PLACEMENT GUI OK", "" );
 	}
 	else
 	{
+		if ( fTraceB1Remaster )
+			TraceB1RemasterLoad( "PREPARE LOADED SECTOR BEGIN", "" );
 		PrepareLoadedSector();
+		if ( fTraceB1Remaster )
+			TraceB1RemasterLoad( "PREPARE LOADED SECTOR OK", "" );
 	}
 
 //	UnPauseGame( );
 
 	// This function will either hide or display the tree tops, depending on the game setting
+	if ( fTraceB1Remaster )
+		TraceB1RemasterLoad( "TREE STATE BEGIN", "" );
 	SetTreeTopStateForMap();
+	if ( fTraceB1Remaster )
+		TraceB1RemasterLoad( "TREE STATE OK", "" );
 
 	// Flugente: certain features need to alter an item's temperature value depending on the time passed
 	// if we do these functions here and adjust for the time passed since this sector was loaded last, it will seem to the player
@@ -3317,13 +3340,24 @@ BOOLEAN EnterSector( INT16 sSectorX, INT16 sSectorY , INT8 bSectorZ )
 	//SectorInventoryCooldownFunctions(sSectorX, sSectorY, bSectorZ);
 	//moved from SectorInventoryCooldownFunctions. Invisible items are handled as well.
 	//Since we have allready loaded the items previously we can use the globals here.
+	if ( fTraceB1Remaster )
+		TraceB1RemasterLoad( "COOLDOWN BEGIN", "" );
 	HandleSectorCooldownFunctions( sSectorX, sSectorY, (INT8)bSectorZ, gWorldItems, guiNumWorldItems, TRUE );
+	if ( fTraceB1Remaster )
+		TraceB1RemasterLoad( "COOLDOWN OK", "" );
 	//Update LastTimePlayerWasInSector
 	SetLastTimePlayerWasInSector();
 	
 	//Save to tempfile
+	if ( fTraceB1Remaster )
+		TraceB1RemasterLoad( "TEMP SAVE BEGIN", "" );
 	SaveWorldItemsToTempItemFile( sSectorX, sSectorY, (INT8)bSectorZ, guiNumWorldItems, gWorldItems );
+	if ( fTraceB1Remaster )
+		TraceB1RemasterLoad( "TEMP SAVE OK", "" );
 
+
+	if ( fTraceB1Remaster )
+		TraceB1RemasterLoad( "ENTERSECTOR COMPLETE", "" );
 
 	return TRUE; //because the map was loaded.
 }
