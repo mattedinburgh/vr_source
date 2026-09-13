@@ -2773,6 +2773,10 @@ void HandleAITacticalTraversal( SOLDIERTYPE * pSoldier )
 	UINT8 ubQuoteActionID = pSoldier->ubQuoteActionID;
 	BOOLEAN fEnemyRetreated = (pSoldier->bTeam == ENEMY_TEAM);
 
+	// Convert an active AI escape ticket into a completed sector escape before
+	// TacticalRemoveSoldier can free and later reuse this tactical soldier ID.
+	AIRegisterEnemyEscapeTraversal(pSoldier);
+
 	HandleNPCChangesForTacticalTraversal( pSoldier );
 
 	if ( pSoldier->ubProfile != NO_PROFILE && NPCHasUnusedRecordWithGivenApproach( pSoldier->ubProfile, APPROACH_DONE_TRAVERSAL ) )
