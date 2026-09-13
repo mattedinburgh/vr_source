@@ -7461,20 +7461,24 @@ UINT32 CalcChanceToHitGun(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 sAimTime, 
 			iChance += __min( 0, gbDiff[ DIFF_ENEMY_TO_HIT_MOD ][ SoldierDifficultyLevel( pSoldier ) ] );
 		}
 	}
+	// Human enemy/militia combatants receive no hidden class CtH percentages.
+	if (!AICombatTeam(pSoldier))
+	{
 	// SANDRO - Bonus CtH for Militia
-	if (pSoldier->ubSoldierClass == SOLDIER_CLASS_GREEN_MILITIA && gGameExternalOptions.sGreenMilitiaCtHBonusPercent != 0)
-		iChance += ((iChance * gGameExternalOptions.sGreenMilitiaCtHBonusPercent) /100);
-	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_REG_MILITIA && gGameExternalOptions.sRegularMilitiaCtHBonusPercent != 0)
-		iChance += ((iChance * gGameExternalOptions.sRegularMilitiaCtHBonusPercent) /100);
-	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA && gGameExternalOptions.sVeteranMilitiaCtHBonusPercent != 0)
-		iChance += ((iChance * gGameExternalOptions.sVeteranMilitiaCtHBonusPercent) /100);
-	// bonus for enemy
-	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ADMINISTRATOR && gGameExternalOptions.sEnemyAdminCtHBonusPercent != 0)
-		iChance += ((iChance * gGameExternalOptions.sEnemyAdminCtHBonusPercent) /100);
-	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ARMY && gGameExternalOptions.sEnemyRegularCtHBonusPercent != 0)
-		iChance += ((iChance * gGameExternalOptions.sEnemyRegularCtHBonusPercent) /100);
-	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE && gGameExternalOptions.sEnemyEliteCtHBonusPercent != 0)
-		iChance += ((iChance * gGameExternalOptions.sEnemyEliteCtHBonusPercent) /100);
+		if (pSoldier->ubSoldierClass == SOLDIER_CLASS_GREEN_MILITIA && gGameExternalOptions.sGreenMilitiaCtHBonusPercent != 0)
+			iChance += ((iChance * gGameExternalOptions.sGreenMilitiaCtHBonusPercent) /100);
+		else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_REG_MILITIA && gGameExternalOptions.sRegularMilitiaCtHBonusPercent != 0)
+			iChance += ((iChance * gGameExternalOptions.sRegularMilitiaCtHBonusPercent) /100);
+		else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA && gGameExternalOptions.sVeteranMilitiaCtHBonusPercent != 0)
+			iChance += ((iChance * gGameExternalOptions.sVeteranMilitiaCtHBonusPercent) /100);
+		// bonus for enemy
+		else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ADMINISTRATOR && gGameExternalOptions.sEnemyAdminCtHBonusPercent != 0)
+			iChance += ((iChance * gGameExternalOptions.sEnemyAdminCtHBonusPercent) /100);
+		else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ARMY && gGameExternalOptions.sEnemyRegularCtHBonusPercent != 0)
+			iChance += ((iChance * gGameExternalOptions.sEnemyRegularCtHBonusPercent) /100);
+		else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE && gGameExternalOptions.sEnemyEliteCtHBonusPercent != 0)
+			iChance += ((iChance * gGameExternalOptions.sEnemyEliteCtHBonusPercent) /100);
+			}
 	// SANDRO - option to make special NPCs stronger - chance to hit
 	if (gGameExternalOptions.usSpecialNPCStronger > 0)
 	{
@@ -9453,8 +9457,9 @@ UINT32 CalcChanceHTH( SOLDIERTYPE * pAttacker,SOLDIERTYPE *pDefender, INT16 ubAi
 		}
 	}
 
-	if (! (pAttacker->flags.uiStatusFlags & SOLDIER_PC) )   // if attacker is a computer AI controlled enemy
+	if (!(pAttacker->flags.uiStatusFlags & SOLDIER_PC) && !AICombatTeam(pAttacker))
 	{
+		// Human combat AI difficulty comes from decisions/equipment, not invisible melee accuracy.
 		iAttRating += gbDiff[ DIFF_ENEMY_TO_HIT_MOD ][ SoldierDifficultyLevel( pAttacker ) ];
 	}
 
