@@ -99,6 +99,11 @@ enum //strategic values for each sector
 #define SF_ASSIGN_NOTICED_ENEMIES_KNOW_NUMBER		0x00004000		// Flugente: info from assigment: enemies were found, and we know their number
 #define SF_ASSIGN_NOTICED_ENEMIES_KNOW_DIRECTION	0x00008000		// Flugente: info from assigment: enemies were found, and we know the direction they are moving in
 
+// Vengeance pursuit state: enemies that have already escaped one tactical sector
+// may not perform another strategic map-edge escape until that force is defeated.
+// Stored in SECTORINFO so the rule survives save/load.
+#define SF_ENEMY_RETREAT_LOCKED						0x00010000
+
 #define SF_SMOKE_EFFECTS_TEMP_FILE_EXISTS			0x00100000		//Temp File starts with sm_
 #define SF_LIGHTING_EFFECTS_TEMP_FILE_EXISTS		0x00200000		//Temp File starts with l_
 #define SF_REVEALED_STATUS_TEMP_FILE_EXISTS			0x01000000		//Temp File starts with v_
