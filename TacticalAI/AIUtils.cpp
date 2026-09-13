@@ -5329,26 +5329,41 @@ UINT16 AIPerceivedFriendlyStrength(SOLDIERTYPE *pSoldier)
 
 	UINT32 uiStrength = 0;
 
-	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
-		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
-		if (!pFriend ||
-			!pFriend->bActive ||
-			!pFriend->bInSector ||
-			pFriend->stats.bLife < OKLIFE ||
-			pFriend->bCollapsed ||
-			pFriend->bBreathCollapsed ||
-			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
-			!AIResponderKnowsCasualty(pSoldier, pFriend) ||
-			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > TACTICAL_RANGE)
+		if (!pFriend || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW))
 		{
 			continue;
 		}
 
+		BOOLEAN fSameTeam = (pFriend->bTeam == pSoldier->bTeam);
+		BOOLEAN fVisiblePlayerSupport =
+			pSoldier->bTeam == MILITIA_TEAM && pFriend->bTeam == OUR_TEAM;
+		if (!fSameTeam && !fVisiblePlayerSupport)
+			continue;
+
+		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
+		if (iDistance > TACTICAL_RANGE)
+			continue;
+
+		if (fSameTeam)
+		{
+			if (!AIResponderKnowsCasualty(pSoldier, pFriend))
+				continue;
+		}
+		else
+		{
+			// Player mercs contribute to militia force-ratio judgment only when their
+			// presence is directly observable. They do not donate opponent knowledge.
+			if (iDistance > 1 && LOS_Raised(pSoldier, pFriend, CALC_FROM_ALL_DIRS) <= 0)
+				continue;
+		}
+
 		// Preserve the existing scale (100 = one fresh combatant), but assess actual
 		// current combat power rather than treating every conscious body as identical.
-		// Friendly wounds, fatigue and suppression are legitimate team information.
 		INT32 iReadiness = 100;
 
 		if (pFriend->stats.bLifeMax > 0)
@@ -5376,15 +5391,16 @@ UINT16 AIPerceivedFriendlyStrength(SOLDIERTYPE *pSoldier)
 		if (pFriend->flags.uiStatusFlags & SOLDIER_COWERING)
 			iReadiness = iReadiness * 50 / 100;
 
-		// A soldier breaking contact still has a weapon and can provide some rearward
-		// fire, but should not count like a fully committed rifleman in the force ratio.
-		if (AIEscapeActive(pFriend))
-			iReadiness = iReadiness * 35 / 100;
-		else if (AIDisengagementActive(pFriend))
-			iReadiness = iReadiness * 60 / 100;
+		// AI combatants already have explicit withdrawal state. Player mercs simply
+		// contribute their visible current readiness; they are never put into AI escape state.
+		if (fSameTeam)
+		{
+			if (AIEscapeActive(pFriend))
+				iReadiness = iReadiness * 35 / 100;
+			else if (AIDisengagementActive(pFriend))
+				iReadiness = iReadiness * 60 / 100;
+		}
 
-		// A conscious soldier still has some local value even when badly degraded,
-		// but never counts like a fresh rifleman merely because bLife >= OKLIFE.
 		uiStrength += (UINT32)__max(20, __min(100, iReadiness));
 	}
 
