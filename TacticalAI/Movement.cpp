@@ -706,8 +706,13 @@ INT32 InternalGoAsFarAsPossibleTowards(SOLDIERTYPE *pSoldier, INT32 sDesGrid, IN
 				}
 				else
 				{
+					BOOLEAN fWindowTraversal =
+						sSwitchValue == TRAVELCOST_JUMPABLEWINDOW ||
+						sSwitchValue == TRAVELCOST_JUMPABLEWINDOW_N ||
+						sSwitchValue == TRAVELCOST_JUMPABLEWINDOW_W;
 					UINT8 ubTerrainID = gpWorldLevelData[sTempDest].ubTerrainID;
-					if (pSoldier->usUIMovementMode == RUNNING && TERRAIN_IS_WATER(ubTerrainID) && pSoldier->pathing.bLevel == 0)
+					if (fWindowTraversal ||
+						(pSoldier->usUIMovementMode == RUNNING && TERRAIN_IS_WATER(ubTerrainID) && pSoldier->pathing.bLevel == 0))
 						usEstimatePrevMovementMode = WALKING;
 					else
 						usEstimatePrevMovementMode = pSoldier->usUIMovementMode;
