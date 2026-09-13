@@ -9359,10 +9359,10 @@ UINT32 CountSuspicionValue( SOLDIERTYPE *pSoldier )
 			{
 				uiValue++;
 			}
-			// bonus if bleeding
+			// Bleeding raises suspicion at range; severe bleeding is more noticeable and can expose at close range.
 			if ( pSoldier->bBleeding > 0 )
 			{
-				uiValue++;
+				uiValue += (pSoldier->bBleeding > MIN_BLEEDING_THRESHOLD) ? 2 : 1;
 			}
 			// bonus for soldier state
 			if ( MercUnderTheInfluence( pSoldier ) ||
