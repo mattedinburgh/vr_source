@@ -102,7 +102,7 @@ function Get-UpstreamLobotPathMap {
         }
 
         $sha = $dirSha[$dirKey]
-        $tree = Invoke-RestMethod -UseBasicParsing -Headers $headers -Uri "$UpstreamApi/git/trees/$sha?recursive=1"
+        $tree = Invoke-RestMethod -UseBasicParsing -Headers $headers -Uri "$UpstreamApi/git/trees/$($sha)?recursive=1"
         if ($tree.truncated) {
             throw "GitHub returned a truncated LOBOT tree for $bodyDir; refusing an incomplete deployment."
         }
