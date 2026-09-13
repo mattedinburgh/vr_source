@@ -2758,6 +2758,22 @@ BOOLEAN BulletHitMerc( BULLET * pBullet, STRUCTURE * pStructure, BOOLEAN fIntend
 			pTarget->bNumPelletsHitBy++;
 		}
 
+		// Keep successful rounds in the same diagnostic stream as misses. This is
+		// important for balancing NCTH: the player can compare two otherwise
+		// similar shots and see which physical trajectory components changed.
+		// Buckshot is collapsed to the first pellet hit so one trigger pull does
+		// not flood the battle log with near-identical entries.
+		if ( UsingNewCTHSystem() && pBullet->ubFirerID != NOBODY &&
+			 pFirer->bTeam == gbPlayerNum && !(pBullet->fFragment) )
+		{
+			BOOLEAN fLogHit = TRUE;
+			if ( pBullet->usFlags & BULLET_FLAG_BUCKSHOT )
+				fLogHit = (pTarget->bNumPelletsHitBy == 1);
+
+			if ( fLogHit )
+				BattleLogAddNCTHHit( pBullet->iBullet, pTarget->ubID, (INT16)iDamage );
+		}
+
 		//////////////////////////////////////////////////////////////////////////////////////////////
 		// HEADROCK HAM 4: Experience Gain
 		//
