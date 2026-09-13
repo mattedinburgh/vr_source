@@ -19728,7 +19728,10 @@ BOOLEAN SOLDIERTYPE::LastTargetCollapsed(void)
 		return FALSE;
 	}
 
-	// now check target state
+	// Do not read live collapse state through a stale last-target tile.
+	if (this->aiData.bOppList[ubTarget] != SEEN_CURRENTLY)
+		return FALSE;
+
 	if (MercPtrs[ubTarget]->stats.bLife < OKLIFE ||
 		MercPtrs[ubTarget]->IsUnconscious())
 	{
@@ -19760,7 +19763,10 @@ BOOLEAN SOLDIERTYPE::LastTargetSuppressed(void)
 		return FALSE;
 	}
 
-	// now check target state
+	// Cowering is observable only while the target is personally seen now.
+	if (this->aiData.bOppList[ubTarget] != SEEN_CURRENTLY)
+		return FALSE;
+
 	if (MercPtrs[ubTarget]->IsCowering())
 	{
 		return TRUE;
