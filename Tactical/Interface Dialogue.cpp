@@ -3219,51 +3219,88 @@ void HandleNPCDoAction( UINT8 ubTargetNPC, UINT16 usActionCode, UINT8 ubQuoteNum
 				break;
 
 			case NPC_ACTION_DARREN_PAYS_PLAYER:
-				// should change to split up cash
-				pSoldier = FindSoldierByProfileID( ubTargetNPC, FALSE );
-
-				if ( pSoldier )
 				{
-					INT32		sNearestPC;
-					UINT8		ubID;
-					INT8		bMoneySlot;
-					INT8		bEmptySlot;
+					// The original payout path depended on Darren having both a money stack
+					// and a spare inventory slot.  If either condition failed, the player
+					// silently received nothing.  Pay the recorded wager robustly instead:
+					// place it on a player merc, or drop it visibly at that merc's feet if
+					// the inventory is full.
+					const INT32 iBet = gMercProfiles[ ubTargetNPC ].iBalance;
 
-					sNearestPC = ClosestPC( pSoldier, NULL );
-					
-					if (!TileIsOutOfBounds(sNearestPC))
+					if ( iBet <= 0 )
 					{
-						ubID = WhoIsThere2( sNearestPC, 0 );
-						if (ubID != NOBODY)
-						{
-							pSoldier2 = MercPtrs[ ubID ];
-						}
+						break;
 					}
 
-					if (pSoldier2)
-					{
-						bMoneySlot = FindObjClass( pSoldier, IC_MONEY );
-						bEmptySlot = FindObj( pSoldier, NOTHING );
+					const UINT32 uiPayout = (UINT32)iBet * 2;
+					pSoldier = FindSoldierByProfileID( ubTargetNPC, FALSE );
 
-						// have to separate out money from Darren's stash equal to the amount of the bet
-						// times 2 (returning the player's money, after all!)
-						if (bMoneySlot != NO_SLOT && bEmptySlot != NO_SLOT)
+					// Prefer the closest PC, preserving the original behaviour.
+					if ( pSoldier )
+					{
+						const INT32 sNearestPC = ClosestPC( pSoldier, NULL );
+
+						if ( !TileIsOutOfBounds( sNearestPC ) )
 						{
-							CreateMoney( gMercProfiles[ ubTargetNPC ].iBalance * 2, &(pSoldier->inv[ bEmptySlot ] ) );
-							pSoldier->inv[ bMoneySlot ][0]->data.money.uiMoneyAmount -= gMercProfiles[ ubTargetNPC ].iBalance * 2;
-							if (bMoneySlot < bEmptySlot)
+							const UINT8 ubID = WhoIsThere2( sNearestPC, 0 );
+							if ( ubID != NOBODY )
 							{
-								// move main stash to later in inventory!
-								SwapObjs( pSoldier, bEmptySlot, bMoneySlot, TRUE );
-								SoldierGiveItem( pSoldier, pSoldier2, &(pSoldier->inv[ bMoneySlot ] ), bMoneySlot );
-							}
-							else
-							{
-								SoldierGiveItem( pSoldier, pSoldier2, &(pSoldier->inv[ bEmptySlot ] ), bEmptySlot );
+								pSoldier2 = MercPtrs[ ubID ];
+								if ( !pSoldier2 || pSoldier2->bTeam != gbPlayerNum )
+								{
+									pSoldier2 = NULL;
+								}
 							}
 						}
 					}
 
+					// Fallback: any living player merc in the loaded sector is a valid
+					// recipient.  This prevents map/level lookup edge cases from eating
+					// the payout.
+					if ( !pSoldier2 )
+					{
+						for ( UINT8 ubLoop = gTacticalStatus.Team[ gbPlayerNum ].bFirstID;
+							  ubLoop <= gTacticalStatus.Team[ gbPlayerNum ].bLastID;
+							  ++ubLoop )
+						{
+							SOLDIERTYPE *pCandidate = MercPtrs[ ubLoop ];
+							if ( pCandidate && pCandidate->bActive && pCandidate->bInSector && pCandidate->stats.bLife > 0 )
+							{
+								pSoldier2 = pCandidate;
+								break;
+							}
+						}
+					}
+
+					if ( pSoldier2 )
+					{
+						CreateMoney( uiPayout, &gTempObject );
+
+						if ( AutoPlaceObjectAnywhere( pSoldier2, &gTempObject, TRUE ) )
+						{
+							// Keep Darren's physical cash roughly consistent when possible,
+							// but never make payment contingent on his inventory layout.
+							if ( pSoldier )
+							{
+								const INT8 bMoneySlot = FindObjClass( pSoldier, IC_MONEY );
+								if ( bMoneySlot != NO_SLOT )
+								{
+									UINT32 &uiDarrenCash = pSoldier->inv[ bMoneySlot ][0]->data.money.uiMoneyAmount;
+									if ( uiDarrenCash > uiPayout )
+									{
+										uiDarrenCash -= uiPayout;
+									}
+									else
+									{
+										DeleteObj( &(pSoldier->inv[ bMoneySlot ]) );
+									}
+								}
+							}
+
+							// Mark the recorded wager settled so a repeated dialogue/action
+							// cannot duplicate the reward.
+							gMercProfiles[ ubTargetNPC ].iBalance = 0;
+						}
 				}
 
 				break;
