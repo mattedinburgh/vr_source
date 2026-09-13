@@ -5760,6 +5760,7 @@ static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituati
 }
 
 static UINT8 gubAIDisengageTurns[MAX_NUM_SOLDIERS] = { 0 };
+static UINT8 gubAIForcedDisengageTurns[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIDisengageTurnStamp[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIDisengageIdentity[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIDisengageStartTurn[MAX_NUM_SOLDIERS] = { 0 };
@@ -5777,6 +5778,7 @@ static void AIMaintainDisengagementTimeline(void)
 		for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
 		{
 			gubAIDisengageTurns[i] = 0;
+			gubAIForcedDisengageTurns[i] = 0;
 			guiAIDisengageTurnStamp[i] = 0;
 			guiAIDisengageIdentity[i] = 0;
 			guiAIDisengageStartTurn[i] = 0;
@@ -5818,6 +5820,7 @@ void AIForceDisengagementState(SOLDIERTYPE *pSoldier, UINT8 ubTurns)
 		guiAIDisengageStartTurn[ubID] = uiTurnStamp;
 
 	gubAIDisengageTurns[ubID] = __max(gubAIDisengageTurns[ubID], __max((UINT8)1, ubTurns));
+	gubAIForcedDisengageTurns[ubID] = __max(gubAIForcedDisengageTurns[ubID], __max((UINT8)1, ubTurns));
 	AIResetRecoveryStreak(pSoldier);
 }
 
@@ -5832,6 +5835,7 @@ void AIClearDisengagementState(SOLDIERTYPE *pSoldier)
 	if (guiAIDisengageIdentity[ubID] == pSoldier->uiUniqueSoldierIdValue)
 	{
 		gubAIDisengageTurns[ubID] = 0;
+		gubAIForcedDisengageTurns[ubID] = 0;
 		guiAIDisengageTurnStamp[ubID] = 0;
 		guiAIDisengageStartTurn[ubID] = 0;
 	}
@@ -6030,6 +6034,7 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 	if (guiAIDisengageIdentity[ubID] != pSoldier->uiUniqueSoldierIdValue)
 	{
 		gubAIDisengageTurns[ubID] = 0;
+		gubAIForcedDisengageTurns[ubID] = 0;
 		guiAIDisengageTurnStamp[ubID] = 0;
 		guiAIDisengageIdentity[ubID] = pSoldier->uiUniqueSoldierIdValue;
 		guiAIDisengageStartTurn[ubID] = 0;
@@ -6040,6 +6045,7 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 		pSoldier->IsZombie() || pSoldier->aiData.bAlertStatus < STATUS_RED)
 	{
 		gubAIDisengageTurns[ubID] = 0;
+		gubAIForcedDisengageTurns[ubID] = 0;
 		guiAIDisengageStartTurn[ubID] = 0;
 		AIClearEscapeState(pSoldier);
 		return FALSE;
@@ -6059,6 +6065,7 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 	if (pSoldier->aiData.bOrders == STATIONARY)
 	{
 		gubAIDisengageTurns[ubID] = 0;
+		gubAIForcedDisengageTurns[ubID] = 0;
 		guiAIDisengageStartTurn[ubID] = 0;
 		return FALSE;
 	}
@@ -6075,9 +6082,11 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 			if (gubAIDisengageTurns[ubID] == 0)
 				guiAIDisengageStartTurn[ubID] = 0;
 		}
+		if (gubAIForcedDisengageTurns[ubID] > 0)
+			--gubAIForcedDisengageTurns[ubID];
 	}
 
-	if (gubAIDisengageTurns[ubID] > 0)
+	if (gubAIDisengageTurns[ubID] > 0 && gubAIForcedDisengageTurns[ubID] == 0)
 	{
 		UINT8 ubRecoveryStreak = AIUpdateRecoveryStreak(pSoldier, bSituation,
 			ubRoutPressure, fLastSurvivor);
