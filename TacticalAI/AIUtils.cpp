@@ -6358,7 +6358,7 @@ static INT8 AIProfessionalismModifier(SOLDIERTYPE *pSoldier)
 // initiative and coordination the soldier's formation plausibly possesses.
 UINT8 AIGetDoctrineProfile(SOLDIERTYPE *pSoldier)
 {
-	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+	if (!AICombatTeam(pSoldier))
 		return AI_DOCTRINE_LINE;
 
 	switch (pSoldier->ubSoldierClass)
@@ -6366,30 +6366,37 @@ UINT8 AIGetDoctrineProfile(SOLDIERTYPE *pSoldier)
 	case SOLDIER_CLASS_ADMINISTRATOR:
 		return AI_DOCTRINE_SECURITY;
 
-	case SOLDIER_CLASS_ELITE:
-		// Elite troops on static/guard orders behave like palace/base guards:
-		// tactically capable, but less willing to abandon the mission.
+	case SOLDIER_CLASS_GREEN_MILITIA:
+		// Green militia use the same tactical rules as line infantry, but complex
+		// manoeuvres require nearby experienced militia/local command support.
+		return AI_DOCTRINE_LINE;
+
+	case SOLDIER_CLASS_REG_MILITIA:
+		// Regular militia are experienced local defenders and may coordinate
+		// independently rather than being artificially restricted to a simpler AI.
+		return AI_DOCTRINE_VETERAN;
+
+	case SOLDIER_CLASS_ELITE_MILITIA:
 		if (pSoldier->aiData.bOrders == STATIONARY ||
 			pSoldier->aiData.bOrders == ONGUARD ||
 			pSoldier->aiData.bOrders == SNIPER)
-		{
 			return AI_DOCTRINE_ELITE_GUARD;
-		}
+		return AI_DOCTRINE_ELITE_MOBILE;
+
+	case SOLDIER_CLASS_ELITE:
+		if (pSoldier->aiData.bOrders == STATIONARY ||
+			pSoldier->aiData.bOrders == ONGUARD ||
+			pSoldier->aiData.bOrders == SNIPER)
+			return AI_DOCTRINE_ELITE_GUARD;
 		return AI_DOCTRINE_ELITE_MOBILE;
 
 	case SOLDIER_CLASS_ARMY:
-		// Regular attitudes are often randomized at creation, so CUNNING alone must
-		// not magically create a veteran. Actual experience is the primary signal;
-		// a cunning level-5 regular is treated as an experienced NCO-like soldier,
-		// while level-6+ regulars have enough field competence to act independently.
 		if (AICheckIsCommander(pSoldier) || AICheckIsOfficer(pSoldier) ||
 			pSoldier->stats.bExpLevel >= 6 ||
 			(pSoldier->stats.bExpLevel >= 5 &&
 			 (pSoldier->aiData.bAttitude == CUNNINGAID ||
 			  pSoldier->aiData.bAttitude == CUNNINGSOLO)))
-		{
 			return AI_DOCTRINE_VETERAN;
-		}
 		return AI_DOCTRINE_LINE;
 
 	default:
@@ -6401,9 +6408,7 @@ BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier)
 {
 	if (!pSoldier)
 		return FALSE;
-
-	// Doctrine restrictions are for Deidranna's army only. Preserve militia behaviour.
-	if (pSoldier->bTeam != ENEMY_TEAM)
+	if (!AICombatTeam(pSoldier))
 		return TRUE;
 
 	if (AICheckIsCommander(pSoldier) || AICheckIsOfficer(pSoldier))
@@ -6420,11 +6425,17 @@ BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier)
 			pLeader->pathing.bLevel != pSoldier->pathing.bLevel ||
 			PythSpacesAway(pSoldier->sGridNo, pLeader->sGridNo) > TACTICAL_RANGE / 2 ||
 			AIDisengagementActive(pLeader) || AIEscapeActive(pLeader))
-		{
 			continue;
-		}
 
 		if (AICheckIsCommander(pLeader) || AICheckIsOfficer(pLeader))
+			return TRUE;
+
+		// Militia do not always carry formal officer roles. A nearby regular or elite
+		// militia soldier provides the local experience a green element needs to use
+		// the same coordinated manoeuvre logic as a commanded army fireteam.
+		if (pSoldier->bTeam == MILITIA_TEAM &&
+			(pLeader->ubSoldierClass == SOLDIER_CLASS_REG_MILITIA ||
+			 pLeader->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA))
 			return TRUE;
 	}
 
@@ -6433,59 +6444,38 @@ BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier)
 
 BOOLEAN AIAllowsComplexManeuver(SOLDIERTYPE *pSoldier)
 {
-	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
-		return TRUE;
-
+	if (!AICombatTeam(pSoldier)) return TRUE;
 	switch (AIGetDoctrineProfile(pSoldier))
 	{
-	case AI_DOCTRINE_SECURITY:
-		return FALSE;
-	case AI_DOCTRINE_LINE:
-		return AIHasLocalCommandSupport(pSoldier);
-	default:
-		return TRUE;
+	case AI_DOCTRINE_SECURITY: return FALSE;
+	case AI_DOCTRINE_LINE: return AIHasLocalCommandSupport(pSoldier);
+	default: return TRUE;
 	}
 }
 
 BOOLEAN AIAllowsIndependentFlank(SOLDIERTYPE *pSoldier)
 {
-	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
-		return TRUE;
-
+	if (!AICombatTeam(pSoldier)) return TRUE;
 	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
-	if (ubDoctrine == AI_DOCTRINE_SECURITY)
-		return FALSE;
-	if (ubDoctrine == AI_DOCTRINE_LINE)
-		return AIHasLocalCommandSupport(pSoldier);
-
+	if (ubDoctrine == AI_DOCTRINE_SECURITY) return FALSE;
+	if (ubDoctrine == AI_DOCTRINE_LINE) return AIHasLocalCommandSupport(pSoldier);
 	return TRUE;
 }
 
 BOOLEAN AIAllowsProactiveSupport(SOLDIERTYPE *pSoldier)
 {
-	if (!pSoldier)
-		return FALSE;
-
-	// A soldier who is already breaking contact may still return fire, but should
-	// not spend the turn preparing a new offensive support task.
-	if (AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier))
-		return FALSE;
-
-	if (pSoldier->bTeam != ENEMY_TEAM)
-		return TRUE;
-
+	if (!pSoldier) return FALSE;
+	if (AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier)) return FALSE;
+	if (!AICombatTeam(pSoldier)) return TRUE;
 	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
-	if (ubDoctrine == AI_DOCTRINE_SECURITY)
-		return FALSE;
-	if (ubDoctrine == AI_DOCTRINE_LINE)
-		return AIHasLocalCommandSupport(pSoldier);
-
+	if (ubDoctrine == AI_DOCTRINE_SECURITY) return FALSE;
+	if (ubDoctrine == AI_DOCTRINE_LINE) return AIHasLocalCommandSupport(pSoldier);
 	return TRUE;
 }
 
 UINT8 AIDoctrineResponseLimit(SOLDIERTYPE *pSoldier)
 {
-	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+	if (!AICombatTeam(pSoldier))
 		return 4;
 
 	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
@@ -6514,7 +6504,7 @@ UINT8 AIDoctrineResponseLimit(SOLDIERTYPE *pSoldier)
 
 INT8 AIDoctrineAnchorModifier(SOLDIERTYPE *pSoldier)
 {
-	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+	if (!AICombatTeam(pSoldier))
 		return 0;
 
 	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
@@ -6776,7 +6766,7 @@ INT32 AICrossfirePositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT3
 
 	// Crossfire geometry is an advanced coordination task. Ordinary line troops only
 	// receive it while local command is intact; security troops do not improvise it.
-	if (pSoldier->bTeam == ENEMY_TEAM && !AIAllowsComplexManeuver(pSoldier))
+	if (AICombatTeam(pSoldier) && !AIAllowsComplexManeuver(pSoldier))
 		return 0;
 
 	UINT8 ubCandidateDir = AIDirection(sTargetSpot, sCandidateSpot);
@@ -6910,7 +6900,7 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 
 	// Lower-quality formations can still make sensible covered advances, but do not
 	// independently solve exposed manoeuvre problems like a professional fireteam.
-	if (pSoldier->bTeam == ENEMY_TEAM && !fComplexDoctrine && iAdvanceDist + 2 < iCurrentDist)
+	if (AICombatTeam(pSoldier) && !fComplexDoctrine && iAdvanceDist + 2 < iCurrentDist)
 	{
 		if (ubDoctrine == AI_DOCTRINE_SECURITY &&
 			(!fAdvanceCover || usAdvanceExposure > usCurrentExposure + 25))
@@ -7141,7 +7131,7 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 
 	// Unsupported improvisation belongs to experienced/mobile troops. Security and
 	// uncommanded line infantry hold or seek another covered route instead.
-	if (pSoldier->bTeam == ENEMY_TEAM && !fComplexDoctrine)
+	if (AICombatTeam(pSoldier) && !fComplexDoctrine)
 		return FALSE;
 
 	// A very bold soldier may make a modest unsupported dash, but not while
