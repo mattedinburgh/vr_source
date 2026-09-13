@@ -59,6 +59,13 @@ BOOLEAN			gfCaves = FALSE;
 UINT32										guiEnvWeather	= 0;
 UINT32										guiRainLoop	= NO_SAMPLE;
 
+// Advanced weather state is deliberately dormant unless ENABLE_ADVANCED_WEATHER is TRUE.
+// The 256-entry array mirrors the strategic surface-sector grid.
+ADVANCED_WEATHER_STATE gAdvancedWeatherState[ ADVANCED_WEATHER_SECTOR_COUNT ];
+static BOOLEAN gfAdvancedWeatherInitialized = FALSE;
+static UINT32 guiLastAdvancedWeatherUpdate = 0xFFFFFFFF;
+static UINT8 gubLastAdvancedWeatherSector = 255;
+
 
 // frame cues for lightning
 UINT8 ubLightningTable[3][10][2]=
@@ -167,6 +174,343 @@ UINT8		gubGlobalTemperature = 0;
 // local prototypes
 void EnvDoLightning(void);
 
+// -----------------------------------------------------------------------------
+// Advanced sector-local weather modernization
+// -----------------------------------------------------------------------------
+static UINT32 AdvancedWeatherHash( UINT32 uiValue )
+{
+	// Small deterministic integer mixer. We intentionally do not consume JA2's global
+	// Random() stream, so saving/reloading cannot reroll weather or disturb combat RNG.
+	uiValue ^= uiValue >> 16;
+	uiValue *= 0x7feb352d;
+	uiValue ^= uiValue >> 15;
+	uiValue *= 0x846ca68b;
+	uiValue ^= uiValue >> 16;
+	return uiValue;
+}
+
+static INT32 AdvancedWeatherAbs( INT32 iValue )
+{
+	return ( iValue < 0 ) ? -iValue : iValue;
+}
+
+static UINT8 AdvancedWeatherClampPercent( INT32 iValue )
+{
+	if ( iValue < 0 )
+		return 0;
+	if ( iValue > 100 )
+		return 100;
+	return (UINT8)iValue;
+}
+
+static UINT32 AdvancedWeatherWorldMinutes()
+{
+	UINT32 uiDay = GetWorldDay();
+	if ( uiDay < 1 )
+		uiDay = 1;
+	return ( ( uiDay - 1 ) * 1440 ) + GetWorldMinutesInDay();
+}
+
+static void BuildAdvancedWeatherStateForSector( UINT8 ubSectorId, UINT32 uiWorldMinutes, ADVANCED_WEATHER_STATE* pState )
+{
+	UINT32 uiDay = ( uiWorldMinutes / 1440 ) + 1;
+	UINT32 uiMinute = uiWorldMinutes % 1440;
+	UINT32 uiDaySeed = AdvancedWeatherHash( uiDay ^ 0x56EA7E31 );
+	UINT32 uiSectorSeed = AdvancedWeatherHash( uiDaySeed ^ ( (UINT32)ubSectorId * 0x9E3779B9 ) );
+	INT32 iSectorX = ubSectorId % 16;
+	INT32 iSectorY = ubSectorId / 16;
+	INT32 iFrontPos = -6 + (INT32)( ( uiMinute * 27 ) / 1439 );
+	INT32 iBandCenter = (INT32)( ( uiDaySeed >> 9 ) & 0x0f );
+	INT32 iPrimary;
+	INT32 iSecondary;
+	INT32 iDistance;
+	INT32 iRadius = 4 + (INT32)( ( uiDaySeed >> 17 ) % 5 );
+	INT32 iVariation = (INT32)( uiSectorSeed % 25 ) - 12;
+	INT32 iStrength;
+	INT32 iFog = 0;
+	UINT8 ubOrientation = (UINT8)( uiDaySeed & 0x03 );
+	UINT32 uiUpdateMinutes = __max( 1, gGameExternalOptions.uiAdvancedWeatherUpdateMinutes );
+
+	// Four deterministic travel directions. For opposite directions, mirror the
+	// moving front coordinate. The secondary-axis distance gives the front an
+	// elongated, irregular band instead of isolated per-sector weather rolls.
+	if ( ubOrientation == 0 || ubOrientation == 1 )
+	{
+		iPrimary = ( ubOrientation == 0 ) ? iSectorX : ( 15 - iSectorX );
+		iSecondary = iSectorY;
+	}
+	else
+	{
+		iPrimary = ( ubOrientation == 2 ) ? iSectorY : ( 15 - iSectorY );
+		iSecondary = iSectorX;
+	}
+
+	if ( !gGameExternalOptions.gfEnableLocalWeather )
+	{
+		iPrimary = 8;
+		iSecondary = 8;
+	}
+
+	iDistance = AdvancedWeatherAbs( iPrimary - iFrontPos ) + AdvancedWeatherAbs( iSecondary - iBandCenter ) / 3;
+	iStrength = 100 - ( iDistance * ( 100 / ( iRadius + 1 ) ) );
+	iStrength = (INT32)AdvancedWeatherClampPercent( iStrength + iVariation );
+
+	memset( pState, 0, sizeof( ADVANCED_WEATHER_STATE ) );
+	pState->uiSeed = uiSectorSeed;
+	pState->uiSystemId = uiDaySeed;
+	pState->ubWindDirection = (UINT8)( ( ubOrientation * 2 ) & 0x07 );
+	pState->ubWindStrength = AdvancedWeatherClampPercent( 15 + iStrength / 2 + (INT32)( ( uiDaySeed >> 24 ) % 20 ) );
+	pState->ubCloudCover = AdvancedWeatherClampPercent( 22 + ( iStrength * 3 ) / 4 + iVariation / 2 );
+	pState->ubPrecipitation = AdvancedWeatherClampPercent( iStrength + iVariation - 15 );
+	pState->ubStormEnergy = ( pState->ubPrecipitation > 55 ) ?
+		AdvancedWeatherClampPercent( ( (INT32)pState->ubPrecipitation - 50 ) * 2 + (INT32)( uiSectorSeed % 11 ) ) : 0;
+
+	// Dawn fog is moisture-driven and burns off naturally as the morning advances.
+	if ( gGameExternalOptions.gfEnableFog && uiMinute >= 300 && uiMinute <= 570 && pState->ubPrecipitation < 45 )
+	{
+		INT32 iFogPeak = 100 - AdvancedWeatherAbs( (INT32)uiMinute - 405 ) / 2;
+		INT32 iMoistureCap = 15 + (INT32)pState->ubCloudCover / 2;
+		iFog = __min( iFogPeak, iMoistureCap );
+		pState->ubFog = AdvancedWeatherClampPercent( iFog );
+	}
+
+	pState->ubType = ADV_WEATHER_CLEAR;
+	if ( pState->ubStormEnergy >= 72 && pState->ubPrecipitation >= 75 )
+		pState->ubType = ADV_WEATHER_THUNDERSTORM;
+	else if ( pState->ubPrecipitation >= 70 )
+		pState->ubType = ADV_WEATHER_HEAVY_RAIN;
+	else if ( pState->ubPrecipitation >= 40 )
+		pState->ubType = ADV_WEATHER_RAIN;
+	else if ( pState->ubPrecipitation >= 18 )
+		pState->ubType = ADV_WEATHER_DRIZZLE;
+	else if ( pState->ubFog >= 35 )
+		pState->ubType = ADV_WEATHER_FOG;
+	else if ( pState->ubCloudCover >= 45 )
+		pState->ubType = ADV_WEATHER_CLOUDY;
+
+	// Dust is intentionally rare until regional climate data is externalized.
+	if ( gGameExternalOptions.gfEnableDustStorms && pState->ubPrecipitation < 8 &&
+		pState->ubCloudCover < 40 && pState->ubWindStrength >= 55 &&
+		uiMinute >= 660 && uiMinute <= 1080 && ( uiSectorSeed % 100 ) < 8 )
+	{
+		pState->ubType = ADV_WEATHER_DUST_STORM;
+		pState->ubFog = 0;
+	}
+
+	pState->uiStartWorldMinutes = uiWorldMinutes - ( uiWorldMinutes % uiUpdateMinutes );
+	pState->uiEndWorldMinutes = pState->uiStartWorldMinutes + uiUpdateMinutes;
+}
+
+void InitializeAdvancedWeather()
+{
+	memset( gAdvancedWeatherState, 0, sizeof( gAdvancedWeatherState ) );
+	gfAdvancedWeatherInitialized = TRUE;
+	guiLastAdvancedWeatherUpdate = 0xFFFFFFFF;
+	gubLastAdvancedWeatherSector = 255;
+}
+
+static UINT8 GetCurrentAdvancedWeatherSectorId()
+{
+	if ( gWorldSectorX < 1 || gWorldSectorX > 16 || gWorldSectorY < 1 || gWorldSectorY > 16 )
+		return 255;
+	return (UINT8)( ( gWorldSectorY - 1 ) * 16 + ( gWorldSectorX - 1 ) );
+}
+
+static void SyncLegacyWeatherFromAdvancedState( const ADVANCED_WEATHER_STATE* pState )
+{
+	UINT32 uiOldRainBits = guiEnvWeather & ( WEATHER_FORECAST_SHOWERS | WEATHER_FORECAST_THUNDERSHOWERS | WEATHER_FORECAST_DRIZZLE );
+	UINT32 uiNewRainBits = 0;
+
+	guiEnvWeather &= ~( WEATHER_FORECAST_SHOWERS | WEATHER_FORECAST_THUNDERSHOWERS | WEATHER_FORECAST_DRIZZLE );
+
+	switch ( pState->ubType )
+	{
+		case ADV_WEATHER_DRIZZLE:
+			uiNewRainBits = WEATHER_FORECAST_SHOWERS;
+			break;
+		case ADV_WEATHER_RAIN:
+		case ADV_WEATHER_HEAVY_RAIN:
+			uiNewRainBits = WEATHER_FORECAST_SHOWERS;
+			break;
+		case ADV_WEATHER_THUNDERSTORM:
+			uiNewRainBits = WEATHER_FORECAST_THUNDERSHOWERS;
+			break;
+		default:
+			break;
+	}
+
+	guiEnvWeather |= uiNewRainBits;
+	if ( uiOldRainBits != uiNewRainBits )
+		gfDoLighting = TRUE;
+}
+
+void AdvancedWeatherUpdateCurrentSector()
+{
+	UINT32 uiWorldMinutes;
+	UINT32 uiUpdateMinutes;
+	UINT8 ubCurrentSector;
+	UINT16 usSector;
+
+	if ( !gGameExternalOptions.gfEnableAdvancedWeather )
+		return;
+
+	if ( !gfAdvancedWeatherInitialized )
+		InitializeAdvancedWeather();
+
+	ubCurrentSector = GetCurrentAdvancedWeatherSectorId();
+	uiWorldMinutes = AdvancedWeatherWorldMinutes();
+	uiUpdateMinutes = __max( 1, gGameExternalOptions.uiAdvancedWeatherUpdateMinutes );
+
+	if ( guiLastAdvancedWeatherUpdate == 0xFFFFFFFF ||
+		uiWorldMinutes < guiLastAdvancedWeatherUpdate ||
+		uiWorldMinutes >= guiLastAdvancedWeatherUpdate + uiUpdateMinutes ||
+		ubCurrentSector != gubLastAdvancedWeatherSector )
+	{
+		for ( usSector = 0; usSector < ADVANCED_WEATHER_SECTOR_COUNT; ++usSector )
+			BuildAdvancedWeatherStateForSector( (UINT8)usSector, uiWorldMinutes, &gAdvancedWeatherState[ usSector ] );
+
+		guiLastAdvancedWeatherUpdate = uiWorldMinutes;
+		gubLastAdvancedWeatherSector = ubCurrentSector;
+	}
+
+	SyncLegacyWeatherFromAdvancedState( &gAdvancedWeatherState[ ubCurrentSector ] );
+}
+
+const ADVANCED_WEATHER_STATE* GetAdvancedWeatherStateForSector( UINT8 ubSectorId )
+{
+	if ( !gfAdvancedWeatherInitialized )
+		InitializeAdvancedWeather();
+	return &gAdvancedWeatherState[ ubSectorId ];
+}
+
+static const ADVANCED_WEATHER_STATE* GetCurrentAdvancedWeatherState()
+{
+	AdvancedWeatherUpdateCurrentSector();
+	return &gAdvancedWeatherState[ GetCurrentAdvancedWeatherSectorId() ];
+}
+
+UINT8 WeatherGetVisionPenaltyPercent()
+{
+	const ADVANCED_WEATHER_STATE* pState;
+	if ( !gGameExternalOptions.gfEnableAdvancedWeather )
+		return 0;
+	pState = GetCurrentAdvancedWeatherState();
+	switch ( pState->ubType )
+	{
+		case ADV_WEATHER_DRIZZLE: return 2;
+		case ADV_WEATHER_RAIN: return 6;
+		case ADV_WEATHER_HEAVY_RAIN: return 12;
+		case ADV_WEATHER_THUNDERSTORM: return 16;
+		case ADV_WEATHER_FOG: return AdvancedWeatherClampPercent( 10 + pState->ubFog / 3 );
+		case ADV_WEATHER_DUST_STORM: return 35;
+		default: return 0;
+	}
+}
+
+UINT8 WeatherGetHearingPenaltyPercent( UINT8 ubNoiseType )
+{
+	const ADVANCED_WEATHER_STATE* pState;
+	INT32 iPenalty = 0;
+	if ( !gGameExternalOptions.gfEnableAdvancedWeather || !gGameExternalOptions.gfEnableWeatherAIEffects )
+		return 0;
+	pState = GetCurrentAdvancedWeatherState();
+	switch ( pState->ubType )
+	{
+		case ADV_WEATHER_DRIZZLE: iPenalty = 10; break;
+		case ADV_WEATHER_RAIN: iPenalty = 25; break;
+		case ADV_WEATHER_HEAVY_RAIN: iPenalty = 45; break;
+		case ADV_WEATHER_THUNDERSTORM: iPenalty = 60; break;
+		case ADV_WEATHER_DUST_STORM: iPenalty = 20; break;
+		default: iPenalty = 0; break;
+	}
+
+	// Low-energy sounds are masked much more than explosions and unsuppressed gunfire.
+	switch ( ubNoiseType )
+	{
+		case NOISE_EXPLOSION:
+		case NOISE_GRENADE_IMPACT:
+			iPenalty = iPenalty / 5;
+			break;
+		case NOISE_GUNFIRE:
+		case NOISE_BULLET_IMPACT:
+			iPenalty = iPenalty / 2;
+			break;
+		case NOISE_SCREAM:
+		case NOISE_VOICE:
+			iPenalty = ( iPenalty * 3 ) / 4;
+			break;
+		default:
+			break;
+	}
+	return AdvancedWeatherClampPercent( iPenalty );
+}
+
+UINT8 WeatherGetBreathRecoveryPenaltyPercent()
+{
+	if ( !gGameExternalOptions.gfEnableAdvancedWeather )
+		return 0;
+	switch ( GetCurrentAdvancedWeatherState()->ubType )
+	{
+		case ADV_WEATHER_DRIZZLE: return 3;
+		case ADV_WEATHER_RAIN: return 8;
+		case ADV_WEATHER_HEAVY_RAIN: return 12;
+		case ADV_WEATHER_THUNDERSTORM: return 15;
+		case ADV_WEATHER_DUST_STORM: return 10;
+		default: return 0;
+	}
+}
+
+UINT8 WeatherGetWeaponReliabilityPenalty()
+{
+	if ( !gGameExternalOptions.gfEnableAdvancedWeather || !gGameExternalOptions.gfEnableWeatherWeaponEffects )
+		return 0;
+	switch ( GetCurrentAdvancedWeatherState()->ubType )
+	{
+		case ADV_WEATHER_RAIN: return 1;
+		case ADV_WEATHER_HEAVY_RAIN: return 2;
+		case ADV_WEATHER_THUNDERSTORM: return 2;
+		case ADV_WEATHER_DUST_STORM: return 3;
+		default: return 0;
+	}
+}
+
+UINT8 WeatherGetSmokeDecayModifierPercent()
+{
+	if ( !gGameExternalOptions.gfEnableAdvancedWeather || !gGameExternalOptions.gfEnableWeatherSmokeEffects )
+		return 0;
+	switch ( GetCurrentAdvancedWeatherState()->ubType )
+	{
+		case ADV_WEATHER_DRIZZLE: return 5;
+		case ADV_WEATHER_RAIN: return 15;
+		case ADV_WEATHER_HEAVY_RAIN: return 30;
+		case ADV_WEATHER_THUNDERSTORM: return 40;
+		case ADV_WEATHER_DUST_STORM: return 15;
+		default: return 0;
+	}
+}
+
+UINT8 WeatherGetLocalizationErrorRadius( UINT8 ubNoiseType )
+{
+	INT32 iRadius = 0;
+	if ( !gGameExternalOptions.gfEnableAdvancedWeather || !gGameExternalOptions.gfEnableWeatherAIEffects )
+		return 0;
+	switch ( GetCurrentAdvancedWeatherState()->ubType )
+	{
+		case ADV_WEATHER_DRIZZLE: iRadius = 1; break;
+		case ADV_WEATHER_RAIN: iRadius = 3; break;
+		case ADV_WEATHER_HEAVY_RAIN: iRadius = 6; break;
+		case ADV_WEATHER_THUNDERSTORM: iRadius = 10; break;
+		case ADV_WEATHER_FOG: iRadius = 1; break;
+		case ADV_WEATHER_DUST_STORM: iRadius = 5; break;
+		default: iRadius = 0; break;
+	}
+	if ( ubNoiseType == NOISE_EXPLOSION || ubNoiseType == NOISE_GRENADE_IMPACT )
+		iRadius = iRadius / 3;
+	else if ( ubNoiseType == NOISE_GUNFIRE || ubNoiseType == NOISE_BULLET_IMPACT )
+		iRadius = ( iRadius * 2 ) / 3;
+	return AdvancedWeatherClampPercent( iRadius );
+}
+
 
 // polled by the game to handle time/atmosphere changes from gamescreen
 void EnvironmentController( BOOLEAN fCheckForLights )
@@ -191,6 +535,10 @@ void EnvironmentController( BOOLEAN fCheckForLights )
 		}
 		return;
 	}
+
+	// When enabled, derive current tactical weather from the deterministic
+	// sector-local state before legacy rain/audio/light code consumes guiEnvWeather.
+	AdvancedWeatherUpdateCurrentSector();
 
 	if(fTimeOfDayControls )
 	{
@@ -419,6 +767,10 @@ void ForecastDayEvents( )
 		// ATE: Don't forecast if start of game...
 		if ( guiEnvDay > 1 )
 		{
+			// The advanced system owns weather generation when explicitly enabled.
+			// Otherwise retain the original Vengeance ranged rain event unchanged.
+			if ( !gGameExternalOptions.gfEnableAdvancedWeather )
+			{
 			//rain
 			if ( Random( 100 ) < gGameExternalOptions.gusRainChancePerDay )
 			{
@@ -448,6 +800,11 @@ void ForecastDayEvents( )
 				//AddSameDayStrategicEvent( EVENT_ENDRAINSTORM,		uiEndTime, 0 );
 			}
 			//end rain
+			}
+			else
+			{
+				AdvancedWeatherUpdateCurrentSector();
+			}
 
 
 			/*
@@ -708,6 +1065,12 @@ UINT8 GetTimeOfDayAmbientLightLevel()
 
 void EnvBeginRainStorm( UINT8 ubIntensity )
 {
+	if ( gGameExternalOptions.gfEnableAdvancedWeather )
+	{
+		AdvancedWeatherUpdateCurrentSector();
+		return;
+	}
+
 	if( !gfBasement && !gfCaves )
 	{
 		gfDoLighting = TRUE;
@@ -738,6 +1101,12 @@ void EnvBeginRainStorm( UINT8 ubIntensity )
 
 void EnvEndRainStorm( )
 {
+	if ( gGameExternalOptions.gfEnableAdvancedWeather )
+	{
+		AdvancedWeatherUpdateCurrentSector();
+		return;
+	}
+
 	gfDoLighting = TRUE;
 
 #ifdef JA2TESTVERSION
