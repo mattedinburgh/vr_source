@@ -34,6 +34,7 @@ Commits:
 - `18e27cb4` shaded/Z-aware true-colour tactical blitter
 - `ffca6183` route true-colour map imagery through renderworld
 - `35d63c58` make tile surfaces prefer optional JPC replacements
+- `71b167a7` add stable 4x4 ordered RGB565 dithering for true-colour source art
 
 ## Replacement archive format
 
@@ -93,6 +94,18 @@ Levels 1-3 = brightening.
 Levels 5-15 = progressive darkening.
 
 Indexed shade level 0 is a special glow palette; true-colour map art treats level 0 as neutral to avoid injecting an unintended glow tint.
+
+## Colour-depth policy
+
+The source artwork may use full 24-bit RGB / 32-bit RGBA colour.
+
+The tactical framebuffer remains RGB565 for now. This gives 65,536 physical output values, but true-colour source art is now converted with stable ordered dithering so gradients, vegetation, concrete, water and other textured surfaces retain much more apparent colour detail than direct RGB565 rounding.
+
+The dither pattern is anchored to source-image coordinates so it does not crawl or shimmer when the camera scrolls.
+
+A full 32-bit tactical framebuffer remains a possible later engine project, but it is deliberately **not** part of the current map-remaster rollout. Converting the global framebuffer would touch a large amount of legacy rendering, UI, font, cursor, assembly blitter and pitch-calculation code for a smaller visual improvement than the current 256-colour -> true-colour-source + dithered-RGB565 jump.
+
+Decision: finish and validate the true-colour asset path first. Revisit a native 32-bit framebuffer only after terrain, Z-strip structures, shadows and lighting are stable.
 
 ## Compatibility rule
 
