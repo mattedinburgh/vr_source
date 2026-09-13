@@ -6082,6 +6082,12 @@ BOOLEAN LoadSavedGame( int ubSavedGameID )
 		gTacticalStatus.uiFlags &= ~LOADING_SAVED_GAME;
 	}
 
+	// Fireteam, rout/escape and cached edge-route state is intentionally transient
+	// rather than serialized into SOLDIERTYPE. Explicitly invalidate it after every
+	// successful load so a same-sector quickload cannot inherit future AI decisions.
+	AIResetRetreatCoordinationStateForLoad();
+	AIResetEscapePlanStateForLoad();
+
 	// CJC January 13: we can't do this because (a) it resets militia IN THE MIDDLE OF 
 	// COMBAT, and (b) if we add militia to the teams while LOADING_SAVED_GAME is set,
 	// the team counters will not be updated properly!!!
