@@ -2229,6 +2229,12 @@ BOOLEAN SOLDIERTYPE::Load(HWFILE hFile)
 			for(UINT8 i = 0; i < SOLDIER_COOLDOWN_MAX; ++i)
 				this->usSkillCooldown[i] = 0;
 
+			// These fields occupy bytes that did not exist as named state in these old saves.
+			this->ubBleedoutTurns = 0;
+			this->ubBleedoutState = BLEEDOUT_NONE;
+			this->ubDraggedCasualtyID = NOBODY;
+			this->ubDraggedByID = NOBODY;
+
 			// Flugente: okay, this part will be a bit weird, so bear with me
 			// ubFiller had length 7 before this revision - we still need to read those. We have to do that, otherwise the next read functions will read the filler
 			UINT8 blarg[7];
@@ -2251,6 +2257,12 @@ BOOLEAN SOLDIERTYPE::Load(HWFILE hFile)
 				buffer++;
 			while((buffer%4) > 0)
 				buffer++;
+
+			// Master used a 20-byte filler here. Four of those bytes are now named
+			// bleedout/drag fields, so account for them even though this old save
+			// predates the fields and only the remaining 16 bytes are ubFiller.
+			buffer += sizeof(ubBleedoutTurns) + sizeof(ubBleedoutState) +
+				sizeof(ubDraggedCasualtyID) + sizeof(ubDraggedByID);
 						
 			for(int i = 0; i < sizeof(ubFiller); ++i)
 				buffer++;
