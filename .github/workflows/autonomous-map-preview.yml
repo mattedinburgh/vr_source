@@ -148,7 +148,12 @@ jobs:
           $ja2Text = [regex]::Replace($ja2Text, '(?im)^\s*SCREEN_MODE_WINDOWED\s*=\s*\d+\s*$', 'SCREEN_MODE_WINDOWED = 1')
           [System.IO.File]::WriteAllText($ja2Ini, $ja2Text, (New-Object System.Text.UTF8Encoding($false)))
 
-          $required = @('Data','Data-1.13','Data-Vengeance','Data-AIMv53','Data-Maps-Tiles','Data-PCM','Data-UI','Data-Weapon-Sounds','Data-Voice-Taunts','Data-Music')
+          # The Vengeance VFS always mounts a writable UserProf. Keep the live
+          # profile isolated, but provide an empty writable profile in the sandbox.
+          $profileRoot = Join-Path $sandbox 'Profiles\UserProfile_Vengeance'
+          New-Item -ItemType Directory -Force -Path $profileRoot | Out-Null
+
+          $required = @('Data','Data-1.13','Data-Vengeance','Data-AIMv53','Data-Maps-Tiles','Data-PCM','Data-UI','Data-Weapon-Sounds','Data-Voice-Taunts','Data-Music','Profiles\UserProfile_Vengeance')
           foreach ($dir in $required) {
             $path = Join-Path $sandbox $dir
             if (-not (Test-Path $path)) { throw "Vengeance data layer missing from sandbox: $path" }
