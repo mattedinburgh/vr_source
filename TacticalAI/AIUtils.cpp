@@ -5203,8 +5203,7 @@ static BOOLEAN AIEnemyResponderEligible(SOLDIERTYPE *pSoldier)
 		!(pSoldier->flags.uiStatusFlags & SOLDIER_COWERING) &&
 		!AIDisengagementActive(pSoldier) &&
 		!AIEscapeActive(pSoldier) &&
-		pSoldier->aiData.bOrders != STATIONARY &&
-		pSoldier->aiData.bOrders != SNIPER;
+		!AIEnemyFixedMissionRole(pSoldier);
 }
 
 static BOOLEAN AIEnemyResponderEngagedAwayFromContact(SOLDIERTYPE *pSoldier, INT32 sContactSpot)
