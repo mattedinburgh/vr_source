@@ -2893,6 +2893,10 @@ void PrepareLoadedSector()
 		}
 	}
 
+	// Officer/General roles require the full enemy roster, so assign them here rather
+	// than during individual soldier construction.
+	EnsureEnemyCommandRoles();
+
 	EndLoadScreen( );
 
 	if( !( gTacticalStatus.uiFlags & LOADING_SAVED_GAME ) )
