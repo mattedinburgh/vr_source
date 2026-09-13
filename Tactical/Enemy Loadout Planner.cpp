@@ -1552,6 +1552,100 @@ UINT16 SelectBestEnemyGameGunForPlan(
 	return usBestItem;
 }
 
+UINT16 SelectBestEnemySupportItemForPlan(
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	INT8 bSoldierClass,
+	UINT16 usPrimaryGun,
+	UINT8 ubMaxCoolness)
+{
+	INT8 bPoolClass;
+	UINT8 ubChoiceType;
+	const ARMY_GUN_CHOICE_TYPE *pPool;
+	UINT16 usBestItem = 0;
+	INT32 iBestScore = -10000;
+
+	if ( !pPlan || pPlan->SupportProfile == ENEMY_SUPPORT_NONE )
+		return 0;
+
+	switch ( pPlan->SupportProfile )
+	{
+		case ENEMY_SUPPORT_GRENADE_LAUNCHER:
+			ubChoiceType = GRENADELAUNCHER;
+			break;
+		case ENEMY_SUPPORT_LIGHT_AT:
+			ubChoiceType = SINGLESHOTROCKETLAUNCHER;
+			break;
+		case ENEMY_SUPPORT_RPG:
+			ubChoiceType = ROCKETLAUNCHER;
+			break;
+		case ENEMY_SUPPORT_MORTAR:
+			ubChoiceType = MORTARLAUNCHER;
+			break;
+		default:
+			return 0;
+	}
+
+	bPoolClass = EnemyLoadoutPoolClass(bSoldierClass);
+	pPool = &gArmyItemChoices[bPoolClass][ubChoiceType];
+
+	for (UINT8 i = 0; i < pPool->ubChoices && i < 50; ++i)
+	{
+		INT16 sPoolItem = pPool->bItemNo[i];
+		UINT16 usCandidate;
+		INT32 iScore;
+
+		if ( sPoolItem <= 0 )
+			continue;
+
+		usCandidate = (UINT16)sPoolItem;
+
+		if ( !ItemIsLegal(usCandidate) )
+			continue;
+
+		if ( ubMaxCoolness > 0 &&
+			 Item[usCandidate].ubCoolness > ubMaxCoolness )
+		{
+			continue;
+		}
+
+		iScore = __min((INT32)25, (INT32)Item[usCandidate].ubCoolness * 3);
+
+		if ( pPlan->SupportProfile == ENEMY_SUPPORT_GRENADE_LAUNCHER )
+		{
+			// Prefer a launcher that can mount on the selected primary game gun.
+			// A standalone launcher remains a valid fallback.
+			if ( usPrimaryGun > 0 &&
+				 ValidAttachment(usCandidate, usPrimaryGun) )
+			{
+				iScore += 100;
+			}
+			else if ( Item[usCandidate].usItemClass & IC_LAUNCHER )
+			{
+				iScore += 35;
+			}
+			else
+			{
+				iScore -= 20;
+			}
+		}
+		else
+		{
+			// Heavy support pools are already authored by class; within that
+			// pool prefer a valid launcher item and let coolness break ties.
+			if ( Item[usCandidate].usItemClass & IC_LAUNCHER )
+				iScore += 50;
+		}
+
+		if ( iScore > iBestScore )
+		{
+			iBestScore = iScore;
+			usBestItem = usCandidate;
+		}
+	}
+
+	return usBestItem;
+}
+
 static INT32 ScoreEnemyOpticForPlan(
 	const ENEMY_LOADOUT_PLAN *pPlan,
 	UINT16 usAttachment)
@@ -2463,7 +2557,8 @@ void BuildEnemyEquipmentRecommendation(
 	INT8 bSoldierClass,
 	INT8 bWeaponClass,
 	UINT8 ubAttachmentCoolness,
-	UINT8 ubLBECoolness)
+	UINT8 ubLBECoolness,
+	UINT8 ubSupportCoolness)
 {
 	if ( !pRecommendation )
 		return;
@@ -2481,6 +2576,12 @@ void BuildEnemyEquipmentRecommendation(
 		pPlan,
 		bSoldierClass,
 		bWeaponClass);
+
+	pRecommendation->usSupportItem = SelectBestEnemySupportItemForPlan(
+		pPlan,
+		bSoldierClass,
+		pRecommendation->usPrimaryGun,
+		ubSupportCoolness);
 
 	if ( pRecommendation->usPrimaryGun > 0 )
 	{
