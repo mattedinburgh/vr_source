@@ -127,6 +127,7 @@ struct ENEMY_ATTACHMENT_PACKAGE
 struct ENEMY_EQUIPMENT_RECOMMENDATION
 {
 	UINT16 usPrimaryGun;
+	UINT16 usSupportItem;
 	ENEMY_ATTACHMENT_PACKAGE Attachments;
 	ENEMY_LBE_PACKAGE LBE;
 	ENEMY_SUPPORT_PROFILE SupportProfile;
@@ -292,6 +293,12 @@ UINT16 SelectBestEnemyGameGunForPlan(
 	INT8 bSoldierClass,
 	INT8 bWeaponClass);
 
+UINT16 SelectBestEnemySupportItemForPlan(
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	INT8 bSoldierClass,
+	UINT16 usPrimaryGun,
+	UINT8 ubMaxCoolness);
+
 // Deterministic scoring helpers for the future role-aware item selectors.
 // Negative large scores mean "do not use"; no RNG is consumed.
 INT32 ScoreEnemyAttachmentForPlan(
@@ -352,7 +359,8 @@ void BuildEnemyEquipmentRecommendation(
 	INT8 bSoldierClass,
 	INT8 bWeaponClass,
 	UINT8 ubAttachmentCoolness,
-	UINT8 ubLBECoolness);
+	UINT8 ubLBECoolness,
+	UINT8 ubSupportCoolness);
 
 const char *EnemyLoadoutRoleName(ENEMY_LOADOUT_ROLE Role);
 
