@@ -299,7 +299,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 	pSoldier->usAttackingWeapon = pSoldier->inv[HANDPOS].usItem;
 	pSoldier->bWeaponMode = WM_NORMAL;
 	std::map<INT8, OBJECTTYPE*> ObjList;
-	GetScopeLists(&pSoldier->inv[HANDPOS], ObjList);
+	GetScopeLists(pSoldier, &pSoldier->inv[HANDPOS], ObjList);
 	pSoldier->bScopeMode = USE_BEST_SCOPE;
 	pSoldier->bDoBurst = 0;
 	pSoldier->bDoAutofire = 0;
