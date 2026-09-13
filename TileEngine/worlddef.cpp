@@ -675,9 +675,11 @@ static UINT8 DetermineSectorVisualProfile( const STR8 pFilename )
 	if ( pFilename == NULL )
 		return SECTOR_VISUAL_DEFAULT;
 
-	// Vengeance sector metadata explicitly identifies A3 with tropical-farm loading art.
+	// A3 rollback: keep the original authored sector completely untouched for gameplay.
+	// The experimental farm remaster remains dormant in source until it is rebuilt
+	// behind collision-safe visual slots and validated with the engine previewer.
 	if ( _stricmp( pFilename, "A3.dat" ) == 0 )
-		return SECTOR_VISUAL_A3_FARM;
+		return SECTOR_VISUAL_DEFAULT;
 
 	if ( _stricmp( pFilename, "A2.dat" ) == 0 ||
 		 _stricmp( pFilename, "B2.dat" ) == 0 )
