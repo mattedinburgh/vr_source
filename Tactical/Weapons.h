@@ -625,6 +625,8 @@ typedef struct
 	FLOAT fRangeCompensationY;
 	FLOAT fDeviationX;
 	FLOAT fDeviationY;
+	FLOAT fLimitCorrectionX;
+	FLOAT fLimitCorrectionY;
 
 	FLOAT fBulletDeviation;
 	FLOAT fShotOffsetX;
