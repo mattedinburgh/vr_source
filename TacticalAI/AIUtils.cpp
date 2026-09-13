@@ -11200,7 +11200,9 @@ BOOLEAN AbortFinalSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bAction, INT32 s
 		AICorpseWarningKnown(pSoldier, sSpot, bLevel) &&
 		!InSmoke(sSpot, bLevel) &&
 		!fFriendsBlack &&
-		(fFlankingFriends || !fSuccessfulAttack || !fSeekEnemy || EnemyCanAttackSpot(pSoldier, sSpot, bLevel) || InARoom(sSpot, NULL) && bLevel == 0 || AICorpseWarningKnown(pSoldier, sSpot, bLevel)))
+		(fFlankingFriends || !fSuccessfulAttack || !fSeekEnemy ||
+		 EnemyCanAttackSpot(pSoldier, sSpot, bLevel) ||
+		 (InARoom(sSpot, NULL) && bLevel == 0)))
 	{
 		DebugAI(AI_MSG_INFO, pSoldier, String("fresh corpse! abort!"));
 
@@ -11309,7 +11311,9 @@ BOOLEAN AbortPath(SOLDIERTYPE *pSoldier, INT8 bAction, INT32 sClosestDisturbance
 			AICorpseWarningKnown(pSoldier, sCheckGridNo, pSoldier->pathing.bLevel) &&
 			!InSmoke(sCheckGridNo, pSoldier->pathing.bLevel) &&
 			!fFriendsBlack &&
-			(fFlankingFriends || !fSuccessfulAttack || !fSeekEnemy || EnemyCanAttackSpot(pSoldier, sCheckGridNo, bLevel) || InARoom(sCheckGridNo, NULL) && bLevel == 0 || AICorpseWarningKnown(pSoldier, sCheckGridNo, bLevel)))
+			(fFlankingFriends || !fSuccessfulAttack || !fSeekEnemy ||
+			 EnemyCanAttackSpot(pSoldier, sCheckGridNo, bLevel) ||
+			 (InARoom(sCheckGridNo, NULL) && bLevel == 0)))
 		{
 			DebugAI(AI_MSG_INFO, pSoldier, String("fresh corpse! abort!"));
 
