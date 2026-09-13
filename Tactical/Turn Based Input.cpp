@@ -2766,6 +2766,7 @@ void GetKeyboardInput( UINT32 *puiNewEvent )
 						else if ( pSoldier->IsDraggingBleedoutCasualty() )
 						{
 							pSoldier->StopDraggingBleedoutCasualty();
+							ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, L"%s puts the casualty down.", pSoldier->GetName() );
 						}
 						else
 						{
@@ -2788,7 +2789,14 @@ void GetKeyboardInput( UINT32 *puiNewEvent )
 							}
 
 							if ( pCasualty )
-								pSoldier->StartDraggingBleedoutCasualty( pCasualty, TRUE );
+							{
+								if ( pSoldier->StartDraggingBleedoutCasualty( pCasualty, TRUE ) )
+									ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, L"%s starts moving %s.", pSoldier->GetName(), pCasualty->GetName() );
+							}
+							else
+							{
+								ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, L"No adjacent unconscious or downed teammate to move." );
+							}
 						}
 					}
 				}
