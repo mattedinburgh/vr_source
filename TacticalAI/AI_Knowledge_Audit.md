@@ -37,6 +37,7 @@ New AI must not:
 - treat a stale last-known location as exact current position
 - infer exact hidden enemy health, stance, equipment or movement from raw soldier state unless existing perception already exposes it
 - create a second omniscient perception system
+- treat cached `SEEN_CURRENTLY` as sufficient for aimed fire when a fresh LOS test is blocked by smoke or another newly changed visibility condition
 
 New AI may:
 - use currently seen opponents
