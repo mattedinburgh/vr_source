@@ -29,6 +29,7 @@ Use this branch as the single source install candidate:
 - Human-like self-preservation, wounds/morale, fallback, disengagement, escape/rout and surrender/cower behavior.
 - Cover/support, suppression, emergency smoke, combat medics, target allocation, range-aware positioning and search variation.
 - Knowledge-fair targeting: no hidden position/health/stance/capability leaks from public or stale contacts.
+- 1.13-aligned smoke concealment targeting: unseen contacts are not valid direct-fire targets by default (`AI_SHOOT_UNSEEN = FALSE`), and every claimed current contact must also pass a fresh LOS check before aimed fire.
 - Fire-and-manoeuvre, local support roles and coordinated withdrawals.
 - 6–9-man fireteams with local response, staged reinforcement release and remnant merging.
 - Proportional/local reaction instead of whole-sector rush-to-noise behavior.
