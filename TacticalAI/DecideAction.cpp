@@ -4014,6 +4014,17 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 				// permission to abandon its post once the contact response budget is full.
 				bSeekPts = -99;
 			}
+
+			// Do not bypass the fireteam response budget through the HELP branch.
+			// A held reserve may still assist a casualty in its immediate local area,
+			// but it does not cross the response boundary to join the remote firefight.
+			if (fHoldRemoteReserve &&
+				!TileIsOutOfBounds(sClosestFriend) &&
+				PythSpacesAway(pSoldier->sGridNo, sClosestFriend) >
+					__max(6, DAY_VISION_RANGE / 4))
+			{
+				bHelpPts = -99;
+			}
 			if (TileIsOutOfBounds(sClosestOpponent))
 			{
 				bHidePts = -99;
