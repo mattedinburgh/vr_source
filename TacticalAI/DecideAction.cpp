@@ -4092,6 +4092,14 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 		{
 			CheckTossOpponentFence(pSoldier, &BestThrow);
 
+			// A breach needs one committed explosive, not one grenade per sequential AI
+			// decision. Ordinary combat grenades keep their softer saturation penalty.
+			if (BestThrow.ubPossible &&
+				AIRecentTossSaturation(pSoldier, BestThrow.sTarget, BestThrow.bTargetLevel) > 0)
+			{
+				BestThrow.ubPossible = FALSE;
+			}
+
 			if (BestThrow.ubPossible)
 			{
 				DebugAI(AI_MSG_INFO, pSoldier, String("prepare throw at spot %d level %d aimtime %d", BestThrow.sTarget, BestThrow.bTargetLevel, BestThrow.ubAimTime));
@@ -6498,6 +6506,14 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		FindFenceAroundSpot(pSoldier->sGridNo))
 	{
 		CheckTossOpponentFence(pSoldier, &BestThrow);
+
+			// A breach needs one committed explosive, not one grenade per sequential AI
+			// decision. Ordinary combat grenades keep their softer saturation penalty.
+			if (BestThrow.ubPossible &&
+				AIRecentTossSaturation(pSoldier, BestThrow.sTarget, BestThrow.bTargetLevel) > 0)
+			{
+				BestThrow.ubPossible = FALSE;
+			}
 
 		if (BestThrow.ubPossible)
 		{
@@ -9865,6 +9881,14 @@ INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 					{
 						CheckTossFlankFence(pSoldier, &BestThrow);
 
+						// Do not have multiple members of the same fireteam spend grenades
+						// on a fence breach that another member has already committed to.
+						if (BestThrow.ubPossible &&
+							AIRecentTossSaturation(pSoldier, BestThrow.sTarget, BestThrow.bTargetLevel) > 0)
+						{
+							BestThrow.ubPossible = FALSE;
+						}
+
 						if (BestThrow.ubPossible)
 						{
 							DebugAI(AI_MSG_INFO, pSoldier, String("prepare throw at spot %d level %d aimtime %d", BestThrow.sTarget, BestThrow.bTargetLevel, BestThrow.ubAimTime));
@@ -10061,6 +10085,14 @@ INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 						Chance(20 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10)))
 					{
 						CheckTossFlankFence(pSoldier, &BestThrow);
+
+						// Do not have multiple members of the same fireteam spend grenades
+						// on a fence breach that another member has already committed to.
+						if (BestThrow.ubPossible &&
+							AIRecentTossSaturation(pSoldier, BestThrow.sTarget, BestThrow.bTargetLevel) > 0)
+						{
+							BestThrow.ubPossible = FALSE;
+						}
 
 						if (BestThrow.ubPossible)
 						{
