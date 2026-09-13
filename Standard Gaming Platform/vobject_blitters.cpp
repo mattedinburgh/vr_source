@@ -375,6 +375,153 @@ BOOLEAN BltTrueColorDataTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, 
 	return TRUE;
 }
 
+static UINT16 TrueColorGetZStripLevel(ZStripInfo *pZInfo, UINT16 usBaseZ, INT32 iSourceX, UINT16 usZStripDelta)
+{
+	INT32 iLevel = (INT32)usBaseZ + ((INT32)pZInfo->bInitialZChange * (INT32)usZStripDelta);
+
+	if(iSourceX >= (INT32)pZInfo->ubFirstZStripWidth)
+	{
+		INT32 iChanges = 1 + ((iSourceX - (INT32)pZInfo->ubFirstZStripWidth) / 20);
+		if(iChanges > (INT32)pZInfo->ubNumberOfZChanges)
+			iChanges = pZInfo->ubNumberOfZChanges;
+
+		for(INT32 i = 0; i < iChanges; ++i)
+		{
+			if(pZInfo->pbZChange[i] < 0)
+				iLevel -= usZStripDelta;
+			else if(pZInfo->pbZChange[i] > 0)
+				iLevel += usZStripDelta;
+		}
+	}
+
+	if(iLevel < 0)
+		iLevel = 0;
+	else if(iLevel > 65535)
+		iLevel = 65535;
+	return (UINT16)iLevel;
+}
+
+BOOLEAN BltTrueColorDataTo16BPPBufferZStrip(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue,
+	HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion,
+	UINT8 ubShadeLevel, INT16 sZStripIndex, UINT16 usZStripDelta,
+	BOOLEAN fSameZBurnsThrough, BOOLEAN fObscured, BOOLEAN fZWrite)
+{
+	Assert(pBuffer != NULL);
+	Assert(pZBuffer != NULL);
+	Assert(hSrcVObject != NULL);
+
+	if(hSrcVObject->ubBitDepth != 16 && hSrcVObject->ubBitDepth != 32)
+		return FALSE;
+	if(usIndex >= hSrcVObject->usNumberOf16BPPObjects)
+		return FALSE;
+	if(sZStripIndex < 0 || sZStripIndex >= (INT16)hSrcVObject->usNumberOfObjects)
+		return FALSE;
+	if(hSrcVObject->ppZStripInfo == NULL || hSrcVObject->ppZStripInfo[sZStripIndex] == NULL)
+	{
+		DebugMsg(TOPIC_VIDEOOBJECT, DBG_LEVEL_0, String("Missing Z-Strip info on true-colour multi-Z object"));
+		return FALSE;
+	}
+
+	SixteenBPPObjectInfo *pObject = &hSrcVObject->p16BPPObject[usIndex];
+	ZStripInfo *pZInfo = hSrcVObject->ppZStripInfo[sZStripIndex];
+	if(pObject->p16BPPData == NULL || pObject->usWidth == 0 || pObject->usHeight == 0)
+		return FALSE;
+
+	INT32 iDestLeft = iX + pObject->sOffsetX;
+	INT32 iDestTop = iY + pObject->sOffsetY;
+	INT32 iClipLeft = clipregion ? clipregion->iLeft : ClippingRect.iLeft;
+	INT32 iClipTop = clipregion ? clipregion->iTop : ClippingRect.iTop;
+	INT32 iClipRight = clipregion ? clipregion->iRight : ClippingRect.iRight;
+	INT32 iClipBottom = clipregion ? clipregion->iBottom : ClippingRect.iBottom;
+
+	INT32 iDrawLeft = __max(iDestLeft, iClipLeft);
+	INT32 iDrawTop = __max(iDestTop, iClipTop);
+	INT32 iDrawRight = __min(iDestLeft + (INT32)pObject->usWidth, iClipRight + 1);
+	INT32 iDrawBottom = __min(iDestTop + (INT32)pObject->usHeight, iClipBottom + 1);
+
+	if(iDrawLeft >= iDrawRight || iDrawTop >= iDrawBottom)
+		return TRUE;
+
+	const UINT16 usShadeScale = TrueColorShadeScale(ubShadeLevel);
+	const INT32 iSourceStartX = iDrawLeft - iDestLeft;
+	const INT32 iSourceStartY = iDrawTop - iDestTop;
+
+	for(INT32 y = iDrawTop; y < iDrawBottom; ++y)
+	{
+		UINT16 *pDest = (UINT16*)((UINT8*)pBuffer + ((UINT32)y * uiDestPitchBYTES)) + iDrawLeft;
+		UINT16 *pZ = (UINT16*)((UINT8*)pZBuffer + ((UINT32)y * uiDestPitchBYTES)) + iDrawLeft;
+		const INT32 iSourceY = iSourceStartY + (y - iDrawTop);
+
+		for(INT32 x = iDrawLeft; x < iDrawRight; ++x, ++pDest, ++pZ)
+		{
+			const INT32 iSourceX = iSourceStartX + (x - iDrawLeft);
+			UINT8 ubRed, ubGreen, ubBlue, ubAlpha;
+
+			if(hSrcVObject->ubBitDepth == 32)
+			{
+				const UINT8 *pSrc = (const UINT8*)pObject->p16BPPData +
+					(((UINT32)iSourceY * pObject->usWidth + (UINT32)iSourceX) * 4);
+				ubRed = pSrc[0];
+				ubGreen = pSrc[1];
+				ubBlue = pSrc[2];
+				ubAlpha = pSrc[3];
+			}
+			else
+			{
+				const UINT16 usSource = pObject->p16BPPData[(UINT32)iSourceY * pObject->usWidth + (UINT32)iSourceX];
+				const UINT32 uiRGB = GetRGBColor(usSource);
+				ubRed = (UINT8)(uiRGB & 0xFF);
+				ubGreen = (UINT8)((uiRGB >> 8) & 0xFF);
+				ubBlue = (UINT8)((uiRGB >> 16) & 0xFF);
+				ubAlpha = 255;
+			}
+
+			if(ubAlpha == 0)
+				continue;
+
+			const UINT16 usPixelZ = TrueColorGetZStripLevel(pZInfo, usZValue, iSourceX, usZStripDelta);
+			const BOOLEAN fBlocked = fSameZBurnsThrough ? (*pZ > usPixelZ) : (*pZ >= usPixelZ);
+			if(fBlocked)
+			{
+				if(!fObscured)
+					continue;
+				// Legacy obscure blitters reveal occluded structures as a checkerboard.
+				// They draw when destination X/Y parity matches.
+				if((x & 1) != (y & 1))
+					continue;
+			}
+
+			ubRed = TrueColorScaleChannel(ubRed, usShadeScale);
+			ubGreen = TrueColorScaleChannel(ubGreen, usShadeScale);
+			ubBlue = TrueColorScaleChannel(ubBlue, usShadeScale);
+
+			if(hSrcVObject->ubBitDepth == 32 && usShadeScale != 0 &&
+				(ubRed != 0 || ubGreen != 0 || ubBlue != 0))
+			{
+				TrueColorApplyRGB565Dither(&ubRed, &ubGreen, &ubBlue, iSourceX, iSourceY);
+			}
+
+			if(ubAlpha < 255)
+			{
+				const UINT32 uiDestRGB = GetRGBColor(*pDest);
+				const UINT32 uiInvAlpha = 255 - ubAlpha;
+				const UINT8 ubDestRed = (UINT8)(uiDestRGB & 0xFF);
+				const UINT8 ubDestGreen = (UINT8)((uiDestRGB >> 8) & 0xFF);
+				const UINT8 ubDestBlue = (UINT8)((uiDestRGB >> 16) & 0xFF);
+				ubRed = (UINT8)(((UINT32)ubRed * ubAlpha + (UINT32)ubDestRed * uiInvAlpha + 127) / 255);
+				ubGreen = (UINT8)(((UINT32)ubGreen * ubAlpha + (UINT32)ubDestGreen * uiInvAlpha + 127) / 255);
+				ubBlue = (UINT8)(((UINT32)ubBlue * ubAlpha + (UINT32)ubDestBlue * uiInvAlpha + 127) / 255);
+			}
+
+			*pDest = Get16BPPColor(FROMRGB(ubRed, ubGreen, ubBlue));
+			if(fZWrite && ubAlpha >= 128)
+				*pZ = usPixelZ;
+		}
+	}
+
+	return TRUE;
+}
+
 BOOLEAN Blt32BPPTo16BPPTransShadow(UINT16 *pDst, UINT32 uiDstPitch, UINT32 *pSrc, UINT32 uiSrcPitch, INT32 iDstXPos, INT32 iDstYPos, INT32 iSrcXPos, INT32 iSrcYPos, UINT32 uiWidth, UINT32 uiHeight)
 {
 	UINT32 *pSrcPtr;
