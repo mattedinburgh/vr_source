@@ -13,6 +13,8 @@
 #include "Strategic Movement.h"
 #include "UndergroundInit.h"
 #include <string>
+#include <vector>
+#include <cctype>
 #include "strategicmap.h"
 
 extern HVSURFACE ghFrameBuffer;
@@ -400,6 +402,303 @@ std::string FindBestFittingLoadscreenFilename(const std::string& baseName, SCREE
 	return baseName + ".sti";
 }
 
+// Documentary loadscreen pool support.  The generated pack uses predictable
+// pool/file names, so the game can discover it through FileExists() without
+// depending on OS directory enumeration or on SectorLoadscreens.xml limits.
+static const INT32 REAL_CONFLICT_POOL_COUNT = 9;
+static const UINT32 REAL_CONFLICT_MAX_FILES_PER_POOL = 500;
+static const UINT32 REAL_CONFLICT_RECENT_HISTORY = 32;
+
+static const CHAR8* gRealConflictPoolCodes[REAL_CONFLICT_POOL_COUNT] =
+{
+	"TM", "JM", "RM", "AF", "AR", "CT", "IN", "RU", "JG"
+};
+
+static BOOLEAN gRealConflictPoolScanned[REAL_CONFLICT_POOL_COUNT] =
+{
+	FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE
+};
+
+static std::vector<std::string> gRealConflictPoolFiles[REAL_CONFLICT_POOL_COUNT];
+static std::vector<std::string> gRecentRealConflictLoadscreens;
+
+static INT32 GetRealConflictPoolIndex(const CHAR8* pCode)
+{
+	if (pCode == NULL)
+		return -1;
+
+	for (INT32 i = 0; i < REAL_CONFLICT_POOL_COUNT; ++i)
+	{
+		if (strcmp(gRealConflictPoolCodes[i], pCode) == 0)
+			return i;
+	}
+
+	return -1;
+}
+
+static void ScanRealConflictPool(INT32 iPool)
+{
+	if (iPool < 0 || iPool >= REAL_CONFLICT_POOL_COUNT || gRealConflictPoolScanned[iPool])
+		return;
+
+	gRealConflictPoolScanned[iPool] = TRUE;
+
+	for (UINT32 uiSeq = 1; uiSeq <= REAL_CONFLICT_MAX_FILES_PER_POOL; ++uiSeq)
+	{
+		CHAR8 szPath[260];
+		sprintf(
+			szPath,
+			"LOADSCREENS\\\\RealConflict\\\\%s\\\\%s_%03u_1920x1080.png",
+			gRealConflictPoolCodes[iPool],
+			gRealConflictPoolCodes[iPool],
+			uiSeq);
+
+		if (FileExists(szPath))
+			gRealConflictPoolFiles[iPool].push_back(szPath);
+	}
+}
+
+static BOOLEAN WasRealConflictLoadscreenShownRecently(const std::string& imagePath)
+{
+	for (std::vector<std::string>::const_iterator it = gRecentRealConflictLoadscreens.begin();
+		 it != gRecentRealConflictLoadscreens.end(); ++it)
+	{
+		if (*it == imagePath)
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
+static BOOLEAN PickRealConflictPoolImage(const CHAR8* pPoolCode, std::string& imagePath)
+{
+	const INT32 iPool = GetRealConflictPoolIndex(pPoolCode);
+	if (iPool < 0)
+		return FALSE;
+
+	ScanRealConflictPool(iPool);
+	const std::vector<std::string>& files = gRealConflictPoolFiles[iPool];
+	if (files.empty())
+		return FALSE;
+
+	std::vector<UINT32> eligible;
+	for (UINT32 i = 0; i < files.size(); ++i)
+	{
+		if (!WasRealConflictLoadscreenShownRecently(files[i]))
+			eligible.push_back(i);
+	}
+
+	// Small pools eventually exhaust the global history.  When that happens,
+	// permit older images again but still avoid an immediate repeat whenever
+	// there is more than one choice.
+	if (eligible.empty())
+	{
+		for (UINT32 i = 0; i < files.size(); ++i)
+		{
+			if (gRecentRealConflictLoadscreens.empty() ||
+				files.size() == 1 ||
+				files[i] != gRecentRealConflictLoadscreens.back())
+			{
+				eligible.push_back(i);
+			}
+		}
+	}
+
+	if (eligible.empty())
+		eligible.push_back(0);
+
+	const UINT32 uiChoice = eligible[Random((UINT32)eligible.size())];
+	imagePath = files[uiChoice];
+
+	gRecentRealConflictLoadscreens.push_back(imagePath);
+	if (gRecentRealConflictLoadscreens.size() > REAL_CONFLICT_RECENT_HISTORY)
+		gRecentRealConflictLoadscreens.erase(gRecentRealConflictLoadscreens.begin());
+
+	return TRUE;
+}
+
+static std::string LowercaseLoadscreenPath(const std::string& path)
+{
+	std::string lower(path);
+	for (size_t i = 0; i < lower.size(); ++i)
+		lower[i] = (CHAR8)tolower((unsigned char)lower[i]);
+	return lower;
+}
+
+static BOOLEAN LoadscreenPathContains(const std::string& lowerPath, const CHAR8* pText)
+{
+	return lowerPath.find(pText) != std::string::npos;
+}
+
+static const CHAR8* GetRealConflictPoolForContext(const std::string& legacyImagePath, UINT8 ubLoadScreenID)
+{
+	// Documentary photographs are intended for above-ground travel/combat
+	// transitions.  Purpose-built cave/mine/basement art remains preferable
+	// underground.
+	if (requestedZ != 0 ||
+		ubLoadScreenID == UNDERGROUND ||
+		ubLoadScreenID == LOADINGSCREEN_BASEMENT ||
+		ubLoadScreenID == LOADINGSCREEN_MINE ||
+		ubLoadScreenID == LOADINGSCREEN_CAVE)
+	{
+		return NULL;
+	}
+
+	if (ubLoadScreenID == HELI || ubLoadScreenID == LOADINGSCREEN_HELI)
+		return "AF";
+
+	const std::string path = LowercaseLoadscreenPath(legacyImagePath);
+
+	if (LoadscreenPathContains(path, "airport") ||
+		LoadscreenPathContains(path, "airfield") ||
+		LoadscreenPathContains(path, "airdrop") ||
+		LoadscreenPathContains(path, "airborne") ||
+		LoadscreenPathContains(path, "parachut") ||
+		LoadscreenPathContains(path, "heli") ||
+		LoadscreenPathContains(path, "plane"))
+		return "AF";
+
+	if (LoadscreenPathContains(path, "tank") ||
+		LoadscreenPathContains(path, "armor") ||
+		LoadscreenPathContains(path, "armour") ||
+		LoadscreenPathContains(path, "apc"))
+		return "AR";
+
+	if (LoadscreenPathContains(path, "bridge") ||
+		LoadscreenPathContains(path, "dam") ||
+		LoadscreenPathContains(path, "power") ||
+		LoadscreenPathContains(path, "oil") ||
+		LoadscreenPathContains(path, "refinery") ||
+		LoadscreenPathContains(path, "pipeline"))
+		return "IN";
+
+	if (LoadscreenPathContains(path, "ruin") ||
+		LoadscreenPathContains(path, "destroy") ||
+		LoadscreenPathContains(path, "wreck") ||
+		LoadscreenPathContains(path, "burn"))
+		return "RU";
+
+	if (LoadscreenPathContains(path, "coast") ||
+		LoadscreenPathContains(path, "beach") ||
+		LoadscreenPathContains(path, "harbor") ||
+		LoadscreenPathContains(path, "harbour") ||
+		LoadscreenPathContains(path, "port") ||
+		LoadscreenPathContains(path, "dock") ||
+		LoadscreenPathContains(path, "island"))
+		return "CT";
+
+	if (LoadscreenPathContains(path, "town") ||
+		LoadscreenPathContains(path, "city") ||
+		LoadscreenPathContains(path, "street") ||
+		LoadscreenPathContains(path, "military") ||
+		LoadscreenPathContains(path, "army") ||
+		LoadscreenPathContains(path, "prison") ||
+		LoadscreenPathContains(path, "palace") ||
+		LoadscreenPathContains(path, "hospital") ||
+		LoadscreenPathContains(path, "warehouse") ||
+		LoadscreenPathContains(path, "barrack") ||
+		LoadscreenPathContains(path, "police") ||
+		LoadscreenPathContains(path, "mall") ||
+		LoadscreenPathContains(path, "sam"))
+		return "TM";
+
+	if (LoadscreenPathContains(path, "jungle") ||
+		LoadscreenPathContains(path, "tropical") ||
+		LoadscreenPathContains(path, "forest") ||
+		LoadscreenPathContains(path, "swamp") ||
+		LoadscreenPathContains(path, "river") ||
+		LoadscreenPathContains(path, "bamboo"))
+		return "JM";
+
+	if (LoadscreenPathContains(path, "farm") ||
+		LoadscreenPathContains(path, "village") ||
+		LoadscreenPathContains(path, "valley") ||
+		LoadscreenPathContains(path, "trail") ||
+		LoadscreenPathContains(path, "wild") ||
+		LoadscreenPathContains(path, "desert") ||
+		LoadscreenPathContains(path, "road"))
+		return "RM";
+
+	// If the authored loadscreen name is generic, use strategic terrain as a
+	// second source of context rather than choosing a totally unrelated photo.
+	if (requestedX > 0 && requestedX < MAP_WORLD_X - 1 &&
+		requestedY > 0 && requestedY < MAP_WORLD_Y - 1)
+	{
+		SECTORINFO* pSector = &SectorInfo[SECTOR(requestedX, requestedY)];
+		switch (pSector->ubTraversability[THROUGH_STRATEGIC_MOVE])
+		{
+			case TOWN:
+				return "TM";
+			case TROPICS:
+			case TROPICS_ROAD:
+			case DENSE:
+			case DENSE_ROAD:
+			case SWAMP:
+			case SWAMP_ROAD:
+			case WATER:
+			case NS_RIVER:
+			case EW_RIVER:
+				return "JM";
+			case COASTAL:
+			case COASTAL_ROAD:
+				return "CT";
+			default:
+				return "RM";
+		}
+	}
+
+	return "RM";
+}
+
+static BOOLEAN PickRealConflictLoadscreen(const std::string& legacyImagePath, UINT8 ubLoadScreenID, std::string& imagePath)
+{
+	const CHAR8* pPrimaryPool = GetRealConflictPoolForContext(legacyImagePath, ubLoadScreenID);
+	if (pPrimaryPool == NULL)
+		return FALSE;
+
+	if (PickRealConflictPoolImage(pPrimaryPool, imagePath))
+		return TRUE;
+
+	// Context-aware fallbacks keep the feature useful while a photo category is
+	// sparse, but never replace underground screens.
+	const CHAR8* pFallback1 = "JM";
+	const CHAR8* pFallback2 = "TM";
+
+	if (strcmp(pPrimaryPool, "AF") == 0)
+	{
+		pFallback1 = "JM";
+		pFallback2 = "TM";
+	}
+	else if (strcmp(pPrimaryPool, "CT") == 0 || strcmp(pPrimaryPool, "RM") == 0 || strcmp(pPrimaryPool, "JG") == 0)
+	{
+		pFallback1 = "JM";
+		pFallback2 = "TM";
+	}
+	else if (strcmp(pPrimaryPool, "IN") == 0 || strcmp(pPrimaryPool, "RU") == 0 || strcmp(pPrimaryPool, "AR") == 0)
+	{
+		pFallback1 = "TM";
+		pFallback2 = "JM";
+	}
+	else if (strcmp(pPrimaryPool, "JM") == 0)
+	{
+		pFallback1 = "TM";
+		pFallback2 = "AF";
+	}
+	else if (strcmp(pPrimaryPool, "TM") == 0)
+	{
+		pFallback1 = "JM";
+		pFallback2 = "AF";
+	}
+
+	if (strcmp(pPrimaryPool, pFallback1) != 0 && PickRealConflictPoolImage(pFallback1, imagePath))
+		return TRUE;
+	if (strcmp(pPrimaryPool, pFallback2) != 0 && strcmp(pFallback1, pFallback2) != 0 &&
+		PickRealConflictPoolImage(pFallback2, imagePath))
+		return TRUE;
+
+	return FALSE;
+}
+
 //sets up the loadscreen with specified ID, and draws it to the FRAME_BUFFER,
 //and refreshing the screen with it.
 void DisplayLoadScreenWithID( UINT8 ubLoadScreenID )
@@ -478,6 +777,9 @@ void DisplayLoadScreenWithID( UINT8 ubLoadScreenID )
 		}
 
 		std::string strImage = FindBestFittingLoadscreenFilename(imagePath, (SCREEN_RESOLUTION)iResolution);
+		std::string documentaryImage;
+		if (PickRealConflictLoadscreen(strImage, ubLoadScreenID, documentaryImage))
+			strImage = documentaryImage;
 		strImage.copy(vs_desc.ImageFile, sizeof(vs_desc.ImageFile) - 1);
 	}
 	else
@@ -494,6 +796,10 @@ void DisplayLoadScreenWithID( UINT8 ubLoadScreenID )
 			strImage.append(LoadScreenNames[0]);
 		}
 		strImage = FindBestFittingLoadscreenFilename(strImage, (SCREEN_RESOLUTION)iResolution);
+
+		std::string documentaryImage;
+		if (PickRealConflictLoadscreen(strImage, ubLoadScreenID, documentaryImage))
+			strImage = documentaryImage;
 
 		strImage.copy(vs_desc.ImageFile, sizeof(vs_desc.ImageFile)-1);
 	}
