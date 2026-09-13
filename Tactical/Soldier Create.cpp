@@ -2673,12 +2673,21 @@ void CreateDetailedPlacementGivenBasicPlacementInfo( SOLDIERCREATE_STRUCT *pp, B
 	{
 			GenerateRandomEquipment( pp, ubSoldierClass, bp->bRelativeEquipmentLevel);
 
-			// Flugente testing: militia get equipment in a different way
+			// Flugente testing: militia get equipment in a different way.
+			// Do not let tactical militia creation consume the player's sector stash while
+			// the sector is contested. Reinforcements/resets during a battle keep their
+			// generated fallback equipment instead of repeatedly taking guns/ammo/armour.
 			if ( pp->bTeam == MILITIA_TEAM && sX > 0 && sX < 17 && sY > 0 && sY < 17 )
 			{
 				INT8 sZ = gbWorldSectorZ > -1 ? gbWorldSectorZ : 0;
+				BOOLEAN fSectorUnderAttack =
+					( ( gTacticalStatus.uiFlags & INCOMBAT ) != 0 ) ||
+					gTacticalStatus.fEnemyInSector ||
+					( NumHostilesInSector( sX, sY, sZ ) > 0 ) ||
+					( sX == gWorldSectorX && sY == gWorldSectorY && sZ == gbWorldSectorZ && HostileBloodcatsPresent() );
 
-				TakeMilitiaEquipmentfromSector(sX, sY, sZ, pp, ubSoldierClass);
+				if ( !fSectorUnderAttack )
+					TakeMilitiaEquipmentfromSector(sX, sY, sZ, pp, ubSoldierClass);
 			}
 	}
 
@@ -2854,12 +2863,20 @@ void CreateDetailedPlacementGivenStaticDetailedPlacementAndBasicPlacementInfo(
 	{
 		GenerateRandomEquipment( pp, bp->ubSoldierClass, bp->bRelativeEquipmentLevel);
 
-		// Flugente testing: militia get equipment in a different way
+		// Flugente testing: militia get equipment in a different way.
+		// Keep sector inventory locked while hostile contact is active; newly-created
+		// militia use their generated fallback kit instead of consuming the stash.
 		if ( pp->bTeam == MILITIA_TEAM && sX > 0 && sX < 17 && sY > 0 && sY < 17 )
 		{
 			INT8 sZ = gbWorldSectorZ > -1 ? gbWorldSectorZ : 0;
+			BOOLEAN fSectorUnderAttack =
+				( ( gTacticalStatus.uiFlags & INCOMBAT ) != 0 ) ||
+				gTacticalStatus.fEnemyInSector ||
+				( NumHostilesInSector( sX, sY, sZ ) > 0 ) ||
+				( sX == gWorldSectorX && sY == gWorldSectorY && sZ == gbWorldSectorZ && HostileBloodcatsPresent() );
 
-			TakeMilitiaEquipmentfromSector(sX, sY, sZ, pp, bp->ubSoldierClass);
+			if ( !fSectorUnderAttack )
+				TakeMilitiaEquipmentfromSector(sX, sY, sZ, pp, bp->ubSoldierClass);
 		}
 
 		DecideToAssignSniperOrders(pp);
