@@ -6871,6 +6871,7 @@ INT32 AISupportRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed || pSoldier->bBreathCollapsed ||
 		(pSoldier->usSoldierFlagMask & SOLDIER_POW) ||
 		(pSoldier->flags.uiStatusFlags & SOLDIER_COWERING) ||
+		AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier) ||
 		!AICheckHasGun(pSoldier) || AIGunAmmo(pSoldier) == 0)
 	{
 		return -10000;
