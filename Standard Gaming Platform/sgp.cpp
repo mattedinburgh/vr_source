@@ -1256,9 +1256,21 @@ int PASCAL HandledWinMain(HINSTANCE hInstance,	HINSTANCE hPrevInstance, LPSTR pC
 //	ShowCursor(FALSE);
 
 #ifdef USE_VFS
-	//vfs::Path exe_dir, exe_file;
-	//os::getExecutablePath(exe_dir, exe_file);
-	//os::setCurrectDirectory(exe_dir);
+	// VFS configuration files are intentionally relative to the executable
+	// directory.  Older Vengeance builds left the process CWD unchanged, so
+	// launching the editor/game by full path from PowerShell or another tool
+	// could make InitializeStandardGamingPlatform fail before the VFS mounted.
+	CHAR8 zExecutablePath[MAX_PATH];
+	DWORD dwExecutablePathLen = GetModuleFileNameA( NULL, zExecutablePath, MAX_PATH );
+	if ( dwExecutablePathLen > 0 && dwExecutablePathLen < MAX_PATH )
+	{
+		CHAR8 *pLastSlash = strrchr( zExecutablePath, '\\' );
+		if ( pLastSlash != NULL )
+		{
+			*pLastSlash = '\0';
+			SetCurrentDirectoryA( zExecutablePath );
+		}
+	}
 #else
 	STRING512 sExecutableDir;
 	GetExecutableDirectory( sExecutableDir );
