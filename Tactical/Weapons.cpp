@@ -129,7 +129,7 @@ FLOAT CalcNewChanceToHitAimSpecialBonus(SOLDIERTYPE *pSoldier);
 FLOAT CalcNewChanceToHitAimTargetBonus(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pTarget, INT32 sGridNo, INT32 iRange, UINT8 ubAimPos, BOOLEAN fCantSeeTarget);
 FLOAT CalcNewChanceToHitAimTraitBonus(SOLDIERTYPE *pSoldier, FLOAT fAimCap, FLOAT fDifference, INT32 sGridNo, INT16 ubAimTime, FLOAT fScopeMagFactor, UINT32 uiBestScopeRange);
 
-INT32 HTHImpact( SOLDIERTYPE * pSoldier, SOLDIERTYPE * pTarget, INT32 iHitBy, BOOLEAN fBladeAttack );
+INT32 HTHImpact( SOLDIERTYPE * pSoldier, SOLDIERTYPE * pTarget, INT32 iHitBy, BOOLEAN fBladeAttack, MELEE_DIAGNOSTIC *pDiagnostic = NULL );
 
 BOOLEAN gfNextShotKills = FALSE;
 BOOLEAN gfReportHitChances = FALSE;
@@ -3271,30 +3271,48 @@ BOOLEAN UseBlade( SOLDIERTYPE *pSoldier , INT32 sTargetGridNo )
 			PossiblyStartEnemyTaunt( pSoldier, TAUNT_HIT_BLADE, pTargetSoldier->ubID ); 
 			PossiblyStartEnemyTaunt( pTargetSoldier, TAUNT_GOT_HIT_BLADE, pSoldier->ubID ); 
 
-			// CALCULATE DAMAGE!
-			// attack HITS, calculate damage (base damage is 1-maximum knife sImpact)
-			iImpact = HTHImpact( pSoldier, pTargetSoldier, (iHitChance - iDiceRoll), TRUE );
+			// CALCULATE DAMAGE! Capture the exact runtime chance, roll and every
+			// damage stage so the battle-log hover explains this specific strike.
+			MELEE_DIAGNOSTIC meleeDiag;
+			memset( &meleeDiag, 0, sizeof(meleeDiag) );
+			meleeDiag.fValid = TRUE;
+			meleeDiag.fBlade = TRUE;
+			meleeDiag.ubAttackerID = pSoldier->ubID;
+			meleeDiag.ubTargetID = pTargetSoldier->ubID;
+			meleeDiag.ubAimLocation = pSoldier->bAimShotLocation;
+			meleeDiag.ubAimTime = pSoldier->aiData.bAimTime;
+			meleeDiag.usWeapon = pSoldier->GetUsedWeaponNumber( &pSoldier->inv[pSoldier->ubAttackingHand] );
+			meleeDiag.sHitChance = (INT16)iHitChance;
+			meleeDiag.sRoll = (INT16)iDiceRoll;
+			meleeDiag.sHitMargin = (INT16)(iHitChance - iDiceRoll);
+			iImpact = HTHImpact( pSoldier, pTargetSoldier, (iHitChance - iDiceRoll), TRUE, &meleeDiag );
 
 			// Flugente: check for underbarrel weapons and use that object if necessary (think of bayonets)
 			OBJECTTYPE* pObj = pSoldier->GetUsedWeapon( &pSoldier->inv[pSoldier->ubAttackingHand] );
 
 			// modify this by the knife's condition (if it's dull, not much good)
-			iImpact = ( iImpact * WEAPON_STATUS_MOD( (*pObj)[0]->data.objectStatus) ) / 100;
+			meleeDiag.sWeaponConditionPercent = (INT16)WEAPON_STATUS_MOD( (*pObj)[0]->data.objectStatus );
+			iImpact = ( iImpact * meleeDiag.sWeaponConditionPercent ) / 100;
+			meleeDiag.sAfterCondition = (INT16)iImpact;
 			
 			// modify by hit location
 			AdjustImpactByHitLocation( iImpact, pSoldier->bAimShotLocation, &iImpact, &iImpactForCrits );
+			meleeDiag.sAfterHitLocation = (INT16)iImpact;
 
 			// bonus for surprise
+			meleeDiag.sSurprisePercent = fSurpriseAttack ? 50 : 0;
 			if ( fSurpriseAttack )
 			{
 				iImpact = (iImpact * 3) / 2;
 			}
+			meleeDiag.sAfterSurprise = (INT16)iImpact;
 
 			// any successful hit does at LEAST 1 pt minimum damage
 			if (iImpact < 1)
 			{
 				iImpact = 1;
 			}
+			meleeDiag.sFinalDamage = (INT16)iImpact;
 			
 			if ( (*pObj)[0]->data.objectStatus > USABLE )
 			{
@@ -3319,7 +3337,7 @@ BOOLEAN UseBlade( SOLDIERTYPE *pSoldier , INT32 sTargetGridNo )
 			if ( pTargetSoldier->ubProfile != NO_PROFILE )
 				gMercProfiles[ pTargetSoldier->ubProfile ].records.usTimesWoundedStabbed++;
 
-			BattleLogAddMeleeHit( pSoldier->ubID, pTargetSoldier->ubID, (INT16)iImpact );
+			BattleLogAddMeleeHit( &meleeDiag );
 
 			// Send event for getting hit
 			memset( &(SWeaponHit), 0, sizeof( SWeaponHit ) );
@@ -4072,14 +4090,31 @@ BOOLEAN UseHandToHand( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo, BOOLEAN fStea
 			if ( iDiceRoll < iHitChance || AreInMeanwhile( ) )
 #endif
 			{
-				// CALCULATE DAMAGE!
-				iImpact = HTHImpact( pSoldier, pTargetSoldier, (iHitChance - iDiceRoll), FALSE );
+				// CALCULATE DAMAGE! Keep an exact snapshot for hover diagnostics.
+				MELEE_DIAGNOSTIC meleeDiag;
+				memset( &meleeDiag, 0, sizeof(meleeDiag) );
+				meleeDiag.fValid = TRUE;
+				meleeDiag.fBlade = FALSE;
+				meleeDiag.ubAttackerID = pSoldier->ubID;
+				meleeDiag.ubTargetID = pTargetSoldier->ubID;
+				meleeDiag.ubAimLocation = pSoldier->bAimShotLocation;
+				meleeDiag.ubAimTime = pSoldier->aiData.bAimTime;
+				meleeDiag.usWeapon = pSoldier->GetUsedWeaponNumber( &pSoldier->inv[pSoldier->ubAttackingHand] );
+				meleeDiag.sHitChance = (INT16)(AreInMeanwhile() ? 100 : iHitChance);
+				meleeDiag.sRoll = (INT16)iDiceRoll;
+				meleeDiag.sHitMargin = (INT16)(meleeDiag.sHitChance - iDiceRoll);
+				iImpact = HTHImpact( pSoldier, pTargetSoldier, (iHitChance - iDiceRoll), FALSE, &meleeDiag );
+				meleeDiag.sWeaponConditionPercent = 100;
+				meleeDiag.sAfterCondition = (INT16)iImpact;
+				meleeDiag.sAfterHitLocation = (INT16)iImpact;
+				meleeDiag.sAfterSurprise = (INT16)iImpact;
+				meleeDiag.sFinalDamage = (INT16)iImpact;
 
 				// SANDRO - new merc records - times wounded (punched)
 				if ( pTargetSoldier->ubProfile != NO_PROFILE )
 					gMercProfiles[ pTargetSoldier->ubProfile ].records.usTimesWoundedPunched++;
 
-				BattleLogAddMeleeHit( pSoldier->ubID, pTargetSoldier->ubID, (INT16)iImpact );
+				BattleLogAddMeleeHit( &meleeDiag );
 
 				// Send event for getting hit
 				memset( &(SWeaponHit), 0, sizeof( SWeaponHit ) );
@@ -8838,7 +8873,7 @@ INT32 BulletImpact( SOLDIERTYPE *pFirer, BULLET *pBullet, SOLDIERTYPE * pTarget,
 	return( iImpact );
 }
 
-INT32 HTHImpact( SOLDIERTYPE * pSoldier, SOLDIERTYPE * pTarget, INT32 iHitBy, BOOLEAN fBladeAttack )
+INT32 HTHImpact( SOLDIERTYPE * pSoldier, SOLDIERTYPE * pTarget, INT32 iHitBy, BOOLEAN fBladeAttack, MELEE_DIAGNOSTIC *pDiagnostic )
 {
 	////////////////////////////////////////////
 	// SANDRO - this all was somehow messed up
@@ -8916,10 +8951,21 @@ INT32 HTHImpact( SOLDIERTYPE * pSoldier, SOLDIERTYPE * pTarget, INT32 iHitBy, BO
 		}
 	}
 
+	if ( pDiagnostic )
+		pDiagnostic->sBaseImpact = (INT16)iImpact;
+
 	iFluke = PreRandom( 51 ) - 25; // +/-25% bonus due to random factors
 	iBonus = iHitBy / 2;				// up to 50% extra impact for accurate attacks
 
+	if ( pDiagnostic )
+	{
+		pDiagnostic->sFlukePercent = (INT16)iFluke;
+		pDiagnostic->sAccuracyPercent = (INT16)iBonus;
+	}
+
 	iImpact = iImpact * (100 + iFluke + iBonus) / 100;
+	if ( pDiagnostic )
+		pDiagnostic->sAfterHitQuality = (INT16)iImpact;
 
 	iBonus = 0; 
 
@@ -9125,11 +9171,25 @@ INT32 HTHImpact( SOLDIERTYPE * pSoldier, SOLDIERTYPE * pTarget, INT32 iHitBy, BO
 	}
 
 	// apply all bonuses
+	if ( pDiagnostic )
+	{
+		pDiagnostic->sTraitSituationPercent = (INT16)iBonus;
+		pDiagnostic->sSpecialFlatDamage = (INT16)(iImpact - pDiagnostic->sAfterHitQuality);
+	}
 	iImpact = (iImpact * (100 + iBonus) + 50) / 100; // round it properly
+	if ( pDiagnostic )
+		pDiagnostic->sAfterBonuses = (INT16)iImpact;
 
 	// Flugente: moved the damage calculation into a separate function
-	BOOLEAN autoresolve = IsAutoResolveActive();		
-	iImpact = max( 1, (INT32)(iImpact * (100 - pTarget->GetDamageResistance(autoresolve, FALSE)) / 100 ) );
+	BOOLEAN autoresolve = IsAutoResolveActive();
+	INT32 iResistancePercent = pTarget->GetDamageResistance(autoresolve, FALSE);
+	iImpact = max( 1, (INT32)(iImpact * (100 - iResistancePercent) / 100 ) );
+	if ( pDiagnostic )
+	{
+		pDiagnostic->sResistancePercent = (INT16)iResistancePercent;
+		pDiagnostic->sAfterResistance = (INT16)iImpact;
+		pDiagnostic->sFinalDamage = (INT16)iImpact;
+	}
 
 	// Flugente: if the target is a zombie, any melee attack, regardless of hit location, will set the headshot flag. Thus any zombie killed in melee will stay dead (if you play with that option)
 	if ( pTarget->IsZombie() )
