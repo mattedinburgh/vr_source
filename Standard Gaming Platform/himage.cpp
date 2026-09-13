@@ -351,6 +351,48 @@ static UINT32 B1TCReadU32( const UINT8 *pData )
 		((UINT32)pData[3] << 24);
 }
 
+static void B1TCInheritSTIAppData( HIMAGE hImage, UINT16 fContents )
+{
+	if( !(fContents & IMAGE_APPDATA) )
+		return;
+
+	std::string legacyFilename( hImage->ImageFile );
+	const std::string::size_type dot = legacyFilename.find_last_of('.');
+	if( dot == std::string::npos )
+		return;
+	legacyFilename = legacyFilename.substr( 0, dot + 1 ) + "sti";
+
+	image_type legacyImage;
+	memset( &legacyImage, 0, sizeof(legacyImage) );
+	strncpy( legacyImage.ImageFile, legacyFilename.c_str(), sizeof(legacyImage.ImageFile) - 1 );
+	legacyImage.ImageFile[ sizeof(legacyImage.ImageFile) - 1 ] = 0;
+
+	if( !FileExists( legacyImage.ImageFile ) )
+		return;
+
+	// B1TC replaces pixels only. Preserve any AuxObjectData/app-specific payload
+	// carried by the authored STI so future true-colour conversions cannot
+	// silently change animation or tile metadata.
+	if( !LoadSTCIFileToImage( &legacyImage, IMAGE_APPDATA ) )
+	{
+		DbgMessage( TOPIC_HIMAGE, DBG_LEVEL_2, String("Could not inherit STI appdata for true-colour sibling %s", hImage->ImageFile) );
+		return;
+	}
+
+	if( legacyImage.pAppData != NULL && legacyImage.uiAppDataSize > 0 )
+	{
+		hImage->pAppData = legacyImage.pAppData;
+		hImage->uiAppDataSize = legacyImage.uiAppDataSize;
+		hImage->fFlags |= IMAGE_APPDATA;
+
+		legacyImage.pAppData = NULL;
+		legacyImage.uiAppDataSize = 0;
+		legacyImage.fFlags &= ~IMAGE_APPDATA;
+	}
+
+	ReleaseImageData( &legacyImage, IMAGE_ALLDATA );
+}
+
 static BOOLEAN LoadB1TCFileToImage( HIMAGE hImage, UINT16 fContents )
 {
 	HWFILE hFile = FileOpen( hImage->ImageFile, FILE_ACCESS_READ );
@@ -481,6 +523,7 @@ static BOOLEAN LoadB1TCFileToImage( HIMAGE hImage, UINT16 fContents )
 	hImage->pPalette = NULL;
 	hImage->pui16BPPPalette = NULL;
 	hImage->fFlags |= IMAGE_BITMAPDATA;
+	B1TCInheritSTIAppData( hImage, fContents );
 	return TRUE;
 }
 
