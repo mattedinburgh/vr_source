@@ -1334,15 +1334,19 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 
 							pTMilitiaSoldier->aiData.bOrders = FARPATROL;
 							pTMilitiaSoldier->aiData.bAttitude = DEFENSIVE;
+							AIForceDisengagementState( pTMilitiaSoldier, 4 );
 							pTMilitiaSoldier->usUIMovementMode = RUNNING;
 
 							// set up next action to run away
-							sActionGridNo =  FindSpotMaxDistFromOpponents( pTMilitiaSoldier );
+							sActionGridNo = FindRetreatSpot( pTMilitiaSoldier );
+							if ( TileIsOutOfBounds(sActionGridNo) )
+								sActionGridNo = FindSpotMaxDistFromOpponents( pTMilitiaSoldier );
 
 							pTMilitiaSoldier->aiData.usNextActionData = sActionGridNo;
 							
 							if (!TileIsOutOfBounds(pTMilitiaSoldier->aiData.usNextActionData))
 							{
+								pTMilitiaSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
 								pTMilitiaSoldier->aiData.bNextAction = AI_ACTION_RUN_AWAY;
 								pTMilitiaSoldier->aiData.usActionData = ANIM_STAND;
 
@@ -1351,7 +1355,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 								pTMilitiaSoldier->aiData.ubPendingActionAnimCount = 0;
 							}
 
-							if ( pTMilitiaSoldier->sGridNo != sActionGridNo )
+							if ( !TileIsOutOfBounds(sActionGridNo) && pTMilitiaSoldier->sGridNo != sActionGridNo )
 							{
 								SendGetNewSoldierPathEvent( pTMilitiaSoldier, sActionGridNo, pTMilitiaSoldier->usUIMovementMode );
 							}
@@ -1606,6 +1610,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 							{
 								pTeamSoldier->aiData.bOrders = FARPATROL;
 								pTeamSoldier->aiData.bAttitude = DEFENSIVE;
+								AIForceDisengagementState( pTeamSoldier, 4 );
 								pTeamSoldier->usUIMovementMode = RUNNING;
 
 								//// set up next action to run away
@@ -1618,12 +1623,15 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 								//}
 
 								// set up next action to run away
-								sActionGridNo =  FindSpotMaxDistFromOpponents( pTeamSoldier );
+								sActionGridNo = FindRetreatSpot( pTeamSoldier );
+								if ( TileIsOutOfBounds(sActionGridNo) )
+									sActionGridNo = FindSpotMaxDistFromOpponents( pTeamSoldier );
 
 								pTeamSoldier->aiData.usNextActionData = sActionGridNo;
 
 								if ( !TileIsOutOfBounds(pTeamSoldier->aiData.usNextActionData) )
 								{
+									pTeamSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
 									pTeamSoldier->aiData.bNextAction = AI_ACTION_RUN_AWAY;
 									pTeamSoldier->aiData.usActionData = ANIM_STAND;									
 
@@ -1632,7 +1640,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 									pTeamSoldier->aiData.ubPendingActionAnimCount = 0;
 								}
 
-								if ( pTeamSoldier->sGridNo != sActionGridNo )
+								if ( !TileIsOutOfBounds(sActionGridNo) && pTeamSoldier->sGridNo != sActionGridNo )
 								{
 									SendGetNewSoldierPathEvent( pTeamSoldier, sActionGridNo, pTeamSoldier->usUIMovementMode );
 								}
