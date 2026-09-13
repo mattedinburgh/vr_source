@@ -2791,7 +2791,13 @@ void GetKeyboardInput( UINT32 *puiNewEvent )
 							if ( pCasualty )
 							{
 								if ( pSoldier->StartDraggingBleedoutCasualty( pCasualty, TRUE ) )
+								{
 									ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, L"%s starts moving %s.", pSoldier->GetName(), pCasualty->GetName() );
+								}
+								else
+								{
+									ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, L"%s cannot move %s right now (check AP).", pSoldier->GetName(), pCasualty->GetName() );
+								}
 							}
 							else
 							{
