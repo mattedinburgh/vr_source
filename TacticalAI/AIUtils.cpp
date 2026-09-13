@@ -4631,11 +4631,16 @@ static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 	for (UINT8 ubTeam = 1; ubTeam < gubAINextFireteam; ++ubTeam)
 	{
 		UINT8 ubTargetReady = AIFireteamCountById(ubTeam, TRUE);
-		if (ubTeam == ubOld || ubTargetReady < 3)
+		if (ubTeam == ubOld || ubTargetReady == 0)
+			continue;
+
+		// Two battered elements may rebuild one viable team together (1+2, 2+1,
+		// 2+2). Do not merge two lone survivors into another fragile two-man remnant.
+		if (ubTargetReady + ubReady < 3)
 			continue;
 
 		// Merge capacity is combat strength, not body count. Downed casualties move
-		// with the remnant for cohesion/rescue, but they do not block two survivors
+		// with the remnant for cohesion/rescue, but they do not block survivors
 		// from joining a viable element.
 		if (ubTargetReady + ubReady > AI_FIRETEAM_MAX_MERGED)
 			continue;
