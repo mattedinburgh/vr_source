@@ -8292,8 +8292,10 @@ void CalcTargetMovementOffset( SOLDIERTYPE *pShooter, SOLDIERTYPE *pTarget, OBJE
 	{
 		// HEADROCK HAM 4: Hopefully the right spot for this: This soldier has no "old" coordinates, so just set them
 		// to wherever he/she is currently standing.
-		pTarget->sOldXPos = CenterX( pTarget->sGridNo );
-		pTarget->sOldYPos = CenterY( pTarget->sGridNo );
+		INT16 sXPos, sYPos;
+		ConvertGridNoToCenterCellXY(pTarget->sGridNo, &sXPos, &sYPos);
+		pTarget->sOldXPos = sXPos;
+		pTarget->sOldYPos = sYPos;
 		// Since movement is now nonexistent, break the formula here without adjusting coordinates.
 		return;
 	}
