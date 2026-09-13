@@ -12401,26 +12401,31 @@ FLOAT CalcNewChanceToHitBaseWeaponBonus(SOLDIERTYPE *pSoldier, INT32 sGridNo, IN
 FLOAT CalcNewChanceToHitBaseSpecialBonus(SOLDIERTYPE *pSoldier)
 {
 	FLOAT fBaseModifier = 0;
-	
-		/////////////////////////////////////////////////////////////////////////////////////
-	// SANDRO - Bonus CtH for Militia
+	FLOAT fClassBonus = 0;
+	FLOAT fSpecialNPCBonus = 0;
+	FLOAT fDifficultyBonus = 0;
+
+	/////////////////////////////////////////////////////////////////////////////////////
+	// SANDRO - Bonus CtH for Militia / enemy classes.
 	if (pSoldier->ubSoldierClass == SOLDIER_CLASS_GREEN_MILITIA && gGameExternalOptions.sGreenMilitiaCtHBonusPercent != 0)
-		fBaseModifier += gGameExternalOptions.sGreenMilitiaCtHBonusPercent;
+		fClassBonus = (FLOAT)gGameExternalOptions.sGreenMilitiaCtHBonusPercent;
 	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_REG_MILITIA && gGameExternalOptions.sRegularMilitiaCtHBonusPercent != 0)
-		fBaseModifier += gGameExternalOptions.sRegularMilitiaCtHBonusPercent;
+		fClassBonus = (FLOAT)gGameExternalOptions.sRegularMilitiaCtHBonusPercent;
 	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA && gGameExternalOptions.sVeteranMilitiaCtHBonusPercent != 0)
-		fBaseModifier += gGameExternalOptions.sVeteranMilitiaCtHBonusPercent;
-	// bonus for enemy
+		fClassBonus = (FLOAT)gGameExternalOptions.sVeteranMilitiaCtHBonusPercent;
 	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ADMINISTRATOR && gGameExternalOptions.sEnemyAdminCtHBonusPercent != 0)
-		fBaseModifier += gGameExternalOptions.sEnemyAdminCtHBonusPercent;
+		fClassBonus = (FLOAT)gGameExternalOptions.sEnemyAdminCtHBonusPercent;
 	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ARMY && gGameExternalOptions.sEnemyRegularCtHBonusPercent != 0)
-		fBaseModifier += gGameExternalOptions.sEnemyRegularCtHBonusPercent;
+		fClassBonus = (FLOAT)gGameExternalOptions.sEnemyRegularCtHBonusPercent;
 	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE && gGameExternalOptions.sEnemyEliteCtHBonusPercent != 0)
-		fBaseModifier += gGameExternalOptions.sEnemyEliteCtHBonusPercent;
-		
-	// SANDRO - option to make special NPCs stronger - chance to hit
+		fClassBonus = (FLOAT)gGameExternalOptions.sEnemyEliteCtHBonusPercent;
+
+	fBaseModifier += fClassBonus;
+
+	// SANDRO - option to make special NPCs stronger - chance to hit.
 	if (gGameExternalOptions.usSpecialNPCStronger > 0)
 	{
+		FLOAT fBeforeNPCBonus = fBaseModifier;
 		switch( pSoldier->ubProfile )
 		{
 			case CARMEN:
@@ -12443,6 +12448,7 @@ FLOAT CalcNewChanceToHitBaseSpecialBonus(SOLDIERTYPE *pSoldier)
 				fBaseModifier += (fBaseModifier * gGameExternalOptions.usSpecialNPCStronger / 100);
 				break;
 		}
+		fSpecialNPCBonus = fBaseModifier - fBeforeNPCBonus;
 	}
 
 	// Human tactical AI should become harder through decisions, equipment and numbers,
@@ -12451,7 +12457,15 @@ FLOAT CalcNewChanceToHitBaseSpecialBonus(SOLDIERTYPE *pSoldier)
 	if ( !(pSoldier->flags.uiStatusFlags & SOLDIER_PC ) &&
 		(pSoldier->bSide != gbPlayerNum) && !AICombatTeam(pSoldier) )
 	{
-		fBaseModifier += gGameCTHConstants.BASE_DIFFICULTY[gGameOptions.ubDifficultyLevel];
+		fDifficultyBonus = (FLOAT)gGameCTHConstants.BASE_DIFFICULTY[gGameOptions.ubDifficultyLevel];
+		fBaseModifier += fDifficultyBonus;
+	}
+
+	if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+	{
+		gNCTHWorkingDiagnostic.fClassAccuracyBonus = fClassBonus;
+		gNCTHWorkingDiagnostic.fSpecialNPCAccuracyBonus = fSpecialNPCBonus;
+		gNCTHWorkingDiagnostic.fBaseDifficultyBonus = fDifficultyBonus;
 	}
 
 	return fBaseModifier;
@@ -12757,14 +12771,19 @@ FLOAT CalcNewChanceToHitAimWeaponBonus(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT
 FLOAT CalcNewChanceToHitAimSpecialBonus(SOLDIERTYPE *pSoldier)
 {
 	FLOAT fAimModifier = 0;
+	FLOAT fDifficultyBonus = 0;
 
 	// Do not grant hidden difficulty-based aiming bonuses to human enemy/militia AI.
 	if ( !(pSoldier->flags.uiStatusFlags & SOLDIER_PC ) &&
 		(pSoldier->bSide != gbPlayerNum) && !AICombatTeam(pSoldier) )
 	{
-		fAimModifier += gGameCTHConstants.AIM_DIFFICULTY[gGameOptions.ubDifficultyLevel];
+		fDifficultyBonus = (FLOAT)gGameCTHConstants.AIM_DIFFICULTY[gGameOptions.ubDifficultyLevel];
+		fAimModifier += fDifficultyBonus;
 	}
-	
+
+	if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+		gNCTHWorkingDiagnostic.fAimDifficultyBonus = fDifficultyBonus;
+
 	return fAimModifier;
 }
 
