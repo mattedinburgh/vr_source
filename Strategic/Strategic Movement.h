@@ -265,6 +265,12 @@ void RetreatGroupToPreviousSector( GROUP *pGroup );
 
 GROUP* FindMovementGroupInSector( UINT8 ubSectorX, UINT8 ubSectorY, BOOLEAN fPlayer );
 
+// Enemy tactical escapes are transferred into the adjacent strategic sector as
+// static troops.  Queue/process the resulting defender collision outside tactical
+// battle cleanup so escaped enemies cannot coexist with mercs or militia.
+void QueueEnemyRetreatConflict( UINT8 ubSectorX, UINT8 ubSectorY );
+BOOLEAN ProcessNextEnemyRetreatConflict( void );
+
 BOOLEAN GroupAtFinalDestination( GROUP *pGroup );
 
 // find the travel time between waypts for this group
