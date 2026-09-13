@@ -310,10 +310,8 @@ void ResetMilitia()
 	if (gfStrategicMilitiaChangesMade)
 	{
 		// Never tear down and recreate tactical militia while this sector is contested.
-		// TeamDropAll() intentionally refuses to return sector gear during combat;
-		// rebuilding anyway would therefore delete militia inventories and could lose
-		// player equipment previously issued from the sector stash. Keep the change
-		// flag set and process the rebuild once hostile contact has ended.
+		// Keep the change flag set and preserve the live tactical inventories until
+		// hostile contact has ended; the safe rebuild below will then reuse them.
 		if ( (gTacticalStatus.uiFlags & INCOMBAT) ||
 			 gTacticalStatus.fEnemyInSector ||
 			 NumHostilesInSector( gWorldSectorX, gWorldSectorY, gbWorldSectorZ ) > 0 ||
