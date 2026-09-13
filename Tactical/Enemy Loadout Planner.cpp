@@ -566,37 +566,49 @@ void BuildEnemyRoleTargets(
 		pTargets,
 		ENEMY_ROLE_SQUAD_LEADER,
 		(ubSquadSize >= 5) ? 1 : 0,
-		(ubSquadSize >= 14 && IsEliteEnemy(bSoldierClass)) ? 2 : 1);
+		(ubSquadSize >= 5)
+			? ((ubSquadSize >= 14 && IsEliteEnemy(bSoldierClass)) ? 2 : 1)
+			: 0);
 
 	SetRoleTarget(
 		pTargets,
 		ENEMY_ROLE_AUTOMATIC_RIFLEMAN,
 		(ubProgress >= 20 && ubSquadSize >= 5) ? 1 : 0,
-		ClampU8((ubSquadSize + 5) / 6, 1, 3));
+		(ubProgress >= 20 && ubSquadSize >= 5)
+			? ClampU8((ubSquadSize + 5) / 6, 1, 3)
+			: 0);
 
 	SetRoleTarget(
 		pTargets,
 		ENEMY_ROLE_GRENADIER,
 		(ubProgress >= 30 && ubSquadSize >= 6) ? 1 : 0,
-		ClampU8((ubSquadSize + 4) / 5, 1, 3));
+		(ubProgress >= 30 && ubSquadSize >= 6)
+			? ClampU8((ubSquadSize + 4) / 5, 1, 3)
+			: 0);
 
 	SetRoleTarget(
 		pTargets,
 		ENEMY_ROLE_MARKSMAN,
 		(ubProgress >= 40 && ubSquadSize >= 7) ? 1 : 0,
-		ClampU8((ubSquadSize + 7) / 8, 1, 2));
+		(ubProgress >= 40 && ubSquadSize >= 7)
+			? ClampU8((ubSquadSize + 7) / 8, 1, 2)
+			: 0);
 
 	SetRoleTarget(
 		pTargets,
 		ENEMY_ROLE_ASSAULT,
 		(ubProgress >= 20 && ubSquadSize >= 5) ? 1 : 0,
-		ClampU8((ubSquadSize + 6) / 7, 1, 3));
+		(ubProgress >= 20 && ubSquadSize >= 5)
+			? ClampU8((ubSquadSize + 6) / 7, 1, 3)
+			: 0);
 
 	SetRoleTarget(
 		pTargets,
 		ENEMY_ROLE_MEDIC,
 		((ubProgress >= (IsEliteEnemy(bSoldierClass) ? 40 : 50)) && ubSquadSize >= 9) ? 1 : 0,
-		(ubSquadSize >= 16) ? 2 : 1);
+		((ubProgress >= (IsEliteEnemy(bSoldierClass) ? 40 : 50)) && ubSquadSize >= 9)
+			? ((ubSquadSize >= 16) ? 2 : 1)
+			: 0);
 
 	// Optional roles.  Desired stays zero; the planner can spend reserved
 	// variation slots on these according to availability and caps.
