@@ -1464,18 +1464,22 @@ void BattleLogAddNCTHHit( INT32 iBullet, UINT8 ubTargetID, INT16 sDamage )
 		pEntry->fDamageClickable = TRUE;
 	}
 
+	CHAR16 zDamageToken[64];
+	swprintf( zDamageToken, L"%d damage", sDamage );
+
 	if ( fIntendedHit )
 	{
-		const CHAR16 *pOutcome = fShooterPlayer ? L"HIT" : L"ENEMY HIT";
-		swprintf( pEntry->zText, L"[%02d:%02d] %s - %s -> %s - dmg %d - NCTH %.0f  [click]",
-			guiHour, guiMin, pOutcome, pName, pActualTargetName, sDamage, d.fFinalChance );
+		swprintf( pEntry->zText, L"[%02d:%02d] %s hit %s for %s",
+			guiHour, guiMin, pName, pActualTargetName, zDamageToken );
 	}
 	else
 	{
-		const CHAR16 *pOutcome = fShooterPlayer ? L"HIT OTHER" : L"ENEMY HIT OTHER";
-		swprintf( pEntry->zText, L"[%02d:%02d] %s - %s aimed %s, hit %s - dmg %d  [click]",
-			guiHour, guiMin, pOutcome, pName, pIntendedTargetName, pActualTargetName, sDamage );
+		swprintf( pEntry->zText, L"[%02d:%02d] %s aimed %s but hit %s for %s",
+			guiHour, guiMin, pName, pIntendedTargetName, pActualTargetName, zDamageToken );
 	}
+	BattleLogSetTokenRange( pEntry, L"hit", FALSE );
+	if ( pEntry->fDamageClickable )
+		BattleLogSetTokenRange( pEntry, zDamageToken, TRUE );
 	gusBattleLogScrollOffset = 0;
 
 	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
