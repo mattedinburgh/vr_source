@@ -219,6 +219,22 @@ INT32 ScoreEnemyLBEForPlan(
 	UINT16 usLBEItem,
 	UINT8 ubMaxCoolness);
 
+// Deterministic audit selectors.  They search the same class-specific pools as
+// the live equipment system but do not consume game RNG and are not wired into
+// soldier generation yet.
+UINT16 SelectBestEnemyAttachmentForPlan(
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	INT8 bSoldierClass,
+	UINT16 usBaseItem,
+	UINT8 ubItemChoiceType,
+	UINT8 ubMaxCoolness);
+
+UINT16 SelectBestEnemyLBEForPlan(
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	INT8 bSoldierClass,
+	UINT8 ubMaxCoolness,
+	INT8 bRequiredLBEClass);
+
 const char *EnemyLoadoutRoleName(ENEMY_LOADOUT_ROLE Role);
 
 #endif
