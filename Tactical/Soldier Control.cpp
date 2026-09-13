@@ -5942,6 +5942,69 @@ static void DropVRDirectionalBloodTrail( SOLDIERTYPE *pSoldier, UINT8 ubSprayDir
 }
 
 
+// VR cinematic gunshot reactions: deliberately exaggerated test baseline.
+// Surviving merc-body hits get a physical reaction instead of always playing the
+// stock in-place hit. Running victims lose their footing immediately; standing
+// victims can be driven one or two tiles away from the incoming shot or collapse
+// sideways/forward. Probabilities are intentionally aggressive for visual testing.
+static BOOLEAN HandleVRCinematicGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWeaponIndex, INT16 sDamage, UINT16 bDirection )
+{
+	if ( pSoldier == NULL || pSoldier->stats.bLife <= 0 || pSoldier->ubBodyType >= 4 )
+		return FALSE;
+
+	if ( !( Item[ usWeaponIndex ].usItemClass & IC_GUN ) || sDamage < 1 || pSoldier->MercInWater() )
+		return FALSE;
+
+	if ( gAnimControl[ pSoldier->usAnimState ].ubEndHeight != ANIM_STAND )
+		return FALSE;
+
+	UINT8 ubIncomingDirection = (UINT8)( bDirection % NUM_WORLD_DIRECTIONS );
+
+	// Preserve the visual direction of travel when a running soldier is hit. The
+	// forward-fall animation then reads as momentum carrying the body into a trip.
+	if ( pSoldier->usAnimState == RUNNING || pSoldier->usAnimState == RUNNING_W_PISTOL )
+	{
+		UINT8 ubMomentumDirection = pSoldier->ubDirection;
+		if ( pSoldier->pathing.usPathIndex < pSoldier->pathing.usPathDataSize )
+			ubMomentumDirection = (UINT8)( pSoldier->pathing.usPathingData[ pSoldier->pathing.usPathIndex ] % NUM_WORLD_DIRECTIONS );
+
+		pSoldier->EVENT_SetSoldierDirection( ubMomentumDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+	}
+
+	// Extreme test mix. Later this will be scaled by energy, damage, armour,
+	// hit location, stance and current movement speed.
+	UINT8 ubReaction = (UINT8)Random( 100 );
+
+	if ( ubReaction < 45 )
+	{
+		// Hard two-tile displacement. Existing FLYBACK_HIT already owns the
+		// collision/path checks and gracefully degrades when space is blocked.
+		pSoldier->ChangeToFlybackAnimation( ubIncomingDirection );
+		return TRUE;
+	}
+	else if ( ubReaction < 75 )
+	{
+		// Shorter one-tile stagger/fallback.
+		pSoldier->ChangeToFallbackAnimation( ubIncomingDirection );
+		return TRUE;
+	}
+	else
+	{
+		// Directional collapse: mostly sideways so repeated hits do not all look
+		// identical. Existing fall code handles the transition to the ground.
+		UINT8 ubFallDirection = (UINT8)( ( ubIncomingDirection + ( Random( 2 ) ? 2 : 6 ) ) % NUM_WORLD_DIRECTIONS );
+		pSoldier->EVENT_SetSoldierDirection( ubFallDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+	}
+}
+
 // VR fatal-reaction pack: ten fatal gunshot variants built from safe existing body
 // states plus directional gore/dismemberment overlays. This deliberately avoids adding
 // new SOLDIERTYPE save fields; persistent amputated-corpse art can be layered on later.
@@ -7064,6 +7127,9 @@ void SoldierGotHitGunFire( SOLDIERTYPE *pSoldier, UINT16 usWeaponIndex, INT16 sD
 	}
 
 	if ( HandleVRFatalGunshotReaction( pSoldier, usWeaponIndex, sDamage, bDirection, ubHitLocation ) )
+		return;
+
+	if ( HandleVRCinematicGunshotReaction( pSoldier, usWeaponIndex, sDamage, bDirection ) )
 		return;
 
 	DoGenericHit( pSoldier, ubSpecial, bDirection );
@@ -21591,9 +21657,9 @@ void SOLDIERTYPE::ChangeToFlybackAnimation( UINT8 flyBackDirection )
 	// Set path....
 	this->pathing.usPathDataSize = 0;
 	this->pathing.usPathIndex    = 0;
-	this->pathing.usPathingData[ this->pathing.usPathDataSize ] = gOppositeDirection[ this->ubDirection ];
+	this->pathing.usPathingData[ this->pathing.usPathDataSize ] = ubOppositeDir;
 	this->pathing.usPathDataSize++;
-	this->pathing.usPathingData[ this->pathing.usPathDataSize ] = gOppositeDirection[ this->ubDirection ];
+	this->pathing.usPathingData[ this->pathing.usPathDataSize ] = ubOppositeDir;
 	this->pathing.usPathDataSize++;
 	this->pathing.sFinalDestination = sNewGridNo;
 	this->EVENT_InternalSetSoldierDestination( (UINT8) this->pathing.usPathingData[ this->pathing.usPathIndex ], FALSE, FLYBACK_HIT );
@@ -21638,7 +21704,7 @@ void SOLDIERTYPE::ChangeToFallbackAnimation( UINT8 fallBackDirection )
 	// Set path....
 	this->pathing.usPathDataSize = 0;
 	this->pathing.usPathIndex    = 0;
-	this->pathing.usPathingData[ this->pathing.usPathDataSize ] = gOppositeDirection[ this->ubDirection ];
+	this->pathing.usPathingData[ this->pathing.usPathDataSize ] = ubOppositeDir;
 	this->pathing.usPathDataSize++;
 	this->pathing.sFinalDestination = sNewGridNo;
 	this->EVENT_InternalSetSoldierDestination( this->pathing.usPathingData[ this->pathing.usPathIndex ], FALSE, FALLBACK_HIT_STAND );
