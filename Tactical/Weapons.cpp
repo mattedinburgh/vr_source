@@ -7858,7 +7858,7 @@ UINT32 AICalcChanceToHitGun(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTim
 
 		if ( dMagFactor <= 1.0 && !pSoldier->IsValidAlternativeFireMode( ubAimTime, sGridNo ) )
 		{
-			dBasicAperture = dBasicAperture * (FLOAT)( (100 - gGameCTHConstants.IRON_SIGHT_PERFORMANCE_BONUS) / 100);
+			dBasicAperture = dBasicAperture * (FLOAT)( (100 - gGameCTHConstants.IRON_SIGHT_PERFORMANCE_BONUS) / 100.0f);
 		}
 
 		// Match player laser bonuses by range, lighting and selected aiming mode.
