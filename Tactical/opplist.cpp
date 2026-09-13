@@ -7150,13 +7150,12 @@ void VerifyPublicOpplistDueToDeath(SOLDIERTYPE *pSoldier)
 						// point to what the teammate's personal opplist value is
 						pMatePersOL = pTeamMate->aiData.bOppList + pOpponent->ubID;
 
-						// test to see if this value is "seen currently"
-						if (*pMatePersOL == SEEN_CURRENTLY)
+						// A cached CURRENT value is not enough after smoke/cover changes.
+						// Preserve public current sight only for a teammate with live LOS.
+						if (*pMatePersOL == SEEN_CURRENTLY &&
+							SoldierToSoldierLineOfSightTest(pTeamMate, pOpponent, TRUE, CALC_FROM_ALL_DIRS))
 						{
-							// this opponent HAS been verified!
 							bOpponentStillSeen = TRUE;
-
-							// we can stop looking for other witnesses now
 							break;
 						}
 					}
