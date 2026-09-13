@@ -2176,6 +2176,221 @@ STR VoiceTauntFileName[] =
 	"RIPOSTE"
 };
 
+// Shared battlefield reactions: a small CC0 military callout bank is used as an
+// occasional alternative to the existing per-class/per-voice taunt library.
+// This keeps the original VR personalities while making obvious combat events
+// sound more like battlefield communication.  One global cooldown prevents a
+// large sector from turning into overlapping radio chatter.
+static UINT32 guiLastSharedBattlefieldReaction = 0;
+
+static BOOLEAN PlaySharedBattlefieldReaction( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType )
+{
+	if ( !pCiv || pCiv->stats.bLife < OKLIFE || pCiv->bCollapsed || pCiv->bBreathCollapsed )
+		return FALSE;
+
+	const CHAR8 *zChoices[4] = { NULL, NULL, NULL, NULL };
+	UINT8 ubChoiceCount = 0;
+	UINT8 ubSharedChance = 0;
+
+	switch ( iTauntType )
+	{
+		case TAUNT_FIRE_GUN:
+			zChoices[0] = "target_engaged";
+			zChoices[1] = "suppressing_fire";
+			ubChoiceCount = 2;
+			ubSharedChance = 30;
+			break;
+
+		case TAUNT_FIRE_LAUNCHER:
+			zChoices[0] = "rpg";
+			zChoices[1] = "fire_in_the_hole";
+			ubChoiceCount = 2;
+			ubSharedChance = 65;
+			break;
+
+		case TAUNT_THROW_GRENADE:
+			zChoices[0] = "fire_in_the_hole";
+			ubChoiceCount = 1;
+			ubSharedChance = 75;
+			break;
+
+		case TAUNT_OUT_OF_AMMO:
+			zChoices[0] = "cover_me";
+			zChoices[1] = "call_for_backup";
+			ubChoiceCount = 2;
+			ubSharedChance = 55;
+			break;
+
+		case TAUNT_RELOAD:
+			zChoices[0] = "reloading";
+			zChoices[1] = "cover_me";
+			ubChoiceCount = 2;
+			ubSharedChance = 60;
+			break;
+
+		case TAUNT_CHARGE_BLADE:
+		case TAUNT_CHARGE_HTH:
+			zChoices[0] = "go_go_go";
+			ubChoiceCount = 1;
+			ubSharedChance = 55;
+			break;
+
+		case TAUNT_RUN_AWAY:
+			zChoices[0] = "call_for_backup";
+			zChoices[1] = "watch_my_back";
+			zChoices[2] = "get_down";
+			ubChoiceCount = 3;
+			ubSharedChance = 50;
+			break;
+
+		case TAUNT_SEEK_NOISE:
+			zChoices[0] = "hold";
+			zChoices[1] = "watch_my_back";
+			zChoices[2] = "look_out";
+			ubChoiceCount = 3;
+			ubSharedChance = 35;
+			break;
+
+		case TAUNT_ALERT:
+			zChoices[0] = "look_out";
+			zChoices[1] = "call_for_backup";
+			zChoices[2] = "target_engaged";
+			ubChoiceCount = 3;
+			ubSharedChance = 50;
+			break;
+
+		case TAUNT_SUSPICIOUS:
+			zChoices[0] = "hold";
+			zChoices[1] = "watch_my_back";
+			ubChoiceCount = 2;
+			ubSharedChance = 35;
+			break;
+
+		case TAUNT_NOTICED_UNSEEN:
+			zChoices[0] = "sniper";
+			zChoices[1] = "look_out";
+			ubChoiceCount = 2;
+			ubSharedChance = 55;
+			break;
+
+		case TAUNT_INFORM_ABOUT:
+			zChoices[0] = "target_engaged";
+			zChoices[1] = "watch_my_back";
+			ubChoiceCount = 2;
+			ubSharedChance = 35;
+			break;
+
+		case TAUNT_GOT_HIT_EXPLOSION:
+		case TAUNT_GOT_HIT_STRUCTURE_EXPLOSION:
+		case TAUNT_GOT_HIT_FALLROOF:
+			zChoices[0] = "get_down";
+			zChoices[1] = "look_out";
+			ubChoiceCount = 2;
+			ubSharedChance = 45;
+			break;
+
+		case TAUNT_GOT_HIT:
+		case TAUNT_GOT_HIT_GUNFIRE:
+		case TAUNT_GOT_HIT_BLADE:
+		case TAUNT_GOT_HIT_HTH:
+		case TAUNT_GOT_HIT_OBJECT:
+		case TAUNT_GOT_HIT_THROWING_KNIFE:
+			zChoices[0] = "cover_me";
+			zChoices[1] = "get_down";
+			ubChoiceCount = 2;
+			ubSharedChance = 25;
+			break;
+
+		case TAUNT_GOT_MISSED:
+		case TAUNT_GOT_MISSED_GUNFIRE:
+		case TAUNT_GOT_MISSED_BLADE:
+		case TAUNT_GOT_MISSED_HTH:
+		case TAUNT_GOT_MISSED_THROWING_KNIFE:
+			zChoices[0] = "get_down";
+			zChoices[1] = "look_out";
+			ubChoiceCount = 2;
+			ubSharedChance = 25;
+			break;
+
+		case TAUNT_KILL:
+		case TAUNT_KILL_GUNFIRE:
+		case TAUNT_KILL_BLADE:
+		case TAUNT_KILL_HTH:
+		case TAUNT_KILL_THROWING_KNIFE:
+		case TAUNT_HEAD_POP:
+			zChoices[0] = "target_destroyed";
+			ubChoiceCount = 1;
+			ubSharedChance = 65;
+			break;
+
+		case TAUNT_HIT:
+		case TAUNT_HIT_GUNFIRE:
+		case TAUNT_HIT_BLADE:
+		case TAUNT_HIT_HTH:
+		case TAUNT_HIT_THROWING_KNIFE:
+			zChoices[0] = "target_engaged";
+			ubChoiceCount = 1;
+			ubSharedChance = 20;
+			break;
+
+		case TAUNT_MISS:
+		case TAUNT_MISS_GUNFIRE:
+		case TAUNT_MISS_BLADE:
+		case TAUNT_MISS_HTH:
+		case TAUNT_MISS_THROWING_KNIFE:
+			zChoices[0] = "cover_me";
+			zChoices[1] = "suppressing_fire";
+			ubChoiceCount = 2;
+			ubSharedChance = 15;
+			break;
+
+		default:
+			return FALSE;
+	}
+
+	UINT32 uiNow = GetJA2Clock();
+	if ( ubChoiceCount == 0 || Random( 100 ) >= ubSharedChance ||
+		( uiNow - guiLastSharedBattlefieldReaction ) < 1800 )
+	{
+		return FALSE;
+	}
+
+	CHAR8 zFilename[260];
+	CHAR16 zNoise[260];
+	UINT8 ubFirstChoice = Random( ubChoiceCount );
+	BOOLEAN fFound = FALSE;
+
+	for ( UINT8 ubCheck = 0; ubCheck < ubChoiceCount; ++ubCheck )
+	{
+		UINT8 ubChoice = ( ubFirstChoice + ubCheck ) % ubChoiceCount;
+		sprintf( zFilename, "Voice\\Battlefield\\%s\\%s.ogg",
+			( pCiv->ubBodyType == REGFEMALE ) ? "Female" : "Male", zChoices[ubChoice] );
+		if ( FileExists( zFilename ) )
+		{
+			fFound = TRUE;
+			break;
+		}
+	}
+
+	if ( !fFound )
+		return FALSE;
+
+	if ( gTauntsSettings.fTauntMakeNoise == TRUE )
+	{
+		mbstowcs( zNoise, zFilename, strlen( zFilename ) + 1 );
+		MakeNoise( pCiv->ubID, pCiv->sGridNo, pCiv->pathing.bLevel,
+			pCiv->bOverTerrainType, (UINT8)gTauntsSettings.sVolume, NOISE_VOICE, zNoise );
+	}
+	else if ( PlayJA2SampleFromFile( zFilename, RATE_11025,
+		SoundVolume( HIGHVOLUME, pCiv->sGridNo ), 1, SoundDir( pCiv->sGridNo ) ) == SOUND_ERROR )
+	{
+		return FALSE;
+	}
+
+	guiLastSharedBattlefieldReaction = uiNow;
+	return TRUE;
+}
+
 // sevenfm: voice taunts
 BOOLEAN PlayVoiceTaunt(SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTarget)
 {
@@ -2219,6 +2434,11 @@ BOOLEAN PlayVoiceTaunt(SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTa
 		}
 		return FALSE;
 	}
+
+	// About one event in several uses the shared military bank; otherwise the
+	// original Vengeance per-voice taunt system continues unchanged.
+	if ( PlaySharedBattlefieldReaction( pCiv, iTauntType ) )
+		return TRUE;
 
 	if (pCiv->bTeam == MILITIA_TEAM)
 	{
