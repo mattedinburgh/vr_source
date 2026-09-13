@@ -5215,6 +5215,7 @@ UINT8 AIObservedRecentCasualties(SOLDIERTYPE *pSoldier)
 			pFriend->bActive &&
 			pFriend->bInSector &&
 			pFriend->stats.bLife > 0 &&
+			AIResponderKnowsCasualty(pSoldier, pFriend) &&
 			(pFriend->stats.bLife < OKLIFE ||
 			 pFriend->bCollapsed ||
 			 pFriend->bBreathCollapsed) &&
@@ -5243,6 +5244,7 @@ UINT8 AILocalCasualtyPercent(SOLDIERTYPE *pSoldier)
 			!pFriend->bActive ||
 			!pFriend->bInSector ||
 			pFriend->stats.bLife <= 0 ||
+			!AIResponderKnowsCasualty(pSoldier, pFriend) ||
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > TACTICAL_RANGE)
 		{
 			continue;
@@ -5275,8 +5277,8 @@ UINT8 AIFriendlyCasualtyPercent(SOLDIERTYPE *pSoldier)
 }
 
 // Strength is expressed in certainty points: 100 is one fully known combatant.
-// Friendly status is known to the team; opponent strength is derived only from
-// personal/public JA2 knowledge and never from hidden sector totals.
+// Friendly strength is local-awareness bounded; opponent strength is derived only
+// from personal/public JA2 knowledge and never from hidden sector totals.
 UINT16 AIPerceivedFriendlyStrength(SOLDIERTYPE *pSoldier)
 {
 	if (!AICombatTeam(pSoldier))
@@ -5295,6 +5297,7 @@ UINT16 AIPerceivedFriendlyStrength(SOLDIERTYPE *pSoldier)
 			pFriend->bCollapsed ||
 			pFriend->bBreathCollapsed ||
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			!AIResponderKnowsCasualty(pSoldier, pFriend) ||
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > TACTICAL_RANGE)
 		{
 			continue;
