@@ -3222,7 +3222,7 @@ void HandleNPCDoAction( UINT8 ubTargetNPC, UINT16 usActionCode, UINT8 ubQuoteNum
 				{
 					// The original payout path depended on Darren having both a money stack
 					// and a spare inventory slot.  If either condition failed, the player
-					// silently received nothing.  Pay the recorded wager robustly instead:
+					// silently received nothing.  Pay the recorded amount robustly instead:
 					// place it on a player merc, or drop it visibly at that merc's feet if
 					// the inventory is full.
 					const INT32 iBet = gMercProfiles[ ubTargetNPC ].iBalance;
@@ -3232,25 +3232,9 @@ void HandleNPCDoAction( UINT8 ubTargetNPC, UINT16 usActionCode, UINT8 ubQuoteNum
 						break;
 					}
 
-					// Vengeance economy: vanilla JA2 pays 2x the stake on every win.
-					// That is too lucrative here, especially when all three bouts are
-					// cleared at the maximum wager.  Return the stake plus a progressive
-					// profit instead, so tougher later opponents are worth more without
-					// turning the ring into a money printer.
-					UINT32 uiProfitPercent = 25;
-					const UINT8 ubBoxersRemaining = BoxersAvailable();
-					const UINT8 ubBoutNumber = ( ubBoxersRemaining < NUM_BOXERS ) ? ( NUM_BOXERS - ubBoxersRemaining ) : 1;
-
-					if ( ubBoutNumber == 2 )
-					{
-						uiProfitPercent = 35;
-					}
-					else if ( ubBoutNumber >= 3 )
-					{
-						uiProfitPercent = 50;
-					}
-
-					const UINT32 uiPayout = (UINT32)iBet + ( (UINT32)iBet * uiProfitPercent ) / 100;
+					// Fixed ring reward: return twice the recorded entry amount.
+					// Example: 5000 entered -> 10000 returned.
+					const UINT32 uiPayout = (UINT32)iBet * 2;
 					pSoldier = FindSoldierByProfileID( ubTargetNPC, FALSE );
 
 					// Prefer the closest PC, preserving the original behaviour.
@@ -3315,7 +3299,7 @@ void HandleNPCDoAction( UINT8 ubTargetNPC, UINT16 usActionCode, UINT8 ubQuoteNum
 								}
 							}
 
-							// Mark the recorded wager settled so a repeated dialogue/action
+							// Mark the recorded amount settled so a repeated dialogue/action
 							// cannot duplicate the reward.
 							gMercProfiles[ ubTargetNPC ].iBalance = 0;
 						}
