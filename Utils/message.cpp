@@ -694,6 +694,22 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 	ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, gsBattleLogX, gsBattleLogY, gsBattleLogX + 1, gsBattleLogY + gsBattleLogH, borderHi );
 	ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, gsBattleLogX + gsBattleLogW - 1, gsBattleLogY, gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH, border );
 
+	// Draw all solid panel surfaces before locking the framebuffer for font blits.
+	// ColorFillVideoSurfaceArea performs its own surface access and must not be
+	// invoked while we already hold the video-surface lock.
+	INT16 inspectorX = gsBattleLogX;
+	INT16 inspectorY = (INT16)__max( 2, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 3 );
+	INT16 inspectorW = gsBattleLogW;
+	if ( gfBattleLogInspectorVisible )
+	{
+		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, inspectorX, inspectorY, inspectorX + inspectorW, inspectorY + BATTLE_LOG_INSPECTOR_H, bg );
+		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, inspectorX, inspectorY, inspectorX + inspectorW, inspectorY + BATTLE_LOG_HEADER_H, header );
+		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, inspectorX, inspectorY, inspectorX + inspectorW, inspectorY + 1, borderHi );
+		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, inspectorX, inspectorY, inspectorX + 1, inspectorY + BATTLE_LOG_INSPECTOR_H, borderHi );
+		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, inspectorX + inspectorW - 1, inspectorY, inspectorX + inspectorW, inspectorY + BATTLE_LOG_INSPECTOR_H, border );
+		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, inspectorX, inspectorY + BATTLE_LOG_INSPECTOR_H - 1, inspectorX + inspectorW, inspectorY + BATTLE_LOG_INSPECTOR_H, border );
+	}
+
 	gpBattleLogDestBuf = LockVideoSurface( pBlitter->uiDestBuff, &guiBattleLogDestPitchBYTES );
 	if ( gpBattleLogDestBuf == NULL )
 		return;
@@ -726,17 +742,10 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 	if ( gfBattleLogInspectorVisible )
 	{
 		NCTH_SHOT_DIAGNOSTIC &d = gBattleLogInspectorDiagnostic;
-		INT16 ix = gsBattleLogX;
-		INT16 iy = (INT16)__max( 2, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 3 );
-		INT16 iw = gsBattleLogW;
+		INT16 ix = inspectorX;
+		INT16 iy = inspectorY;
+		INT16 iw = inspectorW;
 		CHAR16 z[256];
-
-		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, ix, iy, ix + iw, iy + BATTLE_LOG_INSPECTOR_H, bg );
-		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, ix, iy, ix + iw, iy + BATTLE_LOG_HEADER_H, header );
-		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, ix, iy, ix + iw, iy + 1, borderHi );
-		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, ix, iy, ix + 1, iy + BATTLE_LOG_INSPECTOR_H, borderHi );
-		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, ix + iw - 1, iy, ix + iw, iy + BATTLE_LOG_INSPECTOR_H, border );
-		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, ix, iy + BATTLE_LOG_INSPECTOR_H - 1, ix + iw, iy + BATTLE_LOG_INSPECTOR_H, border );
 
 		BattleLogPrintInspectorLine( ix + 6, iy + 4, FONT_MCOLOR_LTYELLOW, L"SHOT INSPECTOR - MISS" );
 
