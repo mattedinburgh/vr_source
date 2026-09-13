@@ -748,9 +748,16 @@ INT8 DecideEmergencyBuddyAid(SOLDIERTYPE *pSoldier)
 			continue;
 		}
 
+		BOOLEAN fPatientBleedout = IsBleedoutCasualty(pPatient) && pPatient->ubBleedoutState == BLEEDOUT_ACTIVE;
+		BOOLEAN fBestBleedout = pBestPatient && IsBleedoutCasualty(pBestPatient) &&
+			pBestPatient->ubBleedoutState == BLEEDOUT_ACTIVE;
+
 		if (!pBestPatient ||
-			pPatient->stats.bLife < pBestPatient->stats.bLife ||
-			(pPatient->stats.bLife == pBestPatient->stats.bLife && pPatient->bBleeding > pBestPatient->bBleeding))
+			(fPatientBleedout && !fBestBleedout) ||
+			(fPatientBleedout && fBestBleedout && pPatient->ubBleedoutTurns < pBestPatient->ubBleedoutTurns) ||
+			(fPatientBleedout == fBestBleedout && pPatient->stats.bLife < pBestPatient->stats.bLife) ||
+			(fPatientBleedout == fBestBleedout && pPatient->stats.bLife == pBestPatient->stats.bLife &&
+			 pPatient->bBleeding > pBestPatient->bBleeding))
 		{
 			pBestPatient = pPatient;
 		}
