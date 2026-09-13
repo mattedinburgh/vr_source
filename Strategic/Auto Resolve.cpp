@@ -2611,6 +2611,25 @@ void RemoveAutoResolveInterface( BOOLEAN fDeleteForGood )
 	UINT8 ubCurrentRank;
 	UINT8 ubCurrentGroupID = 0;
 	BOOLEAN fFirstGroup = TRUE;
+	BOOLEAN fMercVictoryLoot = FALSE;
+
+	// Capture this before cleanup nulls gpMercs[].pSoldier. A merc-won autoresolve
+	// means at least one living player merc remained on the battlefield at victory.
+	// Militia-only victories and battles where every merc retreated keep strategic
+	// abstract loot rates.
+	if ( fDeleteForGood && gpAR && gpAR->ubBattleStatus == BATTLE_VICTORY && gpAR->ubMercs > 0 )
+	{
+		for ( INT32 iMerc = 0; iMerc < gpAR->ubMercs; ++iMerc )
+		{
+			if ( gpMercs[iMerc].pSoldier &&
+				gpMercs[iMerc].pSoldier->stats.bLife >= OKLIFE &&
+				!(gpMercs[iMerc].uiFlags & (CELL_RETREATED | CELL_RETREATING)) )
+			{
+				fMercVictoryLoot = TRUE;
+				break;
+			}
+		}
+	}
 
 DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Autoresolve2");
 	//VtResumeSampling();
@@ -2802,24 +2821,6 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Autoresolve2");
 			}
 			TacticalRemoveSoldierPointer( gpCivs[ i ].pSoldier, FALSE );
 			memset( &gpCivs[ i ], 0, sizeof( SOLDIERCELL ) );
-		}
-	}
-
-	// Merc-won autoresolve should leave a believable battlefield to loot. This is
-	// deliberately not enabled for militia-only victories, and not if every merc
-	// retreated before the militia finished the battle.
-	BOOLEAN fMercVictoryLoot = FALSE;
-	if ( fDeleteForGood && gpAR->ubBattleStatus == BATTLE_VICTORY && gpAR->ubMercs > 0 )
-	{
-		for ( INT32 iMerc = 0; iMerc < gpAR->ubMercs; ++iMerc )
-		{
-			if ( gpMercs[iMerc].pSoldier &&
-				gpMercs[iMerc].pSoldier->stats.bLife >= OKLIFE &&
-				!(gpMercs[iMerc].uiFlags & (CELL_RETREATED | CELL_RETREATING)) )
-			{
-				fMercVictoryLoot = TRUE;
-				break;
-			}
 		}
 	}
 
