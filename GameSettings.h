@@ -387,6 +387,20 @@ typedef struct
 	UINT8	usAssassinMinimumProgress;
 	UINT8	usAssassinMinimumMilitia;
 	UINT32  usAssassinPropabilityModifier;
+
+	// Flugente / 1.13 enemy command roles, ported to Vengeance.
+	BOOLEAN fEnemyRoles;
+	BOOLEAN fEnemyOfficers;
+	UINT16  usEnemyOfficersPerTeamSize;
+	UINT16  usEnemyOfficersMax;
+	INT8    sEnemyOfficerSuppressionResistanceBonus;
+	FLOAT   dEnemyOfficerMoraleModifier;
+	FLOAT   dEnemyOfficerSurrenderStrengthBonus;
+	BOOLEAN fEnemyGenerals;
+	UINT8   usEnemyGeneralsNumber;
+	UINT16  usEnemyGeneralsBodyGuardsNumber;
+	FLOAT   fEnemyGeneralStrategicDecisionSpeedBonus;
+	FLOAT   fEnemyGeneralStrategicMovementSpeedBonus;
 	///////////////////////////////////////
 
 	// System settings
