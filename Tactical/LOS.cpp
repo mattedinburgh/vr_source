@@ -7852,6 +7852,12 @@ void AdjustTargetCenterPoint( SOLDIERTYPE *pShooter, INT32 iTargetGridNo, FLOAT 
 			dMuzzleOffsetY = pShooter->dPrevMuzzleOffsetY[0];
 		}
 
+		if ( gNCTHWorkingDiagnostic.fValid && gNCTHWorkingDiagnostic.ubShooterID == pShooter->ubID )
+		{
+			gNCTHWorkingDiagnostic.fInheritedMuzzleX = dMuzzleOffsetX;
+			gNCTHWorkingDiagnostic.fInheritedMuzzleY = dMuzzleOffsetY;
+		}
+
 		////////////////////////////////////////////////////////////////////////////////////////////
 		// STEP 4: Recoil Offset
 		//
