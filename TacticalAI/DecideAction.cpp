@@ -2864,7 +2864,6 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 	// sevenfm: before deciding anything, stop cowering
 	if( !fCivilian &&
 		SoldierAI(pSoldier) &&
-		ubCanMove &&
 		pSoldier->stats.bLife > OKLIFE &&
 		!pSoldier->bCollapsed &&
 		!pSoldier->bBreathCollapsed &&
@@ -2873,7 +2872,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		// Suppression cowering should persist until effective shock falls below the
 		// engine's own cowering threshold. Standing up immediately made suppression
 		// largely cosmetic and exposed pinned soldiers again on their next AI turn.
-		if (CoweringShockLevel(pSoldier))
+		if (CoweringShockLevel(pSoldier) || !ubCanMove)
 		{
 			pSoldier->aiData.usActionData = NOWHERE;
 			return AI_ACTION_NONE;
@@ -5249,12 +5248,12 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			// Suppression panic is a real tactical state. Do not let a pinned soldier
 			// start fallback, rescue, scavenging or attack setup until shock recovers.
 			// Environmental escape remains higher priority and is handled outside this block.
-			if (!fCivilian && SoldierAI(pSoldier) && ubCanMove &&
+			if (!fCivilian && SoldierAI(pSoldier) &&
 				pSoldier->stats.bLife > OKLIFE &&
 				!pSoldier->bCollapsed && !pSoldier->bBreathCollapsed &&
 				(pSoldier->usAnimState == COWERING || pSoldier->usAnimState == COWERING_PRONE))
 			{
-				if (CoweringShockLevel(pSoldier))
+				if (CoweringShockLevel(pSoldier) || !ubCanMove)
 				{
 					pSoldier->aiData.usActionData = NOWHERE;
 					return AI_ACTION_NONE;
