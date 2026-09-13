@@ -4147,6 +4147,10 @@ UINT8 AICountNearbyOperationalFriends(SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT
 	return ubCount;
 }
 
+// Escape intent is defined later in this file; remnant absorption needs to cancel
+// a stale sector-flight state immediately when the soldier successfully rejoins.
+static void AIClearEscapeState(SOLDIERTYPE *pSoldier);
+
 // Shared enemy/militia fireteam coordination. This state is sector-local and intentionally lives
 // outside SOLDIERTYPE so it does not change the savegame structure.
 #define AI_FIRETEAM_NONE 0
@@ -4603,6 +4607,20 @@ static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 		{
 			gubAIFireteam[pFriend->ubID] = ubBest;
 			guiAIFireteamRejoinUntilTurn[pFriend->ubID] = uiRejoinUntil;
+
+			// Reattachment supersedes an old break-contact/sector-flight decision.
+			// Without clearing these states, a soldier could be assigned to the new
+			// element yet continue executing the stale escape behaviour on his next turn.
+			AIClearDisengagementState(pFriend);
+			AIClearEscapeState(pFriend);
+
+			if (pFriend->bTeam == ENEMY_TEAM &&
+				pFriend->ubProfile == NO_PROFILE &&
+				pFriend->ubQuoteActionID >= QUOTE_ACTION_ID_TRAVERSE_EAST &&
+				pFriend->ubQuoteActionID <= QUOTE_ACTION_ID_TRAVERSE_NORTH)
+			{
+				pFriend->ubQuoteActionID = 0;
+			}
 		}
 	}
 	return TRUE;
