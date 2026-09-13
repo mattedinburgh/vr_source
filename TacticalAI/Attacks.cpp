@@ -3977,8 +3977,9 @@ BOOLEAN GetBestAoEGridNo(SOLDIERTYPE *pSoldier, INT32* pGridNo, INT16 aRadius, U
 
 			if (bKnowledge == SEEN_CURRENTLY)
 			{
-				// active KNOWN opponent, remember where he is so that we DO blow him up!
-				sOpponentTile[ubOpponentCnt] = pFriend->sGridNo;
+				// Current team knowledge may come from another observer. Use the stored
+				// known location rather than the opponent object's hidden live tile.
+				sOpponentTile[ubOpponentCnt] = KnownLocation(pSoldier, pFriend->ubID);
 			}
 			//else if ( bKnowledge == SEEN_LAST_TURN || bKnowledge == HEARD_LAST_TURN || bKnowledge == HEARD_THIS_TURN || bKnowledge == SEEN_THIS_TURN)
 			else if (bKnowledge >= HEARD_2_TURNS_AGO && bKnowledge <= SEEN_2_TURNS_AGO)
@@ -3995,6 +3996,9 @@ BOOLEAN GetBestAoEGridNo(SOLDIERTYPE *pSoldier, INT32* pGridNo, INT16 aRadius, U
 			{
 				continue;
 			}
+
+			if (TileIsOutOfBounds(sOpponentTile[ubOpponentCnt]))
+				continue;
 
 			// also remember who he is (which soldier #)
 			ubOpponentID[ubOpponentCnt] = pFriend->ubID;
