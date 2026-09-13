@@ -159,6 +159,8 @@ void BattleLogAddNCTHMiss( INT32 iBullet );
 void BattleLogAddNCTHBlocked( INT32 iBullet, UINT8 ubReason );
 void BattleLogAddNCTHHit( INT32 iBullet, UINT8 ubTargetID, INT16 sDamage );
 void BattleLogAddMeleeHit( const MELEE_DIAGNOSTIC *pDiagnostic );
+void BattleLogAddExplosionEvent( UINT8 ubOwner, UINT16 usItem );
+void BattleLogAddExplosionHit( UINT8 ubOwner, UINT8 ubTargetID, UINT16 usItem, INT16 sDamage, INT16 sBreathDamage );
 void BattleLogAddText( UINT16 usColor, STR16 pString );
 void BattleLogSetVisible( BOOLEAN fVisible );
 
