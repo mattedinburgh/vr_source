@@ -424,7 +424,15 @@ UINT32 MapUtilScreenHandle(void)
 	// been applied to the in-memory world by LoadWorld().  Persist it under a
 	// separate filename so QA can inspect a real map without touching live A3.dat.
 	BOOLEAN fBakeSaved = TRUE;
-	if ( gfMapPreviewCaptureMode && _stricmp( zFilename, "A3.dat" ) == 0 )
+	const CHAR8 *pBakeLeaf = zFilename;
+	const CHAR8 *pBakeBackslash = strrchr( zFilename, '\\' );
+	const CHAR8 *pBakeSlash = strrchr( zFilename, '/' );
+	if ( pBakeBackslash != NULL && pBakeBackslash + 1 > pBakeLeaf )
+		pBakeLeaf = pBakeBackslash + 1;
+	if ( pBakeSlash != NULL && pBakeSlash + 1 > pBakeLeaf )
+		pBakeLeaf = pBakeSlash + 1;
+
+	if ( gfMapPreviewCaptureMode && _stricmp( pBakeLeaf, "A3.dat" ) == 0 )
 	{
 		MapPreviewWriteStatus( "BAKE begin A3_REMASTERED.dat" );
 		fBakeSaved = SaveWorld( "A3_REMASTERED.dat" );
