@@ -2195,32 +2195,28 @@ BOOLEAN SOLDIERTYPE::Load(HWFILE hFile)
 			numBytesRead = ReadFieldByField(hFile, &this->ubDraggedByID, sizeof(ubDraggedByID), sizeof(UINT8), numBytesRead);
 			numBytesRead = ReadFieldByField(hFile, &this->ubFiller, sizeof(ubFiller), sizeof(UINT8), numBytesRead);
 
-			// Old version-151 saves used these four bytes as filler. Normalise legacy
-			// zero-filled or otherwise impossible combinations after reading them.
-			if ( this->ubBleedoutState == BLEEDOUT_NONE )
-			{
-				this->ubBleedoutTurns = 0;
-				this->ubDraggedCasualtyID = NOBODY;
-				this->ubDraggedByID = NOBODY;
-			}
-			else if ( this->ubBleedoutState > BLEEDOUT_STABILIZED ||
+			// Old version-151 saves used these four bytes as filler. Validate the
+			// bleed-out bytes here, but do NOT tie drag validity to bleed-out state:
+			// ordinary unconscious/collapsed casualties legitimately have
+			// BLEEDOUT_NONE while being extracted. Reciprocal drag links are validated
+			// after every soldier has been reconstructed.
+			if ( this->ubBleedoutState > BLEEDOUT_STABILIZED ||
 				(this->ubBleedoutState == BLEEDOUT_ACTIVE &&
 				 (this->ubBleedoutTurns < 1 || this->ubBleedoutTurns > 7)) )
 			{
 				this->ubBleedoutTurns = 0;
 				this->ubBleedoutState = BLEEDOUT_NONE;
-				this->ubDraggedCasualtyID = NOBODY;
-				this->ubDraggedByID = NOBODY;
 			}
-			else
+			else if ( this->ubBleedoutState == BLEEDOUT_NONE ||
+				this->ubBleedoutState == BLEEDOUT_STABILIZED )
 			{
-				if ( this->ubBleedoutState == BLEEDOUT_STABILIZED )
-					this->ubBleedoutTurns = 0;
-				if ( this->ubDraggedCasualtyID >= TOTAL_SOLDIERS )
-					this->ubDraggedCasualtyID = NOBODY;
-				if ( this->ubDraggedByID >= TOTAL_SOLDIERS )
-					this->ubDraggedByID = NOBODY;
+				this->ubBleedoutTurns = 0;
 			}
+
+			if ( this->ubDraggedCasualtyID >= TOTAL_SOLDIERS )
+				this->ubDraggedCasualtyID = NOBODY;
+			if ( this->ubDraggedByID >= TOTAL_SOLDIERS )
+				this->ubDraggedByID = NOBODY;
 		}
 		else
 		{
@@ -6650,6 +6646,37 @@ BOOLEAN LoadSoldierStructure( HWFILE hFile )
 
 		}
 	}
+
+	// Validate casualty extraction links only after all soldiers have been rebuilt.
+	// This preserves legitimate ordinary-unconscious drags across save/reload while
+	// safely rejecting legacy filler bytes, one-sided links and spatially broken state.
+	for ( cnt = 0; cnt < TOTAL_SOLDIERS; ++cnt )
+	{
+		SOLDIERTYPE *pSoldier = &Menptr[ cnt ];
+		if ( !pSoldier->bActive )
+		{
+			pSoldier->ubDraggedCasualtyID = NOBODY;
+			pSoldier->ubDraggedByID = NOBODY;
+			continue;
+		}
+
+		if ( pSoldier->ubDraggedCasualtyID != NOBODY )
+		{
+			if ( !pSoldier->IsDraggingBleedoutCasualty() )
+				pSoldier->StopDraggingBleedoutCasualty();
+		}
+
+		if ( pSoldier->ubDraggedByID != NOBODY )
+		{
+			SOLDIERTYPE *pRescuer = MercPtrs[ pSoldier->ubDraggedByID ];
+			if ( !pRescuer || pRescuer->ubDraggedCasualtyID != pSoldier->ubID ||
+				!pRescuer->IsDraggingBleedoutCasualty() )
+			{
+				pSoldier->ubDraggedByID = NOBODY;
+			}
+		}
+	}
+
 
 	// Fix robot
 	if ( guiCurrentSaveGameVersion <= 87 )
