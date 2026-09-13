@@ -782,8 +782,8 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		BattleLogPrintInspectorLine( ix + 6, iy + 4, FONT_MCOLOR_LTYELLOW, L"SHOT INSPECTOR - MISS" );
 
 		INT16 sy = iy + BATTLE_LOG_HEADER_H + 3;
-		swprintf( z, L"Aim %d | range %.1f tiles | NCTH %.1f | muzzle sway %.1f",
-			d.ubAimTime, d.fRange / (FLOAT)CELL_X_SIZE, d.fFinalChance, d.fMuzzleSway );
+		swprintf( z, L"Aim %d | volley round %d | range %.1f tiles | NCTH %.1f | muzzle sway %.1f",
+			d.ubAimTime, d.ubVolleyShot, d.fRange / (FLOAT)CELL_X_SIZE, d.fFinalChance, d.fMuzzleSway );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
 
 		swprintf( z, L"Skill: MRK %d  DEX %d  WIS %d  EXP %d | breath %d  shock %d",
@@ -978,11 +978,14 @@ void BattleLogAddNCTHMiss( INT32 iBullet )
 	pEntry->ncth = d;
 
 	const CHAR16 *pName = L"Merc";
+	const CHAR16 *pTargetName = L"target";
 	if ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] )
 		pName = MercPtrs[d.ubShooterID]->GetName();
+	if ( d.ubTargetID != NOBODY && MercPtrs[d.ubTargetID] )
+		pTargetName = MercPtrs[d.ubTargetID]->GetName();
 
-	swprintf( pEntry->zText, L"[%02d:%02d] MISS - %s - NCTH %.0f  [click for why]",
-		guiHour, guiMin, pName, d.fFinalChance );
+	swprintf( pEntry->zText, L"[%02d:%02d] MISS - %s -> %s - NCTH %.0f  [click for why]",
+		guiHour, guiMin, pName, pTargetName, d.fFinalChance );
 	gusBattleLogScrollOffset = 0;
 
 	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
