@@ -4419,8 +4419,10 @@ BOOLEAN SOLDIERTYPE::EVENT_InitNewSoldierAnim( UINT16 usNewState, UINT16 usStart
 		if ( usOvertAPDuration > 0 )
 		{
 			this->usSoldierFlagMask |= SOLDIER_COVERT_TEMPORARY_OVERT;
+			UINT16 usMaxAP = max(1, APBPConstants[AP_MAXIMUM]);
+			UINT16 usOvertSeconds = max(1, (4 * usOvertAPDuration) / usMaxAP);
 			this->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_SECONDS] =
-				GetWorldTotalSeconds() + max(1, usOvertAPDuration / 25);
+				GetWorldTotalSeconds() + usOvertSeconds;
 			this->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_APS] = usOvertAPDuration;
 		}
 	}
@@ -23189,6 +23191,13 @@ UINT16	GridNoSpotterCTHBonus( SOLDIERTYPE* pSniper, INT32 sGridNo, UINT bTeam)
 // handles visible gear/backpacks without making every pickup/drop an instant cover failure.
 UINT16 GetSuspiciousAnimationAPDuration( UINT16 usAnimation )
 {
+	// Express durations as a share of the active AP economy. This keeps covert behaviour stable
+	// across classic VR (~20-25 AP), 1.13-style 100 AP, and any later AP rescaling.
+	UINT16 usMaxAP = max(1, APBPConstants[AP_MAXIMUM]);
+	UINT16 usMedium = max(1, (50 * usMaxAP) / 100);
+	UINT16 usMajor = max(1, (60 * usMaxAP) / 100);
+	UINT16 usExtreme = usMaxAP;
+
 	switch ( usAnimation )
 	{
 	case NINJA_PUNCH:
@@ -23206,7 +23215,7 @@ UINT16 GetSuspiciousAnimationAPDuration( UINT16 usAnimation )
 	case FOCUSED_STAB:
 	case HTH_KICK:
 	case FOCUSED_HTH_KICK:
-		return 60;
+		return usMajor;
 
 	case THROW_GRENADE_STANCE:
 	case LOB_GRENADE_STANCE:
@@ -23215,8 +23224,6 @@ UINT16 GetSuspiciousAnimationAPDuration( UINT16 usAnimation )
 	case THROW_ITEM:
 	case LOB_ITEM:
 	case THROW_ITEM_CROUCHED:
-		return 50;
-
 	case DECAPITATE:
 	case TAKE_BLOOD_FROM_CORPSE:
 	case PLANT_BOMB:
@@ -23225,18 +23232,18 @@ UINT16 GetSuspiciousAnimationAPDuration( UINT16 usAnimation )
 	case PICK_LOCK:
 	case LOCKPICK_CROUCHED:
 	case STEAL_ITEM_CROUCHED:
-		return 50;
+		return usMedium;
 
 	case SHOOT_ROCKET_CROUCHED:
 	case SHOOT_ROCKET:
 	case HELIDROP:
 	case NINJA_SPINKICK:
-		return 100;
+		return usExtreme;
 
 	case CUTTING_FENCE:
 	case JUMPWINDOWS:
 	case LONG_JUMP:
-		return 60;
+		return usMajor;
 	}
 
 	return 0;
