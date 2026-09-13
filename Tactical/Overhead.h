@@ -367,6 +367,7 @@ enum
 UINT16 HighestEnemyOfficersInSector(UINT8& aType);
 UINT8 HighestEnemyOfficerNearSoldier(SOLDIERTYPE* pTarget, INT16 sRadius);
 UINT16 NumSoldiersWithFlagInSector(UINT8 aTeam, UINT32 aFlag);
+void EnsureEnemyCommandRoles();
 
 // Flugente: offer the enemy the chance to surrender
 void HandleSurrenderOffer( SOLDIERTYPE* pSoldier );
