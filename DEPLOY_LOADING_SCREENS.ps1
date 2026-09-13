@@ -12,7 +12,7 @@ if ([string]::IsNullOrWhiteSpace($GameRoot)) {
 }
 
 Write-Host ""
-Write-Host "Vengeance loading-screen deployment v5"
+Write-Host "Vengeance loading-screen deployment v6"
 Write-Host "Source repo : $SourceRoot"
 Write-Host "Game root   : $GameRoot"
 Write-Host ""
@@ -26,19 +26,26 @@ if (-not $SkipExe) {
     $builtExe = Join-Path $SourceRoot "bin\VS2013\JA2_EN_Release.exe"
     $gameExe = Join-Path $GameRoot "JA2_EN_Release.exe"
 
-    if (-not (Test-Path $builtExe)) {
-        throw "Release executable not found: '$builtExe'. Build Release | Win32 first."
-    }
+    if (Test-Path $builtExe) {
+        Copy-Item $builtExe $gameExe -Force
+        $srcHash = (Get-FileHash $builtExe -Algorithm SHA256).Hash
+        $dstHash = (Get-FileHash $gameExe -Algorithm SHA256).Hash
+        if ($srcHash -ne $dstHash) {
+            throw "EXE verification failed after copy."
+        }
 
-    Copy-Item $builtExe $gameExe -Force
-    $srcHash = (Get-FileHash $builtExe -Algorithm SHA256).Hash
-    $dstHash = (Get-FileHash $gameExe -Algorithm SHA256).Hash
-    if ($srcHash -ne $dstHash) {
-        throw "EXE verification failed after copy."
+        Write-Host "EXE deployed and SHA256 verified:"
+        Write-Host "  $gameExe"
     }
-
-    Write-Host "EXE deployed and SHA256 verified:"
-    Write-Host "  $gameExe"
+    elseif (Test-Path $gameExe) {
+        Write-Host "Built release executable was not found in the repository output folder."
+        Write-Host "Keeping the existing game-root executable instead:"
+        Write-Host "  $gameExe"
+        Write-Host "Use a freshly built Release | Win32 EXE if engine-side loadscreen changes were made."
+    }
+    else {
+        throw "Neither built nor game-root Release executable exists. Expected '$builtExe' or '$gameExe'."
+    }
 }
 
 function Test-RealConflictPack([string]$Path) {
@@ -110,7 +117,7 @@ if (-not $assetSource) {
     if (-not $git) {
         throw @"
 No local documentary loadscreen pack with at least 100 PNGs was found, and Git could
-not be located. Git does NOT need to be on PATH for v5; the script also checks common
+not be located. Git does NOT need to be on PATH for v6; the script also checks common
 Git for Windows and GitHub Desktop locations.
 
 Expected local pack:
