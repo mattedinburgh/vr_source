@@ -4375,7 +4375,25 @@ static void AISeedEnemyFireteams(void)
 			else usTarget = __min((UINT16)AI_FIRETEAM_MAX_NORMAL, usTarget);
 
 			INT16 sSeedIndex = -1;
-			for (UINT16 i = 0; i < usCount; ++i) if (!fAssigned[i]) { sSeedIndex = (INT16)i; break; }
+			INT32 iBestSeedScore = -100000;
+			for (UINT16 i = 0; i < usCount; ++i)
+			{
+				if (fAssigned[i]) continue;
+				SOLDIERTYPE *pCandidate = MercPtrs[ubMembers[i]];
+				if (!pCandidate) continue;
+
+				// Build each element around the best remaining leader. Rank has a strong
+				// preference, while experience breaks ties. Fixed sentries are slightly
+				// disfavoured as mobile-team seeds so they keep their map mission.
+				INT32 iSeedScore = (INT32)AICommandAuthority(pCandidate) * 100 +
+					(INT32)pCandidate->stats.bExpLevel * 4;
+				if (AIEnemyFixedMissionRole(pCandidate)) iSeedScore -= 12;
+				if (iSeedScore > iBestSeedScore)
+				{
+					iBestSeedScore = iSeedScore;
+					sSeedIndex = (INT16)i;
+				}
+			}
 			if (sSeedIndex < 0) break;
 
 			UINT8 ubFireteam = gubAINextFireteam++;
@@ -4401,7 +4419,7 @@ static void AISeedEnemyFireteams(void)
 					if (gubAIFireteam[ubAssignedId] != ubFireteam) continue;
 					SOLDIERTYPE *pMember = MercPtrs[ubAssignedId];
 					if (!pMember) continue;
-					fHasLeader = fHasLeader || AICheckIsOfficer(pMember) || AICheckIsCommander(pMember);
+					fHasLeader = fHasLeader || AICheckIsLeader(pMember);
 					fHasMedic = fHasMedic || AICheckIsMedic(pMember);
 					fHasMachinegunner = fHasMachinegunner || AICheckIsMachinegunner(pMember);
 					fHasRadio = fHasRadio || AICheckIsRadioOperator(pMember);
@@ -4427,7 +4445,7 @@ static void AISeedEnemyFireteams(void)
 
 					INT32 iRolePenalty = 0;
 					if (AIEnemyFixedMissionRole(pCandidate) != fSeedFixedMission) iRolePenalty += 8;
-					if (fHasLeader && (AICheckIsOfficer(pCandidate) || AICheckIsCommander(pCandidate))) iRolePenalty += 4;
+					if (fHasLeader && AICheckIsLeader(pCandidate)) iRolePenalty += 4;
 					if (fHasMedic && AICheckIsMedic(pCandidate)) iRolePenalty += 4;
 					if (fHasMachinegunner && AICheckIsMachinegunner(pCandidate)) iRolePenalty += 4;
 					if (fHasRadio && AICheckIsRadioOperator(pCandidate)) iRolePenalty += 4;
@@ -4476,7 +4494,7 @@ static INT32 AIFireteamRoleOverlapPenalty(UINT8 ubFireteam, SOLDIERTYPE *pCandid
 		if (!AIEnemyFireteamEligible(pMember) || pMember->ubID >= MAX_NUM_SOLDIERS ||
 			guiAIFireteamIdentity[pMember->ubID] != pMember->uiUniqueSoldierIdValue ||
 			gubAIFireteam[pMember->ubID] != ubFireteam) continue;
-		fHasLeader = fHasLeader || AICheckIsOfficer(pMember) || AICheckIsCommander(pMember);
+		fHasLeader = fHasLeader || AICheckIsLeader(pMember);
 		fHasMedic = fHasMedic || AICheckIsMedic(pMember);
 		fHasMachinegunner = fHasMachinegunner || AICheckIsMachinegunner(pMember);
 		fHasRadio = fHasRadio || AICheckIsRadioOperator(pMember);
@@ -4612,7 +4630,7 @@ static INT32 AIFireteamRemnantDestinationPenalty(UINT8 ubFireteam)
 			++ubUnderFire;
 
 		if (!fBreaking && !pMember->aiData.bUnderFire &&
-			(AICheckIsCommander(pMember) || AICheckIsOfficer(pMember)))
+			AICheckIsLeader(pMember))
 		{
 			fStableLeader = TRUE;
 		}
@@ -5644,7 +5662,8 @@ UINT8 AILocalRoutPressure(SOLDIERTYPE *pSoldier)
 		BOOLEAN fDisengaging = AIDisengagementEstablishedForRout(pFriend);
 		BOOLEAN fRunningAway = (pFriend->aiData.bAction == AI_ACTION_RUN_AWAY);
 		BOOLEAN fCowering = (pFriend->flags.uiStatusFlags & SOLDIER_COWERING) != 0;
-		BOOLEAN fLeader = AICheckIsOfficer(pFriend) || AICheckIsCommander(pFriend);
+		UINT8 ubLeaderAuthority = AICommandAuthority(pFriend);
+		BOOLEAN fLeader = ubLeaderAuthority >= 2;
 		BOOLEAN fEstablishedBreak = fEscaping || fDisengaging;
 
 		// Breaking friends exert social pressure only at local tactical scale.
@@ -5664,15 +5683,17 @@ UINT8 AILocalRoutPressure(SOLDIERTYPE *pSoldier)
 		// A leader visibly abandoning the fight is especially destabilising.
 		if (fLeader && (fEscaping || fDisengaging || fRunningAway))
 		{
-			iPressure += 10;
+			// Watching a senior commander break is more destabilising than losing a
+			// junior NCO, but rank never overrides the local/casualty gates above.
+			iPressure += __min(18, 4 + (INT32)ubLeaderAuthority * 2);
 			if (fEstablishedBreak)
 				fBreakingLeader = TRUE;
 		}
-		// A nearby leader who is still holding together can slow a cascade, but
-		// cannot erase several nearby soldiers already breaking contact.
+		// A nearby leader who is still holding together can slow a cascade. Higher
+		// authority helps more, but cannot erase several established local breaks.
 		else if (fLeader && !fCowering && !pFriend->aiData.bUnderFire)
 		{
-			iPressure -= 15;
+			iPressure -= __min(22, 6 + (INT32)ubLeaderAuthority * 2);
 			fStableLeader = TRUE;
 		}
 	}
@@ -6192,7 +6213,7 @@ static BOOLEAN AIHasNearbyStableLeader(SOLDIERTYPE *pSoldier)
 			continue;
 		}
 
-		if (AICheckIsCommander(pFriend) || AICheckIsOfficer(pFriend))
+		if (AICheckIsLeader(pFriend))
 			return TRUE;
 	}
 
@@ -6770,10 +6791,13 @@ static INT8 AIProfessionalismModifier(SOLDIERTYPE *pSoldier)
 	case SOLDIER_CLASS_ELITE_MILITIA: iModifier += 7; break;
 	}
 
-	if (AICheckIsCommander(pSoldier))
+	UINT8 ubAuthority = AICommandAuthority(pSoldier);
+	if (ubAuthority >= 6)
 		iModifier += 5;
-	else if (AICheckIsOfficer(pSoldier))
+	else if (ubAuthority >= 4)
 		iModifier += 3;
+	else if (ubAuthority >= 2)
+		iModifier += 1;
 
 	return (INT8)__max(-10, __min(15, iModifier));
 }
@@ -6816,7 +6840,7 @@ UINT8 AIGetDoctrineProfile(SOLDIERTYPE *pSoldier)
 		return AI_DOCTRINE_ELITE_MOBILE;
 
 	case SOLDIER_CLASS_ARMY:
-		if (AICheckIsCommander(pSoldier) || AICheckIsOfficer(pSoldier) ||
+		if (AICheckIsLeader(pSoldier) ||
 			pSoldier->stats.bExpLevel >= 6 ||
 			(pSoldier->stats.bExpLevel >= 5 &&
 			 (pSoldier->aiData.bAttitude == CUNNINGAID ||
@@ -6836,7 +6860,7 @@ BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier)
 	if (!AICombatTeam(pSoldier))
 		return TRUE;
 
-	if (AICheckIsCommander(pSoldier) || AICheckIsOfficer(pSoldier))
+	if (AICheckIsLeader(pSoldier))
 		return TRUE;
 
 	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
@@ -6848,30 +6872,45 @@ BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier)
 			(pLeader->usSoldierFlagMask & SOLDIER_POW) ||
 			(pLeader->flags.uiStatusFlags & SOLDIER_COWERING) ||
 			pLeader->pathing.bLevel != pSoldier->pathing.bLevel ||
-			PythSpacesAway(pSoldier->sGridNo, pLeader->sGridNo) > TACTICAL_RANGE / 2 ||
 			AIDisengagementActive(pLeader) || AIEscapeActive(pLeader))
 			continue;
 
-		if (AICheckIsCommander(pLeader) || AICheckIsOfficer(pLeader))
-			return TRUE;
+		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, pLeader->sGridNo);
+		UINT8 ubAuthority = AICommandAuthority(pLeader);
+		if (ubAuthority >= 2)
+		{
+			// NCO command is fireteam-local. Lieutenants/Captains can coordinate a
+			// neighbouring element at short range; Majors+ have a wider local command
+			// radius. No rank grants sector-wide magical morale or information sharing.
+			if (ubAuthority <= 3)
+			{
+				if (AISameFireteam(pSoldier, pLeader) &&
+					iDistance <= __max(5, TACTICAL_RANGE / 3))
+					return TRUE;
+			}
+			else if (ubAuthority <= 5)
+			{
+				if (iDistance <= TACTICAL_RANGE / 2 &&
+					(AISameFireteam(pSoldier, pLeader) || iDistance <= TACTICAL_RANGE / 3))
+					return TRUE;
+			}
+			else if (iDistance <= TACTICAL_RANGE)
+			{
+				return TRUE;
+			}
+		}
 
-		// Militia do not always carry formal officer roles. Green militia can borrow
-		// local experience from a regular or elite neighbour. Regular militia remain
-		// line-infantry peers of regular army troops and need an elite/formal leader
-		// before unlocking the same independent complex manoeuvres.
-		if (pSoldier->bTeam == MILITIA_TEAM)
+		// Militia do not always carry formal officer roles. Preserve the existing
+		// experience hand-off, but keep it strictly local.
+		if (pSoldier->bTeam == MILITIA_TEAM && iDistance <= TACTICAL_RANGE / 2)
 		{
 			if (pSoldier->ubSoldierClass == SOLDIER_CLASS_GREEN_MILITIA &&
 				(pLeader->ubSoldierClass == SOLDIER_CLASS_REG_MILITIA ||
 				 pLeader->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA))
-			{
 				return TRUE;
-			}
 			if (pSoldier->ubSoldierClass == SOLDIER_CLASS_REG_MILITIA &&
 				pLeader->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA)
-			{
 				return TRUE;
-			}
 		}
 	}
 
@@ -6930,6 +6969,14 @@ UINT8 AIDoctrineResponseLimit(SOLDIERTYPE *pSoldier)
 	if (pSoldier->aiData.bOrders == ONCALL)
 		ubLimit += 2;
 	else if (pSoldier->aiData.bOrders == SEEKENEMY)
+		ubLimit += 1;
+
+	// Senior officers can release a slightly larger local response. This is command
+	// authority, not free reinforcements: the normal reserve budget and hard cap remain.
+	UINT8 ubAuthority = AICommandAuthority(pSoldier);
+	if (ubAuthority >= 5)
+		ubLimit += 1;
+	if (ubAuthority >= 7 && pSoldier->aiData.bOrders == ONCALL)
 		ubLimit += 1;
 
 	if (ubDoctrine == AI_DOCTRINE_SECURITY && ubLimit > 3)
@@ -9433,16 +9480,66 @@ BOOLEAN AICheckIsMortarOperator(SOLDIERTYPE *pSoldier)
 	return FALSE;
 }
 
+UINT8 AIGetCommandRank(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || !AICombatTeam(pSoldier))
+		return AI_RANK_NONE;
+
+	// 1.13's visible EnemyRank.xml is experience-level based. Keep the same ladder
+	// as the stable baseline so the UI and AI agree about what a rank means.
+	UINT8 ubRank = (UINT8)__max(1, __min(10, (INT32)pSoldier->stats.bExpLevel));
+	UINT8 ubLeaderTraits = NUM_SKILL_TRAITS(pSoldier, SQUADLEADER_NT);
+
+	// Explicit leadership traits remain authoritative. This preserves old Vengeance
+	// role assignment while allowing ordinary experienced soldiers to form a real
+	// chain of command even when the generator did not assign Squadleader.
+	if (ubLeaderTraits >= 2)
+		ubRank = __max((UINT8)AI_RANK_MAJOR, ubRank);
+	else if (ubLeaderTraits == 1)
+		ubRank = __max((UINT8)AI_RANK_LIEUTENANT, ubRank);
+
+	// Generic tactical troops top out at Colonel in 1.13. Reserve General for the
+	// rare case of a top-level soldier explicitly generated as a senior commander.
+	if (ubLeaderTraits >= 2 && pSoldier->stats.bExpLevel >= 10)
+		return AI_RANK_GENERAL;
+
+	return ubRank;
+}
+
+UINT8 AICommandAuthority(SOLDIERTYPE *pSoldier)
+{
+	switch (AIGetCommandRank(pSoldier))
+	{
+	case AI_RANK_CORPORAL:
+	case AI_RANK_SPECIALIST:      return 1;
+	case AI_RANK_SERGEANT:        return 2;
+	case AI_RANK_STAFF_SERGEANT:  return 3;
+	case AI_RANK_LIEUTENANT:      return 4;
+	case AI_RANK_CAPTAIN:         return 5;
+	case AI_RANK_MAJOR:           return 6;
+	case AI_RANK_COLONEL:         return 7;
+	case AI_RANK_GENERAL:         return 8;
+	default:                      return 0;
+	}
+}
+
+BOOLEAN AICheckIsNCO(SOLDIERTYPE *pSoldier)
+{
+	UINT8 ubRank = AIGetCommandRank(pSoldier);
+	return ubRank >= AI_RANK_CORPORAL && ubRank <= AI_RANK_STAFF_SERGEANT;
+}
+
+BOOLEAN AICheckIsLeader(SOLDIERTYPE *pSoldier)
+{
+	// Corporals/specialists are useful succession candidates, but a fireteam receives
+	// full command support from a Sergeant or above. Explicit Squadleader is already
+	// promoted to officer rank by AIGetCommandRank().
+	return AICommandAuthority(pSoldier) >= 2;
+}
+
 BOOLEAN AICheckIsOfficer(SOLDIERTYPE *pSoldier)
 {
-	CHECKF(pSoldier);
-
-	if( HAS_SKILL_TRAIT(pSoldier, SQUADLEADER_NT) )
-	{
-		return TRUE;
-	}
-
-	return FALSE;
+	return AIGetCommandRank(pSoldier) >= AI_RANK_LIEUTENANT;
 }
 
 BOOLEAN AICheckIsGLOperator(SOLDIERTYPE *pSoldier)
@@ -9480,14 +9577,7 @@ BOOLEAN AICheckIsGLOperator(SOLDIERTYPE *pSoldier)
 
 BOOLEAN AICheckIsCommander(SOLDIERTYPE *pSoldier)
 {
-	CHECKF(pSoldier);
-
-	if( NUM_SKILL_TRAITS( pSoldier, SQUADLEADER_NT ) > 1 )
-	{
-		return TRUE;
-	}
-
-	return FALSE;
+	return AIGetCommandRank(pSoldier) >= AI_RANK_MAJOR;
 }
 
 BOOLEAN AICheckIsMachinegunner(SOLDIERTYPE *pSoldier)
