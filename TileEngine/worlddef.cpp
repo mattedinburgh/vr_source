@@ -2710,25 +2710,43 @@ void InitLoadedWorld( )
 		return;
 	}
 #endif
+	const BOOLEAN fTraceB1Init = ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG );
+	if( fTraceB1Init ) TraceB1RemasterLoad( "INIT WORLD: BEGIN", "" );
+
 	// COMPILE MOVEMENT COSTS
+	if( fTraceB1Init ) TraceB1RemasterLoad( "INIT WORLD: MOVEMENT BEGIN", "" );
 	CompileWorldMovementCosts( );
+	if( fTraceB1Init ) TraceB1RemasterLoad( "INIT WORLD: MOVEMENT OK", "" );
 
 	// COMPILE INTERACTIVE TILES
+	if( fTraceB1Init ) TraceB1RemasterLoad( "INIT WORLD: INTERACTIVE BEGIN", "" );
 	CompileInteractiveTiles( );
+	if( fTraceB1Init ) TraceB1RemasterLoad( "INIT WORLD: INTERACTIVE OK", "" );
 
 	// COMPILE WORLD VISIBLIY TILES
+	if( fTraceB1Init ) TraceB1RemasterLoad( "INIT WORLD: WIREFRAME BEGIN", "" );
 	CalculateWorldWireFrameTiles( TRUE );
+	if( fTraceB1Init ) TraceB1RemasterLoad( "INIT WORLD: WIREFRAME OK", "" );
 
+	if( fTraceB1Init ) TraceB1RemasterLoad( "INIT WORLD: LIGHT SPRITES BEGIN", "" );
 	LightSpriteRenderAll();
+	if( fTraceB1Init ) TraceB1RemasterLoad( "INIT WORLD: LIGHT SPRITES OK", "" );
 
+	if( fTraceB1Init ) TraceB1RemasterLoad( "INIT WORLD: SHADOW OPTIMIZE BEGIN", "" );
 	OptimizeMapForShadows( );
+	if( fTraceB1Init ) TraceB1RemasterLoad( "INIT WORLD: SHADOW OPTIMIZE OK", "" );
 
+	if( fTraceB1Init ) TraceB1RemasterLoad( "INIT WORLD: INTERFACE HEIGHT BEGIN", "" );
 	SetInterfaceHeightLevel( );
+	if( fTraceB1Init ) TraceB1RemasterLoad( "INIT WORLD: INTERFACE HEIGHT OK", "" );
 
 	// ATE: if we have a slide location, remove it!
 	gTacticalStatus.sSlideTarget = NOWHERE;
 
+	if( fTraceB1Init ) TraceB1RemasterLoad( "INIT WORLD: BLUE FLAGS BEGIN", "" );
 	SetBlueFlagFlags();
+	if( fTraceB1Init ) TraceB1RemasterLoad( "INIT WORLD: BLUE FLAGS OK", "" );
+	if( fTraceB1Init ) TraceB1RemasterLoad( "INIT WORLD: COMPLETE", "" );
 }
 
 #ifdef JA2EDITOR
