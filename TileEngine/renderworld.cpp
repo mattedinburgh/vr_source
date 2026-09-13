@@ -2086,20 +2086,53 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 								{
 									if(gbPixelDepth==16 && (hVObject->ubBitDepth == 16 || hVObject->ubBitDepth == 32))
 									{
-										// True-colour map imagery keeps the existing 16-bit framebuffer and
-										// Z-buffer.  Legacy indexed objects never enter this path.
-										BltTrueColorDataTo16BPPBuffer(
-											(UINT16*)pDestBuf,
-											uiDestPitchBYTES,
-											fZBlitter ? gpZBuffer : NULL,
-											sZLevel,
-											hVObject,
-											sXPos, sYPos,
-											usImageIndex,
-											&gClippingRect,
-											pNode->ubShadeLevel,
-											fZBlitter,
-											fZWrite);
+										// True-colour map imagery keeps the existing 16-bit framebuffer/Z-buffer.
+										// Multi-tile structures use the same JSD-derived Z strips as legacy ETRLE.
+										if(fMultiZBlitter && fZBlitter)
+										{
+											INT16 sTrueColorZStripIndex = usImageIndex;
+											BOOLEAN fTrueColorSameZBurnsThrough = FALSE;
+
+											// Legacy wall rendering deliberately lets equal-Z wall pixels burn through.
+											// The obscured/pixelated path uses normal >= Z semantics, just like the
+											// original 8-bit renderer.
+											if(fWallTile && !fObscuredBlitter)
+											{
+												fTrueColorSameZBurnsThrough = TRUE;
+												sTrueColorZStripIndex = (sZStripIndex == -1) ? usImageIndex : sZStripIndex;
+											}
+
+											BltTrueColorDataTo16BPPBufferZStrip(
+												(UINT16*)pDestBuf,
+												uiDestPitchBYTES,
+												gpZBuffer,
+												sZLevel,
+												hVObject,
+												sXPos, sYPos,
+												usImageIndex,
+												&gClippingRect,
+												pNode->ubShadeLevel,
+												sTrueColorZStripIndex,
+												Z_STRIP_DELTA_Y,
+												fTrueColorSameZBurnsThrough,
+												fObscuredBlitter,
+												fZWrite);
+										}
+										else
+										{
+											BltTrueColorDataTo16BPPBuffer(
+												(UINT16*)pDestBuf,
+												uiDestPitchBYTES,
+												fZBlitter ? gpZBuffer : NULL,
+												sZLevel,
+												hVObject,
+												sXPos, sYPos,
+												usImageIndex,
+												&gClippingRect,
+												pNode->ubShadeLevel,
+												fZBlitter,
+												fZWrite);
+										}
 
 										if ( (uiLevelNodeFlags & LEVELNODE_UPDATESAVEBUFFERONCE ) )
 										{
