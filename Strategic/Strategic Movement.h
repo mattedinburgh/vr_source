@@ -270,6 +270,8 @@ GROUP* FindMovementGroupInSector( UINT8 ubSectorX, UINT8 ubSectorY, BOOLEAN fPla
 // battle cleanup so escaped enemies cannot coexist with mercs or militia.
 void QueueEnemyRetreatConflict( UINT8 ubSectorX, UINT8 ubSectorY );
 BOOLEAN ProcessNextEnemyRetreatConflict( void );
+BOOLEAN EnemyRetreatLockedInSector( UINT8 ubSectorX, UINT8 ubSectorY );
+void ClearEnemyRetreatLockInSector( UINT8 ubSectorX, UINT8 ubSectorY );
 
 BOOLEAN GroupAtFinalDestination( GROUP *pGroup );
 
