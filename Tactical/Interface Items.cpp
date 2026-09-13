@@ -2709,7 +2709,7 @@ void INVRenderINVPanelItem( SOLDIERTYPE *pSoldier, INT16 sPocket, UINT8 fDirtyLe
 			// CHRISL: Change coords for STI that covers 2nd hand location when carrying a 2handed weapon
 			if( guiCurrentItemDescriptionScreen != MAP_SCREEN )
 			{
-				newX = ((UsingNewInventorySystem() == false)) ? (xResOffset + 217) : ((SCREEN_WIDTH - xResSize)/2 + 114);
+				newX = ((UsingNewInventorySystem() == false)) ? (INTERFACE_START_X + 217) : (INTERFACE_START_X + 114);
 				newY = ((UsingNewInventorySystem() == false)) ? sY : (sY - 1);
 				BltVideoObjectFromIndex( guiSAVEBUFFER, guiSecItemHiddenVO, UsingNewInventorySystem(), newX, newY, VO_BLT_SRCTRANSPARENCY, NULL );
 				RestoreExternBackgroundRect( newX, newY, 72, 28 );
@@ -9895,14 +9895,14 @@ void ShadowNIVPanel()
 	// First rectangle
 	startX1 = gsItemPopupInvX;
 	startY1 = gsItemPopupInvY;
-	endX1 = SCREEN_WIDTH - xResOffset;
+	endX1 = (UINT16)(INTERFACE_START_X + INTERFACE_WIDTH);
 	endY1 = startY1 + 109;
 	ShadowVideoSurfaceRect( FRAME_BUFFER, startX1, startY1, endX1 , endY1  );
 
 	// Second rectangle
 	startX2 = startX1;
 	startY2 = endY1;
-	endX2 = SCREEN_WIDTH - xResOffset - 155;
+	endX2 = (UINT16)(INTERFACE_START_X + INTERFACE_WIDTH - 155);
 	endY2 = SCREEN_HEIGHT;
 	ShadowVideoSurfaceRect( FRAME_BUFFER, startX2, startY2, endX2 , endY2  );
 
@@ -10094,7 +10094,7 @@ BOOLEAN InitKeyRingPopup( SOLDIERTYPE *pSoldier, INT16 sInvX, INT16 sInvY, INT16
 	else
 	{
 		// Set some globals	
-		gsKeyRingPopupInvX				= xResOffset + sInvX + TACTICAL_INVENTORY_KEYRING_GRAPHIC_OFFSET_X;
+		gsKeyRingPopupInvX				= INTERFACE_START_X + sInvX + TACTICAL_INVENTORY_KEYRING_GRAPHIC_OFFSET_X;
 		sKeyRingItemWidth				= KEY_RING_ROW_WIDTH;
 		sOffSetY = 8;
 	}
@@ -12437,7 +12437,7 @@ void GetHelpTextForItem( STR16 pzStr, OBJECTTYPE *pObject, SOLDIERTYPE *pSoldier
 				if ( gGameExternalOptions.fAdvRepairSystem && gGameExternalOptions.fDirtSystem && ( sThreshold < 100 || bDirt > 0 ) )
 				{
 					#ifdef CHINESE
-						swprintf( pStr, L"%s [%d%£¥(%d%£¥)]\n%s %d\n%s %d\n%s %d (%d)\n%s (%d) %s\n%s %1.1f %s\n %s %.2f%%",
+						swprintf( pStr, L"%s [%d%Â£Â¥(%d%Â£Â¥)]\n%s %d\n%s %d\n%s %d (%d)\n%s (%d) %s\n%s %1.1f %s\n %s %.2f%%",
 					#else
 						swprintf( pStr, L"%s [%d%%(%d%%)]\n%s %d\n%s %d\n%s %d (%d)\n%s (%d) %s\n%s %1.1f %s\n%s %.2f%%",
 					#endif
@@ -12465,7 +12465,7 @@ void GetHelpTextForItem( STR16 pzStr, OBJECTTYPE *pObject, SOLDIERTYPE *pSoldier
 				else if ( gGameExternalOptions.fAdvRepairSystem && sThreshold < 100 )
 				{
 					#ifdef CHINESE
-						swprintf( pStr, L"%s [%d%£¥(%d%£¥)]\n%s %d\n%s %d\n%s %d (%d)\n%s (%d) %s\n%s %1.1f %s",
+						swprintf( pStr, L"%s [%d%Â£Â¥(%d%Â£Â¥)]\n%s %d\n%s %d\n%s %d (%d)\n%s (%d) %s\n%s %1.1f %s",
 					#else
 						swprintf( pStr, L"%s [%d%%(%d%%)]\n%s %d\n%s %d\n%s %d (%d)\n%s (%d) %s\n%s %1.1f %s",
 					#endif
@@ -12491,7 +12491,7 @@ void GetHelpTextForItem( STR16 pzStr, OBJECTTYPE *pObject, SOLDIERTYPE *pSoldier
 				else if ( gGameExternalOptions.fDirtSystem && bDirt > 0 )
 				{
 					#ifdef CHINESE
-						swprintf( pStr, L"%s [%d%£¥]\n%s %d\n%s %d\n%s %d (%d)\n%s (%d) %s\n%s %1.1f %s\n %s %.2f%%",
+						swprintf( pStr, L"%s [%d%Â£Â¥]\n%s %d\n%s %d\n%s %d (%d)\n%s (%d) %s\n%s %1.1f %s\n %s %.2f%%",
 					#else
 						swprintf( pStr, L"%s [%d%%]\n%s %d\n%s %d\n%s %d (%d)\n%s (%d) %s\n%s %1.1f %s\n%s %.2f%%",
 					#endif
@@ -12518,7 +12518,7 @@ void GetHelpTextForItem( STR16 pzStr, OBJECTTYPE *pObject, SOLDIERTYPE *pSoldier
 				else
 				{
 					#ifdef CHINESE
-						swprintf( pStr, L"%s [%d%£¥]\n%s %d\n%s %d\n%s %d (%d)\n%s (%d) %s\n%s %1.1f %s",
+						swprintf( pStr, L"%s [%d%Â£Â¥]\n%s %d\n%s %d\n%s %d (%d)\n%s (%d) %s\n%s %1.1f %s",
 					#else
 						swprintf( pStr, L"%s [%d%%]\n%s %d\n%s %d\n%s %d (%d)\n%s (%d) %s\n%s %1.1f %s",
 					#endif
