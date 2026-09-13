@@ -161,18 +161,19 @@ jobs:
           if (Test-Path $ddrawIni) {
             $ddraw = [System.IO.File]::ReadAllText($ddrawIni)
             $ddraw = [regex]::Replace($ddraw, '(?ims)^\\[MapEditor_Vengeance\\]\\s*.*?(?=^\\[|\\z)', '')
-            $profile = @"
-
-[MapEditor_Vengeance]
-windowed=true
-renderer=gdi
-singlecpu=false
-fixmousehook=true
-noactivateapp=true
-releasealt=true
-novidmem=true
-"@
-            [System.IO.File]::WriteAllText($ddrawIni, ($ddraw.TrimEnd() + $profile + [Environment]::NewLine), (New-Object System.Text.UTF8Encoding($false)))
+            $profileLines = @(
+              '',
+              '[MapEditor_Vengeance]',
+              'windowed=true',
+              'renderer=gdi',
+              'singlecpu=false',
+              'fixmousehook=true',
+              'noactivateapp=true',
+              'releasealt=true',
+              'novidmem=true'
+            )
+            $profile = $profileLines -join [Environment]::NewLine
+            [System.IO.File]::WriteAllText($ddrawIni, ($ddraw.TrimEnd() + [Environment]::NewLine + $profile + [Environment]::NewLine), (New-Object System.Text.UTF8Encoding($false)))
           }
 
           $previewDir = Join-Path $sandbox 'MAP_PREVIEWS'
