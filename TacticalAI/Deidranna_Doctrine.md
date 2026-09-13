@@ -17,7 +17,10 @@ anti-cheat rules documented in `AI_Knowledge_Audit.md`.
 | ELITE_GUARD | stationary/guard/sniper elites | high tactical skill, low roaming | high | yes |
 
 Militia is deliberately left on the existing shared human-like AI behavior; these
-restrictions are specifically for Deidranna's heterogeneous army.
+restrictions are specifically for Deidranna's heterogeneous army. The implementation
+enforces this at the doctrine helper boundary: militia may use shared fireteam,
+self-preservation and casualty-response systems, but Deidranna command/initiative,
+anchoring, proactive-support and QRF doctrine gates are ENEMY_TEAM-only.
 
 ## Command effect
 
@@ -55,9 +58,10 @@ Initial distant response size is doctrine-dependent. Anchored SECURITY/ELITE_GUA
 `ONCALL` expands the response element by two; `SEEKENEMY` by one.
 
 After confirmed radio contact, the existing perceived-enemy-strength reinforcement
-waves can expand line/QRF commitment. Fixed SECURITY troops remain capped at three
-unless explicitly assigned ONCALL/SEEKENEMY, and ELITE_GUARD troops are capped at five,
-so a distant firefight does not automatically empty a defended facility.
+waves can expand line/QRF commitment. SECURITY is hard-capped at three and
+ELITE_GUARD at five **after** baseline/wave reconciliation, so command/order modifiers
+cannot bypass the final garrison cap and a distant firefight does not automatically
+empty a defended facility.
 
 ## Fire and manoeuvre
 
