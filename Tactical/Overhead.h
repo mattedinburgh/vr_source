@@ -354,6 +354,20 @@ extern UINT8 NumEnemyInSector();
 // Flugente
 extern UINT8 NumZombiesInSector();
 
+enum
+{
+	OFFICER_NONE = 0,
+	OFFICER_LIEUTNANT,
+	OFFICER_CAPTAIN,
+	OFFICER_MAX
+};
+
+// Enemy command-role helpers. "Near" is intentionally local in Vengeance so
+// one officer does not magically buff an entire sector.
+UINT16 HighestEnemyOfficersInSector(UINT8& aType);
+UINT8 HighestEnemyOfficerNearSoldier(SOLDIERTYPE* pTarget, INT16 sRadius);
+UINT16 NumSoldiersWithFlagInSector(UINT8 aTeam, UINT32 aFlag);
+
 // Flugente: offer the enemy the chance to surrender
 void HandleSurrenderOffer( SOLDIERTYPE* pSoldier );
 
