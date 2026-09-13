@@ -6221,7 +6221,7 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 		!( this->flags.uiStatusFlags & ( SOLDIER_VEHICLE | SOLDIER_ROBOT ) ) )
 	{
 		UINT8 ubBloodStrength = 3;
-		UINT8 ubSprayDirection = gOppositeDirection[ (UINT8)bDirection ];
+		UINT8 ubSprayDirection = gOppositeDirection[ (UINT8)( bDirection % NUM_WORLD_DIRECTIONS ) ];
 		INT16 sGoreZ = 30;
 
 		if ( sDamage >= 30 )
