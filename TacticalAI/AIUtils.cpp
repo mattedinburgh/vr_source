@@ -5087,15 +5087,25 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		pSoldier->aiData.bOrders == SNIPER)
 		return AI_ACTION_NONE;
 
-	// An established withdrawal/escape is already a higher-priority tactical state.
-	// Do not mutate fireteam membership before honouring it; this is especially
-	// important for explicit militia Retreat orders, which use forced disengagement.
-	if (AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier))
+	// A shattered enemy one/two-man element gets first refusal on joining a viable
+	// neighbouring fireteam even if break-contact intent has already started. This
+	// implements "reattach before flee": a survivor should reinforce another coherent
+	// element rather than leave the sector when a usable element is still available.
+	// Militia explicit/strategic retreat remains authoritative.
+	UINT8 ubBefore = AIFireteamRegroupingStrength(pSoldier);
+	BOOLEAN fEnemyRemnantCanReattach =
+		pSoldier->bTeam == ENEMY_TEAM &&
+		ubBefore > 0 && ubBefore <= 2 &&
+		AICanAbsorbFireteamRemnant(pSoldier);
+
+	if ((AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier)) &&
+		!fEnemyRemnantCanReattach)
+	{
 		return AI_ACTION_NONE;
+	}
 
 	// A shattered one/two-man element gets first refusal on joining a viable
-	// neighbouring fireteam only while it is still tactically available to regroup.
-	UINT8 ubBefore = AIFireteamRegroupingStrength(pSoldier);
+	// neighbouring fireteam while a coherent destination still exists.
 	BOOLEAN fWasRemnant = (ubBefore > 0 && ubBefore <= 2);
 	if (fWasRemnant)
 		AIAbsorbFireteamRemnant(pSoldier);
