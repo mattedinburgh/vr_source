@@ -12406,24 +12406,32 @@ FLOAT CalcNewChanceToHitBaseSpecialBonus(SOLDIERTYPE *pSoldier)
 	FLOAT fDifficultyBonus = 0;
 
 	/////////////////////////////////////////////////////////////////////////////////////
-	// SANDRO - Bonus CtH for Militia / enemy classes.
-	if (pSoldier->ubSoldierClass == SOLDIER_CLASS_GREEN_MILITIA && gGameExternalOptions.sGreenMilitiaCtHBonusPercent != 0)
-		fClassBonus = (FLOAT)gGameExternalOptions.sGreenMilitiaCtHBonusPercent;
-	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_REG_MILITIA && gGameExternalOptions.sRegularMilitiaCtHBonusPercent != 0)
-		fClassBonus = (FLOAT)gGameExternalOptions.sRegularMilitiaCtHBonusPercent;
-	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA && gGameExternalOptions.sVeteranMilitiaCtHBonusPercent != 0)
-		fClassBonus = (FLOAT)gGameExternalOptions.sVeteranMilitiaCtHBonusPercent;
-	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ADMINISTRATOR && gGameExternalOptions.sEnemyAdminCtHBonusPercent != 0)
-		fClassBonus = (FLOAT)gGameExternalOptions.sEnemyAdminCtHBonusPercent;
-	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ARMY && gGameExternalOptions.sEnemyRegularCtHBonusPercent != 0)
-		fClassBonus = (FLOAT)gGameExternalOptions.sEnemyRegularCtHBonusPercent;
-	else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE && gGameExternalOptions.sEnemyEliteCtHBonusPercent != 0)
-		fClassBonus = (FLOAT)gGameExternalOptions.sEnemyEliteCtHBonusPercent;
+	// Legacy 1.13/VR class CtH multipliers were effectively hidden difficulty
+	// bonuses for enemy and militia soldiers. The revised AI is meant to gain its
+	// advantage from tactics, equipment, morale, positioning and numbers instead,
+	// so human combat teams do not receive these class-wide accuracy multipliers.
+	if ( !AICombatTeam(pSoldier) )
+	{
+		if (pSoldier->ubSoldierClass == SOLDIER_CLASS_GREEN_MILITIA && gGameExternalOptions.sGreenMilitiaCtHBonusPercent != 0)
+			fClassBonus = (FLOAT)gGameExternalOptions.sGreenMilitiaCtHBonusPercent;
+		else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_REG_MILITIA && gGameExternalOptions.sRegularMilitiaCtHBonusPercent != 0)
+			fClassBonus = (FLOAT)gGameExternalOptions.sRegularMilitiaCtHBonusPercent;
+		else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA && gGameExternalOptions.sVeteranMilitiaCtHBonusPercent != 0)
+			fClassBonus = (FLOAT)gGameExternalOptions.sVeteranMilitiaCtHBonusPercent;
+		else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ADMINISTRATOR && gGameExternalOptions.sEnemyAdminCtHBonusPercent != 0)
+			fClassBonus = (FLOAT)gGameExternalOptions.sEnemyAdminCtHBonusPercent;
+		else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ARMY && gGameExternalOptions.sEnemyRegularCtHBonusPercent != 0)
+			fClassBonus = (FLOAT)gGameExternalOptions.sEnemyRegularCtHBonusPercent;
+		else if (pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE && gGameExternalOptions.sEnemyEliteCtHBonusPercent != 0)
+			fClassBonus = (FLOAT)gGameExternalOptions.sEnemyEliteCtHBonusPercent;
+	}
 
 	fBaseModifier += fClassBonus;
 
-	// SANDRO - option to make special NPCs stronger - chance to hit.
-	if (gGameExternalOptions.usSpecialNPCStronger > 0)
+	// Keep the legacy special-NPC multiplier only outside the enemy/militia
+	// tactical combat brain. Named enemy bosses should be dangerous because of
+	// their authored stats/equipment and AI, not an invisible CtH multiplier.
+	if (gGameExternalOptions.usSpecialNPCStronger > 0 && !AICombatTeam(pSoldier))
 	{
 		FLOAT fBeforeNPCBonus = fBaseModifier;
 		switch( pSoldier->ubProfile )
