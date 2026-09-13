@@ -7214,6 +7214,8 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 				!AISameFireteam(pSoldier, pCandidate) ||
 				pCandidate->stats.bLife < OKLIFE || pCandidate->bCollapsed || pCandidate->bBreathCollapsed ||
 				(pCandidate->usSoldierFlagMask & SOLDIER_POW) ||
+				(pCandidate->flags.uiStatusFlags & SOLDIER_COWERING) ||
+				AIDisengagementActive(pCandidate) || AIEscapeActive(pCandidate) ||
 				pCandidate->pathing.bLevel != pSoldier->pathing.bLevel ||
 				pCandidate->bActionPoints <= 0 ||
 				PythSpacesAway(pSoldier->sGridNo, pCandidate->sGridNo) > TACTICAL_RANGE / 2)
