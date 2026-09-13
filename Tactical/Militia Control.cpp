@@ -1458,6 +1458,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 							//Hold Position !!!
 							//ScreenMsg( FONT_WHITE, MSG_INTERFACE, L"Hold Position" );
 							ResetMilitiaCommandQueue( pTMilitiaSoldier );
+							AIClearDisengagementState( pTMilitiaSoldier );
 							pTMilitiaSoldier->aiData.bOrders = STATIONARY;
 							pTMilitiaSoldier->aiData.bAttitude = DEFENSIVE;
 							// sevenfm: set this spot as original point
@@ -1553,6 +1554,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 								{
 									// Rally to a distinct nearby position, then hold it.
 									ResetMilitiaCommandQueue( pTMilitiaSoldier );
+									AIClearDisengagementState( pTMilitiaSoldier );
 									pTMilitiaSoldier->aiData.bOrders = STATIONARY;
 									pTMilitiaSoldier->aiData.bAttitude = DEFENSIVE;
 									pTMilitiaSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
@@ -1726,6 +1728,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 							if ( (pTeamSoldier->bActive) && (pTeamSoldier->bInSector) && (pTeamSoldier->stats.bLife >= OKLIFE) )
 							{
 								ResetMilitiaCommandQueue( pTeamSoldier );
+								AIClearDisengagementState( pTeamSoldier );
 								pTeamSoldier->aiData.bOrders = STATIONARY;
 								pTeamSoldier->aiData.bAttitude = DEFENSIVE;
 								// sevenfm: set this spot as original point
@@ -1839,6 +1842,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 								if ( !TileIsOutOfBounds(sActionGridNo) )
 								{
 									ResetMilitiaCommandQueue( pTeamSoldier );
+									AIClearDisengagementState( pTeamSoldier );
 									pTeamSoldier->aiData.bOrders = STATIONARY;
 									pTeamSoldier->aiData.bAttitude = DEFENSIVE;
 									pTeamSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
@@ -1881,6 +1885,8 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 								if ( !TileIsOutOfBounds(sActionGridNo) )
 								{
 									// A spread order is a local defensive reposition, not a sector-wide patrol.
+									ResetMilitiaCommandQueue( pTeamSoldier );
+									AIClearDisengagementState( pTeamSoldier );
 									pTeamSoldier->aiData.bOrders = STATIONARY;
 									pTeamSoldier->aiData.bAttitude = DEFENSIVE;
 									pTeamSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
