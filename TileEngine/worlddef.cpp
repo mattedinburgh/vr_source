@@ -864,7 +864,6 @@ static BOOLEAN A3FarmCowGridSafe( INT32 sGridNo )
 	if ( !GetTileType( pMap->pLandHead->usIndex, &uiLandType ) )
 		return FALSE;
 
-	// Do not place livestock in water, on buildings, or on hard interior floors.
 	if ( uiLandType == REGWATERTEXTURE || uiLandType == DEEPWATERTEXTURE ||
 		 (uiLandType >= FIRSTFLOOR && uiLandType <= LASTFLOOR) )
 		return FALSE;
@@ -872,17 +871,186 @@ static BOOLEAN A3FarmCowGridSafe( INT32 sGridNo )
 	return TRUE;
 }
 
+// Reusable A3 visual building block. These pieces live only on the object layer:
+// no JSD means no collision, cover, LOS, room or quest semantics are changed.
+typedef struct
+{
+	INT8 bDx;
+	INT8 bDy;
+	UINT16 usType;
+	UINT8 ubSubIndex;
+} A3_FARM_VISUAL_PIECE;
+
+static BOOLEAN A3FarmOffsetGrid( INT32 sAnchor, INT8 bDx, INT8 bDy, INT32 *psGridNo )
+{
+	if ( sAnchor < 0 || sAnchor >= WORLD_MAX || psGridNo == NULL )
+		return FALSE;
+
+	const INT32 sRows = WORLD_MAX / WORLD_COLS;
+	const INT32 sAnchorRow = sAnchor / WORLD_COLS;
+	const INT32 sAnchorCol = sAnchor % WORLD_COLS;
+	const INT32 sRow = sAnchorRow + bDy;
+	const INT32 sCol = sAnchorCol + bDx;
+
+	if ( sRow < 0 || sRow >= sRows || sCol < 0 || sCol >= WORLD_COLS )
+		return FALSE;
+
+	*psGridNo = sRow * WORLD_COLS + sCol;
+	return TRUE;
+}
+
+static BOOLEAN A3FarmDecorationGridSafe( INT32 sGridNo, BOOLEAN fAllowFloor )
+{
+	if ( sGridNo < 0 || sGridNo >= WORLD_MAX || gpWorldLevelData == NULL )
+		return FALSE;
+
+	MAP_ELEMENT *pMap = &gpWorldLevelData[ sGridNo ];
+	if ( pMap->pLandHead == NULL || pMap->pStructHead != NULL ||
+		 pMap->pRoofHead != NULL || pMap->pOnRoofHead != NULL ||
+		 pMap->pObjectHead != NULL )
+		return FALSE;
+
+	UINT32 uiLandType = 0;
+	if ( !GetTileType( pMap->pLandHead->usIndex, &uiLandType ) )
+		return FALSE;
+
+	if ( uiLandType == REGWATERTEXTURE || uiLandType == DEEPWATERTEXTURE )
+		return FALSE;
+
+	if ( uiLandType >= FIRSTFLOOR && uiLandType <= LASTFLOOR )
+		return fAllowFloor;
+
+	return ( uiLandType >= FIRSTTEXTURE && uiLandType <= SEVENTHTEXTURE );
+}
+
+static BOOLEAN A3FarmCustomFrameExists( UINT16 usType, UINT8 ubSubIndex )
+{
+	if ( usType >= NUMBEROFTILETYPES || ubSubIndex == 0 ||
+		 ubSubIndex > gNumTilesPerType[ usType ] )
+		return FALSE;
+
+	PTILE_IMAGERY pSurface = gTileSurfaceArray[ usType ];
+	return ( pSurface != NULL && pSurface->vo != NULL &&
+			 ubSubIndex <= pSurface->vo->usNumberOfObjects );
+}
+
+static UINT16 A3PlaceFarmVisualBlock( INT32 sAnchor, const A3_FARM_VISUAL_PIECE *pPieces,
+	UINT8 ubPieceCount, BOOLEAN fAllowFloor )
+{
+	if ( pPieces == NULL || ubPieceCount == 0 )
+		return 0;
+
+	// Validate the complete composition first. A block is never half-placed.
+	for ( UINT8 i = 0; i < ubPieceCount; ++i )
+	{
+		INT32 sGridNo = NOWHERE;
+		if ( !A3FarmOffsetGrid( sAnchor, pPieces[i].bDx, pPieces[i].bDy, &sGridNo ) ||
+			 !A3FarmDecorationGridSafe( sGridNo, fAllowFloor ) ||
+			 !A3FarmCustomFrameExists( pPieces[i].usType, pPieces[i].ubSubIndex ) )
+			return 0;
+	}
+
+	UINT16 usPlaced = 0;
+	for ( UINT8 i = 0; i < ubPieceCount; ++i )
+	{
+		INT32 sGridNo = NOWHERE;
+		if ( A3FarmOffsetGrid( sAnchor, pPieces[i].bDx, pPieces[i].bDy, &sGridNo ) &&
+			 B1AddVisualDecoration( sGridNo, pPieces[i].usType, pPieces[i].ubSubIndex ) )
+			++usPlaced;
+	}
+	return usPlaced;
+}
+
+// Multi-tile compositions. The art lives in tileset 38 and can be reused by
+// future rural-sector profiles without baking A3 coordinates into the sprites.
+static const A3_FARM_VISUAL_PIECE gA3CropStripA[] =
+{
+	{0,0,SECONDDECORATIONS,1},{1,0,SECONDDECORATIONS,2},
+	{2,0,SECONDDECORATIONS,3},{3,0,SECONDDECORATIONS,4}
+};
+static const A3_FARM_VISUAL_PIECE gA3CropStripB[] =
+{
+	{0,0,SECONDDECORATIONS,5},{1,0,SECONDDECORATIONS,6},
+	{2,0,SECONDDECORATIONS,7},{3,0,SECONDDECORATIONS,8}
+};
+static const A3_FARM_VISUAL_PIECE gA3CropPatch[] =
+{
+	{0,0,SECONDDECORATIONS,1},{1,0,SECONDDECORATIONS,4},
+	{0,1,SECONDDECORATIONS,7},{1,1,SECONDDECORATIONS,10}
+};
+static const A3_FARM_VISUAL_PIECE gA3MudRun[] =
+{
+	{0,0,THIRDDECORATIONS,1},{1,0,THIRDDECORATIONS,2},{2,0,THIRDDECORATIONS,3}
+};
+static const A3_FARM_VISUAL_PIECE gA3MudCorner[] =
+{
+	{0,0,THIRDDECORATIONS,4},{1,0,THIRDDECORATIONS,5},
+	{0,1,THIRDDECORATIONS,6},{1,1,THIRDDECORATIONS,7}
+};
+static const A3_FARM_VISUAL_PIECE gA3FieldEdge[] =
+{
+	{0,0,DEBRISWEEDS,1},{1,0,DEBRISWEEDS,5},
+	{2,0,DEBRISROCKS,2},{3,0,DEBRISWEEDS,9}
+};
+static const A3_FARM_VISUAL_PIECE gA3DrainageRun[] =
+{
+	{0,0,DEBRISGRASS,1},{1,0,DEBRISGRASS,2},
+	{2,0,DEBRISGRASS,3},{3,0,DEBRISROCKS,6}
+};
+static const A3_FARM_VISUAL_PIECE gA3YardPalletCluster[] =
+{
+	{0,0,DEBRISWOOD,1},{1,0,DEBRISMISC,1},
+	{0,1,DEBRISWOOD,4},{1,1,DEBRISMISC,7}
+};
+static const A3_FARM_VISUAL_PIECE gA3YardToolCluster[] =
+{
+	{0,0,DEBRISMISC,5},{1,0,DEBRISWOOD,3},
+	{0,1,DEBRISMISC,3},{1,1,DEBRISROCKS,4}
+};
+static const A3_FARM_VISUAL_PIECE gA3TroughCluster[] =
+{
+	{0,0,FOURTHDECORATIONS,8},{1,0,DEBRISWEEDS,3},
+	{0,1,THIRDDECORATIONS,4},{1,1,DEBRISWOOD,5}
+};
+static const A3_FARM_VISUAL_PIECE gA3ScarecrowPlot[] =
+{
+	{1,0,FOURTHDECORATIONS,1},
+	{0,1,SECONDDECORATIONS,2},{1,1,SECONDDECORATIONS,3},{2,1,SECONDDECORATIONS,4},
+	{1,2,DEBRISWEEDS,6}
+};
+static const A3_FARM_VISUAL_PIECE gA3HayCorner[] =
+{
+	{0,0,FOURTHDECORATIONS,2},{1,0,DEBRISWOOD,3},
+	{0,1,DEBRISWEEDS,2},{1,1,DEBRISMISC,1}
+};
+static const A3_FARM_VISUAL_PIECE gA3WaterTankCorner[] =
+{
+	{0,0,FOURTHDECORATIONS,4},{1,0,DEBRISGRASS,5},
+	{0,1,THIRDDECORATIONS,10},{1,1,DEBRISROCKS,8}
+};
+static const A3_FARM_VISUAL_PIECE gA3FarmSignCorner[] =
+{
+	{0,0,FOURTHDECORATIONS,5},{1,0,DEBRISWEEDS,8},{0,1,DEBRISROCKS,3}
+};
+static const A3_FARM_VISUAL_PIECE gA3LeanToCorner[] =
+{
+	{0,0,FOURTHDECORATIONS,7},{1,0,DEBRISMISC,4},
+	{0,1,DEBRISWOOD,2},{1,1,DEBRISMISC,8}
+};
+
 static void DressA3FarmEnvironment( void )
 {
 	if ( gubSectorVisualProfile != SECTOR_VISUAL_A3_FARM || gpWorldLevelData == NULL )
 		return;
 
-	UINT32 uiCropRows = 0;
-	UINT32 uiFieldClutter = 0;
-	UINT32 uiFarmyardClutter = 0;
-	UINT32 uiTrailClutter = 0;
-	UINT32 uiTrailEdges = 0;
-	UINT32 uiWaterEdges = 0;
+	UINT32 uiCropBlocks = 0;
+	UINT32 uiEdgeBlocks = 0;
+	UINT32 uiMudBlocks = 0;
+	UINT32 uiDrainageBlocks = 0;
+	UINT32 uiYardBlocks = 0;
+	UINT32 uiLandmarkBlocks = 0;
+	UINT32 uiCustomPieces = 0;
+	UINT32 uiSingleDetail = 0;
 
 	for ( INT32 sGridNo = 0; sGridNo < WORLD_MAX; ++sGridNo )
 	{
@@ -907,77 +1075,126 @@ static void DressA3FarmEnvironment( void )
 		const UINT32 uiHash = B1VisualHash( (UINT32)sGridNo ^ 0xA3F47D21u );
 		const INT32 sRow = sGridNo / WORLD_COLS;
 		const INT32 sColumn = sGridNo % WORLD_COLS;
+		const BOOLEAN fFieldBand = (((sRow + (sColumn / 12)) % 6) <= 1);
 
-		// Broad crop/pasture bands make the sector read as cultivated land at 1080p.
-		// Only sparse object-layer vegetation is added, so LOS/pathing/cover do not change.
-		const BOOLEAN fFieldBand = (((sRow + (sColumn / 14)) % 7) <= 1);
-		if ( fOpenFarmGround && !fNearStructure && !fNearTrail && fFieldBand &&
-			 ((uiHash >> 3) % 19) == 0 )
+		// Large readable cultivated shapes instead of isolated random weeds.
+		if ( fOpenFarmGround && !fNearStructure && !fNearTrail && !fNearWater &&
+			 fFieldBand && uiCropBlocks < 28 && ((uiHash >> 2) % 101) == 0 )
 		{
-			const UINT32 uiType = ((uiHash >> 18) & 1) ? DEBRISGRASS : DEBRISWEEDS;
-			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 7 );
-			if ( usSubIndex != 0 && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
-				++uiCropRows;
-		}
-
-		// Irregular scrub and trampled field detail breaks up otherwise flat expanses.
-		if ( fOpenFarmGround && ((uiHash >> 5) % (fNearStructure ? 31 : 83)) == 0 )
-		{
-			const UINT32 uiType = ((uiHash >> 19) & 1) ? DEBRISWEEDS : DEBRISGRASS;
-			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 8 );
-			if ( usSubIndex != 0 && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
-				++uiFieldClutter;
-		}
-
-		// Concentrate wood, stone and discarded equipment around the farm compound.
-		if ( fNearStructure && (fOpenFarmGround || fFloor) && ((uiHash >> 9) % 17) == 0 )
-		{
-			UINT32 uiType = DEBRISMISC;
-			switch ( (uiHash >> 22) % 3 )
+			UINT16 usPlaced = 0;
+			switch ( (uiHash >> 17) % 3 )
 			{
-				case 0: uiType = DEBRISWOOD; break;
-				case 1: uiType = DEBRISROCKS; break;
-				default: uiType = DEBRISMISC; break;
+				case 0: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3CropStripA, 4, FALSE ); break;
+				case 1: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3CropStripB, 4, FALSE ); break;
+				default: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3CropPatch, 4, FALSE ); break;
 			}
-			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 12 );
-			if ( usSubIndex != 0 && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
-				++uiFarmyardClutter;
+			if ( usPlaced )
+			{
+				++uiCropBlocks;
+				uiCustomPieces += usPlaced;
+			}
 		}
 
-		// Rutted, muddy access track: much denser than the first pass so the route
-		// remains visible when the camera is pulled out.
-		if ( fTrail && ((uiHash >> 7) % 11) == 0 )
+		// Scruffy field boundaries along roads and wet margins.
+		if ( fOpenFarmGround && (fNearTrail || fNearWater) &&
+			 uiEdgeBlocks < 20 && ((uiHash >> 7) % 53) == 0 )
 		{
-			const UINT32 uiType = ((uiHash >> 21) & 1) ? DEBRISSAND : DEBRISROCKS;
-			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 15 );
-			if ( usSubIndex != 0 && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
-				++uiTrailClutter;
+			const UINT16 usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3FieldEdge, 4, FALSE );
+			if ( usPlaced )
+			{
+				++uiEdgeBlocks;
+				uiCustomPieces += usPlaced;
+			}
 		}
 
-		// Weeds along the edges of the farm track visually connect the road with fields.
-		if ( fOpenFarmGround && fNearTrail && ((uiHash >> 6) % 13) == 0 )
+		// Mud/rut compositions follow authored tracks; no terrain/path costs change.
+		if ( fTrail && uiMudBlocks < 14 && ((uiHash >> 5) % 37) == 0 )
 		{
-			const UINT32 uiType = ((uiHash >> 20) & 1) ? DEBRISWEEDS : DEBRISGRASS;
-			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 11 );
-			if ( usSubIndex != 0 && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
-				++uiTrailEdges;
+			const UINT16 usPlaced = ((uiHash >> 18) & 1)
+				? A3PlaceFarmVisualBlock( sGridNo, gA3MudRun, 3, FALSE )
+				: A3PlaceFarmVisualBlock( sGridNo, gA3MudCorner, 4, FALSE );
+			if ( usPlaced )
+			{
+				++uiMudBlocks;
+				uiCustomPieces += usPlaced;
+			}
 		}
 
-		// A3's campaign metadata marks it as a wet Oronegro sector. Reeds/scrub along
-		// existing water margins reinforce that identity without adding new water tiles.
-		if ( fOpenFarmGround && fNearWater && ((uiHash >> 8) % 9) == 0 )
+		// Irrigation / ditch vocabulary belongs at existing water margins only.
+		if ( fOpenFarmGround && fNearWater && uiDrainageBlocks < 12 &&
+			 ((uiHash >> 9) % 43) == 0 )
 		{
-			const UINT32 uiType = ((uiHash >> 23) & 1) ? DEBRISGRASS : DEBRISWEEDS;
-			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 14 );
-			if ( usSubIndex != 0 && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
-				++uiWaterEdges;
+			const UINT16 usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3DrainageRun, 4, FALSE );
+			if ( usPlaced )
+			{
+				++uiDrainageBlocks;
+				uiCustomPieces += usPlaced;
+			}
+		}
+
+		// Dense, legible working-yard clusters around the authored compound.
+		if ( fNearStructure && (fOpenFarmGround || fFloor) && uiYardBlocks < 16 &&
+			 ((uiHash >> 6) % 31) == 0 )
+		{
+			UINT16 usPlaced = 0;
+			switch ( (uiHash >> 20) % 3 )
+			{
+				case 0: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3YardPalletCluster, 4, TRUE ); break;
+				case 1: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3YardToolCluster, 4, TRUE ); break;
+				default: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3TroughCluster, 4, TRUE ); break;
+			}
+			if ( usPlaced )
+			{
+				++uiYardBlocks;
+				uiCustomPieces += usPlaced;
+			}
+		}
+
+		// Rare focal compositions give A3 memorable silhouettes without turning
+		// every square into clutter.
+		if ( fOpenFarmGround && uiLandmarkBlocks < 6 && ((uiHash >> 11) % 401) == 0 )
+		{
+			UINT16 usPlaced = 0;
+			switch ( (uiHash >> 23) % 5 )
+			{
+				case 0: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3ScarecrowPlot, 5, FALSE ); break;
+				case 1: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3HayCorner, 4, FALSE ); break;
+				case 2: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3WaterTankCorner, 4, FALSE ); break;
+				case 3: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3FarmSignCorner, 3, FALSE ); break;
+				default: usPlaced = A3PlaceFarmVisualBlock( sGridNo, gA3LeanToCorner, 4, FALSE ); break;
+			}
+			if ( usPlaced )
+			{
+				++uiLandmarkBlocks;
+				uiCustomPieces += usPlaced;
+			}
+		}
+
+		// Fine-grain custom details fill the gaps between the larger compositions.
+		if ( pMap->pObjectHead == NULL && fOpenFarmGround && ((uiHash >> 4) % 71) == 0 )
+		{
+			const UINT16 usSubIndex = (UINT16)(1 + ((uiHash >> 13) % 10));
+			if ( A3FarmCustomFrameExists( DEBRISWEEDS, (UINT8)usSubIndex ) &&
+				 B1AddVisualDecoration( sGridNo, DEBRISWEEDS, usSubIndex ) )
+				++uiSingleDetail;
+		}
+		else if ( pMap->pObjectHead == NULL && fNearStructure && (fOpenFarmGround || fFloor) &&
+				  ((uiHash >> 8) % 47) == 0 )
+		{
+			const UINT16 usType = ((uiHash >> 19) & 1) ? DEBRISMISC : DEBRISWOOD;
+			const UINT16 usSubIndex = (UINT16)(1 + ((uiHash >> 14) % 10));
+			if ( A3FarmCustomFrameExists( usType, (UINT8)usSubIndex ) &&
+				 B1AddVisualDecoration( sGridNo, usType, usSubIndex ) )
+				++uiSingleDetail;
 		}
 	}
 
-	CHAR8 zDressing[224];
-	sprintf( zDressing, "cropRows=%lu field=%lu farmyard=%lu trail=%lu trailEdges=%lu waterEdges=%lu visual-only",
-		uiCropRows, uiFieldClutter, uiFarmyardClutter, uiTrailClutter, uiTrailEdges, uiWaterEdges );
-	TraceA3FarmLoad( "ENVIRONMENT DRESSING", zDressing );
+	CHAR8 zDressing[256];
+	sprintf( zDressing,
+		"blocks crop=%lu edge=%lu mud=%lu drainage=%lu yard=%lu landmark=%lu pieces=%lu singles=%lu visual-only",
+		uiCropBlocks, uiEdgeBlocks, uiMudBlocks, uiDrainageBlocks, uiYardBlocks,
+		uiLandmarkBlocks, uiCustomPieces, uiSingleDetail );
+	TraceA3FarmLoad( "FARM BLOCK COMPOSER", zDressing );
 }
 
 static void EnsureA3FarmCowPlacements( void )
@@ -1827,6 +2044,7 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 	CHAR8	cAdjustedFile[ 128 ];
 	BOOLEAN	fSectorReplacementRequested = FALSE;
 	BOOLEAN	fSectorReplacementLoaded = FALSE;
+	UINT8	ubSectorReplacementTilesetID = ubTilesetID;
 
 	// Delete the surface first!
 	if ( gTileSurfaceArray[ ubType ] != NULL )
@@ -1838,13 +2056,12 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 	// Adjust flag for same as default used...
 	gbSameAsDefaultSurfaceUsed[ ubType ] = FALSE;
 
-	// B1 Oronegro oil-rig remaster. Terrain, water, roads, floors and one audited
-	// vegetation family are remastered. Roof/facade replacements are enabled only
-	// where their JSD structure data is byte-identical to the authored originals.
-	// Other structural art remains authored and receives the runtime hero grade.
+	// Sector-specific pixel replacements. Structural identities remain authored;
+	// A3's new kit deliberately uses visual-only decoration/debris slots.
 	STR8 pLoadFilename = cFilename;
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG && ubTilesetID == 50 )
 	{
+		ubSectorReplacementTilesetID = 50;
 		switch ( ubType )
 		{
 			case FIRSTTEXTURE:     pLoadFilename = "B1_T_SAND1.STI"; break;
@@ -1879,6 +2096,21 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 			case DEBRISMISC:        pLoadFilename = "B1_STREET_JUNK.STI"; break;
 		}
 	}
+	else if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM && ubTilesetID == 38 )
+	{
+		ubSectorReplacementTilesetID = 38;
+		switch ( ubType )
+		{
+			case SECONDDECORATIONS: pLoadFilename = "A3_CROP_ROWS.STI"; break;
+			case THIRDDECORATIONS:  pLoadFilename = "A3_MUD_RUTS.STI"; break;
+			case FOURTHDECORATIONS: pLoadFilename = "A3_LANDMARKS.STI"; break;
+			case DEBRISROCKS:       pLoadFilename = "A3_FIELD_STONES.STI"; break;
+			case DEBRISWOOD:        pLoadFilename = "A3_WOOD_YARD.STI"; break;
+			case DEBRISWEEDS:       pLoadFilename = "A3_EDGE_WEEDS.STI"; break;
+			case DEBRISGRASS:       pLoadFilename = "A3_IRRIGATION.STI"; break;
+			case DEBRISMISC:        pLoadFilename = "A3_FARM_JUNK.STI"; break;
+		}
+	}
 
 	fSectorReplacementRequested = ( _stricmp( pLoadFilename, cFilename ) != 0 );
 
@@ -1890,8 +2122,9 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 		// B1 remaster art is optional from the engine's point of view: a bad visual
 		// replacement must never make the authored sector unplayable. Every fallback
 		// is explicit in the black box so broken assets remain easy to identify.
-		sprintf( cAdjustedFile, "TILESETS\\50\\%s", cFileBPP );
-		TraceB1RemasterLoad( "ASSET REQUEST", cAdjustedFile );
+		sprintf( cAdjustedFile, "TILESETS\\%d\\%s", ubSectorReplacementTilesetID, cFileBPP );
+		if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM ) TraceA3FarmLoad( "ASSET REQUEST", cAdjustedFile );
+		else TraceB1RemasterLoad( "ASSET REQUEST", cAdjustedFile );
 
 		// A true-colour .b1tc sibling is a complete visual replacement for the
 		// requested STI.  The STI pathname remains the logical map/JSD identity, so
@@ -1916,18 +2149,21 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 				sprintf( zB1VisibleAsset, "%s trueColor=%s bytes=%lu", cAdjustedFile, cTrueColorFile, FileSize( cTrueColorFile ) );
 			else
 				sprintf( zB1VisibleAsset, "%s bytes=%lu", cAdjustedFile, FileSize( cAdjustedFile ) );
-			TraceB1RemasterLoad( fTrueColorReplacementVisible ? "TRUECOLOR ASSET EXISTS" : "ASSET EXISTS", zB1VisibleAsset );
+			if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM ) TraceA3FarmLoad( fTrueColorReplacementVisible ? "TRUECOLOR ASSET EXISTS" : "ASSET EXISTS", zB1VisibleAsset );
+			else TraceB1RemasterLoad( fTrueColorReplacementVisible ? "TRUECOLOR ASSET EXISTS" : "ASSET EXISTS", zB1VisibleAsset );
 		}
 		else
 		{
 			CHAR8 zB1MissingAsset[256];
 			sprintf( zB1MissingAsset, "sti=%s b1tc=%s", cAdjustedFile, cTrueColorFile );
-			TraceB1RemasterLoad( "ASSET MISSING", zB1MissingAsset );
+			if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM ) TraceA3FarmLoad( "ASSET MISSING", zB1MissingAsset );
+			else TraceB1RemasterLoad( "ASSET MISSING", zB1MissingAsset );
 		}
 
 		if ( !fReplacementVisible )
 		{
-			TraceB1RemasterLoad( "FALLBACK MISSING REMASTER", cAdjustedFile );
+			if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM ) TraceA3FarmLoad( "FALLBACK MISSING ART", cAdjustedFile );
+			else TraceB1RemasterLoad( "FALLBACK MISSING REMASTER", cAdjustedFile );
 			FilenameForBPP( cFilename, cFileBPP );
 			if ( !fGetFromRoot )
 				sprintf( cAdjustedFile, "TILESETS\\%d\\%s", ubTilesetID, cFileBPP );
@@ -1937,7 +2173,8 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 		}
 		else
 		{
-			TraceB1RemasterLoad( "LOAD TILE SURFACE BEGIN", cAdjustedFile );
+			if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM ) TraceA3FarmLoad( "LOAD TILE SURFACE BEGIN", cAdjustedFile );
+			else TraceB1RemasterLoad( "LOAD TILE SURFACE BEGIN", cAdjustedFile );
 		}
 	}
 	else if ( !fGetFromRoot )
@@ -1954,8 +2191,10 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 
 	if ( TileSurf == NULL && fSectorReplacementRequested )
 	{
-		TraceB1RemasterLoad( "LOAD TILE SURFACE FAILED", cAdjustedFile );
-		TraceB1RemasterLoad( "FALLBACK DECODE FAILURE", cAdjustedFile );
+		if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM ) TraceA3FarmLoad( "LOAD TILE SURFACE FAILED", cAdjustedFile );
+		else TraceB1RemasterLoad( "LOAD TILE SURFACE FAILED", cAdjustedFile );
+		if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM ) TraceA3FarmLoad( "FALLBACK DECODE FAILURE", cAdjustedFile );
+		else TraceB1RemasterLoad( "FALLBACK DECODE FAILURE", cAdjustedFile );
 
 		FilenameForBPP( cFilename, cFileBPP );
 		if ( !fGetFromRoot )
@@ -1974,15 +2213,18 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 
 	if ( fSectorReplacementRequested )
 	{
-		TraceB1RemasterLoad( "ASSET LOADED", cAdjustedFile );
+		if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM ) TraceA3FarmLoad( "ASSET LOADED", cAdjustedFile );
+		else TraceB1RemasterLoad( "ASSET LOADED", cAdjustedFile );
 		CHAR8 zB1AssetInfo[192];
 		sprintf( zB1AssetInfo, "%s frames=%u bitDepth=%u", cAdjustedFile,
 			TileSurf->vo != NULL ? TileSurf->vo->usNumberOfObjects : 0,
 			TileSurf->vo != NULL ? TileSurf->vo->ubBitDepth : 0 );
-		TraceB1RemasterLoad( "ASSET INFO", zB1AssetInfo );
+		if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM ) TraceA3FarmLoad( "ASSET INFO", zB1AssetInfo );
+		else TraceB1RemasterLoad( "ASSET INFO", zB1AssetInfo );
 		if ( TileSurf->vo == NULL || TileSurf->vo->usNumberOfObjects == 0 )
 		{
-			TraceB1RemasterLoad( "FALLBACK INVALID REMASTER", cAdjustedFile );
+			if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM ) TraceA3FarmLoad( "FALLBACK INVALID ART", cAdjustedFile );
+			else TraceB1RemasterLoad( "FALLBACK INVALID REMASTER", cAdjustedFile );
 			DeleteTileSurface( TileSurf );
 
 			FilenameForBPP( cFilename, cFileBPP );
@@ -2005,7 +2247,7 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 			fSectorReplacementLoaded = TRUE;
 
 			// Shade-table caches are keyed by TileSurfaceFilenames[], not by the actual
-			// file passed to LoadTileSurface(). Keep successful B1 replacements on their
+			// file passed to LoadTileSurface(). Keep successful sector replacements on their
 			// own cache key so stock shade tables cannot be reused with remastered art.
 			strncpy( TileSurfaceFilenames[ ubType ], cFileBPP, sizeof( TileSurfaceFilenames[ ubType ] ) - 1 );
 			TileSurfaceFilenames[ ubType ][ sizeof( TileSurfaceFilenames[ ubType ] ) - 1 ] = 0;
