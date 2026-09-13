@@ -10129,8 +10129,15 @@ void ProcessBleedoutCasualties( )
 		if ( pSoldier->ubDraggedByID != NOBODY )
 		{
 			SOLDIERTYPE *pRescuer = MercPtrs[ pSoldier->ubDraggedByID ];
-			if ( !pRescuer || pRescuer->ubDraggedCasualtyID != pSoldier->ubID )
+			if ( pRescuer && pRescuer->ubDraggedCasualtyID == pSoldier->ubID )
+			{
+				if ( !pRescuer->IsDraggingBleedoutCasualty() )
+					pRescuer->StopDraggingBleedoutCasualty();
+			}
+			else
+			{
 				pSoldier->ubDraggedByID = NOBODY;
+			}
 		}
 
 		if ( !pSoldier->bActive || !pSoldier->bInSector || pSoldier->ubBleedoutState == BLEEDOUT_NONE )
