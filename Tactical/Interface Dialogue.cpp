@@ -3232,7 +3232,25 @@ void HandleNPCDoAction( UINT8 ubTargetNPC, UINT16 usActionCode, UINT8 ubQuoteNum
 						break;
 					}
 
-					const UINT32 uiPayout = (UINT32)iBet * 2;
+					// Vengeance economy: vanilla JA2 pays 2x the stake on every win.
+					// That is too lucrative here, especially when all three bouts are
+					// cleared at the maximum wager.  Return the stake plus a progressive
+					// profit instead, so tougher later opponents are worth more without
+					// turning the ring into a money printer.
+					UINT32 uiProfitPercent = 25;
+					const UINT8 ubBoxersRemaining = BoxersAvailable();
+					const UINT8 ubBoutNumber = ( ubBoxersRemaining < NUM_BOXERS ) ? ( NUM_BOXERS - ubBoxersRemaining ) : 1;
+
+					if ( ubBoutNumber == 2 )
+					{
+						uiProfitPercent = 35;
+					}
+					else if ( ubBoutNumber >= 3 )
+					{
+						uiProfitPercent = 50;
+					}
+
+					const UINT32 uiPayout = (UINT32)iBet + ( (UINT32)iBet * uiProfitPercent ) / 100;
 					pSoldier = FindSoldierByProfileID( ubTargetNPC, FALSE );
 
 					// Prefer the closest PC, preserving the original behaviour.
