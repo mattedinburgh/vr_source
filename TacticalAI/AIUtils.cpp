@@ -3678,7 +3678,8 @@ BOOLEAN TeamSeesOpponent( INT8 bTeam, SOLDIERTYPE * pOpponent )
 			{
 
 
-				if (pSoldier->aiData.bOppList[ pOpponent->ubID ] == SEEN_CURRENTLY)
+				if (pSoldier->aiData.bOppList[ pOpponent->ubID ] == SEEN_CURRENTLY &&
+					LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0)
 					return ( TRUE );
 			}
 		}
@@ -3693,7 +3694,8 @@ BOOLEAN TeamSeesOpponent( INT8 bTeam, SOLDIERTYPE * pOpponent )
 				// function.
 				//Assert( pOpponent->bSide != bSide );
 
-				if (pSoldier->aiData.bOppList[ pOpponent->ubID ] == SEEN_CURRENTLY)
+				if (pSoldier->aiData.bOppList[ pOpponent->ubID ] == SEEN_CURRENTLY &&
+					LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0)
 					return ( TRUE );
 			}
 		}		
@@ -3714,7 +3716,8 @@ BOOLEAN TeamSeesOpponent( INT8 bTeam, SOLDIERTYPE * pOpponent )
 				// function.
 				//Assert( pOpponent->bSide != bSide );
 
-				if (pSoldier->aiData.bOppList[ pOpponent->ubID ] == SEEN_CURRENTLY)
+				if (pSoldier->aiData.bOppList[ pOpponent->ubID ] == SEEN_CURRENTLY &&
+					LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0)
 					return ( TRUE );
 			}
 		}	
