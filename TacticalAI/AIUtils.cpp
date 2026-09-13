@@ -5030,9 +5030,14 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		pSoldier->aiData.bOrders == SNIPER)
 		return AI_ACTION_NONE;
 
+	// An established withdrawal/escape is already a higher-priority tactical state.
+	// Do not mutate fireteam membership before honouring it; this is especially
+	// important for explicit militia Retreat orders, which use forced disengagement.
+	if (AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier))
+		return AI_ACTION_NONE;
+
 	// A shattered one/two-man element gets first refusal on joining a viable
-	// neighbouring fireteam. Only if no such element exists should ordinary
-	// disengagement/escape logic take over.
+	// neighbouring fireteam only while it is still tactically available to regroup.
 	UINT8 ubBefore = AIFireteamRegroupingStrength(pSoldier);
 	BOOLEAN fWasRemnant = (ubBefore > 0 && ubBefore <= 2);
 	if (fWasRemnant)
@@ -5042,9 +5047,7 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 
 	if (!fRecentlyReattached &&
 		(pSoldier->aiData.bUnderFire || pSoldier->aiData.bOppCnt > 0 ||
-		 pSoldier->IsFlanking() ||
-		 AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier) ||
-		 GuySawEnemy(pSoldier, SEEN_LAST_TURN)))
+		 pSoldier->IsFlanking() || GuySawEnemy(pSoldier, SEEN_LAST_TURN)))
 	{
 		return AI_ACTION_NONE;
 	}
