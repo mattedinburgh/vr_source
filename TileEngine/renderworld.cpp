@@ -58,6 +58,7 @@
 
 extern	CHAR8	gDebugStr[128];
 extern	BOOLEAN fLandLayerDirty	= TRUE;
+extern	BOOLEAN gfVisibleEquipmentRuntimeReady;
 
 extern	INT16	gsVIEWPORT_START_X;
 extern	INT16	gsVIEWPORT_START_Y;
@@ -829,7 +830,7 @@ static void RenderVisibleEquipmentLayers(
 	BOOLEAN fZBlitter,
 	BOOLEAN fObscuredBlitter )
 {
-	if ( pSoldier == NULL || pDestBuf == NULL || pShadeTable == NULL )
+	if ( !gfVisibleEquipmentRuntimeReady || pSoldier == NULL || pDestBuf == NULL || pShadeTable == NULL )
 		return;
 
 	using namespace LogicalBodyTypes;
