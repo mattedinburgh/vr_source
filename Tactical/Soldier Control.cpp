@@ -5859,6 +5859,144 @@ static void SpawnVRDirectionalGoreSpray( SOLDIERTYPE *pSoldier, const CHAR8 *zFi
 	CreateAnimationTile( &AniParams );
 }
 
+// VR fatal-reaction pack: ten fatal gunshot variants built from safe existing body
+// states plus directional gore/dismemberment overlays. This deliberately avoids adding
+// new SOLDIERTYPE save fields; persistent amputated-corpse art can be layered on later.
+static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWeaponIndex, INT16 sDamage, UINT16 bDirection, UINT8 ubHitLocation )
+{
+	if ( pSoldier == NULL || pSoldier->stats.bLife != 0 || pSoldier->ubBodyType >= 4 )
+		return FALSE;
+
+	if ( !( Item[ usWeaponIndex ].usItemClass & IC_GUN ) || pSoldier->MercInWater() )
+		return FALSE;
+
+	UINT8 ubIncomingDirection = (UINT8)( bDirection % NUM_WORLD_DIRECTIONS );
+	UINT8 ubExitDirection = gOppositeDirection[ ubIncomingDirection ];
+	UINT8 ubVariant = (UINT8)Random( 10 );
+	UINT8 ubHeight = gAnimControl[ pSoldier->usAnimState ].ubEndHeight;
+
+	// Dismemberment is fatal-only and biased toward genuinely violent hits. Ordinary
+	// low-damage kills still get the extra fall variety without implausible limb loss.
+	if ( sDamage < 18 && ubVariant >= 5 )
+		ubVariant = (UINT8)( ubVariant % 5 );
+
+	if ( ubHitLocation == AIM_SHOT_HEAD && sDamage >= 18 && Random( 100 ) < 70 )
+		ubVariant = 5;
+	else if ( ubHitLocation == AIM_SHOT_LEGS && sDamage >= 24 && Random( 100 ) < 45 )
+		ubVariant = 7;
+	else if ( ubHitLocation == AIM_SHOT_TORSO && sDamage >= 30 && Random( 100 ) < 35 )
+		ubVariant = ( Random( 2 ) == 0 ) ? 6 : 8;
+	else if ( sDamage >= 45 && Random( 100 ) < 35 )
+		ubVariant = 9;
+
+	// Prone and crouched bodies have fewer structurally safe body states. Keep the
+	// gore variant, but finish through the correct stance-specific death path.
+	if ( ubHeight == ANIM_PRONE )
+	{
+		const CHAR8 *zEffect = "TILECACHE\\VR_FATAL_CRUMPLE.STI";
+		INT16 sZ = 10;
+		if ( ubVariant == 5 ) { zEffect = "TILECACHE\\VR_FATAL_HEAD_GIB.STI"; sZ = 16; }
+		else if ( ubVariant == 6 ) { zEffect = "TILECACHE\\VR_FATAL_ARM_GIB.STI"; sZ = 13; }
+		else if ( ubVariant == 7 ) { zEffect = "TILECACHE\\VR_FATAL_LEG_GIB.STI"; sZ = 8; }
+		else if ( ubVariant == 8 ) { zEffect = "TILECACHE\\VR_FATAL_TORSO_GIB.STI"; sZ = 12; }
+		else if ( ubVariant == 9 ) { zEffect = "TILECACHE\\VR_FATAL_CHUNKS.STI"; sZ = 12; }
+		SpawnVRDirectionalGoreSpray( pSoldier, zEffect, ubExitDirection, sZ, 43, 0 );
+		pSoldier->EVENT_InitNewSoldierAnim( PRONE_LAY_FROMHIT, 0, FALSE );
+		return TRUE;
+	}
+
+	if ( ubHeight == ANIM_CROUCH )
+	{
+		const CHAR8 *zEffect = "TILECACHE\\VR_FATAL_CRUMPLE.STI";
+		INT16 sZ = 23;
+		if ( ubVariant == 5 ) { zEffect = "TILECACHE\\VR_FATAL_HEAD_GIB.STI"; sZ = 31; }
+		else if ( ubVariant == 6 ) { zEffect = "TILECACHE\\VR_FATAL_ARM_GIB.STI"; sZ = 25; }
+		else if ( ubVariant == 7 ) { zEffect = "TILECACHE\\VR_FATAL_LEG_GIB.STI"; sZ = 14; }
+		else if ( ubVariant == 8 ) { zEffect = "TILECACHE\\VR_FATAL_TORSO_GIB.STI"; sZ = 24; }
+		else if ( ubVariant == 9 ) { zEffect = "TILECACHE\\VR_FATAL_CHUNKS.STI"; sZ = 24; }
+		SpawnVRDirectionalGoreSpray( pSoldier, zEffect, ubExitDirection, sZ, 42, 0 );
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_CROUCH, 0, FALSE );
+		return TRUE;
+	}
+
+	// Standing fatal reactions: ten variants.
+	switch ( ubVariant )
+	{
+	case 0: // shot folds victim toward the incoming direction
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_FALL_FORWARD.STI", ubExitDirection, 31, 43, 0 );
+		pSoldier->EVENT_SetSoldierDirection( ubIncomingDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 1: // backward collapse
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_FALL_BACK.STI", ubExitDirection, 31, 42, 0 );
+		pSoldier->ChangeToFallbackAnimation( ubIncomingDirection );
+		return TRUE;
+
+	case 2: // hard two-tile flyback
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_FALL_BACK.STI", ubExitDirection, 32, 38, 0 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubExitDirection, 28, 48, 45 );
+		pSoldier->ChangeToFlybackAnimation( ubIncomingDirection );
+		return TRUE;
+
+	case 3: // lateral fall to victim's left
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_FALL_LEFT.STI", ubExitDirection, 30, 43, 0 );
+		pSoldier->EVENT_SetSoldierDirection( (UINT8)( ( ubIncomingDirection + 6 ) % NUM_WORLD_DIRECTIONS ) );
+		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 4: // lateral fall to victim's right
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_FALL_RIGHT.STI", ubExitDirection, 30, 43, 0 );
+		pSoldier->EVENT_SetSoldierDirection( (UINT8)( ( ubIncomingDirection + 2 ) % NUM_WORLD_DIRECTIONS ) );
+		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 5: // head destruction
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_HEAD_GIB.STI", ubExitDirection, 51, 36, 0 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubExitDirection, 48, 44, 35 );
+		pSoldier->EVENT_InitNewSoldierAnim( JFK_HITDEATH, 0, FALSE );
+		return TRUE;
+
+	case 6: // arm torn away; body falls laterally
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_ARM_GIB.STI", ubExitDirection, 35, 38, 0 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, 32, 48, 35 );
+		pSoldier->EVENT_SetSoldierDirection( (UINT8)( ( ubIncomingDirection + ( Random( 2 ) ? 2 : 6 ) ) % NUM_WORLD_DIRECTIONS ) );
+		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 7: // leg sever / catastrophic lower-body hit
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_LEG_GIB.STI", ubExitDirection, 17, 39, 0 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CRUMPLE.STI", ubExitDirection, 20, 47, 20 );
+		SoldierCollapse( pSoldier );
+		return TRUE;
+
+	case 8: // torso chunk / violent backward drop
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_TORSO_GIB.STI", ubExitDirection, 31, 36, 0 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubExitDirection, 29, 45, 40 );
+		pSoldier->ChangeToFallbackAnimation( ubIncomingDirection );
+		return TRUE;
+
+	case 9: // catastrophic body dismemberment
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubExitDirection, 32, 33, 0 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_TORSO_GIB.STI", ubExitDirection, 30, 39, 30 );
+		if ( sDamage >= 35 && gGameSettings.fOptions[ TOPTION_BLOOD_N_GORE ] )
+			pSoldier->EVENT_InitNewSoldierAnim( BODYEXPLODING, 0, FALSE );
+		else
+			pSoldier->ChangeToFlybackAnimation( ubIncomingDirection );
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
 // 0verhaul:  These routines are obsolete.  Just call ReduceAttackBusyCount to reduce the ABC or
 // FreeUpAttacker to abort the current action.
 // extern SOLDIERTYPE * FreeUpAttackerGivenTarget( UINT8 ubID, UINT8 ubTargetID );
@@ -6820,6 +6958,12 @@ void SoldierGotHitGunFire( SOLDIERTYPE *pSoldier, UINT16 usWeaponIndex, INT16 sD
 		// Only for mercs...
 		if ( pSoldier->ubBodyType < 4 )
 		{
+			if ( pSoldier->stats.bLife == 0 )
+			{
+				UINT8 ubExitDirection = gOppositeDirection[ (UINT8)( bDirection % NUM_WORLD_DIRECTIONS ) ];
+				SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_FALL_BACK.STI", ubExitDirection, 32, 38, 0 );
+				SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubExitDirection, 28, 47, 42 );
+			}
 			pSoldier->ChangeToFlybackAnimation( (UINT8)bDirection );
 			return;
 		}
@@ -6830,10 +6974,19 @@ void SoldierGotHitGunFire( SOLDIERTYPE *pSoldier, UINT16 usWeaponIndex, INT16 sD
 		// Only for mercs ( or KIDS! )
 		if ( pSoldier->ubBodyType < 4 || pSoldier->ubBodyType == HATKIDCIV || pSoldier->ubBodyType == KIDCIV )
 		{
+			if ( pSoldier->stats.bLife == 0 && pSoldier->ubBodyType < 4 )
+			{
+				UINT8 ubExitDirection = gOppositeDirection[ (UINT8)( bDirection % NUM_WORLD_DIRECTIONS ) ];
+				SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_HEAD_GIB.STI", ubExitDirection, 51, 35, 0 );
+				SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubExitDirection, 48, 44, 30 );
+			}
 			pSoldier->EVENT_InitNewSoldierAnim( JFK_HITDEATH, 0 , FALSE );
 			return;
 		}
 	}
+
+	if ( HandleVRFatalGunshotReaction( pSoldier, usWeaponIndex, sDamage, bDirection, ubHitLocation ) )
+		return;
 
 	DoGenericHit( pSoldier, ubSpecial, bDirection );
 
