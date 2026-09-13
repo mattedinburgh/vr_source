@@ -5242,8 +5242,11 @@ BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, U
 	// remnant stays out of an independent QRF response and will perform the actual
 	// reattachment through DecideFireteamCohesionAction on its own decision turn.
 	if (AIFireteamRegroupingStrength(pSoldier) <= 2 &&
-		AICanAbsorbFireteamRemnant(pSoldier))
+		AISelectFireteamRemnantDestination(pSoldier, NULL) != AI_FIRETEAM_NONE)
 	{
+		// Reserve allocation is queried frequently. Do not run full route/path
+		// validation here; the cohesion action validates reachability immediately
+		// before any remnant membership or escape state is changed.
 		return TRUE;
 	}
 
@@ -7052,31 +7055,16 @@ static INT8 AIProfessionalismModifier(SOLDIERTYPE *pSoldier)
 // initiative and coordination the soldier's formation plausibly possesses.
 UINT8 AIGetDoctrineProfile(SOLDIERTYPE *pSoldier)
 {
-	if (!AICombatTeam(pSoldier))
+	// Deidranna doctrine is an ENEMY_TEAM identity layer only. Militia shares the
+	// human-like tactical core, but must not inherit Deidranna command/initiative
+	// restrictions merely because AICombatTeam() also includes MILITIA_TEAM.
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
 		return AI_DOCTRINE_LINE;
 
 	switch (pSoldier->ubSoldierClass)
 	{
 	case SOLDIER_CLASS_ADMINISTRATOR:
 		return AI_DOCTRINE_SECURITY;
-
-	case SOLDIER_CLASS_GREEN_MILITIA:
-		// Green militia use the same tactical rules as line infantry, but complex
-		// manoeuvres require nearby experienced militia/local command support.
-		return AI_DOCTRINE_LINE;
-
-	case SOLDIER_CLASS_REG_MILITIA:
-		// Regular militia use the same line-infantry doctrine as regular army troops.
-		// Their better professionalism and nearby experienced militia improve execution
-		// without granting them artificial elite-level independent manoeuvre ability.
-		return AI_DOCTRINE_LINE;
-
-	case SOLDIER_CLASS_ELITE_MILITIA:
-		if (pSoldier->aiData.bOrders == STATIONARY ||
-			pSoldier->aiData.bOrders == ONGUARD ||
-			pSoldier->aiData.bOrders == SNIPER)
-			return AI_DOCTRINE_ELITE_GUARD;
-		return AI_DOCTRINE_ELITE_MOBILE;
 
 	case SOLDIER_CLASS_ELITE:
 		if (pSoldier->aiData.bOrders == STATIONARY ||
@@ -7165,7 +7153,7 @@ BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier)
 
 BOOLEAN AIAllowsComplexManeuver(SOLDIERTYPE *pSoldier)
 {
-	if (!AICombatTeam(pSoldier)) return TRUE;
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM) return TRUE;
 	switch (AIGetDoctrineProfile(pSoldier))
 	{
 	case AI_DOCTRINE_SECURITY: return FALSE;
@@ -7196,7 +7184,7 @@ static BOOLEAN AIHasOperationalGeneralInSector(void)
 
 BOOLEAN AIAllowsIndependentFlank(SOLDIERTYPE *pSoldier)
 {
-	if (!AICombatTeam(pSoldier)) return TRUE;
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM) return TRUE;
 	if (pSoldier->bTeam == ENEMY_TEAM &&
 		(pSoldier->usSoldierFlagMask & SOLDIER_BODYGUARD) &&
 		AIHasOperationalGeneralInSector())
@@ -7213,7 +7201,7 @@ BOOLEAN AIAllowsProactiveSupport(SOLDIERTYPE *pSoldier)
 {
 	if (!pSoldier) return FALSE;
 	if (AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier)) return FALSE;
-	if (!AICombatTeam(pSoldier)) return TRUE;
+	if (pSoldier->bTeam != ENEMY_TEAM) return TRUE;
 	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
 	if (ubDoctrine == AI_DOCTRINE_SECURITY) return FALSE;
 	if (ubDoctrine == AI_DOCTRINE_LINE) return AIHasLocalCommandSupport(pSoldier);
@@ -7222,7 +7210,7 @@ BOOLEAN AIAllowsProactiveSupport(SOLDIERTYPE *pSoldier)
 
 UINT8 AIDoctrineResponseLimit(SOLDIERTYPE *pSoldier)
 {
-	if (!AICombatTeam(pSoldier))
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
 		return 4;
 
 	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
@@ -7259,7 +7247,7 @@ UINT8 AIDoctrineResponseLimit(SOLDIERTYPE *pSoldier)
 
 INT8 AIDoctrineAnchorModifier(SOLDIERTYPE *pSoldier)
 {
-	if (!AICombatTeam(pSoldier))
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
 		return 0;
 
 	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
