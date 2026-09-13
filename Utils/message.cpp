@@ -1042,8 +1042,9 @@ void BattleLogAddNCTHMiss( INT32 iBullet )
 	if ( d.ubTargetID != NOBODY && MercPtrs[d.ubTargetID] )
 		pTargetName = MercPtrs[d.ubTargetID]->GetName();
 
-	swprintf( pEntry->zText, L"[%02d:%02d] MISS - %s -> %s - NCTH %.0f  [click for why]",
-		guiHour, guiMin, pName, pTargetName, d.fFinalChance );
+	const CHAR16 *pOutcome = fShooterPlayer ? L"MISS" : L"ENEMY MISS";
+	swprintf( pEntry->zText, L"[%02d:%02d] %s - %s -> %s - NCTH %.0f  [click]",
+		guiHour, guiMin, pOutcome, pName, pTargetName, d.fFinalChance );
 	gusBattleLogScrollOffset = 0;
 
 	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
@@ -1097,8 +1098,9 @@ void BattleLogAddNCTHBlocked( INT32 iBullet, UINT8 ubReason )
 	else if ( ubReason == BATTLELOG_BLOCK_ROOF )
 		pBlockReason = L"roof";
 
-	swprintf( pEntry->zText, L"[%02d:%02d] BLOCKED - %s -> %s - %s - NCTH %.0f  [click]",
-		guiHour, guiMin, pName, pTargetName, pBlockReason, d.fFinalChance );
+	const CHAR16 *pOutcome = fShooterPlayer ? L"BLOCKED" : L"ENEMY BLOCKED";
+	swprintf( pEntry->zText, L"[%02d:%02d] %s - %s -> %s - %s - NCTH %.0f  [click]",
+		guiHour, guiMin, pOutcome, pName, pTargetName, pBlockReason, d.fFinalChance );
 	gusBattleLogScrollOffset = 0;
 
 	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
@@ -1145,8 +1147,9 @@ void BattleLogAddNCTHHit( INT32 iBullet, UINT8 ubTargetID, INT16 sDamage )
 	if ( ubTargetID != NOBODY && MercPtrs[ubTargetID] )
 		pTargetName = MercPtrs[ubTargetID]->GetName();
 
-	swprintf( pEntry->zText, L"[%02d:%02d] HIT - %s -> %s - dmg %d - NCTH %.0f  [click]",
-		guiHour, guiMin, pName, pTargetName, sDamage, d.fFinalChance );
+	const CHAR16 *pOutcome = fShooterPlayer ? L"HIT" : L"ENEMY HIT";
+	swprintf( pEntry->zText, L"[%02d:%02d] %s - %s -> %s - dmg %d - NCTH %.0f  [click]",
+		guiHour, guiMin, pOutcome, pName, pTargetName, sDamage, d.fFinalChance );
 	gusBattleLogScrollOffset = 0;
 
 	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
