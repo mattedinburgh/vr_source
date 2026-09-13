@@ -9720,6 +9720,11 @@ static BOOLEAN CanEnterBleedoutState( SOLDIERTYPE *pSoldier, UINT8 ubReason, INT
 	if ( !pSoldier || bOldLife <= 0 || pSoldier->ubBleedoutState != BLEEDOUT_NONE )
 		return FALSE;
 
+	// The rescue window is measured in full tactical rounds. Do not create an
+	// active countdown outside combat, where EndTurnEvents() would never advance it.
+	if ( !(gTacticalStatus.uiFlags & INCOMBAT) )
+		return FALSE;
+
 	// Human-sized combatants only. Vehicles, robots, creatures and zombies retain
 	// their existing death rules.
 	if ( !IS_MERC_BODY_TYPE( pSoldier ) ||
