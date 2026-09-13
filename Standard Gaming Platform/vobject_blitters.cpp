@@ -359,7 +359,10 @@ BOOLEAN BltTrueColorDataTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, 
 			*pDest = Get16BPPColor(FROMRGB(ubRed, ubGreen, ubBlue));
 			if(pZ != NULL)
 			{
-				if(fZWrite)
+				// Alpha-blended edge pixels should not become solid depth blockers.
+				// Lower-alpha pixels may blend visually but only cutout-strength pixels
+				// write Z, matching normal alpha-tested rendering expectations.
+				if(fZWrite && ubAlpha >= 128)
 					*pZ = usZValue;
 				++pZ;
 			}
