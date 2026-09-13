@@ -1370,7 +1370,7 @@ INT32 FindSpotMaxDistFromOpponents(SOLDIERTYPE *pSoldier)
 	UINT32 uiThreatCnt = 0;
 	INT32 iSearchRange;
 	INT16	sMaxLeft, sMaxRight, sMaxUp, sMaxDown, sXOffset, sYOffset;
-	INT8 * pbPersOL,*pbPublOL, bEscapeDirection, bBestEscapeDirection = -1;
+	INT8 * pbPersOL,*pbPublOL;
 	SOLDIERTYPE *pOpponent;
 	INT32	sOrigin;
 	INT32	iRoamRange;
@@ -1611,7 +1611,6 @@ INT32 FindSpotMaxDistFromOpponents(SOLDIERTYPE *pSoldier)
 			// Generic RUN_AWAY is an in-sector tactical retreat only. Strategic edge
 			// selection and traversal belong exclusively to DecideEscapeAction(), which
 			// enforces the 2/3-runner quota and arms traversal only at a valid edge.
-			bEscapeDirection = -1;
 			for (uiLoop = 0; uiLoop < uiThreatCnt; uiLoop++)
 			{
 				iThreatRange = GetRangeInCellCoordsFromGridNoDiff( sGridNo, sThreatGridNo[uiLoop] );
@@ -1628,7 +1627,6 @@ INT32 FindSpotMaxDistFromOpponents(SOLDIERTYPE *pSoldier)
 				iClosestThreatRange = iSpotClosestThreatRange;
 				//NumMessage("New best range = ",iClosestThreatRange);
 				sBestSpot = sGridNo;
-				bBestEscapeDirection = bEscapeDirection;
 				//NumMessage("New best grid = ",bestSpot);
 			}
 		}
