@@ -5717,7 +5717,8 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			BestShot.ubPossible &&
 			BestShot.ubOpponent != NOBODY &&
 			MercPtrs[BestShot.ubOpponent] &&
-			PersonalKnowledge(pSoldier, BestShot.ubOpponent) == SEEN_CURRENTLY;
+			PersonalKnowledge(pSoldier, BestShot.ubOpponent) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, MercPtrs[BestShot.ubOpponent], CALC_FROM_ALL_DIRS) > 0;
 
 		if (BestShot.ubFriendlyFireChance)	//dnl ch61 180813
 		{
@@ -6141,7 +6142,8 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		ubBestAttackAction != AI_ACTION_NONE &&
 		BestAttack.ubOpponent != NOBODY &&
 		MercPtrs[BestAttack.ubOpponent] &&
-		PersonalKnowledge(pSoldier, BestAttack.ubOpponent) == SEEN_CURRENTLY;
+		PersonalKnowledge(pSoldier, BestAttack.ubOpponent) == SEEN_CURRENTLY &&
+		LOS_Raised(pSoldier, MercPtrs[BestAttack.ubOpponent], CALC_FROM_ALL_DIRS) > 0;
 
 	// BLACK AI already receives target-value bonuses for covering a teammate's
 	// bound/withdrawal inside CalcBestShot(). Preserve that task through the later
