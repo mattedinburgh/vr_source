@@ -781,11 +781,11 @@ INT32 MineIncomeModifierFromFacility( UINT8 ubMine )
 	// anv: if we have no foreman assigned, check if NPC foreman is OK
 	if(!bForemanAssigned)
 	{
-		UINT8 ubMinerID = GetHeadMinerProfileIdForMine(ubMine);
-		if(ubMinerID != -1)
+		UINT16 usMinerID = GetHeadMinerProfileIdForMine(ubMine);
+		if ( usMinerID != (UINT16)-1 )
 		{
-			MERCPROFILESTRUCT *pMercProfile = &(gMercProfiles[ubMinerID]);
-			if (pMercProfile && pMercProfile->bLife > 0 && GetMineIndexForSector(pMercProfile->sSectorX, pMercProfile->sSectorY) == ubMine && pMercProfile->bSectorZ == 0)
+			MERCPROFILESTRUCT *pMercProfile = &(gMercProfiles[usMinerID]);
+			if (pMercProfile && pMercProfile->bLife >= OKLIFE && GetMineIndexForSector(pMercProfile->sSectorX, pMercProfile->sSectorY) == ubMine && pMercProfile->bSectorZ == 0)
 			{
 				// sevenfm: pSoldier is uninitialized here, use pMercProfile instead?
 				//UINT8 ubSector = SECTOR(pSoldier->sSectorX, pSoldier->sSectorY);
