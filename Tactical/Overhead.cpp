@@ -10824,7 +10824,7 @@ void EnsureEnemyCommandRoles()
 			{
 				SOLDIERTYPE* p = MercPtrs[i];
 				if (!p || !p->bActive || !p->bInSector || p->stats.bLife < OKLIFE ||
-					(p->usSoldierFlagMask & (SOLDIER_POW | SOLDIER_VIP | SOLDIER_BODYGUARD)))
+					(p->usSoldierFlagMask & (SOLDIER_POW | SOLDIER_VIP | SOLDIER_BODYGUARD | SOLDIER_ENEMY_OFFICER)))
 					continue;
 				INT32 score = (p->ubSoldierClass == SOLDIER_CLASS_ELITE ? 5000 : 0) + p->stats.bExpLevel * 100 + p->stats.bLeadership;
 				if (score > bestScore) { bestScore = score; pBest = p; }
@@ -10838,6 +10838,22 @@ void EnsureEnemyCommandRoles()
 
 	if (!gGameExternalOptions.fEnemyOfficers || !enemyCount)
 		return;
+
+	// General assignment above may have promoted an existing formal officer to VIP.
+	// Recount subordinate officers now so the sector keeps the configured command
+	// density instead of silently losing one lieutenant/captain around a General.
+	officerCount = 0;
+	for (INT32 i = gTacticalStatus.Team[ENEMY_TEAM].bFirstID; i <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++i)
+	{
+		SOLDIERTYPE* p = MercPtrs[i];
+		if (p && p->bActive && p->bInSector && p->stats.bLife > 0 &&
+			!(p->usSoldierFlagMask & SOLDIER_POW) &&
+			(p->usSoldierFlagMask & SOLDIER_ENEMY_OFFICER) &&
+			!(p->usSoldierFlagMask & SOLDIER_VIP))
+		{
+			++officerCount;
+		}
+	}
 
 	UINT16 desired = min(gGameExternalOptions.usEnemyOfficersMax,
 		(UINT16)(enemyCount / max((UINT16)1, gGameExternalOptions.usEnemyOfficersPerTeamSize)));
