@@ -1362,6 +1362,17 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 
 INT32 FindSpotMaxDistFromOpponents(SOLDIERTYPE *pSoldier)
 {
+	// Migration/safety guard: legacy generic retreat used to arm strategic traversal.
+	// A non-profile enemy without a live capped escape ticket must never carry that
+	// stale quote into AIMain, including after loading an older in-progress battle.
+	if (pSoldier && pSoldier->bTeam == ENEMY_TEAM && pSoldier->ubProfile == NO_PROFILE &&
+		!AIEscapeActive(pSoldier) &&
+		pSoldier->ubQuoteActionID >= QUOTE_ACTION_ID_TRAVERSE_EAST &&
+		pSoldier->ubQuoteActionID <= QUOTE_ACTION_ID_TRAVERSE_NORTH)
+	{
+		pSoldier->ubQuoteActionID = 0;
+	}
+
 	INT32 sGridNo;
 	INT32 sBestSpot = NOWHERE;
 	UINT32 uiLoop;
