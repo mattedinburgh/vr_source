@@ -948,6 +948,7 @@ static void DressSanMonaEnvironment( void )
 	UINT32 uiVenueClutter = 0;
 	UINT32 uiEdgeDetail = 0;
 	UINT32 uiMineDecay = 0;
+	UINT32 uiRoofDetail = 0;
 
 	UINT32 uiSeed = 0x5A4D4F4Eu;
 	switch ( gubSectorVisualProfile )
@@ -963,7 +964,34 @@ static void DressSanMonaEnvironment( void )
 	for ( INT32 sGridNo = 0; sGridNo < WORLD_MAX; ++sGridNo )
 	{
 		MAP_ELEMENT *pMap = &gpWorldLevelData[ sGridNo ];
-		if ( pMap->pLandHead == NULL || pMap->pRoofHead != NULL || pMap->pOnRoofHead != NULL )
+		if ( pMap->pLandHead == NULL )
+			continue;
+
+		const UINT32 uiHash = B1VisualHash( (UINT32)sGridNo ^ uiSeed );
+
+		// Sparse rooftop utility clutter makes the city read at 1920x1080 without
+		// altering roof geometry. AddOnRoofToTail creates only a render node here;
+		// no JSD/collision structure is injected.
+		if ( pMap->pRoofHead != NULL )
+		{
+			if ( pMap->pOnRoofHead == NULL &&
+				 gubSectorVisualProfile != SECTOR_VISUAL_SAN_MONA_UNDERGROUND )
+			{
+				UINT32 uiModulo = 83;
+				if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C5_STRIP ) uiModulo = 43;
+				else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D5_KINGPIN ) uiModulo = 53;
+				else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D4_MINE ) uiModulo = 97;
+
+				if ( ((uiHash >> 4) % uiModulo) == 0 )
+				{
+					const UINT16 usRoofSubIndex = A3FarmVisualSubIndex( FIRSTONROOF, uiHash >> 13 );
+					if ( usRoofSubIndex && B1AddOnRoofVisualDecoration( sGridNo, FIRSTONROOF, usRoofSubIndex ) )
+						++uiRoofDetail;
+				}
+			}
+			continue;
+		}
+		if ( pMap->pOnRoofHead != NULL )
 			continue;
 
 		UINT32 uiLandType = 0;
@@ -979,7 +1007,6 @@ static void DressSanMonaEnvironment( void )
 		if ( fOccupiedStructure )
 			continue;
 
-		const UINT32 uiHash = B1VisualHash( (UINT32)sGridNo ^ uiSeed );
 		UINT32 uiType = DEBRISMISC;
 		UINT16 usSubIndex = 0;
 
@@ -1058,8 +1085,8 @@ static void DressSanMonaEnvironment( void )
 	}
 
 	CHAR8 zDressing[192];
-	sprintf( zDressing, "street=%lu venue=%lu edge=%lu mine=%lu visual-only; authored NPC/quest geometry preserved",
-		uiStreetClutter, uiVenueClutter, uiEdgeDetail, uiMineDecay );
+	sprintf( zDressing, "street=%lu venue=%lu edge=%lu mine=%lu roof=%lu visual-only; authored NPC/quest geometry preserved",
+		uiStreetClutter, uiVenueClutter, uiEdgeDetail, uiMineDecay, uiRoofDetail );
 	TraceSanMonaLoad( "ENVIRONMENT DRESSING", zDressing );
 }
 
