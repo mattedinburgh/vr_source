@@ -9921,7 +9921,7 @@ BOOLEAN SOLDIERTYPE::IsDraggingBleedoutCasualty( void )
 	}
 
 	SOLDIERTYPE *pCasualty = MercPtrs[ this->ubDraggedCasualtyID ];
-	if ( !pCasualty || !pCasualty->bActive || !pCasualty->bInSector ||
+	if ( !pCasualty || pCasualty == this || !pCasualty->bActive || !pCasualty->bInSector ||
 		pCasualty->ubDraggedByID != this->ubID || pCasualty->bTeam != this->bTeam ||
 		pCasualty->pathing.bLevel != this->pathing.bLevel || !IsCarryableLivingCasualty( pCasualty ) ||
 		pCasualty->ubServiceCount > 0 || PythSpacesAway( this->sGridNo, pCasualty->sGridNo ) > 2 )
