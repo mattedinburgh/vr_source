@@ -6383,9 +6383,10 @@ UINT8 AIGetDoctrineProfile(SOLDIERTYPE *pSoldier)
 		return AI_DOCTRINE_LINE;
 
 	case SOLDIER_CLASS_REG_MILITIA:
-		// Regular militia are experienced local defenders and may coordinate
-		// independently rather than being artificially restricted to a simpler AI.
-		return AI_DOCTRINE_VETERAN;
+		// Regular militia use the same line-infantry doctrine as regular army troops.
+		// Their better professionalism and nearby experienced militia improve execution
+		// without granting them artificial elite-level independent manoeuvre ability.
+		return AI_DOCTRINE_LINE;
 
 	case SOLDIER_CLASS_ELITE_MILITIA:
 		if (pSoldier->aiData.bOrders == STATIONARY ||
