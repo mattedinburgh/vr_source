@@ -1002,7 +1002,16 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 		TraceB1RemasterLoad( "ASSET REQUEST", cAdjustedFile );
 
 		const BOOLEAN fReplacementVisible = FileExists( cAdjustedFile );
-		TraceB1RemasterLoad( fReplacementVisible ? "ASSET EXISTS" : "ASSET MISSING", cAdjustedFile );
+		if ( fReplacementVisible )
+		{
+			CHAR8 zB1VisibleAsset[192];
+			sprintf( zB1VisibleAsset, "%s bytes=%lu", cAdjustedFile, FileSize( cAdjustedFile ) );
+			TraceB1RemasterLoad( "ASSET EXISTS", zB1VisibleAsset );
+		}
+		else
+		{
+			TraceB1RemasterLoad( "ASSET MISSING", cAdjustedFile );
+		}
 
 		if ( !fReplacementVisible )
 		{
