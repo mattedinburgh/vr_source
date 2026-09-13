@@ -59,6 +59,7 @@
     <ClInclude Include="Interface Utils.h" />
     <ClInclude Include="Interface.h" />
     <ClInclude Include="InterfaceItemImages.h" />
+    <ClInclude Include="Enemy Loadout Planner.h" />
     <ClInclude Include="Inventory Choosing.h" />
     <ClInclude Include="Item Types.h" />
     <ClInclude Include="Items.h" />
@@ -145,6 +146,7 @@
     <ClCompile Include="Interface Utils.cpp" />
     <ClCompile Include="Interface.cpp" />
     <ClCompile Include="InterfaceItemImages.cpp" />
+    <ClCompile Include="Enemy Loadout Planner.cpp" />
     <ClCompile Include="Inventory Choosing.cpp" />
     <ClCompile Include="Item Types.cpp" />
     <ClCompile Include="Items.cpp" />
