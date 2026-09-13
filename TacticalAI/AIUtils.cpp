@@ -5123,48 +5123,41 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		pSoldier->stats.bLife < OKLIFE ||
 		pSoldier->bCollapsed ||
 		pSoldier->bBreathCollapsed ||
-		(pSoldier->flags.uiStatusFlags & SOLDIER_COWERING) ||
-		pSoldier->aiData.bOrders == STATIONARY ||
-		pSoldier->aiData.bOrders == SNIPER)
+		(pSoldier->flags.uiStatusFlags & SOLDIER_COWERING))
 		return AI_ACTION_NONE;
 
-	// A shattered enemy one/two-man element gets first refusal on joining a viable
-	// neighbouring fireteam even if break-contact intent has already started. This
-	// implements "reattach before flee": a survivor should reinforce another coherent
-	// element rather than leave the sector when a usable element is still available.
-	// Militia explicit/strategic retreat remains authoritative.
 	UINT8 ubBefore = AIFireteamRegroupingStrength(pSoldier);
+	BOOLEAN fWasRemnant = (ubBefore > 0 && ubBefore <= 2);
+	UINT8 ubPlannedTarget = fWasRemnant ?
+		AISelectFireteamRemnantDestination(pSoldier, NULL) : AI_FIRETEAM_NONE;
+	BOOLEAN fRemnantCanReattach = (ubPlannedTarget != AI_FIRETEAM_NONE);
 	BOOLEAN fEnemyRemnantCanReattach =
-		pSoldier->bTeam == ENEMY_TEAM &&
-		ubBefore > 0 && ubBefore <= 2 &&
-		AICanAbsorbFireteamRemnant(pSoldier);
+		pSoldier->bTeam == ENEMY_TEAM && fRemnantCanReattach;
+	BOOLEAN fRecentlyReattached = AIRecentlyReattachedFireteamRemnant(pSoldier);
 
+	// Existing break-contact intent normally owns the decision. The exception is an
+	// enemy remnant that has a real local element it can physically attempt to join.
 	if ((AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier)) &&
-		!fEnemyRemnantCanReattach)
+		!fEnemyRemnantCanReattach && !fRecentlyReattached)
 	{
 		return AI_ACTION_NONE;
 	}
 
-	// A shattered one/two-man element gets first refusal on joining a viable
-	// neighbouring fireteam while a coherent destination still exists.
-	BOOLEAN fWasRemnant = (ubBefore > 0 && ubBefore <= 2);
-	if (fWasRemnant)
-		AIAbsorbFireteamRemnant(pSoldier);
+	// Fixed sentries/snipers keep their mission unless their own element has shattered
+	// and a compatible local fixed element can absorb them. That is the point at which
+	// survival/cohesion is allowed to override the original fixed post.
+	if ((pSoldier->aiData.bOrders == STATIONARY || pSoldier->aiData.bOrders == SNIPER) &&
+		!fRemnantCanReattach && !fRecentlyReattached)
+	{
+		return AI_ACTION_NONE;
+	}
 
-	BOOLEAN fRecentlyReattached = AIRecentlyReattachedFireteamRemnant(pSoldier);
-
-	if (!fRecentlyReattached &&
+	if (!fRecentlyReattached && !fRemnantCanReattach &&
 		(pSoldier->aiData.bUnderFire || pSoldier->aiData.bOppCnt > 0 ||
 		 pSoldier->IsFlanking() || GuySawEnemy(pSoldier, SEEN_LAST_TURN)))
 	{
 		return AI_ACTION_NONE;
 	}
-
-	// Reattachment is a tactical regroup, not a rout. If a stale escape intent was
-	// acquired earlier in the same collapse episode, cancel it while the soldier
-	// has a viable new element to join.
-	if (fRecentlyReattached && AIEscapeActive(pSoldier))
-		AIClearEscapeState(pSoldier);
 
 	SOLDIERTYPE *pAnchor = NULL;
 	INT32 iBest = 10000;
@@ -5176,28 +5169,54 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
 			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
-			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend) ||
-			!AISameFireteam(pSoldier, pFriend))
+			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend))
 			continue;
-		BOOLEAN fEngaged = pFriend->aiData.bUnderFire || pFriend->aiData.bOppCnt > 0 || GuySawEnemy(pFriend, SEEN_LAST_TURN);
+
+		BOOLEAN fCorrectElement = FALSE;
+		if (fRemnantCanReattach)
+		{
+			fCorrectElement =
+				pFriend->ubID < MAX_NUM_SOLDIERS &&
+				guiAIFireteamIdentity[pFriend->ubID] == pFriend->uiUniqueSoldierIdValue &&
+				gubAIFireteam[pFriend->ubID] == ubPlannedTarget;
+		}
+		else
+		{
+			fCorrectElement = AISameFireteam(pSoldier, pFriend);
+		}
+		if (!fCorrectElement)
+			continue;
+
+		BOOLEAN fEngaged = pFriend->aiData.bUnderFire || pFriend->aiData.bOppCnt > 0 ||
+			GuySawEnemy(pFriend, SEEN_LAST_TURN);
 		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
 		if (fEngaged && (!fEngagedAnchor || iDistance < iBest))
 		{
-			fEngagedAnchor = TRUE; pAnchor = pFriend; iBest = iDistance;
+			fEngagedAnchor = TRUE;
+			pAnchor = pFriend;
+			iBest = iDistance;
 		}
 		else if (!fEngagedAnchor && iDistance < iBest)
 		{
-			pAnchor = pFriend; iBest = iDistance;
+			pAnchor = pFriend;
+			iBest = iDistance;
 		}
 	}
 
 	if (!pAnchor || (!fWasRemnant && !fRecentlyReattached && !fEngagedAnchor))
 		return AI_ACTION_NONE;
+
+	// If the remnant is already inside the receiving element's local support bubble,
+	// commit the reassignment without inventing a pointless movement action.
 	if (iBest <= __max(8, DAY_VISION_RANGE / 2))
+	{
+		if (fRemnantCanReattach)
+			AIAbsorbFireteamRemnant(pSoldier);
 		return AI_ACTION_NONE;
+	}
 
 	BOOLEAN fCautiousMove = fEngagedAnchor || fRecentlyReattached ||
-		pSoldier->aiData.bUnderFire || pSoldier->aiData.bOppCnt > 0;
+		fRemnantCanReattach || pSoldier->aiData.bUnderFire || pSoldier->aiData.bOppCnt > 0;
 	INT8 bReserveAP = fCautiousMove ?
 		(GetAPsCrouch(pSoldier, TRUE) + GetAPsToLook(pSoldier)) : 0;
 	UINT8 ubFlags = fCautiousMove ? FLAG_CAUTIOUS : 0;
@@ -5229,17 +5248,24 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		UINT16 usMoveExposure = AIKnownThreatExposure(
 			pSoldier, pSoldier->aiData.usActionData, pSoldier->pathing.bLevel);
 
-		// A regrouping remnant may accept some temporary exposure to reach mutual
-		// support, but never sprint through a clearly worse known kill zone.
-		UINT16 usAllowedIncrease = fRecentlyReattached ? 90 : 150;
+		UINT16 usAllowedIncrease = (fRecentlyReattached || fRemnantCanReattach) ? 90 : 150;
 		if (usMoveExposure > usCurrentExposure + usAllowedIncrease &&
 			!AnyCoverAtSpot(pSoldier, pSoldier->aiData.usActionData))
 		{
 			return AI_ACTION_NONE;
 		}
-
-		pSoldier->aiData.fAIFlags |= AI_CAUTIOUS;
 	}
+
+	// Commit only after a legal, acceptably exposed move toward the selected element
+	// exists. Failed pathing therefore leaves the old fireteam/retreat state intact.
+	if (fRemnantCanReattach && !AIAbsorbFireteamRemnant(pSoldier))
+		return AI_ACTION_NONE;
+
+	if ((fRecentlyReattached || fRemnantCanReattach) && AIEscapeActive(pSoldier))
+		AIClearEscapeState(pSoldier);
+
+	if (fCautiousMove)
+		pSoldier->aiData.fAIFlags |= AI_CAUTIOUS;
 
 	return AI_ACTION_SEEK_FRIEND;
 }
@@ -5964,12 +5990,12 @@ static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituati
 		bSituation != AI_BATTLE_UNKNOWN &&
 		AIShouldStartEscapeFromState(pSoldier, bSituation, ubCasualties, fLastSurvivor, ubRoutPressure))
 	{
-		// Fireteam survival beats individual flight. A one/two-man remnant first
-		// attempts to attach to another viable element; the reassignment remains
-		// sticky for several turns so it cannot immediately flip back into a rout.
+		// Fireteam survival beats individual flight. Cohesion owns the actual
+		// reassignment because it can validate a real movement route first; escape
+		// logic only defers while such a local destination exists.
 		if (AIRecentlyReattachedFireteamRemnant(pSoldier))
 			return;
-		if (AIFireteamRegroupingStrength(pSoldier) <= 2 && AIAbsorbFireteamRemnant(pSoldier))
+		if (AIFireteamRegroupingStrength(pSoldier) <= 2 && AICanAbsorbFireteamRemnant(pSoldier))
 			return;
 
 		// Escape is deliberately scarce. Once the local force has its two runners
@@ -6300,6 +6326,19 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 		gubAIForcedDisengageTurns[ubID] = 0;
 		guiAIDisengageStartTurn[ubID] = 0;
 		AIClearEscapeState(pSoldier);
+		return FALSE;
+	}
+	// A remnant that has just successfully joined a functioning enemy element gets
+	// a short stabilization window. Otherwise the same casualty/rout snapshot can
+	// immediately recreate disengagement on the very next sub-decision.
+	if (pSoldier->bTeam == ENEMY_TEAM && AIRecentlyReattachedFireteamRemnant(pSoldier))
+	{
+		gubAIDisengageTurns[ubID] = 0;
+		gubAIForcedDisengageTurns[ubID] = 0;
+		guiAIDisengageTurnStamp[ubID] = 0;
+		guiAIDisengageStartTurn[ubID] = 0;
+		AIClearEscapeState(pSoldier);
+		AIResetRecoveryStreak(pSoldier);
 		return FALSE;
 	}
 
