@@ -269,6 +269,9 @@ enum
 	BATTLE_SOUND_ENEMY2,
 	BATTLE_SOUND_PUNCH,				// Flugente: attacking with punch attack
 	BATTLE_SOUND_KNIFE,				// Flugente: attacking with knife attack
+	// Battlefield casualty audio. Appended to preserve all existing sound IDs.
+	BATTLE_SOUND_AGONY,
+	BATTLE_SOUND_MEDIC,
 	NUM_MERC_BATTLE_SOUNDS
 };
 
