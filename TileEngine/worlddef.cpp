@@ -890,6 +890,11 @@ static BOOLEAN IsMandatoryB1RemasterType( UINT8 ubType )
 		case FIRSTROOF:
 		case FIRSTONROOF:
 		case SECONDONROOF:
+		// Four B1 wall/facade sets pass the same identity audit.
+		case FIRSTWALL:
+		case SECONDWALL:
+		case THIRDWALL:
+		case FOURTHWALL:
 			return TRUE;
 		default:
 			return FALSE;
@@ -951,9 +956,9 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 	gbSameAsDefaultSurfaceUsed[ ubType ] = FALSE;
 
 	// B1 Oronegro oil-rig remaster. Terrain, water, roads and floors are remastered.
-	// Three roof sets are also enabled after a JSD identity audit confirmed their
-	// structure data is byte-identical to the authored originals. Other walls/roofs/
-	// objects remain authored until their destruction/script/JSD audit is complete.
+	// Audited roof and facade sets are also enabled after their JSD structure data
+	// was confirmed byte-identical to the authored originals. Other structural art
+	// remains authored until its destruction/script/JSD audit is complete.
 	STR8 pLoadFilename = cFilename;
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG && ubTilesetID == 50 )
 	{
@@ -973,6 +978,10 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 			case SECONDFLOOR:      pLoadFilename = "B1_P-FLOOR3.STI"; break;
 			case THIRDFLOOR:       pLoadFilename = "B1_WELFLOR1.STI"; break;
 			case FOURTHFLOOR:      pLoadFilename = "B1_WELFLOR2.STI"; break;
+			case FIRSTWALL:        pLoadFilename = "B1_BUILD_36.STI"; break;
+			case SECONDWALL:       pLoadFilename = "B1_BUILD_31.STI"; break;
+			case THIRDWALL:        pLoadFilename = "B1_BUILD_40.STI"; break;
+			case FOURTHWALL:       pLoadFilename = "B1_BUILD_35.STI"; break;
 			case FIRSTROOF:        pLoadFilename = "B1_W-ROOF2.sti"; break;
 			case FIRSTONROOF:      pLoadFilename = "B1_Rooffan.sti"; break;
 			case SECONDONROOF:     pLoadFilename = "B1_Oil_OROOF.sti"; break;
