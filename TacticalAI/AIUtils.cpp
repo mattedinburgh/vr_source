@@ -7994,7 +7994,7 @@ UINT8 AITargetSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 			// teammate actually achieved an effect this turn (hit) or the currently
 			// observed target is already collapsed/cowering from the engagement.
 			BOOLEAN fEffectiveFire =
-				(pFriend->usSoldierFlagMask2 & SOLDIER_SUCCESSFUL_ATTACK) != 0 ||
+				pFriend->LastAttackHit() ||
 				pFriend->LastTargetCollapsed() ||
 				pFriend->LastTargetSuppressed();
 			if (fEffectiveFire)
