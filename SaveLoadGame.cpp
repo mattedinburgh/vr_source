@@ -6674,9 +6674,32 @@ BOOLEAN LoadSoldierStructure( HWFILE hFile )
 		SOLDIERTYPE *pSoldier = &Menptr[ cnt ];
 		if ( !pSoldier->bActive )
 		{
+			pSoldier->ubBleedoutTurns = 0;
+			pSoldier->ubBleedoutState = BLEEDOUT_NONE;
 			pSoldier->ubDraggedCasualtyID = NOBODY;
 			pSoldier->ubDraggedByID = NOBODY;
 			continue;
+		}
+
+		// These bytes were filler in legacy saves. A plausible numeric state is not
+		// sufficient: a real saved downed casualty must also satisfy the runtime
+		// life/collapse/body/team invariants created by CanEnterBleedoutState().
+		if ( pSoldier->ubBleedoutState != BLEEDOUT_NONE )
+		{
+			BOOLEAN fValidSavedBleedout =
+				IsBleedoutCasualty( pSoldier ) &&
+				pSoldier->bCollapsed &&
+				IS_MERC_BODY_TYPE( pSoldier ) &&
+				!(pSoldier->flags.uiStatusFlags & (SOLDIER_VEHICLE | SOLDIER_ROBOT)) &&
+				( pSoldier->bTeam == gbPlayerNum ||
+				  ((pSoldier->bTeam == ENEMY_TEAM || pSoldier->bTeam == MILITIA_TEAM) &&
+				   pSoldier->ubProfile == NO_PROFILE) );
+
+			if ( !fValidSavedBleedout )
+			{
+				pSoldier->ubBleedoutTurns = 0;
+				pSoldier->ubBleedoutState = BLEEDOUT_NONE;
+			}
 		}
 
 		if ( pSoldier->ubDraggedCasualtyID != NOBODY )
