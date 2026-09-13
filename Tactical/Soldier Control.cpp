@@ -10448,15 +10448,19 @@ static void MaybePlayBattlefieldCasualtyAudio( SOLDIERTYPE *pCasualty, INT8 bOld
 		}
 	}
 	else if ( pCasualty->ubProfile == NO_PROFILE &&
+		( pCasualty->bTeam == gbPlayerNum || pCasualty->bTeam == MILITIA_TEAM ) &&
 		pCasualty->stats.bLife >= CONSCIOUSNESS && Random( 100 ) < 55 )
 	{
+		// Shared English casualty callouts are allied-only. Enemy Army voices
+		// remain Spanish and use the Army voice-taunt bank.
 		fMedicCalled = pCasualty->DoMercBattleSound( BATTLE_SOUND_MEDIC );
 		if ( fMedicCalled )
 			guiLastBattlefieldMedicCall = uiNow;
 	}
 
-	// Nearby generic teammate can call when the casualty cannot; sector-wide cooldown avoids spam.
-	if ( !fMedicCalled && ( uiNow - guiLastBattlefieldMedicCall ) > 6000 && Random( 100 ) < 65 )
+	// Nearby allied generic teammate can call when the casualty cannot; sector-wide cooldown avoids spam.
+	if ( ( pCasualty->bTeam == gbPlayerNum || pCasualty->bTeam == MILITIA_TEAM ) &&
+		!fMedicCalled && ( uiNow - guiLastBattlefieldMedicCall ) > 6000 && Random( 100 ) < 65 )
 	{
 		SOLDIERTYPE *pCaller = FindNearbyGenericMedicCaller( pCasualty );
 		if ( pCaller && pCaller->DoMercBattleSound( BATTLE_SOUND_MEDIC ) )
