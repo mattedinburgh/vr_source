@@ -397,10 +397,12 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			continue;
 		}
 
-		const BOOLEAN fPersonalStateKnown = (bPersonalKnowledge == SEEN_CURRENTLY);
+		const BOOLEAN fDirectVisualContact =
+			(bPersonalKnowledge == SEEN_CURRENTLY) &&
+			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
 		const BOOLEAN fCurrentTeamReport = (bPublicKnowledge == SEEN_CURRENTLY);
-		const BOOLEAN fCurrentContact = fPersonalStateKnown || fCurrentTeamReport;
-		if (fPersonalStateKnown && !ValidOpponent(pSoldier, pOpponent))
+		const BOOLEAN fCurrentContact = fDirectVisualContact || fCurrentTeamReport;
+		if (fDirectVisualContact && !ValidOpponent(pSoldier, pOpponent))
 			continue;
 
 		if (AIShouldAvoidFinishingDownedTarget(pSoldier, pOpponent, fCurrentContact))
@@ -409,7 +411,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		// A downed casualty is no longer an intentional target. Stale-area fire can
 		// still hit them incidentally, but a soldier who can currently see that the
 		// opponent is down will switch to an active threat instead of finishing them.
-		if (fPersonalStateKnown && IsBleedoutCasualty( pOpponent ))
+		if (fDirectVisualContact && IsBleedoutCasualty( pOpponent ))
 		{
 			continue;
 		}
@@ -438,7 +440,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		// current sighting can provide a precise reported tile, but the shooter still
 		// treats it as suppression because he cannot directly observe target movement,
 		// exposure, wounds or stance.
-		fSuppression = !fPersonalStateKnown;
+		fSuppression = !fDirectVisualContact;
 
 		// Match JA2 1.13's default behaviour: an unseen remembered/reported
 		// contact is not a valid individual direct-fire target unless blind
@@ -451,7 +453,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		}
 
 		// determine enemy location
-		if (fPersonalStateKnown)
+		if (fDirectVisualContact)
 		{
 			// Personal current sight: exact live position/level are legitimate.
 			sTarget = pOpponent->sGridNo;
@@ -511,7 +513,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		if (ubMinAPcost > pSoldier->bActionPoints)
 			continue;			// next opponent
 
-		ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fPersonalStateKnown);
+		ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fDirectVisualContact);
 
 		// if we can't possibly get through all the cover
 		if (ubChanceToGetThrough == 0)
@@ -609,7 +611,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 						// sevenfm: check CTGT and friendly fire chance for every stance
 						gUnderFire.Clear();
 						gUnderFire.Enable();
-						ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fPersonalStateKnown);
+						ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fDirectVisualContact);
 						ubFriendlyFireChance = gUnderFire.Chance(pSoldier->bTeam, pSoldier->bSide, TRUE);
 						gUnderFire.Disable();
 
@@ -697,7 +699,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 						// sevenfm: check CTGT and friendly fire chance for every stance
 						gUnderFire.Clear();
 						gUnderFire.Enable();
-						ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fPersonalStateKnown);
+						ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fDirectVisualContact);
 						ubFriendlyFireChance = gUnderFire.Chance(pSoldier->bTeam, pSoldier->bSide, TRUE);
 						gUnderFire.Disable();
 
@@ -778,7 +780,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 						// sevenfm: check CTGT and friendly fire chance for every stance
 						gUnderFire.Clear();
 						gUnderFire.Enable();
-						ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fPersonalStateKnown);
+						ubChanceToGetThrough = AIKnownShotChanceToGetThrough(pSoldier, pOpponent, sTarget, bLevel, fDirectVisualContact);
 						ubFriendlyFireChance = gUnderFire.Chance(pSoldier->bTeam, pSoldier->bSide, TRUE);
 						gUnderFire.Disable();
 
@@ -846,7 +848,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			(ubChanceToReallyHit < 25 || (PythSpacesAway(pSoldier->sGridNo, sTarget) > CalcMaxTossRange(pSoldier, pSoldier->usAttackingWeapon, FALSE))))// Madd / 2 ) ) ) //dnl ch69 160913 was ubChanceToReallyHit < 30
 			continue; // don't bother... next opponent
 
-		if (fPersonalStateKnown)
+		if (fDirectVisualContact)
 		{
 			// Personal current sight: detailed armour/wounds/weapon threat are legitimate.
 			iThreatValue = CalcManThreatValue(pOpponent,pSoldier->sGridNo,TRUE,pSoldier);
@@ -892,13 +894,13 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		}
 
 		// sevenfm: empty vehicles have very low priority
-		if (fPersonalStateKnown && pOpponent->ubWhatKindOfMercAmI == MERC_TYPE__VEHICLE && GetNumberInVehicle( pOpponent->bVehicleID ) == 0 )
+		if (fDirectVisualContact && pOpponent->ubWhatKindOfMercAmI == MERC_TYPE__VEHICLE && GetNumberInVehicle( pOpponent->bVehicleID ) == 0 )
 		{
 			iAttackValue /= 4;
 		}
 
 		// sevenfm: dying, cowering or unconscious soldiers have very low priority
-		if (fPersonalStateKnown && (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed && pOpponent->bBreath == 0))
+		if (fDirectVisualContact && (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed && pOpponent->bBreath == 0))
 		{
 			iAttackValue /= 4;
 		}
@@ -963,7 +965,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 				INT32 iPenaltyPercent = 15 * ubSaturation;
 
 				// Do not waste several shooters finishing an already disabled opponent.
-				if (fPersonalStateKnown && (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed || pOpponent->bBreathCollapsed))
+				if (fDirectVisualContact && (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed || pOpponent->bBreathCollapsed))
 					iPenaltyPercent = 30 * ubSaturation;
 
 				// Immediate self-defence still justifies concentrated fire.
@@ -999,7 +1001,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 
 				//dnl ch62 180813 ignore firing into breathless targets if there are targets in better condition
 				// sevenfm: check that best opponent exists
-				if (fBestTargetStateKnown && fPersonalStateKnown && pBestShot->ubOpponent != NOBODY &&
+				if (fBestTargetStateKnown && fDirectVisualContact && pBestShot->ubOpponent != NOBODY &&
 					(Menptr[pBestShot->ubOpponent].bCollapsed || Menptr[pBestShot->ubOpponent].bBreathCollapsed) &&
 					Menptr[pBestShot->ubOpponent].bBreath < OKBREATH &&
 					Menptr[pBestShot->ubOpponent].bBreath < pOpponent->bBreath)
@@ -1008,7 +1010,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 				}
 
 				// sevenfm: if best opponent is dying and new opponent is ok, use new opponent
-				if (fBestTargetStateKnown && fPersonalStateKnown && pBestShot->ubOpponent != NOBODY &&
+				if (fBestTargetStateKnown && fDirectVisualContact && pBestShot->ubOpponent != NOBODY &&
 					Menptr[pBestShot->ubOpponent].stats.bLife < OKLIFE &&
 					pOpponent->stats.bLife >= OKLIFE)
 				{
@@ -1035,7 +1037,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			}
 
 			// sevenfm: if new opponent is dying and best opponent is ok, ignore new opponent
-			if (fBestTargetStateKnown && fPersonalStateKnown && pBestShot->ubOpponent != NOBODY &&
+			if (fBestTargetStateKnown && fDirectVisualContact && pBestShot->ubOpponent != NOBODY &&
 				Menptr[pBestShot->ubOpponent].stats.bLife >= OKLIFE &&
 				pOpponent->stats.bLife < OKLIFE)
 			{
@@ -1055,7 +1057,7 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			pBestShot->ubStance				= ubBestStance;
 			pBestShot->bScopeMode			= bScopeMode;
 			pBestShot->ubFriendlyFireChance = (UINT8)ubBestFriendlyFireChance;
-			fBestTargetStateKnown = fPersonalStateKnown;
+			fBestTargetStateKnown = fDirectVisualContact;
 		}
 	}
 //if(pBestShot->ubPossible)SendFmtMsg("CalcBestShot;\r\n  ID=%d Loc=%d APs=%d Ac=%d AcData=%d Al=%d, SM=%d, LAc=%d, NAc=%d AT=%d\r\n  AP?=%d,%d,%d/%d BS=%d", pSoldier->ubID, pSoldier->sGridNo, pSoldier->bActionPoints, pSoldier->aiData.bAction, pSoldier->aiData.usActionData, pSoldier->aiData.bAlertStatus, pBestShot->bScopeMode, pSoldier->aiData.bLastAction, pSoldier->aiData.bNextAction, pBestShot->ubAimTime, pBestShot->ubAPCost, CalcAPCostForAiming(pSoldier, pBestShot->sTarget, (INT8)pBestShot->ubAimTime), CalcTotalAPsToAttack(pSoldier, pBestShot->sTarget, TRUE, pBestShot->ubAimTime), CalcTotalAPsToAttack(pSoldier, pBestShot->sTarget, FALSE, pBestShot->ubAimTime), pBestShot->ubStance);
