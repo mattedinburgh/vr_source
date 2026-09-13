@@ -420,15 +420,26 @@ UINT32 MapUtilScreenHandle(void)
 		(UINT16)(640 * WORLD_COLS / OLD_WORLD_COLS),
 		(UINT16)(320 * WORLD_ROWS / OLD_WORLD_ROWS) );
 
+	// MAPSHOT is also our safe A3 baking path.  The farm dressing has already
+	// been applied to the in-memory world by LoadWorld().  Persist it under a
+	// separate filename so QA can inspect a real map without touching live A3.dat.
+	BOOLEAN fBakeSaved = TRUE;
+	if ( gfMapPreviewCaptureMode && _stricmp( zFilename, "A3.dat" ) == 0 )
+	{
+		MapPreviewWriteStatus( "BAKE begin A3_REMASTERED.dat" );
+		fBakeSaved = SaveWorld( "A3_REMASTERED.dat" );
+		MapPreviewWriteStatus( fBakeSaved ? "BAKE_OK A3_REMASTERED.dat" : "BAKE_FAIL A3_REMASTERED.dat" );
+	}
+
 	// MAPSHOT is a single-purpose automation path. Do not spend another pass
 	// generating/quantizing the tiny radar STI; stop immediately after the
-	// full engine overview is on disk. The workflow validates the file itself.
+	// full engine overview and optional baked map are on disk.
 	if ( gfMapPreviewCaptureMode )
 	{
 		TrashOverheadMap();
 		FListNode = NULL;
 		gfProgramIsRunning = FALSE;
-		MapPreviewWriteStatus( fPreviewSaved ? "DONE success" : "DONE failure" );
+		MapPreviewWriteStatus( (fPreviewSaved && fBakeSaved) ? "DONE success" : "DONE failure" );
 		return MAPUTILITY_SCREEN;
 	}
 
