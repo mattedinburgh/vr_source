@@ -5859,6 +5859,40 @@ static void SpawnVRDirectionalGoreSpray( SOLDIERTYPE *pSoldier, const CHAR8 *zFi
 	CreateAnimationTile( &AniParams );
 }
 
+
+static void DropVRDirectionalBloodTrail( SOLDIERTYPE *pSoldier, UINT8 ubSprayDirection, UINT8 ubInitialStrength, UINT8 ubMaxTiles )
+{
+	if ( pSoldier == NULL || !pSoldier->bInSector || TileIsOutOfBounds( pSoldier->sGridNo ) || ubMaxTiles == 0 )
+		return;
+
+	UINT8 ubType = 0;
+	if ( pSoldier->flags.uiStatusFlags & SOLDIER_MONSTER )
+		ubType = ( pSoldier->pathing.bLevel == 0 ) ? CREATURE_ON_FLOOR : CREATURE_ON_ROOF;
+
+	INT32 sTrailGridNo = pSoldier->sGridNo;
+	for ( UINT8 ubStep = 1; ubStep <= ubMaxTiles; ++ubStep )
+	{
+		INT32 sNextGridNo = NewGridNo( sTrailGridNo, DirectionInc( ubSprayDirection ) );
+		if ( TileIsOutOfBounds( sNextGridNo ) || sNextGridNo == sTrailGridNo )
+			break;
+
+		sTrailGridNo = sNextGridNo;
+		UINT8 ubStrength = ( ubInitialStrength > ubStep ) ? (UINT8)( ubInitialStrength - ubStep ) : 1;
+		InternalDropBlood( sTrailGridNo, pSoldier->pathing.bLevel, ubType, ubStrength, pSoldier->bVisible );
+
+		// Sprinkler-style side droplets: progressively weaker flecks beside the main
+		// exit line, alternating left/right so the trail is not a solid red stripe.
+		UINT8 ubSideDirection = (UINT8)( ( ubSprayDirection + ( ( ubStep & 1 ) ? 1 : 7 ) ) % NUM_WORLD_DIRECTIONS );
+		INT32 sSideGridNo = NewGridNo( sTrailGridNo, DirectionInc( ubSideDirection ) );
+		if ( !TileIsOutOfBounds( sSideGridNo ) && sSideGridNo != sTrailGridNo )
+		{
+			UINT8 ubSideStrength = ( ubStrength > 2 ) ? (UINT8)( ubStrength - 2 ) : 1;
+			InternalDropBlood( sSideGridNo, pSoldier->pathing.bLevel, ubType, ubSideStrength, pSoldier->bVisible );
+		}
+	}
+}
+
+
 // VR fatal-reaction pack: ten fatal gunshot variants built from safe existing body
 // states plus directional gore/dismemberment overlays. This deliberately avoids adding
 // new SOLDIERTYPE save fields; persistent amputated-corpse art can be layered on later.
@@ -5875,19 +5909,17 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	UINT8 ubVariant = (UINT8)Random( 10 );
 	UINT8 ubHeight = gAnimControl[ pSoldier->usAnimState ].ubEndHeight;
 
-	// Dismemberment is fatal-only and biased toward genuinely violent hits. Ordinary
-	// low-damage kills still get the extra fall variety without implausible limb loss.
-	if ( sDamage < 18 && ubVariant >= 5 )
-		ubVariant = (UINT8)( ubVariant % 5 );
+	// Extreme gore test baseline: fatal hits may use any dismemberment variant even
+	// at low raw damage. We will scale these probabilities back after visual tuning.
+	if ( Random( 100 ) < 75 )
+		ubVariant = (UINT8)( 5 + Random( 5 ) );
 
-	if ( ubHitLocation == AIM_SHOT_HEAD && sDamage >= 18 && Random( 100 ) < 70 )
+	if ( ubHitLocation == AIM_SHOT_HEAD && Random( 100 ) < 90 )
 		ubVariant = 5;
-	else if ( ubHitLocation == AIM_SHOT_LEGS && sDamage >= 24 && Random( 100 ) < 45 )
+	else if ( ubHitLocation == AIM_SHOT_LEGS && Random( 100 ) < 70 )
 		ubVariant = 7;
-	else if ( ubHitLocation == AIM_SHOT_TORSO && sDamage >= 30 && Random( 100 ) < 35 )
+	else if ( ubHitLocation == AIM_SHOT_TORSO && Random( 100 ) < 65 )
 		ubVariant = ( Random( 2 ) == 0 ) ? 6 : 8;
-	else if ( sDamage >= 45 && Random( 100 ) < 35 )
-		ubVariant = 9;
 
 	// Prone and crouched bodies have fewer structurally safe body states. Keep the
 	// gore variant, but finish through the correct stance-specific death path.
@@ -6365,30 +6397,20 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 	// DEDUCT LIFE
 	ubCombinedLoss = this->SoldierTakeDamage( ANIM_CROUCH, sDamage, poisondamage, sBreathLoss, ubReason, this->ubAttackerID, NOWHERE, FALSE, TRUE );
 
-	// VR directional gore: every conventional gunshot doing at least 1 HP of damage
-	// creates an animated exit spray behind the victim. No probability roll is used
-	// in this first brutal baseline; balance can be added after visual testing.
+	// VR extreme-gore test baseline: every conventional gunshot doing at least 1 HP
+	// gets maximal visual gore. This deliberately does NOT modify actual HP damage.
+	// The purpose of this pass is to establish the upper visual bound before scaling.
 	if ( ubReason == TAKE_DAMAGE_GUNFIRE &&
 		sDamage >= 1 &&
 		this->bInSector &&
 		!( this->flags.uiStatusFlags & ( SOLDIER_VEHICLE | SOLDIER_ROBOT ) ) )
 	{
-		UINT8 ubBloodStrength = 3;
 		UINT8 ubSprayDirection = gOppositeDirection[ (UINT8)( bDirection % NUM_WORLD_DIRECTIONS ) ];
 		INT16 sGoreZ = 30;
 
-		if ( sDamage >= 30 )
-			ubBloodStrength = MAXBLOODQUANTITY;
-		else if ( sDamage >= 24 )
-			ubBloodStrength = 6;
-		else if ( sDamage >= 18 )
-			ubBloodStrength = 5;
-		else if ( sDamage >= 12 )
-			ubBloodStrength = 4;
-
-		// Keep the normal persistent blood system as aftermath, but the visible hit
-		// feedback now comes from animated directional spray rather than decals.
-		DropBlood( this, ubBloodStrength, this->bVisible );
+		// Maximum local aftermath plus a six-tile fading exit trail.
+		DropBlood( this, MAXBLOODQUANTITY, this->bVisible );
+		DropVRDirectionalBloodTrail( this, ubSprayDirection, MAXBLOODQUANTITY, 6 );
 
 		if ( ubHitLocation == AIM_SHOT_HEAD )
 			sGoreZ = 50;
@@ -6400,27 +6422,16 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 		else if ( gAnimControl[ this->usAnimState ].ubEndHeight == ANIM_PRONE )
 			sGoreZ = 10;
 
-		if ( ubHitLocation == AIM_SHOT_HEAD || sDamage >= 18 )
-		{
-			// Heavy hits throw a dense burst out of the exit side, then leave two
-			// progressively lower/farther droplet curtains falling behind the victim.
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubSprayDirection, sGoreZ, 40, 0 );
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubSprayDirection, (INT16)( sGoreZ - 3 ), 47, 28 );
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubSprayDirection, (INT16)( sGoreZ - 7 ), 54, 58 );
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 10 ), 61, 92 );
-		}
-		else if ( sDamage >= 8 )
-		{
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubSprayDirection, sGoreZ, 44, 0 );
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 4 ), 51, 38 );
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 7 ), 58, 72 );
-		}
-		else
-		{
-			// Even a one-point wound gets an exit burst plus a smaller rearward falloff.
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, sGoreZ, 46, 0 );
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 3 ), 55, 42 );
-		}
+		// Sprinkler, not a bucket: four separated high-velocity droplet curtains,
+		// progressively farther and lower behind the exit wound.
+		SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubSprayDirection, sGoreZ, 32, 0 );
+		SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubSprayDirection, (INT16)( sGoreZ - 3 ), 38, 42 );
+		SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubSprayDirection, (INT16)( sGoreZ - 7 ), 45, 88 );
+		SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 11 ), 53, 145 );
+
+		// Every hit also throws visible tissue fragments for this deliberately extreme
+		// test baseline. Actual limb-loss variants remain handled by the fatal system.
+		SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubSprayDirection, (INT16)( sGoreZ - 2 ), 39, 24 );
 	}
 
 	// ATE: OK, Let's check our ASSIGNMENT state,
