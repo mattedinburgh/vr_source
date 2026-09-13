@@ -3290,7 +3290,29 @@ BOOLEAN InitSaveDir()
 extern bool alreadySaving = false;
 
 
+static BOOLEAN SaveGameBlackBoxInternal( int ubSaveGameID, STR16 pGameDesc );
+
 BOOLEAN SaveGame( int ubSaveGameID, STR16 pGameDesc )
+{
+	CHAR8 operationName[96];
+	DWORD operationToken;
+	BOOLEAN result;
+
+	_snprintf( operationName, sizeof( operationName ) - 1, "SaveGame slot=%d", ubSaveGameID );
+	operationName[ sizeof( operationName ) - 1 ] = 0;
+	BlackBoxCounterAdd( "save.attempts", 1 );
+	BlackBoxContext( "save.current", "type=SAVE slot=%d phase=BEGIN sector=%d,%d,%d screen=%u",
+		ubSaveGameID, gWorldSectorX, gWorldSectorY, gbWorldSectorZ, guiCurrentScreen );
+	operationToken = BlackBoxOperationBegin( "SAVE", operationName );
+	result = SaveGameBlackBoxInternal( ubSaveGameID, pGameDesc );
+	BlackBoxOperationEnd( operationToken, result ? "OK" : "FAILED" );
+	BlackBoxContext( "save.current", "type=SAVE slot=%d phase=%s sector=%d,%d,%d screen=%u",
+		ubSaveGameID, result ? "COMPLETE" : "FAILED", gWorldSectorX, gWorldSectorY, gbWorldSectorZ, guiCurrentScreen );
+	BlackBoxCounterAdd( result ? "save.successes" : "save.failures", 1 );
+	return result;
+}
+
+static BOOLEAN SaveGameBlackBoxInternal( int ubSaveGameID, STR16 pGameDesc )
 {
 	BlackBoxEvent( "SAVE", "SaveGame begin slot=%d sector=%d,%d,%d screen=%u", ubSaveGameID, gWorldSectorX, gWorldSectorY, gbWorldSectorZ, guiCurrentScreen );
 	BlackBoxCheckpoint( "SAVE", "operation=SAVE slot=%d phase=BEGIN sector=%d,%d,%d", ubSaveGameID, gWorldSectorX, gWorldSectorY, gbWorldSectorZ );
@@ -4424,7 +4446,29 @@ UINT32 guiBrokenSaveGameVersion = 0;
 extern int gEnemyPreservedTempFileVersion[256];
 extern int gCivPreservedTempFileVersion[256];
 
+static BOOLEAN LoadSavedGameBlackBoxInternal( int ubSavedGameID );
+
 BOOLEAN LoadSavedGame( int ubSavedGameID )
+{
+	CHAR8 operationName[96];
+	DWORD operationToken;
+	BOOLEAN result;
+
+	_snprintf( operationName, sizeof( operationName ) - 1, "LoadSavedGame slot=%d", ubSavedGameID );
+	operationName[ sizeof( operationName ) - 1 ] = 0;
+	BlackBoxCounterAdd( "load.attempts", 1 );
+	BlackBoxContext( "save.current", "type=LOAD slot=%d phase=BEGIN sector=%d,%d,%d screen=%u",
+		ubSavedGameID, gWorldSectorX, gWorldSectorY, gbWorldSectorZ, guiCurrentScreen );
+	operationToken = BlackBoxOperationBegin( "SAVE", operationName );
+	result = LoadSavedGameBlackBoxInternal( ubSavedGameID );
+	BlackBoxOperationEnd( operationToken, result ? "OK" : "FAILED" );
+	BlackBoxContext( "save.current", "type=LOAD slot=%d phase=%s sector=%d,%d,%d screen=%u",
+		ubSavedGameID, result ? "COMPLETE" : "FAILED", gWorldSectorX, gWorldSectorY, gbWorldSectorZ, guiCurrentScreen );
+	BlackBoxCounterAdd( result ? "load.successes" : "load.failures", 1 );
+	return result;
+}
+
+static BOOLEAN LoadSavedGameBlackBoxInternal( int ubSavedGameID )
 {
 	BlackBoxEvent( "SAVE", "LoadSavedGame begin slot=%d screen=%u", ubSavedGameID, guiCurrentScreen );
 	BlackBoxCheckpoint( "SAVE", "operation=LOAD slot=%d phase=BEGIN", ubSavedGameID );
