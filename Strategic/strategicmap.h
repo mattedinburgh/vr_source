@@ -197,6 +197,16 @@ BOOLEAN HandlePotentialBringUpAutoresolveToFinishBattle( int pSectorX, int pSect
 // WANNE - BMP;
 BOOLEAN MapExists( UINT8 * szFilename );
 
+// Vengeance enemy-General campaign layer. State is stored in reserved bytes of
+// StrategicMapElement so old save layouts remain binary compatible.
+void EnsureEnemyGeneralsInitialised();
+BOOLEAN SectorHasEnemyGeneral(INT16 sMapX, INT16 sMapY);
+BOOLEAN PlayerKnowsEnemyGeneral(INT16 sMapX, INT16 sMapY);
+UINT8 CountActiveEnemyGenerals();
+BOOLEAN RevealRandomEnemyGeneral(UINT16& usSector);
+void RemoveEnemyGeneral(INT16 sMapX, INT16 sMapY);
+BOOLEAN RelocateEnemyGeneralToMeduna(INT16 sMapX, INT16 sMapY);
+
 BOOLEAN EscapeDirectionIsValid( INT8 * pbDirection );
 //Used for determining the type of error message that comes up when you can't traverse to
 //an adjacent sector.	THESE VALUES DO NOT NEED TO BE SAVED!
