@@ -686,11 +686,6 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_DEFAULT || pTileSurf == NULL || pTileSurf->vo == NULL )
 		return;
 
-	// B1 replacement art already carries its final palette/detail treatment. Do not
-	// grade it a second time; non-replaced B1 art can still receive the mild sector profile.
-	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG && fSectorReplacementLoaded )
-		return;
-
 	// Restrict grading to tactical-world art. Never recolour UI/item tiles or dedicated shadow sprites.
 	if ( ubType >= FIRSTSWITCHES || IsSectorVisualShadowType( ubType ) )
 		return;
@@ -708,144 +703,141 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 	INT32 greenBias = 1;
 	INT32 blueBias = 0;
 
-	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
-	{
-		// B1 base treatment for still-authored props/vegetation: slightly less
-		// saturated, stronger local contrast and a mild dusty industrial bias.
-		saturationPercent = 104;
-		contrastPercent = 113;
-		redBias = 3;
-		greenBias = 1;
-		blueBias = -3;
-	}
+	const BOOLEAN fB1Profile = ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG );
+	const BOOLEAN fB1Water = fB1Profile &&
+		( ubType == REGWATERTEXTURE || ubType == DEEPWATERTEXTURE || ubType == ANOTHERDEBRIS );
+	const BOOLEAN fB1Floor = fB1Profile && ( ubType >= FIRSTFLOOR && ubType <= LASTFLOOR );
+	const BOOLEAN fB1Roof = fB1Profile && ( ubType >= FIRSTROOF && ubType <= LASTSLANTROOF );
+	const BOOLEAN fB1OnRoof = fB1Profile && ( ubType >= FIRSTONROOF && ubType <= LASTONROOF );
+	const BOOLEAN fB1Wall = fB1Profile && ( ubType >= FIRSTWALL && ubType <= LASTDOOR );
+	const BOOLEAN fB1Road = fB1Profile && ( (ubType >= FIRSTROAD && ubType <= LASTROAD) || ubType == ROADPIECES );
+	const BOOLEAN fB1Terrain = fB1Profile && ( ubType >= FIRSTTEXTURE && ubType <= SEVENTHTEXTURE );
+	const BOOLEAN fB1GreenTerrain = fB1Profile && ( ubType >= THIRDTEXTURE && ubType <= SIXTHTEXTURE );
 
-	// Terrain carries most of the perceived improvement: stronger local contrast and less flat colour.
-	if ( ubType >= FIRSTTEXTURE && ubType <= LASTTEXTURE )
+	if ( fB1Profile )
+	{
+		// B1 HERO PASS.  This is intentionally dramatic at normal tactical zoom:
+		// humid tropical oil infrastructure, hard sun, salt/rain oxidation, dirty
+		// vegetation and black industrial surfaces.  Successful replacement STIs
+		// are graded too; the previous pass skipped them and was visually too subtle.
+		saturationPercent = 110;
+		contrastPercent = 126;
+		redBias = 5;
+		greenBias = 2;
+		blueBias = -5;
+
+		if ( fSectorReplacementLoaded )
+			contrastPercent += 6;
+
+		if ( fB1Water )
+		{
+			// Heavy tropical teal/blue water with obvious depth and reflected sky.
+			saturationPercent = 152;
+			contrastPercent = 136;
+			redBias = -24;
+			greenBias = 8;
+			blueBias = 29;
+		}
+		else if ( fB1GreenTerrain )
+		{
+			// Wet, dirty tropical growth around an industrial site.
+			saturationPercent = 124;
+			contrastPercent = 131;
+			redBias = -1;
+			greenBias = 12;
+			blueBias = -10;
+		}
+		else if ( fB1Terrain )
+		{
+			// Sun-bleached ochre sand/trails with baked, warm highlights.
+			saturationPercent = 123;
+			contrastPercent = 130;
+			redBias = 15;
+			greenBias = 8;
+			blueBias = -15;
+		}
+		else if ( fB1Floor )
+		{
+			// Oil-stained concrete / steel plate: cool graphite shadows, hard edges.
+			saturationPercent = 84;
+			contrastPercent = 142;
+			redBias = 4;
+			greenBias = 2;
+			blueBias = -9;
+		}
+		else if ( fB1Roof )
+		{
+			// Hot oxidised roofing.  Warm highlights and rusty mids separate roof
+			// planes clearly from the building sides.
+			saturationPercent = 116;
+			contrastPercent = 146;
+			redBias = 17;
+			greenBias = 4;
+			blueBias = -16;
+		}
+		else if ( fB1OnRoof )
+		{
+			// Fans/tanks/process equipment: darkest and punchiest metal family.
+			saturationPercent = 120;
+			contrastPercent = 150;
+			redBias = 18;
+			greenBias = 2;
+			blueBias = -17;
+		}
+		else if ( fB1Wall )
+		{
+			// Weathered industrial facades: faded paint, rust streaks, hard sunlight.
+			saturationPercent = 106;
+			contrastPercent = 139;
+			redBias = 13;
+			greenBias = 5;
+			blueBias = -12;
+		}
+		else if ( fB1Road )
+		{
+			// Blackened service roads / oily hardstanding.
+			saturationPercent = 80;
+			contrastPercent = 141;
+			redBias = 4;
+			greenBias = 1;
+			blueBias = -10;
+		}
+		else if ( ubType == DEBRISROCKS || ubType == DEBRISMISC )
+		{
+			// Bleached concrete, gravel and pale industrial rubble.
+			saturationPercent = 80;
+			contrastPercent = 137;
+			redBias = 7;
+			greenBias = 5;
+			blueBias = -7;
+		}
+		else if ( ubType == DEBRISWOOD || ubType == DEBRISSAND || ubType == DEBRIS2MISC )
+		{
+			// Rust, soot, old wood and discarded industrial scrap.
+			saturationPercent = 120;
+			contrastPercent = 142;
+			redBias = 17;
+			greenBias = 2;
+			blueBias = -17;
+		}
+		else if ( ubType == DEBRISWEEDS || ubType == DEBRISGRASS )
+		{
+			saturationPercent = 114;
+			contrastPercent = 134;
+			redBias = 0;
+			greenBias = 10;
+			blueBias = -9;
+		}
+	}
+	else if ( ubType >= FIRSTTEXTURE && ubType <= LASTTEXTURE )
 	{
 		saturationPercent += 4;
 		contrastPercent += 2;
-		if ( ubType == REGWATERTEXTURE || ubType == DEEPWATERTEXTURE )
-		{
-			// Keep Oronegro water cooler/deeper instead of applying the dusty ground bias.
-			redBias = -3;
-			greenBias = 1;
-			blueBias = 6;
-			saturationPercent += 3;
-		}
-	}
-	else if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
-	{
-		// B1 Tier 1A: give the non-structural ground/detail layers distinct material
-		// identities. These slots change palette only: no map indices, JSD, collision,
-		// cover, LOS, destruction state or scripted object identity is touched.
-		if ( ubType == ANOTHERDEBRIS )
-		{
-			// POOL.STI: cooler, cleaner water/concrete separation.
-			saturationPercent = 118;
-			contrastPercent = 116;
-			redBias = -8;
-			greenBias = 3;
-			blueBias = 10;
-		}
-		else if ( ubType == FIRSTROAD )
-		{
-			// STREET2.STI: darker, weathered industrial roadway. Palette-only despite
-			// its JSD partner, so the authored structure footprint is unchanged.
-			saturationPercent = 92;
-			contrastPercent = 116;
-			redBias = 4;
-			greenBias = 2;
-			blueBias = -4;
-		}
-		else if ( ubType == DEBRISROCKS )
-		{
-			// W-DEBRI1.STI: neutral concrete/rock rubble.
-			saturationPercent = 88;
-			contrastPercent = 118;
-			redBias = 4;
-			greenBias = 2;
-			blueBias = -3;
-		}
-		else if ( ubType == DEBRISWOOD )
-		{
-			// P-DEBRI1.STI: warmer wood/rust debris.
-			saturationPercent = 110;
-			contrastPercent = 116;
-			redBias = 7;
-			greenBias = 3;
-			blueBias = -7;
-		}
-		else if ( ubType == DEBRISWEEDS )
-		{
-			// W-DEBRI2.STI: dusty organic debris.
-			saturationPercent = 103;
-			contrastPercent = 115;
-			redBias = 4;
-			greenBias = 4;
-			blueBias = -5;
-		}
-		else if ( ubType == DEBRISGRASS )
-		{
-			// W-DEBRI3.STI: faded vegetation with clearer local contrast.
-			saturationPercent = 101;
-			contrastPercent = 116;
-			redBias = 2;
-			greenBias = 5;
-			blueBias = -5;
-		}
-		else if ( ubType == DEBRISSAND )
-		{
-			// Oil_Debris.sti: sootier/rustier dedicated rig debris.
-			saturationPercent = 94;
-			contrastPercent = 123;
-			redBias = 6;
-			greenBias = 0;
-			blueBias = -7;
-		}
-		else if ( ubType == DEBRISMISC )
-		{
-			// P-DEBRI3.STI: pale concrete/rubble without the old flat grey look.
-			saturationPercent = 84;
-			contrastPercent = 119;
-			redBias = 5;
-			greenBias = 3;
-			blueBias = -3;
-		}
-		else if ( ubType == DEBRIS2MISC )
-		{
-			// WP_DEB.STI: darker industrial scrap/plant debris.
-			saturationPercent = 92;
-			contrastPercent = 122;
-			redBias = 6;
-			greenBias = 1;
-			blueBias = -6;
-		}
-		else if ( ubType >= FIRSTROOF && ubType <= LASTSLANTROOF )
-		{
-			// B1 roofs that still use authored art: push sun bleaching, oxidised steel
-			// and edge contrast harder than walls so the industrial roofscape reads
-			// clearly from the tactical camera. Palette-only; structure data is untouched.
-			saturationPercent = 96;
-			contrastPercent = 121;
-			redBias = 6;
-			greenBias = 2;
-			blueBias = -6;
-		}
-		else if ( ubType >= FIRSTWALL && ubType <= LASTDOOR )
-		{
-			// B1 oil-rig walls/doors: weathered and slightly warm without changing
-			// authored JSD/collision/destruction behaviour.
-			saturationPercent = 94;
-			contrastPercent = 116;
-			redBias = 4;
-			greenBias = 1;
-			blueBias = -4;
-		}
 	}
 	else if ( (ubType >= FIRSTWALL && ubType <= LASTDOOR) ||
 			  (ubType >= FIRSTROOF && ubType <= LASTSLANTROOF) )
 	{
-		// Oronegro town architecture uses the same conservative treatment.
+		// Oronegro town remains conservative. The dramatic treatment is B1-only.
 		contrastPercent += 2;
 		saturationPercent -= 2;
 	}
@@ -858,9 +850,56 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 		const INT32 b = palette[i].peBlue;
 		const INT32 luma = (r * 30 + g * 59 + b * 11) / 100;
 
-		palette[i].peRed   = GradeSectorVisualComponent( r, luma, saturationPercent, contrastPercent, redBias );
-		palette[i].peGreen = GradeSectorVisualComponent( g, luma, saturationPercent, contrastPercent, greenBias );
-		palette[i].peBlue  = GradeSectorVisualComponent( b, luma, saturationPercent, contrastPercent, blueBias );
+		INT32 outR = GradeSectorVisualComponent( r, luma, saturationPercent, contrastPercent, redBias );
+		INT32 outG = GradeSectorVisualComponent( g, luma, saturationPercent, contrastPercent, greenBias );
+		INT32 outB = GradeSectorVisualComponent( b, luma, saturationPercent, contrastPercent, blueBias );
+
+		if ( fB1Profile )
+		{
+			// Strong luma-dependent split tone: cool damp shadows and hot sunlit
+			// highlights. This gives the low-resolution art more perceived depth.
+			if ( luma < 92 )
+			{
+				const INT32 depth = 92 - luma;
+				outR -= 6 + depth / 10;
+				outG -= 2 + depth / 24;
+				outB += fB1Water ? (12 + depth / 7) : (5 + depth / 15);
+			}
+			else if ( luma > 164 )
+			{
+				const INT32 light = luma - 164;
+				if ( fB1Water )
+				{
+					outG += 6 + light / 13;
+					outB += 10 + light / 9;
+				}
+				else
+				{
+					outR += 9 + light / 10;
+					outG += 5 + light / 15;
+					outB += light / 30;
+				}
+			}
+
+			// Material-specific secondary tone.  These are deliberately modest
+			// compared with the main grade, but make adjacent materials read apart.
+			if ( fB1Floor || fB1Road )
+			{
+				outR -= 4;
+				outG -= 3;
+				outB -= 1;
+			}
+			else if ( fB1Roof || fB1OnRoof )
+			{
+				outR += 5;
+				outG -= 1;
+				outB -= 5;
+			}
+		}
+
+		palette[i].peRed   = ClampSectorVisualComponent( outR );
+		palette[i].peGreen = ClampSectorVisualComponent( outG );
+		palette[i].peBlue  = ClampSectorVisualComponent( outB );
 	}
 
 	// Rebuild the base 16bpp palette from the adjusted 8bpp colours. Normal shade tables are built later.
