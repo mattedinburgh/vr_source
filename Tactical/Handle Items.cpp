@@ -2104,6 +2104,11 @@ BOOLEAN SoldierDropItem( SOLDIERTYPE * pSoldier, OBJECTTYPE * pObj )
 
 void SoldierPickupItem( SOLDIERTYPE *pSoldier, INT32 iItemIndex, INT32 sGridNo, INT8 bZLevel )
 {
+	// Militia equipment is managed by the dedicated sector inventory/restock
+	// system. Never let generic ground-item pickup queue a militia theft.
+	if ( !pSoldier || pSoldier->bTeam == MILITIA_TEAM )
+		return;
+
 	INT32 sActionGridNo;
 
 	// Remove any previous actions
@@ -2176,6 +2181,11 @@ void HandleAutoPlaceFail( SOLDIERTYPE *pSoldier, INT32 iItemIndex, INT32 sGridNo
 
 void SoldierGetItemFromWorld( SOLDIERTYPE *pSoldier, INT32 iItemIndex, INT32 sGridNo, INT8 bZLevel, BOOLEAN *pfSelectionList )
 {
+	// Authoritative final guard: militia never remove generic world items.
+	// This also protects against stale pending pickup actions from older saves.
+	if ( !pSoldier || pSoldier->bTeam == MILITIA_TEAM )
+		return;
+
 	ITEM_POOL		*		pItemPool;
 	ITEM_POOL		*		pItemPoolToDelete = NULL;
 	INT32						cnt = 0;
@@ -2420,7 +2430,7 @@ void SoldierGetItemFromWorld( SOLDIERTYPE *pSoldier, INT32 iItemIndex, INT32 sGr
 						}
 						else if ( Item[gWorldItems[ iItemIndex ].object.usItem].usItemClass & IC_FACE && gGameExternalOptions.fMilitiaUseSectorInventory_Face )
 						{
-							gWorldItems[ iItemIndex ].object[0]->data.sObjectFlag |= IC_FACE;
+							gWorldItems[ iItemIndex ].object[0]->data.sObjectFlag |= TAKEN_BY_MILITIA;
 						}
 						else if ( Item[gWorldItems[ iItemIndex ].object.usItem].usItemClass & (IC_BLADE|IC_PUNCH) && gGameExternalOptions.fMilitiaUseSectorInventory_Melee )
 						{
