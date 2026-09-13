@@ -3330,17 +3330,17 @@ void LoadGameAPBPConstants()
 	APBPConstants[BP_BURY_MINE] = iniReader.ReadInteger("BPConstants","BP_BURY_MINE",250);
 	APBPConstants[BP_DISARM_MINE] = iniReader.ReadInteger("BPConstants","BP_DISARM_MINE",0);
 	APBPConstants[BP_JUMP_OVER] = iniReader.ReadInteger("BPConstants","BP_JUMP_OVER",250);
-	APBPConstants[BP_BACK_PACK] = iniReader.ReadInteger("APConstants","BP_JUMP_OVER",50);
-	APBPConstants[BP_WORK_ZIPPER] = iniReader.ReadInteger("APConstants","BP_WORK_ZIPPER",250);
-	APBPConstants[BP_UNJAM] = iniReader.ReadInteger("APConstants","BP_WORK_ZIPPER",0);	
+	APBPConstants[BP_BACK_PACK] = iniReader.ReadInteger("BPConstants","BP_BACK_PACK",50);
+	APBPConstants[BP_WORK_ZIPPER] = iniReader.ReadInteger("BPConstants","BP_WORK_ZIPPER",250);
+	APBPConstants[BP_UNJAM] = iniReader.ReadInteger("BPConstants","BP_UNJAM",10);	
 	APBPConstants[BP_JUMPOFFWALL] = iniReader.ReadInteger("BPConstants","BP_JUMPOFFWALL",250);
 	APBPConstants[BP_JUMPWALL] = iniReader.ReadInteger("BPConstants","BP_JUMPWALL",500);
 	APBPConstants[BP_FORTIFICATION]					= iniReader.ReadInteger("BPConstants","BP_FORTIFICATION", 700);
 	APBPConstants[BP_REMOVE_FORTIFICATION]			= iniReader.ReadInteger("BPConstants","BP_REMOVE_FORTIFICATION", 400);
 	APBPConstants[BP_FILL_SANDBAG]					= iniReader.ReadInteger("BPConstants","BP_FILL_SANDBAG", 500);
 	APBPConstants[BP_HANDCUFF]						= iniReader.ReadInteger("BPConstants","BP_HANDCUFF", 100);
-	APBPConstants[BP_APPLYITEM]						= iniReader.ReadInteger("BPConstants","BP_APPLYITEM", 50);	
-	APBPConstants[BP_INVENTORY_ARM]					= iniReader.ReadInteger("BPConstants","BP_INVENTORY_ARM", 10);
+	APBPConstants[BP_APPLYITEM]						= iniReader.ReadInteger("BPConstants","BP_APPLYITEM", 5);	
+	APBPConstants[BP_INVENTORY_ARM]					= iniReader.ReadInteger("BPConstants","BP_INVENTORY_ARM", 0);
 			
 	SetupMaxActionPointsAnimation();
 #undef ReadInteger
