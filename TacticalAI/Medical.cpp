@@ -555,6 +555,15 @@ INT8 DecideCombatCasualtyEvacuation( SOLDIERTYPE *pSoldier )
 		if ( TileIsOutOfBounds( sApproachGrid ) )
 			continue;
 
+		// Do not run to an approach square from which the actual pickup is
+		// impossible because a wall/closed door separates rescuer and casualty.
+		UINT8 ubDragDirection = AIDirection( sApproachGrid, pPatient->sGridNo );
+		if ( ubDragDirection == DIRECTION_IRRELEVANT ||
+			gubWorldMovementCosts[pPatient->sGridNo][ubDragDirection][pSoldier->pathing.bLevel] >= TRAVELCOST_BLOCKED )
+		{
+			continue;
+		}
+
 		INT32 iPathSteps = 1;
 		if ( sApproachGrid != pSoldier->sGridNo )
 		{
