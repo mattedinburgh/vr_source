@@ -1506,6 +1506,82 @@ UINT16 SelectBestEnemyLBEForPlan(
 	return usBestItem;
 }
 
+void BuildBestEnemyLBEPackageForPlan(
+	ENEMY_LBE_PACKAGE *pPackage,
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	INT8 bSoldierClass,
+	UINT8 ubMaxCoolness)
+{
+	UINT16 usCombatPack;
+	UINT16 usBackpack;
+	INT32 iCombatPackScore;
+	INT32 iBackpackScore;
+
+	if ( !pPackage )
+		return;
+
+	memset(pPackage, 0, sizeof(ENEMY_LBE_PACKAGE));
+
+	if ( !pPlan )
+		return;
+
+	// A vest is the fighting-load foundation for all normal combat roles.
+	pPackage->usVest = SelectBestEnemyLBEForPlan(
+		pPlan,
+		bSoldierClass,
+		ubMaxCoolness,
+		VEST_PACK);
+
+	// Thigh rigs are role equipment, not universal extra storage.
+	if ( pPlan->LBEProfile == ENEMY_LBE_ASSAULT ||
+		 pPlan->LBEProfile == ENEMY_LBE_AUTOMATIC ||
+		 pPlan->LBEProfile == ENEMY_LBE_GRENADIER ||
+		 pPlan->LBEProfile == ENEMY_LBE_HEAVY_SUPPORT )
+	{
+		pPackage->usThigh = SelectBestEnemyLBEForPlan(
+			pPlan,
+			bSoldierClass,
+			ubMaxCoolness,
+			THIGH_PACK);
+	}
+
+	// Ordinary combat roles stop at fighting-load LBE.  Specialists that need
+	// additional mission equipment choose one back-carried solution, never a
+	// gratuitous combat-pack + backpack stack.
+	if ( !pPlan->fUseBackpack &&
+		 pPlan->LBEProfile != ENEMY_LBE_MEDIC &&
+		 pPlan->LBEProfile != ENEMY_LBE_RADIO &&
+		 pPlan->LBEProfile != ENEMY_LBE_HEAVY_SUPPORT )
+	{
+		return;
+	}
+
+	usCombatPack = SelectBestEnemyLBEForPlan(
+		pPlan,
+		bSoldierClass,
+		ubMaxCoolness,
+		COMBAT_PACK);
+	usBackpack = SelectBestEnemyLBEForPlan(
+		pPlan,
+		bSoldierClass,
+		ubMaxCoolness,
+		BACKPACK);
+
+	iCombatPackScore = usCombatPack
+		? ScoreEnemyLBEForPlan(pPlan, usCombatPack, ubMaxCoolness)
+		: -10000;
+	iBackpackScore = usBackpack
+		? ScoreEnemyLBEForPlan(pPlan, usBackpack, ubMaxCoolness)
+		: -10000;
+
+	// Tie goes to the smaller combat pack.  A full backpack must be clearly
+	// more useful for this role to justify its extra combat burden.
+	if ( iBackpackScore > iCombatPackScore + 10 )
+		pPackage->usBackpack = usBackpack;
+	else
+		pPackage->usCombatPack = usCombatPack;
+}
+
 const char *EnemyLoadoutRoleName(ENEMY_LOADOUT_ROLE Role)
 {
 	switch ( Role )
