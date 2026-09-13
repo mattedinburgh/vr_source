@@ -1432,10 +1432,7 @@ void InitNewInventorySystem( )
 	else
 		INTERFACE_WIDTH			= 1024;
 
-	// Vengeance widescreen layout: anchor the tactical interface to the right.
-	// On 4:3 resolutions SCREEN_WIDTH == INTERFACE_WIDTH, so behaviour is unchanged.
-	// On widescreen this intentionally frees the lower-left strip for the battle log.
-	INTERFACE_START_X		= (SCREEN_WIDTH - INTERFACE_WIDTH);
+	INTERFACE_START_X		= (SCREEN_WIDTH - INTERFACE_WIDTH)/2;
 	INTERFACE_HEIGHT		= 120;
 	INV_INTERFACE_HEIGHT	= 200;
 	INTERFACE_START_Y		= ( SCREEN_HEIGHT - INTERFACE_HEIGHT );
@@ -1452,9 +1449,7 @@ void InitOldInventorySystem( )
 	else
 		INTERFACE_WIDTH			= 1024;
 
-	// Vengeance widescreen layout: keep old-inventory HUD aligned with the
-	// new-inventory HUD so the freed lower-left battle-log strip is stable.
-	INTERFACE_START_X		= (SCREEN_WIDTH - INTERFACE_WIDTH);
+	INTERFACE_START_X		= (SCREEN_WIDTH - INTERFACE_WIDTH)/2;
 	INTERFACE_HEIGHT		= 120;
 	INV_INTERFACE_HEIGHT	= 140;
 	INTERFACE_START_Y		= ( SCREEN_HEIGHT - INTERFACE_HEIGHT );
