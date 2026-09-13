@@ -2116,7 +2116,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 												Z_STRIP_DELTA_Y,
 												fTrueColorSameZBurnsThrough,
 												fObscuredBlitter,
-												fZWrite);
+												TRUE);
 										}
 										else if(fShadowBlitter || fIntensityBlitter)
 										{
