@@ -1047,6 +1047,9 @@ void BuildEnemyLoadoutPlan(
 
 	pPlan->LBEProfile = ENEMY_LBE_STANDARD_RIFLE;
 	pPlan->OpticProfile = ENEMY_OPTIC_IRONS;
+	pPlan->SupportProfile = ENEMY_SUPPORT_NONE;
+	pPlan->ubSupportAmmoMinimum = 0;
+	pPlan->ubSupportAmmoMaximum = 0;
 	pPlan->ubAmmoMinimum = 4;
 	pPlan->ubAmmoMaximum = 6;
 	pPlan->ubGrenadeMinimum = (ubProgress >= 30) ? 1 : 0;
@@ -1107,10 +1110,13 @@ void BuildEnemyLoadoutPlan(
 		case ENEMY_ROLE_GRENADIER:
 			pPlan->LBEProfile = ENEMY_LBE_GRENADIER;
 			pPlan->OpticProfile = (ubProgress >= 40) ? ENEMY_OPTIC_LOW_POWER : ENEMY_OPTIC_IRONS;
+			pPlan->SupportProfile = ENEMY_SUPPORT_GRENADE_LAUNCHER;
+			pPlan->ubSupportAmmoMinimum = 4;
+			pPlan->ubSupportAmmoMaximum = (ubProgress >= 65) ? 7 : 6;
 			pPlan->ubAmmoMinimum = 4;
 			pPlan->ubAmmoMaximum = 5;
-			pPlan->ubGrenadeMinimum = 4;
-			pPlan->ubGrenadeMaximum = 7;
+			pPlan->ubGrenadeMinimum = 1;
+			pPlan->ubGrenadeMaximum = 2;
 			pPlan->ubSmokeMinimum = 1;
 			pPlan->ubSmokeMaximum = 2;
 			pPlan->fHeavyWeapon = TRUE;
@@ -1119,6 +1125,12 @@ void BuildEnemyLoadoutPlan(
 		case ENEMY_ROLE_AT_SPECIALIST:
 			pPlan->LBEProfile = ENEMY_LBE_HEAVY_SUPPORT;
 			pPlan->OpticProfile = (ubProgress >= 45) ? ENEMY_OPTIC_CLOSE_COMBAT : ENEMY_OPTIC_IRONS;
+			pPlan->SupportProfile = (ubProgress >= 55) ? ENEMY_SUPPORT_RPG : ENEMY_SUPPORT_LIGHT_AT;
+			if ( pPlan->SupportProfile == ENEMY_SUPPORT_RPG )
+			{
+				pPlan->ubSupportAmmoMinimum = fElite ? 3 : 2;
+				pPlan->ubSupportAmmoMaximum = fElite ? 5 : 4;
+			}
 			pPlan->ubAmmoMinimum = 3;
 			pPlan->ubAmmoMaximum = 5;
 			pPlan->ubGrenadeMaximum = 1;
@@ -1174,10 +1186,13 @@ void BuildEnemyLoadoutPlan(
 		case ENEMY_ROLE_MORTAR:
 			pPlan->LBEProfile = ENEMY_LBE_HEAVY_SUPPORT;
 			pPlan->OpticProfile = ENEMY_OPTIC_IRONS;
+			pPlan->SupportProfile = ENEMY_SUPPORT_MORTAR;
+			pPlan->ubSupportAmmoMinimum = 2;
+			pPlan->ubSupportAmmoMaximum = fElite ? 5 : 4;
 			pPlan->ubAmmoMinimum = 2;
 			pPlan->ubAmmoMaximum = 4;
-			pPlan->ubGrenadeMinimum = 2;
-			pPlan->ubGrenadeMaximum = 4;
+			pPlan->ubGrenadeMinimum = 0;
+			pPlan->ubGrenadeMaximum = 1;
 			pPlan->fUseBackpack = TRUE;
 			pPlan->fHeavyWeapon = TRUE;
 			break;
