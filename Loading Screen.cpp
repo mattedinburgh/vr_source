@@ -707,6 +707,8 @@ void DisplayLoadScreenWithID( UINT8 ubLoadScreenID )
 	VSURFACE_DESC		vs_desc = {};
 	HVSURFACE			hVSurface;
 	UINT32				uiLoadScreen;
+	std::string			legacyFallbackImage;
+	BOOLEAN				fDocumentarySelected = FALSE;
 
 	vs_desc.fCreateFlags = VSURFACE_CREATE_FROMFILE | VSURFACE_SYSTEM_MEM_USAGE | VSURFACE_CREATE_FROMPNG_FALLBACK;
 
@@ -778,10 +780,12 @@ void DisplayLoadScreenWithID( UINT8 ubLoadScreenID )
 		}
 
 		std::string strImage = FindBestFittingLoadscreenFilename(imagePath, (SCREEN_RESOLUTION)iResolution);
+		legacyFallbackImage = strImage;
 		std::string documentaryImage;
 		if (PickRealConflictLoadscreen(strImage, ubLoadScreenID, documentaryImage))
 		{
 			strImage = documentaryImage;
+			fDocumentarySelected = TRUE;
 			BlackBoxEvent("LOADSCREEN", "documentary selected id=%u sector=%d,%d,%d path=%s",
 				ubLoadScreenID, requestedX, requestedY, requestedZ, strImage.c_str());
 		}
@@ -806,11 +810,13 @@ void DisplayLoadScreenWithID( UINT8 ubLoadScreenID )
 			strImage.append(LoadScreenNames[0]);
 		}
 		strImage = FindBestFittingLoadscreenFilename(strImage, (SCREEN_RESOLUTION)iResolution);
+		legacyFallbackImage = strImage;
 
 		std::string documentaryImage;
 		if (PickRealConflictLoadscreen(strImage, ubLoadScreenID, documentaryImage))
 		{
 			strImage = documentaryImage;
+			fDocumentarySelected = TRUE;
 			BlackBoxEvent("LOADSCREEN", "documentary selected id=%u sector=%d,%d,%d path=%s",
 				ubLoadScreenID, requestedX, requestedY, requestedZ, strImage.c_str());
 		}
@@ -834,7 +840,22 @@ void DisplayLoadScreenWithID( UINT8 ubLoadScreenID )
 	}
 	else
 	{
+		BOOLEAN fLoadscreenReady = FALSE;
 		if (FileExists(vs_desc.ImageFile) && AddVideoSurface(&vs_desc, &uiLoadScreen))
+		{
+			fLoadscreenReady = TRUE;
+		}
+		else if (fDocumentarySelected && !legacyFallbackImage.empty())
+		{
+			BlackBoxEvent("LOADSCREEN", "documentary load failed; retrying legacy path=%s",
+				legacyFallbackImage.c_str());
+			memset(vs_desc.ImageFile, 0, sizeof(vs_desc.ImageFile));
+			legacyFallbackImage.copy(vs_desc.ImageFile, sizeof(vs_desc.ImageFile) - 1);
+			if (FileExists(vs_desc.ImageFile) && AddVideoSurface(&vs_desc, &uiLoadScreen))
+				fLoadscreenReady = TRUE;
+		}
+
+		if (fLoadscreenReady)
 		{
 			SGPRect SrcRect, DstRect;
 									
