@@ -391,6 +391,8 @@ void ClearDisplayedListOfTacticalStrings( void )
 #define BATTLELOG_INSPECTOR_NONE 0
 #define BATTLELOG_INSPECTOR_SHOT 1
 #define BATTLELOG_INSPECTOR_DAMAGE 2
+#define BATTLELOG_INSPECTOR_MELEE_CHANCE 3
+#define BATTLELOG_INSPECTOR_MELEE_DAMAGE 4
 
 typedef struct
 {
@@ -399,6 +401,7 @@ typedef struct
 	UINT16 usColor;
 	BOOLEAN fClickable;
 	BOOLEAN fDamageClickable;
+	BOOLEAN fMelee;
 	INT16 sShotClickStart;
 	INT16 sShotClickEnd;
 	INT16 sDamageClickStart;
@@ -412,6 +415,7 @@ typedef struct
 	INT32 iBullet;
 	NCTH_SHOT_DIAGNOSTIC ncth;
 	DAMAGE_DIAGNOSTIC damage;
+	MELEE_DIAGNOSTIC melee;
 } BATTLE_LOG_ENTRY;
 
 static BATTLE_LOG_ENTRY gBattleLogEntries[BATTLE_LOG_MAX_ENTRIES];
@@ -450,6 +454,7 @@ static MOUSE_REGION gBattleLogResizeRegion;
 static MOUSE_REGION gBattleLogInspectorRegion;
 static NCTH_SHOT_DIAGNOSTIC gBattleLogInspectorDiagnostic;
 static DAMAGE_DIAGNOSTIC gBattleLogInspectorDamageDiagnostic;
+static MELEE_DIAGNOSTIC gBattleLogInspectorMeleeDiagnostic;
 static UINT8 gubBattleLogInspectorMode = BATTLELOG_INSPECTOR_NONE;
 static UINT32 guiBattleLogInspectorSequence = 0;
 static UINT8 gubBattleLogInspectorOutcome = BATTLELOG_OUTCOME_NONE;
@@ -786,9 +791,9 @@ static UINT8 BattleLogHitTestInfoToken( MOUSE_REGION *pRegion, UINT32 *pSequence
 	INT16 sRelativeX = (INT16)(pRegion->MouseXPos - (gsBattleLogX + 6));
 	UINT8 ubMode = BATTLELOG_INSPECTOR_NONE;
 	if ( pEntry->fDamageClickable && sRelativeX >= pEntry->sDamageClickStart && sRelativeX <= pEntry->sDamageClickEnd )
-		ubMode = BATTLELOG_INSPECTOR_DAMAGE;
+		ubMode = pEntry->fMelee ? BATTLELOG_INSPECTOR_MELEE_DAMAGE : BATTLELOG_INSPECTOR_DAMAGE;
 	else if ( pEntry->fClickable && sRelativeX >= pEntry->sShotClickStart && sRelativeX <= pEntry->sShotClickEnd )
-		ubMode = BATTLELOG_INSPECTOR_SHOT;
+		ubMode = pEntry->fMelee ? BATTLELOG_INSPECTOR_MELEE_CHANCE : BATTLELOG_INSPECTOR_SHOT;
 
 	if ( ubMode != BATTLELOG_INSPECTOR_NONE && pSequence )
 		*pSequence = seq;
@@ -825,6 +830,8 @@ static void BattleLogShowHoverInspector( UINT32 seq, UINT8 ubRequestedMode )
 
 	if ( ubRequestedMode == BATTLELOG_INSPECTOR_DAMAGE )
 		gBattleLogInspectorDamageDiagnostic = pEntry->damage;
+	else if ( ubRequestedMode == BATTLELOG_INSPECTOR_MELEE_CHANCE || ubRequestedMode == BATTLELOG_INSPECTOR_MELEE_DAMAGE )
+		gBattleLogInspectorMeleeDiagnostic = pEntry->melee;
 	else
 		gBattleLogInspectorDiagnostic = pEntry->ncth;
 
@@ -1082,7 +1089,80 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 
 	if ( gfBattleLogInspectorVisible )
 	{
-		if ( gubBattleLogInspectorMode == BATTLELOG_INSPECTOR_DAMAGE )
+		if ( gubBattleLogInspectorMode == BATTLELOG_INSPECTOR_MELEE_CHANCE )
+		{
+			MELEE_DIAGNOSTIC &md = gBattleLogInspectorMeleeDiagnostic;
+			INT16 ix = inspectorX;
+			INT16 iy = inspectorY;
+			CHAR16 z[256];
+			INT16 sy = iy + BATTLE_LOG_HEADER_H + 3;
+			const CHAR16 *pAttackerName = ( md.ubAttackerID != NOBODY && MercPtrs[md.ubAttackerID] ) ? MercPtrs[md.ubAttackerID]->GetName() : L"unknown";
+			const CHAR16 *pTargetName = ( md.ubTargetID != NOBODY && MercPtrs[md.ubTargetID] ) ? MercPtrs[md.ubTargetID]->GetName() : L"target";
+			const CHAR16 *pAttackType = md.fBlade ? L"BLADE" : L"HAND-TO-HAND";
+			const CHAR16 *pHitLocation = L"torso";
+			if ( md.ubAimLocation == AIM_SHOT_HEAD ) pHitLocation = L"head";
+			else if ( md.ubAimLocation == AIM_SHOT_LEGS ) pHitLocation = L"legs";
+
+			BattleLogPrintInspectorLine( ix + 6, iy + 4, FONT_MCOLOR_LTYELLOW, L"MELEE HIT CHANCE" );
+			swprintf( z, L"%s -> %s | %s", pAttackerName, pTargetName, pAttackType );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
+			swprintf( z, L"Chance %d%% | roll %d -> HIT", md.sHitChance, md.sRoll );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGREEN, z ); sy += lineH;
+			swprintf( z, L"Hit margin %+d | damage accuracy bonus %+d%%", md.sHitMargin, md.sAccuracyPercent );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTYELLOW, z ); sy += lineH;
+			swprintf( z, L"Aim: %s | aim time %d", pHitLocation, md.ubAimTime );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
+			const CHAR16 *pWeaponName = L"unarmed";
+			if ( md.usWeapon < MAXITEMS && ShortItemNames[md.usWeapon][0] != 0 )
+				pWeaponName = ShortItemNames[md.usWeapon];
+			swprintf( z, L"Weapon: %s [item %d]", pWeaponName, md.usWeapon );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z );
+		}
+		else if ( gubBattleLogInspectorMode == BATTLELOG_INSPECTOR_MELEE_DAMAGE )
+		{
+			MELEE_DIAGNOSTIC &md = gBattleLogInspectorMeleeDiagnostic;
+			INT16 ix = inspectorX;
+			INT16 iy = inspectorY;
+			CHAR16 z[256];
+			INT16 sy = iy + BATTLE_LOG_HEADER_H + 3;
+			const CHAR16 *pAttackerName = ( md.ubAttackerID != NOBODY && MercPtrs[md.ubAttackerID] ) ? MercPtrs[md.ubAttackerID]->GetName() : L"unknown";
+			const CHAR16 *pTargetName = ( md.ubTargetID != NOBODY && MercPtrs[md.ubTargetID] ) ? MercPtrs[md.ubTargetID]->GetName() : L"target";
+			const CHAR16 *pHitLocation = L"torso";
+			if ( md.ubAimLocation == AIM_SHOT_HEAD ) pHitLocation = L"head";
+			else if ( md.ubAimLocation == AIM_SHOT_LEGS ) pHitLocation = L"legs";
+
+			BattleLogPrintInspectorLine( ix + 6, iy + 4, FONT_MCOLOR_LTGREEN, L"MELEE DAMAGE" );
+			swprintf( z, L"%s -> %s | final damage %d", pAttackerName, pTargetName, md.sFinalDamage );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
+			swprintf( z, L"Base impact: %d", md.sBaseImpact );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
+			swprintf( z, L"Hit quality: random %+d%% + accuracy %+d%% -> %d",
+				md.sFlukePercent, md.sAccuracyPercent, md.sAfterHitQuality );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTYELLOW, z ); sy += lineH;
+			swprintf( z, L"Traits/situation %+d%% | special flat %+d -> %d",
+				md.sTraitSituationPercent, md.sSpecialFlatDamage, md.sAfterBonuses );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTYELLOW, z ); sy += lineH;
+			swprintf( z, L"Damage resistance %d%% -> %d", md.sResistancePercent, md.sAfterResistance );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
+
+			if ( md.fBlade )
+			{
+				swprintf( z, L"Weapon condition modifier %d%% -> %d", md.sWeaponConditionPercent, md.sAfterCondition );
+				BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
+				swprintf( z, L"Hit location (%s) -> %d", pHitLocation, md.sAfterHitLocation );
+				BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTYELLOW, z ); sy += lineH;
+				swprintf( z, L"Surprise %+d%% -> %d", md.sSurprisePercent, md.sAfterSurprise );
+				BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
+			}
+			else
+			{
+				BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY,
+					L"Aimed location / surprise / martial bonuses are included above." ); sy += lineH;
+			}
+			swprintf( z, L"Final: %d damage", md.sFinalDamage );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGREEN, z );
+		}
+		else if ( gubBattleLogInspectorMode == BATTLELOG_INSPECTOR_DAMAGE )
 		{
 			DAMAGE_DIAGNOSTIC &dd = gBattleLogInspectorDamageDiagnostic;
 			INT16 ix = inspectorX;
@@ -1443,16 +1523,17 @@ void BattleLogAddText( UINT16 usColor, STR16 pString )
 	}
 }
 
-void BattleLogAddMeleeHit( UINT8 ubAttackerID, UINT8 ubTargetID, INT16 sDamage )
+void BattleLogAddMeleeHit( const MELEE_DIAGNOSTIC *pDiagnostic )
 {
 	BattleLogCheckSector();
 
-	if ( ubAttackerID == NOBODY || ubTargetID == NOBODY ||
-		MercPtrs[ubAttackerID] == NULL || MercPtrs[ubTargetID] == NULL )
+	if ( pDiagnostic == NULL || !pDiagnostic->fValid ||
+		pDiagnostic->ubAttackerID == NOBODY || pDiagnostic->ubTargetID == NOBODY ||
+		MercPtrs[pDiagnostic->ubAttackerID] == NULL || MercPtrs[pDiagnostic->ubTargetID] == NULL )
 		return;
 
-	BOOLEAN fAttackerPlayer = ( MercPtrs[ubAttackerID]->bTeam == gbPlayerNum );
-	BOOLEAN fTargetPlayer = ( MercPtrs[ubTargetID]->bTeam == gbPlayerNum );
+	BOOLEAN fAttackerPlayer = ( MercPtrs[pDiagnostic->ubAttackerID]->bTeam == gbPlayerNum );
+	BOOLEAN fTargetPlayer = ( MercPtrs[pDiagnostic->ubTargetID]->bTeam == gbPlayerNum );
 	if ( !fAttackerPlayer && !fTargetPlayer )
 		return;
 
@@ -1461,15 +1542,23 @@ void BattleLogAddMeleeHit( UINT8 ubAttackerID, UINT8 ubTargetID, INT16 sDamage )
 	memset( pEntry, 0, sizeof(*pEntry) );
 	pEntry->uiSequence = guiBattleLogSequence;
 	pEntry->usColor = fAttackerPlayer ? FONT_MCOLOR_LTGREEN : FONT_MCOLOR_LTRED;
+	pEntry->fClickable = TRUE;
+	pEntry->fDamageClickable = TRUE;
+	pEntry->fMelee = TRUE;
 	pEntry->ubOutcome = BATTLELOG_OUTCOME_HIT;
-	pEntry->ubActualTargetID = ubTargetID;
-	pEntry->sDamage = sDamage;
+	pEntry->ubActualTargetID = pDiagnostic->ubTargetID;
+	pEntry->sDamage = pDiagnostic->sFinalDamage;
 	pEntry->iBullet = -1;
+	pEntry->melee = *pDiagnostic;
 
-	const CHAR16 *pAttackerName = MercPtrs[ubAttackerID]->GetName();
-	const CHAR16 *pTargetName = MercPtrs[ubTargetID]->GetName();
-	swprintf( pEntry->zText, L"[%02d:%02d] %s hit %s for %d damage",
-		guiHour, guiMin, pAttackerName, pTargetName, sDamage );
+	const CHAR16 *pAttackerName = MercPtrs[pDiagnostic->ubAttackerID]->GetName();
+	const CHAR16 *pTargetName = MercPtrs[pDiagnostic->ubTargetID]->GetName();
+	CHAR16 zDamageToken[64];
+	swprintf( zDamageToken, L"%d damage", pDiagnostic->sFinalDamage );
+	swprintf( pEntry->zText, L"[%02d:%02d] %s hit %s for %s",
+		guiHour, guiMin, pAttackerName, pTargetName, zDamageToken );
+	BattleLogSetTokenRange( pEntry, L" hit ", FALSE );
+	BattleLogSetTokenRange( pEntry, zDamageToken, TRUE );
 	gusBattleLogScrollOffset = 0;
 
 	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
