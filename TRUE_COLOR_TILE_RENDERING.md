@@ -33,8 +33,13 @@ Commits:
 - `02874050` declare tactical true-colour blitter
 - `18e27cb4` shaded/Z-aware true-colour tactical blitter
 - `ffca6183` route true-colour map imagery through renderworld
-- `35d63c58` make tile surfaces prefer optional JPC replacements
-- `71b167a7` add stable 4x4 ordered RGB565 dithering for true-colour source art
+- `71b167a7` stable 4x4 ordered RGB565 dithering
+- `93dbc53b` move dithering before alpha blend and preserve full-black shade
+- `1a15b062` harden JPC frame sequencing and keep single-frame RGB at 32bpp
+- `a175cded` prevent low-alpha edge pixels from writing solid Z
+- `8db387c0` remove redundant explicit JPC fallback change (fallback was already the CreateImage default)
+- `9b848a96` keep legacy-only item/physics/erase-Z blitters away from true-colour objects
+- `0ac01ba2` preserve exact black/white channel endpoints while dithering
 
 ## Replacement archive format
 
@@ -61,6 +66,10 @@ The PNG frame count must remain compatible with the associated `foo.jsd` structu
 
 RGB (3-channel, 8-bit) and RGBA (4-channel, 8-bit) frames are accepted. A single archive must not mix indexed/paletted and true-colour frames.
 
+Frame filenames are validated as a contiguous numeric sequence beginning with `0.png`. Missing indices are rejected instead of silently compacting later frames into the wrong tile index.
+
+PNG X/Y offsets are part of tile compatibility. Remastered frames must preserve the original region offsets (PNG offset metadata) as well as frame order and dimensions where structure alignment depends on them.
+
 ## Rollout / safety
 
 ### Safe first targets
@@ -82,6 +91,8 @@ Keep legacy indexed rendering for:
 - special pixelation/obscured effects.
 
 The generic true-colour path has simple Z test/write, but does not yet reproduce every specialized 8-bit blitter.
+
+RGBA depth writes use an alpha cutout threshold: pixels below 128 alpha may blend visually but do not become solid Z blockers. Legacy-only item-outline, physics-object and erase-Z branches are guarded so true-colour objects fall through safely instead of calling 8-bit ETRLE blitters.
 
 ## Lighting
 
@@ -110,6 +121,8 @@ Decision: finish and validate the true-colour asset path first. Revisit a native
 ## Compatibility rule
 
 Deleting/renaming the optional `.jpc.7z` replacement must immediately return that tileset to the original STI renderer without a map conversion.
+
+Note: this fallback behavior already existed in `CreateImage()` before the true-colour work. No extra Tile Surface override is required.
 
 ## Next engineering work
 
