@@ -11250,6 +11250,7 @@ static SOLDIERTYPE *AISelectMilitiaConsolidationAnchor(SOLDIERTYPE *pSoldier)
 static INT8 DecideMilitiaDefensiveConsolidation(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 {
 	if (!pSoldier || pSoldier->bTeam != MILITIA_TEAM ||
+		AIForcedDisengagementActive(pSoldier) ||
 		!fCanMove || pSoldier->bActionPoints != pSoldier->bInitialActionPoints ||
 		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed)
 	{
