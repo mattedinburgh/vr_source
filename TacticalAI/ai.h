@@ -321,8 +321,8 @@ BOOLEAN AIAllowsIndependentFlank(SOLDIERTYPE *pSoldier);
 BOOLEAN AIAllowsProactiveSupport(SOLDIERTYPE *pSoldier);
 UINT8 AIDoctrineResponseLimit(SOLDIERTYPE *pSoldier);
 INT8 AIDoctrineAnchorModifier(SOLDIERTYPE *pSoldier);
-// Enemy fireteam coordination.  Fireteams are transient sector-local AI state and
-// deliberately do not alter SOLDIERTYPE/savegame layout.
+// Shared enemy/militia fireteam coordination. Fireteams are transient sector-local
+// AI state and deliberately do not alter SOLDIERTYPE/savegame layout.
 UINT8 AIFireteamId(SOLDIERTYPE *pSoldier);
 UINT8 AIFireteamAliveCount(SOLDIERTYPE *pSoldier);
 UINT8 AIFireteamCombatReadyCount(SOLDIERTYPE *pSoldier);
