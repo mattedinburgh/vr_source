@@ -6271,7 +6271,6 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	UINT8 ubExitDirection = gOppositeDirection[ ubIncomingDirection ];
 	UINT8 ubLeftDirection = (UINT8)( ( ubIncomingDirection + 6 ) % NUM_WORLD_DIRECTIONS );
 	UINT8 ubRightDirection = (UINT8)( ( ubIncomingDirection + 2 ) % NUM_WORLD_DIRECTIONS );
-	UINT8 ubVariant = (UINT8)Random( 30 );
 	UINT8 ubHeight = gAnimControl[ pSoldier->usAnimState ].ubEndHeight;
 	BOOLEAN fHadMomentum = ( ( gAnimControl[ pSoldier->usAnimState ].uiFlags & ANIM_MOVING ) != 0 );
 	UINT8 ubMomentumDirection = pSoldier->ubDirection;
@@ -6283,22 +6282,35 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	UINT8 ubRagdollLeftDirection = (UINT8)( ( ubRagdollBaseDirection + 6 ) % NUM_WORLD_DIRECTIONS );
 	UINT8 ubRagdollRightDirection = (UINT8)( ( ubRagdollBaseDirection + 2 ) % NUM_WORLD_DIRECTIONS );
 
-	// Extreme test baseline: keep all thirty variants reachable, but strongly bias
-	// the gore family toward the actual hit location so head/leg/torso hits read clearly.
-	if ( ubHitLocation == AIM_SHOT_HEAD && Random( 100 ) < 80 )
-		ubVariant = (UINT8)( 5 + Random( 5 ) );
-	else if ( ubHitLocation == AIM_SHOT_LEGS && Random( 100 ) < 75 )
-		ubVariant = (UINT8)( 15 + Random( 5 ) );
-	else if ( ubHitLocation == AIM_SHOT_TORSO && Random( 100 ) < 70 )
-		ubVariant = (UINT8)( 20 + Random( 5 ) );
+	// Physical body motion is the default spectacle. Variants 25-29 are deliberately
+	// additional fall/crumple/spin packages, not "maximum gore" packages.
+	static const UINT8 aubMotionVariants[ 9 ] = { 0, 1, 3, 4, 25, 26, 27, 28, 29 };
+	UINT8 ubVariant = aubMotionVariants[ Random( 9 ) ];
 
-	// Pseudo-ragdoll bias: a moving victim often carries his existing velocity into
-	// the death instead of snapping to a stationary pose. Hit-location gore remains
-	// independent, so this can safely override the body-motion family for testing.
-	if ( fHadMomentum && Random( 100 ) < 65 )
+	// Dismemberment is memorable because it is exceptional. Only sufficiently hard
+	// fatal hits can replace the motion-only choice with a location-biased gore family.
+	if ( sDamage >= 18 )
 	{
-		static const UINT8 aubMomentumVariants[ 6 ] = { 0, 2, 3, 4, 27, 28 };
-		ubVariant = aubMomentumVariants[ Random( 6 ) ];
+		UINT8 ubDismemberChance = ( sDamage >= 45 ) ? 55 : ( sDamage >= 30 ) ? 40 : 25;
+		if ( Random( 100 ) < ubDismemberChance )
+		{
+			if ( ubHitLocation == AIM_SHOT_HEAD )
+				ubVariant = (UINT8)( 5 + Random( 5 ) );
+			else if ( ubHitLocation == AIM_SHOT_LEGS )
+				ubVariant = (UINT8)( 15 + Random( 5 ) );
+			else if ( Random( 100 ) < 30 )
+				ubVariant = (UINT8)( 10 + Random( 5 ) ); // occasional arm loss from a catastrophic upper-body hit
+			else
+				ubVariant = (UINT8)( 20 + Random( 5 ) );
+		}
+	}
+
+	// Moving victims preferentially keep their momentum into the fall instead of
+	// snapping into a stationary gore pose.
+	if ( fHadMomentum && Random( 100 ) < 70 )
+	{
+		static const UINT8 aubMomentumVariants[ 7 ] = { 0, 3, 4, 25, 27, 28, 29 };
+		ubVariant = aubMomentumVariants[ Random( 7 ) ];
 	}
 
 	DebugMsg( TOPIC_JA2, DBG_LEVEL_3, String( "VR_FATAL variant=%u soldier=%u hitloc=%u damage=%d height=%u incomingDir=%u momentum=%u momentumDir=%u",
@@ -6349,14 +6361,10 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 			sZ = ( ubHeight == ANIM_PRONE ) ? 12 : 25;
 		}
 
-		SpawnVRDirectionalGoreSpray( pSoldier, zEffect, ubExitDirection, sZ, (INT16)( 34 + ( ubVariant % 11 ) ), 0 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI",
-			ubExitDirection, (INT16)( sZ > 6 ? sZ - 4 : sZ ), (INT16)( 41 + ( ubVariant % 9 ) ), (UINT8)( 20 + ( ubVariant % 4 ) * 15 ) );
-
-		if ( ubVariant % 3 == 0 )
-			SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, sZ, 46, 0 );
-
-		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, (UINT8)( 3 + ( ubVariant % 4 ) ) );
+		// For crouched/prone deaths, only explicit dismemberment families get an extra
+		// tissue layer. Motion-only variants rely on the body animation plus baseline mist.
+		if ( ubVariant >= 5 && ubVariant <= 24 )
+			SpawnVRDirectionalGoreSpray( pSoldier, zEffect, ubExitDirection, sZ, (INT16)( 30 + ( ubVariant % 7 ) ), 0 );
 
 		if ( ubHeight == ANIM_PRONE )
 			pSoldier->EVENT_InitNewSoldierAnim( PRONE_LAY_FROMHIT, 0, FALSE );
@@ -6567,50 +6575,29 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
 		return TRUE;
 
-	case 25: // catastrophic full-body dismemberment
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubExitDirection, 34, 30, 0 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_TORSO_GIB.STI", ubExitDirection, 31, 37, 30 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, 29, 44, 60 );
-		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 6 );
-		if ( gGameSettings.fOptions[ TOPTION_BLOOD_N_GORE ] )
-			pSoldier->EVENT_InitNewSoldierAnim( BODYEXPLODING, 0, FALSE );
-		else
-			pSoldier->ChangeToFlybackAnimation( ubIncomingDirection );
-		return TRUE;
-
-	case 26: // catastrophic crumple with mixed limb chunks
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CRUMPLE.STI", ubExitDirection, 25, 32, 0 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_ARM_GIB.STI", ubLeftDirection, 31, 39, 15 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_LEG_GIB.STI", ubRightDirection, 16, 43, 20 );
-		SoldierCollapse( pSoldier );
-		return TRUE;
-
-	case 27: // triple-layer backward blast
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_TORSO_GIB.STI", ubExitDirection, 33, 30, 0 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubExitDirection, 30, 37, 35 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, 28, 45, 70 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, 31, 48, 0 );
-		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 6 );
+	case 25: // hard backward drop: body movement, no cartoon explosion
 		pSoldier->ChangeToFlybackAnimation( ubIncomingDirection );
 		return TRUE;
 
-	case 28: // huge mist cone followed by forward collapse
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, 39, 29, 0 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, 34, 37, 35 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubExitDirection, 29, 45, 75 );
-		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 6 );
-		pSoldier->EVENT_SetSoldierDirection( ubIncomingDirection );
+	case 26: // knees give way / vertical crumple
+		SoldierCollapse( pSoldier );
+		return TRUE;
+
+	case 27: // momentum-biased left spill
+		pSoldier->EVENT_SetSoldierDirection( ubRagdollLeftDirection );
 		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
 		pSoldier->BeginTyingToFall();
 		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
 		return TRUE;
 
-	case 29: // maximum-gore finale: mixed chunks plus randomized lateral body fall
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubExitDirection, 34, 29, 0 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_HEAD_GIB.STI", ubExitDirection, 49, 35, 20 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_ARM_GIB.STI", ubLeftDirection, 33, 40, 20 );
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_LEG_GIB.STI", ubRightDirection, 17, 44, 25 );
-		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 6 );
+	case 28: // momentum-biased right spill
+		pSoldier->EVENT_SetSoldierDirection( ubRagdollRightDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 29: // loose randomized lateral collapse
 		pSoldier->EVENT_SetSoldierDirection( Random( 2 ) ? ubLeftDirection : ubRightDirection );
 		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
 		pSoldier->BeginTyingToFall();
