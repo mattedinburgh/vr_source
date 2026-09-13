@@ -1002,7 +1002,17 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		BATTLE_LOG_ENTRY *pEntry = BattleLogEntryBySequence( seq );
 		if ( pEntry )
 		{
-			BattleLogPrintClippedLine( gsBattleLogX + 6, y, gsBattleLogW - 18, pEntry->usColor, pEntry->zText );
+			INT16 sTextX = gsBattleLogX + 6;
+			INT16 sMaxWidth = gsBattleLogW - 18;
+			BattleLogPrintClippedLine( sTextX, y, sMaxWidth, pEntry->usColor, pEntry->zText );
+
+			if ( pEntry->fClickable && pEntry->zShotToken[0] != 0 && pEntry->sShotClickStart < sMaxWidth )
+				BattleLogPrintClippedLine( sTextX + pEntry->sShotClickStart, y,
+					sMaxWidth - pEntry->sShotClickStart, FONT_MCOLOR_LTYELLOW, pEntry->zShotToken );
+
+			if ( pEntry->fDamageClickable && pEntry->zDamageToken[0] != 0 && pEntry->sDamageClickStart < sMaxWidth )
+				BattleLogPrintClippedLine( sTextX + pEntry->sDamageClickStart, y,
+					sMaxWidth - pEntry->sDamageClickStart, FONT_MCOLOR_LTGREEN, pEntry->zDamageToken );
 		}
 		seq++;
 		y += lineH;
