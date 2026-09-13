@@ -8392,11 +8392,11 @@ INT32 BulletImpact( SOLDIERTYPE *pFirer, BULLET *pBullet, SOLDIERTYPE * pTarget,
 		// HEADROCK HAM 5.1: Oh sandro, you rendered zerominimumdamage moot...
 		if ( AmmoTypes[ubAmmoType].zeroMinimumDamage )
 		{
-			iImpact = __max( 0, (INT32)(iImpact * (100 - pTarget->GetDamageResistance(autoresolve, FALSE)) / 100 ) );
+			iImpact = __max( 0, (INT32)(iImpact * (100 - damageDiag.iDamageResistancePercent) / 100 ) );
 		}
 		else
 		{
-			iImpact = __max( 1, (INT32)(iImpact * (100 - pTarget->GetDamageResistance(autoresolve, FALSE)) / 100 ) );
+			iImpact = __max( 1, (INT32)(iImpact * (100 - damageDiag.iDamageResistancePercent) / 100 ) );
 		}
 
 		damageDiag.iImpactAfterResistance = iImpact;
