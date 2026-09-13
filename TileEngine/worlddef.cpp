@@ -1045,6 +1045,157 @@ static void EnsureA3FarmCowPlacements( void )
 	TraceA3FarmLoad( "COWS", zCows );
 }
 
+static void DressSanMonaEnvironment( void )
+{
+	if ( !IsSanMonaVisualProfile() || gpWorldLevelData == NULL )
+		return;
+
+	UINT32 uiStreetClutter = 0;
+	UINT32 uiVenueClutter = 0;
+	UINT32 uiEdgeDetail = 0;
+	UINT32 uiMineDecay = 0;
+	UINT32 uiRoofDetail = 0;
+
+	UINT32 uiSeed = 0x5A4D4F4Eu;
+	switch ( gubSectorVisualProfile )
+	{
+		case SECTOR_VISUAL_SAN_MONA_C5_STRIP:       uiSeed ^= 0xC50051u; break;
+		case SECTOR_VISUAL_SAN_MONA_C6_EAST:        uiSeed ^= 0xC60061u; break;
+		case SECTOR_VISUAL_SAN_MONA_D4_MINE:        uiSeed ^= 0xD40041u; break;
+		case SECTOR_VISUAL_SAN_MONA_D5_KINGPIN:     uiSeed ^= 0xD50051u; break;
+		case SECTOR_VISUAL_SAN_MONA_UNDERGROUND:    uiSeed ^= 0xD4B151u; break;
+		default: break;
+	}
+
+	for ( INT32 sGridNo = 0; sGridNo < WORLD_MAX; ++sGridNo )
+	{
+		MAP_ELEMENT *pMap = &gpWorldLevelData[ sGridNo ];
+		if ( pMap->pLandHead == NULL )
+			continue;
+
+		const UINT32 uiHash = B1VisualHash( (UINT32)sGridNo ^ uiSeed );
+
+		// Sparse rooftop utility clutter makes the city read at 1920x1080 without
+		// altering roof geometry. AddOnRoofToTail creates only a render node here;
+		// no JSD/collision structure is injected.
+		if ( pMap->pRoofHead != NULL )
+		{
+			if ( pMap->pOnRoofHead == NULL &&
+				 gubSectorVisualProfile != SECTOR_VISUAL_SAN_MONA_UNDERGROUND )
+			{
+				UINT32 uiModulo = 83;
+				if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C5_STRIP ) uiModulo = 43;
+				else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D5_KINGPIN ) uiModulo = 53;
+				else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D4_MINE ) uiModulo = 97;
+
+				if ( ((uiHash >> 4) % uiModulo) == 0 )
+				{
+					const UINT16 usRoofSubIndex = A3FarmVisualSubIndex( FIRSTONROOF, uiHash >> 13 );
+					if ( usRoofSubIndex && B1AddOnRoofVisualDecoration( sGridNo, FIRSTONROOF, usRoofSubIndex ) )
+						++uiRoofDetail;
+				}
+			}
+			continue;
+		}
+		if ( pMap->pOnRoofHead != NULL )
+			continue;
+
+		UINT32 uiLandType = 0;
+		if ( !GetTileType( pMap->pLandHead->usIndex, &uiLandType ) )
+			continue;
+
+		const BOOLEAN fRoad = B1GridHasObjectType( sGridNo, ROADPIECES );
+		const BOOLEAN fNearRoad = B1GridHasNeighbourObjectType( sGridNo, ROADPIECES );
+		const BOOLEAN fFloor = ( uiLandType >= FIRSTFLOOR && uiLandType <= LASTFLOOR );
+		const BOOLEAN fOpenGround = ( uiLandType >= FIRSTTEXTURE && uiLandType <= SEVENTHTEXTURE );
+		const BOOLEAN fNearStructure = B1GridHasNeighbourStructure( sGridNo );
+		const BOOLEAN fOccupiedStructure = ( pMap->pStructHead != NULL );
+		if ( fOccupiedStructure )
+			continue;
+
+		UINT32 uiType = DEBRISMISC;
+		UINT16 usSubIndex = 0;
+
+		if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C5_STRIP )
+		{
+			// C5: Tony/Hans, Shady Lady and bars - dense, lived-in vice strip.
+			if ( (fRoad || fNearRoad) && ((uiHash >> 3) % 31) == 0 )
+			{
+				uiType = ((uiHash >> 19) & 1) ? DEBRISMISC : DEBRIS2MISC;
+				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 7 );
+				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiStreetClutter;
+			}
+			else if ( fNearStructure && (fFloor || fOpenGround) && ((uiHash >> 8) % 23) == 0 )
+			{
+				uiType = ((uiHash >> 21) & 1) ? DEBRISWOOD : DEBRISSAND;
+				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 11 );
+				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiVenueClutter;
+			}
+		}
+		else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C6_EAST )
+		{
+			// C6: Angel and the bar - still lawless, but cleaner and more residential/commercial.
+			if ( fNearStructure && fOpenGround && ((uiHash >> 7) % 79) == 0 )
+			{
+				uiType = ((uiHash >> 20) & 1) ? DEBRISWEEDS : DEBRISGRASS;
+				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 10 );
+				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiEdgeDetail;
+			}
+			else if ( fNearRoad && ((uiHash >> 9) % 113) == 0 )
+			{
+				uiType = DEBRISMISC;
+				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 13 );
+				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiStreetClutter;
+			}
+		}
+		else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D5_KINGPIN )
+		{
+			// D5: boxing club + Kingpin compound. Controlled, expensive and intimidating, not a dump.
+			if ( fNearStructure && (fFloor || fOpenGround) && ((uiHash >> 6) % 47) == 0 )
+			{
+				uiType = ((uiHash >> 22) & 1) ? DEBRISWOOD : DEBRISMISC;
+				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 12 );
+				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiVenueClutter;
+			}
+			else if ( fNearRoad && ((uiHash >> 10) % 127) == 0 )
+			{
+				usSubIndex = A3FarmVisualSubIndex( DEBRISSAND, uiHash >> 15 );
+				if ( usSubIndex && B1AddVisualDecoration( sGridNo, DEBRISSAND, usSubIndex ) ) ++uiEdgeDetail;
+			}
+		}
+		else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D4_MINE )
+		{
+			// D4: abandoned mine / stash approach - dry rubble, timber and scrub.
+			if ( (fNearStructure || fNearRoad) && (fOpenGround || fFloor) && ((uiHash >> 5) % 29) == 0 )
+			{
+				uiType = ((uiHash >> 20) & 1) ? DEBRISROCKS : DEBRISWOOD;
+				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 9 );
+				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiMineDecay;
+			}
+			else if ( fOpenGround && ((uiHash >> 11) % 83) == 0 )
+			{
+				usSubIndex = A3FarmVisualSubIndex( DEBRISWEEDS, uiHash >> 14 );
+				if ( usSubIndex && B1AddVisualDecoration( sGridNo, DEBRISWEEDS, usSubIndex ) ) ++uiEdgeDetail;
+			}
+		}
+		else
+		{
+			// D4_B1/D5_B1: only sparse visual debris; never touch exits, stash, rooms or geometry.
+			if ( fFloor && ((uiHash >> 6) % 71) == 0 )
+			{
+				uiType = ((uiHash >> 18) & 1) ? DEBRISROCKS : DEBRISMISC;
+				usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 12 );
+				if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiMineDecay;
+			}
+		}
+	}
+
+	CHAR8 zDressing[192];
+	sprintf( zDressing, "street=%lu venue=%lu edge=%lu mine=%lu roof=%lu visual-only; authored NPC/quest geometry preserved",
+		uiStreetClutter, uiVenueClutter, uiEdgeDetail, uiMineDecay, uiRoofDetail );
+	TraceSanMonaLoad( "ENVIRONMENT DRESSING", zDressing );
+}
+
 static void DressB1OilRigEnvironment( void )
 {
 	if ( gubSectorVisualProfile != SECTOR_VISUAL_ORONEGRO_OIL_RIG || gpWorldLevelData == NULL )
