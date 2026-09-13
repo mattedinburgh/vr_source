@@ -2332,7 +2332,14 @@ BOOLEAN ValidateEnemyLoadoutPlan(const ENEMY_LOADOUT_PLAN *pPlan)
 		return FALSE;
 	}
 
-	if ( pPlan->ubAmmoMinimum > pPlan->ubAmmoMaximum ||
+	if ( pPlan->SupportProfile < ENEMY_SUPPORT_NONE ||
+		 pPlan->SupportProfile > ENEMY_SUPPORT_MORTAR )
+	{
+		return FALSE;
+	}
+
+	if ( pPlan->ubSupportAmmoMinimum > pPlan->ubSupportAmmoMaximum ||
+		 pPlan->ubAmmoMinimum > pPlan->ubAmmoMaximum ||
 		 pPlan->ubGrenadeMinimum > pPlan->ubGrenadeMaximum ||
 		 pPlan->ubSmokeMinimum > pPlan->ubSmokeMaximum ||
 		 pPlan->ubAttachmentMinimum > pPlan->ubAttachmentMaximum ||
@@ -2340,6 +2347,19 @@ BOOLEAN ValidateEnemyLoadoutPlan(const ENEMY_LOADOUT_PLAN *pPlan)
 	{
 		return FALSE;
 	}
+
+	if ( pPlan->SupportProfile == ENEMY_SUPPORT_GRENADE_LAUNCHER &&
+		 pPlan->Role != ENEMY_ROLE_GRENADIER )
+		return FALSE;
+
+	if ( (pPlan->SupportProfile == ENEMY_SUPPORT_LIGHT_AT ||
+		  pPlan->SupportProfile == ENEMY_SUPPORT_RPG) &&
+		 pPlan->Role != ENEMY_ROLE_AT_SPECIALIST )
+		return FALSE;
+
+	if ( pPlan->SupportProfile == ENEMY_SUPPORT_MORTAR &&
+		 pPlan->Role != ENEMY_ROLE_MORTAR )
+		return FALSE;
 
 	if ( pPlan->fAllowSuppressor &&
 		 pPlan->Role != ENEMY_ROLE_SCOUT &&
@@ -2435,6 +2455,48 @@ BOOLEAN ValidateEnemyLoadoutBatch(const ENEMY_LOADOUT_BATCH *pBatch)
 		usAdmins == pBatch->ubAdmins &&
 		usRegulars == pBatch->ubRegulars &&
 		usElites == pBatch->ubElites;
+}
+
+void BuildEnemyEquipmentRecommendation(
+	ENEMY_EQUIPMENT_RECOMMENDATION *pRecommendation,
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	INT8 bSoldierClass,
+	INT8 bWeaponClass,
+	UINT8 ubAttachmentCoolness,
+	UINT8 ubLBECoolness)
+{
+	if ( !pRecommendation )
+		return;
+
+	memset(pRecommendation, 0, sizeof(ENEMY_EQUIPMENT_RECOMMENDATION));
+
+	if ( !pPlan || !ValidateEnemyLoadoutPlan(pPlan) )
+		return;
+
+	pRecommendation->SupportProfile = pPlan->SupportProfile;
+	pRecommendation->ubSupportAmmoMinimum = pPlan->ubSupportAmmoMinimum;
+	pRecommendation->ubSupportAmmoMaximum = pPlan->ubSupportAmmoMaximum;
+
+	pRecommendation->usPrimaryGun = SelectBestEnemyGameGunForPlan(
+		pPlan,
+		bSoldierClass,
+		bWeaponClass);
+
+	if ( pRecommendation->usPrimaryGun > 0 )
+	{
+		BuildBestEnemyAttachmentPackageForPlan(
+			&pRecommendation->Attachments,
+			pPlan,
+			bSoldierClass,
+			pRecommendation->usPrimaryGun,
+			ubAttachmentCoolness);
+	}
+
+	BuildBestEnemyLBEPackageForPlan(
+		&pRecommendation->LBE,
+		pPlan,
+		bSoldierClass,
+		ubLBECoolness);
 }
 
 const char *EnemyLoadoutRoleName(ENEMY_LOADOUT_ROLE Role)
