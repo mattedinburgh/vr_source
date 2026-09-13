@@ -112,22 +112,32 @@ void SHOWEXCEPTION(vfs::Exception& ex)
 
 #define HANDLE_FATAL_ERROR \
 	catch(sgp::Exception &ex){ \
+		BlackBoxEvent("FATAL", "sgp::Exception: %s", ex.what()); \
+		BlackBoxCheckpoint("FATAL", "sgp::Exception: %s", ex.what()); \
 		SGP_ERROR(ex.what()); \
 		FatalError((const STR8)ex.what()); \
 		exit(0); } \
 	catch(vfs::Exception &ex){ \
+		BlackBoxEvent("FATAL", "vfs::Exception: %s", ex.getExceptionString().utf8().c_str()); \
+		BlackBoxCheckpoint("FATAL", "vfs::Exception"); \
 		SGP_ERROR(ex.what()); \
 		FatalError((const STR8)ex.getExceptionString().utf8().c_str()); \
 		exit(0); } \
 	catch(std::exception &ex){ \
+		BlackBoxEvent("FATAL", "std::exception: %s", ex.what()); \
+		BlackBoxCheckpoint("FATAL", "std::exception: %s", ex.what()); \
 		SGP_ERROR(ex.what()); \
 		FatalError((const STR8)ex.what()); \
 		exit(0); } \
 	catch(const char* msg){ \
+		BlackBoxEvent("FATAL", "exception message: %s", msg ? msg : ""); \
+		BlackBoxCheckpoint("FATAL", "%s", msg ? msg : ""); \
 		SGP_ERROR(msg); \
 		FatalError((const STR8)msg); \
 		exit(0); } \
 	catch(...){ \
+		BlackBoxEvent("FATAL", "Caught undefined exception"); \
+		BlackBoxCheckpoint("FATAL", "Caught undefined exception"); \
 		SGP_ERROR("Caught undefined exception"); \
 		FatalError("Caught undefined exception"); \
 		exit(0); }
