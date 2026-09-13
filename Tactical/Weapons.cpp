@@ -138,6 +138,49 @@ BOOLEAN gfReportHitChances = FALSE;
 // by other functions. This is mostly to assist the new Tracer Fire system...
 BOOLEAN fCalculateCTHDuringGunfire = FALSE;
 
+#define NCTH_DIAGNOSTIC_RING_SIZE 128
+NCTH_SHOT_DIAGNOSTIC gNCTHWorkingDiagnostic;
+static NCTH_SHOT_DIAGNOSTIC gNCTHShotDiagnosticRing[NCTH_DIAGNOSTIC_RING_SIZE];
+
+void NCTHBeginShotDiagnostic( SOLDIERTYPE *pShooter, INT32 sTargetGridNo, UINT8 ubAimTime, UINT8 ubAimPos, UINT16 usWeapon )
+{
+	memset( &gNCTHWorkingDiagnostic, 0, sizeof(gNCTHWorkingDiagnostic) );
+	gNCTHWorkingDiagnostic.fValid = TRUE;
+	gNCTHWorkingDiagnostic.iBullet = -1;
+	gNCTHWorkingDiagnostic.ubShooterID = pShooter ? pShooter->ubID : NOBODY;
+	gNCTHWorkingDiagnostic.ubTargetID = pShooter ? pShooter->ubTargetID : NOBODY;
+	gNCTHWorkingDiagnostic.ubAimTime = ubAimTime;
+	gNCTHWorkingDiagnostic.ubAimPos = ubAimPos;
+	gNCTHWorkingDiagnostic.ubStance = pShooter ? gAnimControl[pShooter->usAnimState].ubEndHeight : ANIM_STAND;
+	gNCTHWorkingDiagnostic.ubVolleyShot = pShooter ? pShooter->bDoBurst : 0;
+	gNCTHWorkingDiagnostic.usWeapon = usWeapon;
+	gNCTHWorkingDiagnostic.sTargetGridNo = sTargetGridNo;
+}
+
+void NCTHRegisterBulletDiagnostic( INT32 iBullet, UINT8 ubVolleyShot )
+{
+	if ( !gNCTHWorkingDiagnostic.fValid || iBullet < 0 )
+		return;
+
+	NCTH_SHOT_DIAGNOSTIC &slot = gNCTHShotDiagnosticRing[(UINT32)iBullet % NCTH_DIAGNOSTIC_RING_SIZE];
+	slot = gNCTHWorkingDiagnostic;
+	slot.iBullet = iBullet;
+	slot.ubVolleyShot = ubVolleyShot;
+}
+
+BOOLEAN NCTHGetBulletDiagnostic( INT32 iBullet, NCTH_SHOT_DIAGNOSTIC *pOut )
+{
+	if ( iBullet < 0 || pOut == NULL )
+		return FALSE;
+
+	NCTH_SHOT_DIAGNOSTIC &slot = gNCTHShotDiagnosticRing[(UINT32)iBullet % NCTH_DIAGNOSTIC_RING_SIZE];
+	if ( !slot.fValid || slot.iBullet != iBullet )
+		return FALSE;
+
+	*pOut = slot;
+	return TRUE;
+}
+
 //GLOBALS
 
 // TODO: Move strings to extern file
@@ -1807,7 +1850,15 @@ BOOLEAN UseGunNCTH( SOLDIERTYPE *pSoldier , INT32 sTargetGridNo )
 	}
 	else
 	{
-		uiMuzzleSway = 100 - CalcChanceToHitGun( pSoldier, sTargetGridNo, pSoldier->aiData.bAimTime, pSoldier->bAimShotLocation );
+		// Mark this as the real fired shot. UI/AI preview CTH calls must not overwrite
+		// the shot diagnostic that will later be attached to the physical bullet.
+		fCalculateCTHDuringGunfire = TRUE;
+		NCTHBeginShotDiagnostic( pSoldier, sTargetGridNo, pSoldier->aiData.bAimTime, pSoldier->bAimShotLocation, usUBItem );
+		UINT32 uiShotCTH = CalcChanceToHitGun( pSoldier, sTargetGridNo, pSoldier->aiData.bAimTime, pSoldier->bAimShotLocation );
+		fCalculateCTHDuringGunfire = FALSE;
+		uiMuzzleSway = 100 - uiShotCTH;
+		if ( gNCTHWorkingDiagnostic.fValid )
+			gNCTHWorkingDiagnostic.fMuzzleSway = (FLOAT)uiMuzzleSway;
 	}
 
 	//ATE: Added if we are in meanwhile, we always hit...
@@ -5509,6 +5560,13 @@ if (UsingNewCTHSystem())
 	// First calculate the basic value for BASE CTH by factoring in all the character's skills.
 	// The most important skill here is EXPERIENCE.
 	fBaseChance = CalcNewChanceToHitBaseAttributeBonus(pSoldier);
+	if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+	{
+		gNCTHWorkingDiagnostic.fBaseAttribute = fBaseChance;
+		gNCTHWorkingDiagnostic.iRange = iRange;
+		gNCTHWorkingDiagnostic.iSightRange = iSightRange;
+		gNCTHWorkingDiagnostic.fCantSeeTarget = fCantSeeTarget;
+	}
 
 	// this shooter will never hit anything
 	if ( fBaseChance <= gGameExternalOptions.ubMinimumCTH )
@@ -5517,10 +5575,16 @@ if (UsingNewCTHSystem())
 	// Add a flat Base bonus from the item and its attachments.
 	INT32 imoda = GetObjectModifier( pSoldier, pInHand, stance, ITEMMODIFIER_FLATBASE );
 	INT32 imodb = GetObjectModifier( pSoldier, pInHand, gAnimControl[ pSoldier->usAnimState ].ubEndHeight, ITEMMODIFIER_FLATBASE );
-	fBaseChance += (FLOAT)((gGameExternalOptions.ubProneModifierPercentage * imoda + (100 - gGameExternalOptions.ubProneModifierPercentage) * imodb)/100); 
+	FLOAT fFlatBase = (FLOAT)((gGameExternalOptions.ubProneModifierPercentage * imoda + (100 - gGameExternalOptions.ubProneModifierPercentage) * imodb)/100);
+	fBaseChance += fFlatBase;
+	if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+		gNCTHWorkingDiagnostic.fFlatBase = fFlatBase;
 
 	// get bonus from effects lasting on the shooter (morale, injury, shock etc.)
-	fBaseModifier += CalcNewChanceToHitBaseEffectBonus(pSoldier);
+	FLOAT fBaseEffect = CalcNewChanceToHitBaseEffectBonus(pSoldier);
+	fBaseModifier += fBaseEffect;
+	if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+		gNCTHWorkingDiagnostic.fBaseEffect = fBaseEffect;
 
 	// Handling value modified by ini
 	UINT8 ubModifiedHandling = Weapon[ usInHand ].ubHandling;
@@ -5536,17 +5600,29 @@ if (UsingNewCTHSystem())
 	FLOAT fGunAimDifficulty = fGunDifficulty;
 	
 	// get bonus from weapon handling
-	fBaseModifier += CalcNewChanceToHitBaseWeaponBonus(pSoldier, sGridNo, ubAimTime, fGunBaseDifficulty, stance);
+	FLOAT fBaseWeapon = CalcNewChanceToHitBaseWeaponBonus(pSoldier, sGridNo, ubAimTime, fGunBaseDifficulty, stance);
+	fBaseModifier += fBaseWeapon;
+	if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+		gNCTHWorkingDiagnostic.fBaseWeapon = fBaseWeapon;
 
 	// get special bonus (enemy/militia bonus, special characters, game difficulty bonus etc.)
-	fBaseModifier += CalcNewChanceToHitBaseSpecialBonus(pSoldier);
+	FLOAT fBaseSpecial = CalcNewChanceToHitBaseSpecialBonus(pSoldier);
+	fBaseModifier += fBaseSpecial;
+	if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+		gNCTHWorkingDiagnostic.fBaseSpecial = fBaseSpecial;
 
 	// get target specific bonus
-	fBaseModifier += CalcNewChanceToHitBaseTargetBonus(pSoldier, pTarget, sGridNo, iRange, ubAimPos, fCantSeeTarget);
+	FLOAT fBaseTarget = CalcNewChanceToHitBaseTargetBonus(pSoldier, pTarget, sGridNo, iRange, ubAimPos, fCantSeeTarget);
+	fBaseModifier += fBaseTarget;
+	if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+		gNCTHWorkingDiagnostic.fBaseTarget = fBaseTarget;
 
 	//CHRISL: Applying the Gear AimBonus (penalty) here, and directly to fBaseModifier as a flat penalty, instead of altering iSightRange above.  For now
 	//	I'm just applying this to the BaseModifier which means that aiming can overcome the Gear AimBonus (penalty).
-	fBaseModifier += GetGearAimBonus ( pSoldier, iSightRange, ubAimTime );
+	FLOAT fGearAim = GetGearAimBonus ( pSoldier, iSightRange, ubAimTime );
+	fBaseModifier += fGearAim;
+	if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+		gNCTHWorkingDiagnostic.fGearAim = fGearAim;
 
 	////////////////////////////////////
 	// Finish BASE CTH calculation:
@@ -5555,6 +5631,11 @@ if (UsingNewCTHSystem())
 	fBaseChance = __min( fBaseChance, 100 );
 
 	fFinalChance = fBaseChance;
+	if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+	{
+		gNCTHWorkingDiagnostic.fBaseModifier = fBaseModifier;
+		gNCTHWorkingDiagnostic.fBaseChance = fBaseChance;
+	}
 	//////////////////////////////////////////////////////////////////////////////////
 	// Second step: Calculate bonuses from aiming
 	//
@@ -5610,25 +5691,42 @@ if (UsingNewCTHSystem())
 
 		// get attribute based aiming value. 
 		// This is also the CTH cap, the absolute maximum CTH a shooter can get.
-		fAimChance = CalcNewChanceToHitAimAttributeBonus(pSoldier);		
+		fAimChance = CalcNewChanceToHitAimAttributeBonus(pSoldier);
+		if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+			gNCTHWorkingDiagnostic.fAimAttribute = fAimChance;
 
 		// get direct AimChance bonus for traits (throwing, sniper etc.)
 		FLOAT fDifference = 99 - fAimChance;
-		fAimChance += CalcNewChanceToHitAimTraitBonus(pSoldier, fAimChance, fDifference, sGridNo, ubAimTime, fScopeMagFactor, uiBestScopeRange);
+		FLOAT fAimTraitCap = CalcNewChanceToHitAimTraitBonus(pSoldier, fAimChance, fDifference, sGridNo, ubAimTime, fScopeMagFactor, uiBestScopeRange);
+		fAimChance += fAimTraitCap;
+		if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+			gNCTHWorkingDiagnostic.fAimTraitCap = fAimTraitCap;
 
 		// Add percent-based modifier from the gun and its attachments
 		FLOAT moda = (FLOAT)(fAimChance * GetObjectModifier( pSoldier, pInHand, stance, ITEMMODIFIER_PERCENTCAP ) / 100);
 		FLOAT modb = (FLOAT)(fAimChance * GetObjectModifier( pSoldier, pInHand, gAnimControl[ pSoldier->usAnimState ].ubEndHeight, ITEMMODIFIER_PERCENTCAP ) / 100);
-		fAimChance += (FLOAT)((gGameExternalOptions.ubProneModifierPercentage * moda + (100 - gGameExternalOptions.ubProneModifierPercentage) * modb)/100);
+		FLOAT fPercentCap = (FLOAT)((gGameExternalOptions.ubProneModifierPercentage * moda + (100 - gGameExternalOptions.ubProneModifierPercentage) * modb)/100);
+		fAimChance += fPercentCap;
+		if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+			gNCTHWorkingDiagnostic.fPercentCap = fPercentCap;
 
 		// get aimbonus from effects lasting on the shooter
-		fAimModifier += CalcNewChanceToHitAimEffectBonus(pSoldier);
+		FLOAT fAimEffect = CalcNewChanceToHitAimEffectBonus(pSoldier);
+		fAimModifier += fAimEffect;
+		if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+			gNCTHWorkingDiagnostic.fAimEffect = fAimEffect;
 
 		// get aimbonus from weapon handling
-		fAimModifier += CalcNewChanceToHitAimWeaponBonus(pSoldier, sGridNo, ubAimTime, fGunAimDifficulty, stance);
+		FLOAT fAimWeapon = CalcNewChanceToHitAimWeaponBonus(pSoldier, sGridNo, ubAimTime, fGunAimDifficulty, stance);
+		fAimModifier += fAimWeapon;
+		if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+			gNCTHWorkingDiagnostic.fAimWeapon = fAimWeapon;
 
 		// get special aimbonus (game difficulty etc.)
-		fAimModifier += CalcNewChanceToHitAimSpecialBonus(pSoldier);
+		FLOAT fAimSpecial = CalcNewChanceToHitAimSpecialBonus(pSoldier);
+		fAimModifier += fAimSpecial;
+		if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+			gNCTHWorkingDiagnostic.fAimSpecial = fAimSpecial;
 
 		// apply bonus from traits
 		// Flugente: moved trait modifiers into a member function
@@ -5636,20 +5734,34 @@ if (UsingNewCTHSystem())
 		if ( pTarget && pTarget->ubProfile != NO_PROFILE )
 			targetprofile = pTarget->ubProfile;
 
-		fAimModifier += pSoldier->GetTraitCTHModifier( usInHand, ubAimTime, targetprofile );
+		FLOAT fTraitModifier = pSoldier->GetTraitCTHModifier( usInHand, ubAimTime, targetprofile );
+		fAimModifier += fTraitModifier;
+		if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+			gNCTHWorkingDiagnostic.fTraitModifier = fTraitModifier;
 
 		// Flugente: backgrounds
 		if ( pTarget && pTarget->bTeam == CREATURE_TEAM )
-			fAimModifier += pSoldier->GetBackgroundValue(BG_PERC_CTH_CREATURE);
+		{
+			FLOAT fBackground = (FLOAT)pSoldier->GetBackgroundValue(BG_PERC_CTH_CREATURE);
+			fAimModifier += fBackground;
+			if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+				gNCTHWorkingDiagnostic.fBackground = fBackground;
+		}
 
 		// Flugente: if we are a sniper and a spotter from our team spots the targetted location, we receive a powerful cth bonus
 		if ( gGameOptions.fNewTraitSystem && (Weapon[usInHand].ubWeaponType == GUN_SN_RIFLE || Weapon[usInHand].ubWeaponType == GUN_RIFLE) )
 		{
-			fAimModifier += GridNoSpotterCTHBonus( pSoldier, sGridNo, pSoldier->bTeam);
+			FLOAT fSpotter = (FLOAT)GridNoSpotterCTHBonus( pSoldier, sGridNo, pSoldier->bTeam);
+			fAimModifier += fSpotter;
+			if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+				gNCTHWorkingDiagnostic.fSpotter = fSpotter;
 		}
 
 		// get aimbonus from target
-		fAimModifier += CalcNewChanceToHitAimTargetBonus(pSoldier, pTarget, sGridNo, iRange, ubAimPos, fCantSeeTarget);
+		FLOAT fAimTarget = CalcNewChanceToHitAimTargetBonus(pSoldier, pTarget, sGridNo, iRange, ubAimPos, fCantSeeTarget);
+		fAimModifier += fAimTarget;
+		if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+			gNCTHWorkingDiagnostic.fAimTarget = fAimTarget;
 
 		// silversurfer: this doesn't make sense. We always apply a penalty when we can see the target?
 		// invisible targets are already taken into account one step above in aimbonus from target
@@ -5657,13 +5769,17 @@ if (UsingNewCTHSystem())
 		// VISIBILITY
 		if (iRange > 0 && iSightRange > iRange && !fCantSeeTarget)
 		{
+			FLOAT fBeforeVisibility = fAimModifier;
 			FLOAT fTempPenalty = (FLOAT)((FLOAT)iSightRange / (FLOAT)iRange);
 			fTempPenalty = (FLOAT)(100 / fTempPenalty);
 			fAimModifier += ((100-fTempPenalty) * gGameCTHConstants.AIM_VISIBILITY)/100;
 			fAimModifier = __max( gGameCTHConstants.AIM_TARGET_INVISIBLE, fAimModifier );
+			if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+				gNCTHWorkingDiagnostic.fVisibility = fAimModifier - fBeforeVisibility;
 		}
 
 		// factor in scopes under their range
+		FLOAT fBeforeScopePenalty = fAimModifier;
 		if ( !pSoldier->IsValidAlternativeFireMode( ubAimTime, sGridNo ) )
 		{
 			if (fScopeMagFactor > 1.0 && iRange < (INT32)(uiBestScopeRange * gGameCTHConstants.AIM_TOO_CLOSE_THRESHOLD))
@@ -5681,9 +5797,14 @@ if (UsingNewCTHSystem())
 			}
 		}
 
+		if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+			gNCTHWorkingDiagnostic.fScopePenalty = fAimModifier - fBeforeScopePenalty;
+
 		// Make sure cap is within limits
 		fAimChance = __max(fAimChance, __max(0,(UINT32)fBaseChance));
 		fAimChance = __min(fAimChance, gGameExternalOptions.ubMaximumCTH);
+		if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+			gNCTHWorkingDiagnostic.fAimCap = fAimChance;
 
 		// Now figure out the distance between the Base CTH and the CTH Cap. This is the distance we'll potentially
 		// cover when applying the maximum number of aiming clicks for this gun.
@@ -5716,13 +5837,20 @@ if (UsingNewCTHSystem())
 		// Finally, add the appropriate number of CTH points to our chance-to-hit, and limit it into good values.
 		fFinalChance = __max(fBaseChance + (INT32)fAimPoints, fBaseChance);
 		fFinalChance = __min(fFinalChance, (INT32)fAimChance);
+		if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+		{
+			gNCTHWorkingDiagnostic.fAimModifier = fAimModifier;
+			gNCTHWorkingDiagnostic.fAimPoints = fAimPoints;
+		}
 	}
 		
 	// Impose global limits.	
 	// Flugente: backgrounds
 	fFinalChance = __min(fFinalChance, min(100, gGameExternalOptions.ubMaximumCTH + (UINT8)(pSoldier->GetBackgroundValue(BG_PERC_CTH_MAX))) );
 	fFinalChance = __max(fFinalChance, gGameExternalOptions.ubMinimumCTH);
-	
+
+	if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+		gNCTHWorkingDiagnostic.fFinalChance = fFinalChance;
 
 	return ((INT32)fFinalChance);
 }
@@ -9856,6 +9984,11 @@ void ShotMiss( UINT8 ubAttackerID, INT32 iBullet )
 
 	if ( fDoMissForGun )
 	{
+		// Player-facing battle log entry. The entry stores the exact runtime NCTH
+		// snapshot keyed to this bullet and can be clicked for the full breakdown.
+		if ( pAttacker->bTeam == gbPlayerNum && UsingNewCTHSystem() )
+			BattleLogAddNCTHMiss( iBullet );
+
 		// PLAY SOUND AND FLING DEBRIS
 		// RANDOMIZE SOUND SYSTEM
 
