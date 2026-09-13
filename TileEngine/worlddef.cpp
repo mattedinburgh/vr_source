@@ -611,15 +611,25 @@ BOOLEAN LoadTileSurfaces( char ppTileSurfaceFilenames[][32], UINT8 ubTilesetID )
 
 void TraceB1RemasterLoad( const STR8 pStage, const STR8 pDetail )
 {
-	FILE *pTrace = fopen( "B1_remaster_load.log", "a" );
-	if ( pTrace == NULL )
-		return;
+	const STR8 pSafeStage = ( pStage != NULL ) ? pStage : "";
+	const STR8 pSafeDetail = ( pDetail != NULL ) ? pDetail : "";
 
-	fprintf( pTrace, "%s%s%s\n", pStage != NULL ? pStage : "",
-		( pDetail != NULL && pDetail[0] != '\0' ) ? ": " : "",
-		pDetail != NULL ? pDetail : "" );
-	fflush( pTrace );
-	fclose( pTrace );
+	// Feed the global crash black box first. BlackBoxEvent is flushed on every
+	// durable event, while the checkpoint is copied into the crash report.
+	BlackBoxCheckpoint( "B1", "%s%s%s", pSafeStage,
+		pSafeDetail[0] != '\0' ? ": " : "", pSafeDetail );
+	BlackBoxEvent( "B1", "%s%s%s", pSafeStage,
+		pSafeDetail[0] != '\0' ? ": " : "", pSafeDetail );
+
+	// Keep a tiny standalone trace as a second independent breadcrumb.
+	FILE *pTrace = fopen( "B1_remaster_load.log", "a" );
+	if ( pTrace != NULL )
+	{
+		fprintf( pTrace, "%s%s%s\n", pSafeStage,
+			pSafeDetail[0] != '\0' ? ": " : "", pSafeDetail );
+		fflush( pTrace );
+		fclose( pTrace );
+	}
 }
 
 static UINT8 DetermineSectorVisualProfile( const STR8 pFilename )
