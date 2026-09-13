@@ -10629,6 +10629,9 @@ void SOLDIERTYPE::BreakWindow( void )
 	if ( !CanBreakWindow() )
 		return;
 
+	const INT16 sBreakAPCost = GetAPsToBreakWindow( this, FALSE );
+	if ( !EnoughPoints( this, sBreakAPCost, BP_USE_CROWBAR, FALSE ) )
+		return;
 	if ( this->IsDraggingBleedoutCasualty() )
 		this->StopDraggingBleedoutCasualty();
 
@@ -10642,7 +10645,7 @@ void SOLDIERTYPE::BreakWindow( void )
 	this->EVENT_InitNewSoldierAnim( CROWBAR_ATTACK, 0, FALSE );
 	SetUIBusy( this->ubID );
 
-	DeductPoints( this, GetAPsToBreakWindow( this, FALSE ), BP_USE_CROWBAR );
+	DeductPoints( this, sBreakAPCost, BP_USE_CROWBAR );
 }
 
 BOOLEAN SOLDIERTYPE::IsDraggingBleedoutCasualty( void )
