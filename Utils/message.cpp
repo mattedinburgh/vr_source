@@ -786,6 +786,14 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 			d.ubAimTime, d.fRange / (FLOAT)CELL_X_SIZE, d.fFinalChance, d.fMuzzleSway );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
 
+		swprintf( z, L"Skill: MRK %d  DEX %d  WIS %d  EXP %d | breath %d  shock %d",
+			d.bMarksmanship, d.bDexterity, d.bWisdom, d.bExperience, d.bBreath, d.bShock );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
+
+		swprintf( z, L"Handling: %d | base difficulty %.2f  aim difficulty %.2f | stance %d",
+			d.ubModifiedHandling, d.fGunBaseDifficulty, d.fGunAimDifficulty, d.ubStance );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
+
 		swprintf( z, L"Base: attributes %.1f  flat %+0.1f  -> %.1f", d.fBaseAttribute, d.fFlatBase, d.fBaseChance );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGREEN, z ); sy += lineH;
 
@@ -821,8 +829,12 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 			d.fRandomSwayX, d.fRandomSwayY, d.fTargetTrackingX, d.fTargetTrackingY );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTYELLOW, z ); sy += lineH;
 
-		swprintf( z, L"Volley: pre-recoil %+0.2f,%+0.2f | recoil %+0.2f,%+0.2f | range Y %+0.2f",
-			d.fPreRecoilX, d.fPreRecoilY, d.fRecoilX, d.fRecoilY, d.fRangeCompensationY );
+		swprintf( z, L"Volley: inherited %+0.2f,%+0.2f | recoil %+0.2f,%+0.2f",
+			d.fInheritedMuzzleX, d.fInheritedMuzzleY, d.fRecoilX, d.fRecoilY );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
+
+		swprintf( z, L"Compensation: pre-recoil %+0.2f,%+0.2f | beyond-range Y %+0.2f",
+			d.fPreRecoilX, d.fPreRecoilY, d.fRangeCompensationY );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
 
 		swprintf( z, L"Weapon dispersion: %+0.2f,%+0.2f (radius %.2f) | final %+0.2f,%+0.2f",
@@ -850,13 +862,15 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"target tracking/lead error"; }
 		candidate = d.fPreRecoilX*d.fPreRecoilX + d.fPreRecoilY*d.fPreRecoilY;
 		if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"pre-recoil compensation"; }
+		candidate = d.fInheritedMuzzleX*d.fInheritedMuzzleX + d.fInheritedMuzzleY*d.fInheritedMuzzleY;
+		if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"inherited burst direction"; }
 		candidate = d.fRecoilX*d.fRecoilX + d.fRecoilY*d.fRecoilY;
 		if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"burst/autofire recoil"; }
 		candidate = d.fRangeCompensationY*d.fRangeCompensationY;
 		if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"beyond-range compensation"; }
 		candidate = d.fDeviationX*d.fDeviationX + d.fDeviationY*d.fDeviationY;
 		if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"intrinsic weapon dispersion"; }
-		swprintf( z, L"This round deviated most from: %s | aperture quality %d%%",
+		swprintf( z, L"Largest trajectory component: %s | aperture quality %d%%",
 			physicalWhy, d.sApertureRatio );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTRED, z );
 	}
