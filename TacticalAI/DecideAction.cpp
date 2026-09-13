@@ -1193,7 +1193,7 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 
 	// sevenfm: only if not raised alert yet
 	if( !fCivilian &&
-		pSoldier->bTeam == ENEMY_TEAM &&		
+		AICombatTeam(pSoldier) &&		
 		SoldierAI(pSoldier) &&
 		gGameExternalOptions.bNewTacticalAIBehavior )
 	{
@@ -1215,10 +1215,12 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 					!TileIsOutOfBounds(pCorpse->def.sGridNo) )
 				{
 					// sevenfm: test vision
-					if( CorpseEnemyTeam(pCorpse) &&
+					if( ((pSoldier->bTeam == ENEMY_TEAM && CorpseEnemyTeam(pCorpse)) ||
+						 (pSoldier->bTeam == MILITIA_TEAM && CorpseMilitiaTeam(pCorpse))) &&
 						SoldierTo3DLocationLineOfSightTest( pSoldier, pCorpse->def.sGridNo, pCorpse->def.bLevel, 1, TRUE, CALC_FROM_WANTED_DIR ) )
 					{
-						ScreenMsg( MSG_FONT_YELLOW, MSG_INTERFACE, New113Message[MSG113_ENEMY_FOUND_DEAD_BODY]);
+						if (pSoldier->bTeam == ENEMY_TEAM)
+							ScreenMsg( MSG_FONT_YELLOW, MSG_INTERFACE, New113Message[MSG113_ENEMY_FOUND_DEAD_BODY]);
 						//pCorpse->def.ubAIWarningValue=0;
 						return( AI_ACTION_RED_ALERT );
 					}
@@ -1241,7 +1243,7 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 		////////////////////////////////////////////////////////////////////////////
 
 		// Flugente: if we see one of our buddies in handcuffs, its a clear sign of enemy activity!
-		if ( gGameExternalOptions.fAllowPrisonerSystem )
+		if ( pSoldier->bTeam == ENEMY_TEAM && gGameExternalOptions.fAllowPrisonerSystem )
 		{
 			UINT8 ubPerson = GetClosestFlaggedSoldierID( pSoldier, VISION_RANGE, ENEMY_TEAM, SOLDIER_POW, TRUE );
 
@@ -1253,7 +1255,7 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 		}
 
 		// sevenfm: officer can come to inspect suspicious soldier
-		if ( HAS_SKILL_TRAIT(pSoldier, SQUADLEADER_NT) )
+		if ( pSoldier->bTeam == ENEMY_TEAM && HAS_SKILL_TRAIT(pSoldier, SQUADLEADER_NT) )
 		{
 			UINT8 ubPerson = GetClosestFlaggedSoldierID( pSoldier, VISION_RANGE, OUR_TEAM, SOLDIER_COVERT_SOLDIER | SOLDIER_COVERT_CIV, TRUE );
 
@@ -1861,7 +1863,7 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 	sNoiseGridNo = MostImportantNoiseHeard(pSoldier, &iNoiseValue, &fClimb, &fReachable);
 	
 	if( !fCivilian &&
-		pSoldier->bTeam == ENEMY_TEAM &&
+		AICombatTeam(pSoldier) &&
 		SoldierAI(pSoldier) &&
 		gGameExternalOptions.bNewTacticalAIBehavior )
 	{
@@ -1890,11 +1892,13 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 					!TileIsOutOfBounds(pCorpse->def.sGridNo) )
 				{
 					// sevenfm: test vision
-					if( CorpseEnemyTeam(pCorpse) &&
+					if( ((pSoldier->bTeam == ENEMY_TEAM && CorpseEnemyTeam(pCorpse)) ||
+						 (pSoldier->bTeam == MILITIA_TEAM && CorpseMilitiaTeam(pCorpse))) &&
 						//PythSpacesAway( pSoldier->sGridNo, pCorpse->def.sGridNo ) <= DAY_VISION_RANGE / 2 &&
 						SoldierTo3DLocationLineOfSightTest( pSoldier, pCorpse->def.sGridNo, pCorpse->def.bLevel, 1, TRUE, CALC_FROM_WANTED_DIR ) )
 					{
-						ScreenMsg( MSG_FONT_YELLOW, MSG_INTERFACE, New113Message[MSG113_ENEMY_FOUND_DEAD_BODY]);
+						if (pSoldier->bTeam == ENEMY_TEAM)
+							ScreenMsg( MSG_FONT_YELLOW, MSG_INTERFACE, New113Message[MSG113_ENEMY_FOUND_DEAD_BODY]);
 						//pCorpse->def.ubAIWarningValue=0;
 						return( AI_ACTION_RED_ALERT );
 					}
@@ -1917,7 +1921,7 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 		////////////////////////////////////////////////////////////////////////////
 
 		// Flugente: if we see one of our buddies in handcuffs, its a clear sign of enemy activity!
-		if ( gGameExternalOptions.fAllowPrisonerSystem )
+		if ( pSoldier->bTeam == ENEMY_TEAM && gGameExternalOptions.fAllowPrisonerSystem )
 		{
 			UINT8 ubPerson = GetClosestFlaggedSoldierID( pSoldier, VISION_RANGE, ENEMY_TEAM, SOLDIER_POW, TRUE );
 
