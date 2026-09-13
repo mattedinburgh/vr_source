@@ -7687,6 +7687,12 @@ void AdjustTargetCenterPoint( SOLDIERTYPE *pShooter, INT32 iTargetGridNo, FLOAT 
 
 	// First, let's calculate the basic Aperture. This is the size of an unmodified aperture at 1x Normal Distance.
 	iBasicAperture = CalcBasicAperture( );
+	FLOAT fRawBasicAperture = iBasicAperture;
+	FLOAT fIronAperture = iBasicAperture;
+	FLOAT fLaserAperture = iBasicAperture;
+	FLOAT fLaserEffectPercent = 0.0f;
+	INT16 sDiagnosticLaserRange = 0;
+	INT8 bDiagnosticLaserLight = -1;
 
 	// Modern 1.13 NCTH uses the real shot context here, not the UI display globals.
 	FLOAT iMagFactor = CalcMagFactor( pShooter, pWeapon, d2DDistance, iTargetGridNo, (UINT8)pShooter->aiData.bAimTime );
@@ -7706,8 +7712,11 @@ void AdjustTargetCenterPoint( SOLDIERTYPE *pShooter, INT32 iTargetGridNo, FLOAT 
 			iBasicAperture = iBasicAperture * (FLOAT)( (100 - gGameCTHConstants.IRON_SIGHT_PERFORMANCE_BONUS) / 100);
 		}
 
+		fIronAperture = iBasicAperture;
+
 		// Laser bonuses are evaluated from the actual weapon, target tile and light level.
 		INT16 sLaserRange = GetBestLaserRange( pWeapon );
+		sDiagnosticLaserRange = sLaserRange;
 		if ( sLaserRange > 0
 			&& ( gGameCTHConstants.LASER_PERFORMANCE_BONUS_HIP + gGameCTHConstants.LASER_PERFORMANCE_BONUS_IRON + gGameCTHConstants.LASER_PERFORMANCE_BONUS_SCOPE != 0) )
 		{
