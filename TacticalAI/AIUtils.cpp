@@ -2155,8 +2155,8 @@ INT32 ClosestReachableFriendInTrouble(SOLDIERTYPE *pSoldier, BOOLEAN * pfClimbin
 	INT32 sPathCost, sClosestFriend = NOWHERE, sShortestPath = 1000, sClimbGridNo;
 	BOOLEAN fClimbingNecessary, fClosestClimbingNecessary = FALSE;
 	SOLDIERTYPE *pFriend;
-	UINT8 ubMyFireteamAlive = AICombatTeam(pSoldier) ?
-		AIFireteamAliveCount(pSoldier) : 0;
+	UINT8 ubMyFireteamReady = AICombatTeam(pSoldier) ?
+		AIFireteamCombatReadyCount(pSoldier) : 0;
 
 	// civilians don't really have any "friends", so they don't bother with this
 	if (PTR_CIVILIAN)
@@ -2195,7 +2195,7 @@ INT32 ClosestReachableFriendInTrouble(SOLDIERTYPE *pSoldier, BOOLEAN * pfClimbin
 		if (AICombatTeam(pSoldier) && pFriend->bTeam == pSoldier->bTeam &&
 			!AISameFireteam(pSoldier, pFriend))
 		{
-			if (ubMyFireteamAlive > 2 &&
+			if (ubMyFireteamReady > 2 &&
 				PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > __max(6, DAY_VISION_RANGE / 3))
 			{
 				continue;
@@ -2528,8 +2528,8 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 		return MORALE_FEARLESS;
 	}
 
-	UINT8 ubMyFireteamAlive = AICombatTeam(pSoldier) ?
-		AIFireteamAliveCount(pSoldier) : 0;
+	UINT8 ubMyFireteamReady = AICombatTeam(pSoldier) ?
+		AIFireteamCombatReadyCount(pSoldier) : 0;
 
 	// An enemy with no usable weapon should prioritize self-preservation instead of
 	// becoming fearless and charging an armed opponent with hands or a knife.
@@ -2655,7 +2655,7 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 			// cross-support, rather than from soldiers fighting on the far side of the map.
 			if (AICombatTeam(pSoldier) && pFriend->bTeam == pSoldier->bTeam &&
 				!AISameFireteam(pSoldier, pFriend) &&
-				ubMyFireteamAlive > 2 &&
+				ubMyFireteamReady > 2 &&
 				PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > TACTICAL_RANGE / 2)
 			{
 				continue;
