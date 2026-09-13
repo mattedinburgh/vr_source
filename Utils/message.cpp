@@ -388,6 +388,9 @@ void ClearDisplayedListOfTacticalStrings( void )
 #define BATTLELOG_OUTCOME_BLOCKED   2
 #define BATTLELOG_OUTCOME_HIT       3
 #define BATTLELOG_OUTCOME_INTERCEPT 4
+#define BATTLELOG_INSPECTOR_NONE 0
+#define BATTLELOG_INSPECTOR_SHOT 1
+#define BATTLELOG_INSPECTOR_DAMAGE 2
 
 typedef struct
 {
@@ -395,12 +398,20 @@ typedef struct
 	CHAR16 zText[640];
 	UINT16 usColor;
 	BOOLEAN fClickable;
+	BOOLEAN fDamageClickable;
+	INT16 sShotClickStart;
+	INT16 sShotClickEnd;
+	INT16 sDamageClickStart;
+	INT16 sDamageClickEnd;
+	CHAR16 zShotToken[32];
+	CHAR16 zDamageToken[64];
 	UINT8 ubOutcome;
 	UINT8 ubActualTargetID;
 	UINT8 ubBlockReason;
 	INT16 sDamage;
 	INT32 iBullet;
 	NCTH_SHOT_DIAGNOSTIC ncth;
+	DAMAGE_DIAGNOSTIC damage;
 } BATTLE_LOG_ENTRY;
 
 static BATTLE_LOG_ENTRY gBattleLogEntries[BATTLE_LOG_MAX_ENTRIES];
@@ -434,6 +445,8 @@ static MOUSE_REGION gBattleLogContentRegion;
 static MOUSE_REGION gBattleLogResizeRegion;
 static MOUSE_REGION gBattleLogInspectorRegion;
 static NCTH_SHOT_DIAGNOSTIC gBattleLogInspectorDiagnostic;
+static DAMAGE_DIAGNOSTIC gBattleLogInspectorDamageDiagnostic;
+static UINT8 gubBattleLogInspectorMode = BATTLELOG_INSPECTOR_NONE;
 static UINT32 guiBattleLogInspectorSequence = 0;
 static UINT8 gubBattleLogInspectorOutcome = BATTLELOG_OUTCOME_NONE;
 static UINT8 gubBattleLogInspectorActualTargetID = NOBODY;
