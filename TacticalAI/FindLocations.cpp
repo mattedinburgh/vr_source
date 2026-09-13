@@ -381,8 +381,11 @@ INT32 CalcCoverValue(SOLDIERTYPE *pMe, INT32 sMyGridNo, INT32 iMyThreat, INT32 i
 	// normally, that will be the cover I'll use, unless worst case over-rides it
 	bHisCTGT = bHisActualCTGT;
 
-	// only calculate his best case CTGT if there is room for improvement!
-	if (bHisActualCTGT < 100)
+	// Only a personally current contact gets adjacent-movement best-case CTGT. A stale
+	// contact is evaluated from its remembered tile so hidden mobility/collapse state
+	// cannot improve or reduce the cover score.
+	
+	if (fHisStateKnown && bHisActualCTGT < 100)
 	{
 		// if we didn't remember his real gridno earlier up above, we got to now,
 		// because calculating worst case is about to play with it in a big way!		
