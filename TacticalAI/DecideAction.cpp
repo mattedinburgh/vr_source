@@ -11000,7 +11000,7 @@ static BOOLEAN AIValidMilitiaConsolidationAnchor(SOLDIERTYPE *pSoldier, SOLDIERT
 	}
 
 	// Strongpoints need actual local mass, not a lone survivor in good cover.
-	if (CountNearbyFriends(pFriend, pFriend->sGridNo, DAY_VISION_RANGE / 4) < 2)
+	if (AICountNearbyOperationalFriends(pFriend, pFriend->sGridNo, DAY_VISION_RANGE / 4) < 2)
 		return FALSE;
 
 	return TRUE;
@@ -11051,7 +11051,7 @@ static SOLDIERTYPE *AISelectMilitiaConsolidationAnchor(SOLDIERTYPE *pSoldier)
 		if (!AIValidMilitiaConsolidationAnchor(pSoldier, pFriend))
 			continue;
 
-		UINT8 ubSupport = CountNearbyFriends(pFriend, pFriend->sGridNo, DAY_VISION_RANGE / 4);
+		UINT8 ubSupport = AICountNearbyOperationalFriends(pFriend, pFriend->sGridNo, DAY_VISION_RANGE / 4);
 		UINT16 usExposure = AIKnownThreatExposure(pSoldier, pFriend->sGridNo, pFriend->pathing.bLevel);
 		UINT8 ubAdjacent = NumberOfTeamMatesAdjacent(pFriend, pFriend->sGridNo);
 		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
