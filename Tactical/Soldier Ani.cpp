@@ -80,6 +80,7 @@ class SOLDIERTYPE;
 BOOLEAN		gfLastMercTalkedAboutKillingID = NOBODY;
 
 extern void AddFuelToVehicle( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pVehicle );
+extern void BattlefieldVoiceNotifyEnemyManDown( SOLDIERTYPE *pDeadSoldier );
 
 
 DOUBLE		gHopFenceForwardSEDist[ NUMSOLDIERBODYTYPES ] = { 2.2, 0.7, 3.2, 0.7 };
@@ -3832,6 +3833,10 @@ BOOLEAN HandleSoldierDeath( SOLDIERTYPE *pSoldier , BOOLEAN *pfMadeCorpse )
 			else if(pSoldier->bTeam <6 && ((gTacticalStatus.ubTopMessageType == PLAYER_TURN_MESSAGE) || (gTacticalStatus.ubTopMessageType == PLAYER_INTERRUPT_MESSAGE)))
 				send_death(pSoldier);						
 		}
+
+		// Battlefield chatter: surviving nearby Spanish-speaking Army troops can
+		// react to a man going down.  The helper owns probability/cooldown checks.
+		BattlefieldVoiceNotifyEnemyManDown( pSoldier );
 
 		// anv: enemy taunts after kill
 		SOLDIERTYPE *pKillerSoldier = NULL;
