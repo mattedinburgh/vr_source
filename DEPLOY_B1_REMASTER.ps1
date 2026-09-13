@@ -1,5 +1,5 @@
 param(
-    [string]$GameRoot = "C:\\VENGENCE\\Jagged Alliance 2"
+    [string]$GameRoot = "C:\VENGENCE\Jagged Alliance 2"
 )
 
 $ErrorActionPreference = "Stop"
@@ -9,7 +9,7 @@ $Repo = "mattedinburgh/vr_gamedir"
 $Branch = "install/all-2026-09-12"
 $ApiUrl = "https://api.github.com/repos/$Repo/contents/Data-Maps-Tiles/Tilesets/50?ref=install%2Fall-2026-09-12"
 $Headers = @{ "User-Agent" = "JA2-Vengeance-B1-Remaster-Deployer" }
-$TargetDir = Join-Path $GameRoot "Data-Maps-Tiles\\Tilesets\\50"
+$TargetDir = Join-Path $GameRoot "Data-Maps-Tiles\TILESETS\50"
 
 Write-Host ""
 Write-Host "=== Vengeance B1 remaster deployment ==="
@@ -29,26 +29,28 @@ if (-not (Test-Path $Exe)) {
 New-Item -ItemType Directory -Path $TargetDir -Force | Out-Null
 
 Write-Host "Reading B1 asset manifest from GitHub..."
-$Listing = Invoke-RestMethod -Uri $ApiUrl -Headers $Headers -UseBasicParsing
+$Listing = Invoke-RestMethod -Uri $ApiUrl -Headers $Headers
 
 $Assets = @(
     $Listing | Where-Object {
-        ($_.name -match '^B1_.*\\.(sti|jsd|b1tc)$') -or
-        ($_.name -match '^(Oil_Debris|Oil_decal)\\.b1tc$')
+        ($_.name -match '^B1_.*\.(sti|jsd|b1tc)$') -or
+        ($_.name -match '^(Oil_Debris|Oil_decal)\.b1tc$')
     } | Sort-Object name
 )
 
-if ($Assets.Count -lt 54) {
-    throw "Expected at least 54 B1 remaster files, found only $($Assets.Count). Deployment aborted."
+if ($Assets.Count -ne 54) {
+    throw "Expected exactly 54 B1 remaster files from the audited branch, found $($Assets.Count). Deployment aborted."
 }
 
 $Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$BackupDir = Join-Path $GameRoot "B1_Remaster_Backup\\$Stamp"
-$Existing = Get-ChildItem -Path $TargetDir -File -ErrorAction SilentlyContinue |
-    Where-Object {
-        ($_.Name -match '^B1_.*\\.(sti|jsd|b1tc)$') -or
-        ($_.Name -match '^(Oil_Debris|Oil_decal)\\.b1tc$')
-    }
+$BackupDir = Join-Path $GameRoot "B1_Remaster_Backup\$Stamp"
+$Existing = @(
+    Get-ChildItem -Path $TargetDir -File -ErrorAction SilentlyContinue |
+        Where-Object {
+            ($_.Name -match '^B1_.*\.(sti|jsd|b1tc)$') -or
+            ($_.Name -match '^(Oil_Debris|Oil_decal)\.b1tc$')
+        }
+)
 
 if ($Existing.Count -gt 0) {
     New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
