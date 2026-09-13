@@ -910,6 +910,12 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 		}
 
 		fSectorReplacementLoaded = TRUE;
+
+		// Shade-table caches are keyed by TileSurfaceFilenames[], not by the actual
+		// file passed to LoadTileSurface().  Keep B1 replacements on their own cache
+		// key so a stock tileset .sha cannot be reused with the remastered palette.
+		strncpy( TileSurfaceFilenames[ ubType ], cFileBPP, sizeof( TileSurfaceFilenames[ ubType ] ) - 1 );
+		TileSurfaceFilenames[ ubType ][ sizeof( TileSurfaceFilenames[ ubType ] ) - 1 ] = 0;
 	}
 
 	TileSurf->fType							= ubType;
