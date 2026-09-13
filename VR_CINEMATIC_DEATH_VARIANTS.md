@@ -80,3 +80,17 @@ The system uses the bundled assets already deployed by `DEPLOY_GORE.ps1`:
 ## Important limitation
 
 These are 30 distinct in-game death sequences assembled from the real JA2 merc motion states plus direction, displacement and gore layers. They are not 30 newly hand-drawn full-body sprite-sheet animation sets. The current Vengeance game data does not contain 30 unused human merc death sprite sheets to expose directly.
+
+## Pseudo-ragdoll and sprinkler pass
+
+Current extreme-test behaviour also includes:
+
+- moving victims preserve their travel direction as momentum for a large share of fatal reactions;
+- momentum-biased deaths prefer face-plants, side spins, hard flybacks and mist-cone collapses;
+- all displacement continues through JA2's existing blocked-tile checks;
+- every fatal gunshot receives an extreme gore envelope before its individual variant: dense local blood, a long thinning trail, tissue chunks and a hit-location-specific head/leg/torso layer;
+- blood projection now uses many small delayed droplets with slight directional jitter ("sprinkler") rather than one broad heavy fan;
+- heavy spray layers in the fatal pack were replaced by medium/small layered sprays;
+- gore animation tiles render two shade levels darker than default and ground blood decals three shade levels darker, producing a deeper/darker red without changing terrain or character palettes.
+
+This remains an intentionally exaggerated test configuration. Frequency, displacement, gore volume and damage/weapon scaling are deferred until the visual system is proven stable.
