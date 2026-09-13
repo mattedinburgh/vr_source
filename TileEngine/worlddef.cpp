@@ -124,6 +124,7 @@ BOOLEAN					gfForceLoad		= FALSE;
 UINT8						gubCurrentLevel;
 INT32						giCurrentTilesetID = 0;
 CHAR8						gzLastLoadedFile[ 260 ];
+BOOLEAN					gfMapPreviewCaptureMode = FALSE;
 
 UINT32			gCurrentBackground = FIRSTTEXTURE;
 
@@ -5445,7 +5446,7 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	uiLoadWorldTime = GetJA2Clock() - uiLoadWorldStartTime;
 #endif
 	// ATE: Not while updating maps!
-	if(guiCurrentScreen != MAPUTILITY_SCREEN)
+	if(guiCurrentScreen != MAPUTILITY_SCREEN || gfMapPreviewCaptureMode)
 	{
 		GenerateBuildings();
 
