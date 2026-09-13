@@ -258,7 +258,7 @@ static void TrueColorApplyRGB565Dither(UINT8 *pubRed, UINT8 *pubGreen, UINT8 *pu
 
 BOOLEAN BltTrueColorDataTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue,
 	HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion,
-	UINT8 ubShadeLevel, BOOLEAN fZTest, BOOLEAN fZWrite)
+	UINT8 ubShadeLevel, BOOLEAN fZTest, BOOLEAN fZWrite, BOOLEAN fObscured)
 {
 	Assert(pBuffer != NULL);
 	Assert(hSrcVObject != NULL);
@@ -327,10 +327,24 @@ BOOLEAN BltTrueColorDataTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, 
 				continue;
 			}
 
-			if(fZTest && pZ != NULL && usZValue < *pZ)
+			BOOLEAN fBlockedByZ = FALSE;
+			if(fZTest && pZ != NULL)
 			{
-				++pZ;
-				continue;
+				if(fObscured)
+				{
+					// Legacy obscured blitters pixelate on equal-or-higher Z.
+					fBlockedByZ = (*pZ >= usZValue);
+					if(fBlockedByZ && ((x & 1) != (y & 1)))
+					{
+						++pZ;
+						continue;
+					}
+				}
+				else if(usZValue < *pZ)
+				{
+					++pZ;
+					continue;
+				}
 			}
 
 			ubRed = TrueColorScaleChannel(ubRed, usShadeScale);
@@ -365,7 +379,9 @@ BOOLEAN BltTrueColorDataTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, 
 				// Alpha-blended edge pixels should not become solid depth blockers.
 				// Lower-alpha pixels may blend visually but only cutout-strength pixels
 				// write Z, matching normal alpha-tested rendering expectations.
-				if(fZWrite && ubAlpha >= 128)
+				// Obscured checkerboard pixels are visual hints only; the legacy
+				// simple-Z blitter leaves the higher/equal Z value intact there.
+				if(fZWrite && ubAlpha >= 128 && !fBlockedByZ)
 					*pZ = usZValue;
 				++pZ;
 			}
