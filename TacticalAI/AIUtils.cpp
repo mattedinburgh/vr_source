@@ -4846,7 +4846,30 @@ static BOOLEAN AIEnemyResponderEligible(SOLDIERTYPE *pSoldier)
 		pSoldier->aiData.bOrders != SNIPER;
 }
 
-static UINT8 AIFireteamDeployableCountById(UINT8 ubFireteam)
+static BOOLEAN AIEnemyResponderAvailableForContact(SOLDIERTYPE *pSoldier, INT32 sContactSpot)
+{
+	if (!AIEnemyResponderEligible(pSoldier) || TileIsOutOfBounds(sContactSpot))
+		return FALSE;
+
+	BOOLEAN fEngaged = pSoldier->aiData.bUnderFire ||
+		pSoldier->aiData.bOppCnt > 0 ||
+		GuySawEnemy(pSoldier, SEEN_LAST_TURN);
+	if (!fEngaged)
+		return TRUE;
+
+	// A fireteam already committed to a different local fight must not be counted
+	// as available QRF strength for this contact. Use only this soldier's legitimate
+	// known-opponent location; if direct fire is coming from an unknown source, count
+	// the soldier only when he is already physically in this contact's immediate area.
+	INT32 sOwnContact = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	if (!TileIsOutOfBounds(sOwnContact))
+		return PythSpacesAway(sOwnContact, sContactSpot) <= TACTICAL_RANGE / 2;
+
+	return PythSpacesAway(pSoldier->sGridNo, sContactSpot) <=
+		__max(6, DAY_VISION_RANGE / 4);
+}
+
+static UINT8 AIFireteamDeployableCountById(UINT8 ubFireteam, INT32 sContactSpot)
 {
 	if (ubFireteam == AI_FIRETEAM_NONE)
 		return 0;
@@ -4856,7 +4879,7 @@ static UINT8 AIFireteamDeployableCountById(UINT8 ubFireteam)
 		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
-		if (!AIEnemyResponderEligible(pFriend) ||
+		if (!AIEnemyResponderAvailableForContact(pFriend, sContactSpot) ||
 			pFriend->ubID >= MAX_NUM_SOLDIERS ||
 			guiAIFireteamIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
 			gubAIFireteam[pFriend->ubID] != ubFireteam)
@@ -4875,7 +4898,7 @@ static INT32 AIFireteamDeployableDistanceToSpot(UINT8 ubFireteam, INT32 sSpot)
 		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
-		if (!AIEnemyResponderEligible(pFriend) ||
+		if (!AIEnemyResponderAvailableForContact(pFriend, sSpot) ||
 			pFriend->ubID >= MAX_NUM_SOLDIERS ||
 			guiAIFireteamIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
 			gubAIFireteam[pFriend->ubID] != ubFireteam)
@@ -4901,7 +4924,7 @@ BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, U
 		return TRUE;
 
 	UINT8 ubMine = AIFireteamId(pSoldier);
-	UINT8 ubMyReady = AIFireteamDeployableCountById(ubMine);
+	UINT8 ubMyReady = AIFireteamDeployableCountById(ubMine, sContactSpot);
 	if (ubMyReady == 0)
 		return TRUE;
 
@@ -4913,7 +4936,7 @@ BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, U
 		if (ubTeam == ubMine)
 			continue;
 
-		UINT8 ubReady = AIFireteamDeployableCountById(ubTeam);
+		UINT8 ubReady = AIFireteamDeployableCountById(ubTeam, sContactSpot);
 		if (ubReady == 0)
 			continue;
 
