@@ -1307,7 +1307,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 							pTMilitiaSoldier->aiData.bOrders = STATIONARY;
 							pTMilitiaSoldier->aiData.bAttitude = DEFENSIVE;
 							// sevenfm: set this spot as original point
-							pTMilitiaSoldier->aiData.sPatrolGrid[0] = pTMilitiaSoldier->sGridNo;
+							pTeamSoldier->aiData.sPatrolGrid[0] = pTeamSoldier->sGridNo;
 						}
 
 						if ( GetSoldier( &pSoldier, gusSelectedSoldier )  )
@@ -1386,7 +1386,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 								sGridNo = pSoldier->sGridNo;
 
 								// See if we can get there
-								sActionGridNo =  FindAdjacentGridEx( pSoldier, sGridNo, &ubDirection, &sAdjustedGridNo, TRUE, FALSE );
+								sActionGridNo =  FindAdjacentGridEx( pTMilitiaSoldier, sGridNo, &ubDirection, &sAdjustedGridNo, TRUE, FALSE );
 								if ( sActionGridNo != -1 )
 								{
 									// sevenfm: change from stationary/patrol etc
@@ -1487,10 +1487,11 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 
 							// sevenfm: make soldier defensive to take cover instead of attacking
 							pTMilitiaSoldier->aiData.bAttitude = DEFENSIVE;
-							pTMilitiaSoldier->aiData.bAIMorale = MORALE_WORRIED;
+							// Keep the militia soldier's actual morale. A player cover order is a tactical
+							// instruction, not a morale-state rewrite.
 
 							//sActionGridNo =  FindBestNearbyCover(pTMilitiaSoldier,pTMilitiaSoldier->aiData.bAIMorale,&iDummy);
-							sActionGridNo =  FindBestNearbyCover(pTMilitiaSoldier,MORALE_WORRIED,&iDummy);
+							sActionGridNo =  FindBestNearbyCover(pTMilitiaSoldier,pTMilitiaSoldier->aiData.bAIMorale,&iDummy);
 							
 							if (!TileIsOutOfBounds(sActionGridNo))
 							{
@@ -1672,7 +1673,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 									sGridNo = pSoldier->sGridNo;
 
 									// See if we can get there
-									sActionGridNo =  FindAdjacentGridEx( pSoldier, sGridNo, &ubDirection, &sAdjustedGridNo, TRUE, FALSE );
+									sActionGridNo =  FindAdjacentGridEx( pTeamSoldier, sGridNo, &ubDirection, &sAdjustedGridNo, TRUE, FALSE );
 									if ( sActionGridNo != -1 )
 									{
 										// sevenfm: change from stationary/patrol etc
@@ -1851,11 +1852,11 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 							{
 								// sevenfm: make soldier defensive to take cover instead of attacking
 								pTeamSoldier->aiData.bAttitude = DEFENSIVE;
-								pTeamSoldier->aiData.bAIMorale = MORALE_WORRIED;
+								// Keep actual morale; the explicit player order already tells the AI to prioritize cover.
 
 								// See if we can get there
 								//sActionGridNo =  FindBestNearbyCover(pTeamSoldier,pTeamSoldier->aiData.bAIMorale,&iDummy);
-								sActionGridNo =  FindBestNearbyCover(pTeamSoldier,MORALE_WORRIED,&iDummy);
+								sActionGridNo =  FindBestNearbyCover(pTeamSoldier,pTeamSoldier->aiData.bAIMorale,&iDummy);
 																
 								if (!TileIsOutOfBounds(sActionGridNo))
 								{
