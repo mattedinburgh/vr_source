@@ -193,7 +193,7 @@ BOOLEAN Blt32BPPTo16BPPTransClip(UINT16 *pDest, UINT32 uiDestPitch, UINT32 *pSrc
 
 // True-colour tactical tile blitter. Keeps the legacy 16-bit framebuffer/Z-buffer
 // while allowing 16/32-bit source imagery and applying the normal JA2 shade levels.
-BOOLEAN BltTrueColorDataTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion, UINT8 ubShadeLevel, BOOLEAN fZTest, BOOLEAN fZWrite);
+BOOLEAN BltTrueColorDataTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion, UINT8 ubShadeLevel, BOOLEAN fZTest, BOOLEAN fZWrite, BOOLEAN fObscured);
 BOOLEAN BltTrueColorDataTo16BPPBufferZStrip(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion, UINT8 ubShadeLevel, INT16 sZStripIndex, UINT16 usZStripDelta, BOOLEAN fSameZBurnsThrough, BOOLEAN fObscured, BOOLEAN fZWrite);
 BOOLEAN BltTrueColorMaskTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion, BOOLEAN fIntensity, BOOLEAN fZTest, BOOLEAN fZWrite);
 BOOLEAN Blt32BPPTo16BPPTransShadow(UINT16 *pDest, UINT32 uiDestPitch, UINT32 *pSrc, UINT32 uiSrcPitch, INT32 iDestXPos, INT32 iDestYPos, INT32 iSrcXPos, INT32 iSrcYPos, UINT32 uiWidth, UINT32 uiHeight);
