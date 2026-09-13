@@ -9349,10 +9349,14 @@ UINT32 CountSuspicionValue( SOLDIERTYPE *pSoldier )
 			// calculate basic value 
 
 			uiValue = 1 + SoldierDifficultyLevel( pOpponent );
-			// add bonus for squad leader
+			// Command personnel scrutinise suspicious behaviour more effectively.
 			if (HAS_SKILL_TRAIT( pOpponent, SQUADLEADER_NT ) )
 			{
 				uiValue += NUM_SKILL_TRAITS( pOpponent, SQUADLEADER_NT );
+			}
+			else if ( pOpponent->usSoldierFlagMask & SOLDIER_ENEMY_OFFICER )
+			{
+				uiValue += 1;
 			}
 			// bonus when using flashlight
 			if ( pSoldier->GetBestEquippedFlashLightRange() > 0 )
