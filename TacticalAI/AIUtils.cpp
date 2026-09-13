@@ -5001,112 +5001,24 @@ BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, U
 
 // Defined with the escape-state helpers below; forward declaration is needed
 // because remnant cohesion deliberately outranks stale escape intent.
-static void AIClearEscapeState(SOLDIERTYPE *pSoldier);
-
-INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
+static void AIClearEscapeState(SOLDIERTYPE *pSoldier)
 {
-	if (!fCanMove || !gfTurnBasedAI || !AIEnemyFireteamEligible(pSoldier) ||
-		pSoldier->stats.bLife < OKLIFE ||
-		pSoldier->bCollapsed ||
-		pSoldier->bBreathCollapsed ||
-		(pSoldier->flags.uiStatusFlags & SOLDIER_COWERING) ||
-		pSoldier->aiData.bOrders == STATIONARY ||
-		pSoldier->aiData.bOrders == SNIPER)
-		return AI_ACTION_NONE;
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return;
 
-	// A shattered one/two-man element gets first refusal on joining a viable
-	// neighbouring fireteam. Only if no such element exists should ordinary
-	// disengagement/escape logic take over.
-	UINT8 ubBefore = AIFireteamRegroupingStrength(pSoldier);
-	BOOLEAN fWasRemnant = (ubBefore > 0 && ubBefore <= 2);
-	if (fWasRemnant)
-		AIAbsorbFireteamRemnant(pSoldier);
+	gubAIEscapeIntent[pSoldier->ubID] = 0;
+	guiAIEscapeIdentity[pSoldier->ubID] = pSoldier->uiUniqueSoldierIdValue;
+	guiAIEscapeStartTurn[pSoldier->ubID] = 0;
 
-	BOOLEAN fRecentlyReattached = AIRecentlyReattachedFireteamRemnant(pSoldier);
-
-	if (!fRecentlyReattached &&
-		(pSoldier->aiData.bUnderFire || pSoldier->aiData.bOppCnt > 0 ||
-		 pSoldier->IsFlanking() ||
-		 AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier) ||
-		 GuySawEnemy(pSoldier, SEEN_LAST_TURN)))
+	// Regrouping or recovery can cancel escape after a soldier has already reached
+	// a strategic map edge. Disarm a stale traversal quote as part of clearing the
+	// enemy escape state so a successfully reattached soldier cannot still leave.
+	if (pSoldier->bTeam == ENEMY_TEAM && pSoldier->ubProfile == NO_PROFILE &&
+		pSoldier->ubQuoteActionID >= QUOTE_ACTION_ID_TRAVERSE_EAST &&
+		pSoldier->ubQuoteActionID <= QUOTE_ACTION_ID_TRAVERSE_NORTH)
 	{
-		return AI_ACTION_NONE;
+		pSoldier->ubQuoteActionID = 0;
 	}
-
-	// Reattachment is a tactical regroup, not a rout. If a stale escape intent was
-	// acquired earlier in the same collapse episode, cancel it while the soldier
-	// has a viable new element to join.
-	if (fRecentlyReattached && AIEscapeActive(pSoldier))
-		AIClearEscapeState(pSoldier);
-
-	SOLDIERTYPE *pAnchor = NULL;
-	INT32 iBest = 10000;
-	BOOLEAN fEngagedAnchor = FALSE;
-	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
-	{
-		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
-		if (!pFriend || pFriend == pSoldier || !AIEnemyFireteamEligible(pFriend) ||
-			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
-			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
-			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
-			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend) ||
-			!AISameFireteam(pSoldier, pFriend))
-			continue;
-		BOOLEAN fEngaged = pFriend->aiData.bUnderFire || pFriend->aiData.bOppCnt > 0 || GuySawEnemy(pFriend, SEEN_LAST_TURN);
-		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
-		if (fEngaged && (!fEngagedAnchor || iDistance < iBest))
-		{
-			fEngagedAnchor = TRUE; pAnchor = pFriend; iBest = iDistance;
-		}
-		else if (!fEngagedAnchor && iDistance < iBest)
-		{
-			pAnchor = pFriend; iBest = iDistance;
-		}
-	}
-
-	if (!pAnchor || (!fWasRemnant && !fRecentlyReattached && !fEngagedAnchor))
-		return AI_ACTION_NONE;
-	if (iBest <= __max(8, DAY_VISION_RANGE / 2))
-		return AI_ACTION_NONE;
-
-	BOOLEAN fCautiousMove = fEngagedAnchor || fRecentlyReattached ||
-		pSoldier->aiData.bUnderFire || pSoldier->aiData.bOppCnt > 0;
-	INT8 bReserveAP = fCautiousMove ?
-		(GetAPsCrouch(pSoldier, TRUE) + GetAPsToLook(pSoldier)) : 0;
-	UINT8 ubFlags = fCautiousMove ? FLAG_CAUTIOUS : 0;
-
-	pSoldier->aiData.usActionData = InternalGoAsFarAsPossibleTowards(
-		pSoldier, pAnchor->sGridNo, bReserveAP, AI_ACTION_SEEK_FRIEND, ubFlags);
-
-	if (TileIsOutOfBounds(pSoldier->aiData.usActionData) ||
-		pSoldier->aiData.usActionData == pSoldier->sGridNo)
-	{
-		return AI_ACTION_NONE;
-	}
-
-	if (!CheckNPCDestination(pSoldier, pSoldier->aiData.usActionData))
-		return AI_ACTION_NONE;
-
-	if (fCautiousMove)
-	{
-		UINT16 usCurrentExposure = AIKnownThreatExposure(
-			pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
-		UINT16 usMoveExposure = AIKnownThreatExposure(
-			pSoldier, pSoldier->aiData.usActionData, pSoldier->pathing.bLevel);
-
-		// A regrouping remnant may accept some temporary exposure to reach mutual
-		// support, but never sprint through a clearly worse known kill zone.
-		UINT16 usAllowedIncrease = fRecentlyReattached ? 90 : 150;
-		if (usMoveExposure > usCurrentExposure + usAllowedIncrease &&
-			!AnyCoverAtSpot(pSoldier, pSoldier->aiData.usActionData))
-		{
-			return AI_ACTION_NONE;
-		}
-
-		pSoldier->aiData.fAIFlags |= AI_CAUTIOUS;
-	}
-
-	return AI_ACTION_SEEK_FRIEND;
 }
 
 // Chunk 1: battlefield-situation awareness. These helpers expose information to
@@ -5573,26 +5485,25 @@ static UINT8 AICountCommittedEnemyEscapes(SOLDIERTYPE *pExclude)
 
 static UINT8 AIEscapeIntentLimit(void)
 {
-	UINT8 ubReady = 0;
-	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	UINT8 ubLivingFighters = 0;
+	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
 	{
-		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
-		if (pFriend && pFriend->bActive && pFriend->bInSector &&
-			pFriend->stats.bLife >= OKLIFE &&
-			!pFriend->bCollapsed && !pFriend->bBreathCollapsed &&
-			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
-			!(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) &&
-			!AIDisengagementActive(pFriend) && !AIEscapeActive(pFriend))
+		SOLDIERTYPE *pFriend = MercPtrs[i];
+		if (pFriend && pFriend->bTeam == ENEMY_TEAM && pFriend->bActive && pFriend->bInSector &&
+			pFriend->stats.bLife >= OKLIFE && !pFriend->bCollapsed && !pFriend->bBreathCollapsed &&
+			!(pFriend->usSoldierFlagMask & SOLDIER_POW))
 		{
-			++ubReady;
+			// Cowering, disengaging and already-escaping soldiers are still living
+			// fighters for the purpose of opening the third runner slot. Temporary
+			// local withdrawal must not make a sizeable force look like a three-man remnant.
+			++ubLivingFighters;
 		}
 	}
 
-	// Two runners is the normal ceiling. A third is reserved for true end-stage
-	// collapse: either only three combat-capable troops remain or the enemy force
-	// has already suffered overwhelming sector losses. Never permit more than three.
-	if (ubReady <= 3 || TeamPercentKilled(ENEMY_TEAM) >= 75)
+	// A third runner is only permitted in the true end game: no more than three
+	// viable enemy fighters remain in-sector, or the force has already suffered
+	// overwhelming sector losses. Never permit more than three.
+	if (ubLivingFighters <= 3 || TeamPercentKilled(ENEMY_TEAM) >= 75)
 		return AI_ESCAPE_ABSOLUTE_LIMIT;
 
 	return AI_ESCAPE_NORMAL_LIMIT;
