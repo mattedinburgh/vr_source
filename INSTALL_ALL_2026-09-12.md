@@ -102,6 +102,40 @@ Future upstream JA2 1.13 AI work is governed by `TacticalAI/AI_PORTING_POLICY.md
 Correctness, path/AP safety, grenade correctness, crash fixes, performance and
 diagnostics may be reviewed for porting. Tactical doctrine/behaviour changes are
 frozen unless explicitly designed and audited for this Vengeance architecture.
+## Cross-system hardening — 2026-09-14
+
+The integration branch was audited as a whole after the combat, casualty, retreat,
+presentation and LOBOT systems were combined. The following interaction faults were
+corrected:
+
+- Battle victory can no longer leave a hostile bleed-out casualty alive when the
+  prisoner system is disabled. POW-enabled games still stabilize/capture the casualty;
+  POW-disabled games release the temporary bleed-out protection and use the legacy
+  incapacitated-enemy cleanup. This preserves pursuit-sector retreat locks and sector
+  ownership invariants.
+- Eligible fatal gunshots now have one visual owner: the VR 30-way fatal dispatcher runs
+  before legacy head-explode/flyback special branches. Legacy fall/JFK paths remain only
+  as fallbacks for cases the VR dispatcher intentionally excludes, and no longer stack a
+  second VR gore package.
+- Bleed-out/drag state is explicitly save-versioned as version 152. Versions 147-151
+  consume the historical 20 filler bytes without interpreting them, preventing plausible
+  legacy filler values from becoming fake casualties or drag links.
+- Visible-equipment deployment is pinned to a fixed 1.13 gamedir revision instead of
+  moving `master`, while retaining case-resolved asset discovery and the READY marker
+  runtime gate.
+- NCTH movement range evaluation now searches the same available scope-mode catalogue as
+  firing logic rather than judging a position only through `USE_BEST_SCOPE`.
+- Allied casualty callouts share a six-second battlefield medic-call cooldown, and agony
+  reactions receive short spacing so several simultaneous casualties do not produce
+  overlapping voice spam.
+- Civilian murder/loyalty handling was re-audited and deliberately left unchanged:
+  existing Vengeance logic already attributes player/enemy/rebel/monster responsibility,
+  considers witnesses/false blame and scales the loyalty effect accordingly.
+
+A self-hosted Release/Win32 integration-build workflow now syntax-checks deployment
+PowerShell and compiles the Vengeance executable on relevant source pushes. It never
+launches normal gameplay.
+
 ## Build gate
 
 There is no repository CI build configured for this branch. A local Windows Visual Studio **Rebuild Solution** is still required before treating the executable as compiler-verified.
