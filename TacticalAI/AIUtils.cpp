@@ -6387,7 +6387,15 @@ BOOLEAN AIAllowsIndependentFlank(SOLDIERTYPE *pSoldier)
 
 BOOLEAN AIAllowsProactiveSupport(SOLDIERTYPE *pSoldier)
 {
-	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+	if (!pSoldier)
+		return FALSE;
+
+	// A soldier who is already breaking contact may still return fire, but should
+	// not spend the turn preparing a new offensive support task.
+	if (AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier))
+		return FALSE;
+
+	if (pSoldier->bTeam != ENEMY_TEAM)
 		return TRUE;
 
 	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
