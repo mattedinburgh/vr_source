@@ -59,6 +59,8 @@
 	#include "editscreen.h"
 	#include "Arms Dealer Init.h"
 #endif
+#include "LogicalBodyTypes/PaletteDB.h"
+
 #include "MPXmlTeams.hpp"
 #include "Strategic Mines LUA.h"
 #include "UndergroundInit.h"
@@ -418,11 +420,18 @@ BOOLEAN LoadExternalGameplayData(STR directoryName)
 
 		SGP_THROW_IFFALSE(Layers::Instance().LoadFromFile(directoryName, LBT_LAYERSFILENAME, errorBuf), errorBuf);
 
-		// Visible-equipment is an optional overlay. A malformed or incomplete
-		// AnimationSurfaces catalog must not prevent Vengeance from starting.
-		// If surface loading fails, skip LBT filters/body mappings for this run;
-		// native Vengeance animation rendering remains active.
-		if ( !SurfaceDB::Instance().LoadFromFile(directoryName, LBT_ANIMSURFACESFILENAME, errorBuf) )
+		// 1.13 LOBOT equipment sprites use palette tables declared by LayerProp
+		// (for example palette="hats").  Loading surfaces/body mappings without
+		// Palettes.xml renders the raw source colours and produces visibly wrong
+		// armour/helmet overlays.
+		if ( !PaletteDB::Instance().LoadFromFile(directoryName, LBT_PALETTESFILENAME, errorBuf) )
+		{
+			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, errorBuf );
+			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, "LOBOT palette load failed; visible equipment disabled for this run." );
+		}
+		// Visible-equipment is optional. A malformed or incomplete surface catalog
+		// must not prevent Vengeance from starting.
+		else if ( !SurfaceDB::Instance().LoadFromFile(directoryName, LBT_ANIMSURFACESFILENAME, errorBuf) )
 		{
 			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, errorBuf );
 			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, "LOBOT AnimationSurfaces load failed; visible equipment disabled for this run." );
