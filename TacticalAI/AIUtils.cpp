@@ -7266,7 +7266,8 @@ UINT8 AITargetSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 // and actual fire lanes), so it does not grant the AI hidden information.
 BOOLEAN AIFriendNeedsCoveringFire(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID)
 {
-	if (!pSoldier || ubOpponentID == NOBODY || !MercPtrs[ubOpponentID])
+	if (!pSoldier || ubOpponentID == NOBODY || !MercPtrs[ubOpponentID] ||
+		AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier))
 		return FALSE;
 for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; iCounter++)
