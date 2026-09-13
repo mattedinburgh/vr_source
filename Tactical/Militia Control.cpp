@@ -337,6 +337,7 @@ void ResetMilitia()
 			Inventory inv;
 			INT32 sGridNo;
 			INT8 bLevel;
+			UINT8 ubSoldierClass;
 		};
 
 		std::vector<MilitiaInventorySnapshot> preservedInventories;
@@ -359,6 +360,7 @@ void ResetMilitia()
 				snapshot.inv = pMilitia->inv;
 				snapshot.sGridNo = pMilitia->sGridNo;
 				snapshot.bLevel = pMilitia->pathing.bLevel;
+				snapshot.ubSoldierClass = pMilitia->ubSoldierClass;
 				preservedInventories.push_back( snapshot );
 			}
 			else
@@ -382,7 +384,6 @@ void ResetMilitia()
 		AddSoldierInitListMilitia( ubNumGreen, ubNumReg, ubNumVet );
 		gfMilitiaTacticalResetInProgress = FALSE;
 
-		UINT16 usPreservedIndex = 0;
 		for ( UINT32 cnt = gTacticalStatus.Team[MILITIA_TEAM].bFirstID;
 			  cnt <= gTacticalStatus.Team[MILITIA_TEAM].bLastID; ++cnt )
 		{
@@ -394,9 +395,22 @@ void ResetMilitia()
 				continue;
 			}
 
-			if ( usPreservedIndex < preservedInventories.size() )
+			INT32 iSnapshot = -1;
+			for ( UINT32 i = 0; i < preservedInventories.size(); ++i )
 			{
-				pMilitia->inv = preservedInventories[usPreservedIndex++].inv;
+				if ( preservedInventories[i].ubSoldierClass == pMilitia->ubSoldierClass )
+				{
+					iSnapshot = (INT32)i;
+					break;
+				}
+			}
+			if ( iSnapshot == -1 && !preservedInventories.empty() )
+				iSnapshot = 0;
+
+			if ( iSnapshot != -1 )
+			{
+				pMilitia->inv = preservedInventories[iSnapshot].inv;
+				preservedInventories.erase( preservedInventories.begin() + iSnapshot );
 				pMilitia->usSoldierFlagMask &= ~SOLDIER_EQUIPMENT_DROPPED;
 				pMilitia->HandleFlashLights();
 			}
@@ -417,9 +431,10 @@ void ResetMilitia()
 		// Defensive fallback: if map placement limits unexpectedly created fewer
 		// militia than requested, return any unmatched sector-issued items instead
 		// of losing them when the temporary snapshots are destroyed.
-		while ( usPreservedIndex < preservedInventories.size() )
+		while ( !preservedInventories.empty() )
 		{
-			MilitiaInventorySnapshot &snapshot = preservedInventories[usPreservedIndex++];
+			MilitiaInventorySnapshot snapshot = preservedInventories.back();
+			preservedInventories.pop_back();
 			UINT8 invSize = (UINT8)snapshot.inv.size();
 			for ( UINT8 slot = 0; slot < invSize; ++slot )
 			{
