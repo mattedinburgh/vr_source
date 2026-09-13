@@ -1150,7 +1150,7 @@ BOOLEAN CloseEnoughForGrenadeToss( INT32 sGridNo, INT32 sGridNo2 )
 	return( TRUE );
 }
 
-static UINT8 AIRecentTossSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bTargetLevel)
+UINT8 AIRecentTossSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bTargetLevel)
 {
 	if (!pSoldier || TileIsOutOfBounds(sTargetSpot))
 		return 0;
