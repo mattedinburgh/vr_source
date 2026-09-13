@@ -8091,11 +8091,12 @@ static INT32 AIVisibleTargetNCTHQuality(SOLDIERTYPE *pSoldier, INT32 sTargetSpot
 	pSoldier->bScopeMode = USE_BEST_SCOPE;
 
 	INT16 sMinAttackAP = MinAPsToAttack(pSoldier, sTargetSpot, ADDTURNCOST, 0, TRUE);
-	INT32 iBestQuality = 0;
+	INT32 iBestQuality = -1;
 	// A zero-aim shot is still a valid practical firing solution when the minimum
 	// attack cost consumes all remaining AP. Do not misclassify it as 'cannot shoot'.
 	if (sMinAttackAP > 0 && sMinAttackAP <= pSoldier->bActionPoints)
 	{
+		iBestQuality = 0;
 		INT8 bAimLevels = CalcAimingLevelsAvailableWithAP(
 			pSoldier, sTargetSpot, (INT8)__max(0, pSoldier->bActionPoints - sMinAttackAP));
 
