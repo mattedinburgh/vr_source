@@ -4523,14 +4523,17 @@ static INT32 AIFireteamMergeDistance(UINT8 ubFirst, UINT8 ubSecond, SOLDIERTYPE 
 	return iBest;
 }
 
-static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
+static UINT8 AISelectFireteamRemnantDestination(SOLDIERTYPE *pSoldier, UINT8 *pubOld)
 {
+	if (pubOld)
+		*pubOld = AI_FIRETEAM_NONE;
 	if (!AIEnemyFireteamEligible(pSoldier))
-		return FALSE;
+		return AI_FIRETEAM_NONE;
+
 	UINT8 ubOld = AIFireteamId(pSoldier);
 	UINT8 ubReady = AIFireteamRegroupingStrength(pSoldier);
-	if (ubReady == 0 || ubReady > 2)
-		return FALSE;
+	if (ubOld == AI_FIRETEAM_NONE || ubReady == 0 || ubReady > 2)
+		return AI_FIRETEAM_NONE;
 
 	UINT8 ubBest = AI_FIRETEAM_NONE;
 	INT32 iBest = 10000;
@@ -4544,23 +4547,16 @@ static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 		if (ubTeam == ubOld || ubTargetReady == 0)
 			continue;
 
-		// Two battered elements may rebuild one viable team together (1+2, 2+1,
-		// 2+2). Do not merge two lone survivors into another fragile two-man remnant.
-		if (ubTargetReady + ubReady < 3)
+		if (ubTargetReady + ubReady < 3 ||
+			ubTargetReady + ubReady > AI_FIRETEAM_MAX_MERGED)
+		{
 			continue;
-
-		// Merge capacity is combat strength, not body count. Downed casualties move
-		// with the remnant for cohesion/rescue, but they do not block survivors
-		// from joining a viable element.
-		if (ubTargetReady + ubReady > AI_FIRETEAM_MAX_MERGED)
-			continue;
+		}
 
 		INT32 iDistance = AIFireteamMergeDistance(ubOld, ubTeam, pSoldier);
 		if (iDistance >= 10000)
 			continue;
 
-		// Prefer a compatible mission element when two destinations are similarly
-		// close, but never let role preference overwhelm geography.
 		if (AIFireteamPredominantlyFixed(ubTeam) != fOldFixed)
 			iDistance += 8;
 
@@ -4570,7 +4566,22 @@ static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 			ubBest = ubTeam;
 		}
 	}
-	if (ubBest == AI_FIRETEAM_NONE)
+
+	if (ubBest != AI_FIRETEAM_NONE && pubOld)
+		*pubOld = ubOld;
+	return ubBest;
+}
+
+static BOOLEAN AICanAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
+{
+	return AISelectFireteamRemnantDestination(pSoldier, NULL) != AI_FIRETEAM_NONE;
+}
+
+static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
+{
+	UINT8 ubOld = AI_FIRETEAM_NONE;
+	UINT8 ubBest = AISelectFireteamRemnantDestination(pSoldier, &ubOld);
+	if (ubBest == AI_FIRETEAM_NONE || ubOld == AI_FIRETEAM_NONE)
 		return FALSE;
 
 	UINT32 uiRejoinUntil = guiTurnCnt + 3;
@@ -4587,7 +4598,6 @@ static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 	}
 	return TRUE;
 }
-
 static BOOLEAN AIRecentlyReattachedFireteamRemnant(SOLDIERTYPE *pSoldier)
 {
 	if (!AIEnemyFireteamEligible(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
@@ -5697,7 +5707,7 @@ BOOLEAN AIShouldStartEscape(SOLDIERTYPE *pSoldier)
 	// even considered a sector runner.
 	if (AIRecentlyReattachedFireteamRemnant(pSoldier))
 		return FALSE;
-	if (AIFireteamRegroupingStrength(pSoldier) <= 2 && AIAbsorbFireteamRemnant(pSoldier))
+	if (AIFireteamRegroupingStrength(pSoldier) <= 2 && AICanAbsorbFireteamRemnant(pSoldier))
 		return FALSE;
 
 	if (AICountCommittedEnemyEscapes(pSoldier) >= AIEscapeIntentLimit())
