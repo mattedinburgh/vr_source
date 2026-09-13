@@ -399,6 +399,7 @@ enum
 // 0x08000000 intentionally left free for forward compatibility with newer 1.13.
 #define SOLDIER_VIP							0x10000000	//268435456	// enemy General / strategic VIP
 #define SOLDIER_BODYGUARD					0x20000000	//536870912	// assigned protector of an enemy General
+#define SOLDIER_COVERT_TEMPORARY_OVERT		0x40000000	//1073741824	// covert actor recently performed an overt/suspicious action
 /*#define PLAYER_NET_3_LVL_3		0x04000000	//67108864
 #define PLAYER_NET_4_LVL_3		0x08000000	//134217728
 
@@ -596,6 +597,9 @@ enum {
 
 // Flugente: certain skills/traits/taints require a cooldown timer 
 enum {
+	SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_SECONDS = 0,
+	SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_APS,
+
 	SOLDIER_COOLDOWN_MAX = 20,				// enough space for fillers
 };
 
@@ -2052,6 +2056,7 @@ BOOLEAN IsValidArtilleryOrderSector( INT16 sSectorX, INT16 sSectorY, INT8 bSecto
 BOOLEAN SectorJammed();
 BOOLEAN PlayerTeamIsScanning();
 UINT16	GridNoSpotterCTHBonus( SOLDIERTYPE* pSniper, INT32 sGridNo, UINT bTeam);				// bonus for snipers firing at this location (we get this if there are spotters)
+UINT16	GetSuspiciousAnimationAPDuration( UINT16 usAnimation );			// covert overt-state duration in AP for suspicious animations
 
 //typedef struct
 class OLDSOLDIERTYPE_101
