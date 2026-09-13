@@ -3378,17 +3378,19 @@ UINT8 SoldierDifficultyLevel( SOLDIERTYPE * pSoldier )
 			bDifficulty = bDifficultyBase + 1;
 			break;
 
-		// hard code militia;
+		// Militia use the same AI-skill tier progression as enemy human troops.
+		// CalcDifficultyModifier() already applies the intended militia-specific
+		// game-difficulty/progress/location scaling, so do not hard-code their AI level.
 		case SOLDIER_CLASS_GREEN_MILITIA:
-			bDifficulty = 2;
+			bDifficulty = bDifficultyBase - 1;
 			break;
 
 		case SOLDIER_CLASS_REG_MILITIA:
-			bDifficulty = 3;
+			bDifficulty = bDifficultyBase;
 			break;
 
 		case SOLDIER_CLASS_ELITE_MILITIA:
-			bDifficulty = 4;
+			bDifficulty = bDifficultyBase + 1;
 			break;
 
 		case SOLDIER_CLASS_ZOMBIE:
