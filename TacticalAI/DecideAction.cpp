@@ -2899,6 +2899,22 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			return bDisengageAction;
 	}
 
+	// Emergency concealment and anti-clustering must happen before long-range attack
+	// setup; otherwise RED soldiers can spend the turn sniping/mortaring while an
+	// exposed casualty or grenade-vulnerable cluster still needs immediate protection.
+	if (AICombatTeam(pSoldier))
+	{
+		INT8 bSmokeAction = DecideEmergencyProtectionSmoke(pSoldier);
+		if (bSmokeAction != AI_ACTION_NONE)
+			return bSmokeAction;
+	}
+	if (ubCanMove && AICombatTeam(pSoldier))
+	{
+		INT8 bDisperseAction = DecideCombatDispersion(pSoldier);
+		if (bDisperseAction != AI_ACTION_NONE)
+			return bDisperseAction;
+	}
+
 	// If we don't have a gun, enemy combatants may scavenge one when the local
 	// situation makes that movement reasonable. Militia never loot ground/sector
 	// items during a fight; they fight with the equipment they entered with.
@@ -3498,32 +3514,6 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 	}
 
 
-	// Emergency smoke can create the safe window needed for casualty treatment or
-	// a heavily suppressed soldier's disengagement.
-	if (AICombatTeam(pSoldier))
-	{
-		INT8 bSmokeAction = DecideEmergencyProtectionSmoke(pSoldier);
-		if (bSmokeAction != AI_ACTION_NONE)
-			return bSmokeAction;
-	}
-
-	// If several soldiers are packed together under fire, break the cluster before
-	// ordinary withdrawal/offensive logic makes them easy grenade targets.
-	if (ubCanMove && AICombatTeam(pSoldier))
-	{
-		INT8 bDisperseAction = DecideCombatDispersion(pSoldier);
-		if (bDisperseAction != AI_ACTION_NONE)
-			return bDisperseAction;
-	}
-	// A soldier whose own element is engaged closes back toward that element
-	// before independently wandering into another fight. One/two-man remnants
-	// are absorbed into the nearest viable element by this same helper.
-	if (AICombatTeam(pSoldier))
-	{
-		INT8 bCohesionAction = DecideFireteamCohesionAction(pSoldier, ubCanMove);
-		if (bCohesionAction != AI_ACTION_NONE)
-			return bCohesionAction;
-	}
 
 	// If the local fight has collapsed, stop initiating attacks into superior known
 	// opposition. This uses only Chunk 1 perceived knowledge and existing withdrawal/cover.
