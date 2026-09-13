@@ -9955,12 +9955,8 @@ BOOLEAN SOLDIERTYPE::CanDragBleedoutCasualty( SOLDIERTYPE *pCasualty )
 		pCasualty->ubServiceCount > 0 || SpacesAway( this->sGridNo, pCasualty->sGridNo ) != 1 )
 		return FALSE;
 
-	// Current 1.13 drag-person rules reject non-human body types and do not
-	// allow grabbing somebody through a solid wall or closed door.
-	if ( pCasualty->ubBodyType >= COW || pCasualty->ubBodyType == QUEENMONSTER ||
-		(pCasualty->flags.uiStatusFlags & (SOLDIER_VEHICLE | SOLDIER_ROBOT)) )
-		return FALSE;
-
+	// Do not allow grabbing somebody through water, a solid wall or a closed door.
+	// Target body-type legality is centralized in IsCarryableLivingCasualty().
 	if ( this->MercInHighWater() || pCasualty->MercInHighWater() )
 		return FALSE;
 
@@ -10066,7 +10062,7 @@ void SOLDIERTYPE::ClearBleedoutDragLinks( void )
 	{
 		SOLDIERTYPE *pRescuer = MercPtrs[ this->ubDraggedByID ];
 		if ( pRescuer && pRescuer->ubDraggedCasualtyID == this->ubID )
-			pRescuer->ubDraggedCasualtyID = NOBODY;
+			pRescuer->StopDraggingBleedoutCasualty();
 	}
 	this->ubDraggedByID = NOBODY;
 }
