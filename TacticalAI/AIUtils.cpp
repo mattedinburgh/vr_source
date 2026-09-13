@@ -5519,23 +5519,19 @@ static INT8 gbAIEscapeSectorZ = -1;
 #define AI_ESCAPE_NORMAL_LIMIT 2
 #define AI_ESCAPE_ABSOLUTE_LIMIT 3
 
-static UINT8 AICountActiveEnemyEscapes(SOLDIERTYPE *pExclude)
+static UINT8 AICountCommittedEnemyEscapes(SOLDIERTYPE *pExclude)
 {
 	UINT8 ubCount = 0;
-	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
-		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	for (UINT16 ubID = 0; ubID < MAX_NUM_SOLDIERS; ++ubID)
 	{
-		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
-		if (!pFriend || pFriend == pExclude || pFriend->ubID >= MAX_NUM_SOLDIERS ||
-			guiAIEscapeIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
-			gubAIEscapeIntent[pFriend->ubID] == 0)
-		{
+		if (pExclude && ubID == pExclude->ubID)
 			continue;
-		}
+		if (gubAIEscapeIntent[ubID] == 0 || guiAIEscapeIdentity[ubID] == 0)
+			continue;
 
-		// Keep counting a committed runner after he physically traverses off-map.
-		// Otherwise each departure frees a slot and a long rout can leak far more
-		// than the intended two (three only in end-stage collapse) out of one battle.
+		// Count the committed state itself, not whether a tactical soldier object is
+		// still active/in-sector. A runner who already traversed off-map therefore
+		// continues to occupy one of this battle's scarce escape slots.
 		++ubCount;
 	}
 	return ubCount;
@@ -5702,7 +5698,7 @@ BOOLEAN AIShouldStartEscape(SOLDIERTYPE *pSoldier)
 	if (AIFireteamRegroupingStrength(pSoldier) <= 2 && AIAbsorbFireteamRemnant(pSoldier))
 		return FALSE;
 
-	if (AICountActiveEnemyEscapes(pSoldier) >= AIEscapeIntentLimit())
+	if (AICountCommittedEnemyEscapes(pSoldier) >= AIEscapeIntentLimit())
 		return FALSE;
 
 	INT8 bSituation = AIBattleSituation(pSoldier);
@@ -5775,7 +5771,7 @@ static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituati
 		// Escape is deliberately scarce. Once the local force has its two runners
 		// (three only in true end-stage collapse), additional shaken soldiers must
 		// withdraw tactically, regroup, or keep fighting instead of streaming off-map.
-		if (AICountActiveEnemyEscapes(pSoldier) >= AIEscapeIntentLimit())
+		if (AICountCommittedEnemyEscapes(pSoldier) >= AIEscapeIntentLimit())
 			return;
 
 		gubAIEscapeIntent[ubID] = 1;
