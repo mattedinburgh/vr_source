@@ -5983,6 +5983,19 @@ BOOLEAN AIDisengagementActive(SOLDIERTYPE *pSoldier)
 		gubAIDisengageTurns[pSoldier->ubID] > 0);
 }
 
+BOOLEAN AIForcedDisengagementActive(SOLDIERTYPE *pSoldier)
+{
+	AIMaintainDisengagementTimeline();
+
+	if (!AICombatTeam(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return FALSE;
+
+	if (guiAIDisengageIdentity[pSoldier->ubID] != pSoldier->uiUniqueSoldierIdValue)
+		return FALSE;
+
+	return gubAIForcedDisengageTurns[pSoldier->ubID] > 0;
+}
+
 void AIForceDisengagementState(SOLDIERTYPE *pSoldier, UINT8 ubTurns)
 {
 	AIMaintainDisengagementTimeline();
