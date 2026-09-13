@@ -767,7 +767,8 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 	SetFontBackground( FONT_MCOLOR_BLACK );
 	SetFontShadow( DEFAULT_SHADOW );
 	BattleLogPrintInspectorLine( gsBattleLogX + 6, gsBattleLogY + 4, FONT_MCOLOR_WHITE, L"BATTLE LOG" );
-	BattleLogPrintInspectorLine( gsBattleLogX + 82, gsBattleLogY + 4, FONT_MCOLOR_LTGRAY, L"ALL  |  COMBAT  |  SQUAD  |  RADIO" );
+	BattleLogPrintClippedLine( gsBattleLogX + 76, gsBattleLogY + 4, gsBattleLogW - 108,
+		FONT_MCOLOR_LTGRAY, L"drag | wheel | click shot" );
 	BattleLogPrintInspectorLine( gsBattleLogX + gsBattleLogW - 26, gsBattleLogY + 4, FONT_MCOLOR_LTGRAY, L"::" );
 
 	UINT32 endExclusive = 0;
