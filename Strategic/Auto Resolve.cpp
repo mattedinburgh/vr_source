@@ -2607,8 +2607,10 @@ void CreateAutoResolveInterface()
 
 void RemoveAutoResolveInterface( BOOLEAN fDeleteForGood )
 {
-	if( fDeleteForGood && gpAR && gpAR->ubBattleStatus != BATTLE_IN_PROGRESS )
+	if( fDeleteForGood && gpAR && gpAR->ubBattleStatus == BATTLE_VICTORY )
 	{
+		// A defeat leaves surviving pursued escapees in the sector, so their
+		// no-second-retreat lock must remain for the next engagement.
 		ClearEnemyRetreatLockInSector( gpAR->ubSectorX, gpAR->ubSectorY );
 	}
 
