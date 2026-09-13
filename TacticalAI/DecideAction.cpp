@@ -1298,6 +1298,31 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 			}
 		}
 
+		// Covert suspicion 25-49: guards have noticed something odd, but do not treat the target as hostile.
+		// They may turn to watch, providing visible feedback without triggering an investigation or global alert.
+		if ( pSoldier->bTeam == ENEMY_TEAM )
+		{
+			UINT8 ubWatchedPerson = GetClosestFlaggedSoldierID( pSoldier, VISION_RANGE, OUR_TEAM,
+				SOLDIER_COVERT_SOLDIER | SOLDIER_COVERT_CIV, TRUE );
+
+			if ( ubWatchedPerson != NOBODY &&
+				pSoldier->pathing.bLevel == MercPtrs[ubWatchedPerson]->pathing.bLevel &&
+				pSoldier->aiData.bOppList[ubWatchedPerson] == SEEN_CURRENTLY )
+			{
+				UINT8 ubSuspicion = MercPtrs[ubWatchedPerson]->SuspicionPercent();
+				if ( ubSuspicion >= 25 && ubSuspicion < 50 && Random(100) < ubSuspicion )
+				{
+					UINT8 ubWatchDir = atan8( CenterX(pSoldier->sGridNo), CenterY(pSoldier->sGridNo),
+						CenterX(MercPtrs[ubWatchedPerson]->sGridNo), CenterY(MercPtrs[ubWatchedPerson]->sGridNo) );
+					if ( pSoldier->ubDirection != ubWatchDir )
+					{
+						pSoldier->aiData.usActionData = ubWatchDir;
+						return AI_ACTION_CHANGE_FACING;
+					}
+				}
+			}
+		}
+
 		// sevenfm: officer can come to inspect suspicious soldier
 		if ( pSoldier->bTeam == ENEMY_TEAM && HAS_SKILL_TRAIT(pSoldier, SQUADLEADER_NT) )
 		{
@@ -2020,6 +2045,31 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 						{
 							return(AI_ACTION_SEEK_FRIEND);
 						}
+					}
+				}
+			}
+		}
+
+		// Covert suspicion 25-49: guards have noticed something odd, but do not treat the target as hostile.
+		// They may turn to watch, providing visible feedback without triggering an investigation or global alert.
+		if ( pSoldier->bTeam == ENEMY_TEAM )
+		{
+			UINT8 ubWatchedPerson = GetClosestFlaggedSoldierID( pSoldier, VISION_RANGE, OUR_TEAM,
+				SOLDIER_COVERT_SOLDIER | SOLDIER_COVERT_CIV, TRUE );
+
+			if ( ubWatchedPerson != NOBODY &&
+				pSoldier->pathing.bLevel == MercPtrs[ubWatchedPerson]->pathing.bLevel &&
+				pSoldier->aiData.bOppList[ubWatchedPerson] == SEEN_CURRENTLY )
+			{
+				UINT8 ubSuspicion = MercPtrs[ubWatchedPerson]->SuspicionPercent();
+				if ( ubSuspicion >= 25 && ubSuspicion < 50 && Random(100) < ubSuspicion )
+				{
+					UINT8 ubWatchDir = atan8( CenterX(pSoldier->sGridNo), CenterY(pSoldier->sGridNo),
+						CenterX(MercPtrs[ubWatchedPerson]->sGridNo), CenterY(MercPtrs[ubWatchedPerson]->sGridNo) );
+					if ( pSoldier->ubDirection != ubWatchDir )
+					{
+						pSoldier->aiData.usActionData = ubWatchDir;
+						return AI_ACTION_CHANGE_FACING;
 					}
 				}
 			}
