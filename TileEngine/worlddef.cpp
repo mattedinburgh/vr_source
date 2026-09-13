@@ -1122,9 +1122,25 @@ static void DressA3FarmEnvironment( void )
 
 		if ( fOpenFarmGround && ubFieldZone != 0 && !fNearStructure && !fNearTrail && fCropMarker )
 		{
-			const UINT32 uiType = ((uiHash >> 18) & 1) ? DEBRISGRASS : DEBRISWEEDS;
-			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 7 );
-			if ( usSubIndex && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) ) ++uiCropRows;
+			// Reusable VR_CROP_MASTER uses all ten standard decoration frames:
+			// 1-3 dense/tall, 4-5 medium, 6 sparse, 7 harvested stubble,
+			// 8 trampled, 9 field edge and 10 wet/tall crop.
+			UINT16 usSubIndex = 1;
+			switch ( ubFieldZone )
+			{
+				case 1: usSubIndex = (UINT16)(1 + ((uiHash >> 7) % 3)); break;       // thick mature crop
+				case 2: usSubIndex = (UINT16)(3 + ((uiHash >> 9) % 3)); break;       // medium rows
+				case 3: usSubIndex = (UINT16)(6 + ((uiHash >> 11) % 3)); break;      // sparse/stubble/trampled
+				case 4: usSubIndex = ((uiHash >> 13) & 1) ? 9 : 10; break;           // edge / humid crop
+				default: usSubIndex = (UINT16)(1 + ((uiHash >> 7) % 10)); break;
+			}
+
+			PTILE_IMAGERY pCropSurface = gTileSurfaceArray[ SECONDDECORATIONS ];
+			if ( pCropSurface != NULL && pCropSurface->vo != NULL &&
+				 usSubIndex <= gNumTilesPerType[ SECONDDECORATIONS ] &&
+				 usSubIndex <= pCropSurface->vo->usNumberOfObjects &&
+				 B1AddVisualDecoration( sGridNo, SECONDDECORATIONS, usSubIndex ) )
+				++uiCropRows;
 		}
 		else if ( fOpenFarmGround && ubFieldZone != 0 && !fNearStructure && fFurrowMarker )
 		{
@@ -2113,7 +2129,7 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 		ubSectorReplacementTilesetID = 38;
 		switch ( ubType )
 		{
-			case SECONDDECORATIONS: pLoadFilename = "A3_CROP_ROWS.STI"; break;
+			case SECONDDECORATIONS: pLoadFilename = "VR_CROP_MASTER.STI"; break;
 			case THIRDDECORATIONS:  pLoadFilename = "A3_MUD_RUTS.STI"; break;
 			case FOURTHDECORATIONS: pLoadFilename = "A3_LANDMARKS.STI"; break;
 			case DEBRISROCKS:       pLoadFilename = "A3_FIELD_STONES.STI"; break;
