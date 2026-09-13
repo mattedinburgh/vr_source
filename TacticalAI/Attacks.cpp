@@ -440,6 +440,16 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		// exposure, wounds or stance.
 		fSuppression = !fPersonalStateKnown;
 
+		// Match JA2 1.13's default behaviour: an unseen remembered/reported
+		// contact is not a valid individual direct-fire target unless blind
+		// suppression has been explicitly enabled. This matters especially for
+		// smoke: once smoke breaks personal sight, the AI must not keep aiming
+		// at the hidden soldier as though visibility were unchanged.
+		if (fSuppression && !gGameExternalOptions.fAIShootUnseen)
+		{
+			continue;
+		}
+
 		// determine enemy location
 		if (fPersonalStateKnown)
 		{
