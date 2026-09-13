@@ -381,12 +381,18 @@ void ClearDisplayedListOfTacticalStrings( void )
 #define BATTLE_LOG_RESIZE_GRIP 12
 #define BATTLE_LOG_INSPECTOR_H 208
 
+#define BATTLELOG_OUTCOME_NONE    0
+#define BATTLELOG_OUTCOME_MISS    1
+#define BATTLELOG_OUTCOME_BLOCKED 2
+#define BATTLELOG_OUTCOME_HIT     3
+
 typedef struct
 {
 	UINT32 uiSequence;
 	CHAR16 zText[256];
 	UINT16 usColor;
 	BOOLEAN fClickable;
+	UINT8 ubOutcome;
 	INT32 iBullet;
 	NCTH_SHOT_DIAGNOSTIC ncth;
 } BATTLE_LOG_ENTRY;
@@ -418,6 +424,7 @@ static MOUSE_REGION gBattleLogHeaderRegion;
 static MOUSE_REGION gBattleLogContentRegion;
 static MOUSE_REGION gBattleLogResizeRegion;
 static NCTH_SHOT_DIAGNOSTIC gBattleLogInspectorDiagnostic;
+static UINT8 gubBattleLogInspectorOutcome = BATTLELOG_OUTCOME_NONE;
 
 static void BattleLogRebuildOverlay( void );
 static void BattleLogUpdateRegions( void );
@@ -617,6 +624,7 @@ static void BattleLogContentCallback( MOUSE_REGION *pRegion, INT32 iReason )
 	if ( pEntry && pEntry->fClickable )
 	{
 		gBattleLogInspectorDiagnostic = pEntry->ncth;
+		gubBattleLogInspectorOutcome = pEntry->ubOutcome;
 		gfBattleLogInspectorVisible = TRUE;
 		BattleLogRebuildOverlay();
 	}
@@ -792,7 +800,24 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		if ( d.ubStance == ANIM_CROUCH ) pStance = L"crouched";
 		else if ( d.ubStance == ANIM_PRONE ) pStance = L"prone";
 
-		BattleLogPrintInspectorLine( ix + 6, iy + 4, FONT_MCOLOR_LTYELLOW, L"SHOT INSPECTOR - MISS" );
+		const CHAR16 *pOutcomeTitle = L"SHOT INSPECTOR";
+		UINT16 usOutcomeColor = FONT_MCOLOR_LTYELLOW;
+		if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_HIT )
+		{
+			pOutcomeTitle = L"SHOT INSPECTOR - HIT";
+			usOutcomeColor = FONT_MCOLOR_LTGREEN;
+		}
+		else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_BLOCKED )
+		{
+			pOutcomeTitle = L"SHOT INSPECTOR - BLOCKED";
+			usOutcomeColor = FONT_MCOLOR_LTYELLOW;
+		}
+		else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_MISS )
+		{
+			pOutcomeTitle = L"SHOT INSPECTOR - MISS";
+			usOutcomeColor = FONT_MCOLOR_LTRED;
+		}
+		BattleLogPrintInspectorLine( ix + 6, iy + 4, usOutcomeColor, (STR16)pOutcomeTitle );
 
 		INT16 sy = iy + BATTLE_LOG_HEADER_H + 3;
 		swprintf( z, L"Aim %d | round %d | range %.1f tiles | NCTH %.1f | muzzle sway %.1f",
@@ -964,6 +989,7 @@ void BattleLogAddText( UINT16 usColor, STR16 pString )
 	memset( pEntry, 0, sizeof(*pEntry) );
 	pEntry->uiSequence = guiBattleLogSequence;
 	pEntry->usColor = usColor;
+	pEntry->ubOutcome = BATTLELOG_OUTCOME_NONE;
 	pEntry->iBullet = -1;
 	swprintf( pEntry->zText, L"[%02d:%02d] %s", guiHour, guiMin, pString );
 	gusBattleLogScrollOffset = 0;
@@ -987,6 +1013,7 @@ void BattleLogAddNCTHMiss( INT32 iBullet )
 	pEntry->uiSequence = guiBattleLogSequence;
 	pEntry->usColor = FONT_MCOLOR_LTRED;
 	pEntry->fClickable = TRUE;
+	pEntry->ubOutcome = BATTLELOG_OUTCOME_MISS;
 	pEntry->iBullet = iBullet;
 	pEntry->ncth = d;
 
@@ -1027,6 +1054,7 @@ void BattleLogAddNCTHBlocked( INT32 iBullet, UINT8 ubReason )
 	pEntry->uiSequence = guiBattleLogSequence;
 	pEntry->usColor = FONT_MCOLOR_LTYELLOW;
 	pEntry->fClickable = TRUE;
+	pEntry->ubOutcome = BATTLELOG_OUTCOME_BLOCKED;
 	pEntry->iBullet = iBullet;
 	pEntry->ncth = d;
 
@@ -1046,6 +1074,47 @@ void BattleLogAddNCTHBlocked( INT32 iBullet, UINT8 ubReason )
 
 	swprintf( pEntry->zText, L"[%02d:%02d] BLOCKED - %s -> %s - %s - NCTH %.0f  [click]",
 		guiHour, guiMin, pName, pTargetName, pBlockReason, d.fFinalChance );
+	gusBattleLogScrollOffset = 0;
+
+	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
+	{
+		BattleLogEnsureUI();
+		InvalidateRegion( gsBattleLogX, gsBattleLogY,
+			gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH );
+	}
+}
+
+
+void BattleLogAddNCTHHit( INT32 iBullet, UINT8 ubTargetID, INT16 sDamage )
+{
+	NCTH_SHOT_DIAGNOSTIC d;
+	if ( !NCTHGetBulletDiagnostic( iBullet, &d ) )
+		return;
+
+	// Keep the comparison set clean: record intended-target hits, not accidental
+	// collateral contacts along the bullet path.
+	if ( d.ubTargetID == NOBODY || d.ubTargetID != ubTargetID )
+		return;
+
+	guiBattleLogSequence++;
+	BATTLE_LOG_ENTRY *pEntry = &gBattleLogEntries[(guiBattleLogSequence - 1) % BATTLE_LOG_MAX_ENTRIES];
+	memset( pEntry, 0, sizeof(*pEntry) );
+	pEntry->uiSequence = guiBattleLogSequence;
+	pEntry->usColor = FONT_MCOLOR_LTGREEN;
+	pEntry->fClickable = TRUE;
+	pEntry->ubOutcome = BATTLELOG_OUTCOME_HIT;
+	pEntry->iBullet = iBullet;
+	pEntry->ncth = d;
+
+	const CHAR16 *pName = L"Merc";
+	const CHAR16 *pTargetName = L"target";
+	if ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] )
+		pName = MercPtrs[d.ubShooterID]->GetName();
+	if ( ubTargetID != NOBODY && MercPtrs[ubTargetID] )
+		pTargetName = MercPtrs[ubTargetID]->GetName();
+
+	swprintf( pEntry->zText, L"[%02d:%02d] HIT - %s -> %s - dmg %d - NCTH %.0f  [click]",
+		guiHour, guiMin, pName, pTargetName, sDamage, d.fFinalChance );
 	gusBattleLogScrollOffset = 0;
 
 	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
