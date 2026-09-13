@@ -90,6 +90,9 @@ extern INT16 APBPConstants[TOTAL_APBP_VALUES] = {0};
 extern INT16 gubMaxActionPoints[28];//MAXBODYTYPES = 28... JUST GETTING IT TO WORK NOW.  GOTTHARD 7/2/08
 extern BOOLEAN GetCDromDriveLetter( STR8	pString );
 
+// TRUE only after every optional visible-equipment database loaded successfully.
+BOOLEAN gfVisibleEquipmentRuntimeReady = FALSE;
+
 // The InitializeGame function is responsible for setting up all data and Gaming Engine
 // tasks which will run the game
 
@@ -411,35 +414,44 @@ BOOLEAN LoadExternalGameplayData(STR directoryName)
 	SGP_THROW_IFFALSE(ReadInLBEPocketStats(fileName,FALSE),LBEPOCKETFILENAME);
 
 	// 1.13 Logical Body Types: visible tactical armour overlays.
-	// Keep this optional until the matching STI asset pack has been deployed.
-	// The marker is created only after the deployment script verifies every referenced surface.
+	// Keep the entire subsystem optional. A deployed marker proves files were
+	// downloaded, but XML parsing can still fail; no LOBOT parse failure is allowed
+	// to abort Vengeance startup.
+	gfVisibleEquipmentRuntimeReady = FALSE;
 	if ( FileExists( "Anims\\LOBOT\\VR_EQUIPMENT.READY" ) )
 	{
 		using namespace LogicalBodyTypes;
 		CHAR8 errorBuf[512] = "Failed loading LogicalBodyTypes external data!";
 
-		SGP_THROW_IFFALSE(Layers::Instance().LoadFromFile(directoryName, LBT_LAYERSFILENAME, errorBuf), errorBuf);
-
-		// 1.13 LOBOT equipment sprites use palette tables declared by LayerProp
-		// (for example palette="hats").  Loading surfaces/body mappings without
-		// Palettes.xml renders the raw source colours and produces visibly wrong
-		// armour/helmet overlays.
-		if ( !PaletteDB::Instance().LoadFromFile(directoryName, LBT_PALETTESFILENAME, errorBuf) )
+		if ( !Layers::Instance().LoadFromFile(directoryName, LBT_LAYERSFILENAME, errorBuf) )
+		{
+			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, errorBuf );
+			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, "LOBOT Layers load failed; visible equipment disabled for this run." );
+		}
+		else if ( !PaletteDB::Instance().LoadFromFile(directoryName, LBT_PALETTESFILENAME, errorBuf) )
 		{
 			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, errorBuf );
 			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, "LOBOT palette load failed; visible equipment disabled for this run." );
 		}
-		// Visible-equipment is optional. A malformed or incomplete surface catalog
-		// must not prevent Vengeance from starting.
 		else if ( !SurfaceDB::Instance().LoadFromFile(directoryName, LBT_ANIMSURFACESFILENAME, errorBuf) )
 		{
 			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, errorBuf );
 			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, "LOBOT AnimationSurfaces load failed; visible equipment disabled for this run." );
 		}
+		else if ( !FilterDB::Instance().LoadFromFile(directoryName, LBT_FILTERSFILENAME, errorBuf) )
+		{
+			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, errorBuf );
+			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, "LOBOT Filters load failed; visible equipment disabled for this run." );
+		}
+		else if ( !BodyTypeDB::Instance().LoadFromFile(directoryName, LBT_BODYTYPESFILENAME, errorBuf) )
+		{
+			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, errorBuf );
+			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, "LOBOT BodyTypes load failed; visible equipment disabled for this run." );
+		}
 		else
 		{
-			SGP_THROW_IFFALSE(FilterDB::Instance().LoadFromFile(directoryName, LBT_FILTERSFILENAME, errorBuf), errorBuf);
-			SGP_THROW_IFFALSE(BodyTypeDB::Instance().LoadFromFile(directoryName, LBT_BODYTYPESFILENAME, errorBuf), errorBuf);
+			gfVisibleEquipmentRuntimeReady = TRUE;
+			DebugMsg( TOPIC_JA2, DBG_LEVEL_3, "LOBOT visible-equipment runtime enabled." );
 		}
 	}
 	else
