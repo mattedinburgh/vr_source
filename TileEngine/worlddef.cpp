@@ -675,11 +675,15 @@ static UINT8 DetermineSectorVisualProfile( const STR8 pFilename )
 	if ( pFilename == NULL )
 		return SECTOR_VISUAL_DEFAULT;
 
-	// A3 rollback: keep the original authored sector completely untouched for gameplay.
-	// The experimental farm remaster remains dormant in source until it is rebuilt
-	// behind collision-safe visual slots and validated with the engine previewer.
+	// Keep normal A3 gameplay on the original authored sector until the remaster
+	// has passed visual QA.  MAPSHOT is deliberately allowed to activate the farm
+	// profile so we can validate the dormant redesign without risking a live save.
 	if ( _stricmp( pFilename, "A3.dat" ) == 0 )
+	{
+		if ( gfMapPreviewCaptureMode )
+			return SECTOR_VISUAL_A3_FARM;
 		return SECTOR_VISUAL_DEFAULT;
+	}
 
 	if ( _stricmp( pFilename, "A2.dat" ) == 0 ||
 		 _stricmp( pFilename, "B2.dat" ) == 0 )
@@ -1497,7 +1501,8 @@ static void DressA3FarmEnvironment( void )
 
 static void EnsureA3FarmCowPlacements( void )
 {
-	if ( gubSectorVisualProfile != SECTOR_VISUAL_A3_FARM || gfEditMode )
+	if ( gubSectorVisualProfile != SECTOR_VISUAL_A3_FARM ||
+		 ( gfEditMode && !gfMapPreviewCaptureMode ) )
 		return;
 
 	UINT16 usCivilianPlacements = 0;
@@ -2418,7 +2423,8 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 			case DEBRISMISC:        pLoadFilename = "B1_STREET_JUNK.STI"; break;
 		}
 	}
-	else if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM && ubTilesetID == 38 )
+	else if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM &&
+			  ubTilesetID == 38 && !gfMapPreviewCaptureMode )
 	{
 		ubSectorReplacementTilesetID = 38;
 		switch ( ubType )
