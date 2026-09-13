@@ -444,6 +444,12 @@ static INT16 BattleLogLineHeight( void )
 	return (INT16)(GetFontHeight( TINYFONT1 ) + 1);
 }
 
+static INT16 BattleLogInspectorWidth( void )
+{
+	INT16 available = (INT16)__max( gsBattleLogW, SCREEN_WIDTH - gsBattleLogX - 2 );
+	return (INT16)__max( gsBattleLogW, __min( 560, available ) );
+}
+
 static UINT16 BattleLogVisibleRows( void )
 {
 	INT16 usable = gsBattleLogH - BATTLE_LOG_HEADER_H - 5;
@@ -675,6 +681,32 @@ static void BattleLogPrintInspectorLine( INT16 x, INT16 y, UINT16 color, STR16 t
 	mprintf_buffer( gpBattleLogDestBuf, guiBattleLogDestPitchBYTES, TINYFONT1, x, y, L"%s", text );
 }
 
+static void BattleLogPrintClippedLine( INT16 x, INT16 y, INT16 maxWidth, UINT16 color, STR16 text )
+{
+	if ( text == NULL )
+		return;
+
+	CHAR16 clipped[256];
+	wcsncpy( clipped, text, 255 );
+	clipped[255] = 0;
+
+	UINT32 len = (UINT32)wcslen( clipped );
+	BOOLEAN fClipped = FALSE;
+	while ( len > 4 && StringPixLength( clipped, TINYFONT1 ) > maxWidth )
+	{
+		clipped[--len] = 0;
+		fClipped = TRUE;
+	}
+	if ( fClipped && len > 3 )
+	{
+		clipped[len - 3] = L'.';
+		clipped[len - 2] = L'.';
+		clipped[len - 1] = L'.';
+	}
+
+	BattleLogPrintInspectorLine( x, y, color, clipped );
+}
+
 static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 {
 	if ( !gfBattleLogVisible )
@@ -699,7 +731,7 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 	// invoked while we already hold the video-surface lock.
 	INT16 inspectorX = gsBattleLogX;
 	INT16 inspectorY = (INT16)__max( 2, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 3 );
-	INT16 inspectorW = gsBattleLogW;
+	INT16 inspectorW = BattleLogInspectorWidth();
 	if ( gfBattleLogInspectorVisible )
 	{
 		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, inspectorX, inspectorY, inspectorX + inspectorW, inspectorY + BATTLE_LOG_INSPECTOR_H, bg );
@@ -730,7 +762,7 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		BATTLE_LOG_ENTRY *pEntry = BattleLogEntryBySequence( seq );
 		if ( pEntry )
 		{
-			BattleLogPrintInspectorLine( gsBattleLogX + 6, y, pEntry->usColor, pEntry->zText );
+			BattleLogPrintClippedLine( gsBattleLogX + 6, y, gsBattleLogW - 18, pEntry->usColor, pEntry->zText );
 		}
 		seq++;
 		y += lineH;
@@ -834,7 +866,8 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 	guiBattleLogDestPitchBYTES = 0;
 
 	InvalidateRegion( gsBattleLogX, __max(0, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 4),
-		gsBattleLogX + gsBattleLogW + 1, gsBattleLogY + gsBattleLogH + 1 );
+		gsBattleLogX + ( gfBattleLogInspectorVisible ? BattleLogInspectorWidth() : gsBattleLogW ) + 1,
+		gsBattleLogY + gsBattleLogH + 1 );
 }
 
 static void BattleLogRebuildOverlay( void )
@@ -854,7 +887,7 @@ static void BattleLogRebuildOverlay( void )
 	memset( &d, 0, sizeof(d) );
 	d.sLeft = gsBattleLogX;
 	d.sTop = gfBattleLogInspectorVisible ? (INT16)__max(2, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 3) : gsBattleLogY;
-	d.sRight = gsBattleLogX + gsBattleLogW + 1;
+	d.sRight = gsBattleLogX + ( gfBattleLogInspectorVisible ? BattleLogInspectorWidth() : gsBattleLogW ) + 1;
 	d.sBottom = gsBattleLogY + gsBattleLogH + 1;
 	d.sX = d.sLeft;
 	d.sY = d.sTop;
