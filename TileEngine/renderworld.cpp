@@ -2148,7 +2148,8 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 												&gClippingRect,
 												pNode->ubShadeLevel,
 												fZBlitter,
-												fZWrite);
+												fZWrite,
+												fObscuredBlitter);
 										}
 										if ( (uiLevelNodeFlags & LEVELNODE_UPDATESAVEBUFFERONCE ) )
 										{
@@ -2177,7 +2178,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 													usImageIndex,
 													&gClippingRect,
 													pNode->ubShadeLevel,
-													FALSE, FALSE);
+													FALSE, FALSE, FALSE);
 											}
 											UnLockVideoSurface(guiSAVEBUFFER);
 											pNode->uiFlags &= ( ~LEVELNODE_UPDATESAVEBUFFERONCE );
