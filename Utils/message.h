@@ -128,6 +128,7 @@ void DisplayLastMessage( void );
 void BattleLogAddNCTHMiss( INT32 iBullet );
 void BattleLogAddNCTHBlocked( INT32 iBullet, UINT8 ubReason );
 void BattleLogAddNCTHHit( INT32 iBullet, UINT8 ubTargetID, INT16 sDamage );
+void BattleLogAddMeleeHit( UINT8 ubAttackerID, UINT8 ubTargetID, INT16 sDamage );
 void BattleLogAddText( UINT16 usColor, STR16 pString );
 void BattleLogSetVisible( BOOLEAN fVisible );
 
