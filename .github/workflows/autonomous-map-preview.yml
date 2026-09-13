@@ -118,7 +118,7 @@ jobs:
           if (-not (Test-Path (Join-Path $gameRoot 'JA2_EN_Release.exe'))) { throw "Live JA2 game root not found: $gameRoot" }
 
           New-Item -ItemType Directory -Force -Path $sandbox | Out-Null
-          & robocopy $gameRoot $sandbox /MIR /R:1 /W:1 /XD (Join-Path $gameRoot '00000') (Join-Path $gameRoot 'Profiles') (Join-Path $gameRoot 'MAP_PREVIEWS') /XF '*.log'
+          & robocopy $gameRoot $sandbox /MIR /R:1 /W:1 /XD (Join-Path $gameRoot '00000') (Join-Path $gameRoot 'Profiles') (Join-Path $gameRoot 'MAP_PREVIEWS') (Join-Path $gameRoot '.git') (Join-Path $gameRoot 'FORK') (Join-Path $gameRoot 'build') (Join-Path $gameRoot 'lib') (Join-Path $gameRoot '.vs') /XF '*.log' 'MapEditor_Vengeance.exe' 'JA2_EN_Release.exe' '*.pdb'
           $rc = $LASTEXITCODE
           if ($rc -gt 7) { throw "Sandbox refresh failed: robocopy $rc" }
           Write-Host "Sandbox refresh robocopy exit code $rc (0-7 = success)."
