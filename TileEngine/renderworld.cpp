@@ -779,6 +779,40 @@ void RenderSetShadows(BOOLEAN fShadows)
 
 
 
+// Map Vengeance's already-resolved soldier lighting/highlight table to the same table in
+// the 1.13 LOBOT equipment palette. This preserves native VR visibility/fade/highlight
+// behaviour while respecting the palette explicitly selected by each equipment LayerProp.
+static UINT16 *ResolveVisibleEquipmentShadeTable(
+	SOLDIERTYPE *pSoldier,
+	const LogicalBodyTypes::PaletteTable *pPaletteTable,
+	UINT16 *pDefaultShadeTable )
+{
+	if ( pSoldier == NULL || pPaletteTable == NULL )
+		return pDefaultShadeTable;
+
+	INT32 i;
+	for ( i = 0; i < NUM_SOLDIER_SHADES; ++i )
+	{
+		if ( pDefaultShadeTable == pSoldier->pShades[ i ] && pPaletteTable->pShades[ i ] != NULL )
+			return pPaletteTable->pShades[ i ];
+	}
+	for ( i = 0; i < NUM_SOLDIER_EFFECTSHADES; ++i )
+	{
+		if ( pDefaultShadeTable == pSoldier->pEffectShades[ i ] && pPaletteTable->pEffectShades[ i ] != NULL )
+			return pPaletteTable->pEffectShades[ i ];
+	}
+	for ( i = 0; i < 20; ++i )
+	{
+		if ( pDefaultShadeTable == pSoldier->pGlowShades[ i ] && pPaletteTable->pGlowShades[ i ] != NULL )
+			return pPaletteTable->pGlowShades[ i ];
+	}
+
+	if ( pPaletteTable->pShades[ DEFAULT_SHADE_LEVEL ] != NULL )
+		return pPaletteTable->pShades[ DEFAULT_SHADE_LEVEL ];
+
+	return pDefaultShadeTable;
+}
+
 // Render only the 1.13 LOBOT equipment layers over Vengeance's native soldier sprite.
 // This deliberately does not replace the base body/weapon animation: it preserves VR animation
 // compatibility while making equipped armour visible.  Equipment uses the same animation frame
@@ -820,28 +854,32 @@ static void RenderVisibleEquipmentLayers(
 		if ( hEquipment == NULL || hEquipment->ubBitDepth != 8 || usImageIndex >= hEquipment->usNumberOfObjects )
 			continue;
 
-		// The armour-only VR catalog is palette-independent for the first production pass.
-		// Using the soldier's resolved shade table preserves lighting, fade and enemy highlight effects.
+		// 1.13 gear surfaces are not palette-independent. Every production vest/helmet
+		// LayerProp selects an equipment palette, so translate VR's resolved shade/highlight
+		// table to the equivalent table in that palette before blitting.
+		UINT16 *pEquipmentShadeTable = ResolveVisibleEquipmentShadeTable(
+			pSoldier, pLogicalSurface->paletteTable, pShadeTable );
+		const BOOLEAN fIgnoreEquipmentShadows = pLayerProperties->renderShadows ? FALSE : TRUE;
 		if ( fZBlitter )
 		{
 			if ( fObscuredBlitter )
 			{
 				Blt8BPPDataTo16BPPBufferTransShadowZNBObscuredClip(
 					(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
-					hEquipment, sXPos, sYPos, usImageIndex, &gClippingRect, pShadeTable );
+					hEquipment, sXPos, sYPos, usImageIndex, &gClippingRect, pEquipmentShadeTable, fIgnoreEquipmentShadows );
 			}
 			else
 			{
 				Blt8BPPDataTo16BPPBufferTransShadowZNBClip(
 					(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
-					hEquipment, sXPos, sYPos, usImageIndex, &gClippingRect, pShadeTable );
+					hEquipment, sXPos, sYPos, usImageIndex, &gClippingRect, pEquipmentShadeTable, fIgnoreEquipmentShadows );
 			}
 		}
 		else
 		{
 			Blt8BPPDataTo16BPPBufferTransShadowClip(
 				(UINT16*)pDestBuf, uiDestPitchBYTES, hEquipment,
-				sXPos, sYPos, usImageIndex, &gClippingRect, pShadeTable );
+				sXPos, sYPos, usImageIndex, &gClippingRect, pEquipmentShadeTable, fIgnoreEquipmentShadows );
 		}
 	}
 }
