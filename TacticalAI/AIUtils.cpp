@@ -4212,7 +4212,7 @@ static void AIClearEscapeState(SOLDIERTYPE *pSoldier);
 #define AI_FIRETEAM_NONE 0
 #define AI_FIRETEAM_TARGET 8
 #define AI_FIRETEAM_MAX_NORMAL 9
-#define AI_FIRETEAM_MAX_MERGED 11
+#define AI_FIRETEAM_MAX_MERGED 10
 
 extern UINT32 guiTurnCnt;
 
