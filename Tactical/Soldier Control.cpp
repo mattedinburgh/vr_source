@@ -9849,7 +9849,8 @@ BOOLEAN SOLDIERTYPE::IsDraggingBleedoutCasualty( void )
 	SOLDIERTYPE *pCasualty = MercPtrs[ this->ubDraggedCasualtyID ];
 	if ( !pCasualty || !pCasualty->bActive || !pCasualty->bInSector ||
 		pCasualty->ubDraggedByID != this->ubID || pCasualty->bTeam != this->bTeam ||
-		pCasualty->pathing.bLevel != this->pathing.bLevel || !IsCarryableLivingCasualty( pCasualty ) )
+		pCasualty->pathing.bLevel != this->pathing.bLevel || !IsCarryableLivingCasualty( pCasualty ) ||
+		PythSpacesAway( this->sGridNo, pCasualty->sGridNo ) > 2 )
 		return FALSE;
 
 	return TRUE;
@@ -9874,14 +9875,25 @@ BOOLEAN SOLDIERTYPE::CanDragBleedoutCasualty( SOLDIERTYPE *pCasualty )
 	{
 		if ( IsDraggingBleedoutCasualty() )
 			return FALSE;
-		this->ubDraggedCasualtyID = NOBODY;
+
+		// Clear both ends of any stale rescuer link before starting a new extraction.
+		StopDraggingBleedoutCasualty();
 	}
 
 	if ( pCasualty->ubDraggedByID != NOBODY )
 	{
 		SOLDIERTYPE *pOtherRescuer = MercPtrs[ pCasualty->ubDraggedByID ];
-		if ( pOtherRescuer && pOtherRescuer->ubDraggedCasualtyID == pCasualty->ubID )
+		if ( pOtherRescuer && pOtherRescuer->ubDraggedCasualtyID == pCasualty->ubID &&
+			pOtherRescuer->IsDraggingBleedoutCasualty() )
+		{
 			return FALSE;
+		}
+
+		// A non-viable reciprocal link is stale (for example after reload, collapse,
+		// level change or scripted movement). Clear it rather than permanently
+		// blocking rescue by somebody else.
+		if ( pOtherRescuer && pOtherRescuer->ubDraggedCasualtyID == pCasualty->ubID )
+			pOtherRescuer->StopDraggingBleedoutCasualty();
 		pCasualty->ubDraggedByID = NOBODY;
 	}
 
@@ -9952,8 +9964,13 @@ void SOLDIERTYPE::UpdateDraggedBleedoutCasualty( INT32 sOldGridNo )
 
 	SOLDIERTYPE *pCasualty = MercPtrs[ this->ubDraggedCasualtyID ];
 	if ( !pCasualty || TileIsOutOfBounds( sOldGridNo ) ||
-		pCasualty->pathing.bLevel != this->pathing.bLevel || this->MercInHighWater() )
+		pCasualty->pathing.bLevel != this->pathing.bLevel ||
+		PythSpacesAway( sOldGridNo, pCasualty->sGridNo ) > 1 ||
+		this->MercInHighWater() || pCasualty->MercInHighWater() )
 	{
+		// Never teleport a stale or spatially broken casualty link. During a legal
+		// drag step the casualty must still be on, or adjacent to, the tile the
+		// rescuer just vacated.
 		StopDraggingBleedoutCasualty();
 		return;
 	}
