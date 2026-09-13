@@ -5547,7 +5547,9 @@ static UINT8 AIEscapeIntentLimit(void)
 		if (pFriend && pFriend->bActive && pFriend->bInSector &&
 			pFriend->stats.bLife >= OKLIFE &&
 			!pFriend->bCollapsed && !pFriend->bBreathCollapsed &&
-			!(pFriend->usSoldierFlagMask & SOLDIER_POW))
+			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
+			!(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) &&
+			!AIDisengagementActive(pFriend) && !AIEscapeActive(pFriend))
 		{
 			++ubReady;
 		}
