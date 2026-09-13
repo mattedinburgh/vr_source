@@ -648,7 +648,6 @@ static BOOLEAN LoadB1TCFileToImage( HIMAGE hImage, UINT16 fContents )
 	hImage->pPalette = NULL;
 	hImage->pui16BPPPalette = NULL;
 	hImage->fFlags |= IMAGE_BITMAPDATA;
-	B1TCApplyOronegroArtDirection( hImage );
 	B1TCInheritSTIAppData( hImage, fContents );
 	return TRUE;
 }
