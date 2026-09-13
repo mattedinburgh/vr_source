@@ -550,6 +550,16 @@ typedef struct
 	UINT8   ubStance;
 	UINT8   ubVolleyShot;
 	UINT16  usWeapon;
+
+	INT8  bExperience;
+	INT8  bMarksmanship;
+	INT16 bDexterity;
+	INT16 bWisdom;
+	INT8  bBreath;
+	INT8  bShock;
+	UINT8 ubModifiedHandling;
+	FLOAT fGunBaseDifficulty;
+	FLOAT fGunAimDifficulty;
 	INT32   sTargetGridNo;
 	INT32   iRange;
 	INT32   iSightRange;
@@ -602,6 +612,8 @@ typedef struct
 	FLOAT fTargetTrackingY;
 	FLOAT fPreRecoilX;
 	FLOAT fPreRecoilY;
+	FLOAT fInheritedMuzzleX;
+	FLOAT fInheritedMuzzleY;
 	FLOAT fRecoilX;
 	FLOAT fRecoilY;
 	FLOAT fRangeCompensationY;
