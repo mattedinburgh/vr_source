@@ -2617,7 +2617,8 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 				pFriend->bCollapsed ||
 				pFriend->bBreathCollapsed ||
 				(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
-				(pFriend->flags.uiStatusFlags & SOLDIER_COWERING))
+				(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
+				AIDisengagementActive(pFriend) || AIEscapeActive(pFriend))
 			{
 				continue;
 			}
