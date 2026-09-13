@@ -803,6 +803,7 @@ static void RenderVengeanceLobotEquipment(
 	UINT16 sZLevel,
 	UINT16 usImageIndex,
 	UINT16* pShadeTable,
+	UINT8 ubNodeShadeLevel,
 	BOOLEAN fZBlitter,
 	BOOLEAN fObscuredBlitter)
 {
@@ -833,6 +834,17 @@ static void RenderVengeanceLobotEquipment(
 			continue;
 
 		UINT16* pLayerShade = pShadeTable;
+		if (logicalSurface->paletteTable != NULL)
+		{
+			UINT8 ubShadeLevel = (ubNodeShadeLevel & 0x0f);
+			ubShadeLevel = (UINT8)__max(ubShadeLevel - 2, DEFAULT_SHADE_LEVEL);
+			ubShadeLevel |= (ubNodeShadeLevel & 0x30);
+			if (pSoldier->flags.fBeginFade)
+				ubShadeLevel = pSoldier->ubFadeLevel;
+			if (logicalSurface->paletteTable->pShades[ubShadeLevel] != NULL)
+				pLayerShade = logicalSurface->paletteTable->pShades[ubShadeLevel];
+		}
+
 		BOOLEAN clipped = BltIsClippedOrOffScreen(hLayer, sXPos, sYPos, usImageIndex, &gClippingRect);
 
 		if (clipped == TRUE)
