@@ -8339,6 +8339,8 @@ INT32 BulletImpact( SOLDIERTYPE *pFirer, BULLET *pBullet, SOLDIERTYPE * pTarget,
 		gfNextShotKills = FALSE;
 	}
 
+	damageDiag.iImpactAfterMinimum = iImpact;
+
 	if ( iImpact > 0 && !TANK( pTarget ) )
 	{
 		// Flugente: ammo can now add the lifedamage drug effect. This will kill the target in a few turns.
@@ -8360,6 +8362,7 @@ INT32 BulletImpact( SOLDIERTYPE *pFirer, BULLET *pBullet, SOLDIERTYPE * pTarget,
 		}
 
 		iImpact = (INT32)(iImpact * AmmoTypes[ubAmmoType].afterArmourDamageMultiplier / max(1,AmmoTypes[ubAmmoType].afterArmourDamageDivisor) ) ;
+		damageDiag.iImpactAfterAmmo = iImpact;
 		//if (ubAmmoType == AMMO_HP)
 		//{ // good solid hit with a hollow-point bullet, which got through armour!
 		//	iImpact = AMMO_DAMAGE_ADJUSTMENT_HP( iImpact );
@@ -8381,8 +8384,11 @@ INT32 BulletImpact( SOLDIERTYPE *pFirer, BULLET *pBullet, SOLDIERTYPE * pTarget,
 			}
 		}
 				
+		damageDiag.iImpactAfterTraits = iImpact;
+
 		// Flugente: moved the damage calculation into a separate function
-		BOOLEAN autoresolve = IsAutoResolveActive();	
+		BOOLEAN autoresolve = IsAutoResolveActive();
+		damageDiag.iDamageResistancePercent = pTarget->GetDamageResistance(autoresolve, FALSE);	
 		// HEADROCK HAM 5.1: Oh sandro, you rendered zerominimumdamage moot...
 		if ( AmmoTypes[ubAmmoType].zeroMinimumDamage )
 		{
@@ -8393,8 +8399,10 @@ INT32 BulletImpact( SOLDIERTYPE *pFirer, BULLET *pBullet, SOLDIERTYPE * pTarget,
 			iImpact = __max( 1, (INT32)(iImpact * (100 - pTarget->GetDamageResistance(autoresolve, FALSE)) / 100 ) );
 		}
 
+		damageDiag.iImpactAfterResistance = iImpact;
 
 		AdjustImpactByHitLocation( iImpact, ubHitLocation, &iImpact, &iImpactForCrits );
+		damageDiag.iImpactAfterHitLocation = iImpact;
 
 		UINT8 ubDistMessy = Weapon[ usAttackingWeapon ].maxdistformessydeath;
 		// modify by ini values
@@ -8818,6 +8826,10 @@ INT32 BulletImpact( SOLDIERTYPE *pFirer, BULLET *pBullet, SOLDIERTYPE * pTarget,
 			}
 		}
 	}
+
+	damageDiag.iFinalDamage = iImpact;
+	if ( damageDiag.fValid )
+		DamageRegisterBulletDiagnostic( damageDiag.iBullet, &damageDiag );
 
 	return( iImpact );
 }
