@@ -5542,7 +5542,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 						 !pSoldier->aiData.bUnderFire &&
 						 (AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
 						  TileIsOutOfBounds(sClosestOpponent) ||
-						  PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 2)))
+						  PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 2))))
 					{
 						pSoldier->aiData.bAction = SearchForItems( pSoldier, SEARCH_AMMO, pSoldier->inv[handPOS].usItem );
 					}
