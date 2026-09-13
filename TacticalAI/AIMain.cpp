@@ -345,7 +345,8 @@ BOOLEAN AimingGun(SOLDIERTYPE *pSoldier)
 
 void HandleSoldierAI( SOLDIERTYPE *pSoldier ) // FIXME - this function is named inappropriately
 {
-	BlackBoxCheckpoint( "AI", "phase=HANDLE soldier=%u team=%d grid=%d AP=%d life=%d alert=%d action=%d data=%d",
+	BlackBoxCheckpoint( "AI", "phase=HANDLE sector=%d,%d,%d currentTeam=%u soldier=%u team=%d grid=%d AP=%d life=%d alert=%d action=%d data=%d",
+		gWorldSectorX, gWorldSectorY, gbWorldSectorZ, gTacticalStatus.ubCurrentTeam,
 		pSoldier->ubID, pSoldier->bTeam, pSoldier->sGridNo, pSoldier->bActionPoints,
 		pSoldier->bLife, pSoldier->aiData.bAlertStatus, pSoldier->aiData.bAction, pSoldier->aiData.usActionData );
 	// ATE
@@ -1787,7 +1788,8 @@ UINT32 GetTankCannonIndex()
 
 INT8 ExecuteAction(SOLDIERTYPE *pSoldier)
 {
-	BlackBoxCheckpoint( "AI", "phase=EXECUTE soldier=%u team=%d grid=%d AP=%d life=%d action=%d data=%d",
+	BlackBoxCheckpoint( "AI", "phase=EXECUTE sector=%d,%d,%d currentTeam=%u soldier=%u team=%d grid=%d AP=%d life=%d action=%d data=%d",
+		gWorldSectorX, gWorldSectorY, gbWorldSectorZ, gTacticalStatus.ubCurrentTeam,
 		pSoldier->ubID, pSoldier->bTeam, pSoldier->sGridNo, pSoldier->bActionPoints,
 		pSoldier->bLife, pSoldier->aiData.bAction, pSoldier->aiData.usActionData );
 	INT32 iRetCode;
