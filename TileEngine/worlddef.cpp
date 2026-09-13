@@ -3317,7 +3317,18 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 #endif
 	BlackBoxEvent( "MAP", "file=%s phase=TILESET tileset=%d offset=%ld", aFilename, iTilesetID, (long)(pBuffer - pBufferHead) );
 	BlackBoxCheckpoint( "MAP", "file=%s phase=TILESET tileset=%d offset=%ld", aFilename, iTilesetID, (long)(pBuffer - pBufferHead) );
-	Assert(LoadMapTileset(iTilesetID));
+	if ( !LoadMapTileset( iTilesetID ) )
+	{
+		BlackBoxCheckpoint( "MAP", "file=%s phase=TILESET_FAILED tileset=%d", aFilename, iTilesetID );
+		BlackBoxEvent( "MAP", "FAILED tileset load file=%s tileset=%d", aFilename, iTilesetID );
+		if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
+		{
+			TraceB1RemasterLoad( "TILESET FAILED", "" );
+			FatalError( "B1 remaster tileset failed to load completely. See BlackBox_LastRun.log." );
+		}
+		MemFree( pBufferHead );
+		return( FALSE );
+	}
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
 		TraceB1RemasterLoad( "TILESET OK", "" );
 #ifdef JA2TESTVERSION
