@@ -6908,24 +6908,54 @@ BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier)
 
 	INT32 iPressure = 0;
 	INT8 bSituation = AIBattleSituation(pSoldier);
+	BOOLEAN fExposed = !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo);
+	INT32 iPersonalRisk = AIPersonalRisk(pSoldier);
+	INT32 iRiskTolerance = AIPersonalRiskTolerance(pSoldier);
+	INT32 iStress = AILocalStress(pSoldier);
+	BOOLEAN fBadRange = AIEngagementRangeModifier(pSoldier, sThreat) < 0;
+	BOOLEAN fIsolated =
+		AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0;
 
+	// Ordinary contact pressure is not, by itself, a reason to step backwards.
+	// The soldier should normally keep attacking/advancing unless his own position
+	// has a concrete tactical problem that a fallback can actually solve.
 	if (bSituation == AI_BATTLE_LOSING)
-		iPressure += 2;
+		iPressure += 1;
 	if (pSoldier->aiData.bUnderFire)
-		iPressure += 2;
-	if (!AnyCoverAtSpot(pSoldier, pSoldier->sGridNo))
-		iPressure += 2;
-	if (AIPersonalRisk(pSoldier) + 10 >= AIPersonalRiskTolerance(pSoldier))
-		iPressure += 2;
-	if (AILocalStress(pSoldier) >= 35)
 		iPressure += 1;
-	if (AIEngagementRangeModifier(pSoldier, sThreat) < 0)
+	if (fExposed)
+		iPressure += 2;
+	if (iPersonalRisk >= iRiskTolerance + 10)
+		iPressure += 2;
+	else if (iPersonalRisk >= iRiskTolerance)
 		iPressure += 1;
-	if (AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0)
+	if (iStress >= 45)
+		iPressure += 1;
+	if (fBadRange)
+		iPressure += 1;
+	if (fIsolated)
 		iPressure += 1;
 
-	// A winning group gives ground only under clear immediate pressure.
-	INT32 iThreshold = (bSituation == AI_BATTLE_WINNING) ? 4 : 3;
+	BOOLEAN fConcreteFallbackNeed =
+		fExposed ||
+		iPersonalRisk >= iRiskTolerance ||
+		iStress >= 45 ||
+		fBadRange ||
+		fIsolated;
+	if (!fConcreteFallbackNeed)
+		return FALSE;
+
+	// Generic fallback is deliberately harder to trigger than normal seek/advance.
+	// Aggressive/SEEKENEMY troops require still stronger evidence before yielding ground.
+	INT32 iThreshold = (bSituation == AI_BATTLE_WINNING) ? 5 : 4;
+	if (pSoldier->aiData.bAttitude == AGGRESSIVE ||
+		pSoldier->aiData.bAttitude == ATTACKSLAYONLY)
+	{
+		++iThreshold;
+	}
+	if (pSoldier->aiData.bOrders == SEEKENEMY)
+		++iThreshold;
+
 	return (iPressure >= iThreshold);
 }
 
