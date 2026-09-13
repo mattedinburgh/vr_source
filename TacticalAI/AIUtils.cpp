@@ -8653,8 +8653,10 @@ UINT8 CountTeamSeeSoldier( INT8 bTeam, SOLDIERTYPE *pSoldier )
 			!pFriend->bBreathCollapsed &&
 			!(pFriend->usSoldierFlagMask & SOLDIER_POW) )
 		{
-			if (pFriend->aiData.bOppList[ pSoldier->ubID ] == SEEN_CURRENTLY ||
-				pFriend->aiData.bOppList[ pSoldier->ubID ] == SEEN_THIS_TURN )
+			INT8 bFriendKnowledge = pFriend->aiData.bOppList[pSoldier->ubID];
+			if ((bFriendKnowledge == SEEN_CURRENTLY &&
+				 LOS_Raised(pFriend, pSoldier, CALC_FROM_ALL_DIRS) > 0) ||
+				bFriendKnowledge == SEEN_THIS_TURN)
 			{
 				ubFriends++;
 			}
@@ -8704,7 +8706,8 @@ BOOLEAN EnemyCanSeeMe( SOLDIERTYPE *pSoldier )
 		if( (pSoldier->aiData.bOppList[ pOpponent->ubID ] == SEEN_CURRENTLY ||
 			pSoldier->aiData.bOppList[ pOpponent->ubID ] == SEEN_THIS_TURN ||
 			gbPublicOpplist[pSoldier->bTeam][ pOpponent->ubID ] == SEEN_CURRENTLY) &&
-			pOpponent->aiData.bOppList[ pSoldier->ubID ] == SEEN_CURRENTLY )
+			pOpponent->aiData.bOppList[ pSoldier->ubID ] == SEEN_CURRENTLY &&
+			LOS_Raised(pOpponent, pSoldier, CALC_FROM_ALL_DIRS) > 0 )
 		{
 			return TRUE;
 		}
