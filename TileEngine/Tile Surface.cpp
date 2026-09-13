@@ -37,7 +37,10 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 	BOOLEAN								fOk;
 
 
-	hImage = CreateImage( cFilename, IMAGE_ALLDATA );
+	// Prefer an optional JPC replacement while retaining the original STI filename
+	// for structure/JSD lookup. This makes high-colour imagery opt-in and keeps
+	// complete legacy fallback when no replacement archive exists.
+	hImage = CreateImage( cFilename, IMAGE_ALLDATA, ImageFileType::JPC_FALLBACK );
 	if (hImage == NULL)
 	{
 		if ( fTraceB1Asset )
