@@ -3611,7 +3611,10 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	// This deliberately leaves map data and scripted destruction untouched.
 	gubSectorVisualProfile = DetermineSectorVisualProfile( gfForceLoad ? gzForceLoadFile : puiFilename );
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
+	{
 		TraceB1RemasterLoad( "BEGIN", puiFilename );
+		TraceB1RemasterLoad( "VISUAL PROFILE", "hero-v3 tropical-industrial" );
+	}
 
 #ifdef JA2TESTVERSION
 	uiStartTime = GetJA2Clock();
