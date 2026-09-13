@@ -991,10 +991,10 @@ UINT8 GetHeadMinerIndexForMine( INT8 bMineIndex )
 UINT16 GetHeadMinerProfileIdForMine( INT8 bMineIndex )
 {
 	UINT8 ubMinerID = GetHeadMinerIndexForMine( bMineIndex );
-	if(gHeadMinerData.size() > ubMinerID)
-		return(gHeadMinerData[ GetHeadMinerIndexForMine( bMineIndex ) ].usProfileId);
-	else
-		return -1;
+	if ( ubMinerID != (UINT8)-1 && gHeadMinerData.size() > ubMinerID )
+		return gHeadMinerData[ ubMinerID ].usProfileId;
+
+	return (UINT16)-1;
 }
 
 
@@ -1013,7 +1013,7 @@ void IssueHeadMinerQuote( INT8 bMineIndex, UINT8 ubQuoteType )
 	Assert( CheckFact( FACT_MINERS_PLACED, 0 ) );
 
 	ubHeadMinerIndex = GetHeadMinerIndexForMine( bMineIndex );
-	if (ubHeadMinerIndex == -1)
+	if ( ubHeadMinerIndex == (UINT8)-1 || ubHeadMinerIndex >= gHeadMinerData.size() )
 		return;
 	usHeadMinerProfileId = gHeadMinerData[ ubHeadMinerIndex ].usProfileId;
 
