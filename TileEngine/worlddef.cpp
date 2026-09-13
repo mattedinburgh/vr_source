@@ -133,6 +133,7 @@ enum SectorVisualProfile
 {
 	SECTOR_VISUAL_DEFAULT = 0,
 	SECTOR_VISUAL_ORONEGRO_TOWN,
+	SECTOR_VISUAL_A3_FARM,
 	SECTOR_VISUAL_ORONEGRO_OIL_RIG
 };
 
@@ -632,14 +633,27 @@ void TraceB1RemasterLoad( const STR8 pStage, const STR8 pDetail )
 	}
 }
 
+static void TraceA3FarmLoad( const STR8 pStage, const STR8 pDetail )
+{
+	const STR8 pSafeStage = ( pStage != NULL ) ? pStage : "";
+	const STR8 pSafeDetail = ( pDetail != NULL ) ? pDetail : "";
+
+	BlackBoxCheckpoint( "A3", "%s%s%s", pSafeStage,
+		pSafeDetail[0] != '\0' ? ": " : "", pSafeDetail );
+	BlackBoxEvent( "A3", "%s%s%s", pSafeStage,
+		pSafeDetail[0] != '\0' ? ": " : "", pSafeDetail );
+}
+
 static UINT8 DetermineSectorVisualProfile( const STR8 pFilename )
 {
 	if ( pFilename == NULL )
 		return SECTOR_VISUAL_DEFAULT;
 
-	// Oronegro city: keep the authored layout and scripted destruction completely untouched.
+	// Vengeance sector metadata explicitly identifies A3 with tropical-farm loading art.
+	if ( _stricmp( pFilename, "A3.dat" ) == 0 )
+		return SECTOR_VISUAL_A3_FARM;
+
 	if ( _stricmp( pFilename, "A2.dat" ) == 0 ||
-		 _stricmp( pFilename, "A3.dat" ) == 0 ||
 		 _stricmp( pFilename, "B2.dat" ) == 0 )
 		return SECTOR_VISUAL_ORONEGRO_TOWN;
 
@@ -751,6 +765,139 @@ static BOOLEAN B1AddOnRoofVisualDecoration( INT32 sGridNo, UINT32 uiType, UINT16
 	pNode->ubShadeLevel = LightGetAmbient();
 	pNode->ubNaturalShadeLevel = pNode->ubShadeLevel;
 	return TRUE;
+}
+
+static UINT16 A3FarmVisualSubIndex( UINT32 uiType, UINT32 uiHash )
+{
+	if ( uiType >= NUMBEROFTILETYPES || gTileSurfaceArray[ uiType ] == NULL ||
+		 gTileSurfaceArray[ uiType ]->vo == NULL )
+		return 0;
+
+	UINT16 usCapacity = (UINT16)gTileSurfaceArray[ uiType ]->vo->usNumberOfObjects;
+	if ( gNumTilesPerType[ uiType ] < usCapacity )
+		usCapacity = gNumTilesPerType[ uiType ];
+	if ( usCapacity == 0 )
+		return 0;
+	if ( usCapacity > 8 )
+		usCapacity = 8;
+	return (UINT16)( 1 + (uiHash % usCapacity) );
+}
+
+static void DressA3FarmEnvironment( void )
+{
+	if ( gubSectorVisualProfile != SECTOR_VISUAL_A3_FARM || gpWorldLevelData == NULL )
+		return;
+
+	UINT32 uiFieldClutter = 0;
+	UINT32 uiFarmyardClutter = 0;
+	UINT32 uiTrailClutter = 0;
+
+	for ( INT32 sGridNo = 0; sGridNo < WORLD_MAX; ++sGridNo )
+	{
+		MAP_ELEMENT *pMap = &gpWorldLevelData[ sGridNo ];
+		if ( pMap->pLandHead == NULL || pMap->pStructHead != NULL ||
+			 pMap->pRoofHead != NULL || pMap->pOnRoofHead != NULL )
+			continue;
+
+		UINT32 uiLandType = 0;
+		if ( !GetTileType( pMap->pLandHead->usIndex, &uiLandType ) )
+			continue;
+
+		const BOOLEAN fOpenFarmGround = ( uiLandType >= FIRSTTEXTURE && uiLandType <= SIXTHTEXTURE );
+		const BOOLEAN fTrail = ( uiLandType == SEVENTHTEXTURE );
+		const BOOLEAN fFloor = ( uiLandType >= FIRSTFLOOR && uiLandType <= LASTFLOOR );
+		if ( !fOpenFarmGround && !fTrail && !fFloor )
+			continue;
+
+		const BOOLEAN fNearStructure = B1GridHasNeighbourStructure( sGridNo );
+		const UINT32 uiHash = B1VisualHash( (UINT32)sGridNo ^ 0xA3F47D21u );
+
+		if ( fOpenFarmGround && ((uiHash >> 5) % (fNearStructure ? 41 : 113)) == 0 )
+		{
+			const UINT32 uiType = ((uiHash >> 19) & 1) ? DEBRISWEEDS : DEBRISGRASS;
+			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 8 );
+			if ( usSubIndex != 0 && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
+				++uiFieldClutter;
+		}
+
+		if ( fNearStructure && (fOpenFarmGround || fFloor) && ((uiHash >> 9) % 29) == 0 )
+		{
+			const UINT32 uiType = ((uiHash >> 22) & 1) ? DEBRISWOOD : DEBRISMISC;
+			const UINT16 usSubIndex = A3FarmVisualSubIndex( uiType, uiHash >> 12 );
+			if ( usSubIndex != 0 && B1AddVisualDecoration( sGridNo, uiType, usSubIndex ) )
+				++uiFarmyardClutter;
+		}
+
+		if ( fTrail && ((uiHash >> 7) % 37) == 0 )
+		{
+			const UINT16 usSubIndex = A3FarmVisualSubIndex( DEBRISSAND, uiHash >> 15 );
+			if ( usSubIndex != 0 && B1AddVisualDecoration( sGridNo, DEBRISSAND, usSubIndex ) )
+				++uiTrailClutter;
+		}
+	}
+
+	CHAR8 zDressing[160];
+	sprintf( zDressing, "field=%lu farmyard=%lu trail=%lu visual-only",
+		uiFieldClutter, uiFarmyardClutter, uiTrailClutter );
+	TraceA3FarmLoad( "ENVIRONMENT DRESSING", zDressing );
+}
+
+static void EnsureA3FarmCowPlacements( void )
+{
+	if ( gubSectorVisualProfile != SECTOR_VISUAL_A3_FARM || gfEditMode )
+		return;
+
+	UINT16 usCivilianPlacements = 0;
+	for ( SOLDIERINITNODE *pNode = gSoldierInitHead; pNode != NULL; pNode = pNode->next )
+	{
+		if ( pNode->pBasicPlacement == NULL )
+			continue;
+		if ( pNode->pBasicPlacement->bBodyType == COW )
+		{
+			TraceA3FarmLoad( "COWS", "authored cow placement already present; runtime herd skipped" );
+			return;
+		}
+		if ( pNode->pBasicPlacement->bTeam == CIV_TEAM )
+			++usCivilianPlacements;
+	}
+
+	UINT16 usAvailable = (usCivilianPlacements < 28) ? (UINT16)(28 - usCivilianPlacements) : 0;
+	if ( usAvailable == 0 )
+	{
+		TraceA3FarmLoad( "COWS", "no safe civilian placement headroom" );
+		return;
+	}
+
+	// Verified against current A3.dat: empty, roofless ground north of the eastern compound.
+	const INT32 sCowGridNo[] = { 7450, 7460, 8088, 8100 };
+	const UINT8 ubCowDirection[] = { SOUTHWEST, SOUTHEAST, WEST, NORTHEAST };
+	const UINT16 usDesired = (UINT16)( sizeof(sCowGridNo) / sizeof(sCowGridNo[0]) );
+	const UINT16 usToAdd = (usAvailable < usDesired) ? usAvailable : usDesired;
+
+	UINT16 usAdded = 0;
+	for ( UINT16 i = 0; i < usToAdd; ++i )
+	{
+		BASIC_SOLDIERCREATE_STRUCT placement;
+		memset( &placement, 0, sizeof(placement) );
+		placement.fDetailedPlacement = FALSE;
+		placement.usStartingGridNo = sCowGridNo[i];
+		placement.bTeam = CIV_TEAM;
+		placement.ubDirection = ubCowDirection[i];
+		placement.bOrders = STATIONARY;
+		placement.bAttitude = DEFENSIVE;
+		placement.bBodyType = COW;
+		placement.fOnRoof = FALSE;
+		placement.ubCivilianGroup = NON_CIV_GROUP;
+		placement.fPriorityExistance = TRUE;
+		placement.fHasKeys = FALSE;
+
+		if ( AddBasicPlacementToSoldierInitList( &placement ) != NULL )
+			++usAdded;
+	}
+
+	CHAR8 zCows[96];
+	sprintf( zCows, "added=%u existingCivPlacements=%u", usAdded, usCivilianPlacements );
+	TraceA3FarmLoad( "COWS", zCows );
 }
 
 static void DressB1OilRigEnvironment( void )
@@ -956,6 +1103,22 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 	INT32 greenBias = 1;
 	INT32 blueBias = 0;
 
+	const BOOLEAN fA3Profile = ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM );
+	const BOOLEAN fA3Water = fA3Profile &&
+		( ubType == REGWATERTEXTURE || ubType == DEEPWATERTEXTURE || ubType == ANOTHERDEBRIS );
+	const BOOLEAN fA3Terrain = fA3Profile && ( ubType >= FIRSTTEXTURE && ubType <= SEVENTHTEXTURE );
+	const BOOLEAN fA3GreenTerrain = fA3Profile && ( ubType >= THIRDTEXTURE && ubType <= SIXTHTEXTURE );
+	const BOOLEAN fA3Vegetation = fA3Profile &&
+		( (ubType >= FIRSTOSTRUCT && ubType <= SEVENTHOSTRUCT) ||
+		  ubType == FIRSTFULLSTRUCT || ubType == SECONDFULLSTRUCT );
+	const BOOLEAN fA3Wall = fA3Profile && ( ubType >= FIRSTWALL && ubType <= LASTDOOR );
+	const BOOLEAN fA3Roof = fA3Profile && ( ubType >= FIRSTROOF && ubType <= LASTSLANTROOF );
+	const BOOLEAN fA3Floor = fA3Profile && ( ubType >= FIRSTFLOOR && ubType <= LASTFLOOR );
+	const BOOLEAN fA3Debris = fA3Profile &&
+		( ubType == DEBRISROCKS || ubType == DEBRISWOOD || ubType == DEBRISSAND ||
+		  ubType == DEBRISWEEDS || ubType == DEBRISGRASS || ubType == DEBRISMISC ||
+		  ubType == DEBRIS2MISC );
+
 	const BOOLEAN fB1Profile = ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG );
 	const BOOLEAN fB1Water = fB1Profile &&
 		( ubType == REGWATERTEXTURE || ubType == DEEPWATERTEXTURE || ubType == ANOTHERDEBRIS );
@@ -976,7 +1139,58 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 	const BOOLEAN fB1Interior = fB1Profile && ( ubType >= FIRSTISTRUCT && ubType <= FIRSTCISTRUCT );
 	const BOOLEAN fB1Decal = fB1Profile && ( ubType >= FIRSTWALLDECAL && ubType <= EIGTHWALLDECAL );
 
-	if ( fB1Profile )
+	if ( fA3Profile )
+	{
+		// A3 tropical-farm hero pass: humid growth, warm soil, faded buildings and
+		// weathered roofs.  Geometry and all tactical structure data remain authored.
+		saturationPercent = 111;
+		contrastPercent = 114;
+		redBias = 3;
+		greenBias = 4;
+		blueBias = -3;
+
+		if ( fA3Water )
+		{
+			saturationPercent = 116; contrastPercent = 115;
+			redBias = -8; greenBias = 7; blueBias = 10;
+		}
+		else if ( fA3GreenTerrain )
+		{
+			saturationPercent = 120; contrastPercent = 116;
+			redBias = -4; greenBias = 11; blueBias = -6;
+		}
+		else if ( fA3Terrain )
+		{
+			saturationPercent = 112; contrastPercent = 116;
+			redBias = 9; greenBias = 5; blueBias = -9;
+		}
+		else if ( fA3Vegetation )
+		{
+			saturationPercent = 122; contrastPercent = 118;
+			redBias = -4; greenBias = 12; blueBias = -6;
+		}
+		else if ( fA3Wall )
+		{
+			saturationPercent = 96; contrastPercent = 118;
+			redBias = 6; greenBias = 3; blueBias = -5;
+		}
+		else if ( fA3Roof )
+		{
+			saturationPercent = 101; contrastPercent = 121;
+			redBias = 8; greenBias = 2; blueBias = -7;
+		}
+		else if ( fA3Floor )
+		{
+			saturationPercent = 94; contrastPercent = 116;
+			redBias = 5; greenBias = 3; blueBias = -5;
+		}
+		else if ( fA3Debris )
+		{
+			saturationPercent = 108; contrastPercent = 118;
+			redBias = 6; greenBias = 4; blueBias = -6;
+		}
+	}
+	else if ( fB1Profile )
 	{
 		// B1 HERO PASS.  This is intentionally dramatic at normal tactical zoom:
 		// humid tropical oil infrastructure, hard sun, salt/rain oxidation, dirty
@@ -1154,7 +1368,32 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 		INT32 outG = GradeSectorVisualComponent( g, luma, saturationPercent, contrastPercent, greenBias );
 		INT32 outB = GradeSectorVisualComponent( b, luma, saturationPercent, contrastPercent, blueBias );
 
-		if ( fB1Profile )
+		if ( fA3Profile )
+		{
+			if ( luma < 82 )
+			{
+				const INT32 depth = 82 - luma;
+				outR -= 2 + depth / 24;
+				outB += fA3Water ? (5 + depth / 16) : (2 + depth / 30);
+			}
+			else if ( luma > 174 )
+			{
+				const INT32 light = luma - 174;
+				outR += fA3Water ? 0 : (3 + light / 22);
+				outG += 2 + light / 28;
+				if ( fA3Water )
+					outB += 4 + light / 18;
+			}
+			if ( fA3Vegetation || fA3GreenTerrain )
+			{
+				outR -= 1; outG += 3; outB -= 1;
+			}
+			else if ( fA3Roof || fA3Wall || fA3Debris )
+			{
+				outR += 2; outB -= 2;
+			}
+		}
+		else if ( fB1Profile )
 		{
 			// Strong luma-dependent split tone: cool damp shadows and hot sunlit
 			// highlights. This gives the low-resolution art more perceived depth.
@@ -3889,6 +4128,11 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	// Choose visual treatment from the actual sector filename before any tile surfaces load.
 	// This deliberately leaves map data and scripted destruction untouched.
 	gubSectorVisualProfile = DetermineSectorVisualProfile( gfForceLoad ? gzForceLoadFile : puiFilename );
+	if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM )
+	{
+		TraceA3FarmLoad( "BEGIN", puiFilename );
+		TraceA3FarmLoad( "VISUAL PROFILE", "tropical-farm hero pass; authored geometry preserved" );
+	}
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
 	{
 		TraceB1RemasterLoad( "BEGIN", puiFilename );
@@ -4245,6 +4489,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		SetRelativeStartAndEndPercentage(0, 86, 87, L"Loading placements...");
 		RenderProgressBar(0, 0);
 		LoadSoldiersFromMap(&pBuffer, dMajorMapVersion, ubMinorMapVersion);
+		if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM )
+			EnsureA3FarmCowPlacements();
 	}
 	if(uiFlags & MAP_EXITGRIDS_SAVED)
 	{
@@ -4338,6 +4584,9 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	{
 		GenerateBuildings();
 
+		if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM )
+			DressA3FarmEnvironment();
+
 		// Layer deterministic, non-structural environmental storytelling over the
 		// authored oil-rig map without touching B1.dat or any destruction geometry.
 		if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
@@ -4350,6 +4599,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	MemFree(bCounts);
 
 
+	if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM )
+		TraceA3FarmLoad( "WORLD OK", "" );
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
 		TraceB1RemasterLoad( "WORLD OK", "" );
 
