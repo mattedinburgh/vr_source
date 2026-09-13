@@ -20372,7 +20372,7 @@ BOOLEAN SOLDIERTYPE::LaserActive(void)
 	if (gGameExternalOptions.fScopeModes)
 	{
 		std::map<INT8, OBJECTTYPE*> ObjList;
-		GetScopeLists(&this->inv[HANDPOS], ObjList);
+		GetScopeLists(this, &this->inv[HANDPOS], ObjList);
 
 		if (this->bScopeMode == USE_ALT_WEAPON_HOLD)
 		{
