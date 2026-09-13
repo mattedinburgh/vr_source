@@ -1468,7 +1468,10 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 			(!AICheckHasGun(pOpponent) ||
 			(pOpponent->usAnimState == COWERING || pOpponent->usAnimState == COWERING_PRONE) ||
 			ShockLevelPercent(pOpponent) > 50 ||
-			EffectiveMarksmanship(pOpponent) < 90 && !AICheckIsSniper(pOpponent) && !pOpponent->aiData.bLastAttackHit && !AICheckIsMachinegunner(pOpponent) && !pOpponent->IsSpotting()))
+			EffectiveMarksmanship(pOpponent) < 90 && !AICheckIsSniper(pOpponent) &&
+			!pOpponent->aiData.bLastAttackHit &&
+			!(pOpponent->usSoldierFlagMask2 & SOLDIER_SUCCESSFUL_ATTACK) &&
+			!AICheckIsMachinegunner(pOpponent) && !pOpponent->IsSpotting()))
 		{
 			continue;
 		}
