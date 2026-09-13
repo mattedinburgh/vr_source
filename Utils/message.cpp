@@ -402,8 +402,8 @@ static BOOLEAN gfBattleLogInspectorVisible = FALSE;
 
 static INT16 gsBattleLogX = 6;
 static INT16 gsBattleLogY = -1;
-static INT16 gsBattleLogW = 470;
-static INT16 gsBattleLogH = 124;
+static INT16 gsBattleLogW = 380;
+static INT16 gsBattleLogH = 108;
 
 static INT16 gsBattleLogStartMouseX = 0;
 static INT16 gsBattleLogStartMouseY = 0;
@@ -521,7 +521,13 @@ static void BattleLogHeaderCallback( MOUSE_REGION *pRegion, INT32 iReason )
 	}
 	else if ( iReason & MSYS_CALLBACK_REASON_RBUTTON_UP )
 	{
-		BattleLogSetVisible( FALSE );
+		// Never make the panel impossible to reopen by accident. Right-clicking
+		// the header only dismisses the currently open shot inspector.
+		if ( gfBattleLogInspectorVisible )
+		{
+			gfBattleLogInspectorVisible = FALSE;
+			BattleLogRebuildOverlay();
+		}
 	}
 }
 
@@ -730,7 +736,7 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		mprintf( ix + 6, iy + 4, L"SHOT INSPECTOR - MISS" );
 
 		INT16 sy = iy + BATTLE_LOG_HEADER_H + 3;
-		swprintf( z, L"Aim %d | range %.1f tiles | final CTH %.1f | muzzle sway %.1f",
+		swprintf( z, L"Aim %d | range %.1f tiles | NCTH %.1f | muzzle sway %.1f",
 			d.ubAimTime, d.fRange / (FLOAT)CELL_X_SIZE, d.fFinalChance, d.fMuzzleSway );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
 
@@ -869,11 +875,11 @@ void BattleLogAddNCTHMiss( INT32 iBullet )
 	pEntry->iBullet = iBullet;
 	pEntry->ncth = d;
 
-	STR16 pName = L"Merc";
+	const CHAR16 *pName = L"Merc";
 	if ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] )
 		pName = MercPtrs[d.ubShooterID]->GetName();
 
-	swprintf( pEntry->zText, L"[%02d:%02d] MISS - %s - CTH %.0f  [click for why]",
+	swprintf( pEntry->zText, L"[%02d:%02d] MISS - %s - NCTH %.0f  [click for why]",
 		guiHour, guiMin, pName, d.fFinalChance );
 	gusBattleLogScrollOffset = 0;
 
