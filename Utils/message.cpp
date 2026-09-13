@@ -381,7 +381,7 @@ void ClearDisplayedListOfTacticalStrings( void )
 #define BATTLE_LOG_MAX_ENTRIES 128
 #define BATTLE_LOG_HEADER_H 18
 #define BATTLE_LOG_RESIZE_GRIP 12
-#define BATTLE_LOG_INSPECTOR_H 280
+#define BATTLE_LOG_INSPECTOR_H 170
 
 #define BATTLELOG_OUTCOME_NONE    0
 #define BATTLELOG_OUTCOME_MISS    1
@@ -1226,190 +1226,121 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		else
 		{
 			NCTH_SHOT_DIAGNOSTIC &d = gBattleLogInspectorDiagnostic;
-		INT16 ix = inspectorX;
-		INT16 iy = inspectorY;
-		INT16 iw = inspectorW;
-		CHAR16 z[256];
-		UINT8 ubRound = d.ubVolleyShot > 0 ? d.ubVolleyShot : 1;
-		const CHAR16 *pStance = L"standing";
-		if ( d.ubStance == ANIM_CROUCH ) pStance = L"crouched";
-		else if ( d.ubStance == ANIM_PRONE ) pStance = L"prone";
+			INT16 ix = inspectorX;
+			INT16 iy = inspectorY;
+			CHAR16 z[256];
+			UINT8 ubRound = d.ubVolleyShot > 0 ? d.ubVolleyShot : 1;
+			const CHAR16 *pStance = L"standing";
+			if ( d.ubStance == ANIM_CROUCH ) pStance = L"crouched";
+			else if ( d.ubStance == ANIM_PRONE ) pStance = L"prone";
 
-		const CHAR16 *pOutcomeTitle = L"SHOT INSPECTOR";
-		UINT16 usOutcomeColor = FONT_MCOLOR_LTYELLOW;
-		BOOLEAN fInspectorShooterPlayer = ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] &&
-			MercPtrs[d.ubShooterID]->bTeam == gbPlayerNum );
-		BOOLEAN fInspectorActualTargetPlayer = ( gubBattleLogInspectorActualTargetID != NOBODY &&
-			MercPtrs[gubBattleLogInspectorActualTargetID] &&
-			MercPtrs[gubBattleLogInspectorActualTargetID]->bTeam == gbPlayerNum );
+			const CHAR16 *pOutcomeTitle = L"SHOT INFO";
+			UINT16 usOutcomeColor = FONT_MCOLOR_LTYELLOW;
+			BOOLEAN fInspectorShooterPlayer = ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] &&
+				MercPtrs[d.ubShooterID]->bTeam == gbPlayerNum );
+			BOOLEAN fInspectorActualTargetPlayer = ( gubBattleLogInspectorActualTargetID != NOBODY &&
+				MercPtrs[gubBattleLogInspectorActualTargetID] &&
+				MercPtrs[gubBattleLogInspectorActualTargetID]->bTeam == gbPlayerNum );
 
-		if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_HIT )
-		{
-			pOutcomeTitle = L"SHOT INSPECTOR - HIT";
-			usOutcomeColor = fInspectorShooterPlayer ? FONT_MCOLOR_LTGREEN : FONT_MCOLOR_LTRED;
-		}
-		else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_BLOCKED )
-		{
-			pOutcomeTitle = L"SHOT INSPECTOR - BLOCKED";
-			usOutcomeColor = FONT_MCOLOR_LTYELLOW;
-		}
-		else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_INTERCEPT )
-		{
-			pOutcomeTitle = L"SHOT INSPECTOR - HIT OTHER";
-			usOutcomeColor = fInspectorActualTargetPlayer ? FONT_MCOLOR_LTRED : FONT_MCOLOR_LTYELLOW;
-		}
-		else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_MISS )
-		{
-			pOutcomeTitle = L"SHOT INSPECTOR - MISS";
-			usOutcomeColor = fInspectorShooterPlayer ? FONT_MCOLOR_LTRED : FONT_MCOLOR_LTYELLOW;
-		}
-		BattleLogPrintInspectorLine( ix + 6, iy + 4, usOutcomeColor, (STR16)pOutcomeTitle );
+			if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_HIT )
+			{
+				pOutcomeTitle = L"SHOT INFO - HIT";
+				usOutcomeColor = fInspectorShooterPlayer ? FONT_MCOLOR_LTGREEN : FONT_MCOLOR_LTRED;
+			}
+			else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_BLOCKED )
+			{
+				pOutcomeTitle = L"SHOT INFO - BLOCKED";
+				usOutcomeColor = FONT_MCOLOR_LTYELLOW;
+			}
+			else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_INTERCEPT )
+			{
+				pOutcomeTitle = L"SHOT INFO - HIT OTHER";
+				usOutcomeColor = fInspectorActualTargetPlayer ? FONT_MCOLOR_LTRED : FONT_MCOLOR_LTYELLOW;
+			}
+			else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_MISS )
+			{
+				pOutcomeTitle = L"SHOT INFO - MISS";
+				usOutcomeColor = fInspectorShooterPlayer ? FONT_MCOLOR_LTRED : FONT_MCOLOR_LTYELLOW;
+			}
+			BattleLogPrintInspectorLine( ix + 6, iy + 4, usOutcomeColor, (STR16)pOutcomeTitle );
 
-		INT16 sy = iy + BATTLE_LOG_HEADER_H + 3;
-		const CHAR16 *pShooterName = L"unknown";
-		const CHAR16 *pTargetName = L"target";
-		const CHAR16 *pActualTargetName = L"someone";
-		if ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] )
-			pShooterName = MercPtrs[d.ubShooterID]->GetName();
-		if ( d.ubTargetID != NOBODY && MercPtrs[d.ubTargetID] )
-			pTargetName = MercPtrs[d.ubTargetID]->GetName();
-		if ( gubBattleLogInspectorActualTargetID != NOBODY && MercPtrs[gubBattleLogInspectorActualTargetID] )
-			pActualTargetName = MercPtrs[gubBattleLogInspectorActualTargetID]->GetName();
+			INT16 sy = iy + BATTLE_LOG_HEADER_H + 3;
+			const CHAR16 *pShooterName = L"unknown";
+			const CHAR16 *pTargetName = L"target";
+			const CHAR16 *pActualTargetName = L"someone";
+			if ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] )
+				pShooterName = MercPtrs[d.ubShooterID]->GetName();
+			if ( d.ubTargetID != NOBODY && MercPtrs[d.ubTargetID] )
+				pTargetName = MercPtrs[d.ubTargetID]->GetName();
+			if ( gubBattleLogInspectorActualTargetID != NOBODY && MercPtrs[gubBattleLogInspectorActualTargetID] )
+				pActualTargetName = MercPtrs[gubBattleLogInspectorActualTargetID]->GetName();
 
-		if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_INTERCEPT )
-			swprintf( z, L"%s aimed %s -> hit %s | damage %d", pShooterName, pTargetName, pActualTargetName, gsBattleLogInspectorDamage );
-		else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_HIT )
-			swprintf( z, L"%s -> %s | damage %d", pShooterName, pActualTargetName, gsBattleLogInspectorDamage );
-		else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_BLOCKED )
-		{
-			const CHAR16 *pBlock = L"cover/structure";
-			if ( gubBattleLogInspectorBlockReason == BATTLELOG_BLOCK_GROUND ) pBlock = L"ground";
-			else if ( gubBattleLogInspectorBlockReason == BATTLELOG_BLOCK_ROOF ) pBlock = L"roof";
-			swprintf( z, L"%s -> %s | stopped by %s", pShooterName, pTargetName, pBlock );
-		}
-		else
-			swprintf( z, L"%s -> %s", pShooterName, pTargetName );
+			if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_INTERCEPT )
+				swprintf( z, L"%s aimed at %s -> hit %s | %d dmg", pShooterName, pTargetName, pActualTargetName, gsBattleLogInspectorDamage );
+			else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_HIT )
+				swprintf( z, L"%s -> %s | %d dmg", pShooterName, pActualTargetName, gsBattleLogInspectorDamage );
+			else if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_BLOCKED )
+			{
+				const CHAR16 *pBlock = L"cover/structure";
+				if ( gubBattleLogInspectorBlockReason == BATTLELOG_BLOCK_GROUND ) pBlock = L"ground";
+				else if ( gubBattleLogInspectorBlockReason == BATTLELOG_BLOCK_ROOF ) pBlock = L"roof";
+				swprintf( z, L"%s -> %s | blocked by %s", pShooterName, pTargetName, pBlock );
+			}
+			else
+				swprintf( z, L"%s -> %s", pShooterName, pTargetName );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
 
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
+			const CHAR16 *pWeaponName = L"unknown weapon";
+			if ( d.usWeapon < MAXITEMS && ShortItemNames[d.usWeapon][0] != 0 )
+				pWeaponName = ShortItemNames[d.usWeapon];
+			swprintf( z, L"%s | range %.1f tiles | aim %d | round %d",
+				pWeaponName, d.fRange / (FLOAT)CELL_X_SIZE, d.ubAimTime, ubRound );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
 
-		const CHAR16 *pWeaponName = L"unknown weapon";
-		if ( d.usWeapon < MAXITEMS && ShortItemNames[d.usWeapon][0] != 0 )
-			pWeaponName = ShortItemNames[d.usWeapon];
+			swprintf( z, L"NCTH %.1f | %s | breath %d | shock %d",
+				d.fFinalChance, pStance, d.bBreath, d.bShock );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGREEN, z ); sy += lineH;
 
-		swprintf( z, L"Weapon: %s [item %d]", pWeaponName, d.usWeapon );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
+			swprintf( z, L"Optics %.2fx effective | target %+0.1f%% | visibility %+0.1f%% | close-scope %+0.1f%%",
+				d.fEffectiveMagFactor, d.fAimTarget, d.fVisibility, d.fScopePenalty );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
 
-		swprintf( z, L"Aim %d | round %d | range %.1f tiles | NCTH %.1f | muzzle sway %.1f",
-			d.ubAimTime, ubRound, d.fRange / (FLOAT)CELL_X_SIZE, d.fFinalChance, d.fMuzzleSway );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
+			const CHAR16 *why = L"no major penalty";
+			FLOAT worst = 0.0f;
+			if ( d.fBaseWeapon < worst ) { worst = d.fBaseWeapon; why = L"weapon handling"; }
+			if ( d.fAimWeapon < worst ) { worst = d.fAimWeapon; why = L"weapon handling while aiming"; }
+			if ( d.fAimTarget < worst ) { worst = d.fAimTarget; why = L"target movement/stance"; }
+			if ( d.fVisibility < worst ) { worst = d.fVisibility; why = L"visibility/obstruction"; }
+			if ( d.fScopePenalty < worst ) { worst = d.fScopePenalty; why = L"scope too close"; }
+			if ( d.fBaseEffect < worst ) { worst = d.fBaseEffect; why = L"condition/shock/fatigue"; }
+			swprintf( z, L"Biggest penalty: %s (%+.1f)", why, worst );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTYELLOW, z ); sy += lineH;
 
-		swprintf( z, L"Skill: MRK %d  DEX %d  WIS %d  EXP %d | breath %d  shock %d",
-			d.bMarksmanship, d.bDexterity, d.bWisdom, d.bExperience, d.bBreath, d.bShock );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
+			if ( d.fBaseDifficultyBonus != 0.0f || d.fAimDifficultyBonus != 0.0f ||
+				 d.fClassAccuracyBonus != 0.0f || d.fSpecialNPCAccuracyBonus != 0.0f )
+			{
+				swprintf( z, L"AI/difficulty bonuses: base %+0.1f%% | aim %+0.1f%% | class %+0.1f%% | NPC %+0.1f%%",
+					d.fBaseDifficultyBonus, d.fAimDifficultyBonus, d.fClassAccuracyBonus, d.fSpecialNPCAccuracyBonus );
+				BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTYELLOW, z ); sy += lineH;
+			}
 
-		swprintf( z, L"Handling: %d | base difficulty %.2f  aim difficulty %.2f | %s",
-			d.ubModifiedHandling, d.fGunBaseDifficulty, d.fGunAimDifficulty, pStance );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
-
-		swprintf( z, L"Base: attributes %.1f  flat %+0.1f  -> %.1f", d.fBaseAttribute, d.fFlatBase, d.fBaseChance );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGREEN, z ); sy += lineH;
-
-		swprintf( z, L"Base mod: condition %+0.1f%%  weapon %+0.1f%%  target %+0.1f%%",
-			d.fBaseEffect, d.fBaseWeapon, d.fBaseTarget );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
-
-		swprintf( z, L"Base extra: gear %+0.1f%%  team/difficulty %+0.1f%%  total %+0.1f%%",
-			d.fGearAim, d.fBaseSpecial, d.fBaseModifier );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
-
-		swprintf( z, L"Aim cap: attributes %.1f  trait %+0.1f  item-cap %+0.1f  -> %.1f",
-			d.fAimAttribute, d.fAimTraitCap, d.fPercentCap, d.fAimCap );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGREEN, z ); sy += lineH;
-
-		swprintf( z, L"Aim mod: condition %+0.1f%%  weapon %+0.1f%%  team/difficulty %+0.1f%%",
-			d.fAimEffect, d.fAimWeapon, d.fAimSpecial );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
-
-		swprintf( z, L"Aim extra: trait %+0.1f%%  background %+0.1f%%  spotter %+0.1f%%",
-			d.fTraitModifier, d.fBackground, d.fSpotter );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
-
-		swprintf( z, L"Target: %+0.1f%%  visibility %+0.1f%%  close-scope %+0.1f%% | aim points +%.1f",
-			d.fAimTarget, d.fVisibility, d.fScopePenalty, d.fAimPoints );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
-
-		swprintf( z, L"Aperture: raw %.2f -> iron %.2f -> laser %.2f -> scope %.2f -> sway %.2f",
-			d.fRawBasicAperture, d.fIronAperture, d.fLaserAperture, d.fMaxAperture, d.fFinalAperture );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
-
-		swprintf( z, L"Optics: %.2fx raw / %.2fx effective | laser range %d | light %d | laser effect %.1f%%",
-			d.fMagFactor, d.fEffectiveMagFactor, d.sLaserRange, d.bLaserLightLevel, d.fLaserEffectPercent );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
-
-		swprintf( z, L"Sway/track: random %+0.2f,%+0.2f | tracking %+0.2f,%+0.2f",
-			d.fRandomSwayX, d.fRandomSwayY, d.fTargetTrackingX, d.fTargetTrackingY );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTYELLOW, z ); sy += lineH;
-
-		swprintf( z, L"Volley: inherited %+0.2f,%+0.2f | recoil %+0.2f,%+0.2f",
-			d.fInheritedMuzzleX, d.fInheritedMuzzleY, d.fRecoilX, d.fRecoilY );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
-
-		swprintf( z, L"Compensation: pre-recoil %+0.2f,%+0.2f | beyond-range Y %+0.2f",
-			d.fPreRecoilX, d.fPreRecoilY, d.fRangeCompensationY );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
-
-		swprintf( z, L"Weapon dispersion: %+0.2f,%+0.2f (radius %.2f) | final %+0.2f,%+0.2f",
-			d.fDeviationX, d.fDeviationY, d.fBulletDeviation, d.fShotOffsetX, d.fShotOffsetY );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTRED, z ); sy += lineH;
-
-		swprintf( z, L"Trajectory limiter correction: %+0.2f,%+0.2f",
-			d.fLimitCorrectionX, d.fLimitCorrectionY );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
-
-		swprintf( z, L"Accuracy extras: class %+0.1f%% | special NPC %+0.1f%%",
-			d.fClassAccuracyBonus, d.fSpecialNPCAccuracyBonus );
-		BattleLogPrintInspectorLine( ix + 7, sy,
-			(d.fClassAccuracyBonus != 0.0f || d.fSpecialNPCAccuracyBonus != 0.0f) ? FONT_MCOLOR_LTYELLOW : FONT_MCOLOR_LTGRAY, z );
-		sy += lineH;
-
-		swprintf( z, L"Difficulty bonuses: base %+0.1f%% | aim %+0.1f%% | combined special %.1f / %.1f",
-			d.fBaseDifficultyBonus, d.fAimDifficultyBonus, d.fBaseSpecial, d.fAimSpecial );
-		BattleLogPrintInspectorLine( ix + 7, sy,
-			(d.fBaseDifficultyBonus != 0.0f || d.fAimDifficultyBonus != 0.0f) ? FONT_MCOLOR_LTYELLOW : FONT_MCOLOR_LTGRAY, z );
-		sy += lineH;
-
-		// Player-readable dominant formula factor. The raw values above remain
-		// visible so the explanation never hides the actual NCTH calculation.
-		const CHAR16 *why = L"no major formula penalty";
-		FLOAT worst = 0.0f;
-		if ( d.fBaseWeapon < worst ) { worst = d.fBaseWeapon; why = L"weapon handling / base weapon penalty"; }
-		if ( d.fAimWeapon < worst ) { worst = d.fAimWeapon; why = L"weapon handling while aiming"; }
-		if ( d.fAimTarget < worst ) { worst = d.fAimTarget; why = L"target movement / stance / target difficulty"; }
-		if ( d.fVisibility < worst ) { worst = d.fVisibility; why = L"visibility / intervening obstruction penalty"; }
-		if ( d.fScopePenalty < worst ) { worst = d.fScopePenalty; why = L"scope used inside its efficient range"; }
-		if ( d.fBaseEffect < worst ) { worst = d.fBaseEffect; why = L"shooter condition: shock, injury, fatigue or morale"; }
-		swprintf( z, L"Biggest formula penalty: %s (%+.1f)", why, worst );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTYELLOW, z ); sy += lineH;
-
-		// Also identify which physical component moved this particular round the
-		// most. This is what makes two shots with the same NCTH end differently.
-		const CHAR16 *physicalWhy = L"random muzzle sway";
-		FLOAT physicalMagnitude = d.fRandomSwayX*d.fRandomSwayX + d.fRandomSwayY*d.fRandomSwayY;
-		FLOAT candidate = d.fTargetTrackingX*d.fTargetTrackingX + d.fTargetTrackingY*d.fTargetTrackingY;
-		if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"target tracking/lead error"; }
-		candidate = d.fPreRecoilX*d.fPreRecoilX + d.fPreRecoilY*d.fPreRecoilY;
-		if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"pre-recoil compensation"; }
-		candidate = d.fInheritedMuzzleX*d.fInheritedMuzzleX + d.fInheritedMuzzleY*d.fInheritedMuzzleY;
-		if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"inherited burst direction"; }
-		candidate = d.fRecoilX*d.fRecoilX + d.fRecoilY*d.fRecoilY;
-		if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"burst/autofire recoil"; }
-		candidate = d.fRangeCompensationY*d.fRangeCompensationY;
-		if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"beyond-range compensation"; }
-		candidate = d.fDeviationX*d.fDeviationX + d.fDeviationY*d.fDeviationY;
-		if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"intrinsic weapon dispersion"; }
-		swprintf( z, L"Largest trajectory component: %s | aperture quality %d%%",
-			physicalWhy, d.sApertureRatio );
-		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTRED, z );
+			const CHAR16 *physicalWhy = L"random muzzle sway";
+			FLOAT physicalMagnitude = d.fRandomSwayX*d.fRandomSwayX + d.fRandomSwayY*d.fRandomSwayY;
+			FLOAT candidate = d.fTargetTrackingX*d.fTargetTrackingX + d.fTargetTrackingY*d.fTargetTrackingY;
+			if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"target tracking/lead"; }
+			candidate = d.fPreRecoilX*d.fPreRecoilX + d.fPreRecoilY*d.fPreRecoilY;
+			if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"recoil compensation"; }
+			candidate = d.fInheritedMuzzleX*d.fInheritedMuzzleX + d.fInheritedMuzzleY*d.fInheritedMuzzleY;
+			if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"inherited burst direction"; }
+			candidate = d.fRecoilX*d.fRecoilX + d.fRecoilY*d.fRecoilY;
+			if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"burst/autofire recoil"; }
+			candidate = d.fRangeCompensationY*d.fRangeCompensationY;
+			if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"beyond-range compensation"; }
+			candidate = d.fDeviationX*d.fDeviationX + d.fDeviationY*d.fDeviationY;
+			if ( candidate > physicalMagnitude ) { physicalMagnitude = candidate; physicalWhy = L"weapon dispersion"; }
+			swprintf( z, L"Main trajectory factor: %s | aperture quality %d%%",
+				physicalWhy, d.sApertureRatio );
+			BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTRED, z );
 		}
 	}
 
