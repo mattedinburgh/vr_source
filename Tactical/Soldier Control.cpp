@@ -6177,16 +6177,16 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 	// DEDUCT LIFE
 	ubCombinedLoss = this->SoldierTakeDamage( ANIM_CROUCH, sDamage, poisondamage, sBreathLoss, ubReason, this->ubAttackerID, NOWHERE, FALSE, TRUE );
 
-	// VR enhanced gore: every damaging conventional gunshot leaves visible blood.
-	// Keep this deterministic for the first balancing pass; probability can be introduced later.
-	// This only changes the existing map blood graphics and does not alter bleeding or damage.
+	// VR enhanced gore: every damaging conventional gunshot produces an immediate
+	// visible blood splash, including 1 HP hits. This impact effect is deliberately
+	// independent of the legacy Blood & Gore option; the option still controls the
+	// engine's persistent floor-blood rendering.
 	if ( ubReason == TAKE_DAMAGE_GUNFIRE &&
-		sDamage > 0 &&
-		gGameSettings.fOptions[ TOPTION_BLOOD_N_GORE ] &&
+		sDamage >= 1 &&
 		this->bInSector &&
 		!( this->flags.uiStatusFlags & ( SOLDIER_VEHICLE | SOLDIER_ROBOT ) ) )
 	{
-		UINT8 ubBloodStrength = 2;
+		UINT8 ubBloodStrength = 3;
 
 		if ( sDamage >= 30 )
 			ubBloodStrength = MAXBLOODQUANTITY;
@@ -6196,13 +6196,12 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 			ubBloodStrength = 5;
 		else if ( sDamage >= 12 )
 			ubBloodStrength = 4;
-		else if ( sDamage >= 6 )
-			ubBloodStrength = 3;
 
+		// Retain persistent blood for users with the normal Blood & Gore option enabled.
 		DropBlood( this, ubBloodStrength, this->bVisible );
 
-		// Immediate animated impact spray.  This is deliberately independent of
-		// the persistent floor-blood decal so even very small wounds read on impact.
+		// Immediate impact animation. Use a purpose-built red splash instead of the
+		// legacy SPRAY.STI, which is only a tiny grey impact/spark effect.
 		if ( this->bVisible != -1 && GridNoOnScreen( this->sGridNo ) )
 		{
 			ANITILE_PARAMS AniParams;
@@ -6212,10 +6211,21 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 			AniParams.sDelay = 55;
 			AniParams.sStartFrame = 0;
 			AniParams.uiFlags = ANITILE_CACHEDTILE | ANITILE_FORWARD | ANITILE_NOZBLITTER;
-			AniParams.sX = CenterX( this->sGridNo );
-			AniParams.sY = CenterY( this->sGridNo );
-			AniParams.sZ = 0;
-			strcpy( AniParams.zCachedFile, "TILECACHE\\SPRAY.STI" );
+			ConvertGridNoToCenterCellXY( this->sGridNo, &AniParams.sX, &AniParams.sY );
+
+			// Put the splash at approximately the struck body region.
+			AniParams.sZ = 28;
+			if ( ubHitLocation == AIM_SHOT_HEAD )
+				AniParams.sZ = 48;
+			else if ( ubHitLocation == AIM_SHOT_LEGS )
+				AniParams.sZ = 12;
+
+			if ( gAnimControl[ this->usAnimState ].ubEndHeight == ANIM_CROUCH )
+				AniParams.sZ = __min( AniParams.sZ, (INT16)28 );
+			else if ( gAnimControl[ this->usAnimState ].ubEndHeight == ANIM_PRONE )
+				AniParams.sZ = 10;
+
+			strcpy( AniParams.zCachedFile, "TILECACHE\\VR_BLOOD_IMPACT.STI" );
 			CreateAnimationTile( &AniParams );
 		}
 	}
