@@ -6264,19 +6264,24 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 
 		if ( ubHitLocation == AIM_SHOT_HEAD || sDamage >= 18 )
 		{
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubSprayDirection, sGoreZ, 42, 0 );
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubSprayDirection, (INT16)( sGoreZ - 3 ), 50, 30 );
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 6 ), 58, 55 );
+			// Heavy hits throw a dense burst out of the exit side, then leave two
+			// progressively lower/farther droplet curtains falling behind the victim.
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubSprayDirection, sGoreZ, 40, 0 );
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubSprayDirection, (INT16)( sGoreZ - 3 ), 47, 28 );
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubSprayDirection, (INT16)( sGoreZ - 7 ), 54, 58 );
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 10 ), 61, 92 );
 		}
 		else if ( sDamage >= 8 )
 		{
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubSprayDirection, sGoreZ, 46, 0 );
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 4 ), 55, 38 );
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubSprayDirection, sGoreZ, 44, 0 );
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 4 ), 51, 38 );
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 7 ), 58, 72 );
 		}
 		else
 		{
-			// Even a one-point wound gets a clearly visible exit spray.
-			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, sGoreZ, 48, 0 );
+			// Even a one-point wound gets an exit burst plus a smaller rearward falloff.
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, sGoreZ, 46, 0 );
+			SpawnVRDirectionalGoreSpray( this, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubSprayDirection, (INT16)( sGoreZ - 3 ), 55, 42 );
 		}
 	}
 
