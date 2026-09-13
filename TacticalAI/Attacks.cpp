@@ -3428,7 +3428,8 @@ INT8 CountAdjacentSpreadTargets( SOLDIERTYPE * pSoldier, INT16 sFirstTarget, INT
 		if (pTarget)
 		{
 			// check to see if guy is visible
-			if (pSoldier->aiData.bOppList[ pTarget->ubID ] == SEEN_CURRENTLY)
+			if (pSoldier->aiData.bOppList[pTarget->ubID] == SEEN_CURRENTLY &&
+				LOS_Raised(pSoldier, pTarget, CALC_FROM_ALL_DIRS) > 0)
 			{
 				pTargets[bTargetIndex] = pTarget;
 				bTargets++;
@@ -3554,7 +3555,9 @@ INT16 CalcSpreadBurst( SOLDIERTYPE * pSoldier, INT16 sFirstTarget, INT8 bTargetL
 		}
 		sTarget = sFirstTarget + DirIncrementer[bCheckDir];
 		pTarget = SimpleFindSoldier( sTarget, bTargetLevel );
-		if (pTarget && pSoldier->aiData.bOppList[ pTarget->ubID ] == SEEN_CURRENTLY)
+		if (pTarget &&
+			pSoldier->aiData.bOppList[pTarget->ubID] == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pTarget, CALC_FROM_ALL_DIRS) > 0)
 		{
 			bOtherAdjacents = CountAdjacentSpreadTargets( pSoldier, sTarget, bTargetLevel );
 			if (bOtherAdjacents > bAdjacents)
@@ -4139,20 +4142,21 @@ BOOLEAN GetFarthestOpponent(SOLDIERTYPE *pSoldier, UINT8* puID, INT16 sRange)
 			continue;			// next merc
 		}
 
+		pbPersOL = pSoldier->aiData.bOppList + pOpponent->ubID;
+
+		// Exact live state is legitimate only for a genuinely current personal sighting.
+		if (*pbPersOL != SEEN_CURRENTLY ||
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) <= 0)
+		{
+			continue;			// next merc
+		}
+
 		if (!ValidOpponent(pSoldier, pOpponent))
 		{
 			continue;
 		}
 
-		pbPersOL = pSoldier->aiData.bOppList + pOpponent->ubID;
-
-		// if this opponent is not seen personally
-		if (*pbPersOL != SEEN_CURRENTLY)
-		{
-			continue;			// next merc
-		}
-
-		// since we're dealing with seen people, use exact gridnos
+		// since we're dealing with a fresh personal sighting, use exact gridnos
 		sGridNo = pOpponent->sGridNo;
 
 		// if we are standing at that gridno(!, obviously our info is old...)
