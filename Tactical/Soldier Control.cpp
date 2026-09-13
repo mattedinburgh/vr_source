@@ -2164,7 +2164,8 @@ INT16 SOLDIERTYPE::CalcActionPoints( void )
 	///////////////////////////////////////////////////////////////////////////////////////////
 	
 	// if we are in boxing mode, adjust APs... THIS MUST BE LAST!
-	if ( gTacticalStatus.bBoxingState == BOXING || gTacticalStatus.bBoxingState == PRE_BOXING )
+	if ( (gTacticalStatus.bBoxingState == BOXING || gTacticalStatus.bBoxingState == PRE_BOXING) &&
+		(this->flags.uiStatusFlags & SOLDIER_BOXER) )
 	{
 		ubPoints /= 2;
 	}
@@ -2174,7 +2175,8 @@ INT16 SOLDIERTYPE::CalcActionPoints( void )
 
 void SOLDIERTYPE::CalcNewActionPoints( void )
 {
-	if ( gTacticalStatus.bBoxingState == BOXING || gTacticalStatus.bBoxingState == PRE_BOXING )
+	if ( (gTacticalStatus.bBoxingState == BOXING || gTacticalStatus.bBoxingState == PRE_BOXING) &&
+		(this->flags.uiStatusFlags & SOLDIER_BOXER) )
 	{
 		// if we are in boxing mode, carry 1/2 as many points
 		if (this->bActionPoints > APBPConstants[MAX_AP_CARRIED] / 2)
