@@ -8127,17 +8127,38 @@ BOOLEAN KillIncompacitatedEnemyInSector( )
             // post-battle pipeline.
             if ( IsBleedoutCasualty( pTeamSoldier ) )
             {
-                if ( !pTeamSoldier->aiData.bNeutral &&
-                    pTeamSoldier->bSide != gbPlayerNum &&
-                    gGameExternalOptions.fAllowPrisonerSystem )
+                const BOOLEAN fHostileCasualty =
+                    !pTeamSoldier->aiData.bNeutral &&
+                    pTeamSoldier->bSide != gbPlayerNum;
+
+                if ( fHostileCasualty && gGameExternalOptions.fAllowPrisonerSystem )
                 {
                     pTeamSoldier->bBleeding = 0;
                     pTeamSoldier->ubBleedoutState = BLEEDOUT_STABILIZED;
                     pTeamSoldier->ubBleedoutTurns = 0;
                     pTeamSoldier->usSoldierFlagMask |= SOLDIER_POW;
                     RemoveManAsTarget( pTeamSoldier );
+                    continue;
                 }
-                continue;
+
+                if ( fHostileCasualty )
+                {
+                    // With the prisoner system disabled there must be no fifth
+                    // post-battle state where a living hostile is left behind after
+                    // victory. Release the temporary rescue protection and fall
+                    // through to the legacy incapacitated-enemy death pipeline below.
+                    // This is especially important in pursuit battles: otherwise the
+                    // retreat lock can be cleared while a hostile survivor remains.
+                    pTeamSoldier->ClearBleedoutDragLinks();
+                    pTeamSoldier->ubBleedoutState = BLEEDOUT_NONE;
+                    pTeamSoldier->ubBleedoutTurns = 0;
+                }
+                else
+                {
+                    // Friendly/militia casualties keep their rescued/incapacitated
+                    // state and recover through the normal post-combat medical rules.
+                    continue;
+                }
             }
 
             // Checkf for any more bacguys
