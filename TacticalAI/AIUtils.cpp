@@ -1630,13 +1630,14 @@ INT32 ClosestSeenOpponent(SOLDIERTYPE *pSoldier, INT32 * psGridNo, INT8 * pbLeve
 
 		pbPersOL = pSoldier->aiData.bOppList + pOpponent->ubID;
 
-		// if this opponent is not seen personally
-		if (*pbPersOL != SEEN_CURRENTLY)
+		// Cached SEEN_CURRENTLY is not enough after smoke/cover breaks LOS.
+		if (*pbPersOL != SEEN_CURRENTLY ||
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) <= 0)
 		{
 			continue;			// next merc
 		}
 
-		// since we're dealing with seen people, use exact gridnos
+		// since we're dealing with genuinely visible people, use exact gridnos
 		sGridNo = pOpponent->sGridNo;
 		bLevel = pOpponent->pathing.bLevel;
 
@@ -1715,13 +1716,14 @@ INT32 ClosestSeenOpponentWithRoof(SOLDIERTYPE *pSoldier, INT32 * psGridNo, INT8 
 
 		pbPersOL = pSoldier->aiData.bOppList + pOpponent->ubID;
 
-		// if this opponent is not seen personally
-		if (*pbPersOL != SEEN_CURRENTLY)
+		// Cached SEEN_CURRENTLY is not enough after smoke/cover breaks LOS.
+		if (*pbPersOL != SEEN_CURRENTLY ||
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) <= 0)
 		{
 			continue;			// next merc
 		}
 
-		// since we're dealing with seen people, use exact gridnos
+		// since we're dealing with genuinely visible people, use exact gridnos
 		sGridNo = pOpponent->sGridNo;
 		bLevel = pOpponent->pathing.bLevel;
 
