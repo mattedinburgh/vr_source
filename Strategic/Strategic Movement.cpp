@@ -156,6 +156,11 @@ UINT8 NumberMercsInVehicleGroup( GROUP *pGroup );
 // waiting for input from user
 BOOLEAN gfWaitingForInput = FALSE;
 
+// Tactical enemy traversal moves escaped soldiers directly into adjacent-sector
+// static enemy counters, bypassing GroupArrivedAtSector(). Queue that destination
+// so defenders cannot silently coexist with the escaped force.
+static BOOLEAN gfPendingEnemyRetreatConflict[ MAP_WORLD_X ][ MAP_WORLD_Y ] = { FALSE };
+
 //Player grouping functions
 //.........................
 //Creates a new player group, returning the unique ID of that group.	This is the first
@@ -4522,6 +4527,77 @@ GROUP* FindMovementGroupInSector( UINT8 ubSectorX, UINT8 ubSectorY, BOOLEAN fPla
 		pGroup = pGroup->next;
 	}
 	return NULL;
+}
+
+
+void QueueEnemyRetreatConflict( UINT8 ubSectorX, UINT8 ubSectorY )
+{
+	if( ubSectorX < 1 || ubSectorX >= MAP_WORLD_X - 1 ||
+		ubSectorY < 1 || ubSectorY >= MAP_WORLD_Y - 1 )
+		return;
+
+	gfPendingEnemyRetreatConflict[ ubSectorX ][ ubSectorY ] = TRUE;
+}
+
+BOOLEAN ProcessNextEnemyRetreatConflict( void )
+{
+	if( IsAutoResolveActive() || gfPreBattleInterfaceActive ||
+		( gTacticalStatus.uiFlags & INCOMBAT ) ||
+		gTacticalStatus.fEnemyInSector ||
+		gTacticalStatus.fAutoBandageMode )
+		return FALSE;
+
+	for( UINT8 ubY = 1; ubY < MAP_WORLD_Y - 1; ++ubY )
+	{
+		for( UINT8 ubX = 1; ubX < MAP_WORLD_X - 1; ++ubX )
+		{
+			if( !gfPendingEnemyRetreatConflict[ ubX ][ ubY ] )
+				continue;
+
+			if( NumEnemiesInSector( ubX, ubY ) <= 0 )
+			{
+				gfPendingEnemyRetreatConflict[ ubX ][ ubY ] = FALSE;
+				continue;
+			}
+
+			GROUP *pPlayerGroup = FindMovementGroupInSector( ubX, ubY, TRUE );
+			BOOLEAN fMercsPresent = ( PlayerMercsInSector( ubX, ubY, 0 ) > 0 );
+			BOOLEAN fMilitiaPresent = ( CountAllMilitiaInSector( ubX, ubY ) > 0 );
+
+			if( !fMercsPresent && !fMilitiaPresent )
+			{
+				gfPendingEnemyRetreatConflict[ ubX ][ ubY ] = FALSE;
+				continue;
+			}
+
+			StopTimeCompression();
+
+			if( fMercsPresent && pPlayerGroup )
+			{
+				// Use the normal PBI path: player may fight tactically or autoresolve,
+				// and militia already present in the sector joins normally.
+				if( CheckConditionsForBattle( pPlayerGroup ) )
+				{
+					gfPendingEnemyRetreatConflict[ ubX ][ ubY ] = FALSE;
+					return TRUE;
+				}
+
+				// Simultaneous-arrival logic may deliberately defer PBI.
+				return FALSE;
+			}
+
+			if( fMilitiaPresent )
+			{
+				// Militia-only destination: escaped enemies are attackers, not defenders.
+				gubEnemyEncounterCode = ENEMY_INVASION_CODE;
+				gfPendingEnemyRetreatConflict[ ubX ][ ubY ] = FALSE;
+				EnterAutoResolveMode( ubX, ubY );
+				return TRUE;
+			}
+		}
+	}
+
+	return FALSE;
 }
 
 BOOLEAN GroupAtFinalDestination( GROUP *pGroup )
