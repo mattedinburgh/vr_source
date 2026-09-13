@@ -21638,9 +21638,11 @@ void SOLDIERTYPE::ChangeToFlybackAnimation( UINT8 flyBackDirection )
 	sNewGridNo = NewGridNo( sNewGridNo, sDirectionInc );
 	if ( gubWorldMovementCosts[ sNewGridNo ][ ubOppositeDir ][ this->pathing.bLevel ] >= TRAVELCOST_BLOCKED )
 	{
-		// No room to fly back.  Fall back instead
+		// No room for the second displacement tile. Commit to the one-tile
+		// fallback and stop here; continuing would build a route into the blocker.
 		this->BeginTyingToFall();
 		this->ChangeSoldierState( FALLBACK_HIT_STAND, 0, FALSE );
+		return;
 	}
 
 
