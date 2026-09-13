@@ -39,6 +39,10 @@ New AI must not:
 - create a second omniscient perception system
 - treat cached `SEEN_CURRENTLY` as sufficient for aimed fire when a fresh LOS test is blocked by smoke or another newly changed visibility condition
 
+Generic callback/predicate rule:
+- arbitrary `SOLDIER_CONDITION`/callback predicates are treated as potentially reading hidden mutable state;
+- do not evaluate them on unseen opponents unless the caller has a dedicated knowledge-safe contract;
+- generic AoE selection therefore classifies predicate-based enemy/taboo targets only under fresh personal sight, while dedicated grenade/launcher code uses JA2 known locations for remembered contacts.
 New AI may:
 - use currently seen opponents
 - use heard contacts and last-known positions with lower certainty
