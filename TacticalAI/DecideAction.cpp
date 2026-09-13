@@ -327,23 +327,43 @@ static UINT8 AIEnemyResponseLimitForContact(
 	UINT8 ubWaveCap = (UINT8)__min((INT32)ubDesiredResponse,
 		(INT32)ubInitialWave + 2 * (INT32)uiElapsedTurns);
 
-	// Doctrine belongs to the element actually in contact.  Individual QRF members
-	// may have different orders/classes, but those differences must not split a
-	// fireteam into contradictory release/hold decisions.
-	UINT8 ubDoctrineBaseline = AIDoctrineResponseLimit(pResponseAnchor);
-	UINT8 ubDoctrine = AIGetDoctrineProfile(pResponseAnchor);
-	if (ubDoctrine == AI_DOCTRINE_SECURITY &&
-		pResponseAnchor->aiData.bOrders != ONCALL &&
-		pResponseAnchor->aiData.bOrders != SEEKENEMY)
+	// Deidranna doctrine belongs only to ENEMY_TEAM. Militia keeps the shared
+	// human-like response model and must not inherit enemy formation restrictions.
+	UINT8 ubDoctrineBaseline = 4;
+	UINT8 ubDoctrine = AI_DOCTRINE_LINE;
+	if (pResponseAnchor->bTeam == ENEMY_TEAM)
 	{
-		ubWaveCap = __min((UINT8)3, ubWaveCap);
-	}
-	else if (ubDoctrine == AI_DOCTRINE_ELITE_GUARD)
-	{
-		ubWaveCap = __min((UINT8)5, ubWaveCap);
+		// Doctrine belongs to the element actually in contact. Individual QRF members
+		// may have different orders/classes, but those differences must not split a
+		// fireteam into contradictory release/hold decisions.
+		ubDoctrineBaseline = AIDoctrineResponseLimit(pResponseAnchor);
+		ubDoctrine = AIGetDoctrineProfile(pResponseAnchor);
+		if (ubDoctrine == AI_DOCTRINE_SECURITY &&
+			pResponseAnchor->aiData.bOrders != ONCALL &&
+			pResponseAnchor->aiData.bOrders != SEEKENEMY)
+		{
+			ubWaveCap = __min((UINT8)3, ubWaveCap);
+		}
+		else if (ubDoctrine == AI_DOCTRINE_ELITE_GUARD)
+		{
+			ubWaveCap = __min((UINT8)5, ubWaveCap);
+		}
 	}
 
-	return __max(ubDoctrineBaseline, ubWaveCap);
+	UINT8 ubFinalResponse = __max(ubDoctrineBaseline, ubWaveCap);
+
+	// Hard doctrine caps are applied after baseline/wave reconciliation. Previously
+	// an ONCALL/senior elite guard could raise the baseline above five and bypass the
+	// earlier wave cap through max(baseline, wave). Guard facilities must stay guarded.
+	if (pResponseAnchor->bTeam == ENEMY_TEAM)
+	{
+		if (ubDoctrine == AI_DOCTRINE_SECURITY)
+			ubFinalResponse = __min((UINT8)3, ubFinalResponse);
+		else if (ubDoctrine == AI_DOCTRINE_ELITE_GUARD)
+			ubFinalResponse = __min((UINT8)5, ubFinalResponse);
+	}
+
+	return ubFinalResponse;
 }
 
 // RED/BLACK alert state must not bypass the same contact-local response budget
@@ -2994,27 +3014,12 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 	}
 
 	DebugMsg(TOPIC_JA2, DBG_LEVEL_3, "decideactionred: calculate morale before combat commitment");
-	// Break-contact state must be evaluated before weapon scavenging, long-range
-	// attack setup and sniper/mortar decisions. Otherwise a newly collapsing soldier
-	// can spend the turn on an offensive action before the retreat system runs.
 	pSoldier->aiData.bAIMorale = CalcMorale(pSoldier);
-	if (AICombatTeam(pSoldier))
-	{
-		// A shattered enemy element first tries to attach to another viable fireteam.
-		// This must precede disengagement state updates; otherwise the last one/two
-		// soldiers can acquire escape intent before cohesion gets a chance to absorb them.
-		INT8 bCohesionAction = DecideFireteamCohesionAction(pSoldier, ubCanMove);
-		if (bCohesionAction != AI_ACTION_NONE)
-			return bCohesionAction;
 
-		INT8 bDisengageAction = DecideDisengagementAction(pSoldier, ubCanMove);
-		if (bDisengageAction != AI_ACTION_NONE)
-			return bDisengageAction;
-	}
-
-	// Emergency concealment and anti-clustering must happen before long-range attack
-	// setup; otherwise RED soldiers can spend the turn sniping/mortaring while an
-	// exposed casualty or grenade-vulnerable cluster still needs immediate protection.
+	// RED and BLACK use the same high-priority tactical ordering:
+	// emergency protection -> anti-clustering -> cohesion -> disengagement.
+	// Alert-state changes must not silently reverse casualty protection and
+	// break-contact priorities for the same battlefield situation.
 	if (AICombatTeam(pSoldier))
 	{
 		INT8 bSmokeAction = DecideEmergencyProtectionSmoke(pSoldier);
@@ -3026,6 +3031,19 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		INT8 bDisperseAction = DecideCombatDispersion(pSoldier);
 		if (bDisperseAction != AI_ACTION_NONE)
 			return bDisperseAction;
+	}
+	if (AICombatTeam(pSoldier))
+	{
+		// A shattered element first gets a chance to join another viable local
+		// fireteam; the helper refuses ordinary regrouping while under direct pressure.
+		INT8 bCohesionAction = DecideFireteamCohesionAction(pSoldier, ubCanMove);
+		if (bCohesionAction != AI_ACTION_NONE)
+			return bCohesionAction;
+
+		// Persistent break-contact intent then outranks ordinary attack setup.
+		INT8 bDisengageAction = DecideDisengagementAction(pSoldier, ubCanMove);
+		if (bDisengageAction != AI_ACTION_NONE)
+			return bDisengageAction;
 	}
 
 	// In RED state there is no direct close contact. A viable casualty response should
