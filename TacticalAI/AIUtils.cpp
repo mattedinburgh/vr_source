@@ -9341,7 +9341,11 @@ BOOLEAN LastTargetCollapsed( SOLDIERTYPE *pSoldier )
 		return FALSE;
 	}
 
-	// now check target state
+	// Current collapse state is legitimate only if this soldier still personally
+	// sees the occupant of the last-target tile. Otherwise the old tile is merely memory.
+	if (PersonalKnowledge(pSoldier, ubTarget) != SEEN_CURRENTLY)
+		return FALSE;
+
 	if( MercPtrs[ubTarget]->stats.bLife < OKLIFE ||
 		MercPtrs[ubTarget]->bCollapsed ||
 		MercPtrs[ubTarget]->bBreathCollapsed )
@@ -9375,7 +9379,11 @@ BOOLEAN LastTargetSuppressed( SOLDIERTYPE *pSoldier )
 		return FALSE;
 	}
 
-	// now check target state
+	// Suppression/cowering is visible state, not something inferred through an
+	// old target tile after contact has been lost.
+	if (PersonalKnowledge(pSoldier, ubTarget) != SEEN_CURRENTLY)
+		return FALSE;
+
 	if( CoweringShockLevel(MercPtrs[ubTarget]) )
 	{
 		return TRUE;
