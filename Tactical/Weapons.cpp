@@ -1379,9 +1379,11 @@ BOOLEAN CheckForGunJam( SOLDIERTYPE * pSoldier )
 				maxJamChance = __min( 50, maxJamChance );
 
 				int reliability =  GetReliability( pObj ); 
-				int condition = (*pObj)[0]->data.gun.bGunStatus; 
-				int invertedBaseJamChance = condition + (reliability * 2) - 
-					gGameExternalOptions.ubWeaponReliabilityReductionPerRainIntensity * gbCurrentRainIntensity; 
+				int condition = (*pObj)[0]->data.gun.bGunStatus;
+				int weatherReliabilityPenalty = gGameExternalOptions.gfEnableAdvancedWeather ?
+					WeatherGetWeaponReliabilityPenalty() :
+					( gGameExternalOptions.ubWeaponReliabilityReductionPerRainIntensity * gbCurrentRainIntensity );
+				int invertedBaseJamChance = condition + (reliability * 2) - weatherReliabilityPenalty;
 
 				// Flugente: If overheating is allowed, a gun will be prone to more overheating if its temperature is high
 				if ( gGameExternalOptions.fWeaponOverheating )
