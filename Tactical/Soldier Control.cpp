@@ -117,7 +117,6 @@
 //forward declarations of common classes to eliminate includes
 class OBJECTTYPE;
 class SOLDIERTYPE;
-void UpdateDraggedDownedPersonPosition( SOLDIERTYPE *pSoldier, INT32 sOldGridNo );
 
 UINT16 usForceAnimState = INVALID_ANIMATION;//dnl ch70 170913
 
