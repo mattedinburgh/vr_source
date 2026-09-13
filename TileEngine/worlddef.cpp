@@ -731,10 +731,105 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 			saturationPercent += 3;
 		}
 	}
+	else if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
+	{
+		// B1 Tier 1A: give the non-structural ground/detail layers distinct material
+		// identities. These slots change palette only: no map indices, JSD, collision,
+		// cover, LOS, destruction state or scripted object identity is touched.
+		if ( ubType == ANOTHERDEBRIS )
+		{
+			// POOL.STI: cooler, cleaner water/concrete separation.
+			saturationPercent = 118;
+			contrastPercent = 116;
+			redBias = -8;
+			greenBias = 3;
+			blueBias = 10;
+		}
+		else if ( ubType == FIRSTROAD )
+		{
+			// STREET2.STI: darker, weathered industrial roadway. Palette-only despite
+			// its JSD partner, so the authored structure footprint is unchanged.
+			saturationPercent = 92;
+			contrastPercent = 116;
+			redBias = 4;
+			greenBias = 2;
+			blueBias = -4;
+		}
+		else if ( ubType == DEBRISROCKS )
+		{
+			// W-DEBRI1.STI: neutral concrete/rock rubble.
+			saturationPercent = 88;
+			contrastPercent = 118;
+			redBias = 4;
+			greenBias = 2;
+			blueBias = -3;
+		}
+		else if ( ubType == DEBRISWOOD )
+		{
+			// P-DEBRI1.STI: warmer wood/rust debris.
+			saturationPercent = 110;
+			contrastPercent = 116;
+			redBias = 7;
+			greenBias = 3;
+			blueBias = -7;
+		}
+		else if ( ubType == DEBRISWEEDS )
+		{
+			// W-DEBRI2.STI: dusty organic debris.
+			saturationPercent = 103;
+			contrastPercent = 115;
+			redBias = 4;
+			greenBias = 4;
+			blueBias = -5;
+		}
+		else if ( ubType == DEBRISGRASS )
+		{
+			// W-DEBRI3.STI: faded vegetation with clearer local contrast.
+			saturationPercent = 101;
+			contrastPercent = 116;
+			redBias = 2;
+			greenBias = 5;
+			blueBias = -5;
+		}
+		else if ( ubType == DEBRISSAND )
+		{
+			// Oil_Debris.sti: sootier/rustier dedicated rig debris.
+			saturationPercent = 94;
+			contrastPercent = 123;
+			redBias = 6;
+			greenBias = 0;
+			blueBias = -7;
+		}
+		else if ( ubType == DEBRISMISC )
+		{
+			// P-DEBRI3.STI: pale concrete/rubble without the old flat grey look.
+			saturationPercent = 84;
+			contrastPercent = 119;
+			redBias = 5;
+			greenBias = 3;
+			blueBias = -3;
+		}
+		else if ( ubType == DEBRIS2MISC )
+		{
+			// WP_DEB.STI: darker industrial scrap/plant debris.
+			saturationPercent = 92;
+			contrastPercent = 122;
+			redBias = 6;
+			greenBias = 1;
+			blueBias = -6;
+		}
+		else if ( (ubType >= FIRSTWALL && ubType <= LASTDOOR) ||
+				  (ubType >= FIRSTROOF && ubType <= LASTSLANTROOF) )
+		{
+			// Architecture remains readable and slightly weathered without changing any structure data.
+			contrastPercent += 2;
+			saturationPercent -= 2;
+		}
+	}
 	else if ( (ubType >= FIRSTWALL && ubType <= LASTDOOR) ||
 			  (ubType >= FIRSTROOF && ubType <= LASTSLANTROOF) )
 	{
-		// Architecture remains readable and slightly weathered without changing any structure data.
+		// Oronegro town architecture uses the same conservative treatment.
 		contrastPercent += 2;
 		saturationPercent -= 2;
 	}
