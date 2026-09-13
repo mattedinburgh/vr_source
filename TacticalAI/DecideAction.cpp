@@ -10080,9 +10080,9 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 		pSoldier->aiData.bOrders != STATIONARY &&
 		!AICheckSuccessfulAttack(pSoldier, TRUE) &&
 		(pSoldier->aiData.bUnderFire ||
-		CountSeenEnemiesLastTurn(pSoldier) > CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2) ||
+		CountSeenEnemiesLastTurn(pSoldier) > AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2) ||
 		CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE) > CountFriendsLastAttackHit(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE) ||
-		CountCorpses(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE, TRUE, TRUE) > CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE)) &&
+		CountCorpses(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE, TRUE, TRUE) > AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE)) &&
 		(InSmoke(pSoldier->sGridNo, pSoldier->pathing.bLevel) ||
 		Chance(SoldierDifficultyLevel(pSoldier) * 10) ||
 		Chance(AIFriendlyCasualtyPercent(pSoldier)) ||
