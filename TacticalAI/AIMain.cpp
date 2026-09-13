@@ -2589,9 +2589,13 @@ void CheckForChangingOrders(SOLDIERTYPE *pSoldier)
 			// Directly engaged guards may expand their local freedom of movement.
 			pSoldier->aiData.bOrders++;
 		}
-		else if ( pSoldier->bTeam == MILITIA_TEAM && pSoldier->aiData.bOrders != SNIPER && pSoldier->aiData.bOrders != STATIONARY )
+		else if ( pSoldier->bTeam == MILITIA_TEAM &&
+			pSoldier->aiData.bOrders != SNIPER &&
+			pSoldier->aiData.bOrders != STATIONARY &&
+			!(pSoldier->aiData.bOrders == FARPATROL && pSoldier->aiData.bAttitude == DEFENSIVE) )
 		{
-			// go on alert!
+			// Preserve explicit defensive militia commands (hold/rally/retreat).
+			// Other militia can still escalate to SEEKENEMY normally.
 			pSoldier->aiData.bOrders = SEEKENEMY;
 		}
 		else if ( CREATURE_OR_BLOODCAT( pSoldier ) )
