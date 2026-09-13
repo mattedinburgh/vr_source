@@ -536,14 +536,11 @@ INT8 DecideCombatCasualtyEvacuation( SOLDIERTYPE *pSoldier )
 		SOLDIERTYPE *pPatient = MercPtrs[iCounter];
 		if ( !pPatient || pPatient == pSoldier || !pPatient->bActive || !pPatient->bInSector ||
 			(pPatient->usSoldierFlagMask & SOLDIER_POW) ||
-			pPatient->ubBleedoutState != BLEEDOUT_ACTIVE || !IsBleedoutCasualty( pPatient ) ||
+			!IsCarryableLivingCasualty( pPatient ) ||
 			pPatient->pathing.bLevel != pSoldier->pathing.bLevel || pPatient->ubServiceCount > 0 )
 			continue;
 
 		if ( !AIResponderKnowsCasualty( pSoldier, pPatient ) )
-			continue;
-
-		if ( pPatient->ubBleedoutTurns < 4 )
 			continue;
 
 		if ( pPatient->ubDraggedByID != NOBODY )
@@ -607,7 +604,15 @@ INT8 DecideCombatCasualtyEvacuation( SOLDIERTYPE *pSoldier )
 		if ( iPathExposure >= 22 )
 			continue;
 
-		INT32 iUrgency = 120 - 12 * pPatient->ubBleedoutTurns;
+		// Triage urgency rises as an active bleed-out countdown approaches zero.
+		// Ordinary unconscious/collapsed casualties remain valid extraction targets
+		// when exposed, but do not automatically outrank somebody who is dying now.
+		INT32 iUrgency = 70;
+		if ( pPatient->ubBleedoutState == BLEEDOUT_ACTIVE && IsBleedoutCasualty( pPatient ) )
+			iUrgency = 160 - 18 * pPatient->ubBleedoutTurns;
+		else if ( pPatient->stats.bLife < OKLIFE )
+			iUrgency = 100;
+
 		if ( pPatient->aiData.bUnderFire )
 			iUrgency += 20;
 		if ( fSameElement )
