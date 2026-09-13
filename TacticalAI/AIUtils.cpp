@@ -5135,17 +5135,28 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		pSoldier->bTeam == ENEMY_TEAM && fRemnantCanReattach;
 	BOOLEAN fRecentlyReattached = AIRecentlyReattachedFireteamRemnant(pSoldier);
 
-	// Existing break-contact intent normally owns the decision. The exception is an
-	// enemy remnant that has a real local element it can physically attempt to join.
+	// Militia withdrawal is handled by the militia disengagement/consolidation system.
+	// Fireteam regrouping must never reinterpret an explicit player Retreat, nor should
+	// a stale recent-reattachment marker pull a withdrawing militia soldier back inward.
+	if (pSoldier->bTeam == MILITIA_TEAM &&
+		(AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier)))
+	{
+		return AI_ACTION_NONE;
+	}
+
+	// Existing enemy break-contact intent normally owns the decision. The exception is
+	// an enemy remnant that has a real local element it can physically attempt to join.
 	if ((AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier)) &&
 		!fEnemyRemnantCanReattach && !fRecentlyReattached)
 	{
 		return AI_ACTION_NONE;
 	}
 
-	// Fixed sentries/snipers keep their mission unless their own element has shattered
-	// and a compatible local fixed element can absorb them. That is the point at which
-	// survival/cohesion is allowed to override the original fixed post.
+	// A player Hold order is authoritative for militia. Enemy fixed sentries/snipers may
+	// still reattach after their element shatters; that is an autonomous faction behavior.
+	if (pSoldier->bTeam == MILITIA_TEAM && pSoldier->aiData.bOrders == STATIONARY)
+		return AI_ACTION_NONE;
+
 	if ((pSoldier->aiData.bOrders == STATIONARY || pSoldier->aiData.bOrders == SNIPER) &&
 		!fRemnantCanReattach && !fRecentlyReattached)
 	{
