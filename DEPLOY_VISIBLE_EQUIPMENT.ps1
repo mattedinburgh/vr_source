@@ -15,7 +15,7 @@ $Marker = Join-Path $AnimRoot "VR_EQUIPMENT.READY"
 
 # Pin the matching Vengeance LOBOT catalog too. Source + catalog + upstream art
 # must form one reproducible deployment set.
-$VrRef = "24b04534b4c4ba55b926f63092bfa0461a9ff2b0"
+$VrRef = "c0b69f2834d94c6c7614b17ad3443bc272555306"
 $VrRaw = "https://raw.githubusercontent.com/mattedinburgh/vr_gamedir/$VrRef/Data-Vengeance/TableData/LogicalBodyTypes"
 # Pin the external art revision so the same Vengeance commit always resolves the
 # same filenames and bytes. Do not deploy against a moving upstream master.
@@ -141,6 +141,14 @@ $assetPaths = New-Object "System.Collections.Generic.HashSet[string]" ([System.S
 foreach ($catalog in $surfaceCatalogs) {
     $catalogPath = Join-Path $TableRoot $catalog
     $text = [System.IO.File]::ReadAllText($catalogPath)
+
+    # These files are parsed as external XML entities inside the parent
+    # <AnimSurfaces> element. They must therefore be XML fragments containing
+    # only <AnimSurface .../> entries, not standalone XML documents with their
+    # own declaration or <AnimSurfaces> root.
+    if ($text -match '(?i)<\?xml' -or $text -match '(?i)<\s*/?\s*AnimSurfaces\s*>') {
+        throw "Invalid LBT external entity catalog (standalone XML wrapper found): $catalog"
+    }
 
     foreach ($match in [regex]::Matches($text, 'file="([^"]+)"')) {
         $relative = $match.Groups[1].Value
