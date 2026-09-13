@@ -716,6 +716,14 @@ void DeductPoints( SOLDIERTYPE *pSoldier, INT16 sAPCost, INT32 iBPCost, UINT8 ub
 
 	if (sAPCost > 0)
 	{
+		// Temporary overt state wears off as the covert actor spends AP moving/acting after the incident.
+		if ( pSoldier->usSoldierFlagMask & SOLDIER_COVERT_TEMPORARY_OVERT &&
+			pSoldier->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_APS] > 0 )
+		{
+			pSoldier->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_APS] =
+				max(0, (INT16)(pSoldier->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_APS] - sAPCost));
+		}
+
 		// Flugente: if we spend AP, then spotter status ends
 		if (pSoldier->usSkillCounter[SOLDIER_COUNTER_SPOTTER])
 		{
