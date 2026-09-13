@@ -6094,6 +6094,54 @@ static INT16 gsAIDisengageSectorX = -1;
 static INT16 gsAIDisengageSectorY = -1;
 static INT8 gbAIDisengageSectorZ = -1;
 
+void AIResetRetreatCoordinationStateForLoad(void)
+{
+	// These systems deliberately live outside SOLDIERTYPE for save compatibility.
+	// A successful load must therefore invalidate them explicitly, including the
+	// same-sector/same-turn quickload case that timestamp rollback cannot detect.
+	gubAINextFireteam = 1;
+	gfAIFireteamsSeeded = FALSE;
+	gsAIFireteamSectorX = -1;
+	gsAIFireteamSectorY = -1;
+	gbAIFireteamSectorZ = -1;
+	guiAIFireteamLastTurnStamp = 0;
+	gsAIFireteamKnownMenInSector = -1;
+
+	gsAIEscapeSectorX = -1;
+	gsAIEscapeSectorY = -1;
+	gbAIEscapeSectorZ = -1;
+	guiAIEscapeLastTurnStamp = 0;
+	gubAICompletedEnemyEscapes = 0;
+
+	gsAIDisengageSectorX = -1;
+	gsAIDisengageSectorY = -1;
+	gbAIDisengageSectorZ = -1;
+	guiAIDisengageLastTurnStamp = 0;
+
+	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
+	{
+		gubAIFireteam[i] = AI_FIRETEAM_NONE;
+		guiAIFireteamIdentity[i] = 0;
+		guiAIFireteamRejoinUntilTurn[i] = 0;
+
+		gubAIEscapeIntent[i] = 0;
+		guiAIEscapeIdentity[i] = 0;
+		guiAIEscapeStartTurn[i] = 0;
+
+		gubAIDisengageTurns[i] = 0;
+		gubAIForcedDisengageTurns[i] = 0;
+		guiAIDisengageTurnStamp[i] = 0;
+		guiAIDisengageIdentity[i] = 0;
+		guiAIDisengageStartTurn[i] = 0;
+
+		gubAIRecoveryStreak[i] = 0;
+		guiAIRecoveryTurnStamp[i] = 0;
+		guiAIRecoveryIdentity[i] = 0;
+	}
+
+	for (UINT16 i = 0; i < 256; ++i)
+		gbAIFireteamTeam[i] = -1;
+}
 static void AIMaintainDisengagementTimeline(void)
 {
 	UINT32 uiTurnStamp = guiTurnCnt + 1;
