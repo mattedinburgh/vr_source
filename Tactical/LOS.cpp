@@ -7764,6 +7764,11 @@ void AdjustTargetCenterPoint( SOLDIERTYPE *pShooter, INT32 iTargetGridNo, FLOAT 
 		// the muzzle will be pointed, relative to the center of the target, when the trigger is pulled.
 
 		CalcMuzzleSway( pShooter, &dMuzzleOffsetX, &dMuzzleOffsetY, iAperture );
+		if ( gNCTHWorkingDiagnostic.fValid && gNCTHWorkingDiagnostic.ubShooterID == pShooter->ubID )
+		{
+			gNCTHWorkingDiagnostic.fRandomSwayX = dMuzzleOffsetX;
+			gNCTHWorkingDiagnostic.fRandomSwayY = dMuzzleOffsetY;
+		}
 
 		/////////////////////////////////////////////////////////////////////////////////////////////
 		// STEP 3: Lateral Offset due to Target Movement
@@ -7779,7 +7784,14 @@ void AdjustTargetCenterPoint( SOLDIERTYPE *pShooter, INT32 iTargetGridNo, FLOAT 
 
 		if (pTarget)
 		{
+			FLOAT fBeforeTrackingX = dMuzzleOffsetX;
+			FLOAT fBeforeTrackingY = dMuzzleOffsetY;
 			CalcTargetMovementOffset( pShooter, pTarget, pWeapon, &dMuzzleOffsetX, ddOrigHorizAngle, (INT32)iAperture );
+			if ( gNCTHWorkingDiagnostic.fValid && gNCTHWorkingDiagnostic.ubShooterID == pShooter->ubID )
+			{
+				gNCTHWorkingDiagnostic.fTargetTrackingX = dMuzzleOffsetX - fBeforeTrackingX;
+				gNCTHWorkingDiagnostic.fTargetTrackingY = dMuzzleOffsetY - fBeforeTrackingY;
+			}
 		}
 
 		pShooter->dInitialMuzzleOffsetX = dMuzzleOffsetX;
@@ -7808,7 +7820,14 @@ void AdjustTargetCenterPoint( SOLDIERTYPE *pShooter, INT32 iTargetGridNo, FLOAT 
 			// shooter gets his first chance to apply counter force. This dramatically increases the
 			// chance to hit the target with those first few bullets, again assuming no other deviation
 			// was applied.
+			FLOAT fBeforePreRecoilX = dMuzzleOffsetX;
+			FLOAT fBeforePreRecoilY = dMuzzleOffsetY;
 			CalcPreRecoilOffset( pShooter, pWeapon, &dMuzzleOffsetX, &dMuzzleOffsetY, (UINT32)d2DDistance );
+			if ( gNCTHWorkingDiagnostic.fValid && gNCTHWorkingDiagnostic.ubShooterID == pShooter->ubID )
+			{
+				gNCTHWorkingDiagnostic.fPreRecoilX = dMuzzleOffsetX - fBeforePreRecoilX;
+				gNCTHWorkingDiagnostic.fPreRecoilY = dMuzzleOffsetY - fBeforePreRecoilY;
+			}
 		}
 	}
 
@@ -7844,7 +7863,14 @@ void AdjustTargetCenterPoint( SOLDIERTYPE *pShooter, INT32 iTargetGridNo, FLOAT 
 		// this is made difficult by having to fight the gun's recoil at the same time.
 		// This function alters the muzzle direction based on the gun's recoil, and the amount of counter-force
 		// our shooter applies to fight that recoil.
+		FLOAT fBeforeRecoilX = dMuzzleOffsetX;
+		FLOAT fBeforeRecoilY = dMuzzleOffsetY;
 		CalcRecoilOffset( pShooter, &dMuzzleOffsetX, &dMuzzleOffsetY, pWeapon, (UINT32)d2DDistance );
+		if ( gNCTHWorkingDiagnostic.fValid && gNCTHWorkingDiagnostic.ubShooterID == pShooter->ubID )
+		{
+			gNCTHWorkingDiagnostic.fRecoilX = dMuzzleOffsetX - fBeforeRecoilX;
+			gNCTHWorkingDiagnostic.fRecoilY = dMuzzleOffsetY - fBeforeRecoilY;
+		}
 	}
 
 	// At this point, basic muzzle deviation is fully calculated. For Autofire/Burst volleys, the next bullet
@@ -7893,7 +7919,10 @@ void AdjustTargetCenterPoint( SOLDIERTYPE *pShooter, INT32 iTargetGridNo, FLOAT 
 		// shooters will be able to do this reliably. In any case, this can't extend the range of the gun by more 
 		// than a handful of tiles.
 
+		FLOAT fBeforeRangeCompY = dMuzzleOffsetY;
 		CalcRangeCompensationOffset( pShooter, &dMuzzleOffsetY, (INT32)d2DDistance, pWeapon );
+		if ( gNCTHWorkingDiagnostic.fValid && gNCTHWorkingDiagnostic.ubShooterID == pShooter->ubID )
+			gNCTHWorkingDiagnostic.fRangeCompensationY = dMuzzleOffsetY - fBeforeRangeCompY;
 	}
 
 	// We have now completed altering the direction of the muzzle. From here on in, the muzzle direction is fixed.
@@ -7913,7 +7942,14 @@ void AdjustTargetCenterPoint( SOLDIERTYPE *pShooter, INT32 iTargetGridNo, FLOAT 
 	// within that circle, and sends the bullet that way. Over greater distances, this can amount to
 	// several penalties, thus making accurate weapons essential for any long-range shot.
 
+	FLOAT fBeforeDeviationX = dShotOffsetX;
+	FLOAT fBeforeDeviationY = dShotOffsetY;
 	FLOAT iBulletDev = CalcBulletDeviation( pShooter, &dShotOffsetX, &dShotOffsetY, pWeapon, (UINT32)d2DDistance );
+	if ( gNCTHWorkingDiagnostic.fValid && gNCTHWorkingDiagnostic.ubShooterID == pShooter->ubID )
+	{
+		gNCTHWorkingDiagnostic.fDeviationX = dShotOffsetX - fBeforeDeviationX;
+		gNCTHWorkingDiagnostic.fDeviationY = dShotOffsetY - fBeforeDeviationY;
+	}
 
 	/////////////////////////////////////////////////////////////////////////////////////////////
 	// STEP 7: Limit Shot Angle
