@@ -677,82 +677,149 @@ static BOOLEAN B1GridHasNeighbourStructure( INT32 sGridNo )
 	return FALSE;
 }
 
+static BOOLEAN B1GridHasObjectType( INT32 sGridNo, UINT32 uiWantedType )
+{
+	if ( sGridNo < 0 || sGridNo >= WORLD_MAX )
+		return FALSE;
+
+	for ( LEVELNODE *pNode = gpWorldLevelData[ sGridNo ].pObjectHead; pNode != NULL; pNode = pNode->pNext )
+	{
+		UINT32 uiType = 0;
+		if ( GetTileType( pNode->usIndex, &uiType ) && uiType == uiWantedType )
+			return TRUE;
+	}
+	return FALSE;
+}
+
+static BOOLEAN B1CustomDecorationFamilyReady( UINT32 uiType )
+{
+	if ( uiType >= NUMBEROFTILETYPES || gTileSurfaceArray[ uiType ] == NULL ||
+		 gTileSurfaceArray[ uiType ]->vo == NULL )
+		return FALSE;
+
+	// The bespoke B1 families are 32-bit B1TC images with ten authored variants.
+	// If the engine fell back to a generic legacy STI, never spray that fallback
+	// around the sector as if it were our custom street dressing.
+	return gTileSurfaceArray[ uiType ]->vo->ubBitDepth == 32 &&
+		gTileSurfaceArray[ uiType ]->vo->usNumberOfObjects >= 10;
+}
+
+static BOOLEAN B1AddVisualDecoration( INT32 sGridNo, UINT32 uiType, UINT16 usSubIndex )
+{
+	UINT16 usTileIndex = NO_TILE;
+	if ( !GetTileIndexFromTypeSubIndex( uiType, usSubIndex, &usTileIndex ) ||
+		 usTileIndex == NO_TILE || usTileIndex >= giNumberOfTiles )
+		return FALSE;
+
+	LEVELNODE *pNode = AddObjectToTail( sGridNo, usTileIndex );
+	if ( pNode == NULL )
+		return FALSE;
+
+	pNode->ubShadeLevel = LightGetAmbient();
+	pNode->ubNaturalShadeLevel = pNode->ubShadeLevel;
+	return TRUE;
+}
+
 static void DressB1OilRigEnvironment( void )
 {
 	if ( gubSectorVisualProfile != SECTOR_VISUAL_ORONEGRO_OIL_RIG || gpWorldLevelData == NULL )
 		return;
 
-	UINT32 uiAdded = 0;
+	const BOOLEAN fRoadDamageReady = B1CustomDecorationFamilyReady( SECONDDECORATIONS );
+	const BOOLEAN fRubbishReady = B1CustomDecorationFamilyReady( THIRDDECORATIONS );
+	const BOOLEAN fBinsReady = B1CustomDecorationFamilyReady( FOURTHDECORATIONS );
 
-	// Purely visual dressing. These are object-layer debris sprites with no
-	// structure/JSD insertion, so they do not alter cover, pathing, LOS,
-	// penetration, destructibility or the authored B1.dat.
-	for ( INT32 sGridNo = 0; sGridNo < WORLD_MAX && uiAdded < 120; ++sGridNo )
+	UINT32 uiRoadDamage = 0;
+	UINT32 uiRubbish = 0;
+	UINT32 uiBins = 0;
+	UINT32 uiLegacyDebris = 0;
+
+	// B1.dat uses no SECOND/THIRD/FOURTHDECORATIONS entries. Those three slots
+	// are therefore safe B1-only visual layers: road damage/oil, rubbish and bins.
+	// Everything added here is object-layer art only: no JSD structure is inserted,
+	// so cover, LOS, pathing, penetration and authored destruction remain untouched.
+	for ( INT32 sGridNo = 0; sGridNo < WORLD_MAX; ++sGridNo )
 	{
 		MAP_ELEMENT *pMap = &gpWorldLevelData[ sGridNo ];
-		if ( pMap->pLandHead == NULL )
-			continue;
-
-		// Never clutter roofs, occupied structural cells or already-decorated cells.
-		if ( pMap->pStructHead != NULL || pMap->pRoofHead != NULL ||
-			 pMap->pOnRoofHead != NULL || pMap->pObjectHead != NULL )
+		if ( pMap->pLandHead == NULL || pMap->pRoofHead != NULL || pMap->pOnRoofHead != NULL )
 			continue;
 
 		UINT32 uiLandType = 0;
 		if ( !GetTileType( pMap->pLandHead->usIndex, &uiLandType ) )
 			continue;
 
-		const BOOLEAN fHardstanding =
-			( uiLandType == ROADPIECES ) ||
-			( uiLandType >= FIRSTFLOOR && uiLandType <= LASTFLOOR );
-		const BOOLEAN fOpenGround =
-			( uiLandType >= FIRSTTEXTURE && uiLandType <= SEVENTHTEXTURE );
-
-		if ( !fHardstanding && !fOpenGround )
-			continue;
-
+		const BOOLEAN fRoad = B1GridHasObjectType( sGridNo, ROADPIECES );
+		const BOOLEAN fFloor = ( uiLandType >= FIRSTFLOOR && uiLandType <= LASTFLOOR );
+		const BOOLEAN fOpenGround = ( uiLandType >= FIRSTTEXTURE && uiLandType <= SEVENTHTEXTURE );
 		const BOOLEAN fNearStructure = B1GridHasNeighbourStructure( sGridNo );
+		const BOOLEAN fOccupiedStructure = ( pMap->pStructHead != NULL );
 		const UINT32 uiHash = B1VisualHash( (UINT32)sGridNo ^ 0xB10F11u );
 
-		// Litter naturally accumulates beside buildings/loading areas. Keep the
-		// wider apron much cleaner so tactical readability is not compromised.
-		if ( fNearStructure )
+		// Roads were previously skipped because ROADPIECES live on the object layer.
+		// At 1920x1080 that made the wide road network look almost untouched. Add
+		// obvious but spaced-out petroleum puddles and failed-asphalt potholes.
+		if ( fRoad && fRoadDamageReady && (uiHash % 7) == 0 )
 		{
-			if ( (uiHash % 59) != 0 )
-				continue;
-		}
-		else
-		{
-			if ( (uiHash % 307) != 0 )
-				continue;
-		}
+			UINT16 usVariant;
+			if ( fNearStructure && ((uiHash >> 7) % 100) < 68 )
+				usVariant = (UINT16)( 1 + ((uiHash >> 12) % 5) );       // oil puddle
+			else
+				usVariant = (UINT16)( 6 + ((uiHash >> 12) % 5) );       // pothole/cracked asphalt
 
-		UINT32 uiDebrisType;
-		switch ( (uiHash >> 8) & 3 )
-		{
-			case 0: uiDebrisType = DEBRISSAND; break; // Oil_Debris: industrial rubbish
-			case 1: uiDebrisType = DEBRISMISC; break;
-			case 2: uiDebrisType = DEBRISWOOD; break;
-			default: uiDebrisType = DEBRISROCKS; break;
+			if ( B1AddVisualDecoration( sGridNo, SECONDDECORATIONS, usVariant ) )
+				++uiRoadDamage;
 		}
 
-		UINT16 usTileIndex = NO_TILE;
-		const UINT16 usSubIndex = (UINT16)( 1 + ((uiHash >> 12) % 10) );
-		if ( !GetTileIndexFromTypeSubIndex( uiDebrisType, usSubIndex, &usTileIndex ) ||
-			 usTileIndex == NO_TILE || usTileIndex >= giNumberOfTiles )
-			continue;
-
-		LEVELNODE *pNode = AddObjectToTail( sGridNo, usTileIndex );
-		if ( pNode != NULL )
+		// Street rubbish concentrates around worker buildings, fences and loading
+		// areas, with occasional wind-blown piles on the road/apron.
+		if ( !fOccupiedStructure && fRubbishReady )
 		{
-			pNode->ubShadeLevel = LightGetAmbient();
-			pNode->ubNaturalShadeLevel = pNode->ubShadeLevel;
-			++uiAdded;
+			const BOOLEAN fPlaceRubbish =
+				( fNearStructure && ((uiHash >> 8) % 13) == 0 ) ||
+				( fRoad && ((uiHash >> 8) % 47) == 0 ) ||
+				( fOpenGround && fNearStructure && ((uiHash >> 16) % 29) == 0 );
+
+			if ( fPlaceRubbish )
+			{
+				const UINT16 usVariant = (UINT16)( 1 + ((uiHash >> 18) % 10) );
+				if ( B1AddVisualDecoration( sGridNo, THIRDDECORATIONS, usVariant ) )
+					++uiRubbish;
+			}
+		}
+
+		// Battered bins/drums are larger accents: keep them beside structures and
+		// hardstanding, not in the centre of roads. They remain visual only.
+		if ( !fOccupiedStructure && !fRoad && fBinsReady && fNearStructure &&
+			 (fFloor || fOpenGround) && ((uiHash >> 5) % 37) == 0 )
+		{
+			const UINT16 usVariant = (UINT16)( 1 + ((uiHash >> 21) % 10) );
+			if ( B1AddVisualDecoration( sGridNo, FOURTHDECORATIONS, usVariant ) )
+				++uiBins;
+		}
+
+		// A light background layer of existing debris fills empty dirt corners so
+		// the sector does not read as sterile between the bespoke accents.
+		if ( !fOccupiedStructure && !fRoad && (fFloor || fOpenGround) &&
+			 ((uiHash >> 11) % (fNearStructure ? 83 : 311)) == 0 )
+		{
+			UINT32 uiDebrisType;
+			switch ( (uiHash >> 24) & 3 )
+			{
+				case 0: uiDebrisType = DEBRISSAND; break;
+				case 1: uiDebrisType = DEBRISMISC; break;
+				case 2: uiDebrisType = DEBRISWOOD; break;
+				default: uiDebrisType = DEBRISROCKS; break;
+			}
+			const UINT16 usSubIndex = (UINT16)( 1 + ((uiHash >> 14) % 10) );
+			if ( B1AddVisualDecoration( sGridNo, uiDebrisType, usSubIndex ) )
+				++uiLegacyDebris;
 		}
 	}
 
-	CHAR8 zDressing[96];
-	sprintf( zDressing, "visual litter objects=%lu non-structural", uiAdded );
+	CHAR8 zDressing[192];
+	sprintf( zDressing, "roadDamage=%lu rubbish=%lu bins=%lu backgroundDebris=%lu customReady=%d/%d/%d non-structural",
+		uiRoadDamage, uiRubbish, uiBins, uiLegacyDebris,
+		fRoadDamageReady ? 1 : 0, fRubbishReady ? 1 : 0, fBinsReady ? 1 : 0 );
 	TraceB1RemasterLoad( "ENVIRONMENT DRESSING", zDressing );
 }
 
@@ -1183,8 +1250,11 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 			case THIRDWALL:        pLoadFilename = "B1_BUILD_40.STI"; break;
 			case FOURTHWALL:       pLoadFilename = "B1_BUILD_35.STI"; break;
 			case FIRSTROOF:        pLoadFilename = "B1_W-ROOF2.sti"; break;
-			case FIRSTONROOF:      pLoadFilename = "B1_Rooffan.sti"; break;
-			case SECONDONROOF:     pLoadFilename = "B1_Oil_OROOF.sti"; break;
+			case FIRSTONROOF:       pLoadFilename = "B1_Rooffan.sti"; break;
+			case SECONDONROOF:      pLoadFilename = "B1_Oil_OROOF.sti"; break;
+			case SECONDDECORATIONS: pLoadFilename = "B1_ROAD_DAMAGE.STI"; break;
+			case THIRDDECORATIONS:  pLoadFilename = "B1_STREET_RUBBISH.STI"; break;
+			case FOURTHDECORATIONS: pLoadFilename = "B1_STREET_BINS.STI"; break;
 		}
 	}
 
