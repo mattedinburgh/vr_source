@@ -405,6 +405,9 @@ typedef struct
 static BATTLE_LOG_ENTRY gBattleLogEntries[BATTLE_LOG_MAX_ENTRIES];
 static UINT32 guiBattleLogSequence = 0;
 static UINT16 gusBattleLogScrollOffset = 0;
+static INT16 gsBattleLogSectorX = -1;
+static INT16 gsBattleLogSectorY = -1;
+static INT8 gbBattleLogSectorZ = -1;
 
 static BOOLEAN gfBattleLogVisible = TRUE;
 static BOOLEAN gfBattleLogRegionsCreated = FALSE;
@@ -438,6 +441,28 @@ static INT16 gsBattleLogInspectorDamage = 0;
 
 static void BattleLogRebuildOverlay( void );
 static void BattleLogUpdateRegions( void );
+
+static void BattleLogCheckSector( void )
+{
+	if ( gsBattleLogSectorX == gWorldSectorX &&
+		 gsBattleLogSectorY == gWorldSectorY &&
+		 gbBattleLogSectorZ == gbWorldSectorZ )
+	{
+		return;
+	}
+
+	gsBattleLogSectorX = gWorldSectorX;
+	gsBattleLogSectorY = gWorldSectorY;
+	gbBattleLogSectorZ = gbWorldSectorZ;
+	memset( gBattleLogEntries, 0, sizeof(gBattleLogEntries) );
+	guiBattleLogSequence = 0;
+	gusBattleLogScrollOffset = 0;
+	gfBattleLogInspectorVisible = FALSE;
+	guiBattleLogInspectorSequence = 0;
+	gubBattleLogInspectorOutcome = BATTLELOG_OUTCOME_NONE;
+	gubBattleLogInspectorActualTargetID = NOBODY;
+	gsBattleLogInspectorDamage = 0;
+}
 
 static UINT32 BattleLogOldestSequence( void )
 {
@@ -1091,6 +1116,7 @@ static void BattleLogEnsureUI( void )
 {
 	if ( !gfBattleLogVisible )
 		return;
+	BattleLogCheckSector();
 	BattleLogClampGeometry();
 	BattleLogCreateRegions();
 	if ( giBattleLogOverlay == -1 )
@@ -1121,6 +1147,7 @@ void BattleLogSetVisible( BOOLEAN fVisible )
 
 void BattleLogAddText( UINT16 usColor, STR16 pString )
 {
+	BattleLogCheckSector();
 	if ( pString == NULL || pString[0] == 0 )
 		return;
 
@@ -1154,6 +1181,7 @@ void BattleLogAddText( UINT16 usColor, STR16 pString )
 
 void BattleLogAddNCTHMiss( INT32 iBullet )
 {
+	BattleLogCheckSector();
 	NCTH_SHOT_DIAGNOSTIC d;
 	if ( !NCTHGetBulletDiagnostic( iBullet, &d ) )
 		return;
@@ -1198,6 +1226,7 @@ void BattleLogAddNCTHMiss( INT32 iBullet )
 
 void BattleLogAddNCTHBlocked( INT32 iBullet, UINT8 ubReason )
 {
+	BattleLogCheckSector();
 	NCTH_SHOT_DIAGNOSTIC d;
 	if ( !NCTHGetBulletDiagnostic( iBullet, &d ) )
 		return;
@@ -1257,6 +1286,7 @@ void BattleLogAddNCTHBlocked( INT32 iBullet, UINT8 ubReason )
 
 void BattleLogAddNCTHHit( INT32 iBullet, UINT8 ubTargetID, INT16 sDamage )
 {
+	BattleLogCheckSector();
 	NCTH_SHOT_DIAGNOSTIC d;
 	if ( !NCTHGetBulletDiagnostic( iBullet, &d ) )
 		return;
