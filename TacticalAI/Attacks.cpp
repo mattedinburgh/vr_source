@@ -966,13 +966,19 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			{
 				UINT8 ubReadyTeam = AIFireteamCombatReadyCount(pSoldier);
 				BOOLEAN fSmallUnitFocus = ubReadyTeam >= 2 && ubReadyTeam <= 5;
-				INT32 iPenaltyPercent = (fSmallUnitFocus ? 6 : 15) * ubSaturation;
+				// Small teams deliberately mass fire on an active threat. Larger elements
+				// retain the normal anti-overkill reservation penalty.
+				INT32 iPenaltyPercent = fSmallUnitFocus ? 0 : 15 * ubSaturation;
 
-				// A small remnant deliberately concentrates enough rifles to win the local
-				// exchange. Once the target is visibly disabled, immediately spread fire.
-				// Do not waste several shooters finishing an already disabled opponent.
+				// Once suppression has visibly done its job, a small team starts distributing
+				// fire; a downed target is deprioritized much more aggressively.
+				if (fSmallUnitFocus && fDirectVisualContact &&
+					(pOpponent->flags.uiStatusFlags & SOLDIER_COWERING))
+				{
+					iPenaltyPercent = 15 * ubSaturation;
+				}
 				if (fDirectVisualContact && (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed || pOpponent->bBreathCollapsed))
-					iPenaltyPercent = 30 * ubSaturation;
+					iPenaltyPercent = 35 * ubSaturation;
 
 				// Immediate self-defence still justifies concentrated fire.
 				if (fCurrentContact &&
