@@ -2589,7 +2589,7 @@ void CheckForChangingOrders(SOLDIERTYPE *pSoldier)
 			// Directly engaged guards may expand their local freedom of movement.
 			pSoldier->aiData.bOrders++;
 		}
-		else if ( pSoldier->bTeam == MILITIA_TEAM && pSoldier->aiData.bOrders != SNIPER )
+		else if ( pSoldier->bTeam == MILITIA_TEAM && pSoldier->aiData.bOrders != SNIPER && pSoldier->aiData.bOrders != STATIONARY )
 		{
 			// go on alert!
 			pSoldier->aiData.bOrders = SEEKENEMY;
