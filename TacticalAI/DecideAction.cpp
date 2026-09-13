@@ -2927,6 +2927,59 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		}
 	}
 
+	// VR civilian life: ordinary unarmed civilians flee active firefights when they can,
+	// while normal suppression shock can pin them. Profiled NPCs and civilian factions
+	// retain their authored behaviour in the legacy block below.
+	if ( fCivilian && pSoldier->ubProfile == NO_PROFILE &&
+		pSoldier->ubCivilianGroup == NON_CIV_GROUP && pSoldier->aiData.bNeutral &&
+		!( pSoldier->ubBodyType == COW || pSoldier->ubBodyType == CRIPPLECIV ) &&
+		gTacticalStatus.bBoxingState == NOT_BOXING &&
+		FindAIUsableObjClass( pSoldier, IC_WEAPON ) == ITEM_NOT_FOUND &&
+		(gfTurnBasedAI || gTacticalStatus.fEnemyInSector) )
+	{
+		// Heavy suppression wins over movement. Stay down until effective shock
+		// falls below the engine's normal cowering threshold.
+		if ( CoweringShockLevel( pSoldier ) )
+		{
+			if ( pSoldier->flags.uiStatusFlags & SOLDIER_COWERING )
+			{
+				pSoldier->aiData.usActionData = NOWHERE;
+				return( AI_ACTION_NONE );
+			}
+
+			pSoldier->aiData.usActionData = ANIM_CROUCH;
+			return( AI_ACTION_COWER );
+		}
+
+		// Not pinned: immediately increase distance from known danger.
+		if ( ubCanMove )
+		{
+			INT32 sCivilianEscapeSpot = FindSpotMaxDistFromOpponents( pSoldier );
+			if ( !TileIsOutOfBounds( sCivilianEscapeSpot ) )
+			{
+				if ( pSoldier->flags.uiStatusFlags & SOLDIER_COWERING )
+				{
+					pSoldier->aiData.usNextActionData = sCivilianEscapeSpot;
+					pSoldier->aiData.bNextAction = AI_ACTION_RUN_AWAY;
+					pSoldier->aiData.usActionData = ANIM_STAND;
+					return( AI_ACTION_STOP_COWERING );
+				}
+
+				pSoldier->aiData.usActionData = sCivilianEscapeSpot;
+				DebugMsg( TOPIC_JA2, DBG_LEVEL_3, "decideactionred: ordinary civilian evacuates firefight" );
+				return( AI_ACTION_RUN_AWAY );
+			}
+		}
+
+		// No safe path exists: cower rather than crossing exposed ground.
+		if ( pSoldier->flags.uiStatusFlags & SOLDIER_COWERING )
+		{
+			pSoldier->aiData.usActionData = NOWHERE;
+			return( AI_ACTION_NONE );
+		}
+		pSoldier->aiData.usActionData = ANIM_CROUCH;
+		return( AI_ACTION_COWER );
+	}
 	if ( fCivilian && !( pSoldier->ubBodyType == COW || pSoldier->ubBodyType == CRIPPLECIV ) &&
 		gTacticalStatus.bBoxingState == NOT_BOXING)
 	{
@@ -5646,6 +5699,51 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 	}
 #endif
 
+	// VR civilian life: in direct contact, ordinary unarmed civilians do not enter
+	// combatant attack logic. Suppression pins them; otherwise they evacuate.
+	if ( fCivilian && pSoldier->ubProfile == NO_PROFILE &&
+		pSoldier->ubCivilianGroup == NON_CIV_GROUP && pSoldier->aiData.bNeutral &&
+		!( pSoldier->ubBodyType == COW || pSoldier->ubBodyType == CRIPPLECIV ) &&
+		gTacticalStatus.bBoxingState == NOT_BOXING &&
+		FindAIUsableObjClass( pSoldier, IC_WEAPON ) == ITEM_NOT_FOUND )
+	{
+		if ( CoweringShockLevel( pSoldier ) )
+		{
+			if ( pSoldier->flags.uiStatusFlags & SOLDIER_COWERING )
+			{
+				pSoldier->aiData.usActionData = NOWHERE;
+				return( AI_ACTION_NONE );
+			}
+			pSoldier->aiData.usActionData = ANIM_CROUCH;
+			return( AI_ACTION_COWER );
+		}
+
+		if ( ubCanMove )
+		{
+			INT32 sCivilianEscapeSpot = FindSpotMaxDistFromOpponents( pSoldier );
+			if ( !TileIsOutOfBounds( sCivilianEscapeSpot ) )
+			{
+				if ( pSoldier->flags.uiStatusFlags & SOLDIER_COWERING )
+				{
+					pSoldier->aiData.usNextActionData = sCivilianEscapeSpot;
+					pSoldier->aiData.bNextAction = AI_ACTION_RUN_AWAY;
+					pSoldier->aiData.usActionData = ANIM_STAND;
+					return( AI_ACTION_STOP_COWERING );
+				}
+				pSoldier->aiData.usActionData = sCivilianEscapeSpot;
+				DebugMsg( TOPIC_JA2, DBG_LEVEL_3, "decideactionblack: ordinary civilian evacuates firefight" );
+				return( AI_ACTION_RUN_AWAY );
+			}
+		}
+
+		if ( pSoldier->flags.uiStatusFlags & SOLDIER_COWERING )
+		{
+			pSoldier->aiData.usActionData = NOWHERE;
+			return( AI_ACTION_NONE );
+		}
+		pSoldier->aiData.usActionData = ANIM_CROUCH;
+		return( AI_ACTION_COWER );
+	}
 	////////////////////////////////////////////////////////////////////////////
 	// SOLDIER CAN ATTACK IF NOT IN WATER/GAS AND NOT DOING SOMETHING TOO FUNKY
 	////////////////////////////////////////////////////////////////////////////

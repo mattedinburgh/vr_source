@@ -6394,7 +6394,7 @@ void MoveBullet( INT32 iBullet )
 						MercPtrs[ pStructure->usStructureID ]->flags.fCloseCall = TRUE;
 					}
 
-					if ( IS_MERC_BODY_TYPE( MercPtrs[pStructure->usStructureID] ) )
+					if ( IS_MERC_BODY_TYPE( MercPtrs[pStructure->usStructureID] ) || ( IS_CIV_BODY_TYPE( MercPtrs[pStructure->usStructureID] ) && MercPtrs[pStructure->usStructureID]->ubBodyType != CRIPPLECIV ) )
 					{
 						// apply suppression, regardless of friendly or enemy
 						// except if friendly, not within a few tiles of shooter
@@ -6485,7 +6485,7 @@ void MoveBullet( INT32 iBullet )
 						if (ubTargetID != NOBODY)
 						{
 							pTarget = MercPtrs[ ubTargetID ];
-							if ( IS_MERC_BODY_TYPE( pTarget ) && (pBullet->ubFirerID == NOBODY || pBullet->pFirer->bSide != pTarget->bSide) )
+							if ( ( IS_MERC_BODY_TYPE( pTarget ) || ( IS_CIV_BODY_TYPE( pTarget ) && pTarget->ubBodyType != CRIPPLECIV ) ) && (pBullet->ubFirerID == NOBODY || pBullet->pFirer->bSide != pTarget->bSide) )
 							{
 								// buckshot has only a 1 in 2 chance of applying a suppression point
 								// HEADROCK HAM 5: For NCTH, make pellets as effective as any other bullet.

@@ -8431,7 +8431,9 @@ void HandleSuppressionFire( UINT8 ubTargetedMerc, UINT8 ubCausedAttacker )
         // friendly fire at a certain distance. As of HAM 3.2, it also happens with nearby explosions.
         // The number of points accumulated resets to 0 at the end of this function.
 
-        if (pSoldier && IS_MERC_BODY_TYPE( pSoldier) && pSoldier->stats.bLife >= OKLIFE && pSoldier->ubSuppressionPoints > 0)
+        if (pSoldier &&
+            ( IS_MERC_BODY_TYPE( pSoldier ) || ( IS_CIV_BODY_TYPE( pSoldier ) && pSoldier->ubBodyType != CRIPPLECIV ) ) &&
+            pSoldier->stats.bLife >= OKLIFE && pSoldier->ubSuppressionPoints > 0)
         {
             DebugMsg(TOPIC_JA2,DBG_LEVEL_3,String("HandleSuppressionFire: soldier id = %d, life = %d, suppression points = %d",pSoldier->ubID,pSoldier->stats.bLife, pSoldier->ubSuppressionPoints));
             DebugMsg(TOPIC_JA2,DBG_LEVEL_3,String("HandleSuppressionFire: calc suppression tolerance"));
