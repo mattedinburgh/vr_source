@@ -6417,7 +6417,6 @@ BOOLEAN AIShouldStartDisengagement(SOLDIERTYPE *pSoldier)
 	if (!AICombatTeam(pSoldier) || pSoldier->IsZombie() ||
 		pSoldier->ubProfile != NO_PROFILE ||
 		pSoldier->aiData.bAlertStatus < STATUS_RED ||
-		pSoldier->aiData.bOrders == STATIONARY ||
 		pSoldier->aiData.bAttitude == ATTACKSLAYONLY ||
 		AIPerceivedEnemyStrength(pSoldier) == 0)
 	{
@@ -6427,6 +6426,15 @@ BOOLEAN AIShouldStartDisengagement(SOLDIERTYPE *pSoldier)
 	INT8 bSituation = AIBattleSituation(pSoldier);
 	UINT8 ubCasualties = AIFriendlyCasualtyPercent(pSoldier);
 	BOOLEAN fLastSurvivor = AILastSurvivorPressure(pSoldier);
+
+	// Hold is authoritative in ordinary combat. Only genuine catastrophic collapse
+	// or true last-survivor pressure may elevate survival above a fixed mission.
+	if (pSoldier->aiData.bOrders == STATIONARY &&
+		bSituation != AI_BATTLE_CATASTROPHIC && !fLastSurvivor)
+	{
+		return FALSE;
+	}
+
 	return AIShouldStartDisengagementFromState(pSoldier, bSituation, ubCasualties,
 		fLastSurvivor, AILocalRoutPressure(pSoldier));
 }
@@ -6484,7 +6492,8 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 	AIUpdateEscapeStateFromSnapshot(pSoldier, bSituation, ubCasualties,
 		fLastSurvivor, ubRoutPressure);
 
-	if (pSoldier->aiData.bOrders == STATIONARY)
+	if (pSoldier->aiData.bOrders == STATIONARY &&
+		bSituation != AI_BATTLE_CATASTROPHIC && !fLastSurvivor)
 	{
 		gubAIDisengageTurns[ubID] = 0;
 		gubAIForcedDisengageTurns[ubID] = 0;
