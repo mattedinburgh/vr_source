@@ -4586,8 +4586,13 @@ BOOLEAN ProcessNextEnemyRetreatConflict( void )
 	{
 		for( UINT8 ubX = 1; ubX < MAP_WORLD_X - 1; ++ubX )
 		{
-			if( !gfPendingEnemyRetreatConflict[ ubX ][ ubY ] )
+			// The RAM queue gives immediate same-session processing. The persistent
+			// sector flag reconstructs the same conflict after save/load.
+			if( !gfPendingEnemyRetreatConflict[ ubX ][ ubY ] &&
+				!(SectorInfo[ SECTOR( ubX, ubY ) ].uiFlags & SF_ENEMY_RETREAT_LOCKED) )
+			{
 				continue;
+			}
 
 			if( NumEnemiesInSector( ubX, ubY ) <= 0 )
 			{
@@ -4599,9 +4604,12 @@ BOOLEAN ProcessNextEnemyRetreatConflict( void )
 
 			GROUP *pPlayerGroup = FindMovementGroupInSector( ubX, ubY, TRUE );
 			BOOLEAN fMercsPresent = ( PlayerMercsInSector( ubX, ubY, 0 ) > 0 );
+			BOOLEAN fMercBattlePresent = ( fMercsPresent && pPlayerGroup != NULL );
 			BOOLEAN fMilitiaPresent = ( CountAllMilitiaInSector( ubX, ubY ) > 0 );
 
-			if( !fMercsPresent && !fMilitiaPresent )
+			// Airborne/otherwise non-involved player groups must not block the queue
+			// or get silently pulled into autoresolve.
+			if( !fMercBattlePresent && !fMilitiaPresent )
 			{
 				gfPendingEnemyRetreatConflict[ ubX ][ ubY ] = FALSE;
 				continue;
@@ -4609,7 +4617,7 @@ BOOLEAN ProcessNextEnemyRetreatConflict( void )
 
 			StopTimeCompression();
 
-			if( fMercsPresent && pPlayerGroup )
+			if( fMercBattlePresent )
 			{
 				// Escaped enemies are the attackers. Keep ENEMY_INVASION_CODE through
 				// PBI construction so mercs + militia get Fight OR Autoresolve, with
