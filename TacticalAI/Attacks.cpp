@@ -3944,82 +3944,94 @@ BOOLEAN GetBestAoEGridNo(SOLDIERTYPE *pSoldier, INT32* pGridNo, INT16 aRadius, U
 	INT32 lowestY  = 999999;
 	INT32 highestY = 0;
 	
-	// make lists of enemies and friends
+	// Build friend/enemy lists without consulting hidden mutable opponent state.
+	// Friendly positions/status are legitimate team information. Enemy life, sector
+	// presence and arbitrary predicate state are only inspected under fresh personal
+	// sight. This generic helper therefore cannot use cond()/taboo() to classify a
+	// remembered opponent; dedicated grenade/launcher logic handles remembered contacts.
 	for (ubLoop = 0; ubLoop < guiNumMercSlots; ++ubLoop)
 	{
 		pFriend = MercSlots[ubLoop];
-
-		if ( !pFriend || !pFriend->bActive || !pFriend->bInSector )
+		if (!pFriend)
 			continue;
 
-		if (pFriend->stats.bLife == 0)
-			continue;
-
-		// dying or captured friends are 'helpless' anyway, we are willing to sacrifice them :-)
-		if ( uCheckFriends && pSoldier->bSide == pFriend->bSide && pFriend->stats.bLife > OKLIFE && !(pFriend->usSoldierFlagMask & SOLDIER_POW) )
+		BOOLEAN fFriendly = (pSoldier->bSide == pFriend->bSide);
+		if (fFriendly)
 		{
-			// active friend, remember where he is so that we DON'T blow him up!
-			// this includes US, since we don't want to blow OURSELVES up either
-			sFriendTile[ubFriendCnt] = pFriend->sGridNo;
-			ubFriendCnt++;
+			if (!pFriend->bActive || !pFriend->bInSector || pFriend->stats.bLife == 0)
+				continue;
+
+			if (uCheckFriends && pFriend->stats.bLife > OKLIFE &&
+				!(pFriend->usSoldierFlagMask & SOLDIER_POW))
+			{
+				sFriendTile[ubFriendCnt++] = pFriend->sGridNo;
+			}
+			continue;
+		}
+
+		if (CONSIDERED_NEUTRAL(pSoldier, pFriend) ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pFriend->ubProfile != SLAY) ||
+			pFriend->ubBodyType == CROW)
+		{
+			continue;
+		}
+
+		bKnowledge = Knowledge(pSoldier, pFriend->ubID);
+		if (bKnowledge == NOT_HEARD_OR_SEEN)
+			continue;
+
+		BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pFriend->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pFriend, CALC_FROM_ALL_DIRS) > 0;
+
+		if (fDirectVisualContact)
+		{
+			if (!pFriend->bActive || !pFriend->bInSector || pFriend->stats.bLife == 0 ||
+				!ValidOpponent(pSoldier, pFriend))
+			{
+				continue;
+			}
+
+			if (taboo && taboo(pFriend))
+			{
+				INT32 sKnownTaboo = KnownLocation(pSoldier, pFriend->ubID);
+				if (!TileIsOutOfBounds(sKnownTaboo) && ubTabooCnt < MAXMERCS)
+					sTabooTile[ubTabooCnt++] = sKnownTaboo;
+				continue;
+			}
+
+			if (cond && !cond(pFriend))
+				continue;
 		}
 		else
 		{
-			// if an enemy fulfills taboo, we will remember his tile and be careful not to ever hit it!
-			if ( taboo(pFriend) )
-			{
-				sTabooTile[ubTabooCnt] = pFriend->sGridNo;
-				++ubTabooCnt;
+			// cond()/taboo() are arbitrary callbacks and may inspect hidden mutable
+			// state. Without a knowledge-safe predicate API, do not evaluate them on
+			// an unseen contact. Callers needing remembered-contact fire use the
+			// dedicated knowledge-aware grenade/launcher selection paths.
+			if (cond || taboo)
 				continue;
-			}
-
-			// check whether this guy fulfills the target condition
-			if (!cond(pFriend))
-				continue;
-
-			if (!ValidOpponent(pSoldier, pFriend))
-				continue;
-
-			//bPersOL = pSoldier->aiData.bOppList[pFriend->ubID];
-			//bPublOL = gbPublicOpplist[pSoldier->bTeam][pFriend->ubID];
-			bKnowledge = Knowledge(pSoldier, pFriend->ubID);
-
-			if (bKnowledge == SEEN_CURRENTLY)
-			{
-				// Current team knowledge may come from another observer. Use the stored
-				// known location rather than the opponent object's hidden live tile.
-				sOpponentTile[ubOpponentCnt] = KnownLocation(pSoldier, pFriend->ubID);
-			}
-			//else if ( bKnowledge == SEEN_LAST_TURN || bKnowledge == HEARD_LAST_TURN || bKnowledge == HEARD_THIS_TURN || bKnowledge == SEEN_THIS_TURN)
-			else if (bKnowledge >= HEARD_2_TURNS_AGO && bKnowledge <= SEEN_2_TURNS_AGO)
-			{
-				sOpponentTile[ubOpponentCnt] = KnownLocation(pSoldier, pFriend->ubID);
-				/*sOpponentTile[ubOpponentCnt] = gsLastKnownOppLoc[pSoldier->ubID][pFriend->ubID];
-				// cheat; only allow throw if person is REALLY within 2 tiles of where last seen
-				if ( SpacesAway( pFriend->sGridNo, gsLastKnownOppLoc[ pSoldier->ubID ][ pFriend->ubID ] ) < 3 )
-				{
-				sOpponentTile[ubOpponentCnt] = gsLastKnownOppLoc[ pSoldier->ubID ][ pFriend->ubID ];
-				}*/
-			}
-			else
-			{
-				continue;
-			}
-
-			if (TileIsOutOfBounds(sOpponentTile[ubOpponentCnt]))
-				continue;
-
-			// also remember who he is (which soldier #)
-			ubOpponentID[ubOpponentCnt] = pFriend->ubID;
-
-			// update lowest and highest x and y values
-			lowestX  = min(lowestX,  sOpponentTile[ubOpponentCnt] % MAXCOL );
-			highestX = max(highestX, sOpponentTile[ubOpponentCnt] % MAXCOL );
-			lowestY  = min(lowestY,  sOpponentTile[ubOpponentCnt] / MAXCOL );
-			highestY = max(highestY, sOpponentTile[ubOpponentCnt] / MAXCOL );
-
-			ubOpponentCnt++;
 		}
+
+		if (bKnowledge == SEEN_CURRENTLY ||
+			(bKnowledge >= HEARD_2_TURNS_AGO && bKnowledge <= SEEN_2_TURNS_AGO))
+		{
+			sOpponentTile[ubOpponentCnt] = KnownLocation(pSoldier, pFriend->ubID);
+		}
+		else
+		{
+			continue;
+		}
+
+		if (TileIsOutOfBounds(sOpponentTile[ubOpponentCnt]))
+			continue;
+
+		ubOpponentID[ubOpponentCnt] = pFriend->ubID;
+		lowestX  = min(lowestX,  sOpponentTile[ubOpponentCnt] % MAXCOL);
+		highestX = max(highestX, sOpponentTile[ubOpponentCnt] % MAXCOL);
+		lowestY  = min(lowestY,  sOpponentTile[ubOpponentCnt] / MAXCOL);
+		highestY = max(highestY, sOpponentTile[ubOpponentCnt] / MAXCOL);
+		++ubOpponentCnt;
 	}
 
 	// no/not enough enemies found -> no area effect location advisable
@@ -4069,19 +4081,31 @@ BOOLEAN GetBestAoEGridNo(SOLDIERTYPE *pSoldier, INT32* pGridNo, INT16 aRadius, U
 				if (PythSpacesAway(currentSoldierGridNo, sGridNo) > aRadius)
 					continue;
 
-				// if this tile is taboo, don't even think about targeting it!
+				// Reject taboo and duplicate candidates at the candidate level. The legacy
+				// inner-loop continue statements only advanced their scan loops.
+				BOOLEAN fTabooGrid = FALSE;
 				for (ubLoop2 = 0; ubLoop2 < ubTabooCnt; ++ubLoop2)
 				{
 					if (sTabooTile[ubLoop2] == sGridNo)
-						continue;
+					{
+						fTabooGrid = TRUE;
+						break;
+					}
 				}
-								
-				// Check to see if we have considered this tile before:
+				if (fTabooGrid)
+					continue;
+
+				BOOLEAN fAlreadyConsidered = FALSE;
 				for (ubLoop2 = 0; ubLoop2 < ubNumExcludedTiles; ++ubLoop2)
 				{
 					if (sExcludeTile[ubLoop2] == sGridNo)
-						continue;
+					{
+						fAlreadyConsidered = TRUE;
+						break;
+					}
 				}
+				if (fAlreadyConsidered)
+					continue;
 
 				// add this tile to the list of already checked tiles
 				if (ubNumExcludedTiles < MAX_EXCLUDE_TILES)
