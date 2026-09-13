@@ -2596,19 +2596,11 @@ void CheckForChangingOrders(SOLDIERTYPE *pSoldier)
 			pSoldier->aiData.bOppCnt > 0 || GuySawEnemy(pSoldier, SEEN_LAST_TURN);
 
 		if (((pSoldier->aiData.bOrders == ONGUARD) || (pSoldier->aiData.bOrders == CLOSEPATROL)) &&
-			(pSoldier->bTeam != ENEMY_TEAM || fDirectContact))
+			(!AICombatTeam(pSoldier) || fDirectContact))
 		{
-			// Directly engaged guards may expand their local freedom of movement.
+			// Human combat teams preserve guard/patrol assignments on reported contact.
+			// Only direct/recent tactical contact widens their local freedom of movement.
 			pSoldier->aiData.bOrders++;
-		}
-		else if ( pSoldier->bTeam == MILITIA_TEAM &&
-			pSoldier->aiData.bOrders != SNIPER &&
-			pSoldier->aiData.bOrders != STATIONARY &&
-			!(pSoldier->aiData.bOrders == FARPATROL && pSoldier->aiData.bAttitude == DEFENSIVE) )
-		{
-			// Preserve explicit defensive militia commands (hold/rally/retreat).
-			// Other militia can still escalate to SEEKENEMY normally.
-			pSoldier->aiData.bOrders = SEEKENEMY;
 		}
 		else if ( CREATURE_OR_BLOODCAT( pSoldier ) )
 		{
