@@ -722,6 +722,8 @@ bool LoadJPCFileToImage(HIMAGE hImage, UINT16 fContents)
 
 	std::vector<vfs::IBaseFile*> vFiles;
 	int count_files = 0;
+	int highest_png_index = -1;
+	int png_file_count = 0;
 	vfs::CUncompressed7zLibrary::Iterator it = oLib.begin();
 	for(; !it.end(); it.next())
 	{
@@ -741,22 +743,27 @@ bool LoadJPCFileToImage(HIMAGE hImage, UINT16 fContents)
 			{
 				std::wstringstream bss;
 				bss.str( fname.substr(0,dot) );
-				int index;
+				int index = -1;
 				bss >> index;
-				if(index >= 0 && index < count_files)
-				{
-					vFiles[index] = it.value();
-				}
-				else
-				{
-					SGP_THROW(L"invalid index");
-				}
+				SGP_THROW_IFFALSE(!bss.fail() && bss.eof(), L"JPC PNG filename must be a numeric frame index");
+				SGP_THROW_IFFALSE(index >= 0 && index < count_files, L"invalid JPC PNG frame index");
+				SGP_THROW_IFFALSE(vFiles[index] == NULL, L"duplicate JPC PNG frame index");
+				vFiles[index] = it.value();
+				if(index > highest_png_index)
+					highest_png_index = index;
+				png_file_count++;
 			}
 			else if (vfs::StrCmp::Equal(fname.substr(dot,fname.length()-dot), CONST_DOTXML) )
 			{
 				appdata_file = vfs::tReadableFile::cast(it.value());
 			}
 		}
+	}
+
+	SGP_THROW_IFFALSE(png_file_count > 0, L"JPC archive contains no PNG frames");
+	for(int frame = 0; frame <= highest_png_index; ++frame)
+	{
+		SGP_THROW_IFFALSE(vFiles[frame] != NULL, L"JPC PNG frame sequence contains a gap");
 	}
 
 	bool bHasPalette = false;
@@ -781,7 +788,7 @@ bool LoadJPCFileToImage(HIMAGE hImage, UINT16 fContents)
 				}
 				else if(lpng.Info()->channels == 3 && lpng.Info()->bit_depth == 8)
 				{
-					Load24bppPNGImage(hImage, lpng.Rows(), lpng.Info());
+					Load32bppPNGImage(hImage, lpng.Rows(), lpng.Info());
 				}
 				else if(lpng.Info()->channels == 1 && lpng.Info()->bit_depth == 8)
 				{
@@ -952,77 +959,53 @@ bool LoadJPCFileToImage(HIMAGE hImage, UINT16 fContents)
 
 void Load32bppPNGImage(HIMAGE hImage, png::png_bytepp rows, png::png_infop info)
 {
-#if 1
-	hImage->pETRLEObject = (ETRLEObject*)MemAlloc(1 * sizeof(ETRLEObject));
+	SGP_THROW_IFFALSE(info->bit_depth == 8 && (info->channels == 3 || info->channels == 4),
+		L"Load32bppPNGImage requires 8-bit RGB or RGBA input");
+
+	hImage->pETRLEObject = (ETRLEObject*)MemAlloc(sizeof(ETRLEObject));
 	if(!hImage->pETRLEObject)
 	{
 		SGP_THROW(L"bad alloc");
 	}
 	memset(hImage->pETRLEObject, 0, sizeof(ETRLEObject));
 	hImage->usNumberOfObjects = 1;
-	
+
 	hImage->pETRLEObject[0].usHeight = (UINT16)info->height;
-	hImage->pETRLEObject[0].usWidth  = (UINT16)info->width;
-	
+	hImage->pETRLEObject[0].usWidth = (UINT16)info->width;
 	hImage->pETRLEObject[0].sOffsetX = (INT16)info->x_offset;
 	hImage->pETRLEObject[0].sOffsetY = (INT16)info->y_offset;
-	
-	hImage->usHeight   = (UINT16)info->height;
-	hImage->usWidth    = (UINT16)info->width;
+	hImage->pETRLEObject[0].uiDataOffset = 0;
+	hImage->pETRLEObject[0].uiDataLength = (UINT32)info->height * (UINT32)info->width * sizeof(UINT32);
+
+	hImage->usHeight = (UINT16)info->height;
+	hImage->usWidth = (UINT16)info->width;
 	hImage->ubBitDepth = 32;
-	
-	UINT32 SIZE = info->height * info->width * sizeof(UINT32);
-	hImage->p32BPPData = (UINT32*)MemAlloc(SIZE);
+
+	const UINT32 uiSize = hImage->pETRLEObject[0].uiDataLength;
+	hImage->p32BPPData = (UINT32*)MemAlloc(uiSize);
 	if(!hImage->p32BPPData)
 	{
 		MemFree(hImage->pETRLEObject);
+		hImage->pETRLEObject = NULL;
 		SGP_THROW(L"bad alloc");
 	}
-	memset(hImage->p32BPPData, 0, SIZE);
 
-	UINT32* dest_row = NULL;
-	UINT32 rgbcolor = 0;
-	for(unsigned int i=0; i<info->height; ++i)
+	for(unsigned int y = 0; y < info->height; ++y)
 	{
-		dest_row = &(hImage->p32BPPData[i*info->width]);
-		png::png_bytep row_i = rows[i];
-		memcpy(dest_row,row_i,info->width * sizeof(UINT32));
-	}
-
-	hImage->fFlags |= IMAGE_BITMAPDATA;
-#else
-	UINT32 SIZE = info->height * info->width;
-	hImage->p16BPPData = new UINT16[SIZE];
-	memset(hImage->p16BPPData, 0, SIZE*sizeof(UINT16));
-	UINT16* dest_row = NULL;
-	UINT32 rgbcolor = 0;
-	for(unsigned int i=0; i<info->height; ++i)
-	{
-		dest_row = &(hImage->p16BPPData[i*info->width]);
-		png_bytep row_i = rows[i];
-		for(unsigned int sx = 0, dx = 0; sx < 4*info->width; sx+=4, dx+=1)
+		png::png_bytep pSrc = rows[y];
+		UINT8 *pDst = (UINT8*)hImage->p32BPPData + ((size_t)y * info->width * 4);
+		for(unsigned int x = 0; x < info->width; ++x)
 		{
-			if(row_i[sx+3] == 255)
-			{
-				rgbcolor = FROMRGB(row_i[sx], row_i[sx+1], row_i[sx+2]);
-				if(rgbcolor == 0)
-				{
-					// since we already use rgb(0,0,0) as a fully transparent color,
-					// the color black will be mapped to rgb(0,1,0), because green has the most bits
-					//rgbcolor = 1 << 8;
-					rgbcolor = FROMRGB(0,1,0);
-				}
-				dest_row[dx] = Get16BPPColor(rgbcolor);
-			}
-			else
-			{
-				dest_row[dx] = Get16BPPColor(0);
-			}
+			pDst[x*4+0] = pSrc[x*info->channels+0];
+			pDst[x*4+1] = pSrc[x*info->channels+1];
+			pDst[x*4+2] = pSrc[x*info->channels+2];
+			pDst[x*4+3] = (info->channels == 4) ? pSrc[x*4+3] : 255;
 		}
 	}
-#endif
-}
 
+	hImage->uiSizePixData = uiSize;
+	hImage->fFlags |= IMAGE_BITMAPDATA;
+}
 
 void Load24bppPNGImage(HIMAGE hImage, png::png_bytepp rows, png::png_infop info)
 {
