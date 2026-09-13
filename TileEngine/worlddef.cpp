@@ -738,7 +738,6 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 	PTILE_IMAGERY	TileSurf;
 	CHAR8	cFileBPP[128];
 	CHAR8	cAdjustedFile[ 128 ];
-	CHAR8	cFallbackFilename[ 128 ];
 	BOOLEAN	fSectorReplacementRequested = FALSE;
 	BOOLEAN	fSectorReplacementLoaded = FALSE;
 
@@ -786,22 +785,24 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 
 	fSectorReplacementRequested = ( _stricmp( pLoadFilename, cFilename ) != 0 );
 
-	// Older experimental B1 builds could persist the sector prefix in the selected
-	// filename itself (for example B1_WELFLOR2.STI). Keep a clean authored-name
-	// fallback as well, so those builds cannot make B1 unloadable.
-	strcpy( cFallbackFilename, cFilename );
-	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG &&
-		 _strnicmp( cFallbackFilename, "B1_", 3 ) == 0 )
-	{
-		memmove( cFallbackFilename, cFallbackFilename + 3, strlen( cFallbackFilename + 3 ) + 1 );
-	}
-
-	// Adjust for BPP
+	// Adjust for BPP.
 	FilenameForBPP(pLoadFilename, cFileBPP);
 
-	if ( !fGetFromRoot )
+	if ( fSectorReplacementRequested )
 	{
-		// Adjust for tileset position
+		// B1 remaster assets are mandatory. Never use root/INI/stock fallback for these slots.
+		// The exact replacement in TILESETS\\50 must exist and decode successfully.
+		sprintf( cAdjustedFile, "TILESETS\\50\\%s", cFileBPP );
+
+		if ( !FileExists( cAdjustedFile ) )
+		{
+			FatalError( "B1 remaster is incomplete. Mandatory asset missing: %s", cAdjustedFile );
+			return( FALSE );
+		}
+	}
+	else if ( !fGetFromRoot )
+	{
+		// Normal tileset behaviour for non-remaster slots.
 		sprintf( cAdjustedFile, "TILESETS\\%d\\%s", ubTilesetID, cFileBPP );
 	}
 	else
@@ -809,30 +810,19 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 		sprintf( cAdjustedFile, "%s", cFileBPP );
 	}
 
-	// LoadTileSurface reports a full-screen runtime error before returning NULL.
-	// Therefore optional B1 art must be checked and redirected before we call it.
-	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG &&
-		 !FileExists( cAdjustedFile ) )
-	{
-		FilenameForBPP(cFallbackFilename, cFileBPP);
-
-		if ( !fGetFromRoot )
-			sprintf( cAdjustedFile, "TILESETS\\%d\\%s", ubTilesetID, cFileBPP );
-		else
-			sprintf( cAdjustedFile, "%s", cFileBPP );
-
-		fSectorReplacementRequested = FALSE;
-	}
-
 	TileSurf = LoadTileSurface( cAdjustedFile );
 
-	if ( TileSurf != NULL && fSectorReplacementRequested )
+	if ( TileSurf == NULL )
 	{
-		fSectorReplacementLoaded = TRUE;
+		if ( fSectorReplacementRequested )
+		{
+			FatalError( "B1 remaster asset exists but could not be loaded/decoded: %s", cAdjustedFile );
+		}
+		return( FALSE );
 	}
 
-	if ( TileSurf == NULL )
-		return( FALSE );
+	if ( fSectorReplacementRequested )
+		fSectorReplacementLoaded = TRUE;
 
 	TileSurf->fType							= ubType;
 
