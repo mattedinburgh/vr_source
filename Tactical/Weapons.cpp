@@ -530,7 +530,7 @@ weaponStartElementHandle(void *userData, const XML_Char *name, const XML_Char **
 				strcmp(name, "usOverheatingJamThreshold") == 0 || // Flugente
 				strcmp(name, "usOverheatingDamageThreshold") == 0 || // Flugente
 				strcmp(name, "usOverheatingSingleShotTemperature") == 0 || // Flugente
-				strcmp(name, "HeavyGun") == 0)) // SANDRO - cannot be shouldered while standing
+				strcmp(name, "HeavyGun") == 0 || // SANDRO - cannot be shouldered while standing\n\t\t\t\tstrcmp(name, "HeavyWeapon") == 0)) // legacy Vengeance XML alias
 		{
 			pData->curElement = WEAPON_ELEMENT_WEAPON_PROPERY;
 
@@ -810,11 +810,7 @@ weaponEndElementHandle(void *userData, const XML_Char *name)
 			pData->curElement = WEAPON_ELEMENT_WEAPON;
 			pData->curWeapon.usOverheatingSingleShotTemperature = (FLOAT) atof(pData->szCharData);
 		}
-		else if(strcmp(name, "HeavyGun") == 0)
-		{
-			pData->curElement = WEAPON_ELEMENT_WEAPON;
-			pData->curWeapon.HeavyGun = (BOOLEAN) atof(pData->szCharData);
-		}
+		else if(strcmp(name, "HeavyGun") == 0 || strcmp(name, "HeavyWeapon") == 0)\n\t\t{\n\t\t\tpData->curElement = WEAPON_ELEMENT_WEAPON;\n\t\t\tpData->curWeapon.HeavyGun = (BOOLEAN) atof(pData->szCharData);\n\t\t}
 
 		pData->maxReadDepth--;
 	}
