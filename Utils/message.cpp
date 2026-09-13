@@ -472,6 +472,7 @@ static void BattleLogCheckSector( void )
 	guiBattleLogSequence = 0;
 	gusBattleLogScrollOffset = 0;
 	gfBattleLogInspectorVisible = FALSE;
+	gubBattleLogInspectorMode = BATTLELOG_INSPECTOR_NONE;
 	guiBattleLogInspectorSequence = 0;
 	gubBattleLogInspectorOutcome = BATTLELOG_OUTCOME_NONE;
 	gubBattleLogInspectorActualTargetID = NOBODY;
@@ -499,6 +500,41 @@ static BATTLE_LOG_ENTRY* BattleLogEntryBySequence( UINT32 uiSequence )
 static INT16 BattleLogLineHeight( void )
 {
 	return (INT16)(GetFontHeight( TINYFONT1 ) + 1);
+}
+
+static void BattleLogSetTokenRange( BATTLE_LOG_ENTRY *pEntry, const CHAR16 *pToken, BOOLEAN fDamage )
+{
+	if ( pEntry == NULL || pToken == NULL || pToken[0] == 0 )
+		return;
+
+	const CHAR16 *pFound = wcsstr( pEntry->zText, pToken );
+	if ( pFound == NULL )
+		return;
+
+	CHAR16 prefix[640];
+	UINT32 uiChars = (UINT32)(pFound - pEntry->zText);
+	if ( uiChars >= 639 )
+		uiChars = 639;
+	wcsncpy( prefix, pEntry->zText, uiChars );
+	prefix[uiChars] = 0;
+
+	INT16 sStart = (INT16)StringPixLength( prefix, TINYFONT1 );
+	INT16 sEnd = (INT16)(sStart + StringPixLength( (STR16)pToken, TINYFONT1 ));
+
+	if ( fDamage )
+	{
+		pEntry->sDamageClickStart = sStart;
+		pEntry->sDamageClickEnd = sEnd;
+		wcsncpy( pEntry->zDamageToken, pToken, 63 );
+		pEntry->zDamageToken[63] = 0;
+	}
+	else
+	{
+		pEntry->sShotClickStart = sStart;
+		pEntry->sShotClickEnd = sEnd;
+		wcsncpy( pEntry->zShotToken, pToken, 31 );
+		pEntry->zShotToken[31] = 0;
+	}
 }
 
 static INT16 BattleLogInspectorWidth( void )
