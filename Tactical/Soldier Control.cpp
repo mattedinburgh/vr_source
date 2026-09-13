@@ -6158,8 +6158,7 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 		}
 
 		SpawnVRDirectionalGoreSpray( pSoldier, zEffect, ubExitDirection, sZ, (INT16)( 34 + ( ubVariant % 11 ) ), 0 );
-		SpawnVRDirectionalGoreSpray( pSoldier,
-			( ubVariant % 2 ) ? "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI" : "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI",
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI",
 			ubExitDirection, (INT16)( sZ > 6 ? sZ - 4 : sZ ), (INT16)( 41 + ( ubVariant % 9 ) ), (UINT8)( 20 + ( ubVariant % 4 ) * 15 ) );
 
 		if ( ubVariant % 3 == 0 )
