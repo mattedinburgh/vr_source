@@ -3,6 +3,11 @@
 
 #include "types.h"
 
+#define ENEMY_LOADOUT_TEAM_MIN 5
+#define ENEMY_LOADOUT_TEAM_TARGET 8
+#define ENEMY_LOADOUT_TEAM_MAX 10
+#define ENEMY_LOADOUT_MAX_CELLS 32
+
 // Experimental enemy equipment planning layer.
 //
 // This module is intentionally not wired into Tactical.vcxproj or
@@ -66,6 +71,26 @@ struct ENEMY_SQUAD_LOADOUT_STATE
 	ENEMY_ROLE_TARGETS Targets;
 };
 
+struct ENEMY_LOADOUT_CELL
+{
+	UINT8 ubSize;
+	UINT8 ubAdmins;
+	UINT8 ubRegulars;
+	UINT8 ubElites;
+	INT8 bDoctrineClass;
+	ENEMY_SQUAD_LOADOUT_STATE State;
+};
+
+struct ENEMY_LOADOUT_BATCH
+{
+	UINT8 ubTotalSoldiers;
+	UINT8 ubAdmins;
+	UINT8 ubRegulars;
+	UINT8 ubElites;
+	UINT8 ubCellCount;
+	ENEMY_LOADOUT_CELL Cells[ENEMY_LOADOUT_MAX_CELLS];
+};
+
 struct ENEMY_LOADOUT_PLAN
 {
 	ENEMY_LOADOUT_ROLE Role;
@@ -93,6 +118,31 @@ struct ENEMY_LOADOUT_PLAN
 	BOOLEAN fUseBackpack;
 	BOOLEAN fHeavyWeapon;
 };
+
+// Splits a creation batch into balanced 5-10 man equipment cells aligned
+// with the tactical AI fireteam scale (target 8, normal max 9/10).
+// Returns number of cells written to pubSizes.
+UINT8 PlanEnemyLoadoutCellSizes(
+	UINT8 ubTotalSoldiers,
+	UINT8 *pubSizes,
+	UINT8 ubCapacity);
+
+// Builds class-balanced equipment cells for one creation batch.  This does not
+// create soldiers or modify inventory; it is safe to use for dry-run audits.
+void BuildEnemyLoadoutBatch(
+	ENEMY_LOADOUT_BATCH *pBatch,
+	UINT8 ubAdmins,
+	UINT8 ubRegulars,
+	UINT8 ubElites,
+	UINT8 ubProgress,
+	INT8 bEquipmentRating);
+
+// Returns the doctrine class for a mixed cell.  A token elite should not turn
+// an admin-heavy security element into an elite assault team.
+INT8 EnemyLoadoutDoctrineClass(
+	UINT8 ubAdmins,
+	UINT8 ubRegulars,
+	UINT8 ubElites);
 
 // Builds squad-level role targets.  Progress is 0..100.
 // Equipment rating uses the existing GenerateRandomEquipment 0..4 scale.
