@@ -9819,38 +9819,60 @@ BOOLEAN AICheckWeOutnumberSector(SOLDIERTYPE *pSoldier)
 {
 	CHECKF(pSoldier);
 
-	UINT32	uiLoop;
-	SOLDIERTYPE *pOpponent;
+	UINT8 ubNumFriends = 0;
+	UINT8 ubNumOpponents = 0;
 
-	UINT8	ubNumFriends = 0;
-	UINT8	ubNumOpponents = 0;
-
-	// loop through all soldiers in sector
-	for (uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
+	// Sector strength must reflect what this soldier/team can actually know.
+	// Friendly condition is legitimate team information; enemy condition is not.
+	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
 	{
-		pOpponent = MercSlots[uiLoop];
+		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
+		if (!pOpponent)
+			continue;
 
-		// if this merc is inactive, at base, on assignment, dead, unconscious
-		if (!pOpponent || pOpponent->stats.bLife < OKLIFE)
+		if (pOpponent->bTeam == pSoldier->bTeam || pOpponent->bSide == pSoldier->bSide)
+		{
+			if (pOpponent->bActive && pOpponent->bInSector && pOpponent->stats.bLife >= OKLIFE &&
+				!(pOpponent->usSoldierFlagMask & SOLDIER_POW))
+			{
+				++ubNumFriends;
+			}
+			continue;
+		}
+
+		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+		if (bKnowledge == NOT_HEARD_OR_SEEN)
+			continue;
+
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			pOpponent->ubBodyType == CROW)
 		{
 			continue;
 		}
 
-		if (ValidOpponent(pSoldier, pOpponent))
+		const BOOLEAN fDirectVisualContact =
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
+			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
+
+		// Only direct current observation can remove a known contact because of live
+		// casualty/capture/sector state. Stale contacts remain possible threats until
+		// knowledge itself expires.
+		if (fDirectVisualContact &&
+			(!ValidOpponent(pSoldier, pOpponent) ||
+			 pOpponent->IsUnconscious() ||
+			 (pOpponent->usSoldierFlagMask & SOLDIER_POW)))
 		{
-			ubNumOpponents++;
+			continue;
 		}
 
-		if (pOpponent->bTeam == pSoldier->bTeam || pOpponent->bSide == pSoldier->bSide)
-		{
-			ubNumFriends++;
-		}
+		if (TileIsOutOfBounds(KnownLocation(pSoldier, pOpponent->ubID)))
+			continue;
+
+		++ubNumOpponents;
 	}
 
-	if (ubNumFriends > ubNumOpponents * 2)
-		return TRUE;
-
-	return FALSE;
+	return (ubNumOpponents > 0 && ubNumFriends > ubNumOpponents * 2);
 }
 
 BOOLEAN AICheckWeOutnumberPublic(SOLDIERTYPE *pSoldier, INT32 sSpot)
@@ -10180,79 +10202,58 @@ INT8 FindMaxEnemyInterruptLevel( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 blev
 {
 	CHECKF(pSoldier);
 
-	UINT32		uiLoop;
-	SOLDIERTYPE *pOpponent;
-	INT8		bMaxInterruptLevel = 0;
-	INT8		bInterruptLevel;
+	INT8 bMaxInterruptLevel = 0;
 
-	INT32		sThreatLoc;
-	INT8		iThreatLevel;
-
-	UINT8 ubNum = 0;
-
-	// loop through all the enemies
-	for (uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
+	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
 	{
-		pOpponent = MercSlots[ uiLoop ];
+		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
+		if (!pOpponent)
+			continue;
 
-		// if this merc is inactive, at base, on assignment, dead, unconscious
-		if (!pOpponent || pOpponent->stats.bLife < OKLIFE)
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide)
+			continue;
+
+		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+		if (bKnowledge == NOT_HEARD_OR_SEEN)
+			continue;
+
+		const BOOLEAN fDirectVisualContact =
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
+			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
+
+		if (fDirectVisualContact &&
+			(!ValidOpponent(pSoldier, pOpponent) ||
+			 pOpponent->IsUnconscious() ||
+			 (pOpponent->usSoldierFlagMask & SOLDIER_POW)))
 		{
 			continue;
 		}
 
-		// if this man is neutral / on the same side, he's not an opponent
-		if( CONSIDERED_NEUTRAL( pSoldier, pOpponent ) || (pSoldier->bSide == pOpponent->bSide))
+		INT32 sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
+		INT8 bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
+		if (TileIsOutOfBounds(sThreatLoc) ||
+			PythSpacesAway(sThreatLoc, sGridNo) > ubDistance ||
+			bThreatLevel != blevel)
 		{
 			continue;
 		}
 
-		// check if he is captured
-		if(pOpponent->usSoldierFlagMask & SOLDIER_POW)
+		INT8 bInterruptLevel;
+		if (fDirectVisualContact)
 		{
-			continue;
+			// Current direct observation permits the real combat-state estimate.
+			bInterruptLevel = AIEstimateInterruptLevel(pOpponent);
+		}
+		else
+		{
+			// An unseen contact must not reveal hidden experience, agility or shock.
+			// Use a neutral competent-soldier prior and reduce it as information ages.
+			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+			bInterruptLevel = (INT8)__max(1, (6 * iCertainty + 50) / 100);
 		}
 
-		// check personal/public knowledge
-		if( pSoldier->aiData.bOppList[pOpponent->ubID] == NOT_HEARD_OR_SEEN &&
-			gbPublicOpplist[pSoldier->bTeam][pOpponent->ubID] == NOT_HEARD_OR_SEEN )
-		{
-			continue;
-		}
-
-		sThreatLoc = gsPublicLastKnownOppLoc[pSoldier->bTeam][pOpponent->ubID];
-		iThreatLevel = gbPublicLastKnownOppLevel[pSoldier->bTeam][pOpponent->ubID];
-
-		// use personal knowledge if possible
-		if( pSoldier->aiData.bOppList[pOpponent->ubID] != NOT_HEARD_OR_SEEN )
-		{
-			sThreatLoc = gsLastKnownOppLoc[pSoldier->ubID][pOpponent->ubID];
-			iThreatLevel = gbLastKnownOppLevel[pSoldier->ubID][pOpponent->ubID];
-		}
-
-		// if for some reason known location is bad - skip
-		if( TileIsOutOfBounds(sThreatLoc) )
-		{
-			continue;
-		}
-
-		// check distance
-		if( PythSpacesAway(sThreatLoc, sGridNo ) > ubDistance )
-		{
-			continue;
-		}
-
-		// check level
-		if( iThreatLevel != blevel )
-		{
-			continue;
-		}
-
-		bInterruptLevel = AIEstimateInterruptLevel(pOpponent);
-		if( bInterruptLevel > bMaxInterruptLevel )
-		{
+		if (bInterruptLevel > bMaxInterruptLevel)
 			bMaxInterruptLevel = bInterruptLevel;
-		}
 	}
 
 	return bMaxInterruptLevel;
