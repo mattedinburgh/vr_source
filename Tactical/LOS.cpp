@@ -8009,8 +8009,15 @@ void AdjustTargetCenterPoint( SOLDIERTYPE *pShooter, INT32 iTargetGridNo, FLOAT 
 	// result of too many modifiers by the previous functions. In addition, the INI value also
 	// affects accuracy of ALL shots in the game, and is enforced here a second time.
 	
+	FLOAT fBeforeLimitX = dShotOffsetX;
+	FLOAT fBeforeLimitY = dShotOffsetY;
 	LimitImpactPointByFacing( pShooter, pTarget, &dShotOffsetX, &dShotOffsetY, dEndX, dEndY );
-	LimitImpactPointToMaxAperture( &dShotOffsetX, &dShotOffsetY, iDistanceAperture, (UINT32)d2DDistance, uiRange );				
+	LimitImpactPointToMaxAperture( &dShotOffsetX, &dShotOffsetY, iDistanceAperture, (UINT32)d2DDistance, uiRange );
+	if ( gNCTHWorkingDiagnostic.fValid && gNCTHWorkingDiagnostic.ubShooterID == pShooter->ubID )
+	{
+		gNCTHWorkingDiagnostic.fLimitCorrectionX = dShotOffsetX - fBeforeLimitX;
+		gNCTHWorkingDiagnostic.fLimitCorrectionY = dShotOffsetY - fBeforeLimitY;
+	}
 
 
 	// DEBUGGING: Remove this!
