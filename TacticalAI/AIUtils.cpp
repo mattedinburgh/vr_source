@@ -5254,6 +5254,21 @@ BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, U
 	if (ubMyReady == 0)
 		return TRUE;
 
+	// A General's command group is a tactical reserve, not the default QRF. For a
+	// remote contact, keep it intact whenever another coherent deployable element
+	// can respond. Direct/local contact bypasses this helper in the caller, and if
+	// every other element is committed or broken the command group still releases.
+	if (pSoldier->bTeam == ENEMY_TEAM && AIFireteamHasSoldierFlag(ubMine, SOLDIER_VIP))
+	{
+		for (UINT8 ubTeam = 1; ubTeam < gubAINextFireteam; ++ubTeam)
+		{
+			if (ubTeam == ubMine || gbAIFireteamTeam[ubTeam] != pSoldier->bTeam)
+				continue;
+			if (AIFireteamDeployableCountById(ubTeam, sContactSpot) > 0)
+				return TRUE;
+		}
+	}
+
 	INT32 iMine = AIFireteamDeployableDistanceToSpot(ubMine, sContactSpot);
 	UINT16 usCloserReady = 0;
 
