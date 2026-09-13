@@ -1597,6 +1597,17 @@ UINT32 InitializeJA2(void)
 		GenerateAllMapsInit();//dnl ch49 061009
 		return(MAPUTILITY_SCREEN);
 	}
+
+	// Engine-driven single-sector visual QA. Example:
+	//   MapEditor_EN_Release.exe -MAPSHOT=A3.dat
+	// The map is loaded by the real engine, including sector-specific runtime
+	// visual dressing, then MapUtility exports MAP_PREVIEWS\A3_overview.bmp.
+	if(_strnicmp(gzCommandLine, "-MAPSHOT=", 9) == 0)
+	{
+		if(GenerateSingleMapPreviewInit(gzCommandLine + 9))
+			return(MAPUTILITY_SCREEN);
+		return(ERROR_SCREEN);
+	}
 #endif
 #endif
 
