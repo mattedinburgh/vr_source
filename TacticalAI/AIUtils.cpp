@@ -4350,6 +4350,26 @@ static UINT8 AIFireteamRegroupingStrength(SOLDIERTYPE *pSoldier)
 	return AIFireteamRegroupableCountById(AIFireteamId(pSoldier));
 }
 
+static BOOLEAN AIFireteamHasSoldierFlag(UINT8 ubFireteam, UINT32 uiFlag)
+{
+	if (ubFireteam == AI_FIRETEAM_NONE)
+		return FALSE;
+
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
+	{
+		SOLDIERTYPE *pMember = MercPtrs[iCounter];
+		if (!AIEnemyFireteamEligible(pMember) || pMember->ubID >= MAX_NUM_SOLDIERS ||
+			guiAIFireteamIdentity[pMember->ubID] != pMember->uiUniqueSoldierIdValue ||
+			gubAIFireteam[pMember->ubID] != ubFireteam)
+		{
+			continue;
+		}
+		if (pMember->usSoldierFlagMask & uiFlag)
+			return TRUE;
+	}
+	return FALSE;
+}
+
 static INT32 AIFireteamDistanceToSpot(UINT8 ubFireteam, INT32 sSpot)
 {
 	INT32 iBest = 10000;
@@ -4465,6 +4485,19 @@ static void AISeedEnemyFireteams(void)
 					}
 
 					INT32 iRolePenalty = 0;
+					if (pSeed && (pSeed->usSoldierFlagMask & SOLDIER_VIP))
+					{
+						// Bodyguards are a command-group role. Keep them with the General when
+						// possible without changing AP, accuracy, armour or any combat stat.
+						if (pCandidate->usSoldierFlagMask & SOLDIER_BODYGUARD)
+							iCandidateDistance = __max(0, iCandidateDistance - 24);
+						else
+							iRolePenalty += 6;
+					}
+					else if (pCandidate->usSoldierFlagMask & SOLDIER_BODYGUARD)
+					{
+						iRolePenalty += 18;
+					}
 					if (AIEnemyFixedMissionRole(pCandidate) != fSeedFixedMission) iRolePenalty += 8;
 					if (fHasLeader && AICheckIsLeader(pCandidate)) iRolePenalty += 4;
 					if (fHasMedic && AICheckIsMedic(pCandidate)) iRolePenalty += 4;
@@ -4563,6 +4596,11 @@ static void AIEnsureEnemyFireteams(void)
 			if (gbAIFireteamTeam[ubTeam] != pSoldier->bTeam) continue;
 			if (AIFireteamCountById(ubTeam, FALSE) >= AI_FIRETEAM_MAX_NORMAL) continue;
 			INT32 iDistance = AIFireteamJoinDistance(ubTeam, pSoldier);
+			BOOLEAN fGeneralTeam = AIFireteamHasSoldierFlag(ubTeam, SOLDIER_VIP);
+			if (pSoldier->usSoldierFlagMask & SOLDIER_BODYGUARD)
+				iDistance += fGeneralTeam ? -24 : 18;
+			else if (fGeneralTeam)
+				iDistance += 6;
 			iDistance += AIFireteamRoleOverlapPenalty(ubTeam, pSoldier);
 			iDistance += AIFireteamMissionRolePenalty(ubTeam, pSoldier);
 			if (iDistance < iBest) { iBest = iDistance; ubBest = ubTeam; }
