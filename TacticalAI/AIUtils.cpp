@@ -8737,7 +8737,8 @@ UINT8 SpotDangerLevel(SOLDIERTYPE *pSoldier, INT32 sGridNo)
 
 	// Once alerted, stepping into illumination at night is a meaningful exposure cost.
 	if ((pSoldier->aiData.bAlertStatus >= STATUS_RED ||
-		 pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE) &&
+		 pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE ||
+		 pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA) &&
 		(InLightAtNight(sGridNo, pSoldier->pathing.bLevel) ||
 		 FindNearbyExplosiveStructure(sGridNo, pSoldier->pathing.bLevel)))
 	{
