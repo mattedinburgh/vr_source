@@ -4,9 +4,9 @@ on:
   push:
     branches:
       - install/all-2026-09-12
-    paths-ignore:
-      - 'MapPreviews/**'
-      - '**/*.md'
+    paths:
+      - 'MapPreviewTrigger/**'
+      - '.github/workflows/autonomous-map-preview.yml'
   workflow_dispatch:
 
 permissions:
@@ -26,16 +26,19 @@ jobs:
       - name: Check out vr_source
         uses: actions/checkout@v4
         with:
-          ref: install/all-2026-09-12
+          ref: ${{ github.sha }}
           fetch-depth: 1
 
-      - name: Check out vr_gamedir
+      - name: Check out A3 gamedir assets
         uses: actions/checkout@v4
         with:
           repository: mattedinburgh/vr_gamedir
           ref: install/all-2026-09-12
           path: _vr_gamedir
           fetch-depth: 1
+          sparse-checkout: |
+            Data-Maps-Tiles
+          sparse-checkout-cone-mode: true
 
       - name: Find MSBuild
         id: msbuild
