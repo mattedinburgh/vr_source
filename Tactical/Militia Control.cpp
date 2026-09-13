@@ -32,8 +32,11 @@
 	#include "Isometric Utils.h"
 #endif
 
+#include <vector>
+
 #include "MilitiaSquads.h"
 #include "AIInternals.h"
+#include "Inventory Choosing.h"
 
 //forward declarations of common classes to eliminate includes
 class OBJECTTYPE;
@@ -41,6 +44,7 @@ class SOLDIERTYPE;
 
 
 BOOLEAN gfStrategicMilitiaChangesMade = FALSE;
+BOOLEAN gfMilitiaTacticalResetInProgress = FALSE;
 
 BOOLEAN fFirstClickInMilitiaControlScreenMask = FALSE;
 BOOLEAN gfMSResetMilitia = FALSE;
@@ -317,23 +321,86 @@ void ResetMilitia()
 			return;
 		}
 
-		// I truly hope that we remove such inane control methods from the soldier create code when we break the merc slot barrier
-		// Hacks like this really depress me.
-		UINT32 cs = guiCurrentScreen;
-		// Make sure we aren't on the AUTORESOLVE screen for this.  Even if we are.  We are removing and creating soldiers for 
-		// tactical here, not autoresolve.  In my opinion the CreateSoldierXXX and TacticalRemoveSoldierXXX functions should take 
-		// a flag for autoresolve if different initialization or destruction is desired.
-		guiCurrentScreen = GAME_SCREEN;
-
-		// Flugente: cause all militia whose equipment is from this sector to drop it
-		TeamDropAll( MILITIA_TEAM );
-
-		RemoveMilitiaFromTactical();
+		// Preserve the actual inventories of militia that remain in the strategic
+		// headcount. The old reset dropped all sector-issued gear into the world and
+		// then let recreated militia select from the entire sector again, which could
+		// make them grab fresh battle loot. Existing militia should keep what they
+		// already carried; only genuinely new militia may draw new sector equipment.
 		ubNumGreen = MilitiaInSectorOfRank(gWorldSectorX, gWorldSectorY, GREEN_MILITIA);
 		ubNumReg = MilitiaInSectorOfRank(gWorldSectorX, gWorldSectorY, REGULAR_MILITIA);
 		ubNumVet = MilitiaInSectorOfRank(gWorldSectorX, gWorldSectorY, ELITE_MILITIA);
+		UINT16 usTargetMilitiaCount = (UINT16)ubNumGreen + ubNumReg + ubNumVet;
 
+		std::vector<Inventory> preservedInventories;
+		preservedInventories.reserve( usTargetMilitiaCount );
+
+		for ( UINT32 cnt = gTacticalStatus.Team[MILITIA_TEAM].bFirstID;
+			  cnt <= gTacticalStatus.Team[MILITIA_TEAM].bLastID; ++cnt )
+		{
+			SOLDIERTYPE *pMilitia = MercPtrs[cnt];
+			if ( !pMilitia || !pMilitia->bActive || !pMilitia->bInSector ||
+				 pMilitia->sSectorX != gWorldSectorX || pMilitia->sSectorY != gWorldSectorY ||
+				 pMilitia->bSectorZ != gbWorldSectorZ || pMilitia->stats.bLife <= 0 )
+			{
+				continue;
+			}
+
+			if ( preservedInventories.size() < usTargetMilitiaCount )
+			{
+				preservedInventories.push_back( pMilitia->inv );
+			}
+			else
+			{
+				// This tactical soldier no longer exists in strategic headcount. Return
+				// only sector-issued gear before the surplus tactical instance is removed.
+				pMilitia->DropSectorEquipment();
+			}
+		}
+
+		// I truly hope that we remove such inane control methods from the soldier create code when we break the merc slot barrier
+		// Hacks like this really depress me.
+		UINT32 cs = guiCurrentScreen;
+		guiCurrentScreen = GAME_SCREEN;
+
+		RemoveMilitiaFromTactical();
+
+		// Recreate the tactical bodies without allowing their creation path to touch
+		// sector inventory. We restore preserved inventories immediately afterwards.
+		gfMilitiaTacticalResetInProgress = TRUE;
 		AddSoldierInitListMilitia( ubNumGreen, ubNumReg, ubNumVet );
+		gfMilitiaTacticalResetInProgress = FALSE;
+
+		UINT16 usPreservedIndex = 0;
+		for ( UINT32 cnt = gTacticalStatus.Team[MILITIA_TEAM].bFirstID;
+			  cnt <= gTacticalStatus.Team[MILITIA_TEAM].bLastID; ++cnt )
+		{
+			SOLDIERTYPE *pMilitia = MercPtrs[cnt];
+			if ( !pMilitia || !pMilitia->bActive || !pMilitia->bInSector ||
+				 pMilitia->sSectorX != gWorldSectorX || pMilitia->sSectorY != gWorldSectorY ||
+				 pMilitia->bSectorZ != gbWorldSectorZ || pMilitia->stats.bLife <= 0 )
+			{
+				continue;
+			}
+
+			if ( usPreservedIndex < preservedInventories.size() )
+			{
+				pMilitia->inv = preservedInventories[usPreservedIndex++];
+				pMilitia->usSoldierFlagMask &= ~SOLDIER_EQUIPMENT_DROPPED;
+				pMilitia->HandleFlashLights();
+			}
+			else
+			{
+				// A genuinely new strategic militia soldier has no old inventory to
+				// preserve. In a peaceful sector, equip only this new soldier normally.
+				SOLDIERCREATE_STRUCT createStruct;
+				createStruct.Inv = pMilitia->inv;
+				TakeMilitiaEquipmentfromSector( pMilitia->sSectorX, pMilitia->sSectorY,
+					pMilitia->bSectorZ, &createStruct, pMilitia->ubSoldierClass );
+				pMilitia->inv = createStruct.Inv;
+				pMilitia->usSoldierFlagMask &= ~SOLDIER_EQUIPMENT_DROPPED;
+				pMilitia->HandleFlashLights();
+			}
+		}
 
 		// Now restore the original screen setting so the game doesn't go wacky.
 		guiCurrentScreen = cs;
