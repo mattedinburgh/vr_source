@@ -1000,12 +1000,17 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 		sprintf( cAdjustedFile, "TILESETS\\50\\%s", cFileBPP );
 		TraceB1RemasterLoad( "ASSET REQUEST", cAdjustedFile );
 
-		if ( !FileExists( cAdjustedFile ) )
+		const BOOLEAN fReplacementVisible = FileExists( cAdjustedFile );
+		TraceB1RemasterLoad( fReplacementVisible ? "ASSET EXISTS" : "ASSET MISSING", cAdjustedFile );
+
+		if ( !fReplacementVisible )
 		{
+			TraceB1RemasterLoad( "FATAL MISSING ASSET", cAdjustedFile );
 			FatalError( "B1 remaster is incomplete. Mandatory asset missing: %s", cAdjustedFile );
 			return( FALSE );
 		}
 
+		TraceB1RemasterLoad( "LOAD TILE SURFACE BEGIN", cAdjustedFile );
 	}
 	else if ( !fGetFromRoot )
 	{
@@ -1023,6 +1028,7 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 	{
 		if ( fSectorReplacementRequested )
 		{
+			TraceB1RemasterLoad( "LOAD TILE SURFACE FAILED", cAdjustedFile );
 			FatalError( "B1 remaster asset exists but could not be loaded/decoded: %s", cAdjustedFile );
 		}
 		return( FALSE );
@@ -1031,6 +1037,11 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 	if ( fSectorReplacementRequested )
 	{
 		TraceB1RemasterLoad( "ASSET LOADED", cAdjustedFile );
+		CHAR8 zB1AssetInfo[192];
+		sprintf( zB1AssetInfo, "%s frames=%u bitDepth=%u", cAdjustedFile,
+			TileSurf->vo != NULL ? TileSurf->vo->usNumberOfObjects : 0,
+			TileSurf->vo != NULL ? TileSurf->vo->ubBitDepth : 0 );
+		TraceB1RemasterLoad( "ASSET INFO", zB1AssetInfo );
 		if ( TileSurf->vo == NULL || TileSurf->vo->usNumberOfObjects == 0 )
 		{
 			DeleteTileSurface( TileSurf );
