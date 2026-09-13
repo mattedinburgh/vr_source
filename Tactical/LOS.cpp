@@ -7712,7 +7712,7 @@ void AdjustTargetCenterPoint( SOLDIERTYPE *pShooter, INT32 iTargetGridNo, FLOAT 
 		fIronAperture = iBasicAperture;
 
 		// Laser bonuses are evaluated from the actual weapon, target tile and light level.
-		INT16 sLaserRange = GetBestLaserRange( pWeapon );
+		INT16 sLaserRange = pShooter->LaserActive() ? GetBestLaserRange( pWeapon ) : 0;
 		sDiagnosticLaserRange = sLaserRange;
 		if ( sLaserRange > 0
 			&& ( gGameCTHConstants.LASER_PERFORMANCE_BONUS_HIP + gGameCTHConstants.LASER_PERFORMANCE_BONUS_IRON + gGameCTHConstants.LASER_PERFORMANCE_BONUS_SCOPE != 0) )
