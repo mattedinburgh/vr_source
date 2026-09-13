@@ -4152,19 +4152,27 @@ UINT8 AICountNearbyOperationalFriends(SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT
 			continue;
 
 		BOOLEAN fOperationalAlly = (pFriend->bTeam == pSoldier->bTeam);
-		// Militia should recognize nearby player mercs as real local support for
-		// isolation/risk/fallback decisions. This does not share knowledge or make
-		// mercs part of militia fireteams; coordinated maneuvers remain team-local.
-		if (!fOperationalAlly && pSoldier->bTeam == MILITIA_TEAM && pFriend->bTeam == OUR_TEAM)
-			fOperationalAlly = TRUE;
-		if (!fOperationalAlly)
+		BOOLEAN fVisiblePlayerSupport =
+			pSoldier->bTeam == MILITIA_TEAM && pFriend->bTeam == OUR_TEAM;
+		if (!fOperationalAlly && !fVisiblePlayerSupport)
 			continue;
+
+		INT32 iDistance = PythSpacesAway(sGridNo, pFriend->sGridNo);
+		if (iDistance > ubDistance)
+			continue;
+
+		// Player merc support is physical/observable support, not shared knowledge.
+		// Do not let militia count a merc through walls merely because he is nearby.
+		if (fVisiblePlayerSupport && iDistance > 1 &&
+			LOS_Raised(pSoldier, pFriend, CALC_FROM_ALL_DIRS) <= 0)
+		{
+			continue;
+		}
 
 		if (pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
 			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
-			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend) ||
-			PythSpacesAway(sGridNo, pFriend->sGridNo) > ubDistance)
+			(fOperationalAlly && (AIDisengagementActive(pFriend) || AIEscapeActive(pFriend))))
 		{
 			continue;
 		}
