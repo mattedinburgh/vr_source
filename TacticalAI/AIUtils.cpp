@@ -4583,32 +4583,56 @@ static BOOLEAN AIFireteamPredominantlyFixed(UINT8 ubFireteam)
 static INT32 AIFireteamMergeDistance(UINT8 ubFirst, UINT8 ubSecond, SOLDIERTYPE *pJoiningSoldier)
 {
 	if (ubFirst == AI_FIRETEAM_NONE || ubSecond == AI_FIRETEAM_NONE ||
-		gbAIFireteamTeam[ubFirst] != gbAIFireteamTeam[ubSecond]) return 10000;
-	INT32 iBest = 10000;
+		gbAIFireteamTeam[ubFirst] != gbAIFireteamTeam[ubSecond])
+	{
+		return 10000;
+	}
+
+	// AIAbsorbFireteamRemnant() reassigns every regroupable member of ubFirst, not
+	// only the soldier whose turn triggered the merge. Score the destination by the
+	// worst remnant member's nearest viable destination fighter so a scattered pair
+	// cannot merge merely because one survivor happens to be close.
+	INT32 iWorstNearest = 0;
+	UINT8 ubFirstMembers = 0;
 	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
 	{
 		SOLDIERTYPE *pFirst = MercPtrs[i];
-		BOOLEAN fJoiningLead = (pFirst == pJoiningSoldier);
-		if (!AIEnemyFireteamEligible(pFirst) || pFirst->ubID >= MAX_NUM_SOLDIERS ||
+		if (!AIFireteamRegroupableMember(pFirst) ||
 			guiAIFireteamIdentity[pFirst->ubID] != pFirst->uiUniqueSoldierIdValue ||
-			gubAIFireteam[pFirst->ubID] != ubFirst || pFirst->stats.bLife < OKLIFE ||
-			pFirst->bCollapsed || pFirst->bBreathCollapsed || (pFirst->usSoldierFlagMask & SOLDIER_POW) ||
-			(pFirst->flags.uiStatusFlags & SOLDIER_COWERING) ||
-			(!fJoiningLead && (AIDisengagementActive(pFirst) || AIEscapeActive(pFirst)))) continue;
+			gubAIFireteam[pFirst->ubID] != ubFirst)
+		{
+			continue;
+		}
+
+		INT32 iNearest = 10000;
 		for (UINT16 j = 0; j < MAX_NUM_SOLDIERS; ++j)
 		{
 			SOLDIERTYPE *pSecond = MercPtrs[j];
 			if (!AIEnemyFireteamEligible(pSecond) || pSecond->ubID >= MAX_NUM_SOLDIERS ||
 				guiAIFireteamIdentity[pSecond->ubID] != pSecond->uiUniqueSoldierIdValue ||
 				gubAIFireteam[pSecond->ubID] != ubSecond || pSecond->stats.bLife < OKLIFE ||
-				pSecond->bCollapsed || pSecond->bBreathCollapsed || (pSecond->usSoldierFlagMask & SOLDIER_POW) ||
-				(pSecond->flags.uiStatusFlags & SOLDIER_COWERING) || AIDisengagementActive(pSecond) || AIEscapeActive(pSecond)) continue;
+				pSecond->bCollapsed || pSecond->bBreathCollapsed ||
+				(pSecond->usSoldierFlagMask & SOLDIER_POW) ||
+				(pSecond->flags.uiStatusFlags & SOLDIER_COWERING) ||
+				AIDisengagementActive(pSecond) || AIEscapeActive(pSecond))
+			{
+				continue;
+			}
+
 			INT32 iDistance = PythSpacesAway(pFirst->sGridNo, pSecond->sGridNo);
-			if (pFirst->pathing.bLevel != pSecond->pathing.bLevel) iDistance += __max(6, DAY_VISION_RANGE / 3);
-			iBest = __min(iBest, iDistance);
+			if (pFirst->pathing.bLevel != pSecond->pathing.bLevel)
+				iDistance += __max(6, DAY_VISION_RANGE / 3);
+			iNearest = __min(iNearest, iDistance);
 		}
+
+		if (iNearest >= 10000)
+			return 10000;
+
+		iWorstNearest = __max(iWorstNearest, iNearest);
+		++ubFirstMembers;
 	}
-	return iBest;
+
+	return ubFirstMembers > 0 ? iWorstNearest : 10000;
 }
 
 static INT32 AIFireteamRemnantDestinationPenalty(UINT8 ubFireteam)
