@@ -4751,11 +4751,69 @@ static BOOLEAN AICanAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 	return AISelectFireteamRemnantDestination(pSoldier, NULL) != AI_FIRETEAM_NONE;
 }
 
+static BOOLEAN AIFireteamRemnantDestinationReachable(UINT8 ubOld, UINT8 ubBest)
+{
+	if (ubOld == AI_FIRETEAM_NONE || ubBest == AI_FIRETEAM_NONE)
+		return FALSE;
+
+	// This check is intentionally deferred until an actual merge attempt. Fireteam
+	// scoring is queried frequently, while full pathfinding is expensive. Every
+	// regroupable remnant member must be able to reach at least one operational
+	// fighter in the destination element before membership/escape state is changed.
+	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
+	{
+		SOLDIERTYPE *pFirst = MercPtrs[i];
+		if (!AIFireteamRegroupableMember(pFirst) ||
+			guiAIFireteamIdentity[pFirst->ubID] != pFirst->uiUniqueSoldierIdValue ||
+			gubAIFireteam[pFirst->ubID] != ubOld)
+		{
+			continue;
+		}
+
+		BOOLEAN fReachable = FALSE;
+		for (UINT16 j = 0; j < MAX_NUM_SOLDIERS && !fReachable; ++j)
+		{
+			SOLDIERTYPE *pSecond = MercPtrs[j];
+			if (!AIEnemyFireteamEligible(pSecond) || pSecond->ubID >= MAX_NUM_SOLDIERS ||
+				guiAIFireteamIdentity[pSecond->ubID] != pSecond->uiUniqueSoldierIdValue ||
+				gubAIFireteam[pSecond->ubID] != ubBest || pSecond->stats.bLife < OKLIFE ||
+				pSecond->bCollapsed || pSecond->bBreathCollapsed ||
+				(pSecond->usSoldierFlagMask & SOLDIER_POW) ||
+				(pSecond->flags.uiStatusFlags & SOLDIER_COWERING) ||
+				AIDisengagementActive(pSecond) || AIEscapeActive(pSecond))
+			{
+				continue;
+			}
+
+			if (pFirst->pathing.bLevel == pSecond->pathing.bLevel &&
+				PythSpacesAway(pFirst->sGridNo, pSecond->sGridNo) <= 1)
+			{
+				fReachable = TRUE;
+				break;
+			}
+
+			BOOLEAN fClimbingNecessary = FALSE;
+			INT32 sClimbGridNo = NOWHERE;
+			INT16 sPathCost = EstimatePathCostToLocation(
+				pFirst, pSecond->sGridNo, pSecond->pathing.bLevel, TRUE,
+				&fClimbingNecessary, &sClimbGridNo);
+			if (sPathCost > 0)
+				fReachable = TRUE;
+		}
+
+		if (!fReachable)
+			return FALSE;
+	}
+
+	return TRUE;
+}
 static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 {
 	UINT8 ubOld = AI_FIRETEAM_NONE;
 	UINT8 ubBest = AISelectFireteamRemnantDestination(pSoldier, &ubOld);
 	if (ubBest == AI_FIRETEAM_NONE || ubOld == AI_FIRETEAM_NONE)
+		return FALSE;
+	if (!AIFireteamRemnantDestinationReachable(ubOld, ubBest))
 		return FALSE;
 
 	UINT32 uiRejoinUntil = guiTurnCnt + 3;
