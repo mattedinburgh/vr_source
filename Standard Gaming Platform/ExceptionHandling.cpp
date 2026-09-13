@@ -269,6 +269,39 @@ static void BlackBoxRotateRunLogs( void )
 	MoveFileExA( "BlackBox_Hang_LastRun.dmp", "BlackBox_Hang_PreviousRun.dmp", MOVEFILE_REPLACE_EXISTING );
 }
 
+static BOOL BlackBoxFileTailContains( const char *path, const char *needle )
+{
+	HANDLE hFile;
+	DWORD size;
+	DWORD toRead;
+	DWORD read = 0;
+	CHAR8 buffer[16385];
+	BOOL found = FALSE;
+
+	if( path == NULL || needle == NULL || needle[0] == 0 )
+		return FALSE;
+
+	hFile = CreateFileA( path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+		NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL );
+	if( hFile == INVALID_HANDLE_VALUE )
+		return FALSE;
+
+	size = GetFileSize( hFile, NULL );
+	if( size != INVALID_FILE_SIZE )
+	{
+		toRead = size > 16384 ? 16384 : size;
+		if( size > toRead )
+			SetFilePointer( hFile, -(LONG)toRead, NULL, FILE_END );
+		if( ReadFile( hFile, buffer, toRead, &read, NULL ) )
+		{
+			buffer[ read < sizeof( buffer ) ? read : sizeof( buffer ) - 1 ] = 0;
+			found = strstr( buffer, needle ) != NULL;
+		}
+	}
+	CloseHandle( hFile );
+	return found;
+}
+
 static void BlackBoxWriteHangEvidence( DWORD elapsedMs, LONG heartbeatSequence, LONG currentScreen )
 {
 	HANDLE hFile;
@@ -588,6 +621,17 @@ void BlackBoxInitialize( void )
 		GetCurrentProcessId(), GetCurrentThreadId(),
 		gBlackBoxWatchdogThread != NULL ? "yes" : "no",
 		gBlackBoxVectoredHandler != NULL ? "yes" : "no" );
+
+	if( GetFileAttributesA( "BlackBox_PreviousRun.log" ) != INVALID_FILE_ATTRIBUTES )
+	{
+		BOOL previousClean = BlackBoxFileTailContains( "BlackBox_PreviousRun.log", "Clean shutdown" );
+		BlackBoxContext( "previous.run", "status=%s log=BlackBox_PreviousRun.log", previousClean ? "CLEAN" : "UNCLEAN" );
+		BlackBoxCounterAdd( previousClean ? "previous.clean" : "previous.unclean", 1 );
+		if( !previousClean )
+		{
+			BlackBoxEvent( "RECOVERY", "Previous run has no clean-shutdown marker; inspect previous-run/hang/crash evidence" );
+		}
+	}
 #ifdef _DEBUG
 	BlackBoxEvent( "ENGINE", "buildDate=%s buildTime=%s config=Debug pointerBits=%u recorderVersion=4 eventSlots=%u checkpointSlots=%u exceptionSlots=%u",
 		__DATE__, __TIME__, (UINT32)(sizeof(void*) * 8), (UINT32)BLACKBOX_EVENT_SLOTS, (UINT32)BLACKBOX_CHECKPOINT_SLOTS, (UINT32)BLACKBOX_EXCEPTION_SLOTS );
