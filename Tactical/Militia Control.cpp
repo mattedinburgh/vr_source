@@ -202,6 +202,9 @@ static INT32 FindMilitiaSpreadDestination( SOLDIERTYPE *pSoldier )
 
 	pSoldier->aiData.bOrders = bOldOrders;
 	pSoldier->aiData.sPatrolGrid[0] = sOldAnchor;
+	pSoldier->pathing.bPathStored = FALSE;
+	pSoldier->pathing.usPathIndex = 0;
+	pSoldier->pathing.usPathDataSize = 0;
 	return sBestSpot;
 }
 
@@ -256,6 +259,9 @@ static INT32 FindMilitiaRallyDestination( SOLDIERTYPE *pSoldier, INT32 sRallyGri
 
 	pSoldier->aiData.bOrders = bOldOrders;
 	pSoldier->aiData.sPatrolGrid[0] = sOldAnchor;
+	pSoldier->pathing.bPathStored = FALSE;
+	pSoldier->pathing.usPathIndex = 0;
+	pSoldier->pathing.usPathDataSize = 0;
 	return sBestSpot;
 }
 
@@ -1543,6 +1549,8 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 							if ( GetSoldier( &pSoldier, gusSelectedSoldier )  )
 							{
 								sGridNo = pSoldier->sGridNo;
+								ResetMilitiaCommandQueue( pTMilitiaSoldier );
+								AIClearDisengagementState( pTMilitiaSoldier );
 								sActionGridNo = FindMilitiaRallyDestination( pTMilitiaSoldier, sGridNo );
 
 								// Fallback for cramped interiors or maps where the local sampler cannot
@@ -1553,8 +1561,6 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 								if ( !TileIsOutOfBounds(sActionGridNo) )
 								{
 									// Rally to a distinct nearby position, then hold it.
-									ResetMilitiaCommandQueue( pTMilitiaSoldier );
-									AIClearDisengagementState( pTMilitiaSoldier );
 									pTMilitiaSoldier->aiData.bOrders = STATIONARY;
 									pTMilitiaSoldier->aiData.bAttitude = DEFENSIVE;
 									pTMilitiaSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
@@ -1835,14 +1841,14 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 							if ( pCommander && (pTeamSoldier->bActive) && (pTeamSoldier->bInSector) && (pTeamSoldier->stats.bLife >= OKLIFE) )
 							{
 								sGridNo = pCommander->sGridNo;
+								ResetMilitiaCommandQueue( pTeamSoldier );
+								AIClearDisengagementState( pTeamSoldier );
 								sActionGridNo = FindMilitiaRallyDestination( pTeamSoldier, sGridNo );
 								if ( TileIsOutOfBounds(sActionGridNo) )
 									sActionGridNo = FindAdjacentGridEx( pTeamSoldier, sGridNo, &ubDirection, &sAdjustedGridNo, TRUE, FALSE );
 
 								if ( !TileIsOutOfBounds(sActionGridNo) )
 								{
-									ResetMilitiaCommandQueue( pTeamSoldier );
-									AIClearDisengagementState( pTeamSoldier );
 									pTeamSoldier->aiData.bOrders = STATIONARY;
 									pTeamSoldier->aiData.bAttitude = DEFENSIVE;
 									pTeamSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
@@ -1881,12 +1887,12 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 						{
 							if ( (pTeamSoldier->bActive) && (pTeamSoldier->bInSector) && (pTeamSoldier->stats.bLife >= OKLIFE) )
 							{
+								ResetMilitiaCommandQueue( pTeamSoldier );
+								AIClearDisengagementState( pTeamSoldier );
 								sActionGridNo = FindMilitiaSpreadDestination( pTeamSoldier );
 								if ( !TileIsOutOfBounds(sActionGridNo) )
 								{
 									// A spread order is a local defensive reposition, not a sector-wide patrol.
-									ResetMilitiaCommandQueue( pTeamSoldier );
-									AIClearDisengagementState( pTeamSoldier );
 									pTeamSoldier->aiData.bOrders = STATIONARY;
 									pTeamSoldier->aiData.bAttitude = DEFENSIVE;
 									pTeamSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
