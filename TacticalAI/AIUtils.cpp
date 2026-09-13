@@ -2196,33 +2196,40 @@ INT32 ClosestReachableFriendInTrouble(SOLDIERTYPE *pSoldier, BOOLEAN * pfClimbin
 
 		// Legacy Vengeance searched the entire side for a friend in trouble. That
 		// let a distant firefight pull otherwise coherent enemy elements across the
-		// sector. Healthy fireteams now help their own element first; cross-element
-		// help is allowed only locally, while one/two-man remnants remain free to
-		// merge through the fireteam cohesion logic.
+		// sector. Healthy fireteams share contact detail inside the element; another
+		// element may receive help only from directly observable/local distress.
+		BOOLEAN fCrossElementLocalHelp = FALSE;
 		if (AICombatTeam(pSoldier) && pFriend->bTeam == pSoldier->bTeam &&
 			!AISameFireteam(pSoldier, pFriend))
 		{
+			INT32 iFriendDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
 			if (ubMyFireteamReady > 2 &&
-				PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > __max(6, DAY_VISION_RANGE / 3))
+				iFriendDistance > __max(6, DAY_VISION_RANGE / 3))
 			{
 				continue;
 			}
 
-			// Another element's private contact count is not sector-wide knowledge.
-			// Cross-element assistance requires direct/local awareness of that soldier.
-			if (!AIResponderKnowsCasualty(pSoldier, pFriend))
+			BOOLEAN fFriendObservable =
+				iFriendDistance <= 1 ||
+				LOS_Raised(pSoldier, pFriend, CALC_FROM_ALL_DIRS) > 0;
+			if (!fFriendObservable)
 				continue;
+
+			// Do not read another element's private opponent list. Visible suppression,
+			// shock, wounds or collapse are sufficient reasons for local assistance.
+			fCrossElementLocalHelp =
+				pFriend->aiData.bUnderFire ||
+				ShockLevelPercent(pFriend) >= 30 ||
+				pFriend->bBleeding > 0 ||
+				pFriend->stats.bLife < pFriend->stats.bLifeMax ||
+				pFriend->bCollapsed || pFriend->bBreathCollapsed;
 		}
 
-		// CJC: restrict "last one to radio" to only if that guy saw us this turn or last turn
-
-		// if this friend is not under fire, and isn't the last one to radio
-		// sevenfm: also help if friend has more opponents than friends nearby
-		/*if (!(	pFriend->aiData.bUnderFire ||
-				(pFriend->ubID == gTacticalStatus.Team[pFriend->bTeam].ubLastMercToRadio && GuySawEnemyThisTurnOrBefore( pFriend ) ) ||
-				CountSeenEnemiesLastTurn(pFriend) > CountNearbyFriendlies(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE/4) ) )*/
-		// sevenfm: help if friend has more recently seen opponents than friends nearby
-		if( !( CountSeenEnemiesLastTurn(pFriend) > AICountNearbyOperationalFriends(pFriend, pFriend->sGridNo, DAY_VISION_RANGE/4) ) )
+		// Same-fireteam members may coordinate from their shared element picture.
+		// Cross-element help uses only the observable distress gate above.
+		if (!fCrossElementLocalHelp &&
+			!(CountSeenEnemiesLastTurn(pFriend) >
+			  AICountNearbyOperationalFriends(pFriend, pFriend->sGridNo, DAY_VISION_RANGE / 4)))
 		{
 			continue;			// next merc
 		}
