@@ -29,6 +29,7 @@
 
 #include "SaveLoadGame.h"
 #include "debug control.h"
+#include "environment.h"
 
 #include "connect.h"
 
@@ -288,6 +289,17 @@ INT32 NewSmokeEffect( INT32 sGridNo, UINT16 usItem, INT8 bLevel, UINT8 ubOwner, 
 	{
 		// Duration is increased by 2 turns...indoors
 		pSmoke->ubDuration += 3;
+	}
+	else
+	{
+		// Advanced weather shortens outdoor smoke lifetime deterministically.
+		// The query returns zero when the feature/master switch is disabled.
+		UINT8 ubWeatherSmokeDecay = WeatherGetSmokeDecayModifierPercent();
+		if ( ubWeatherSmokeDecay > 0 )
+		{
+			UINT16 usAdjustedDuration = (UINT16)( ( pSmoke->ubDuration * ( 100 - ubWeatherSmokeDecay ) + 99 ) / 100 );
+			pSmoke->ubDuration = (UINT8)__max( 1, usAdjustedDuration );
+		}
 	}
 
 	if ( bLevel )
