@@ -17959,6 +17959,13 @@ INT8 SOLDIERTYPE::GetSuppressionResistanceBonus()
 	
 	bonus += this->GetBackgroundValue(BG_RESI_SUPPRESSION);
 
+	if (this->bTeam == ENEMY_TEAM && gGameExternalOptions.fEnemyRoles && gGameExternalOptions.fEnemyOfficers)
+	{
+		EnsureEnemyCommandRoles();
+		UINT8 officerType = HighestEnemyOfficerNearSoldier(this, max(6, DAY_VISION_RANGE / 2));
+		bonus += (INT8)(officerType * gGameExternalOptions.sEnemyOfficerSuppressionResistanceBonus);
+	}
+
 	return min( 100, max( -100, bonus) );
 }
 
