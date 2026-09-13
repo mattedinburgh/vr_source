@@ -99,6 +99,14 @@ struct ENEMY_LOADOUT_BATCH
 	ENEMY_LOADOUT_CELL Cells[ENEMY_LOADOUT_MAX_CELLS];
 };
 
+struct ENEMY_LBE_PACKAGE
+{
+	UINT16 usVest;
+	UINT16 usThigh;
+	UINT16 usCombatPack;
+	UINT16 usBackpack;
+};
+
 struct ENEMY_LOADOUT_PLAN
 {
 	ENEMY_LOADOUT_ROLE Role;
@@ -234,6 +242,15 @@ UINT16 SelectBestEnemyLBEForPlan(
 	INT8 bSoldierClass,
 	UINT8 ubMaxCoolness,
 	INT8 bRequiredLBEClass);
+
+// Builds a coherent LBE recommendation.  At most one back-carried pack is
+// recommended; ordinary rifle/assault roles are not given backpacks merely
+// because late-game gear is available.
+void BuildBestEnemyLBEPackageForPlan(
+	ENEMY_LBE_PACKAGE *pPackage,
+	const ENEMY_LOADOUT_PLAN *pPlan,
+	INT8 bSoldierClass,
+	UINT8 ubMaxCoolness);
 
 const char *EnemyLoadoutRoleName(ENEMY_LOADOUT_ROLE Role);
 
