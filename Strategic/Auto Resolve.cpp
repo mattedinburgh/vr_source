@@ -2607,6 +2607,11 @@ void CreateAutoResolveInterface()
 
 void RemoveAutoResolveInterface( BOOLEAN fDeleteForGood )
 {
+	if( fDeleteForGood && gpAR && gpAR->ubBattleStatus != BATTLE_IN_PROGRESS )
+	{
+		ClearEnemyRetreatLockInSector( gpAR->ubSectorX, gpAR->ubSectorY );
+	}
+
 	INT32 i;
 	UINT8 ubCurrentRank;
 	UINT8 ubCurrentGroupID = 0;
