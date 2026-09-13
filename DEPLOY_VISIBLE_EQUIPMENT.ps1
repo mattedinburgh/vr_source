@@ -1,0 +1,234 @@
+param(
+    [int]$Workers = 12,
+    [switch]$Force
+)
+
+$ErrorActionPreference = "Stop"
+Set-StrictMode -Version 2
+
+$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$GameRoot = Split-Path -Parent $ScriptRoot
+$DataRoot = Join-Path $GameRoot "Data-Vengeance"
+$TableRoot = Join-Path $DataRoot "TableData\LogicalBodyTypes"
+$AnimRoot = Join-Path $DataRoot "Anims\LOBOT"
+$Marker = Join-Path $AnimRoot "VR_EQUIPMENT.READY"
+
+$VrBranch = "install/all-2026-09-12"
+$VrRaw = "https://raw.githubusercontent.com/mattedinburgh/vr_gamedir/$VrBranch/Data-Vengeance/TableData/LogicalBodyTypes"
+$UpstreamRaw = "https://raw.githubusercontent.com/1dot13/source/master/gamedir/Base"
+
+Write-Host "Vengeance visible-equipment deployment"
+Write-Host "Source repo : $ScriptRoot"
+Write-Host "Game root   : $GameRoot"
+Write-Host ""
+
+if (-not (Test-Path $GameRoot -PathType Container)) {
+    throw "Game root not found: $GameRoot"
+}
+
+New-Item -ItemType Directory -Force -Path $TableRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $AnimRoot | Out-Null
+
+# Never leave a stale marker behind if deployment is interrupted.
+if (Test-Path $Marker) {
+    Remove-Item $Marker -Force
+}
+
+$configFiles = @(
+    "Layers.xml",
+    "Filters.xml",
+    "LogicalBodyTypes.xml",
+    "AnimationSurfaces.xml",
+    "LBT_RGM/LogicalBodyType_RGM_VR_equipment.xml",
+    "LBT_RGM/AnimationSurfaces_RGM_VR_equipment.xml",
+    "LBT_BGM/LogicalBodyType_BGM_VR_equipment.xml",
+    "LBT_BGM/AnimationSurfaces_BGM_VR_equipment.xml",
+    "LBT_RGF/LogicalBodyType_RGF_VR_equipment.xml",
+    "LBT_RGF/AnimationSurfaces_RGF_VR_equipment.xml"
+)
+
+function Get-UrlFile {
+    param(
+        [Parameter(Mandatory=$true)][string]$Url,
+        [Parameter(Mandatory=$true)][string]$Destination
+    )
+
+    $parent = Split-Path -Parent $Destination
+    if ($parent) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
+
+    $last = $null
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        try {
+            Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Destination
+            if ((Test-Path $Destination) -and ((Get-Item $Destination).Length -gt 0)) {
+                return
+            }
+            throw "Downloaded file is empty."
+        }
+        catch {
+            $last = $_
+            if ($attempt -lt 3) {
+                Start-Sleep -Seconds $attempt
+            }
+        }
+    }
+    throw "Failed to download $Url : $last"
+}
+
+Write-Host "Refreshing Vengeance LOBOT configuration..."
+foreach ($relative in $configFiles) {
+    $urlRel = $relative.Replace("\", "/")
+    $destination = Join-Path $TableRoot $relative
+    Get-UrlFile -Url "$VrRaw/$urlRel" -Destination $destination
+}
+
+$surfaceCatalogs = @(
+    "LBT_RGM/AnimationSurfaces_RGM_VR_equipment.xml",
+    "LBT_BGM/AnimationSurfaces_BGM_VR_equipment.xml",
+    "LBT_RGF/AnimationSurfaces_RGF_VR_equipment.xml"
+)
+
+$assetPaths = New-Object "System.Collections.Generic.HashSet[string]" ([System.StringComparer]::OrdinalIgnoreCase)
+
+foreach ($catalog in $surfaceCatalogs) {
+    $catalogPath = Join-Path $TableRoot $catalog
+    $text = [System.IO.File]::ReadAllText($catalogPath)
+
+    foreach ($match in [regex]::Matches($text, 'file="([^"]+)"')) {
+        $relative = $match.Groups[1].Value
+        if ($relative -like "Anims\LOBOT\*") {
+            [void]$assetPaths.Add($relative)
+        }
+    }
+}
+
+if ($assetPaths.Count -eq 0) {
+    throw "No LOBOT equipment assets were found in the deployed catalogs."
+}
+
+$pending = New-Object System.Collections.ArrayList
+foreach ($relative in $assetPaths) {
+    $destination = Join-Path $DataRoot $relative
+    if ($Force -or -not (Test-Path $destination) -or (Get-Item $destination).Length -eq 0) {
+        [void]$pending.Add($relative)
+    }
+}
+
+Write-Host ("Equipment surfaces referenced : {0}" -f $assetPaths.Count)
+Write-Host ("Equipment surfaces to fetch   : {0}" -f $pending.Count)
+
+if ($pending.Count -gt 0) {
+    Add-Type -AssemblyName System.Net.Http
+    $handler = New-Object System.Net.Http.HttpClientHandler
+    $client = New-Object System.Net.Http.HttpClient($handler)
+    $client.Timeout = [TimeSpan]::FromMinutes(5)
+    $client.DefaultRequestHeaders.UserAgent.ParseAdd("VengeanceReloaded-LOBOT-Port/1.0")
+
+    try {
+        for ($offset = 0; $offset -lt $pending.Count; $offset += $Workers) {
+            $lastIndex = [Math]::Min($pending.Count - 1, $offset + $Workers - 1)
+            $batch = @($pending[$offset..$lastIndex])
+            $jobs = @()
+
+            foreach ($relative in $batch) {
+                $urlRel = $relative.Replace("\", "/")
+                $url = "$UpstreamRaw/$urlRel"
+                $destination = Join-Path $DataRoot $relative
+                $parent = Split-Path -Parent $destination
+                New-Item -ItemType Directory -Force -Path $parent | Out-Null
+
+                $jobs += [pscustomobject]@{
+                    Relative = $relative
+                    Url = $url
+                    Destination = $destination
+                    Task = $client.GetByteArrayAsync($url)
+                }
+            }
+
+            foreach ($job in $jobs) {
+                $ok = $false
+                $last = $null
+
+                try {
+                    $bytes = $job.Task.GetAwaiter().GetResult()
+                    if ($bytes.Length -le 0) { throw "Empty response" }
+                    [System.IO.File]::WriteAllBytes($job.Destination, $bytes)
+                    $ok = $true
+                }
+                catch {
+                    $last = $_
+                }
+
+                if (-not $ok) {
+                    # Parallel request failed: retry this one conservatively.
+                    for ($attempt = 1; $attempt -le 3 -and -not $ok; $attempt++) {
+                        try {
+                            $bytes = $client.GetByteArrayAsync($job.Url).GetAwaiter().GetResult()
+                            if ($bytes.Length -le 0) { throw "Empty response" }
+                            [System.IO.File]::WriteAllBytes($job.Destination, $bytes)
+                            $ok = $true
+                        }
+                        catch {
+                            $last = $_
+                            if ($attempt -lt 3) { Start-Sleep -Seconds $attempt }
+                        }
+                    }
+                }
+
+                if (-not $ok) {
+                    throw "Failed to download $($job.Relative): $last"
+                }
+            }
+
+            $done = [Math]::Min($pending.Count, $lastIndex + 1)
+            Write-Progress -Activity "Downloading visible armour animation layers" -Status "$done / $($pending.Count)" -PercentComplete (($done * 100.0) / $pending.Count)
+        }
+    }
+    finally {
+        if ($client) { $client.Dispose() }
+        if ($handler) { $handler.Dispose() }
+        Write-Progress -Activity "Downloading visible armour animation layers" -Completed
+    }
+}
+
+Write-Host "Verifying deployed assets..."
+$missing = New-Object System.Collections.ArrayList
+$totalBytes = [int64]0
+foreach ($relative in $assetPaths) {
+    $destination = Join-Path $DataRoot $relative
+    if (-not (Test-Path $destination) -or (Get-Item $destination).Length -eq 0) {
+        [void]$missing.Add($relative)
+    }
+    else {
+        $totalBytes += (Get-Item $destination).Length
+    }
+}
+
+if ($missing.Count -gt 0) {
+    Write-Host ""
+    Write-Host "Missing files:" -ForegroundColor Red
+    $missing | Select-Object -First 30 | ForEach-Object { Write-Host "  $_" }
+    if ($missing.Count -gt 30) {
+        Write-Host ("  ... and {0} more" -f ($missing.Count - 30))
+    }
+    throw "Visible-equipment deployment incomplete. Enable marker was NOT created."
+}
+
+$markerText = @"
+Vengeance Reloaded visible tactical equipment
+Source: 1dot13/source master LOBOT art
+Mode: overlay-only (native Vengeance body + 1.13 helmet/vest armour layers)
+Assets: $($assetPaths.Count)
+Bytes: $totalBytes
+"@
+[System.IO.File]::WriteAllText($Marker, $markerText, [System.Text.Encoding]::ASCII)
+
+Write-Host ""
+Write-Host "VISIBLE EQUIPMENT ASSETS VERIFIED"
+Write-Host ("Files : {0}" -f $assetPaths.Count)
+Write-Host ("Size  : {0:N1} MiB" -f ($totalBytes / 1MB))
+Write-Host "Marker: $Marker"
+Write-Host ""
+Write-Host "Rebuild/run the current install/all-2026-09-12 source. Helmets and torso armour are now eligible for tactical rendering."
