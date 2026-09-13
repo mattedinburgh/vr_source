@@ -2899,9 +2899,11 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			return bDisengageAction;
 	}
 
-	// If we don't have a gun, scavenge one only when the local situation makes
-	// that movement reasonable. Enemy and militia use the same combat judgement.
+	// If we don't have a gun, enemy combatants may scavenge one when the local
+	// situation makes that movement reasonable. Militia never loot ground/sector
+	// items during a fight; they fight with the equipment they entered with.
 	if (AICombatTeam(pSoldier) &&
+		pSoldier->bTeam != MILITIA_TEAM &&
 		ubCanMove &&
 		!pSoldier->aiData.bNeutral &&
 		gTacticalStatus.bBoxingState == NOT_BOXING &&
@@ -4920,7 +4922,10 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 	// PICKUP A NEARBY ITEM THAT'S USEFUL
 	////////////////////////////////////////////////////////////////////////////
 
-	if ( ubCanMove && !pSoldier->aiData.bNeutral && (gfTurnBasedAI || pSoldier->bTeam == ENEMY_TEAM ) )
+	if ( ubCanMove &&
+		 pSoldier->bTeam != MILITIA_TEAM &&
+		 !pSoldier->aiData.bNeutral &&
+		 (gfTurnBasedAI || pSoldier->bTeam == ENEMY_TEAM ) )
 	{
 		pSoldier->aiData.bAction = SearchForItems( pSoldier, SEARCH_GENERAL_ITEMS, pSoldier->inv[HANDPOS].usItem );
 
@@ -5531,8 +5536,9 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 					// Scavenge ammunition only when doing so is tactically reasonable. Under
 					// direct pressure a human soldier first tries another carried weapon/sidearm
 					// instead of running across the battlefield for loose ammunition.
-					if (!AICombatTeam(pSoldier) ||
-						(!AIShouldAvoidAdvance(pSoldier) &&
+					if (pSoldier->bTeam != MILITIA_TEAM &&
+						(!AICombatTeam(pSoldier) ||
+						 (!AIShouldAvoidAdvance(pSoldier) &&
 						 !pSoldier->aiData.bUnderFire &&
 						 (AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
 						  TileIsOutOfBounds(sClosestOpponent) ||
@@ -5591,7 +5597,10 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 	// If we don't have a gun, look around for one only when scavenging is tactically
 	// reasonable. Human combatants do not sprint into active fire just because a
 	// weapon is lying on the ground somewhere nearby.
-	if (FindAIUsableObjClass( pSoldier, IC_GUN ) == ITEM_NOT_FOUND && ubCanMove && !pSoldier->aiData.bNeutral)
+	if (FindAIUsableObjClass( pSoldier, IC_GUN ) == ITEM_NOT_FOUND &&
+		ubCanMove &&
+		pSoldier->bTeam != MILITIA_TEAM &&
+		!pSoldier->aiData.bNeutral)
 	{
 		BOOLEAN fSafeToScavengeWeapon =
 			!AICombatTeam(pSoldier) ||
