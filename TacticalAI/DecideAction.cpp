@@ -2870,6 +2870,14 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		!pSoldier->bBreathCollapsed &&
 		(pSoldier->usAnimState == COWERING || pSoldier->usAnimState == COWERING_PRONE) )
 	{
+		// Suppression cowering should persist until effective shock falls below the
+		// engine's own cowering threshold. Standing up immediately made suppression
+		// largely cosmetic and exposed pinned soldiers again on their next AI turn.
+		if (CoweringShockLevel(pSoldier))
+		{
+			pSoldier->aiData.usActionData = NOWHERE;
+			return AI_ACTION_NONE;
+		}
 		return AI_ACTION_STOP_COWERING;
 	}
 
@@ -5565,7 +5573,11 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		!pSoldier->bBreathCollapsed &&
 		(pSoldier->usAnimState == COWERING || pSoldier->usAnimState == COWERING_PRONE) )
 	{
-		//ScreenMsg(FONT_MCOLOR_LTGREEN, MSG_INTERFACE, L"[%d] stop cowering", pSoldier->ubID);
+		if (CoweringShockLevel(pSoldier))
+		{
+			pSoldier->aiData.usActionData = NOWHERE;
+			return AI_ACTION_NONE;
+		}
 		return AI_ACTION_STOP_COWERING;
 	}
 
