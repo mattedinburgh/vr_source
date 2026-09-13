@@ -5570,7 +5570,14 @@ if (UsingNewCTHSystem())
 
 	// this shooter will never hit anything
 	if ( fBaseChance <= gGameExternalOptions.ubMinimumCTH )
+	{
+		if ( fCalculateCTHDuringGunfire && gNCTHWorkingDiagnostic.fValid )
+		{
+			gNCTHWorkingDiagnostic.fBaseChance = (FLOAT)gGameExternalOptions.ubMinimumCTH;
+			gNCTHWorkingDiagnostic.fFinalChance = (FLOAT)gGameExternalOptions.ubMinimumCTH;
+		}
 		return gGameExternalOptions.ubMinimumCTH;
+	}
 
 	// Add a flat Base bonus from the item and its attachments.
 	INT32 imoda = GetObjectModifier( pSoldier, pInHand, stance, ITEMMODIFIER_FLATBASE );
