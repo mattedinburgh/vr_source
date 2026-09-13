@@ -8945,75 +8945,8 @@ void ZombieDecideAlertStatus( SOLDIERTYPE *pSoldier )
 static BOOLEAN AITacticalRouteExposureAcceptable(
 	SOLDIERTYPE *pSoldier, INT32 sDestination, INT8 bAction)
 {
-	if (!pSoldier || TileIsOutOfBounds(sDestination) ||
-		sDestination == pSoldier->sGridNo)
-	{
-		return FALSE;
-	}
-
-	INT32 iPathSteps = FindBestPath(
-		pSoldier, sDestination, pSoldier->pathing.bLevel,
-		DetermineMovementMode(pSoldier, bAction), NO_COPYROUTE, 0);
-	if (iPathSteps <= 0)
-		return FALSE;
-
-	UINT16 usCurrentExposure = AIKnownThreatExposure(
-		pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
-	UINT32 uiExposureTotal = 0;
-	UINT8 ubSamples = 0;
-	INT32 sRouteSpot = pSoldier->sGridNo;
-
-	for (INT32 iStep = 0;
-		iStep < iPathSteps && iStep < MAX_PATH_LIST_SIZE; ++iStep)
-	{
-		INT32 sNext = NewGridNo(
-			sRouteSpot, DirectionInc((UINT8)guiPathingData[iStep]));
-		if (sNext == sRouteSpot || TileIsOutOfBounds(sNext))
-			return FALSE;
-
-		sRouteSpot = sNext;
-		INT32 iStepNo = iStep + 1;
-		BOOLEAN fSample =
-			(iStepNo == __max(1, iPathSteps / 3)) ||
-			(iStepNo == __max(1, (iPathSteps * 2) / 3)) ||
-			(iStepNo == iPathSteps) ||
-			(iStepNo == MAX_PATH_LIST_SIZE);
-		if (!fSample)
-			continue;
-
-		if (InGas(pSoldier, sRouteSpot) ||
-			RedSmokeDanger(sRouteSpot, pSoldier->pathing.bLevel) ||
-			FindBombNearby(pSoldier, sRouteSpot, BOMB_DETECTION_RANGE))
-		{
-			return FALSE;
-		}
-
-		UINT16 usExposure = AIKnownThreatExposure(
-			pSoldier, sRouteSpot, pSoldier->pathing.bLevel);
-		uiExposureTotal += usExposure;
-		++ubSamples;
-
-		// Never cross a dramatically worse known fire lane merely to reach a good
-		// destination. A moderate increase is acceptable only while the sampled
-		// point itself has smoke or sight cover.
-		if (usExposure > usCurrentExposure + 140)
-			return FALSE;
-
-		if (usExposure > usCurrentExposure + 70 &&
-			!InSmokeNearby(sRouteSpot, pSoldier->pathing.bLevel) &&
-			!SightCoverAtSpot(pSoldier, sRouteSpot, FALSE))
-		{
-			return FALSE;
-		}
-	}
-
-	if (ubSamples > 0 &&
-		uiExposureTotal / ubSamples > (UINT32)usCurrentExposure + 90)
-	{
-		return FALSE;
-	}
-
-	return TRUE;
+	return AIKnownRouteExposureAcceptable(
+		pSoldier, sDestination, bAction, 140, 70, 90);
 }
 
 INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLEAN fAbortSeek)
