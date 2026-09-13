@@ -16770,6 +16770,23 @@ void		SOLDIERTYPE::SpySelfTest()
 		ScreenMsg( FONT_ORANGE, MSG_INTERFACE, L"Suspicion: %d%% (investigation likely).", ubSuspicion );
 	else
 		ScreenMsg( FONT_ORANGE, MSG_INTERFACE, L"Suspicion: %d%% (critical).", ubSuspicion );
+
+	// Self-test ignores temporary overt state for disguise validity, but still warns the player.
+	if ( this->usSoldierFlagMask & SOLDIER_COVERT_TEMPORARY_OVERT )
+	{
+		if ( this->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_APS] == 0 ||
+			GetWorldTotalSeconds() >= this->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_SECONDS] )
+		{
+			this->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_SECONDS] = 0;
+			this->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_APS] = 0;
+			this->usSoldierFlagMask &= ~SOLDIER_COVERT_TEMPORARY_OVERT;
+		}
+		else
+		{
+			ScreenMsg( FONT_ORANGE, MSG_INTERFACE, L"Recent suspicious action: exposed for up to %d more AP.",
+				(INT32)this->usSkillCooldown[SOLDIER_COOLDOWN_COVERTOPS_TEMPORARYOVERT_APS] );
+		}
+	}
 }
 
 // can we process prisoners in this sector?
