@@ -1163,7 +1163,11 @@ BOOLEAN CheckConditionsForBattle( GROUP *pGroup )
 
 		if( fBattlePending && (!fBloodCatAmbush || gubEnemyEncounterCode == ENTERING_BLOODCAT_LAIR_CODE) )
 		{
-			if( PossibleToCoordinateSimultaneousGroupArrivals( pGroup ) )
+			// Pursuit is an enemy attack on defenders already present in this sector.
+			// Do not postpone it so defenders can coordinate later arrivals. Groups
+			// arriving right now were already included above as simultaneous arrivals.
+			if( !gfPreserveRetreatConflictEncounterCode &&
+				PossibleToCoordinateSimultaneousGroupArrivals( pGroup ) )
 			{
 				return FALSE;
 			}
