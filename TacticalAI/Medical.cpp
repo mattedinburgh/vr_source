@@ -859,13 +859,13 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 	// Security medics provide local first aid rather than assault-rescue. Ordinary
 	// uncommanded line medics are somewhat more cautious; veterans/elites keep the
 	// full existing rescue envelope.
-	if (AICombatTeam(pSoldier) && ubDoctrine == AI_DOCTRINE_SECURITY)
+	if (pSoldier->bTeam == ENEMY_TEAM && ubDoctrine == AI_DOCTRINE_SECURITY)
 	{
 		iMaxRescueDistance = __max(4, DAY_VISION_RANGE / 4);
 		iMaxPathExposure = 16;
 		iMinRescueValue = 28;
 	}
-	else if (AICombatTeam(pSoldier) && ubDoctrine == AI_DOCTRINE_LINE && !fCommanded)
+	else if (pSoldier->bTeam == ENEMY_TEAM && ubDoctrine == AI_DOCTRINE_LINE && !fCommanded)
 	{
 		iMaxRescueDistance = __max(6, DAY_VISION_RANGE / 3);
 		iMaxPathExposure = 22;
