@@ -171,3 +171,25 @@ Note: this fallback behavior already existed in `CreateImage()` before the true-
 4. Test sector save/reload and leave/re-enter B1.
 5. Keep merc/item/special translucency art indexed until those specialist blitters are deliberately ported.
 6. Revisit a native 32-bit framebuffer only after the B1 true-colour path is runtime-stable.
+
+## B1 visual art-direction pass
+
+B1/Oronegro now receives an in-engine pixel-only art-direction pass after B1TC load and before video-object creation. It deliberately preserves frame geometry, offsets, JSDs, collision and map references.
+
+Visual target: a poor, humid Latin-American oil town.
+
+Applied families include:
+- faded ochre/turquoise/salmon/green/ivory stucco with peeling undercoat;
+- vertical rain/damp streaks and lower-wall grime;
+- heavily rusted corrugated roofs with mismatched repair sheets and occasional alpha perforations;
+- cracked, oil-stained roads;
+- dirty/worn floors and dusty/muddy terrain variation;
+- stressed tropical grass;
+- polluted industrial water;
+- stronger rust/soot treatment for oil-specific debris/decals.
+
+Implementation commits:
+- `0cb526e6` — initial in-game B1/Oronegro art pass.
+- `82e88001` — keep facade palette coherent within each wall tile family.
+
+This is runtime transformation of the actual B1TC assets, not a mockup or loading-screen effect.
