@@ -32,6 +32,7 @@
 #include "mousesystem.h"
 #include "Cursors.h"
 #include "Isometric Utils.h"
+#include "Animation Control.h"
 
 typedef struct
 {
