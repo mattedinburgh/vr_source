@@ -1432,7 +1432,10 @@ void InitNewInventorySystem( )
 	else
 		INTERFACE_WIDTH			= 1024;
 
-	INTERFACE_START_X		= (SCREEN_WIDTH - INTERFACE_WIDTH)/2;
+	// Vengeance widescreen layout: anchor the tactical HUD to the right.
+	// This turns the otherwise-unused lower-left widescreen margin into a stable
+	// home for the battle log. On 4:3 resolutions the offset remains zero.
+	INTERFACE_START_X		= (SCREEN_WIDTH - INTERFACE_WIDTH);
 	INTERFACE_HEIGHT		= 120;
 	INV_INTERFACE_HEIGHT	= 200;
 	INTERFACE_START_Y		= ( SCREEN_HEIGHT - INTERFACE_HEIGHT );
@@ -1449,7 +1452,10 @@ void InitOldInventorySystem( )
 	else
 		INTERFACE_WIDTH			= 1024;
 
-	INTERFACE_START_X		= (SCREEN_WIDTH - INTERFACE_WIDTH)/2;
+	// Vengeance widescreen layout: anchor the tactical HUD to the right.
+	// This turns the otherwise-unused lower-left widescreen margin into a stable
+	// home for the battle log. On 4:3 resolutions the offset remains zero.
+	INTERFACE_START_X		= (SCREEN_WIDTH - INTERFACE_WIDTH);
 	INTERFACE_HEIGHT		= 120;
 	INV_INTERFACE_HEIGHT	= 140;
 	INTERFACE_START_Y		= ( SCREEN_HEIGHT - INTERFACE_HEIGHT );
