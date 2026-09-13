@@ -1432,7 +1432,10 @@ void InitNewInventorySystem( )
 	else
 		INTERFACE_WIDTH			= 1024;
 
-	INTERFACE_START_X		= (SCREEN_WIDTH - INTERFACE_WIDTH)/2;
+	// Vengeance widescreen layout: anchor the tactical interface to the right.
+	// On 4:3 resolutions SCREEN_WIDTH == INTERFACE_WIDTH, so behaviour is unchanged.
+	// On widescreen this intentionally frees the lower-left strip for the battle log.
+	INTERFACE_START_X		= (SCREEN_WIDTH - INTERFACE_WIDTH);
 	INTERFACE_HEIGHT		= 120;
 	INV_INTERFACE_HEIGHT	= 200;
 	INTERFACE_START_Y		= ( SCREEN_HEIGHT - INTERFACE_HEIGHT );
@@ -8023,7 +8026,7 @@ BOOLEAN HandleKlerykPistolet( SOLDIERTYPE *pSoldier, UINT32 uiHandPos, UINT16 us
 			else
 			{	//legion
 				// Do we have nothing or the leather vest or kevlar leather vest?
-				if ( usReplaceItem == 4520 ) //z³oty pistolet items.xml
+				if ( usReplaceItem == 4520 ) //zÂ³oty pistolet items.xml
 				{
 					// This is good....
 					fRefuse = FALSE;
