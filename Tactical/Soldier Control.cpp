@@ -9850,7 +9850,7 @@ BOOLEAN SOLDIERTYPE::IsDraggingBleedoutCasualty( void )
 	if ( !pCasualty || !pCasualty->bActive || !pCasualty->bInSector ||
 		pCasualty->ubDraggedByID != this->ubID || pCasualty->bTeam != this->bTeam ||
 		pCasualty->pathing.bLevel != this->pathing.bLevel || !IsCarryableLivingCasualty( pCasualty ) ||
-		PythSpacesAway( this->sGridNo, pCasualty->sGridNo ) > 2 )
+		pCasualty->ubServiceCount > 0 || PythSpacesAway( this->sGridNo, pCasualty->sGridNo ) > 2 )
 		return FALSE;
 
 	return TRUE;
@@ -13195,6 +13195,12 @@ void SOLDIERTYPE::EVENT_SoldierBeginUseDetonator( void )
 
 void SOLDIERTYPE::EVENT_SoldierBeginFirstAid( INT32 sGridNo, UINT8 ubDirection )
 {
+	// Treatment and casualty extraction are mutually exclusive actions.
+	// Put the casualty down before beginning first aid so service links cannot
+	// move with the rescuer on a later movement step.
+	if ( this->IsDraggingBleedoutCasualty() )
+		this->StopDraggingBleedoutCasualty();
+
 	SOLDIERTYPE *pTSoldier;
 	//UINT32 uiMercFlags;
 	UINT16 usSoldierIndex;
