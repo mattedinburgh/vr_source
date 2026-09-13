@@ -2657,12 +2657,14 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 			if ( pSoldier->bSide != pFriend->bSide )
 				continue;		// next merc
 
+			BOOLEAN fVisibleExternalSupport = FALSE;
+			INT32 iFriendDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
+
 			// Morale support is tactical, not sector-wide. Same-fireteam status does not
 			// magically provide confidence across the map: a newly reattached remnant must
 			// physically close on its destination element before gaining its full support.
 			if (AICombatTeam(pSoldier) && pFriend->bTeam == pSoldier->bTeam)
 			{
-				INT32 iFriendDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
 				if (AISameFireteam(pSoldier, pFriend))
 				{
 					if (iFriendDistance > TACTICAL_RANGE)
@@ -2673,35 +2675,44 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 					continue;
 				}
 			}
-
-			// THIS TEST IS INVALID IF A COMPUTER-TEAM IS PLAYING CO-OPERATIVELY
-			// WITH A NON-COMPUTER TEAM SINCE THE OPPLISTS INVOLVED ARE NOT
-			// UP-TO-DATE.	THIS SITUATION IS CURRENTLY NOT POSSIBLE IN HTH/DG.
-
-			// ALSO NOTE THAT WE COUNT US AS OUR (BEST) FRIEND FOR THESE CALCULATIONS
-
-			// subtract HEARD_2_TURNS_AGO (which is negative) to make values start at 0 and
-			// be positive otherwise
-			iPercent = ThreatPercent[pFriend->aiData.bOppList[pOpponent->ubID] - OLDEST_HEARD_VALUE];
-
-			// reduce the percentage value based on how far away they are from the enemy, if they only hear him
-			if ( pFriend->aiData.bOppList[ pOpponent->ubID ] <= HEARD_LAST_TURN )
+			else if (AICombatTeam(pSoldier))
 			{
-				iPercent -= PythSpacesAway( pSoldier->sGridNo, pFriend->sGridNo ) * 2;
-				if ( iPercent <= 0 )
+				// A militia soldier may draw confidence from a nearby visible player merc,
+				// but never from that merc's private opponent list.
+				if (pSoldier->bTeam != MILITIA_TEAM || pFriend->bTeam != OUR_TEAM ||
+					iFriendDistance > TACTICAL_RANGE / 2 ||
+					(iFriendDistance > 1 && LOS_Raised(pSoldier, pFriend, CALC_FROM_ALL_DIRS) <= 0))
 				{
-					//ignore!
 					continue;
 				}
+				fVisibleExternalSupport = TRUE;
 			}
 
-			// Evaluate support against the location this friend actually knows, not the
-			// opponent object's hidden live position.
-			INT32 sFriendKnownOpponent = KnownLocation(pFriend, pOpponent->ubID);
-			if (TileIsOutOfBounds(sFriendKnownOpponent))
+			INT32 sFriendKnownOpponent = NOWHERE;
+			if (fVisibleExternalSupport)
 			{
-				continue;
+				// Use only the militia soldier's own certainty and contact location.
+				iPercent = ThreatPercent[bMostRecentOpplistValue - OLDEST_HEARD_VALUE];
+				sFriendKnownOpponent = KnownLocation(pSoldier, pOpponent->ubID);
 			}
+			else
+			{
+				// Same-team support may use the friend's personal opponent knowledge.
+				iPercent = ThreatPercent[pFriend->aiData.bOppList[pOpponent->ubID] - OLDEST_HEARD_VALUE];
+
+				if ( pFriend->aiData.bOppList[ pOpponent->ubID ] <= HEARD_LAST_TURN )
+				{
+					iPercent -= iFriendDistance * 2;
+					if ( iPercent <= 0 )
+						continue;
+				}
+
+				sFriendKnownOpponent = KnownLocation(pFriend, pOpponent->ubID);
+			}
+
+			if (TileIsOutOfBounds(sFriendKnownOpponent))
+				continue;
+
 			sFrndThreatValue = (iPercent * CalcManThreatValue(pFriend, sFriendKnownOpponent, FALSE, pSoldier)) / 100;
 
 			//sprintf(tempstr,"Known by friend %s, opplist status %d, percent %d, threat = %d",
