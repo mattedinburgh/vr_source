@@ -4036,7 +4036,7 @@ INT32 CalcAPCostForAiming( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo, INT8 bAim
 			// If the weapon has a scope, and the target is within eligible range for scope use
 			
 			if ( (UsingNewCTHSystem() == false && IsScoped(&pSoldier->inv[HANDPOS]) && GetRangeInCellCoordsFromGridNoDiff( pSoldier->sGridNo, sTargetGridNo ) >= GetMinRangeForAimBonus(pSoldier, &pSoldier->inv[HANDPOS]) && !pSoldier->IsValidAlternativeFireMode(bAimTime,sTargetGridNo))
-				|| (UsingNewCTHSystem() == true && GetBestScopeMagnificationFactor(pSoldier, &pSoldier->inv[HANDPOS], (FLOAT)GetRangeInCellCoordsFromGridNoDiff( pSoldier->sGridNo, sTargetGridNo ) > 1.0 ) && !pSoldier->IsValidAlternativeFireMode(bAimTime,sTargetGridNo)))
+				|| (UsingNewCTHSystem() == true && GetBestScopeMagnificationFactor(pSoldier, &pSoldier->inv[HANDPOS], (FLOAT)GetRangeInCellCoordsFromGridNoDiff( pSoldier->sGridNo, sTargetGridNo ) ) > 1.0f && !pSoldier->IsValidAlternativeFireMode(bAimTime,sTargetGridNo)))
 			{
 				// Add an individual cost for EACH click, as necessary.
 
@@ -4083,10 +4083,14 @@ INT32 CalcAPCostForAiming( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo, INT8 bAim
 INT8 CalcAimingLevelsAvailableWithAP( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo, INT8 bAPsLeft )
 {
 	INT8 bAllowedLevels = 0;
+	BOOLEAN fHandThrow = pSoldier != NULL && pSoldier->inv[HANDPOS].exists() &&
+		( Item[pSoldier->inv[HANDPOS].usItem].usItemClass & ( IC_GRENADE | IC_THROWN ) );
 
 	for (INT16 x = APBPConstants[AP_MIN_AIM_ATTACK]; x <= AllowedAimingLevels(pSoldier, sTargetGridNo); x++)
 	{
-		if (CalcAPCostForAiming( pSoldier, sTargetGridNo, (INT8)x ) <= (INT32)bAPsLeft)
+		INT32 iAimCost = fHandThrow ? CalcAPCostForThrowAiming( (INT8)x ) :
+			CalcAPCostForAiming( pSoldier, sTargetGridNo, (INT8)x );
+		if (iAimCost <= (INT32)bAPsLeft)
 		{
 			bAllowedLevels = (INT8)x;
 		}
