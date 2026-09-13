@@ -1947,7 +1947,8 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 						( Item[usInHand].rocketlauncher &&
 						gpWorldLevelData[sOpponentTile[ubLoop]].ubTerrainID == FLAT_FLOOR &&
 						gpWorldLevelData[pSoldier->sGridNo].ubTerrainID != FLAT_FLOOR &&
-						pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE ) )
+						(pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE ||
+						 pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA) ) )
 					{
 						ubChanceToGetThrough = 100;
 					}
