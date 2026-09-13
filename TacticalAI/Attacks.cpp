@@ -2808,12 +2808,20 @@ INT32 EstimateThrowDamage( SOLDIERTYPE *pSoldier, UINT8 ubItemPos, SOLDIERTYPE *
 		if (gpWorldLevelData[sGridNo].ubTerrainID != FLAT_FLOOR)
 			iBreathDamage /= 2;		// reduce effective breath damage by 1/2
 
-		bSlot = FindGasMask(pOpponent); //FindObj( pOpponent, GASMASK );
-		if ((bSlot == HEAD1POS || bSlot == HEAD2POS || bSlot == HELMETPOS) && pOpponent->inv[bSlot][0]->data.objectStatus >= 70)
+		if (fTargetStateKnown)
 		{
-			// take condition of the gas mask into account - it could be leaking
-			iBreathDamage = (iBreathDamage * (100 - pOpponent->inv[bSlot][0]->data.objectStatus)) / 100;
-			//NumMessage("damage after GAS MASK: ",iBreathDamage);
+			bSlot = FindGasMask(pOpponent); //FindObj( pOpponent, GASMASK );
+			if ((bSlot == HEAD1POS || bSlot == HEAD2POS || bSlot == HELMETPOS) && pOpponent->inv[bSlot][0]->data.objectStatus >= 70)
+			{
+				// Current personal sight permits equipment-condition-aware gas valuation.
+				iBreathDamage = (iBreathDamage * (100 - pOpponent->inv[bSlot][0]->data.objectStatus)) / 100;
+			}
+		}
+		else
+		{
+			// Do not inspect a stale contact's hidden headgear. Use the same modest
+			// neutral protection prior used for unseen explosive armour instead.
+			iBreathDamage = iBreathDamage * 80 / 100;
 		}
 
 	}
