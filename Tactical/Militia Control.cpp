@@ -1404,6 +1404,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 						{
 							// Attack !!!
 
+							AIClearDisengagementState( pTMilitiaSoldier );
 							pTMilitiaSoldier->aiData.bOrders = SEEKENEMY;
 							pTMilitiaSoldier->aiData.bAttitude = AGGRESSIVE;
 							pTMilitiaSoldier->usUIMovementMode = RUNNING;
@@ -1663,6 +1664,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 						{
 							if ( (pTeamSoldier->bActive) && (pTeamSoldier->bInSector) && (pTeamSoldier->stats.bLife >= OKLIFE) )
 							{
+								AIClearDisengagementState( pTeamSoldier );
 								pTeamSoldier->aiData.bOrders = SEEKENEMY;
 								pTeamSoldier->aiData.bAttitude = AGGRESSIVE;
 								pTeamSoldier->usUIMovementMode = RUNNING;
