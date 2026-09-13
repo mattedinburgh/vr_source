@@ -72,6 +72,7 @@ typedef struct
 	INT16 sSectorX;
 	INT16 sSectorY;
 	INT8 bSectorZ;
+	INT8 bTeam;
 } AI_RESPONSE_EPISODE;
 
 static AI_RESPONSE_EPISODE gAIEnemyResponse[AI_RESPONSE_EPISODES];
@@ -88,6 +89,7 @@ static void AIResetEnemyResponseEpisodes(void)
 		gAIEnemyResponse[i].sSectorX = -1;
 		gAIEnemyResponse[i].sSectorY = -1;
 		gAIEnemyResponse[i].bSectorZ = -1;
+		gAIEnemyResponse[i].bTeam = -1;
 	}
 	gfAIEnemyResponseInitialized = TRUE;
 }
@@ -123,28 +125,26 @@ static void AIMaintainEnemyResponseEpisodes(void)
 			pEpisode->sSectorX = -1;
 			pEpisode->sSectorY = -1;
 			pEpisode->bSectorZ = -1;
+			pEpisode->bTeam = -1;
 		}
 	}
 }
 
-static INT8 AIGetEnemyResponseEpisode(INT32 sContactSpot, BOOLEAN fRefreshEvidence)
+static INT8 AIGetEnemyResponseEpisode(INT8 bTeam, INT32 sContactSpot, BOOLEAN fRefreshEvidence)
 {
-	if (TileIsOutOfBounds(sContactSpot))
+	if ((bTeam != ENEMY_TEAM && bTeam != MILITIA_TEAM) || TileIsOutOfBounds(sContactSpot))
 		return -1;
 
 	AIMaintainEnemyResponseEpisodes();
-
 	INT8 bBest = -1;
 	INT32 iBestDistance = 10000;
 	for (UINT8 i = 0; i < AI_RESPONSE_EPISODES; ++i)
 	{
 		AI_RESPONSE_EPISODE *pEpisode = &gAIEnemyResponse[i];
-		if (TileIsOutOfBounds(pEpisode->sSpot) ||
-			pEpisode->sSectorX != gWorldSectorX ||
-			pEpisode->sSectorY != gWorldSectorY ||
+		if (TileIsOutOfBounds(pEpisode->sSpot) || pEpisode->bTeam != bTeam ||
+			pEpisode->sSectorX != gWorldSectorX || pEpisode->sSectorY != gWorldSectorY ||
 			pEpisode->bSectorZ != gbWorldSectorZ)
 			continue;
-
 		INT32 iDistance = PythSpacesAway(pEpisode->sSpot, sContactSpot);
 		if (iDistance <= TACTICAL_RANGE / 2 && iDistance < iBestDistance)
 		{
@@ -159,18 +159,13 @@ static INT8 AIGetEnemyResponseEpisode(INT32 sContactSpot, BOOLEAN fRefreshEviden
 		for (UINT8 i = 0; i < AI_RESPONSE_EPISODES; ++i)
 		{
 			AI_RESPONSE_EPISODE *pEpisode = &gAIEnemyResponse[i];
-			if (TileIsOutOfBounds(pEpisode->sSpot))
-			{
-				bBest = (INT8)i;
-				break;
-			}
+			if (TileIsOutOfBounds(pEpisode->sSpot)) { bBest = (INT8)i; break; }
 			if (pEpisode->uiLastEvidenceTurn < uiOldest)
 			{
 				uiOldest = pEpisode->uiLastEvidenceTurn;
 				bBest = (INT8)i;
 			}
 		}
-
 		if (bBest >= 0)
 		{
 			UINT32 uiTurnStamp = guiTurnCnt + 1;
@@ -181,6 +176,7 @@ static INT8 AIGetEnemyResponseEpisode(INT32 sContactSpot, BOOLEAN fRefreshEviden
 			pEpisode->sSectorX = gWorldSectorX;
 			pEpisode->sSectorY = gWorldSectorY;
 			pEpisode->bSectorZ = gbWorldSectorZ;
+			pEpisode->bTeam = bTeam;
 		}
 	}
 	else if (bBest >= 0 && fRefreshEvidence)
@@ -190,7 +186,6 @@ static INT8 AIGetEnemyResponseEpisode(INT32 sContactSpot, BOOLEAN fRefreshEviden
 		if (PythSpacesAway(pEpisode->sSpot, sContactSpot) > DAY_VISION_RANGE / 4)
 			pEpisode->sSpot = sContactSpot;
 	}
-
 	return bBest;
 }
 
@@ -257,7 +252,7 @@ static UINT8 AIEnemyResponseLimitForContact(
 	if (piReinforcementUrgency)
 		*piReinforcementUrgency = 0;
 
-	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM ||
+	if (!AICombatTeam(pSoldier) ||
 		TileIsOutOfBounds(sContactSpot) ||
 		!gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition)
 		return ubDefaultResponse;
@@ -317,7 +312,7 @@ static UINT8 AIEnemyResponseLimitForContact(
 	if (piReinforcementUrgency)
 		*piReinforcementUrgency = iUrgency;
 
-	INT8 bEpisode = AIGetEnemyResponseEpisode(sContactSpot, TRUE);
+	INT8 bEpisode = AIGetEnemyResponseEpisode(pSoldier->bTeam, sContactSpot, TRUE);
 	UINT32 uiElapsedTurns = 0;
 	if (bEpisode >= 0)
 	{
@@ -2260,7 +2255,7 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 					// Enemy reinforcements are released as coherent fireteams.  Once the
 					// nearer element fills the current response budget, the next element
 					// stays in reserve instead of feeding individual soldiers into contact.
-					if (pSoldier->bTeam == ENEMY_TEAM)
+					if (AICombatTeam(pSoldier))
 					{
 						fHoldRemoteReserve = AIFireteamShouldHoldReserve(pSoldier, sNoiseGridNo, ubResponseLimit);
 					}
@@ -2400,7 +2395,7 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 		if (!TileIsOutOfBounds(sClosestFriend))
 		{
 			INT32 iFriendResponseUrgency = 0;
-			if (pSoldier->bTeam == ENEMY_TEAM &&
+			if (AICombatTeam(pSoldier) &&
 				!GuySawEnemy(pSoldier, SEEN_LAST_TURN) &&
 				!pSoldier->aiData.bUnderFire)
 			{
@@ -3057,7 +3052,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			if ((BestThrow.bWeaponIn != NO_SLOT) &&
 				!AIDisengagementActive(pSoldier) && !AIEscapeActive(pSoldier) &&
 				(CalcMaxTossRange(pSoldier, pSoldier->inv[BestThrow.bWeaponIn].usItem, TRUE) > MaxNormalDistanceVisible()) &&
-				(pSoldier->bTeam == ENEMY_TEAM ? AIFireteamCombatReadyCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
+				(AICombatTeam(pSoldier) ? AIFireteamCombatReadyCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
 				(gTacticalStatus.ubSpottersCalledForBy == NOBODY))
 			{
 				// then call for spotters!  Uses up the rest of his turn (whatever
@@ -3116,7 +3111,7 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 				if (!AIDisengagementActive(pSoldier) && !AIEscapeActive(pSoldier) &&
 					GunRange(gun, pSoldier) > MaxNormalDistanceVisible() &&
 					(IsScoped(gun) || pSoldier->aiData.bOrders == SNIPER) &&
-					(pSoldier->bTeam == ENEMY_TEAM ? AIFireteamCombatReadyCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
+					(AICombatTeam(pSoldier) ? AIFireteamCombatReadyCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
 					(gTacticalStatus.ubSpottersCalledForBy == NOBODY))
 				{
 					// then call for spotters!  Uses up the rest of his turn (whatever
@@ -7216,7 +7211,7 @@ L_NEWAIM:
 		AISameFireteam(pSoldier, MercPtrs[gTacticalStatus.ubSpottersCalledForBy]) &&
 		(pSoldier->bActionPoints >= APBPConstants[AP_RADIO]) &&
 		(pSoldier->aiData.bOppCnt > 1) && !fCivilian &&
-		(pSoldier->bTeam == ENEMY_TEAM ? AIFireteamCombatReadyCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) && !bInDeepWater)
+		(AICombatTeam(pSoldier) ? AIFireteamCombatReadyCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) && !bInDeepWater)
 	{
 		// base chance depends on how much new info we have to radio to the others
 		iChance = 25 * WhatIKnowThatPublicDont(pSoldier,TRUE);	// just count them
@@ -9227,7 +9222,7 @@ void PrepareMainRedAIWeights(SOLDIERTYPE *pSoldier, INT8 &bSeekPts, INT8 &bHelpP
 	// for guards and snipers to abandon assigned tactical positions. They become
 	// alert, face the threat and improve cover, but only direct/recent contact or
 	// incoming fire grants freedom to actively seek the enemy.
-	if (pSoldier->bTeam == ENEMY_TEAM &&
+	if (AICombatTeam(pSoldier) &&
 		!pSoldier->aiData.bUnderFire &&
 		pSoldier->aiData.bOppCnt == 0 &&
 		!GuySawEnemy(pSoldier, SEEN_LAST_TURN))
@@ -9360,7 +9355,7 @@ INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 {
 	// Loss of local command ends an uncommanded regular's complex flank; elites and
 	// veteran/cunning troops can continue independently.
-	if (pSoldier->bTeam == ENEMY_TEAM && !AIAllowsIndependentFlank(pSoldier))
+	if (AICombatTeam(pSoldier) && !AIAllowsIndependentFlank(pSoldier))
 	{
 		pSoldier->numFlanks = MAX_FLANKS_RED;
 		return -1;
@@ -10243,7 +10238,7 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 			continue;
 
 		BOOLEAN fSameElement = AISameFireteam(pSoldier, pFriend);
-		if (pSoldier->bTeam == ENEMY_TEAM &&
+		if (AICombatTeam(pSoldier) &&
 			!fSameElement &&
 			iDistance > DAY_VISION_RANGE / 4)
 		{
