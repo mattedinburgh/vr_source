@@ -8942,6 +8942,80 @@ void ZombieDecideAlertStatus( SOLDIERTYPE *pSoldier )
 	}
 }
 
+static BOOLEAN AITacticalRouteExposureAcceptable(
+	SOLDIERTYPE *pSoldier, INT32 sDestination, INT8 bAction)
+{
+	if (!pSoldier || TileIsOutOfBounds(sDestination) ||
+		sDestination == pSoldier->sGridNo)
+	{
+		return FALSE;
+	}
+
+	INT32 iPathSteps = FindBestPath(
+		pSoldier, sDestination, pSoldier->pathing.bLevel,
+		DetermineMovementMode(pSoldier, bAction), NO_COPYROUTE, 0);
+	if (iPathSteps <= 0)
+		return FALSE;
+
+	UINT16 usCurrentExposure = AIKnownThreatExposure(
+		pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+	UINT32 uiExposureTotal = 0;
+	UINT8 ubSamples = 0;
+	INT32 sRouteSpot = pSoldier->sGridNo;
+
+	for (INT32 iStep = 0;
+		iStep < iPathSteps && iStep < MAX_PATH_LIST_SIZE; ++iStep)
+	{
+		INT32 sNext = NewGridNo(
+			sRouteSpot, DirectionInc((UINT8)guiPathingData[iStep]));
+		if (sNext == sRouteSpot || TileIsOutOfBounds(sNext))
+			return FALSE;
+
+		sRouteSpot = sNext;
+		INT32 iStepNo = iStep + 1;
+		BOOLEAN fSample =
+			(iStepNo == __max(1, iPathSteps / 3)) ||
+			(iStepNo == __max(1, (iPathSteps * 2) / 3)) ||
+			(iStepNo == iPathSteps) ||
+			(iStepNo == MAX_PATH_LIST_SIZE);
+		if (!fSample)
+			continue;
+
+		if (InGas(pSoldier, sRouteSpot) ||
+			RedSmokeDanger(sRouteSpot, pSoldier->pathing.bLevel) ||
+			FindBombNearby(pSoldier, sRouteSpot, BOMB_DETECTION_RANGE))
+		{
+			return FALSE;
+		}
+
+		UINT16 usExposure = AIKnownThreatExposure(
+			pSoldier, sRouteSpot, pSoldier->pathing.bLevel);
+		uiExposureTotal += usExposure;
+		++ubSamples;
+
+		// Never cross a dramatically worse known fire lane merely to reach a good
+		// destination. A moderate increase is acceptable only while the sampled
+		// point itself has smoke or sight cover.
+		if (usExposure > usCurrentExposure + 140)
+			return FALSE;
+
+		if (usExposure > usCurrentExposure + 70 &&
+			!InSmokeNearby(sRouteSpot, pSoldier->pathing.bLevel) &&
+			!SightCoverAtSpot(pSoldier, sRouteSpot, FALSE))
+		{
+			return FALSE;
+		}
+	}
+
+	if (ubSamples > 0 &&
+		uiExposureTotal / ubSamples > (UINT32)usCurrentExposure + 90)
+	{
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
 INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLEAN fAbortSeek)
 {
 	UINT8 ubNearbyFireteamClose = 0;
@@ -9092,10 +9166,39 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 				bAction = AI_ACTION_FLANK_RIGHT;
 		}
 
-		// if left or right flanking is possible, search for flanking spot
+		// If left or right flanking is possible, search for a flank whose route does
+		// not cross a substantially worse known fire lane.
 		if (bAction != AI_ACTION_NONE)
 		{
-			pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, sClosestDisturbance, bAction);
+			pSoldier->aiData.usActionData = FindFlankingSpot(
+				pSoldier, sClosestDisturbance, bAction);
+
+			if (!TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
+				!AITacticalRouteExposureAcceptable(
+					pSoldier, pSoldier->aiData.usActionData, bAction))
+			{
+				pSoldier->aiData.usActionData = NOWHERE;
+			}
+
+			// If both arcs were tactically available but the preferred route crosses a
+			// kill lane, try the opposite flank before abandoning manoeuvre.
+			if (TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
+				fLeftFlankPossible && fRightFlankPossible)
+			{
+				INT8 bAlternate =
+					(bAction == AI_ACTION_FLANK_LEFT) ?
+					AI_ACTION_FLANK_RIGHT : AI_ACTION_FLANK_LEFT;
+				INT32 sAlternate = FindFlankingSpot(
+					pSoldier, sClosestDisturbance, bAlternate);
+
+				if (!TileIsOutOfBounds(sAlternate) &&
+					AITacticalRouteExposureAcceptable(
+						pSoldier, sAlternate, bAlternate))
+				{
+					bAction = bAlternate;
+					pSoldier->aiData.usActionData = sAlternate;
+				}
+			}
 
 			if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))
 			{
@@ -9431,10 +9534,13 @@ INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 			{
 				pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, tempGridNo, AI_ACTION_FLANK_LEFT);
 
-				if (!TileIsOutOfBounds(pSoldier->aiData.usActionData)) //&& (currDir - origDir) < 2 )
+				if (!TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
+					AITacticalRouteExposureAcceptable(
+						pSoldier, pSoldier->aiData.usActionData, AI_ACTION_FLANK_LEFT))
 				{
 					return AI_ACTION_FLANK_LEFT;
 				}
+				pSoldier->aiData.usActionData = NOWHERE;
 				else
 				{
 					// wait for next turn if turnbased
@@ -9625,10 +9731,13 @@ INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 			{
 				pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, tempGridNo, AI_ACTION_FLANK_RIGHT);
 
-				if (!TileIsOutOfBounds(pSoldier->aiData.usActionData))//&& (origDir - currDir) < 2 )
+				if (!TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
+					AITacticalRouteExposureAcceptable(
+						pSoldier, pSoldier->aiData.usActionData, AI_ACTION_FLANK_RIGHT))
 				{
 					return AI_ACTION_FLANK_RIGHT;
 				}
+				pSoldier->aiData.usActionData = NOWHERE;
 				else
 				{
 					// wait for next turn if turnbased
@@ -9871,7 +9980,9 @@ INT8 DecideFinishFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, INT8
 
 	if (!CheckNPCDestination(pSoldier, sAdvance) ||
 		InGas(pSoldier, sAdvance) ||
-		Water(sAdvance, pSoldier->pathing.bLevel))
+		Water(sAdvance, pSoldier->pathing.bLevel) ||
+		!AITacticalRouteExposureAcceptable(
+			pSoldier, sAdvance, AI_ACTION_SEEK_OPPONENT))
 	{
 		pSoldier->numFlanks++;
 		return -1;
