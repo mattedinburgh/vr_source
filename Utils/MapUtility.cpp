@@ -3,6 +3,7 @@
 #else
 #include "sgp.h"
 #endif
+#include <stdio.h>
 
 #ifdef JA2EDITOR
 #include "Screens.h"
@@ -51,10 +52,116 @@ RGBValues* p24BitValues = NULL;
 FDLG_LIST* FListNode = NULL;
 BOOLEAN gfMapUtilityWindowActive = FALSE;
 
+static void MapPreviewPutLE16( UINT8 *p, UINT16 v )
+{
+	p[0] = (UINT8)(v & 0xff);
+	p[1] = (UINT8)((v >> 8) & 0xff);
+}
+
+static void MapPreviewPutLE32( UINT8 *p, UINT32 v )
+{
+	p[0] = (UINT8)(v & 0xff);
+	p[1] = (UINT8)((v >> 8) & 0xff);
+	p[2] = (UINT8)((v >> 16) & 0xff);
+	p[3] = (UINT8)((v >> 24) & 0xff);
+}
+
+// Export the engine's full overhead render before it is crushed down to the
+// 88x44 radar image. BMP is deliberately used here: no additional image codec
+// or dependency is needed in the legacy VS2013 editor build.
+static BOOLEAN SaveEngineMapPreviewBMP( const STR8 pMapFilename, UINT32 uiSurface,
+	UINT16 usWidth, UINT16 usHeight )
+{
+	if ( pMapFilename == NULL || usWidth == 0 || usHeight == 0 )
+		return FALSE;
+
+	CHAR8 zBase[260];
+	strncpy( zBase, pMapFilename, sizeof(zBase) - 1 );
+	zBase[ sizeof(zBase) - 1 ] = 0;
+	for ( INT32 i = (INT32)strlen(zBase) - 1; i >= 0; --i )
+	{
+		if ( zBase[i] == '.' )
+		{
+			zBase[i] = 0;
+			break;
+		}
+		if ( zBase[i] == '\\' || zBase[i] == '/' )
+			break;
+	}
+
+	CHAR8 zPreviewDir[260];
+	sprintf( zPreviewDir, "MAP_PREVIEWS" );
+	if ( !DirectoryExists( zPreviewDir ) )
+		MakeFileManDirectory( zPreviewDir );
+
+	CHAR8 zOutput[320];
+	sprintf( zOutput, "MAP_PREVIEWS\\%s_overview.bmp", zBase );
+
+	UINT32 uiPitchBytes = 0;
+	UINT16 *pSrc = (UINT16*)LockVideoSurface( uiSurface, &uiPitchBytes );
+	if ( pSrc == NULL )
+		return FALSE;
+
+	const UINT32 uiRowBytes = ( (UINT32)usWidth * 3u + 3u ) & ~3u;
+	const UINT32 uiImageBytes = uiRowBytes * (UINT32)usHeight;
+	const UINT32 uiFileBytes = 54u + uiImageBytes;
+
+	FILE *fp = fopen( zOutput, "wb" );
+	if ( fp == NULL )
+	{
+		UnLockVideoSurface( uiSurface );
+		return FALSE;
+	}
+
+	UINT8 header[54];
+	memset( header, 0, sizeof(header) );
+	header[0] = 'B';
+	header[1] = 'M';
+	MapPreviewPutLE32( &header[2], uiFileBytes );
+	MapPreviewPutLE32( &header[10], 54 );
+	MapPreviewPutLE32( &header[14], 40 );
+	MapPreviewPutLE32( &header[18], (UINT32)usWidth );
+	MapPreviewPutLE32( &header[22], (UINT32)usHeight );
+	MapPreviewPutLE16( &header[26], 1 );
+	MapPreviewPutLE16( &header[28], 24 );
+	MapPreviewPutLE32( &header[34], uiImageBytes );
+	MapPreviewPutLE32( &header[38], 2835 );
+	MapPreviewPutLE32( &header[42], 2835 );
+	fwrite( header, 1, sizeof(header), fp );
+
+	UINT8 *pRow = (UINT8*)MemAlloc( uiRowBytes );
+	if ( pRow == NULL )
+	{
+		fclose( fp );
+		UnLockVideoSurface( uiSurface );
+		return FALSE;
+	}
+
+	for ( INT32 y = (INT32)usHeight - 1; y >= 0; --y )
+	{
+		memset( pRow, 0, uiRowBytes );
+		for ( UINT16 x = 0; x < usWidth; ++x )
+		{
+			const UINT16 usPixel = pSrc[ y * (uiPitchBytes / 2) + x ];
+			const UINT32 uiRGB = GetRGBColor( usPixel );
+			pRow[x * 3 + 0] = (UINT8)SGPGetBValue( uiRGB );
+			pRow[x * 3 + 1] = (UINT8)SGPGetGValue( uiRGB );
+			pRow[x * 3 + 2] = (UINT8)SGPGetRValue( uiRGB );
+		}
+		fwrite( pRow, 1, uiRowBytes, fp );
+	}
+
+	MemFree( pRow );
+	fclose( fp );
+	UnLockVideoSurface( uiSurface );
+	return TRUE;
+}
+
 void GenerateAllMapsInit(void)
 {
 	GETFILESTRUCT FileInfo;
 	TrashFDlgList(FileList);
+	gfMapPreviewCaptureMode = FALSE;
 	if(GetFileFirst("MAPS\\*.dat", &FileInfo))
 	{
 		FileList = AddToFDlgList(FileList, &FileInfo);
@@ -63,6 +170,28 @@ void GenerateAllMapsInit(void)
 		GetFileClose(&FileInfo);
 	}
 	FListNode = FileList;
+}
+
+BOOLEAN GenerateSingleMapPreviewInit( STR8 pMapFile )
+{
+	GETFILESTRUCT FileInfo;
+	CHAR8 zMapPath[320];
+
+	TrashFDlgList( FileList );
+	FileList = FListNode = NULL;
+	gfMapPreviewCaptureMode = TRUE;
+
+	if ( pMapFile == NULL || pMapFile[0] == 0 )
+		return FALSE;
+
+	sprintf( zMapPath, "MAPS\\%s", pMapFile );
+	if ( !GetFileFirst( zMapPath, &FileInfo ) )
+		return FALSE;
+
+	FileList = AddToFDlgList( FileList, &FileInfo );
+	GetFileClose( &FileInfo );
+	FListNode = FileList;
+	return ( FListNode != NULL );
 }
 
 // Utililty file for sub-sampling/creating our radar screen maps.
@@ -196,6 +325,13 @@ UINT32 MapUtilScreenHandle(void)
 	gfOverheadMapDirty = TRUE;
 	//Buggler: interim code for radar map sti creation <= 360x360 based on DBrot bigger overview code
 	RenderOverheadMap(0, (WORLD_COLS/2), iOffsetHorizontal, iOffsetVertical, iOffsetHorizontal + (640 * WORLD_COLS / OLD_WORLD_COLS), iOffsetVertical + (320 * WORLD_ROWS / OLD_WORLD_ROWS), guiBigMap);//dnl ch82 090114
+
+	// Preserve the full engine-rendered sector for visual QA before radar-map
+	// downsampling destroys the detail we need to inspect.
+	SaveEngineMapPreviewBMP( zFilename, guiBigMap,
+		(UINT16)(640 * WORLD_COLS / OLD_WORLD_COLS),
+		(UINT16)(320 * WORLD_ROWS / OLD_WORLD_ROWS) );
+
 	TrashOverheadMap();
 	// OK, NOW PROCESS OVERHEAD MAP ( SHOULD BE ON THE FRAMEBUFFER )
 	//Buggler: interim code for radar map sti creation <= 360x360 based on DBrot bigger overview code
@@ -341,6 +477,8 @@ UINT32 MapUtilScreenShutdown(void)
 {
 	TrashFDlgList(FileList);
 	MemFree(p24BitValues);
+	p24BitValues = NULL;
+	gfMapPreviewCaptureMode = FALSE;
 	return(TRUE);
 }
 
