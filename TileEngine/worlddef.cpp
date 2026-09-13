@@ -609,7 +609,7 @@ BOOLEAN LoadTileSurfaces( char ppTileSurfaceFilenames[][32], UINT8 ubTilesetID )
 	return( TRUE );
 }
 
-static void TraceB1RemasterLoad( const STR8 pStage, const STR8 pDetail )
+void TraceB1RemasterLoad( const STR8 pStage, const STR8 pDetail )
 {
 	FILE *pTrace = fopen( "B1_remaster_load.log", "a" );
 	if ( pTrace == NULL )
