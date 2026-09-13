@@ -4580,7 +4580,7 @@ static BOOLEAN AIFireteamPredominantlyFixed(UINT8 ubFireteam)
 	return ubFixed > ubMobile;
 }
 
-static INT32 AIFireteamMergeDistance(UINT8 ubFirst, UINT8 ubSecond, SOLDIERTYPE *pJoiningSoldier)
+static INT32 AIFireteamMergeDistance(UINT8 ubFirst, UINT8 ubSecond)
 {
 	if (ubFirst == AI_FIRETEAM_NONE || ubSecond == AI_FIRETEAM_NONE ||
 		gbAIFireteamTeam[ubFirst] != gbAIFireteamTeam[ubSecond])
@@ -4718,7 +4718,7 @@ static UINT8 AISelectFireteamRemnantDestination(SOLDIERTYPE *pSoldier, UINT8 *pu
 			continue;
 		}
 
-		INT32 iDistance = AIFireteamMergeDistance(ubOld, ubTeam, pSoldier);
+		INT32 iDistance = AIFireteamMergeDistance(ubOld, ubTeam);
 		if (iDistance >= 10000 || iDistance > TACTICAL_RANGE)
 			continue;
 
