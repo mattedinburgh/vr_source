@@ -4733,14 +4733,13 @@ static UINT8 AISelectFireteamRemnantDestination(SOLDIERTYPE *pSoldier, UINT8 *pu
 			continue;
 
 		BOOLEAN fTargetFixed = AIFireteamPredominantlyFixed(ubTeam);
-		// A fixed sentry/sniper cannot be reassigned to a mobile element and then
-		// remain stationary while the bookkeeping claims he has rejoined it.
-		if (fOldFixed && !fTargetFixed)
-			continue;
 
 		INT32 iScore = iDistance + AIFireteamRemnantDestinationPenalty(ubTeam);
+		// Mission-compatible elements remain strongly preferred, but a shattered
+		// fixed sentry/sniper pair may attach to a viable mobile element rather than
+		// abandoning the sector simply because no other fixed element survived.
 		if (fTargetFixed != fOldFixed)
-			iScore += 8;
+			iScore += fOldFixed ? 18 : 8;
 
 		// Among local eligible elements, a nearby panicking element should not beat a
 		// slightly farther cohesive team with usable fighters and intact leadership.
@@ -4832,6 +4831,8 @@ static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 	if (!AIFireteamRemnantDestinationReachable(ubOld, ubBest))
 		return FALSE;
 
+	BOOLEAN fOldFixed = AIFireteamPredominantlyFixed(ubOld);
+	BOOLEAN fTargetFixed = AIFireteamPredominantlyFixed(ubBest);
 	UINT32 uiRejoinUntil = guiTurnCnt + 3;
 	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
 	{
@@ -4842,6 +4843,16 @@ static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 		{
 			gubAIFireteam[pFriend->ubID] = ubBest;
 			guiAIFireteamRejoinUntilTurn[pFriend->ubID] = uiRejoinUntil;
+
+			// If the only viable receiving element is mobile, a shattered fixed remnant
+			// explicitly abandons its old post and becomes an on-call member of the new
+			// element. This avoids bookkeeping that says "merged" while the soldier
+			// remains rooted to the destroyed position.
+			if (pFriend->bTeam == ENEMY_TEAM && fOldFixed && !fTargetFixed &&
+				(pFriend->aiData.bOrders == STATIONARY || pFriend->aiData.bOrders == SNIPER))
+			{
+				pFriend->aiData.bOrders = ONCALL;
+			}
 
 			// Reattachment supersedes an old break-contact/sector-flight decision.
 			AIClearDisengagementState(pFriend);
