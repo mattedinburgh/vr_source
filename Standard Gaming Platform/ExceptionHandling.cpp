@@ -292,7 +292,7 @@ const int StackColumns = 8;		// Number of columns in stack dump.
 
 //ppp
 void		ErrorLog(HWFILE LogFile, STR8	Format, ...);
-static void BlackBoxDumpToCrashReport( HWFILE hFile );
+static void BlackBoxDumpToCrashReport( HWFILE hFile, const EXCEPTION_RECORD *pRecord );
 STR			GetExceptionString( DWORD uiExceptionCode );
 void		DisplayRegisters( HWFILE hFile, CONTEXT	*pContext );
 BOOLEAN GetAndDisplayModuleAndSystemInfo( HWFILE hFile, CONTEXT *pContext );
@@ -435,7 +435,7 @@ INT32 RecordExceptionInfo( EXCEPTION_POINTERS *pExceptInfo )
 
 	// Semantic state is written before stack walking because stack/symbol
 	// handling can itself fail on a badly corrupted process.
-	BlackBoxDumpToCrashReport( hFile );
+	BlackBoxDumpToCrashReport( hFile, &Record );
 	ErrorLog( hFile, zNewLine );
 	ErrorLog( hFile, zNewLine );
 
@@ -498,21 +498,104 @@ void ErrorLog( HWFILE hFile, STR8	Format, ...)
 
 }
 
-static void BlackBoxDumpToCrashReport( HWFILE hFile )
+static void BlackBoxDumpToCrashReport( HWFILE hFile, const EXCEPTION_RECORD *pRecord )
 {
 	LONG sequence;
+	LONG checkpointSequence;
 	LONG first;
 	LONG i;
 	LONG slot;
+	MEMORYSTATUS memoryStatus;
+	DWORD lastError;
+	DWORD uptime;
+	CHAR8 exePath[MAX_PATH];
+	CHAR8 cwd[MAX_PATH];
+
+	// Snapshot simple process/system state without taking the black-box lock.
+	// The crash may have happened while another thread owned that lock.
+	lastError = GetLastError();
+	uptime = BlackBoxUptimeMs();
+	memset( &memoryStatus, 0, sizeof( memoryStatus ) );
+	memoryStatus.dwLength = sizeof( memoryStatus );
+	GlobalMemoryStatus( &memoryStatus );
 
 	ErrorLog( hFile, "================ VENGEANCE BLACK BOX ================\r\n" );
-	ErrorLog( hFile, "Current checkpoint:\r\n  %s\r\n", gBlackBoxCheckpoint );
-	ErrorLog( hFile, "\r\nRecent durable events (oldest to newest):\r\n" );
+	ErrorLog( hFile, "Recorder version: 2\r\n" );
+	ErrorLog( hFile, "Process: pid=%lu crashThread=%lu uptimeMs=%lu\r\n",
+		GetCurrentProcessId(), GetCurrentThreadId(), uptime );
+	ErrorLog( hFile, "Recorder health: events=%ld checkpoints=%ld diskWriteFailures=%ld flushFailures=%ld fileOpen=%s\r\n",
+		gBlackBoxEventSequence, gBlackBoxCheckpointSequence,
+		gBlackBoxDiskWriteFailures, gBlackBoxFlushFailures,
+		gBlackBoxFile != INVALID_HANDLE_VALUE ? "yes" : "no" );
+	ErrorLog( hFile, "Memory: load=%lu%% totalPhysMB=%lu availPhysMB=%lu totalPageMB=%lu availPageMB=%lu\r\n",
+		memoryStatus.dwMemoryLoad,
+		memoryStatus.dwTotalPhys / (1024 * 1024),
+		memoryStatus.dwAvailPhys / (1024 * 1024),
+		memoryStatus.dwTotalPageFile / (1024 * 1024),
+		memoryStatus.dwAvailPageFile / (1024 * 1024) );
+	ErrorLog( hFile, "Win32 lastError=%lu\r\n", lastError );
+
+	exePath[0] = 0;
+	if( GetModuleFileNameA( NULL, exePath, MAX_PATH ) > 0 )
+		ErrorLog( hFile, "Executable: %s\r\n", exePath );
+
+	cwd[0] = 0;
+	if( GetCurrentDirectoryA( MAX_PATH, cwd ) > 0 )
+		ErrorLog( hFile, "Working directory: %s\r\n", cwd );
+
+	if( pRecord != NULL )
+	{
+		ErrorLog( hFile, "Exception snapshot: code=0x%08lx flags=0x%08lx address=0x%08x parameters=%lu\r\n",
+			pRecord->ExceptionCode, pRecord->ExceptionFlags, pRecord->ExceptionAddress,
+			pRecord->NumberParameters );
+
+		if( pRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && pRecord->NumberParameters >= 2 )
+		{
+			const char *operation = "read";
+			if( pRecord->ExceptionInformation[0] == 1 )
+				operation = "write";
+			else if( pRecord->ExceptionInformation[0] == 8 )
+				operation = "execute";
+
+			ErrorLog( hFile, "Access violation: operation=%s address=0x%08x\r\n",
+				operation, pRecord->ExceptionInformation[1] );
+		}
+	}
+
+	ErrorLog( hFile, "\r\nLatest global checkpoint:\r\n  %s\r\n", gBlackBoxCheckpoint );
+
+	ErrorLog( hFile, "\r\nLatest checkpoint by subsystem:\r\n" );
+	for( i = 0; i < BLACKBOX_SUBSYSTEM_SLOTS; ++i )
+	{
+		if( gBlackBoxSubsystems[i].name[0] != 0 && gBlackBoxSubsystems[i].checkpoint[0] != 0 )
+		{
+			ErrorLog( hFile, "  %-12s seq=%ld thread=%lu uptimeMs=%lu\r\n    %s\r\n",
+				gBlackBoxSubsystems[i].name,
+				gBlackBoxSubsystems[i].sequence,
+				gBlackBoxSubsystems[i].threadId,
+				gBlackBoxSubsystems[i].tick,
+				gBlackBoxSubsystems[i].checkpoint );
+		}
+	}
 
 	// Never take gBlackBoxLock from the crash handler. If the fault happened
 	// while logging, taking it here could deadlock and destroy the evidence.
+	checkpointSequence = gBlackBoxCheckpointSequence;
+	first = checkpointSequence > BLACKBOX_CHECKPOINT_SLOTS ?
+		checkpointSequence - BLACKBOX_CHECKPOINT_SLOTS : 0;
+
+	ErrorLog( hFile, "\r\nRecent high-frequency checkpoints (oldest to newest):\r\n" );
+	for( i = first; i < checkpointSequence; ++i )
+	{
+		slot = i % BLACKBOX_CHECKPOINT_SLOTS;
+		if( gBlackBoxCheckpoints[slot][0] )
+			ErrorLog( hFile, "%s\r\n", gBlackBoxCheckpoints[slot] );
+	}
+
 	sequence = gBlackBoxEventSequence;
 	first = sequence > BLACKBOX_EVENT_SLOTS ? sequence - BLACKBOX_EVENT_SLOTS : 0;
+
+	ErrorLog( hFile, "\r\nRecent durable events (oldest to newest):\r\n" );
 	for( i = first; i < sequence; ++i )
 	{
 		slot = i % BLACKBOX_EVENT_SLOTS;
@@ -521,7 +604,6 @@ static void BlackBoxDumpToCrashReport( HWFILE hFile )
 	}
 	ErrorLog( hFile, "=======================================================\r\n" );
 }
-
 
 STR	GetExceptionString( DWORD uiExceptionCode )
 {
