@@ -5246,6 +5246,22 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 
 		if (!fImmediateEnvironmentalDanger)
 		{
+			// Suppression panic is a real tactical state. Do not let a pinned soldier
+			// start fallback, rescue, scavenging or attack setup until shock recovers.
+			// Environmental escape remains higher priority and is handled outside this block.
+			if (!fCivilian && SoldierAI(pSoldier) && ubCanMove &&
+				pSoldier->stats.bLife > OKLIFE &&
+				!pSoldier->bCollapsed && !pSoldier->bBreathCollapsed &&
+				(pSoldier->usAnimState == COWERING || pSoldier->usAnimState == COWERING_PRONE))
+			{
+				if (CoweringShockLevel(pSoldier))
+				{
+					pSoldier->aiData.usActionData = NOWHERE;
+					return AI_ACTION_NONE;
+				}
+				return AI_ACTION_STOP_COWERING;
+			}
+
 			// Emergency protection smoke is considered before movement/withdrawal so the
 			// team can create concealment for a casualty or pinned soldier first.
 			if (AICombatTeam(pSoldier))
@@ -5562,23 +5578,6 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				fTryPunching = TRUE;
 			}
 		}
-	}
-
-	// sevenfm: before deciding anything, stop cowering
-	if( !fCivilian &&
-		SoldierAI(pSoldier) &&
-		ubCanMove &&
-		pSoldier->stats.bLife > OKLIFE &&
-		!pSoldier->bCollapsed &&
-		!pSoldier->bBreathCollapsed &&
-		(pSoldier->usAnimState == COWERING || pSoldier->usAnimState == COWERING_PRONE) )
-	{
-		if (CoweringShockLevel(pSoldier))
-		{
-			pSoldier->aiData.usActionData = NOWHERE;
-			return AI_ACTION_NONE;
-		}
-		return AI_ACTION_STOP_COWERING;
 	}
 
 	// If we don't have a gun, look around for one only when scavenging is tactically
