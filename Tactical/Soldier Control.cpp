@@ -5869,37 +5869,29 @@ static void SpawnVRDirectionalGoreSpray( SOLDIERTYPE *pSoldier, const CHAR8 *zFi
 }
 
 
-// Restrained impact mist. The visual target is a very brief set of projected
-// droplets, not a liquid jet. The entertaining gore comes from rare fatal variants
-// (falls, crumples and dismemberment), not from turning every bullet hit into a fountain.
-static void SpawnVRSprinklerGoreBurst( SOLDIERTYPE *pSoldier, UINT8 ubExitDirection, UINT8 ubIncomingDirection, INT16 sZ, BOOLEAN fExtreme )
+// Restrained impact mist. A surviving bullet hit must read as a tiny directional
+// spritz, not a bucket. Fatal gore is handled separately by HandleVRFatalGunshotReaction.
+static void SpawnVRSprinklerGoreBurst( SOLDIERTYPE *pSoldier, UINT8 ubExitDirection, UINT8 ubIncomingDirection, INT16 sZ, BOOLEAN fHeavyImpact )
 {
 	if ( pSoldier == NULL )
 		return;
 
-	// JA2 only gives us eight directions, so keep almost everything on the projectile
-	// axis. Two layers on ordinary hits and three on severe/fatal hits are enough for
-	// a visible sprinkle without merging into a broad opaque fan.
-	static const INT8 abDirJitter[ 3 ] = { 0, 0, 1 };
-	UINT8 ubDroplets = fExtreme ? 3 : 2;
+	// Ordinary hit: ONE small forward layer only. This is deliberately sparse:
+	// stacking even two copies of the current STI is visually too dense at game scale.
+	SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI",
+		ubExitDirection, sZ, 24, 0 );
 
-	for ( UINT8 i = 0; i < ubDroplets; ++i )
+	// Hard but non-fatal hit: add one displaced droplet layer, still no broad fan.
+	if ( fHeavyImpact )
 	{
-		INT16 sDir = (INT16)ubExitDirection + abDirJitter[ i ];
-		while ( sDir < 0 ) sDir += NUM_WORLD_DIRECTIONS;
-		sDir %= NUM_WORLD_DIRECTIONS;
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI",
+			ubExitDirection, (INT16)__max( 5, sZ - 2 ), 30, 16 );
 
-		INT16 sLayerZ = (INT16)__max( 5, sZ - (INT16)i );
-		UINT8 ubOffset = (UINT8)( i * 12 );
-		INT16 sDelay = (INT16)( 26 + i * 4 );
-
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", (UINT8)sDir, sLayerZ, sDelay, ubOffset );
+		// Entry-side mist is rare and tiny. Never make it a mandatory second cone.
+		if ( Random( 100 ) < 15 )
+			SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_BLOOD_IMPACT.STI",
+				ubIncomingDirection, (INT16)__max( 5, sZ - 1 ), 28, 0 );
 	}
-
-	// Backspatter is a small secondary event, not a mandatory second cone.
-	UINT8 ubBackChance = fExtreme ? 55 : 30;
-	if ( Random( 100 ) < ubBackChance )
-		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubIncomingDirection, (INT16)__max( 5, sZ - 2 ), 31, 0 );
 }
 
 static void SpawnVRBloodGroundDecal( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubSprayDirection, const CHAR8 *zFilename )
@@ -7043,10 +7035,8 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 		UINT8 ubSprayDirection = gOppositeDirection[ ubIncomingDirection ];
 		INT16 sGoreZ = 30;
 
-		// Keep the ground mark local and modest. Do not paint a six-tile red stripe
-		// for every successful hit.
-		DropBlood( this, 1, this->bVisible );
-
+		// Do not add a second custom ground-blood drop here. SoldierTakeDamage already
+		// handles wound blood, and doubling it made every impact look much wetter.
 		if ( ubHitLocation == AIM_SHOT_HEAD )
 			sGoreZ = 50;
 		else if ( ubHitLocation == AIM_SHOT_LEGS )
@@ -7057,7 +7047,9 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 		else if ( gAnimControl[ this->usAnimState ].ubEndHeight == ANIM_PRONE )
 			sGoreZ = 10;
 
-		BOOLEAN fHeavyImpact = ( ubHitLocation == AIM_SHOT_HEAD || sDamage >= 18 );
+		// A surviving head hit is not automatically a gore burst. Reserve the second
+		// tiny layer for genuinely hard impacts; fatal hits use the separate death-gore path.
+		BOOLEAN fHeavyImpact = ( sDamage >= 25 );
 		SpawnVRSprinklerGoreBurst( this, ubSprayDirection, ubIncomingDirection, sGoreZ, fHeavyImpact );
 	}
 
