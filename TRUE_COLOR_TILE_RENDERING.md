@@ -26,20 +26,61 @@ Add an opt-in true-colour imagery path:
 
 ## Current implementation on install/all-2026-09-12
 
-Commits:
-- `d6877f1f` preserve multi-region metadata for 16/32-bit VOBJECTs
-- `367510e0` multi-frame true-colour JPC loading
-- `6f23cc07` loader state-scope correction
-- `02874050` declare tactical true-colour blitter
-- `18e27cb4` shaded/Z-aware true-colour tactical blitter
-- `ffca6183` route true-colour map imagery through renderworld
-- `71b167a7` stable 4x4 ordered RGB565 dithering
-- `93dbc53b` move dithering before alpha blend and preserve full-black shade
-- `1a15b062` harden JPC frame sequencing and keep single-frame RGB at 32bpp
-- `a175cded` prevent low-alpha edge pixels from writing solid Z
-- `8db387c0` remove redundant explicit JPC fallback change (fallback was already the CreateImage default)
-- `9b848a96` keep legacy-only item/physics/erase-Z blitters away from true-colour objects
-- `0ac01ba2` preserve exact black/white channel endpoints while dithering
+The renderer now has two true-colour asset inputs:
+
+- **B1TC** — the active B1/Oronegro sibling format. A `foo.b1tc` file automatically replaces the pixels of `foo.sti` while retaining the STI name as map/JSD identity.
+- **JPC/PNG** — the more generic replacement route retained for other assets.
+
+Implemented engine behavior:
+
+- multi-region 16/32-bit VOBJECT metadata and frame counts;
+- full RGB/RGBA source pixels kept until final RGB565 presentation;
+- JA2 shade-level lighting;
+- stable source-coordinate RGB565 dithering;
+- RGBA alpha compositing;
+- ordinary Z test/write and legacy obscured checkerboard reveal;
+- JSD-derived multi-tile Z-strip depth;
+- wall equal-Z burn-through semantics;
+- true-colour shadow and intensity masks;
+- STI appdata inheritance for B1TC sibling replacements;
+- 8-bit-only item/physics/erase-Z special blitters guarded from true-colour objects.
+
+Recent true-colour commits include:
+
+- `d6877f1f` multi-region true-colour VOBJECTs
+- `18e27cb4` initial shaded/Z-aware true-colour blitter
+- `71b167a7` ordered RGB565 dithering
+- `1a15b062` hardened JPC frame loading
+- `93dbc53b` alpha/dither/full-black fixes
+- `a175cded` alpha-aware simple Z writes
+- `9b848a96` legacy-special-blitter guards
+- `1479a9a8` / `cedef5ece9` B1TC reader and STI-sibling selection
+- `d771acee` / `0b32098d` true-colour JSD Z-strip rendering
+- `57a19bf0` / `8a552fc2` true-colour shadow/intensity masks
+- `ffa05d19` / `059a44f3` ordinary obscured-Z parity
+- `4ec7f343` inherit original STI appdata for B1TC
+- `0c1b247b` O(1) per-pixel Z-strip depth lookup via per-blit prefix sums
+- `a5c13e8c` match legacy multi-Z depth-write behavior
+
+### B1 asset validation
+
+The current B1TC payloads were compared against their original STI frame directories. The following sets have **zero frame-geometry mismatches**: frame counts, width, height, X offset and Y offset all match exactly.
+
+- `B1_P-FLOOR3` — 10/10
+- `B1_ROADTLE2` — 312/312
+- `B1_W-ROOF2` — 14/14
+- `B1_BUILD_31` — 65/65
+- `B1_BUILD_35` — 65/65
+- `B1_BUILD_36` — 65/65
+- `B1_BUILD_40` — 65/65
+- `B1_TR_WATER` — 46/46
+- `B1_TRWATER2` — 47/47
+- `B1_WELFLOR1/2/3` — 8/8 each
+
+Structural frame counts also match JSD counts exactly: `B1_W-ROOF2` 14/14 and each validated `B1_BUILD_*` facade set 65/65.
+
+All audited B1TC records have valid `width * height * 4` RGBA payload sizes. Current B1TC assets use binary alpha (0/255), so there is no ambiguous partial-alpha collision edge in the current B1 remaster.
+
 
 ## Replacement archive format
 
@@ -81,18 +122,16 @@ Use true-colour replacements first for:
 - floors;
 - other imagery that does not rely on Z-strip increment logic.
 
-### Do not convert yet
-Keep legacy indexed rendering for:
-- walls that rely on Z strips / burn-through rules;
-- complex roofs/structures until Z-strip parity is added;
-- shadows/intensity masks;
+### Remaining legacy-only areas
+Keep these indexed for now:
 - merc/soldier sprites and palette-swapped body art;
 - item-outline/glow imagery;
-- special pixelation/obscured effects.
+- merc trans-shadow/index-254 semantics;
+- special merc invisibility/translucency paths.
 
-The generic true-colour path has simple Z test/write, but does not yet reproduce every specialized 8-bit blitter.
+Map walls, roofs and structures may now use true-colour imagery when their B1TC/JPC frame geometry and JSD counts are preserved. JSD Z strips, wall equal-Z behavior, ordinary obscured rendering, and shadow/intensity map masks now have true-colour paths.
 
-RGBA depth writes use an alpha cutout threshold: pixels below 128 alpha may blend visually but do not become solid Z blockers. Legacy-only item-outline, physics-object and erase-Z branches are guarded so true-colour objects fall through safely instead of calling 8-bit ETRLE blitters.
+RGBA simple-Z writes use an alpha cutout threshold: pixels below 128 alpha may blend visually but do not become solid Z blockers. Current audited B1TC assets are binary-alpha, so their behavior is unambiguous.
 
 ## Lighting
 
@@ -127,8 +166,8 @@ Note: this fallback behavior already existed in `CreateImage()` before the true-
 ## Next engineering work
 
 1. Build/test VS2013 Release Win32.
-2. Test one isolated B1 ground/road tileset with a true-colour JPC replacement.
-3. Verify day/night shade progression and sector save/reload.
-4. Verify Z interaction for selected ground/floor cases.
-5. Add true-colour Z-strip increment blitters before converting walls/roofs.
-6. Add shadow/intensity/pixelation parity only after the terrain path is stable.
+2. Enter B1 from a clean/new save and verify true-colour ground, road, water, roof and facade loading in black-box traces.
+3. Visually verify day/night shade progression, roof hiding/reveal, wall occlusion and equal-Z intersections.
+4. Test sector save/reload and leave/re-enter B1.
+5. Keep merc/item/special translucency art indexed until those specialist blitters are deliberately ported.
+6. Revisit a native 32-bit framebuffer only after the B1 true-colour path is runtime-stable.
