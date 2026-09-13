@@ -7336,8 +7336,11 @@ BOOLEAN AIAllowsIndependentFlank(SOLDIERTYPE *pSoldier)
 		return FALSE;
 	}
 	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
-	if (ubDoctrine == AI_DOCTRINE_SECURITY) return FALSE;
-	if (ubDoctrine == AI_DOCTRINE_LINE) return AIHasLocalCommandSupport(pSoldier);
+	if (ubDoctrine == AI_DOCTRINE_SECURITY)
+		return AISmallUnitTeamMode(pSoldier) && AIFireteamCombatReadyCount(pSoldier) >= 3;
+	if (ubDoctrine == AI_DOCTRINE_LINE)
+		return AIHasLocalCommandSupport(pSoldier) ||
+			(AISmallUnitTeamMode(pSoldier) && AIFireteamCombatReadyCount(pSoldier) >= 3);
 	return TRUE;
 }
 
@@ -7347,8 +7350,10 @@ BOOLEAN AIAllowsProactiveSupport(SOLDIERTYPE *pSoldier)
 	if (AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier)) return FALSE;
 	if (pSoldier->bTeam != ENEMY_TEAM) return TRUE;
 	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
-	if (ubDoctrine == AI_DOCTRINE_SECURITY) return FALSE;
-	if (ubDoctrine == AI_DOCTRINE_LINE) return AIHasLocalCommandSupport(pSoldier);
+	if (ubDoctrine == AI_DOCTRINE_SECURITY)
+		return AISmallUnitTeamMode(pSoldier) && AIFireteamCombatReadyCount(pSoldier) >= 2;
+	if (ubDoctrine == AI_DOCTRINE_LINE)
+		return AIHasLocalCommandSupport(pSoldier) || AISmallUnitTeamMode(pSoldier);
 	return TRUE;
 }
 
@@ -7743,13 +7748,16 @@ INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		}
 	}
 	INT32 iModifier = 0;
+	BOOLEAN fSmallUnit = AISmallUnitTeamMode(pSoldier);
 
 	if (ubNearbyFriends == 0)
-		iModifier -= 2;
+		iModifier -= fSmallUnit ? 3 : 2;
+	else if (ubNearbyFriends == 1)
+		iModifier += fSmallUnit ? 2 : 0;
 	else if (ubNearbyFriends == 2)
-		iModifier += 1;
+		iModifier += fSmallUnit ? 3 : 1;
 	else if (ubNearbyFriends >= 3)
-		iModifier += 2;
+		iModifier += 3;
 
 	if (!TileIsOutOfBounds(sTargetSpot))
 	{
@@ -7813,15 +7821,18 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 		AIPersonalRisk(pSoldier) <= AIPersonalRiskTolerance(pSoldier))
 	{
 		UINT8 ubActiveMovers = 0;
-		UINT8 ubMoverLimit = fComplexDoctrine ? 2 : 1;
-		INT32 iMoverJitter = fComplexDoctrine ? AIBoundedElementJitter(pSoldier,
+		UINT8 ubSmallTeamReady = AICombatTeamOperationalCount(pSoldier);
+		BOOLEAN fSmallTeam = ubSmallTeamReady >= 2 && ubSmallTeamReady <= 5;
+		UINT8 ubMoverLimit = fSmallTeam ? (ubSmallTeamReady >= 4 ? 2 : 1) :
+			(fComplexDoctrine ? 2 : 1);
+		INT32 iMoverJitter = (fComplexDoctrine && !fSmallTeam) ? AIBoundedElementJitter(pSoldier,
 			(UINT32)(sTargetSpot + 101), 6) : 0;
 
 		// Professional/veteran fireteams vary their bound size. Uncommanded line and
 		// security elements use a simple one-mover-at-a-time rule instead.
-		if (fComplexDoctrine && iMoverJitter <= -4)
+		if (fComplexDoctrine && !fSmallTeam && iMoverJitter <= -4)
 			ubMoverLimit = 1;
-		else if (fComplexDoctrine && iMoverJitter >= 5 &&
+		else if (fComplexDoctrine && !fSmallTeam && iMoverJitter >= 5 &&
 			AILocalStress(pSoldier) < 20 &&
 			AICheckWeOutnumberLocal(pSoldier, sTargetSpot))
 			ubMoverLimit = 3;
