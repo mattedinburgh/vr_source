@@ -189,6 +189,9 @@ bool Filter::Match(SOLDIERTYPE* pSoldier) {
 				case REQ_WEAPON_TYPE:
 					cmp_val = Weapon[pSoldier->inv[HANDPOS].usItem].ubWeaponType;
 					break;
+				case REQ_LEFT_WEAPON_TYPE:
+					cmp_val = Weapon[pSoldier->inv[SECONDHANDPOS].usItem].ubWeaponType;
+					break;
 				case REQ_CALIBRE:
 					cmp_val = Weapon[pSoldier->inv[HANDPOS].usItem].ubCalibre;
 					break;
@@ -203,6 +206,9 @@ bool Filter::Match(SOLDIERTYPE* pSoldier) {
 					break;
 				case REQ_HELMET_AMOR_COVERAGE:
 					cmp_val = Armour[Item[pSoldier->inv[HELMETPOS].usItem].ubClassIndex].ubCoverage;
+					break;
+				case REQ_WEARING_BACKPACK:
+					cmp_val = pSoldier->inv[BPACKPOCKPOS].exists();
 					break;
 				default:
 					if (q < NUM_REQTYPESINV) {
@@ -224,9 +230,9 @@ bool Filter::Match(SOLDIERTYPE* pSoldier) {
 			} else if (r & _TYPE_PAIR) {
 				NumberPair* nl = ii->second.numberPair;
 				// TODO: resolve compiler warning about usigned/signed and the comparison ops?!?
-				sgn = (nl->second > cmp_val) ? -1 : (nl->first < cmp_val) ? 1 : 0;
+				sgn = (nl->second < cmp_val) ? -1 : (nl->first > cmp_val) ? 1 : 0;
 			} else {
-				sgn = (ii->second.number > cmp_val) ? -1 : (ii->second.number < cmp_val) ? 1 : 0;
+				sgn = (ii->second.number < cmp_val) ? -1 : (ii->second.number > cmp_val) ? 1 : 0;
 			}
 		} else if (r & _TYPE_STRING) {
 			// string comparison is quite costly at the moment. should be avoided or reimplemented.
