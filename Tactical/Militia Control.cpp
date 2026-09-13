@@ -1307,7 +1307,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 							pTMilitiaSoldier->aiData.bOrders = STATIONARY;
 							pTMilitiaSoldier->aiData.bAttitude = DEFENSIVE;
 							// sevenfm: set this spot as original point
-							pTeamSoldier->aiData.sPatrolGrid[0] = pTeamSoldier->sGridNo;
+							pTMilitiaSoldier->aiData.sPatrolGrid[0] = pTMilitiaSoldier->sGridNo;
 						}
 
 						if ( GetSoldier( &pSoldier, gusSelectedSoldier )  )
@@ -1572,7 +1572,7 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 								pTeamSoldier->aiData.bOrders = STATIONARY;
 								pTeamSoldier->aiData.bAttitude = DEFENSIVE;
 								// sevenfm: set this spot as original point
-								pTMilitiaSoldier->aiData.sPatrolGrid[0] = pTMilitiaSoldier->sGridNo;
+								pTeamSoldier->aiData.sPatrolGrid[0] = pTeamSoldier->sGridNo;
 							}
 						}
 
