@@ -1752,7 +1752,7 @@ INT32 FindNearestUngassedLand(SOLDIERTYPE *pSoldier)
 				}
 
 				// check for deep water
-				if( DeepWater(pSoldier->sGridNo, pSoldier->pathing.bLevel) )
+				if( DeepWater(sGridNo, pSoldier->pathing.bLevel) )
 				{
 					continue;
 				}
