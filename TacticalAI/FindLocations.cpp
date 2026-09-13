@@ -290,6 +290,7 @@ INT32 CalcCoverValue(SOLDIERTYPE *pMe, INT32 sMyGridNo, INT32 iMyThreat, INT32 i
 	INT8	bHisRealLevel = -1;
 	UINT16 usHisRealAnimState = 0;
 	UINT8 ubHisRealDirection = 0;
+	UINT16 usHisRealAttackingWeapon = NOTHING;
 	BOOLEAN fHisStateVirtualized = FALSE;
 	INT16 sTempX, sTempY;
 	FLOAT dMyX, dMyY, dHisX, dHisY;
@@ -337,8 +338,12 @@ INT32 CalcCoverValue(SOLDIERTYPE *pMe, INT32 sMyGridNo, INT32 iMyThreat, INT32 i
 	{
 		usHisRealAnimState = pHim->usAnimState;
 		ubHisRealDirection = pHim->ubDirection;
+		usHisRealAttackingWeapon = pHim->usAttackingWeapon;
 		pHim->usAnimState = STANDING;
 		pHim->ubDirection = AIDirection(sHisGridNo, sMyGridNo);
+		// ChanceToGetThrough() uses the firer's live weapon/ammo. Setting NOTHING
+		// deliberately routes stale contacts through its neutral Glock-17 LOS surrogate.
+		pHim->usAttackingWeapon = NOTHING;
 		fHisStateVirtualized = TRUE;
 	}
 
@@ -460,6 +465,7 @@ INT32 CalcCoverValue(SOLDIERTYPE *pMe, INT32 sMyGridNo, INT32 iMyThreat, INT32 i
 	{
 		pHim->usAnimState = usHisRealAnimState;
 		pHim->ubDirection = ubHisRealDirection;
+		pHim->usAttackingWeapon = usHisRealAttackingWeapon;
 	}
 
 	// sevenfm: special calculations for zombies: zombie is very dangerous at close range
