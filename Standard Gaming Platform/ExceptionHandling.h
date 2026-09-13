@@ -31,6 +31,10 @@ void BlackBoxInitialize( void );
 void BlackBoxShutdown( void );
 void BlackBoxEvent( const char *category, const char *format, ... );
 void BlackBoxCheckpoint( const char *subsystem, const char *format, ... );
+// Call once per main-loop iteration. This is intentionally cheap: it updates
+// lock-free heartbeat state every frame and only emits health diagnostics at
+// throttled intervals.
+void BlackBoxHeartbeat( DWORD currentScreen );
 
 
 #ifdef __cplusplus
