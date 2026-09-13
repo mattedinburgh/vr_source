@@ -28,12 +28,17 @@
 // ---------------------------------------------------------------------------
 // Independent of VFS/FileMan so it remains useful during startup/shutdown
 // and when those systems are involved in a crash.
-#define BLACKBOX_EVENT_SLOTS 1024
+#define BLACKBOX_EVENT_SLOTS 4096
 #define BLACKBOX_EVENT_CHARS 640
-#define BLACKBOX_CHECKPOINT_SLOTS 1024
+#define BLACKBOX_CHECKPOINT_SLOTS 4096
 #define BLACKBOX_CHECKPOINT_CHARS 768
 #define BLACKBOX_SUBSYSTEM_SLOTS 32
 #define BLACKBOX_SUBSYSTEM_NAME_CHARS 32
+#define BLACKBOX_EXCEPTION_SLOTS 256
+#define BLACKBOX_WATCHDOG_STALL_MS 8000
+#define BLACKBOX_WATCHDOG_REPEAT_MS 15000
+#define BLACKBOX_HEALTH_CHECKPOINT_MS 1000
+#define BLACKBOX_HEALTH_EVENT_MS 30000
 
 typedef struct
 {
@@ -43,6 +48,18 @@ typedef struct
 	DWORD tick;
 	DWORD threadId;
 } BLACKBOX_SUBSYSTEM_STATE;
+
+typedef struct
+{
+	volatile LONG committedSequence;
+	DWORD tick;
+	DWORD threadId;
+	DWORD code;
+	PVOID address;
+	DWORD parameterCount;
+	ULONG_PTR info0;
+	ULONG_PTR info1;
+} BLACKBOX_EXCEPTION_EVENT;
 
 static HANDLE gBlackBoxFile = INVALID_HANDLE_VALUE;
 static CRITICAL_SECTION gBlackBoxLock;
@@ -57,6 +74,76 @@ static CHAR8 gBlackBoxEvents[BLACKBOX_EVENT_SLOTS][BLACKBOX_EVENT_CHARS];
 static CHAR8 gBlackBoxCheckpoints[BLACKBOX_CHECKPOINT_SLOTS][BLACKBOX_CHECKPOINT_CHARS];
 static CHAR8 gBlackBoxCheckpoint[BLACKBOX_CHECKPOINT_CHARS] = "not initialized";
 static BLACKBOX_SUBSYSTEM_STATE gBlackBoxSubsystems[BLACKBOX_SUBSYSTEM_SLOTS];
+
+static BLACKBOX_EXCEPTION_EVENT gBlackBoxExceptions[BLACKBOX_EXCEPTION_SLOTS];
+static volatile LONG gBlackBoxExceptionSequence = 0;
+static LONG gBlackBoxExceptionDrainedSequence = 0;
+static PVOID gBlackBoxVectoredHandler = NULL;
+
+static HANDLE gBlackBoxWatchdogThread = NULL;
+static HANDLE gBlackBoxWatchdogStopEvent = NULL;
+static volatile LONG gBlackBoxHeartbeatSequence = 0;
+static volatile LONG gBlackBoxHeartbeatTick = 0;
+static volatile LONG gBlackBoxHeartbeatScreen = -1;
+static DWORD gBlackBoxMainThreadId = 0;
+static DWORD gBlackBoxLastHealthCheckpointTick = 0;
+static DWORD gBlackBoxLastHealthEventTick = 0;
+
+static BOOL BlackBoxIsInterestingException( DWORD code )
+{
+	switch( code )
+	{
+		case EXCEPTION_ACCESS_VIOLATION:
+		case EXCEPTION_ARRAY_BOUNDS_EXCEEDED:
+		case EXCEPTION_DATATYPE_MISALIGNMENT:
+		case EXCEPTION_FLT_DIVIDE_BY_ZERO:
+		case EXCEPTION_ILLEGAL_INSTRUCTION:
+		case EXCEPTION_IN_PAGE_ERROR:
+		case EXCEPTION_INT_DIVIDE_BY_ZERO:
+		case EXCEPTION_INT_OVERFLOW:
+		case EXCEPTION_INVALID_HANDLE:
+		case EXCEPTION_PRIV_INSTRUCTION:
+		case EXCEPTION_STACK_OVERFLOW:
+		case 0xC0000374L: // STATUS_HEAP_CORRUPTION
+		case 0xC0000409L: // STATUS_STACK_BUFFER_OVERRUN / fast-fail family
+			return TRUE;
+		default:
+			return FALSE;
+	}
+}
+
+static LONG CALLBACK BlackBoxVectoredExceptionHandler( PEXCEPTION_POINTERS pInfo )
+{
+	BLACKBOX_EXCEPTION_EVENT *event;
+	EXCEPTION_RECORD *record;
+	LONG sequence;
+	LONG slot;
+
+	if( !gBlackBoxInitialized || pInfo == NULL || pInfo->ExceptionRecord == NULL )
+		return EXCEPTION_CONTINUE_SEARCH;
+
+	record = pInfo->ExceptionRecord;
+	if( !BlackBoxIsInterestingException( record->ExceptionCode ) )
+		return EXCEPTION_CONTINUE_SEARCH;
+
+	sequence = InterlockedIncrement( &gBlackBoxExceptionSequence );
+	slot = ( sequence - 1 ) % BLACKBOX_EXCEPTION_SLOTS;
+	event = &gBlackBoxExceptions[slot];
+
+	// Do not take the regular recorder lock from a first-chance exception
+	// handler. Publish the sequence last so readers can reject torn slots.
+	InterlockedExchange( &event->committedSequence, 0 );
+	event->tick = GetTickCount() - gBlackBoxStartTick;
+	event->threadId = GetCurrentThreadId();
+	event->code = record->ExceptionCode;
+	event->address = record->ExceptionAddress;
+	event->parameterCount = record->NumberParameters;
+	event->info0 = record->NumberParameters > 0 ? record->ExceptionInformation[0] : 0;
+	event->info1 = record->NumberParameters > 1 ? record->ExceptionInformation[1] : 0;
+	InterlockedExchange( &event->committedSequence, sequence );
+
+	return EXCEPTION_CONTINUE_SEARCH;
+}
 
 static void BlackBoxFormatTime( CHAR8 *buffer, size_t bufferSize )
 {
@@ -106,6 +193,120 @@ static void BlackBoxRotateRunLogs( void )
 	MoveFileExA( "BlackBox_PreviousRun_2.log", "BlackBox_PreviousRun_3.log", MOVEFILE_REPLACE_EXISTING );
 	MoveFileExA( "BlackBox_PreviousRun.log", "BlackBox_PreviousRun_2.log", MOVEFILE_REPLACE_EXISTING );
 	MoveFileExA( "BlackBox_LastRun.log", "BlackBox_PreviousRun.log", MOVEFILE_REPLACE_EXISTING );
+
+	DeleteFileA( "BlackBox_Hang_PreviousRun_4.log" );
+	MoveFileExA( "BlackBox_Hang_PreviousRun_3.log", "BlackBox_Hang_PreviousRun_4.log", MOVEFILE_REPLACE_EXISTING );
+	MoveFileExA( "BlackBox_Hang_PreviousRun_2.log", "BlackBox_Hang_PreviousRun_3.log", MOVEFILE_REPLACE_EXISTING );
+	MoveFileExA( "BlackBox_Hang_PreviousRun.log", "BlackBox_Hang_PreviousRun_2.log", MOVEFILE_REPLACE_EXISTING );
+	MoveFileExA( "BlackBox_Hang_LastRun.log", "BlackBox_Hang_PreviousRun.log", MOVEFILE_REPLACE_EXISTING );
+}
+
+static void BlackBoxWriteHangEvidence( DWORD elapsedMs, LONG heartbeatSequence, LONG currentScreen )
+{
+	HANDLE hFile;
+	DWORD bytesWritten;
+	CHAR8 timestamp[32];
+	CHAR8 checkpoint[BLACKBOX_CHECKPOINT_CHARS];
+	CHAR8 line[1400];
+	DWORD length;
+
+	BlackBoxFormatTime( timestamp, sizeof( timestamp ) );
+	lstrcpynA( checkpoint, gBlackBoxCheckpoint, BLACKBOX_CHECKPOINT_CHARS );
+	_snprintf( line, sizeof( line ) - 1,
+		"[%s] [+%lums] [WATCHDOG] main-thread stall elapsedMs=%lu mainTid=%lu heartbeat=%ld screen=%ld latest=%s\r\n",
+		timestamp, BlackBoxUptimeMs(), elapsedMs, gBlackBoxMainThreadId,
+		heartbeatSequence, currentScreen, checkpoint );
+	line[ sizeof( line ) - 1 ] = 0;
+
+	hFile = CreateFileA(
+		"BlackBox_Hang_LastRun.log",
+		FILE_APPEND_DATA,
+		FILE_SHARE_READ | FILE_SHARE_WRITE,
+		NULL,
+		OPEN_ALWAYS,
+		FILE_ATTRIBUTE_NORMAL,
+		NULL );
+
+	if( hFile == INVALID_HANDLE_VALUE )
+		return;
+
+	length = (DWORD)strlen( line );
+	WriteFile( hFile, line, length, &bytesWritten, NULL );
+	FlushFileBuffers( hFile );
+	CloseHandle( hFile );
+}
+
+static DWORD WINAPI BlackBoxWatchdogThreadProc( LPVOID )
+{
+	LONG lastReportedHeartbeat = -1;
+	DWORD lastReportTick = 0;
+
+	for( ;; )
+	{
+		DWORD waitResult;
+		DWORD now;
+		DWORD heartbeatTick;
+		DWORD elapsed;
+		LONG heartbeatSequence;
+		LONG currentScreen;
+
+		waitResult = WaitForSingleObject( gBlackBoxWatchdogStopEvent, 1000 );
+		if( waitResult == WAIT_OBJECT_0 )
+			break;
+		if( waitResult != WAIT_TIMEOUT )
+			continue;
+
+		heartbeatSequence = gBlackBoxHeartbeatSequence;
+		if( heartbeatSequence <= 0 )
+			continue;
+
+		now = GetTickCount();
+		heartbeatTick = (DWORD)gBlackBoxHeartbeatTick;
+		elapsed = now - heartbeatTick;
+		if( elapsed < BLACKBOX_WATCHDOG_STALL_MS )
+			continue;
+
+		if( heartbeatSequence != lastReportedHeartbeat ||
+			( now - lastReportTick ) >= BLACKBOX_WATCHDOG_REPEAT_MS )
+		{
+			currentScreen = gBlackBoxHeartbeatScreen;
+			BlackBoxWriteHangEvidence( elapsed, heartbeatSequence, currentScreen );
+			lastReportedHeartbeat = heartbeatSequence;
+			lastReportTick = now;
+		}
+	}
+
+	return 0;
+}
+
+static void BlackBoxDrainExceptionFeed( void )
+{
+	LONG snapshot;
+	LONG first;
+	LONG sequence;
+
+	snapshot = gBlackBoxExceptionSequence;
+	if( snapshot <= gBlackBoxExceptionDrainedSequence )
+		return;
+
+	first = gBlackBoxExceptionDrainedSequence + 1;
+	if( snapshot - first + 1 > BLACKBOX_EXCEPTION_SLOTS )
+		first = snapshot - BLACKBOX_EXCEPTION_SLOTS + 1;
+
+	for( sequence = first; sequence <= snapshot; ++sequence )
+	{
+		LONG slot = ( sequence - 1 ) % BLACKBOX_EXCEPTION_SLOTS;
+		BLACKBOX_EXCEPTION_EVENT *event = &gBlackBoxExceptions[slot];
+		if( event->committedSequence != sequence )
+			continue;
+
+		BlackBoxEvent( "SEH",
+			"firstChance seq=%ld code=0x%08lx address=0x%08x tid=%lu uptimeMs=%lu params=%lu info0=0x%08x info1=0x%08x",
+			sequence, event->code, event->address, event->threadId, event->tick,
+			event->parameterCount, event->info0, event->info1 );
+	}
+
+	gBlackBoxExceptionDrainedSequence = snapshot;
 }
 
 void BlackBoxInitialize( void )
@@ -123,9 +324,18 @@ void BlackBoxInitialize( void )
 	gBlackBoxDiskWriteFailures = 0;
 	gBlackBoxFlushFailures = 0;
 	gBlackBoxSubsystemCursor = 0;
+	gBlackBoxExceptionSequence = 0;
+	gBlackBoxExceptionDrainedSequence = 0;
+	gBlackBoxHeartbeatSequence = 0;
+	gBlackBoxHeartbeatTick = (LONG)gBlackBoxStartTick;
+	gBlackBoxHeartbeatScreen = -1;
+	gBlackBoxMainThreadId = GetCurrentThreadId();
+	gBlackBoxLastHealthCheckpointTick = gBlackBoxStartTick;
+	gBlackBoxLastHealthEventTick = gBlackBoxStartTick;
 	memset( gBlackBoxEvents, 0, sizeof( gBlackBoxEvents ) );
 	memset( gBlackBoxCheckpoints, 0, sizeof( gBlackBoxCheckpoints ) );
 	memset( gBlackBoxSubsystems, 0, sizeof( gBlackBoxSubsystems ) );
+	memset( gBlackBoxExceptions, 0, sizeof( gBlackBoxExceptions ) );
 	lstrcpynA( gBlackBoxCheckpoint, "initialized", BLACKBOX_CHECKPOINT_CHARS );
 
 	// Preserve several prior runs. A user can restart after a CTD without
@@ -142,13 +352,28 @@ void BlackBoxInitialize( void )
 		NULL );
 
 	gBlackBoxInitialized = TRUE;
-	BlackBoxEvent( "ENGINE", "Black box initialized pid=%lu tid=%lu", GetCurrentProcessId(), GetCurrentThreadId() );
+
+	// First-chance structured-exception feed. This records the earliest evidence
+	// of memory corruption/access faults even if another handler later masks it.
+	gBlackBoxVectoredHandler = AddVectoredExceptionHandler( 1, BlackBoxVectoredExceptionHandler );
+
+	// A separate watchdog writes to its own bounded-per-run file and never takes
+	// the main recorder critical section. A hung main thread therefore cannot
+	// prevent us from preserving stall evidence.
+	gBlackBoxWatchdogStopEvent = CreateEventA( NULL, TRUE, FALSE, NULL );
+	if( gBlackBoxWatchdogStopEvent != NULL )
+		gBlackBoxWatchdogThread = CreateThread( NULL, 0, BlackBoxWatchdogThreadProc, NULL, 0, NULL );
+
+	BlackBoxEvent( "ENGINE", "Black box initialized pid=%lu tid=%lu watchdog=%s veh=%s",
+		GetCurrentProcessId(), GetCurrentThreadId(),
+		gBlackBoxWatchdogThread != NULL ? "yes" : "no",
+		gBlackBoxVectoredHandler != NULL ? "yes" : "no" );
 #ifdef _DEBUG
-	BlackBoxEvent( "ENGINE", "buildDate=%s buildTime=%s config=Debug pointerBits=%u recorderVersion=2 eventSlots=%u checkpointSlots=%u",
-		__DATE__, __TIME__, (UINT32)(sizeof(void*) * 8), (UINT32)BLACKBOX_EVENT_SLOTS, (UINT32)BLACKBOX_CHECKPOINT_SLOTS );
+	BlackBoxEvent( "ENGINE", "buildDate=%s buildTime=%s config=Debug pointerBits=%u recorderVersion=3 eventSlots=%u checkpointSlots=%u exceptionSlots=%u",
+		__DATE__, __TIME__, (UINT32)(sizeof(void*) * 8), (UINT32)BLACKBOX_EVENT_SLOTS, (UINT32)BLACKBOX_CHECKPOINT_SLOTS, (UINT32)BLACKBOX_EXCEPTION_SLOTS );
 #else
-	BlackBoxEvent( "ENGINE", "buildDate=%s buildTime=%s config=Release pointerBits=%u recorderVersion=2 eventSlots=%u checkpointSlots=%u",
-		__DATE__, __TIME__, (UINT32)(sizeof(void*) * 8), (UINT32)BLACKBOX_EVENT_SLOTS, (UINT32)BLACKBOX_CHECKPOINT_SLOTS );
+	BlackBoxEvent( "ENGINE", "buildDate=%s buildTime=%s config=Release pointerBits=%u recorderVersion=3 eventSlots=%u checkpointSlots=%u exceptionSlots=%u",
+		__DATE__, __TIME__, (UINT32)(sizeof(void*) * 8), (UINT32)BLACKBOX_EVENT_SLOTS, (UINT32)BLACKBOX_CHECKPOINT_SLOTS, (UINT32)BLACKBOX_EXCEPTION_SLOTS );
 #endif
 
 	exePath[0] = 0;
@@ -165,9 +390,30 @@ void BlackBoxShutdown( void )
 	if( !gBlackBoxInitialized )
 		return;
 
-	BlackBoxEvent( "ENGINE", "Clean shutdown uptimeMs=%lu events=%ld checkpoints=%ld diskWriteFailures=%ld flushFailures=%ld",
+	BlackBoxEvent( "ENGINE", "Clean shutdown uptimeMs=%lu events=%ld checkpoints=%ld firstChance=%ld heartbeats=%ld diskWriteFailures=%ld flushFailures=%ld",
 		BlackBoxUptimeMs(), gBlackBoxEventSequence, gBlackBoxCheckpointSequence,
+		gBlackBoxExceptionSequence, gBlackBoxHeartbeatSequence,
 		gBlackBoxDiskWriteFailures, gBlackBoxFlushFailures );
+
+	if( gBlackBoxVectoredHandler != NULL )
+	{
+		RemoveVectoredExceptionHandler( gBlackBoxVectoredHandler );
+		gBlackBoxVectoredHandler = NULL;
+	}
+
+	if( gBlackBoxWatchdogStopEvent != NULL )
+		SetEvent( gBlackBoxWatchdogStopEvent );
+	if( gBlackBoxWatchdogThread != NULL )
+	{
+		WaitForSingleObject( gBlackBoxWatchdogThread, 2000 );
+		CloseHandle( gBlackBoxWatchdogThread );
+		gBlackBoxWatchdogThread = NULL;
+	}
+	if( gBlackBoxWatchdogStopEvent != NULL )
+	{
+		CloseHandle( gBlackBoxWatchdogStopEvent );
+		gBlackBoxWatchdogStopEvent = NULL;
+	}
 
 	EnterCriticalSection( &gBlackBoxLock );
 	if( gBlackBoxFile != INVALID_HANDLE_VALUE )
@@ -282,6 +528,66 @@ void BlackBoxCheckpoint( const char *subsystem, const char *format, ... )
 	gBlackBoxSubsystems[subsystemSlot].tick = uptime;
 	gBlackBoxSubsystems[subsystemSlot].threadId = threadId;
 	LeaveCriticalSection( &gBlackBoxLock );
+}
+
+void BlackBoxHeartbeat( DWORD currentScreen )
+{
+	DWORD now;
+	DWORD previousTick;
+	DWORD gapMs;
+	DWORD handles = 0;
+	DWORD gdiObjects = 0;
+	DWORD userObjects = 0;
+	MEMORYSTATUS memoryStatus;
+	LONG heartbeatSequence;
+
+	if( !gBlackBoxInitialized )
+		return;
+
+	now = GetTickCount();
+	previousTick = (DWORD)InterlockedExchange( &gBlackBoxHeartbeatTick, (LONG)now );
+	InterlockedExchange( &gBlackBoxHeartbeatScreen, (LONG)currentScreen );
+	heartbeatSequence = InterlockedIncrement( &gBlackBoxHeartbeatSequence );
+	gapMs = now - previousTick;
+
+	// If the loop eventually recovers, preserve the exact duration in the
+	// normal durable timeline as well as the watchdog's independent file.
+	if( heartbeatSequence > 1 && gapMs >= BLACKBOX_WATCHDOG_STALL_MS )
+	{
+		BlackBoxEvent( "STALL", "main loop resumed after gapMs=%lu screen=%lu heartbeat=%ld",
+			gapMs, currentScreen, heartbeatSequence );
+	}
+
+	// Drain first-chance fatal-class exceptions from the lock-free emergency
+	// feed after control safely returns to the main loop.
+	BlackBoxDrainExceptionFeed();
+
+	if( ( now - gBlackBoxLastHealthCheckpointTick ) >= BLACKBOX_HEALTH_CHECKPOINT_MS )
+	{
+		memset( &memoryStatus, 0, sizeof( memoryStatus ) );
+		memoryStatus.dwLength = sizeof( memoryStatus );
+		GlobalMemoryStatus( &memoryStatus );
+		GetProcessHandleCount( GetCurrentProcess(), &handles );
+		gdiObjects = GetGuiResources( GetCurrentProcess(), GR_GDIOBJECTS );
+		userObjects = GetGuiResources( GetCurrentProcess(), GR_USEROBJECTS );
+
+		BlackBoxCheckpoint( "HEALTH",
+			"heartbeat=%ld screen=%lu gapMs=%lu handles=%lu gdi=%lu user=%lu memLoad=%lu availPhysMB=%lu",
+			heartbeatSequence, currentScreen, gapMs, handles, gdiObjects, userObjects,
+			memoryStatus.dwMemoryLoad, memoryStatus.dwAvailPhys / (1024 * 1024) );
+		gBlackBoxLastHealthCheckpointTick = now;
+
+		if( ( now - gBlackBoxLastHealthEventTick ) >= BLACKBOX_HEALTH_EVENT_MS )
+		{
+			BlackBoxEvent( "HEALTH",
+				"heartbeat=%ld screen=%lu handles=%lu gdi=%lu user=%lu memLoad=%lu availPhysMB=%lu availPageMB=%lu",
+				heartbeatSequence, currentScreen, handles, gdiObjects, userObjects,
+				memoryStatus.dwMemoryLoad,
+				memoryStatus.dwAvailPhys / (1024 * 1024),
+				memoryStatus.dwAvailPageFile / (1024 * 1024) );
+			gBlackBoxLastHealthEventTick = now;
+		}
+	}
 }
 
 //If we are to use exception handling
@@ -527,13 +833,17 @@ static void BlackBoxDumpToCrashReport( HWFILE hFile, const EXCEPTION_RECORD *pRe
 	GlobalMemoryStatus( &memoryStatus );
 
 	ErrorLog( hFile, "================ VENGEANCE BLACK BOX ================\r\n" );
-	ErrorLog( hFile, "Recorder version: 2\r\n" );
+	ErrorLog( hFile, "Recorder version: 3\r\n" );
 	ErrorLog( hFile, "Process: pid=%lu crashThread=%lu uptimeMs=%lu\r\n",
 		GetCurrentProcessId(), GetCurrentThreadId(), uptime );
-	ErrorLog( hFile, "Recorder health: events=%ld checkpoints=%ld diskWriteFailures=%ld flushFailures=%ld fileOpen=%s\r\n",
-		gBlackBoxEventSequence, gBlackBoxCheckpointSequence,
-		gBlackBoxDiskWriteFailures, gBlackBoxFlushFailures,
+	ErrorLog( hFile, "Recorder health: events=%ld checkpoints=%ld firstChance=%ld heartbeats=%ld diskWriteFailures=%ld flushFailures=%ld fileOpen=%s\r\n",
+		gBlackBoxEventSequence, gBlackBoxCheckpointSequence, gBlackBoxExceptionSequence,
+		gBlackBoxHeartbeatSequence, gBlackBoxDiskWriteFailures, gBlackBoxFlushFailures,
 		gBlackBoxFile != INVALID_HANDLE_VALUE ? "yes" : "no" );
+	ErrorLog( hFile, "Main-loop heartbeat: mainTid=%lu lastTick=%lu lastScreen=%ld ageMs=%lu watchdog=%s\r\n",
+		gBlackBoxMainThreadId, (DWORD)gBlackBoxHeartbeatTick, gBlackBoxHeartbeatScreen,
+		GetTickCount() - (DWORD)gBlackBoxHeartbeatTick,
+		gBlackBoxWatchdogThread != NULL ? "running" : "not-running" );
 	ErrorLog( hFile, "Memory: load=%lu%% totalPhysMB=%lu availPhysMB=%lu totalPageMB=%lu availPageMB=%lu\r\n",
 		memoryStatus.dwMemoryLoad,
 		memoryStatus.dwTotalPhys / (1024 * 1024),
@@ -566,6 +876,30 @@ static void BlackBoxDumpToCrashReport( HWFILE hFile, const EXCEPTION_RECORD *pRe
 
 			ErrorLog( hFile, "Access violation: operation=%s address=0x%08x\r\n",
 				operation, pRecord->ExceptionInformation[1] );
+		}
+	}
+
+	{
+		LONG exceptionSnapshot = gBlackBoxExceptionSequence;
+		LONG exceptionFirst = exceptionSnapshot > BLACKBOX_EXCEPTION_SLOTS ?
+			exceptionSnapshot - BLACKBOX_EXCEPTION_SLOTS + 1 : 1;
+		LONG exceptionSequence;
+
+		ErrorLog( hFile, "\r\nRecent first-chance critical exceptions (oldest to newest):\r\n" );
+		if( exceptionSnapshot <= 0 )
+			ErrorLog( hFile, "  <none>\r\n" );
+
+		for( exceptionSequence = exceptionFirst; exceptionSequence <= exceptionSnapshot; ++exceptionSequence )
+		{
+			LONG exceptionSlot = ( exceptionSequence - 1 ) % BLACKBOX_EXCEPTION_SLOTS;
+			BLACKBOX_EXCEPTION_EVENT *event = &gBlackBoxExceptions[exceptionSlot];
+			if( event->committedSequence != exceptionSequence )
+				continue;
+
+			ErrorLog( hFile,
+				"  seq=%ld uptimeMs=%lu tid=%lu code=0x%08lx address=0x%08x params=%lu info0=0x%08x info1=0x%08x\r\n",
+				exceptionSequence, event->tick, event->threadId, event->code, event->address,
+				event->parameterCount, event->info0, event->info1 );
 		}
 	}
 
