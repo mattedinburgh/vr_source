@@ -10854,8 +10854,12 @@ void EnsureEnemyCommandRoles()
 			SOLDIERTYPE* p = MercPtrs[i];
 			if (!p || !p->bActive || !p->bInSector || p->stats.bLife < OKLIFE || (p->usSoldierFlagMask & SOLDIER_POW))
 				continue;
-			INT32 score = (p->ubSoldierClass == SOLDIER_CLASS_ELITE ? 10000 : 0) +
-				(NUM_SKILL_TRAITS(p, SQUADLEADER_NT) * 2000) + p->stats.bExpLevel * 100 + p->stats.bLeadership;
+			// A General represents command competence first, combat class second. A real
+			// Squadleader should outrank a merely elite shooter; Elite/experience/leadership
+			// remain useful tie-breakers when several command-capable candidates exist.
+			INT32 score = NUM_SKILL_TRAITS(p, SQUADLEADER_NT) * 12000 +
+				(p->ubSoldierClass == SOLDIER_CLASS_ELITE ? 4000 : 0) +
+				p->stats.bExpLevel * 250 + p->stats.bLeadership * 10;
 			if (score > bestScore) { bestScore = score; pBest = p; }
 		}
 		if (pBest)
