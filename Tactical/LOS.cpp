@@ -8307,7 +8307,7 @@ void CalcTargetMovementOffset( SOLDIERTYPE *pShooter, SOLDIERTYPE *pTarget, OBJE
 	// Find the current position of this soldier.
 	INT16 sCurPosX = 0;
 	INT16 sCurPosY = 0;
-	ConvertGridNoToCellXY(pTarget->sGridNo, &sCurPosX, &sCurPosY);
+	ConvertGridNoToCenterCellXY(pTarget->sGridNo, &sCurPosX, &sCurPosY);
 
 	// Figure out the difference between the two coordinates.
 	INT32 sDeltaX = sStartPosX - sCurPosX;
