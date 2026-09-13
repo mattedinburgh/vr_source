@@ -820,11 +820,21 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 			greenBias = 1;
 			blueBias = -6;
 		}
-		else if ( (ubType >= FIRSTWALL && ubType <= LASTDOOR) ||
-				  (ubType >= FIRSTROOF && ubType <= LASTSLANTROOF) )
+		else if ( ubType >= FIRSTROOF && ubType <= LASTSLANTROOF )
 		{
-			// B1 oil-rig architecture: stronger weathering and material separation,
-			// palette-only so authored JSD/collision/destruction remain unchanged.
+			// B1 roofs that still use authored art: push sun bleaching, oxidised steel
+			// and edge contrast harder than walls so the industrial roofscape reads
+			// clearly from the tactical camera. Palette-only; structure data is untouched.
+			saturationPercent = 96;
+			contrastPercent = 121;
+			redBias = 6;
+			greenBias = 2;
+			blueBias = -6;
+		}
+		else if ( ubType >= FIRSTWALL && ubType <= LASTDOOR )
+		{
+			// B1 oil-rig walls/doors: weathered and slightly warm without changing
+			// authored JSD/collision/destruction behaviour.
 			saturationPercent = 94;
 			contrastPercent = 116;
 			redBias = 4;
@@ -875,6 +885,11 @@ static BOOLEAN IsMandatoryB1RemasterType( UINT8 ubType )
 		case SECONDFLOOR:
 		case THIRDFLOOR:
 		case FOURTHFLOOR:
+		// Audited B1 roof replacements. Their paired JSD files are byte-identical
+		// to the authored originals, so only the visible STI artwork changes.
+		case FIRSTROOF:
+		case FIRSTONROOF:
+		case SECONDONROOF:
 			return TRUE;
 		default:
 			return FALSE;
@@ -935,9 +950,10 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 	// Adjust flag for same as default used...
 	gbSameAsDefaultSurfaceUsed[ ubType ] = FALSE;
 
-	// B1 Oronegro oil-rig remaster: Tier 1 only. Terrain, water, roads and floors
-	// are remastered; structure-bearing walls/roofs/objects remain on authored assets
-	// until their destruction/script/JSD audit is complete.
+	// B1 Oronegro oil-rig remaster. Terrain, water, roads and floors are remastered.
+	// Three roof sets are also enabled after a JSD identity audit confirmed their
+	// structure data is byte-identical to the authored originals. Other walls/roofs/
+	// objects remain authored until their destruction/script/JSD audit is complete.
 	STR8 pLoadFilename = cFilename;
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG && ubTilesetID == 50 )
 	{
@@ -957,6 +973,9 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 			case SECONDFLOOR:      pLoadFilename = "B1_P-FLOOR3.STI"; break;
 			case THIRDFLOOR:       pLoadFilename = "B1_WELFLOR1.STI"; break;
 			case FOURTHFLOOR:      pLoadFilename = "B1_WELFLOR2.STI"; break;
+			case FIRSTROOF:        pLoadFilename = "B1_W-ROOF2.sti"; break;
+			case FIRSTONROOF:      pLoadFilename = "B1_Rooffan.sti"; break;
+			case SECONDONROOF:     pLoadFilename = "B1_Oil_OROOF.sti"; break;
 		}
 	}
 
