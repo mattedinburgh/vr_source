@@ -2764,14 +2764,10 @@ BOOLEAN BulletHitMerc( BULLET * pBullet, STRUCTURE * pStructure, BOOLEAN fIntend
 		// Buckshot is collapsed to the first pellet hit so one trigger pull does
 		// not flood the battle log with near-identical entries.
 		if ( UsingNewCTHSystem() && pBullet->ubFirerID != NOBODY &&
-			 pFirer->bTeam == gbPlayerNum && !(pBullet->fFragment) )
+			 pFirer->bTeam == gbPlayerNum && !(pBullet->fFragment) &&
+			 !(pBullet->usFlags & BULLET_FLAG_BUCKSHOT) )
 		{
-			BOOLEAN fLogHit = TRUE;
-			if ( pBullet->usFlags & BULLET_FLAG_BUCKSHOT )
-				fLogHit = (pTarget->bNumPelletsHitBy == 1);
-
-			if ( fLogHit )
-				BattleLogAddNCTHHit( pBullet->iBullet, pTarget->ubID, (INT16)iDamage );
+			BattleLogAddNCTHHit( pBullet->iBullet, pTarget->ubID, (INT16)iDamage );
 		}
 
 		//////////////////////////////////////////////////////////////////////////////////////////////
@@ -3065,7 +3061,8 @@ void BulletHitStructure( BULLET * pBullet, UINT16 usStructureID, INT32 iImpact, 
 	// clean fly-by it ended because terrain/cover intercepted the trajectory.
 	// Record that distinction before StructureHit removes/frees the bullet.
 	if ( fStopped && pBullet->pFirer != NULL &&
-		 pBullet->pFirer->bTeam == gbPlayerNum && UsingNewCTHSystem() )
+		 pBullet->pFirer->bTeam == gbPlayerNum && UsingNewCTHSystem() &&
+		 !(pBullet->usFlags & BULLET_FLAG_BUCKSHOT) )
 	{
 		UINT8 ubBlockReason = BATTLELOG_BLOCK_STRUCTURE;
 		if ( usStructureID == INVALID_STRUCTURE_ID )
