@@ -114,6 +114,7 @@
 #include "Creature Spreading.h"			// added by Flugente forResetCreatureAttackVariables()
 #endif
 #include "connect.h"
+#include "Strategic Movement.h"
 
 #include "Luaglobal.h"
 #include "LuaInitNPCs.h"
@@ -7019,6 +7020,13 @@ BOOLEAN CheckForEndOfBattle( BOOLEAN fAnEnemyRetreated )
 
     if ( fBattleLost || fBattleWon )
     {
+		if( !gbWorldSectorZ )
+		{
+			// The no-second-escape rule lasts through the follow-up battle, then
+			// releases regardless of which side won.
+			ClearEnemyRetreatLockInSector( (UINT8)gWorldSectorX, (UINT8)gWorldSectorY );
+		}
+
         if( !gbWorldSectorZ )
         {
             SectorInfo[ SECTOR( gWorldSectorX, gWorldSectorY) ].bLastKnownEnemies = NumEnemiesInSector( gWorldSectorX, gWorldSectorY );
