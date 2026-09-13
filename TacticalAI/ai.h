@@ -341,6 +341,7 @@ BOOLEAN AILastSurvivorPressure(SOLDIERTYPE *pSoldier);
 UINT8 AILocalRoutPressure(SOLDIERTYPE *pSoldier);
 INT8 AIHopelessOddsModifier(SOLDIERTYPE *pSoldier);
 BOOLEAN AIDisengagementActive(SOLDIERTYPE *pSoldier);
+void AIForceDisengagementState(SOLDIERTYPE *pSoldier, UINT8 ubTurns);
 BOOLEAN AIEscapeActive(SOLDIERTYPE *pSoldier);
 BOOLEAN AIShouldStartEscape(SOLDIERTYPE *pSoldier);
 BOOLEAN AIShouldStartDisengagement(SOLDIERTYPE *pSoldier);
