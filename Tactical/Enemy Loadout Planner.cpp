@@ -836,6 +836,193 @@ static UINT8 AttachmentBudgetMaximum(ENEMY_LOADOUT_ROLE Role, BOOLEAN fElite, UI
 	return maximum;
 }
 
+void InitEnemyLoadoutAssignmentState(
+	ENEMY_LOADOUT_ASSIGNMENT_STATE *pAssignment,
+	const ENEMY_LOADOUT_BATCH *pBatch)
+{
+	if ( !pAssignment )
+		return;
+
+	memset(pAssignment, 0, sizeof(ENEMY_LOADOUT_ASSIGNMENT_STATE));
+
+	if ( pBatch )
+		pAssignment->Remaining = *pBatch;
+}
+
+static UINT8 *EnemyLoadoutClassRoleTickets(
+	ENEMY_LOADOUT_CELL *pCell,
+	INT8 bSoldierClass)
+{
+	if ( !pCell )
+		return NULL;
+
+	switch ( bSoldierClass )
+	{
+		case SOLDIER_CLASS_ADMINISTRATOR:
+			return pCell->ubAdminRoleCount;
+		case SOLDIER_CLASS_ARMY:
+			return pCell->ubRegularRoleCount;
+		case SOLDIER_CLASS_ELITE:
+			return pCell->ubEliteRoleCount;
+		default:
+			return NULL;
+	}
+}
+
+static UINT8 *EnemyLoadoutClassCellCursor(
+	ENEMY_LOADOUT_ASSIGNMENT_STATE *pAssignment,
+	INT8 bSoldierClass)
+{
+	if ( !pAssignment )
+		return NULL;
+
+	switch ( bSoldierClass )
+	{
+		case SOLDIER_CLASS_ADMINISTRATOR:
+			return &pAssignment->ubNextAdminCell;
+		case SOLDIER_CLASS_ARMY:
+			return &pAssignment->ubNextRegularCell;
+		case SOLDIER_CLASS_ELITE:
+			return &pAssignment->ubNextEliteCell;
+		default:
+			return NULL;
+	}
+}
+
+static BOOLEAN ConsumeEnemyRoleFromCell(
+	ENEMY_LOADOUT_CELL *pCell,
+	INT8 bSoldierClass,
+	ENEMY_LOADOUT_ROLE *pRole)
+{
+	static const ENEMY_LOADOUT_ROLE consumptionPriority[] =
+	{
+		ENEMY_ROLE_SQUAD_LEADER,
+		ENEMY_ROLE_RADIO_OPERATOR,
+		ENEMY_ROLE_MEDIC,
+		ENEMY_ROLE_AUTOMATIC_RIFLEMAN,
+		ENEMY_ROLE_GRENADIER,
+		ENEMY_ROLE_MARKSMAN,
+		ENEMY_ROLE_SNIPER,
+		ENEMY_ROLE_AT_SPECIALIST,
+		ENEMY_ROLE_SCOUT,
+		ENEMY_ROLE_ASSAULT,
+		ENEMY_ROLE_RIFLEMAN,
+		ENEMY_ROLE_MORTAR
+	};
+	UINT8 *pubTickets;
+
+	if ( !pCell || !pRole )
+		return FALSE;
+
+	pubTickets = EnemyLoadoutClassRoleTickets(pCell, bSoldierClass);
+	if ( !pubTickets )
+		return FALSE;
+
+	for (UINT8 i = 0; i < sizeof(consumptionPriority) / sizeof(consumptionPriority[0]); ++i)
+	{
+		ENEMY_LOADOUT_ROLE Role = consumptionPriority[i];
+
+		if ( pubTickets[Role] == 0 )
+			continue;
+
+		--pubTickets[Role];
+		if ( pCell->ubRoleCount[Role] > 0 )
+			--pCell->ubRoleCount[Role];
+
+		*pRole = Role;
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+BOOLEAN ConsumeEnemyLoadoutRoleTicket(
+	ENEMY_LOADOUT_ASSIGNMENT_STATE *pAssignment,
+	INT8 bSoldierClass,
+	UINT8 *pubCell,
+	ENEMY_LOADOUT_ROLE *pRole)
+{
+	UINT8 *pubCursor;
+	UINT8 ubCellCount;
+	UINT8 ubStart;
+
+	if ( !pAssignment || !pRole )
+		return FALSE;
+
+	ubCellCount = pAssignment->Remaining.ubCellCount;
+	if ( ubCellCount == 0 )
+		return FALSE;
+
+	pubCursor = EnemyLoadoutClassCellCursor(pAssignment, bSoldierClass);
+	if ( !pubCursor )
+		return FALSE;
+
+	ubStart = (UINT8)(*pubCursor % ubCellCount);
+
+	for (UINT8 offset = 0; offset < ubCellCount; ++offset)
+	{
+		UINT8 ubCell = (UINT8)((ubStart + offset) % ubCellCount);
+
+		if ( ConsumeEnemyRoleFromCell(
+				&pAssignment->Remaining.Cells[ubCell],
+				bSoldierClass,
+				pRole) )
+		{
+			*pubCursor = (UINT8)((ubCell + 1) % ubCellCount);
+			if ( pubCell )
+				*pubCell = ubCell;
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+BOOLEAN ConsumeEnemyLoadoutPlan(
+	ENEMY_LOADOUT_ASSIGNMENT_STATE *pAssignment,
+	INT8 bSoldierClass,
+	INT8 bExpLevel,
+	UINT8 ubProgress,
+	INT8 bEquipmentRating,
+	BOOLEAN fNight,
+	UINT8 *pubCell,
+	ENEMY_LOADOUT_PLAN *pPlan)
+{
+	ENEMY_LOADOUT_ROLE Role;
+	UINT8 ubCell = 0;
+
+	if ( !pPlan )
+		return FALSE;
+
+	memset(pPlan, 0, sizeof(ENEMY_LOADOUT_PLAN));
+
+	if ( !ConsumeEnemyLoadoutRoleTicket(
+			pAssignment,
+			bSoldierClass,
+			&ubCell,
+			&Role) )
+	{
+		return FALSE;
+	}
+
+	BuildEnemyLoadoutPlan(
+		pPlan,
+		Role,
+		bSoldierClass,
+		ubProgress,
+		bEquipmentRating,
+		bExpLevel,
+		fNight);
+
+	if ( !ValidateEnemyLoadoutPlan(pPlan) )
+		return FALSE;
+
+	if ( pubCell )
+		*pubCell = ubCell;
+
+	return TRUE;
+}
+
 void BuildEnemyLoadoutPlan(
 	ENEMY_LOADOUT_PLAN *pPlan,
 	ENEMY_LOADOUT_ROLE Role,
