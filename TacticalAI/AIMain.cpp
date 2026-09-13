@@ -60,6 +60,7 @@
 #include "connect.h"
 #include "ExceptionHandling.h"
 #include "MilitiaSquads.h"	// routed militia strategic traversal
+#include "Strategic Movement.h"	// enemy retreat destination battles
 // needed to use the modularized tactical AI:
 #include "ModularizedTacticalAI/include/Plan.h"
 #include "ModularizedTacticalAI/include/PlanFactoryLibrary.h"
@@ -2878,6 +2879,12 @@ void HandleAITacticalTraversal( SOLDIERTYPE * pSoldier )
 				++pSectorInfo->ubNumAdmins;
 				break;
 
+			}
+
+
+			if( pSoldier->bTeam == ENEMY_TEAM )
+			{
+				QueueEnemyRetreatConflict( (UINT8)iMapX, (UINT8)iMapY );
 			}
 
 			ProcessQueenCmdImplicationsOfDeath( pSoldier );
