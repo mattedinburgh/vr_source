@@ -2756,6 +2756,7 @@ public:
 
 void HandleTakeDamageDeath( SOLDIERTYPE *pSoldier, UINT8 bOldLife, UINT8 ubReason );
 BOOLEAN IsBleedoutCasualty( SOLDIERTYPE *pSoldier );
+BOOLEAN IsCarryableLivingCasualty( SOLDIERTYPE *pSoldier );
 void ProcessBleedoutCasualties( );
 
 // Lightweight, transient rescue dragging for living downed casualties.
