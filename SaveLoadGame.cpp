@@ -6088,6 +6088,7 @@ BOOLEAN LoadSavedGame( int ubSavedGameID )
 	// successful load so a same-sector quickload cannot inherit future AI decisions.
 	AIResetRetreatCoordinationStateForLoad();
 	AIResetEscapePlanStateForLoad();
+	AIResetDecisionCoordinationStateForLoad();
 
 	// CJC January 13: we can't do this because (a) it resets militia IN THE MIDDLE OF 
 	// COMBAT, and (b) if we add militia to the teams while LOADING_SAVED_GAME is set,
