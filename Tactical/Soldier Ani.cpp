@@ -364,6 +364,40 @@ BOOLEAN AdjustToNextAnimationFrame( SOLDIERTYPE *pSoldier )
 
 			case 430:
 				{
+					// 1.13-style manual window breaking: CROWBAR_ATTACK uses this
+					// animation impact frame. Vengeance already had BreakWindow()/
+					// CanBreakWindow(), but the impact callback that actually changes
+					// the window structure was missing.
+					if ( pSoldier->usAnimState == CROWBAR_ATTACK && pSoldier->CanBreakWindow() )
+					{
+						INT32 sWindowGridNo = pSoldier->sGridNo;
+						if ( pSoldier->ubDirection == NORTH || pSoldier->ubDirection == WEST )
+							sWindowGridNo = NewGridNo( pSoldier->sGridNo, (UINT16)DirectionInc( (UINT8)pSoldier->ubDirection ) );
+
+						if ( !TileIsOutOfBounds( sWindowGridNo ) )
+						{
+							STRUCTURE *pStructure = FindStructure( sWindowGridNo, STRUCTURE_WALLNWINDOW );
+							if ( pStructure && !(pStructure->fFlags & STRUCTURE_OPEN) )
+							{
+								WindowHit( sWindowGridNo, pStructure->usStructureID,
+									(pSoldier->ubDirection == SOUTH || pSoldier->ubDirection == EAST), TRUE );
+
+								// Match 1.13 behaviour: smashing glass can wear the crowbar/rifle.
+								UINT16 usItem = pSoldier->inv[HANDPOS].usItem;
+								if ( Chance( 50 - 10 * min( 5, Item[usItem].bReliability ) ) )
+								{
+									if ( pSoldier->inv[HANDPOS][0]->data.objectStatus > 1 )
+										pSoldier->inv[HANDPOS][0]->data.objectStatus--;
+									if ( Random(100) < Item[usItem].usDamageChance &&
+										pSoldier->inv[HANDPOS][0]->data.sRepairThreshold > 1 )
+									{
+										pSoldier->inv[HANDPOS][0]->data.sRepairThreshold--;
+									}
+								}
+							}
+						}
+					}
+
 					DebugMsg(TOPIC_JA2,DBG_LEVEL_3,"AdjustToNextAnimationFrame: case 430");
 					// SHOOT GUN
 					// MAKE AN EVENT, BUT ONLY DO STUFF IF WE OWN THE GUY!
