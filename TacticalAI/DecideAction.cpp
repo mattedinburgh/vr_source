@@ -4024,6 +4024,7 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 			return bActionReturned;
 
 		if (SoldierAI(pSoldier) &&
+			AIAllowsComplexManeuver(pSoldier) &&
 			pSoldier->CheckInitialAP() &&
 			!pSoldier->aiData.bUnderFire &&
 			pSoldier->pathing.bLevel == 0 &&
@@ -10100,6 +10101,7 @@ INT8 DecideUseWirecutters(SOLDIERTYPE *pSoldier)
 
 	if (bWirecutterSlot != NO_SLOT &&
 		SoldierAI(pSoldier) &&
+		AIAllowsComplexManeuver(pSoldier) &&
 		!AIShouldAvoidAdvance(pSoldier) &&
 		(pSoldier->CheckInitialAP() || gfTurnBasedAI) &&
 		!pSoldier->aiData.bUnderFire &&
@@ -10242,6 +10244,7 @@ INT8 DecideUseGrenadeSpecial(SOLDIERTYPE *pSoldier)
 
 	DebugAI(AI_MSG_TOPIC, pSoldier, String("[Grenade for special purpose]"));		
 	if (gfTurnBasedAI &&
+		AIAllowsComplexManeuver(pSoldier) &&
 		!AIShouldAvoidAdvance(pSoldier) &&
 		!gfHiddenInterrupt &&
 		!gTacticalStatus.fInterruptOccurred &&
