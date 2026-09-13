@@ -8005,7 +8005,9 @@ static INT32 AIVisibleTargetNCTHQuality(SOLDIERTYPE *pSoldier, INT32 sTargetSpot
 
 	INT16 sMinAttackAP = MinAPsToAttack(pSoldier, sTargetSpot, ADDTURNCOST, 0, TRUE);
 	INT32 iBestQuality = 0;
-	if (sMinAttackAP > 0 && sMinAttackAP < pSoldier->bActionPoints)
+	// A zero-aim shot is still a valid practical firing solution when the minimum
+	// attack cost consumes all remaining AP. Do not misclassify it as 'cannot shoot'.
+	if (sMinAttackAP > 0 && sMinAttackAP <= pSoldier->bActionPoints)
 	{
 		INT8 bAimLevels = CalcAimingLevelsAvailableWithAP(
 			pSoldier, sTargetSpot, (INT8)__max(0, pSoldier->bActionPoints - sMinAttackAP));
@@ -8074,7 +8076,8 @@ INT8 AIEngagementRangeModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 	// For a personally visible target, use the same NCTH estimator as attack logic.
 	// A shot can therefore be 'inside range' yet still tell the soldier to close.
-	INT32 iNCTHQuality = AIVisibleTargetNCTHQuality(pSoldier, sTargetSpot);
+	INT32 iNCTHQuality = UsingNewCTHSystem() ?
+		AIVisibleTargetNCTHQuality(pSoldier, sTargetSpot) : -1;
 	if (iNCTHQuality >= 0)
 	{
 		if (iNCTHQuality < 10 && iDistance > __max(5, iPreferredMinRange))
