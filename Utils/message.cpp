@@ -544,13 +544,20 @@ static void BattleLogClampGeometry( void )
 
 	if ( gsBattleLogY < 0 )
 	{
-		// Prefer the existing lower-left widescreen margin beside the centered HUD.
-		// On narrower resolutions, where that margin is too small, sit directly
-		// above the tactical interface instead of covering merc portraits.
-		if ( INTERFACE_START_X >= gsBattleLogX + gsBattleLogW + 6 )
+		// With the tactical HUD right-anchored on widescreen, the entire lower-left
+		// strip is otherwise unused. Prefer it for the battle log so the log does
+		// not cover the tactical world. Use most of the strip, capped at 560 px.
+		INT16 sFreeLeftWidth = (INT16)(INTERFACE_START_X - gsBattleLogX - 6);
+		if ( sFreeLeftWidth >= 220 )
+		{
+			gsBattleLogW = (INT16)__max( gsBattleLogW, __min( 560, sFreeLeftWidth ) );
 			gsBattleLogY = (INT16)__max( 2, SCREEN_HEIGHT - gsBattleLogH - 4 );
+		}
 		else
+		{
+			// Narrow / 4:3 fallback: keep the log above the HUD rather than covering it.
 			gsBattleLogY = (INT16)__max( 2, INTERFACE_START_Y - gsBattleLogH - 4 );
+		}
 	}
 
 	gsBattleLogX = __max( 2, __min( gsBattleLogX, (INT16)(SCREEN_WIDTH - gsBattleLogW - 2) ) );
