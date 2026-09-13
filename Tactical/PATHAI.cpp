@@ -1175,9 +1175,11 @@ void AStarPathfinder::ExecuteAStarLogic()
 		}
 
 		INT16 AStarG = baseGCost + movementG;
-		//if the node is more costly in this path than in another open path, continue
-		if (GetAStarStatus(CurrentNode) == AStar_Open
-			&& AStarG >= GetAStarG(CurrentNode))
+		// A strictly more expensive route can be discarded immediately. Equal-G
+		// alternatives are kept until the stop-cover cost is known below so A* can
+		// prefer the safer route without sacrificing shortest-path optimality.
+		if (GetAStarStatus(CurrentNode) == AStar_Open &&
+			AStarG > GetAStarG(CurrentNode))
 		{
 			continue;
 		}
@@ -1214,6 +1216,20 @@ void AStarPathfinder::ExecuteAStarLogic()
 			}
 		}
 #endif
+
+		if (GetAStarStatus(CurrentNode) == AStar_Open &&
+			AStarG == GetAStarG(CurrentNode))
+		{
+#ifdef ASTAR_USING_EXTRACOVER
+			// Same AP/path cost: replace the open-node parent only when this route
+			// produces a strictly better stop-cover value.
+			if (extraGCoverCost >= GetExtraGCover(CurrentNode))
+				continue;
+#else
+			continue;
+#endif
+		}
+
 		int AStarH = CalcH();
 		int AStarF = (AStarG + extraGCoverCost) + AStarH;
 
@@ -1363,13 +1379,15 @@ INT16 AStarPathfinder::CalcAP(int const terrainCost, UINT8 const direction)
 
 		//case TRAVELCOST_DOOR:		movementAPCost = APBPConstants[AP_MOVEMENT_FLAT]; break;
 
-	case TRAVELCOST_FENCE:		movementAPCost = APBPConstants[AP_JUMPFENCE]; break;
-		///dddokno{
+	case TRAVELCOST_FENCE:
+		return (UsingNewInventorySystem() && FindBackpackOnSoldier(pSoldier) != ITEM_NOT_FOUND) ?
+			GetAPsToJumpFence(pSoldier, TRUE) : GetAPsToJumpFence(pSoldier, FALSE);
+
 	case TRAVELCOST_JUMPABLEWINDOW:
 	case TRAVELCOST_JUMPABLEWINDOW_N:
 	case TRAVELCOST_JUMPABLEWINDOW_W:
-		movementAPCost = APBPConstants[AP_JUMPFENCE]; break;
-		///dddokno}
+		return (UsingNewInventorySystem() && FindBackpackOnSoldier(pSoldier) != ITEM_NOT_FOUND) ?
+			GetAPsToJumpThroughWindows(pSoldier, TRUE) : GetAPsToJumpThroughWindows(pSoldier, FALSE);
 
 	case TRAVELCOST_OBSTACLE:
 	default:					return -1;	// Cost too much to be considered!
@@ -1454,23 +1472,6 @@ INT16 AStarPathfinder::CalcAP(int const terrainCost, UINT8 const direction)
 		case CRAWLING:
 			// Can't do it here.....
 			return -1;
-		}
-	}
-	//dddokno 
-	else if ( terrainCost == TRAVELCOST_JUMPABLEWINDOW
-		|| terrainCost == TRAVELCOST_JUMPABLEWINDOW_N
-		|| terrainCost == TRAVELCOST_JUMPABLEWINDOW_W )
-	{
-		switch(movementModeToUseForAPs)
-		{
-		case RUNNING:
-		case WALKING :
-		case SWATTING:
-			movementAPCost += APBPConstants[AP_CROUCH];
-			break;
-
-		default:
-			break;
 		}
 	}
 	//dddokno 
@@ -4568,6 +4569,14 @@ INT32 PlotPath(SOLDIERTYPE *pSold, INT32 sDestGridNo, INT8 bCopyRoute, INT8 bPlo
 				{
 					bIgnoreNextCost = TRUE;
 				}
+				else if (sSwitchValue == TRAVELCOST_JUMPABLEWINDOW ||
+					sSwitchValue == TRAVELCOST_JUMPABLEWINDOW_N ||
+					sSwitchValue == TRAVELCOST_JUMPABLEWINDOW_W)
+				{
+					// JUMPWINDOWS ends the current locomotion state. A following run must
+					// pay its normal startup cost.
+					usMovementModeBefore = WALKING;
+				}
 				else
 				{
 					usMovementModeBefore = usMovementModeToUseForAPs;
@@ -4595,8 +4604,13 @@ INT32 PlotPath(SOLDIERTYPE *pSold, INT32 sDestGridNo, INT8 bCopyRoute, INT8 bPlo
 
 					if (sSwitchValue != TRAVELCOST_FENCE)
 					{
+						BOOLEAN fWindowTraversal =
+							sSwitchValue == TRAVELCOST_JUMPABLEWINDOW ||
+							sSwitchValue == TRAVELCOST_JUMPABLEWINDOW_N ||
+							sSwitchValue == TRAVELCOST_JUMPABLEWINDOW_W;
 						UINT8 ubRunTerrainID = gpWorldLevelData[sTempGrid].ubTerrainID;
-						if (TERRAIN_IS_WATER(ubRunTerrainID) && pSold->pathing.bLevel == 0)
+						if (fWindowTraversal ||
+							(TERRAIN_IS_WATER(ubRunTerrainID) && pSold->pathing.bLevel == 0))
 							usRunModeBefore = WALKING;
 						else
 							usRunModeBefore = RUNNING;
