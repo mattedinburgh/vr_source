@@ -37,6 +37,7 @@
 #include "MilitiaSquads.h"
 #include "AIInternals.h"
 #include "Inventory Choosing.h"
+#include "Handle Items.h"
 
 //forward declarations of common classes to eliminate includes
 class OBJECTTYPE;
@@ -331,7 +332,14 @@ void ResetMilitia()
 		ubNumVet = MilitiaInSectorOfRank(gWorldSectorX, gWorldSectorY, ELITE_MILITIA);
 		UINT16 usTargetMilitiaCount = (UINT16)ubNumGreen + ubNumReg + ubNumVet;
 
-		std::vector<Inventory> preservedInventories;
+		struct MilitiaInventorySnapshot
+		{
+			Inventory inv;
+			INT32 sGridNo;
+			INT8 bLevel;
+		};
+
+		std::vector<MilitiaInventorySnapshot> preservedInventories;
 		preservedInventories.reserve( usTargetMilitiaCount );
 
 		for ( UINT32 cnt = gTacticalStatus.Team[MILITIA_TEAM].bFirstID;
@@ -347,7 +355,11 @@ void ResetMilitia()
 
 			if ( preservedInventories.size() < usTargetMilitiaCount )
 			{
-				preservedInventories.push_back( pMilitia->inv );
+				MilitiaInventorySnapshot snapshot;
+				snapshot.inv = pMilitia->inv;
+				snapshot.sGridNo = pMilitia->sGridNo;
+				snapshot.bLevel = pMilitia->pathing.bLevel;
+				preservedInventories.push_back( snapshot );
 			}
 			else
 			{
@@ -384,7 +396,7 @@ void ResetMilitia()
 
 			if ( usPreservedIndex < preservedInventories.size() )
 			{
-				pMilitia->inv = preservedInventories[usPreservedIndex++];
+				pMilitia->inv = preservedInventories[usPreservedIndex++].inv;
 				pMilitia->usSoldierFlagMask &= ~SOLDIER_EQUIPMENT_DROPPED;
 				pMilitia->HandleFlashLights();
 			}
@@ -399,6 +411,34 @@ void ResetMilitia()
 				pMilitia->inv = createStruct.Inv;
 				pMilitia->usSoldierFlagMask &= ~SOLDIER_EQUIPMENT_DROPPED;
 				pMilitia->HandleFlashLights();
+			}
+		}
+
+		// Defensive fallback: if map placement limits unexpectedly created fewer
+		// militia than requested, return any unmatched sector-issued items instead
+		// of losing them when the temporary snapshots are destroyed.
+		while ( usPreservedIndex < preservedInventories.size() )
+		{
+			MilitiaInventorySnapshot &snapshot = preservedInventories[usPreservedIndex++];
+			UINT8 invSize = (UINT8)snapshot.inv.size();
+			for ( UINT8 slot = 0; slot < invSize; ++slot )
+			{
+				OBJECTTYPE *pObj = &snapshot.inv[slot];
+				if ( pObj->exists() &&
+					 !(pObj->fFlags & OBJECT_UNDROPPABLE) &&
+					 !Item[pObj->usItem].defaultundroppable &&
+					 ((*pObj)[0]->data.sObjectFlag & TAKEN_BY_MILITIA) )
+				{
+					(*pObj)[0]->data.sObjectFlag &= ~TAKEN_BY_MILITIA;
+					if ( !gGameExternalOptions.fMilitiaUseSectorInventory_Ammo &&
+						 (Item[pObj->usItem].usItemClass & IC_GUN) )
+					{
+						(*pObj)[0]->data.gun.ubGunShotsLeft = 0;
+					}
+					AddItemToPool( snapshot.sGridNo, pObj, 1, snapshot.bLevel,
+						(WOLRD_ITEM_FIND_SWEETSPOT_FROM_GRIDNO | WORLD_ITEM_REACHABLE), -1 );
+					DeleteObj( pObj );
+				}
 			}
 		}
 
