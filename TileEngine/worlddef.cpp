@@ -774,14 +774,6 @@ static BOOLEAN IsMandatoryB1RemasterType( UINT8 ubType )
 		case SECONDFLOOR:
 		case THIRDFLOOR:
 		case FOURTHFLOOR:
-		case THIRDOSTRUCT:
-		case FIRSTWALL:
-		case SECONDWALL:
-		case THIRDWALL:
-		case FOURTHWALL:
-		case FIRSTROOF:
-		case FIRSTONROOF:
-		case SECONDONROOF:
 			return TRUE;
 		default:
 			return FALSE;
@@ -823,24 +815,6 @@ static BOOLEAN ValidateB1MapTileReference( UINT8 ubType, UINT16 usSubIndex, INT3
 	return TRUE;
 }
 
-static BOOLEAN IsMandatoryB1StructureType( UINT32 ubType )
-{
-	switch ( ubType )
-	{
-		case THIRDOSTRUCT:
-		case FIRSTWALL:
-		case SECONDWALL:
-		case THIRDWALL:
-		case FOURTHWALL:
-		case FIRSTROOF:
-		case FIRSTONROOF:
-		case SECONDONROOF:
-			return TRUE;
-		default:
-			return FALSE;
-	}
-}
-
 BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLEAN fGetFromRoot )
 {
 	// Add tile surface
@@ -860,8 +834,9 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 	// Adjust flag for same as default used...
 	gbSameAsDefaultSurfaceUsed[ ubType ] = FALSE;
 
-	// B1 Oronegro oil-rig remaster: use sector-specific visual assets while keeping
-	// the map DAT, tile indices and all JSD/structure physics exactly unchanged.
+	// B1 Oronegro oil-rig remaster: Tier 1 only. Terrain, water, roads and floors
+	// are remastered; structure-bearing walls/roofs/objects remain on authored assets
+	// until their destruction/script/JSD audit is complete.
 	STR8 pLoadFilename = cFilename;
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG && ubTilesetID == 50 )
 	{
@@ -881,14 +856,6 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 			case SECONDFLOOR:      pLoadFilename = "B1_P-FLOOR3.STI"; break;
 			case THIRDFLOOR:       pLoadFilename = "B1_WELFLOR1.STI"; break;
 			case FOURTHFLOOR:      pLoadFilename = "B1_WELFLOR2.STI"; break;
-			case THIRDOSTRUCT:     pLoadFilename = "B1_GRASS1.STI"; break;
-			case FIRSTWALL:        pLoadFilename = "B1_BUILD_36.STI"; break;
-			case SECONDWALL:       pLoadFilename = "B1_BUILD_31.STI"; break;
-			case THIRDWALL:        pLoadFilename = "B1_BUILD_40.STI"; break;
-			case FOURTHWALL:       pLoadFilename = "B1_BUILD_35.STI"; break;
-			case FIRSTROOF:        pLoadFilename = "B1_W-ROOF2.sti"; break;
-			case FIRSTONROOF:      pLoadFilename = "B1_Rooffan.sti"; break;
-			case SECONDONROOF:     pLoadFilename = "B1_Oil_OROOF.sti"; break;
 		}
 	}
 
@@ -910,28 +877,6 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 			return( FALSE );
 		}
 
-		if ( IsMandatoryB1StructureType( ubType ) )
-		{
-			CHAR8 cMandatoryJSD[128];
-			strcpy( cMandatoryJSD, cAdjustedFile );
-			STR cExt = strchr( cMandatoryJSD, '.' );
-			if ( cExt != NULL )
-			{
-				cExt++;
-				*cExt = '\0';
-			}
-			else
-			{
-				strcat( cMandatoryJSD, "." );
-			}
-			strcat( cMandatoryJSD, STRUCTURE_FILE_EXTENSION );
-
-			if ( !FileExists( cMandatoryJSD ) )
-			{
-				FatalError( "B1 remaster is incomplete. Mandatory structure data missing: %s", cMandatoryJSD );
-				return( FALSE );
-			}
-		}
 	}
 	else if ( !fGetFromRoot )
 	{
