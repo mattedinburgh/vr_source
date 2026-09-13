@@ -725,7 +725,7 @@ void DisplayLoadScreenWithID( UINT8 ubLoadScreenID )
 	static BOOLEAN fLoggedDocumentarySelectorRevision = FALSE;
 	if (!fLoggedDocumentarySelectorRevision)
 	{
-		BlackBoxEvent("LOADSCREEN", "selector_revision=2026-09-13-v4-flat");
+		BlackBoxEvent("LOADSCREEN", "selector_revision=2026-09-13-v5-renderfix");
 		fLoggedDocumentarySelectorRevision = TRUE;
 	}
 
@@ -946,7 +946,7 @@ void DisplayLoadScreenWithID( UINT8 ubLoadScreenID )
 
 					INT32 newHeight = (INT32)(SCREEN_WIDTH / fLoadingScreenAspectRatio);
 					DstRect.iLeft = 0;
-					DstRect.iRight = 0;
+					DstRect.iRight = SCREEN_WIDTH;
 					DstRect.iTop = (SCREEN_HEIGHT - newHeight) / 2;
 					DstRect.iBottom = DstRect.iTop + newHeight;
 				}
@@ -967,7 +967,14 @@ void DisplayLoadScreenWithID( UINT8 ubLoadScreenID )
 				DstRect.iBottom = SCREEN_HEIGHT;
 			}
 
-			BltStretchVideoSurface( FRAME_BUFFER, uiLoadScreen, 0, 0, 0, &SrcRect, &DstRect );
+			const BOOLEAN fBlitOk = BltStretchVideoSurface( FRAME_BUFFER, uiLoadScreen, 0, 0, 0, &SrcRect, &DstRect );
+			BlackBoxEvent("LOADSCREEN",
+				"blit result=%d stretchMode=%u src=%d,%d-%d,%d dst=%d,%d-%d,%d screen=%dx%d",
+				fBlitOk ? 1 : 0,
+				gGameExternalOptions.ubLoadscreenStretchMode,
+				SrcRect.iLeft, SrcRect.iTop, SrcRect.iRight, SrcRect.iBottom,
+				DstRect.iLeft, DstRect.iTop, DstRect.iRight, DstRect.iBottom,
+				SCREEN_WIDTH, SCREEN_HEIGHT);
 						
 			DeleteVideoSurfaceFromIndex( uiLoadScreen );			
 		}
