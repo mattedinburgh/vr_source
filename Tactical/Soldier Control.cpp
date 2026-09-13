@@ -16736,8 +16736,8 @@ void SOLDIERTYPE::SetMaxSuspicion( void )
 
 BOOLEAN SOLDIERTYPE::CanInspect( SOLDIERTYPE *pOpponent )
 {
-	// only officers can inspect
-	if( !HAS_SKILL_TRAIT(this, SQUADLEADER_NT) )
+	// Tactical squad leaders and formal command-system officers can inspect covert actors.
+	if( !HAS_SKILL_TRAIT(this, SQUADLEADER_NT) && !(this->usSoldierFlagMask & SOLDIER_ENEMY_OFFICER) )
 	{
 		return FALSE;
 	}
