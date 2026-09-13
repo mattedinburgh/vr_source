@@ -11325,7 +11325,8 @@ BOOLEAN AbortPath(SOLDIERTYPE *pSoldier, INT8 bAction, INT32 sClosestDisturbance
 		{
 			DebugAI(AI_MSG_INFO, pSoldier, String("fresh corpse! abort!"));
 
-			if (!SightCoverAtSpot(pSoldier, sCheckGridNo, TRUE) || InARoom(sCheckGridNo, NULL) && bLevel == 0 || AICorpseWarningKnown(pSoldier, sCheckGridNo, bLevel))
+			if (!SightCoverAtSpot(pSoldier, sCheckGridNo, TRUE) ||
+				(InARoom(sCheckGridNo, NULL) && bLevel == 0))
 			{
 				sDangerousSpot = sCheckGridNo;
 			}
