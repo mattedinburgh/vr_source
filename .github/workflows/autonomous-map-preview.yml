@@ -197,10 +197,10 @@ jobs:
           $editor = Join-Path $sandbox 'MapEditor_Vengeance.exe'
           $previewDir = Join-Path $sandbox 'MAP_PREVIEWS'
           $statusFile = Join-Path $previewDir 'mapshot_status.txt'
-          $bmp = Join-Path $previewDir 'A3_overview.bmp'
+          $bmp = Join-Path $previewDir 'A3_REMASTERED_overview.bmp'
 
-          Write-Host "Launching Vengeance editor MAPSHOT: $editor -MAPSHOT=A3.dat"
-          $p = Start-Process -FilePath $editor -ArgumentList '-MAPSHOT=A3.dat' -WorkingDirectory $sandbox -PassThru
+          Write-Host "Launching Vengeance editor MAPSHOT: $editor -MAPSHOT=A3_REMASTERED.dat"
+          $p = Start-Process -FilePath $editor -ArgumentList '-MAPSHOT=A3_REMASTERED.dat' -WorkingDirectory $sandbox -PassThru
           $deadline = (Get-Date).AddSeconds(180)
           $startupDeadline = (Get-Date).AddSeconds(60)
           $lastStatus = ''
@@ -300,7 +300,7 @@ jobs:
           Write-Host "A3 baked map captured: $($baked.FullName) ($($baked.Length) bytes)"
 
           @{
-            sector = 'A3'
+            sector = 'A3_REMASTERED'
             source_sha = '${{ github.sha }}'
             gamedir_sha = '${{ steps.gamedir.outputs.sha }}'
             generated_utc = (Get-Date).ToUniversalTime().ToString('o')
