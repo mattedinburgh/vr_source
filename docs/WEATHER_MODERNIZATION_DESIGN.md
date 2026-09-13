@@ -5,6 +5,36 @@ Base: `install/all-2026-09-12`
 Status: **INACTIVE / DESIGN ONLY**  
 Runtime impact on playable build: **none**
 
+## Implementation status — 2026-09-13
+
+Implemented on this inactive branch:
+- advanced-weather feature gates, master switch default OFF,
+- continuous sector state: precipitation, cloud, wind, fog and storm energy,
+- deterministic daily moving-front generator for all 256 surface sectors,
+- no consumption of JA2 combat RNG for weather generation,
+- compatibility adapter back to legacy Vengeance rain/thunder flags,
+- legacy daily rain scheduler bypassed only when advanced weather is enabled,
+- type-based vision penalties with existing Ranger mitigation preserved,
+- weather-dependent hearing masking shared by player/AI listeners,
+- deterministic unseen-sound localization uncertainty,
+- type-based breath-recovery penalties,
+- conservative weapon-reliability penalties,
+- weather-sensitive outdoor smoke duration,
+- continuous precipitation-driven rain-drop density,
+- thunderclap acoustic masking tied to the actual delayed thunder sound.
+
+Not yet implemented:
+- wind-driven smoke movement,
+- fog/dust visual overlays,
+- strategic-map weather forecast UI,
+- regional climate data externalization,
+- wet-ground/puddle overlays,
+- dedicated black-box weather records,
+- full save-version serialization (current front generation is deterministic from campaign time),
+- local VS2013 Release Win32 compile/test pass.
+
+The repository currently exposes no pull-request CI run for this branch, so code is intentionally left inactive until a local build/test pass is completed.
+
 ## 1. Objective
 
 Modernize Vengeance Reloaded weather using the current JA2 1.13 weather architecture as the reference, while adapting the actual weather catalogue and balance to Vengeance's tropical / Latin-American setting.
