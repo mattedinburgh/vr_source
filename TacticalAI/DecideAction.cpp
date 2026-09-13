@@ -346,6 +346,39 @@ static UINT8 AIEnemyResponseLimitForContact(
 	return __max(ubDoctrineBaseline, ubWaveCap);
 }
 
+// RED/BLACK alert state must not bypass the same contact-local response budget
+// used while investigating in YELLOW. A soldier who is personally engaged,
+// already committed to a flank, or close enough to be part of the immediate
+// response remains free to act; only remote report-driven responders can be held.
+static BOOLEAN AIShouldHoldRemoteContactReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot)
+{
+	if (!pSoldier ||
+		!AICombatTeam(pSoldier) ||
+		TileIsOutOfBounds(sContactSpot) ||
+		!gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition)
+	{
+		return FALSE;
+	}
+
+	if (pSoldier->aiData.bUnderFire ||
+		pSoldier->aiData.bOppCnt > 0 ||
+		GuySawEnemy(pSoldier, SEEN_LAST_TURN) ||
+		pSoldier->IsFlanking())
+	{
+		return FALSE;
+	}
+
+	INT32 iImmediateResponseRange = __max(6, DAY_VISION_RANGE / 4);
+	if (PythSpacesAway(pSoldier->sGridNo, sContactSpot) <= iImmediateResponseRange)
+		return FALSE;
+
+	INT32 iReinforcementUrgency = 0;
+	UINT8 ubResponseLimit = AIEnemyResponseLimitForContact(
+		pSoldier, sContactSpot, &iReinforcementUrgency);
+
+	return AIFireteamShouldHoldReserve(pSoldier, sContactSpot, ubResponseLimit);
+}
+
 static INT8 DecideYellowRemoteRadioSupport(SOLDIERTYPE *pSoldier)
 {
 	if (!pSoldier || !gGameExternalOptions.bNewTacticalAIBehavior ||
