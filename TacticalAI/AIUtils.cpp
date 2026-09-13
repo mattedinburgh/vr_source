@@ -5802,6 +5802,25 @@ BOOLEAN AIDisengagementActive(SOLDIERTYPE *pSoldier)
 		gubAIDisengageTurns[pSoldier->ubID] > 0);
 }
 
+void AIForceDisengagementState(SOLDIERTYPE *pSoldier, UINT8 ubTurns)
+{
+	AIMaintainDisengagementTimeline();
+
+	if (!pSoldier || !AICombatTeam(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return;
+
+	UINT8 ubID = pSoldier->ubID;
+	UINT32 uiTurnStamp = guiTurnCnt + 1;
+
+	guiAIDisengageIdentity[ubID] = pSoldier->uiUniqueSoldierIdValue;
+	guiAIDisengageTurnStamp[ubID] = uiTurnStamp;
+	if (gubAIDisengageTurns[ubID] == 0)
+		guiAIDisengageStartTurn[ubID] = uiTurnStamp;
+
+	gubAIDisengageTurns[ubID] = __max(gubAIDisengageTurns[ubID], __max((UINT8)1, ubTurns));
+	AIResetRecoveryStreak(pSoldier);
+}
+
 static BOOLEAN AIHasNearbyStableLeader(SOLDIERTYPE *pSoldier)
 {
 	if (!AICombatTeam(pSoldier))
