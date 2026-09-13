@@ -7580,6 +7580,14 @@ void SoldierGotHitGunFire( SOLDIERTYPE *pSoldier, UINT16 usWeaponIndex, INT16 sD
 		return;
 	}
 
+	// Eligible fatal gunshots have exactly one visual owner. Run the VR fatal
+	// dispatcher before the legacy head-explode/flyback/falldown branches so those
+	// older special flags cannot pre-empt the 30-way cinematic system or stack a
+	// second gore package on top of it. Nonfatal hits and unsupported cases (water,
+	// non-guns, non-merc body types) continue through the legacy path below.
+	if ( HandleVRFatalGunshotReaction( pSoldier, usWeaponIndex, sDamage, bDirection, ubHitLocation ) )
+		return;
+
 	if ( fFallenOver )
 	{
 		// HEADROCK HAM 3.2: Critical legshots cost an extra number of APs, based on shot damage.
@@ -7593,15 +7601,9 @@ void SoldierGotHitGunFire( SOLDIERTYPE *pSoldier, UINT16 usWeaponIndex, INT16 sD
 
 	if ( fBlownAway )
 	{
-		// Only for mercs...
+		// Legacy fallback only; VR fatal gore is owned above.
 		if ( pSoldier->ubBodyType < 4 )
 		{
-			if ( pSoldier->stats.bLife == 0 )
-			{
-				UINT8 ubExitDirection = gOppositeDirection[ (UINT8)( bDirection % NUM_WORLD_DIRECTIONS ) ];
-				SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_FALL_BACK.STI", ubExitDirection, 32, 38, 0 );
-				SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubExitDirection, 28, 47, 42 );
-			}
 			pSoldier->ChangeToFlybackAnimation( (UINT8)bDirection );
 			return;
 		}
@@ -7609,22 +7611,13 @@ void SoldierGotHitGunFire( SOLDIERTYPE *pSoldier, UINT16 usWeaponIndex, INT16 sD
 
 	if ( fHeadHit )
 	{
-		// Only for mercs ( or KIDS! )
+		// Legacy JFK fallback only; VR fatal gore is owned above.
 		if ( pSoldier->ubBodyType < 4 || pSoldier->ubBodyType == HATKIDCIV || pSoldier->ubBodyType == KIDCIV )
 		{
-			if ( pSoldier->stats.bLife == 0 && pSoldier->ubBodyType < 4 )
-			{
-				UINT8 ubExitDirection = gOppositeDirection[ (UINT8)( bDirection % NUM_WORLD_DIRECTIONS ) ];
-				SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_HEAD_GIB.STI", ubExitDirection, 51, 35, 0 );
-				SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_HEAVY.STI", ubExitDirection, 48, 44, 30 );
-			}
 			pSoldier->EVENT_InitNewSoldierAnim( JFK_HITDEATH, 0 , FALSE );
 			return;
 		}
 	}
-
-	if ( HandleVRFatalGunshotReaction( pSoldier, usWeaponIndex, sDamage, bDirection, ubHitLocation ) )
-		return;
 
 	if ( HandleVRCinematicGunshotReaction( pSoldier, usWeaponIndex, sDamage, bDirection, ubHitLocation ) )
 		return;
