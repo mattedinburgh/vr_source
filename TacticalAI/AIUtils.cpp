@@ -2193,11 +2193,18 @@ INT32 ClosestReachableFriendInTrouble(SOLDIERTYPE *pSoldier, BOOLEAN * pfClimbin
 		// help is allowed only locally, while one/two-man remnants remain free to
 		// merge through the fireteam cohesion logic.
 		if (AICombatTeam(pSoldier) && pFriend->bTeam == pSoldier->bTeam &&
-			!AISameFireteam(pSoldier, pFriend) &&
-			ubMyFireteamAlive > 2 &&
-			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > __max(6, DAY_VISION_RANGE / 3))
+			!AISameFireteam(pSoldier, pFriend))
 		{
-			continue;
+			if (ubMyFireteamAlive > 2 &&
+				PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > __max(6, DAY_VISION_RANGE / 3))
+			{
+				continue;
+			}
+
+			// Another element's private contact count is not sector-wide knowledge.
+			// Cross-element assistance requires direct/local awareness of that soldier.
+			if (!AIResponderKnowsCasualty(pSoldier, pFriend))
+				continue;
 		}
 
 		// CJC: restrict "last one to radio" to only if that guy saw us this turn or last turn
