@@ -2751,32 +2751,48 @@ void PrepareLoadedSector()
 		{
 			if( is_server && fAddCivs && gCivEnabled == 1)//hayden its around here we apply .ini choices for Ai
 			{
+				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: CIVS BEGIN", "" );
 				AddSoldierInitListTeamToWorld( CIV_TEAM, 255 );
+				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: CIVS OK", "" );
 			}
 		}
 		else if (fAddCivs)
 		{
+			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: CIVS BEGIN", "" );
 			AddSoldierInitListTeamToWorld( CIV_TEAM, 255 );
+			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: CIVS OK", "" );
 		}
 
 		if (is_networked)
 		{
 			if(is_server && gMilitiaEnabled == 1)
+			{
+				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: MILITIA INIT BEGIN", "" );
 				AddSoldierInitListTeamToWorld( MILITIA_TEAM, 255 );
+				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: MILITIA INIT OK", "" );
+			}
 		}
 		else
 		{
+			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: MILITIA INIT BEGIN", "" );
 			AddSoldierInitListTeamToWorld( MILITIA_TEAM, 255 );
+			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: MILITIA INIT OK", "" );
 		}
 		
 		if (is_networked)
 		{
 			if(is_server && gCreatureEnabled == 1)
+			{
+				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: BLOODCATS BEGIN", "" );
 				AddSoldierInitListBloodcats();
+				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: BLOODCATS OK", "" );
+			}
 		}
 		else
 		{
+			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: BLOODCATS BEGIN", "" );
 			AddSoldierInitListBloodcats();
+			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: BLOODCATS OK", "" );
 		}
 
 
@@ -2812,16 +2828,28 @@ void PrepareLoadedSector()
 		if (is_networked)
 		{
 			if(is_server && gCreatureEnabled == 1)
+			{
+				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: CREATURES BEGIN", "" );
 				PrepareCreaturesForBattle();
+				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: CREATURES OK", "" );
+			}
 
 			// Haydent
 			if(is_server && gMilitiaEnabled == 1)
+			{
+				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: MILITIA PREP BEGIN", "" );
 				PrepareMilitiaForTactical(FALSE);
+				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: MILITIA PREP OK", "" );
+			}
 		}
 		else
 		{
+			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: CREATURES BEGIN", "" );
 			PrepareCreaturesForBattle();
+			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: CREATURES OK", "" );
+			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: MILITIA PREP BEGIN", "" );
 			PrepareMilitiaForTactical(TRUE);
+			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: MILITIA PREP OK", "" );
 		}
 
 		// OK, set varibles for entring this new sector...
@@ -2839,11 +2867,17 @@ void PrepareLoadedSector()
 		if (is_networked)
 		{
 			if(is_server && gCivEnabled == 1)
+			{
+				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: PROFILES NO INSERT BEGIN", "" );
 				AddProfilesNotUsingProfileInsertionData(); //hayden: is just for civ's
+				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: PROFILES NO INSERT OK", "" );
+			}
 		}
 		else
 		{
+			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: PROFILES NO INSERT BEGIN", "" );
 			AddProfilesNotUsingProfileInsertionData();
+			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: PROFILES NO INSERT OK", "" );
 		}
 #ifdef JA2UB
 //Ja25 No meanwhiles
@@ -2854,11 +2888,17 @@ void PrepareLoadedSector()
 			if (is_networked)
 			{
 				if(is_server && gEnemyEnabled == 1)
+				{
+					if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: ENEMIES BEGIN", "" );
 					fEnemyPresenceInThisSector = PrepareEnemyForSectorBattle();
+					if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: ENEMIES OK", "" );
+				}
 			}
 			else
 			{
+				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: ENEMIES BEGIN", "" );
 				fEnemyPresenceInThisSector = PrepareEnemyForSectorBattle();
+				if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: ENEMIES OK", "" );
 			}
 		}
 
@@ -2880,10 +2920,14 @@ void PrepareLoadedSector()
 
 		//@@@Evaluate
 		//Add profiles to world using strategic info, not editor placements.
+		if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: PROFILES INSERT BEGIN", "" );
 		AddProfilesUsingProfileInsertionData();
+		if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: PROFILES INSERT OK", "" );
 
+		if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: SCHEDULES BEGIN", "" );
 		PostSchedules();
-			if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: PRISTINE SETUP OK", "" );
+		if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: SCHEDULES OK", "" );
+		if ( fTraceB1 ) TraceB1RemasterLoad( "PREPARE: PRISTINE SETUP OK", "" );
 	}
 
 	if( gubEnemyEncounterCode == ENEMY_AMBUSH_CODE || gubEnemyEncounterCode == BLOODCAT_AMBUSH_CODE )
