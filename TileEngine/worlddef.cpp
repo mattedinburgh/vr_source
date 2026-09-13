@@ -728,6 +728,9 @@ static void DressB1OilRigEnvironment( void )
 	const BOOLEAN fRoadDamageReady = B1CustomDecorationFamilyReady( SECONDDECORATIONS );
 	const BOOLEAN fRubbishReady = B1CustomDecorationFamilyReady( THIRDDECORATIONS );
 	const BOOLEAN fBinsReady = B1CustomDecorationFamilyReady( FOURTHDECORATIONS );
+	const BOOLEAN fRubbleReady = B1CustomDecorationFamilyReady( DEBRISROCKS );
+	const BOOLEAN fPalletsReady = B1CustomDecorationFamilyReady( DEBRISWOOD );
+	const BOOLEAN fJunkReady = B1CustomDecorationFamilyReady( DEBRISMISC );
 
 	UINT32 uiRoadDamage = 0;
 	UINT32 uiRubbish = 0;
@@ -797,29 +800,35 @@ static void DressB1OilRigEnvironment( void )
 				++uiBins;
 		}
 
-		// A light background layer of existing debris fills empty dirt corners so
-		// the sector does not read as sterile between the bespoke accents.
+		// Purpose-built oil-town clutter fills empty corners: broken concrete,
+		// pallets/boards and tyres/pipes/scrap. These three B1.dat slots were
+		// verified unused by the authored map, so they are safe visual-only families.
 		if ( !fOccupiedStructure && !fRoad && (fFloor || fOpenGround) &&
-			 ((uiHash >> 11) % (fNearStructure ? 83 : 311)) == 0 )
+			 ((uiHash >> 11) % (fNearStructure ? 31 : 137)) == 0 )
 		{
-			UINT32 uiDebrisType;
-			switch ( (uiHash >> 24) & 3 )
+			UINT32 uiDebrisType = DEBRISMISC;
+			BOOLEAN fFamilyReady = fJunkReady;
+			switch ( (uiHash >> 24) % 3 )
 			{
-				case 0: uiDebrisType = DEBRISSAND; break;
-				case 1: uiDebrisType = DEBRISMISC; break;
-				case 2: uiDebrisType = DEBRISWOOD; break;
-				default: uiDebrisType = DEBRISROCKS; break;
+				case 0: uiDebrisType = DEBRISROCKS; fFamilyReady = fRubbleReady; break;
+				case 1: uiDebrisType = DEBRISWOOD;  fFamilyReady = fPalletsReady; break;
+				default: uiDebrisType = DEBRISMISC; fFamilyReady = fJunkReady; break;
 			}
-			const UINT16 usSubIndex = (UINT16)( 1 + ((uiHash >> 14) % 10) );
-			if ( B1AddVisualDecoration( sGridNo, uiDebrisType, usSubIndex ) )
-				++uiLegacyDebris;
+
+			if ( fFamilyReady )
+			{
+				const UINT16 usSubIndex = (UINT16)( 1 + ((uiHash >> 14) % 10) );
+				if ( B1AddVisualDecoration( sGridNo, uiDebrisType, usSubIndex ) )
+					++uiLegacyDebris;
+			}
 		}
 	}
 
 	CHAR8 zDressing[192];
-	sprintf( zDressing, "roadDamage=%lu rubbish=%lu bins=%lu backgroundDebris=%lu customReady=%d/%d/%d non-structural",
+	sprintf( zDressing, "roadDamage=%lu rubbish=%lu bins=%lu customJunk=%lu ready=%d/%d/%d/%d/%d/%d non-structural",
 		uiRoadDamage, uiRubbish, uiBins, uiLegacyDebris,
-		fRoadDamageReady ? 1 : 0, fRubbishReady ? 1 : 0, fBinsReady ? 1 : 0 );
+		fRoadDamageReady ? 1 : 0, fRubbishReady ? 1 : 0, fBinsReady ? 1 : 0,
+		fRubbleReady ? 1 : 0, fPalletsReady ? 1 : 0, fJunkReady ? 1 : 0 );
 	TraceB1RemasterLoad( "ENVIRONMENT DRESSING", zDressing );
 }
 
@@ -1255,6 +1264,9 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 			case SECONDDECORATIONS: pLoadFilename = "B1_ROAD_DAMAGE.STI"; break;
 			case THIRDDECORATIONS:  pLoadFilename = "B1_STREET_RUBBISH.STI"; break;
 			case FOURTHDECORATIONS: pLoadFilename = "B1_STREET_BINS.STI"; break;
+			case DEBRISROCKS:       pLoadFilename = "B1_CONCRETE_RUBBLE.STI"; break;
+			case DEBRISWOOD:        pLoadFilename = "B1_WOOD_PALLETS.STI"; break;
+			case DEBRISMISC:        pLoadFilename = "B1_STREET_JUNK.STI"; break;
 		}
 	}
 
