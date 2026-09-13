@@ -522,6 +522,105 @@ BOOLEAN BltTrueColorDataTo16BPPBufferZStrip(UINT16 *pBuffer, UINT32 uiDestPitchB
 	return TRUE;
 }
 
+BOOLEAN BltTrueColorMaskTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue,
+	HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion,
+	BOOLEAN fIntensity, BOOLEAN fZTest, BOOLEAN fZWrite)
+{
+	Assert(pBuffer != NULL);
+	Assert(hSrcVObject != NULL);
+
+	if(hSrcVObject->ubBitDepth != 16 && hSrcVObject->ubBitDepth != 32)
+		return FALSE;
+	if(usIndex >= hSrcVObject->usNumberOf16BPPObjects)
+		return FALSE;
+
+	SixteenBPPObjectInfo *pObject = &hSrcVObject->p16BPPObject[usIndex];
+	if(pObject->p16BPPData == NULL || pObject->usWidth == 0 || pObject->usHeight == 0)
+		return FALSE;
+
+	INT32 iDestLeft = iX + pObject->sOffsetX;
+	INT32 iDestTop = iY + pObject->sOffsetY;
+	INT32 iClipLeft = clipregion ? clipregion->iLeft : ClippingRect.iLeft;
+	INT32 iClipTop = clipregion ? clipregion->iTop : ClippingRect.iTop;
+	INT32 iClipRight = clipregion ? clipregion->iRight : ClippingRect.iRight;
+	INT32 iClipBottom = clipregion ? clipregion->iBottom : ClippingRect.iBottom;
+
+	INT32 iDrawLeft = __max(iDestLeft, iClipLeft);
+	INT32 iDrawTop = __max(iDestTop, iClipTop);
+	INT32 iDrawRight = __min(iDestLeft + (INT32)pObject->usWidth, iClipRight + 1);
+	INT32 iDrawBottom = __min(iDestTop + (INT32)pObject->usHeight, iClipBottom + 1);
+
+	if(iDrawLeft >= iDrawRight || iDrawTop >= iDrawBottom)
+		return TRUE;
+
+	const INT32 iSourceStartX = iDrawLeft - iDestLeft;
+	const INT32 iSourceStartY = iDrawTop - iDestTop;
+
+	for(INT32 y = iDrawTop; y < iDrawBottom; ++y)
+	{
+		UINT16 *pDest = (UINT16*)((UINT8*)pBuffer + ((UINT32)y * uiDestPitchBYTES)) + iDrawLeft;
+		UINT16 *pZ = pZBuffer ? ((UINT16*)((UINT8*)pZBuffer + ((UINT32)y * uiDestPitchBYTES)) + iDrawLeft) : NULL;
+		const INT32 iSourceY = iSourceStartY + (y - iDrawTop);
+
+		for(INT32 x = iDrawLeft; x < iDrawRight; ++x, ++pDest)
+		{
+			const INT32 iSourceX = iSourceStartX + (x - iDrawLeft);
+			UINT8 ubAlpha = 0;
+
+			if(hSrcVObject->ubBitDepth == 32)
+			{
+				const UINT8 *pSrc = (const UINT8*)pObject->p16BPPData +
+					(((UINT32)iSourceY * pObject->usWidth + (UINT32)iSourceX) * 4);
+				ubAlpha = pSrc[3];
+			}
+			else
+			{
+				const UINT16 usSource = pObject->p16BPPData[(UINT32)iSourceY * pObject->usWidth + (UINT32)iSourceX];
+				ubAlpha = (usSource == 0) ? 0 : 255;
+			}
+
+			if(ubAlpha == 0)
+			{
+				if(pZ) ++pZ;
+				continue;
+			}
+
+			if(fZTest && pZ != NULL && *pZ >= usZValue)
+			{
+				++pZ;
+				continue;
+			}
+
+			const UINT16 usOriginal = *pDest;
+			const UINT16 usEffect = fIntensity ? IntensityTable[usOriginal] : ShadeTable[usOriginal];
+
+			if(ubAlpha == 255)
+			{
+				*pDest = usEffect;
+			}
+			else
+			{
+				const UINT32 uiOriginalRGB = GetRGBColor(usOriginal);
+				const UINT32 uiEffectRGB = GetRGBColor(usEffect);
+				const UINT32 uiInvAlpha = 255 - ubAlpha;
+				const UINT8 ubRed = (UINT8)((((uiEffectRGB & 0xFF) * ubAlpha) + ((uiOriginalRGB & 0xFF) * uiInvAlpha) + 127) / 255);
+				const UINT8 ubGreen = (UINT8)(((((uiEffectRGB >> 8) & 0xFF) * ubAlpha) + (((uiOriginalRGB >> 8) & 0xFF) * uiInvAlpha) + 127) / 255);
+				const UINT8 ubBlue = (UINT8)(((((uiEffectRGB >> 16) & 0xFF) * ubAlpha) + (((uiOriginalRGB >> 16) & 0xFF) * uiInvAlpha) + 127) / 255);
+				*pDest = Get16BPPColor(FROMRGB(ubRed, ubGreen, ubBlue));
+			}
+
+			if(pZ != NULL)
+			{
+				if(fZWrite && ubAlpha >= 128)
+					*pZ = usZValue;
+				++pZ;
+			}
+		}
+	}
+
+	return TRUE;
+}
+
 BOOLEAN Blt32BPPTo16BPPTransShadow(UINT16 *pDst, UINT32 uiDstPitch, UINT32 *pSrc, UINT32 uiSrcPitch, INT32 iDstXPos, INT32 iDstYPos, INT32 iSrcXPos, INT32 iSrcYPos, UINT32 uiWidth, UINT32 uiHeight)
 {
 	UINT32 *pSrcPtr;
