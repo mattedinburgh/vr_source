@@ -995,8 +995,9 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 
 	if ( fSectorReplacementRequested )
 	{
-		// B1 remaster assets are mandatory. Never use root/INI/stock fallback for these slots.
-		// The exact replacement in TILESETS\\50 must exist and decode successfully.
+		// B1 remaster art is optional from the engine's point of view: a bad visual
+		// replacement must never make the authored sector unplayable. Every fallback
+		// is explicit in the black box so broken assets remain easy to identify.
 		sprintf( cAdjustedFile, "TILESETS\\50\\%s", cFileBPP );
 		TraceB1RemasterLoad( "ASSET REQUEST", cAdjustedFile );
 
@@ -1005,12 +1006,18 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 
 		if ( !fReplacementVisible )
 		{
-			TraceB1RemasterLoad( "FATAL MISSING ASSET", cAdjustedFile );
-			FatalError( "B1 remaster is incomplete. Mandatory asset missing: %s", cAdjustedFile );
-			return( FALSE );
+			TraceB1RemasterLoad( "FALLBACK MISSING REMASTER", cAdjustedFile );
+			FilenameForBPP( cFilename, cFileBPP );
+			if ( !fGetFromRoot )
+				sprintf( cAdjustedFile, "TILESETS\\%d\\%s", ubTilesetID, cFileBPP );
+			else
+				sprintf( cAdjustedFile, "%s", cFileBPP );
+			fSectorReplacementRequested = FALSE;
 		}
-
-		TraceB1RemasterLoad( "LOAD TILE SURFACE BEGIN", cAdjustedFile );
+		else
+		{
+			TraceB1RemasterLoad( "LOAD TILE SURFACE BEGIN", cAdjustedFile );
+		}
 	}
 	else if ( !fGetFromRoot )
 	{
@@ -1024,13 +1031,23 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 
 	TileSurf = LoadTileSurface( cAdjustedFile );
 
+	if ( TileSurf == NULL && fSectorReplacementRequested )
+	{
+		TraceB1RemasterLoad( "LOAD TILE SURFACE FAILED", cAdjustedFile );
+		TraceB1RemasterLoad( "FALLBACK DECODE FAILURE", cAdjustedFile );
+
+		FilenameForBPP( cFilename, cFileBPP );
+		if ( !fGetFromRoot )
+			sprintf( cAdjustedFile, "TILESETS\\%d\\%s", ubTilesetID, cFileBPP );
+		else
+			sprintf( cAdjustedFile, "%s", cFileBPP );
+
+		TileSurf = LoadTileSurface( cAdjustedFile );
+		fSectorReplacementRequested = FALSE;
+	}
+
 	if ( TileSurf == NULL )
 	{
-		if ( fSectorReplacementRequested )
-		{
-			TraceB1RemasterLoad( "LOAD TILE SURFACE FAILED", cAdjustedFile );
-			FatalError( "B1 remaster asset exists but could not be loaded/decoded: %s", cAdjustedFile );
-		}
 		return( FALSE );
 	}
 
@@ -1044,18 +1061,34 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 		TraceB1RemasterLoad( "ASSET INFO", zB1AssetInfo );
 		if ( TileSurf->vo == NULL || TileSurf->vo->usNumberOfObjects == 0 )
 		{
+			TraceB1RemasterLoad( "FALLBACK INVALID REMASTER", cAdjustedFile );
 			DeleteTileSurface( TileSurf );
-			FatalError( "B1 remaster asset loaded without usable frames: %s", cAdjustedFile );
-			return( FALSE );
+
+			FilenameForBPP( cFilename, cFileBPP );
+			if ( !fGetFromRoot )
+				sprintf( cAdjustedFile, "TILESETS\\%d\\%s", ubTilesetID, cFileBPP );
+			else
+				sprintf( cAdjustedFile, "%s", cFileBPP );
+
+			TileSurf = LoadTileSurface( cAdjustedFile );
+			fSectorReplacementRequested = FALSE;
+			if ( TileSurf == NULL || TileSurf->vo == NULL || TileSurf->vo->usNumberOfObjects == 0 )
+			{
+				if ( TileSurf != NULL )
+					DeleteTileSurface( TileSurf );
+				return( FALSE );
+			}
 		}
+		else
+		{
+			fSectorReplacementLoaded = TRUE;
 
-		fSectorReplacementLoaded = TRUE;
-
-		// Shade-table caches are keyed by TileSurfaceFilenames[], not by the actual
-		// file passed to LoadTileSurface().  Keep B1 replacements on their own cache
-		// key so a stock tileset .sha cannot be reused with the remastered palette.
-		strncpy( TileSurfaceFilenames[ ubType ], cFileBPP, sizeof( TileSurfaceFilenames[ ubType ] ) - 1 );
-		TileSurfaceFilenames[ ubType ][ sizeof( TileSurfaceFilenames[ ubType ] ) - 1 ] = 0;
+			// Shade-table caches are keyed by TileSurfaceFilenames[], not by the actual
+			// file passed to LoadTileSurface(). Keep successful B1 replacements on their
+			// own cache key so stock shade tables cannot be reused with remastered art.
+			strncpy( TileSurfaceFilenames[ ubType ], cFileBPP, sizeof( TileSurfaceFilenames[ ubType ] ) - 1 );
+			TileSurfaceFilenames[ ubType ][ sizeof( TileSurfaceFilenames[ ubType ] ) - 1 ] = 0;
+		}
 	}
 
 	TileSurf->fType							= ubType;
