@@ -188,6 +188,60 @@ static INT32 FindMilitiaSpreadDestination( SOLDIERTYPE *pSoldier )
 }
 
 
+static INT32 FindMilitiaRallyDestination( SOLDIERTYPE *pSoldier, INT32 sRallyGridNo )
+{
+	if ( !pSoldier || TileIsOutOfBounds(sRallyGridNo) )
+		return NOWHERE;
+
+	INT8 bOldOrders = pSoldier->aiData.bOrders;
+	INT32 sOldAnchor = pSoldier->aiData.sPatrolGrid[0];
+	pSoldier->aiData.sPatrolGrid[0] = sRallyGridNo;
+	pSoldier->aiData.bOrders = (pSoldier->aiData.bUnderFire || GuySawEnemy( pSoldier )) ? STATIONARY : ONGUARD;
+
+	UINT16 usCurrentExposure = AIKnownThreatExposure( pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel );
+	INT32 sBestSpot = NOWHERE;
+	INT32 iBestScore = -100000;
+
+	for ( UINT8 ubTry = 0; ubTry < 24; ++ubTry )
+	{
+		INT32 sCandidate = RandDestWithinRange( pSoldier );
+		if ( TileIsOutOfBounds(sCandidate) || MilitiaSpreadDestinationReserved( pSoldier, sCandidate ) )
+			continue;
+
+		INT16 sRallyDistance = PythSpacesAway( sRallyGridNo, sCandidate );
+		if ( sRallyDistance < 1 || sRallyDistance > 5 )
+			continue;
+
+		UINT16 usExposure = AIKnownThreatExposure( pSoldier, sCandidate, pSoldier->pathing.bLevel );
+		if ( usExposure > usCurrentExposure + 100 )
+			continue;
+
+		UINT8 ubNearby = CountNearbyFriends( pSoldier, sCandidate, 2 );
+		UINT8 ubAdjacent = NumberOfTeamMatesAdjacent( pSoldier, sCandidate );
+		INT32 iRingPenalty = (INT32)sRallyDistance - 3;
+		if ( iRingPenalty < 0 )
+			iRingPenalty = -iRingPenalty;
+
+		INT32 iScore = AnyCoverAtSpot( pSoldier, sCandidate ) ? 30 : 0;
+		iScore -= 14 * ubNearby;
+		iScore -= 20 * ubAdjacent;
+		iScore -= 5 * iRingPenalty;
+		iScore += __min((INT32)22, __max((INT32)-22,
+			((INT32)usCurrentExposure - (INT32)usExposure) / 4));
+
+		if ( iScore > iBestScore )
+		{
+			iBestScore = iScore;
+			sBestSpot = sCandidate;
+		}
+	}
+
+	pSoldier->aiData.bOrders = bOldOrders;
+	pSoldier->aiData.sPatrolGrid[0] = sOldAnchor;
+	return sBestSpot;
+}
+
+
 void ResetMilitia()
 {
 	UINT8 ubNumGreen = 0;
@@ -1457,41 +1511,34 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 					break;
 
 				case( MILCON_MENU_COMETOME ):
-					{	
+					{
 						if ( (pTMilitiaSoldier->bActive) && (pTMilitiaSoldier->bInSector) && (pTMilitiaSoldier->stats.bLife >= OKLIFE) )
 						{
 							INT32 sActionGridNo, sGridNo, sAdjustedGridNo;
-							UINT8	ubDirection;
+							UINT8 ubDirection;
 
 							if ( GetSoldier( &pSoldier, gusSelectedSoldier )  )
 							{
-								// OK, find an adjacent gridno....
 								sGridNo = pSoldier->sGridNo;
+								sActionGridNo = FindMilitiaRallyDestination( pTMilitiaSoldier, sGridNo );
 
-								// See if we can get there
-								sActionGridNo =  FindAdjacentGridEx( pTMilitiaSoldier, sGridNo, &ubDirection, &sAdjustedGridNo, TRUE, FALSE );
-								if ( sActionGridNo != -1 )
+								// Fallback for cramped interiors or maps where the local sampler cannot
+								// find a legal rally tile.
+								if ( TileIsOutOfBounds(sActionGridNo) )
+									sActionGridNo = FindAdjacentGridEx( pTMilitiaSoldier, sGridNo, &ubDirection, &sAdjustedGridNo, TRUE, FALSE );
+
+								if ( !TileIsOutOfBounds(sActionGridNo) )
 								{
-									// sevenfm: change from stationary/patrol etc
-									pTMilitiaSoldier->aiData.bOrders = FARPATROL;
+									// Rally to a distinct nearby position, then hold it.
+									pTMilitiaSoldier->aiData.bOrders = STATIONARY;
 									pTMilitiaSoldier->aiData.bAttitude = DEFENSIVE;
-
-									// sevenfm: set this spot as original point
-									pTMilitiaSoldier->aiData.sPatrolGrid[0] = pSoldier->sGridNo;
-
-									// SEND PENDING ACTION
-									//pTMilitiaSoldier->ubPendingAction = MERC_STEAL;
-									pTMilitiaSoldier->aiData.sPendingActionData2  = pSoldier->sGridNo;
-									//pTMilitiaSoldier->bPendingActionData3  = ubDirection;
+									pTMilitiaSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
+									pTMilitiaSoldier->aiData.sPendingActionData2 = sActionGridNo;
 									pTMilitiaSoldier->aiData.ubPendingActionAnimCount = 0;
 									pTMilitiaSoldier->usUIMovementMode = RUNNING;
 
-									// CHECK IF WE ARE AT THIS GRIDNO NOW
 									if ( pTMilitiaSoldier->sGridNo != sActionGridNo )
-									{
-										// WALK UP TO DEST FIRST
 										SendGetNewSoldierPathEvent( pTMilitiaSoldier, sActionGridNo, pTMilitiaSoldier->usUIMovementMode );
-									}
 								}
 							}
 						}
@@ -1502,16 +1549,13 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 							StatChange( pSoldier, LDRAMT, 1, FALSE );
 						}
 
-						// stop showing menu
-						fShowMilitiaControlMenu = FALSE;						
+						fShowMilitiaControlMenu = FALSE;
 						giAssignHighLine = -1;
-
-						// set dirty flag
 						fTeamPanelDirty = TRUE;
 						fMapScreenBottomDirty = TRUE;
 					}
 					break;
-
+				
 				case( MILCON_MENU_GETDOWN ):
 					{
 						if ( (pTMilitiaSoldier->bActive) && (pTMilitiaSoldier->bInSector) && (pTMilitiaSoldier->stats.bLife >= OKLIFE) )
@@ -1747,63 +1791,48 @@ void MilitiaControlMenuBtnCallBack( MOUSE_REGION * pRegion, INT32 iReason )
 						UINT8 cnt, ubDirection;
 						INT32 sActionGridNo, sGridNo, sAdjustedGridNo;
 						SOLDIERTYPE *pTeamSoldier;
-						
+						SOLDIERTYPE *pCommander = NULL;
+
+						GetSoldier( &pCommander, gusSelectedSoldier );
 						cnt = gTacticalStatus.Team[ MILITIA_TEAM ].bFirstID;
 
 						for ( pTeamSoldier = MercPtrs[ cnt ]; cnt <= gTacticalStatus.Team[ MILITIA_TEAM ].bLastID; cnt++, pTeamSoldier++)
 						{
-							if ( (pTeamSoldier->bActive) && (pTeamSoldier->bInSector) && (pTeamSoldier->stats.bLife >= OKLIFE) )
+							if ( pCommander && (pTeamSoldier->bActive) && (pTeamSoldier->bInSector) && (pTeamSoldier->stats.bLife >= OKLIFE) )
 							{
-								if ( GetSoldier( &pSoldier, gusSelectedSoldier )  )
+								sGridNo = pCommander->sGridNo;
+								sActionGridNo = FindMilitiaRallyDestination( pTeamSoldier, sGridNo );
+								if ( TileIsOutOfBounds(sActionGridNo) )
+									sActionGridNo = FindAdjacentGridEx( pTeamSoldier, sGridNo, &ubDirection, &sAdjustedGridNo, TRUE, FALSE );
+
+								if ( !TileIsOutOfBounds(sActionGridNo) )
 								{
-									// OK, find an adjacent gridno....
-									sGridNo = pSoldier->sGridNo;
+									pTeamSoldier->aiData.bOrders = STATIONARY;
+									pTeamSoldier->aiData.bAttitude = DEFENSIVE;
+									pTeamSoldier->aiData.sPatrolGrid[0] = sActionGridNo;
+									pTeamSoldier->aiData.sPendingActionData2 = sActionGridNo;
+									pTeamSoldier->aiData.ubPendingActionAnimCount = 0;
+									pTeamSoldier->usUIMovementMode = RUNNING;
 
-									// See if we can get there
-									sActionGridNo =  FindAdjacentGridEx( pTeamSoldier, sGridNo, &ubDirection, &sAdjustedGridNo, TRUE, FALSE );
-									if ( sActionGridNo != -1 )
-									{
-										// sevenfm: change from stationary/patrol etc
-										pTeamSoldier->aiData.bOrders = FARPATROL;
-										pTeamSoldier->aiData.bAttitude = DEFENSIVE;
-
-										// sevenfm: set this spot as original point
-										pTeamSoldier->aiData.sPatrolGrid[0] = pSoldier->sGridNo;
-
-										// SEND PENDING ACTION
-										pTeamSoldier->aiData.sPendingActionData2  = pSoldier->sGridNo;
-										//pTeamSoldier->bPendingActionData3  = ubDirection;
-										pTeamSoldier->aiData.ubPendingActionAnimCount = 0;
-										pTeamSoldier->usUIMovementMode = RUNNING;
-
-										// CHECK IF WE ARE AT THIS GRIDNO NOW
-										if ( pTeamSoldier->sGridNo != sActionGridNo )
-										{
-											// WALK UP TO DEST FIRST
-											SendGetNewSoldierPathEvent( pTeamSoldier, sActionGridNo, pTeamSoldier->usUIMovementMode );
-										}
-									}
+									if ( pTeamSoldier->sGridNo != sActionGridNo )
+										SendGetNewSoldierPathEvent( pTeamSoldier, sActionGridNo, pTeamSoldier->usUIMovementMode );
 								}
 							}
 						}
 
-						if ( GetSoldier( &pSoldier, gusSelectedSoldier )  )
+						if ( pCommander )
 						{
-							DeductPoints( pSoldier, APBPConstants[AP_TALK], 0 );
-							StatChange( pSoldier, LDRAMT, 1, FALSE );
+							DeductPoints( pCommander, APBPConstants[AP_TALK], 0 );
+							StatChange( pCommander, LDRAMT, 1, FALSE );
 						}
 
-						// stop showing menu
 						fShowMilitiaControlMenu = FALSE;
 						giAssignHighLine = -1;
-
-						// set dirty flag
 						fTeamPanelDirty = TRUE;
 						fMapScreenBottomDirty = TRUE;
 					}
 					break;
 				
-
 				case( MILCON_MENU_ALL_SPREAD ):
 					{
 						UINT8 cnt;
