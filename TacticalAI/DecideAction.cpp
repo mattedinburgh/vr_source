@@ -4032,7 +4032,7 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 			RangeChangeDesire(pSoldier) >= 4 &&
 			!TileIsOutOfBounds(sClosestOpponent) &&
 			PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 4 &&
-			(Chance(SoldierDifficultyLevel(pSoldier) * 10) + Chance(20 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10))) &&
+			(Chance(10 + SoldierDifficultyLevel(pSoldier) * 10) + Chance(20 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10))) &&
 			pSoldier->bActionPoints >= APBPConstants[AP_MINIMUM] &&
 			FindFenceAroundSpot(pSoldier->sGridNo))
 		{
@@ -10108,7 +10108,7 @@ INT8 DecideUseWirecutters(SOLDIERTYPE *pSoldier)
 		pSoldier->aiData.bAIMorale >= MORALE_CONFIDENT &&
 		!TileIsOutOfBounds(sClosestOpponent) &&
 		PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 4 &&
-		Chance(SoldierDifficultyLevel(pSoldier) * 20) &&
+		Chance(20 + SoldierDifficultyLevel(pSoldier) * 15) &&
 		pSoldier->bActionPoints >= GetAPsToCutFence(pSoldier) + GetAPsToLook(pSoldier) &&
 		FindFenceAroundSpot(pSoldier->sGridNo))
 	{
@@ -10249,7 +10249,7 @@ INT8 DecideUseGrenadeSpecial(SOLDIERTYPE *pSoldier)
 		pSoldier->bActionPoints == pSoldier->bInitialActionPoints &&
 		pSoldier->aiData.bOrders != STATIONARY &&
 		pSoldier->aiData.bAIMorale >= MORALE_CONFIDENT &&
-		Chance(20 * SoldierDifficultyLevel(pSoldier) + 10 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10)))
+		Chance(15 + 15 * SoldierDifficultyLevel(pSoldier) + 10 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10)))
 	{
 		CheckTossGrenadeSpecial(pSoldier, &BestThrow);
 
@@ -10331,7 +10331,7 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 		CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE) > CountFriendsLastAttackHit(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE) ||
 		CountCorpses(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE, TRUE, TRUE) > AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE)) &&
 		(InSmoke(pSoldier->sGridNo, pSoldier->pathing.bLevel) ||
-		Chance(SoldierDifficultyLevel(pSoldier) * 10) ||
+		Chance(10 + SoldierDifficultyLevel(pSoldier) * 10) ||
 		Chance(AIFriendlyCasualtyPercent(pSoldier)) ||
 		Chance(10 * CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE)) ||
 		Chance(10 * CountCorpses(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE, TRUE, TRUE))))
