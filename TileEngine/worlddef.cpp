@@ -124,6 +124,18 @@ CHAR8						gzLastLoadedFile[ 260 ];
 
 UINT32			gCurrentBackground = FIRSTTEXTURE;
 
+// Sector-specific visual profiles. These alter only loaded tile palettes; map geometry,
+// tile indices, JSD structure data, collision, LOS, cover, destruction and scripts stay intact.
+enum SectorVisualProfile
+{
+	SECTOR_VISUAL_DEFAULT = 0,
+	SECTOR_VISUAL_ORONEGRO_TOWN,
+	SECTOR_VISUAL_ORONEGRO_OIL_RIG
+};
+
+static UINT8 gubSectorVisualProfile = SECTOR_VISUAL_DEFAULT;
+static UINT8 gubLoadedSectorVisualProfile = 0xFF;
+
 
 // From memman.c in SGP
 extern					UINT32		guiMemTotal;
@@ -594,6 +606,125 @@ BOOLEAN LoadTileSurfaces( char ppTileSurfaceFilenames[][32], UINT8 ubTilesetID )
 	return( TRUE );
 }
 
+static UINT8 DetermineSectorVisualProfile( const STR8 pFilename )
+{
+	if ( pFilename == NULL )
+		return SECTOR_VISUAL_DEFAULT;
+
+	// Oronegro city: keep the authored layout and scripted destruction completely untouched.
+	if ( _stricmp( pFilename, "A2.dat" ) == 0 ||
+		 _stricmp( pFilename, "A3.dat" ) == 0 ||
+		 _stricmp( pFilename, "B2.dat" ) == 0 )
+		return SECTOR_VISUAL_ORONEGRO_TOWN;
+
+	if ( _stricmp( pFilename, "B1.dat" ) == 0 )
+		return SECTOR_VISUAL_ORONEGRO_OIL_RIG;
+
+	return SECTOR_VISUAL_DEFAULT;
+}
+
+static BOOLEAN IsSectorVisualShadowType( UINT32 ubType )
+{
+	if ( ubType == FIRSTCLIFFSHADOW ||
+		 (ubType >= FIRSTSHADOW && ubType <= LASTSHADOW) ||
+		 (ubType >= FIRSTDOORSHADOW && ubType <= LASTDOORSHADOW) ||
+		 ubType == FENCESHADOW ||
+		 (ubType >= FIRSTVEHICLESHADOW && ubType <= SECONDVEHICLESHADOW) ||
+		 (ubType >= FIRSTDEBRISSTRUCTSHADOW && ubType <= SECONDDEBRISSTRUCTSHADOW) ||
+		 (ubType >= NINTHOSTRUCTSHADOW && ubType <= TENTHOSTRUCTSHADOW) ||
+		 (ubType >= FIRSTLARGEEXPDEBRISSHADOW && ubType <= SECONDLARGEEXPDEBRISSHADOW) )
+		return TRUE;
+
+	return FALSE;
+}
+
+static UINT8 ClampSectorVisualComponent( INT32 value )
+{
+	if ( value < 0 )
+		return 0;
+	if ( value > 255 )
+		return 255;
+	return (UINT8)value;
+}
+
+static UINT8 GradeSectorVisualComponent( INT32 component, INT32 luma, INT32 saturationPercent, INT32 contrastPercent, INT32 bias )
+{
+	INT32 value = luma + ((component - luma) * saturationPercent) / 100;
+	value = 128 + ((value - 128) * contrastPercent) / 100;
+	value += bias;
+	return ClampSectorVisualComponent( value );
+}
+
+static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT32 ubType )
+{
+	if ( gubSectorVisualProfile == SECTOR_VISUAL_DEFAULT || pTileSurf == NULL || pTileSurf->vo == NULL )
+		return;
+
+	// Restrict grading to tactical-world art. Never recolour UI/item tiles or dedicated shadow sprites.
+	if ( ubType >= FIRSTSWITCHES || IsSectorVisualShadowType( ubType ) )
+		return;
+
+	HVOBJECT pObject = pTileSurf->vo;
+	if ( pObject->pPaletteEntry == NULL || pObject->ubBitDepth != 8 )
+		return;
+
+	SGPPaletteEntry palette[256];
+	memcpy( palette, pObject->pPaletteEntry, sizeof( palette ) );
+
+	INT32 saturationPercent = 106;
+	INT32 contrastPercent = 106;
+	INT32 redBias = 2;
+	INT32 greenBias = 1;
+	INT32 blueBias = 0;
+
+	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
+	{
+		saturationPercent = 108;
+		contrastPercent = 110;
+		redBias = 3;
+		greenBias = 1;
+		blueBias = -2;
+	}
+
+	// Terrain carries most of the perceived improvement: stronger local contrast and less flat colour.
+	if ( ubType >= FIRSTTEXTURE && ubType <= LASTTEXTURE )
+	{
+		saturationPercent += 4;
+		contrastPercent += 2;
+		if ( ubType == REGWATERTEXTURE || ubType == DEEPWATERTEXTURE )
+		{
+			// Keep Oronegro water cooler/deeper instead of applying the dusty ground bias.
+			redBias = -3;
+			greenBias = 1;
+			blueBias = 6;
+			saturationPercent += 3;
+		}
+	}
+	else if ( (ubType >= FIRSTWALL && ubType <= LASTDOOR) ||
+			  (ubType >= FIRSTROOF && ubType <= LASTSLANTROOF) )
+	{
+		// Architecture remains readable and slightly weathered without changing any structure data.
+		contrastPercent += 2;
+		saturationPercent -= 2;
+	}
+
+	// Palette index 0 is commonly used as transparency; preserve it exactly.
+	for ( UINT16 i = 1; i < 256; ++i )
+	{
+		const INT32 r = palette[i].peRed;
+		const INT32 g = palette[i].peGreen;
+		const INT32 b = palette[i].peBlue;
+		const INT32 luma = (r * 30 + g * 59 + b * 11) / 100;
+
+		palette[i].peRed   = GradeSectorVisualComponent( r, luma, saturationPercent, contrastPercent, redBias );
+		palette[i].peGreen = GradeSectorVisualComponent( g, luma, saturationPercent, contrastPercent, greenBias );
+		palette[i].peBlue  = GradeSectorVisualComponent( b, luma, saturationPercent, contrastPercent, blueBias );
+	}
+
+	// Rebuild the base 16bpp palette from the adjusted 8bpp colours. Normal shade tables are built later.
+	SetVideoObjectPalette( pObject, palette );
+}
+
 BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLEAN fGetFromRoot )
 {
 	// Add tile surface
@@ -631,6 +762,7 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 
 	TileSurf->fType							= ubType;
 
+	ApplySectorVisualProfileToTileSurface( TileSurf, ubType );
 	SetRaisedObjectFlag( cAdjustedFile, TileSurf );
 
 	gTileSurfaceArray[ ubType ] = TileSurf;
@@ -3009,6 +3141,10 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 
 	LOADDATA(&iTilesetID, pBuffer, sizeof(INT32));
 
+	// Choose visual treatment from the actual sector filename before any tile surfaces load.
+	// This deliberately leaves map data and scripted destruction untouched.
+	gubSectorVisualProfile = DetermineSectorVisualProfile( gfForceLoad ? gzForceLoadFile : puiFilename );
+
 #ifdef JA2TESTVERSION
 	uiStartTime = GetJA2Clock();
 #endif
@@ -3693,7 +3829,9 @@ giOldTilesetUsed = giCurrentTilesetID;
 	// Init tile surface used values
 	memset( gbNewTileSurfaceLoaded, 0, sizeof( gbNewTileSurfaceLoaded ) );
 
-	if( iTilesetID == giCurrentTilesetID )
+	// A shared tileset can be used by both Oronegro and unrelated sectors. Reload when the
+	// sector visual profile changes so palette grading never leaks into another map.
+	if( iTilesetID == giCurrentTilesetID && gubSectorVisualProfile == gubLoadedSectorVisualProfile )
 	{
 		return( TRUE );
 	}
@@ -3722,6 +3860,7 @@ giOldTilesetUsed = giCurrentTilesetID;
 
 	// SET GLOBAL ID FOR TILESET ( FOR SAVING! )
 	giCurrentTilesetID = iTilesetID;
+	gubLoadedSectorVisualProfile = gubSectorVisualProfile;
 
 	return( TRUE );
 }
