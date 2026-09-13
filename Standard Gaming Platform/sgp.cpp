@@ -1032,6 +1032,8 @@ public:
 		SGP_LOG(_id, msg);
 		if(_trace)
 		{
+			BlackBoxEvent( "VFS_ERROR", "%S", msg ? msg : L"" );
+			BlackBoxCheckpoint( "VFS", "%S", msg ? msg : L"" );
 			sgp::dumpStackTrace(msg);
 		}
 	}
@@ -1040,6 +1042,8 @@ public:
 		SGP_LOG(_id, msg);
 		if(_trace)
 		{
+			BlackBoxEvent( "VFS_ERROR", "%s", msg ? msg : "" );
+			BlackBoxCheckpoint( "VFS", "%s", msg ? msg : "" );
 			sgp::dumpStackTrace(msg);
 		}
 	}
