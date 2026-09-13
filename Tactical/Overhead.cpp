@@ -10741,6 +10741,99 @@ UINT16 NumSoldiersWithFlagInSector(UINT8 aTeam, UINT32 aFlag)
 	return num;
 }
 
+void EnsureEnemyCommandRoles()
+{
+	if (!gGameExternalOptions.fEnemyRoles || gbWorldSectorZ != 0)
+		return;
+
+	UINT16 enemyCount = 0;
+	UINT16 officerCount = 0;
+	UINT16 bodyguardCount = 0;
+	for (INT32 i = gTacticalStatus.Team[ENEMY_TEAM].bFirstID; i <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++i)
+	{
+		SOLDIERTYPE* p = MercPtrs[i];
+		if (!p || !p->bActive || !p->bInSector || p->stats.bLife <= 0 || (p->usSoldierFlagMask & SOLDIER_POW))
+			continue;
+		++enemyCount;
+		if ((p->usSoldierFlagMask & SOLDIER_ENEMY_OFFICER) && !(p->usSoldierFlagMask & SOLDIER_VIP))
+			++officerCount;
+		if (p->usSoldierFlagMask & SOLDIER_BODYGUARD)
+			++bodyguardCount;
+	}
+
+	// General: choose the most suitable surviving soldier only when the strategic
+	// sector actually contains one. This makes the role independent of creation order.
+	if (gGameExternalOptions.fEnemyGenerals && SectorHasEnemyGeneral(gWorldSectorX, gWorldSectorY) &&
+		NumSoldiersWithFlagInSector(ENEMY_TEAM, SOLDIER_VIP) == 0)
+	{
+		SOLDIERTYPE* pBest = NULL;
+		INT32 bestScore = -1;
+		for (INT32 i = gTacticalStatus.Team[ENEMY_TEAM].bFirstID; i <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++i)
+		{
+			SOLDIERTYPE* p = MercPtrs[i];
+			if (!p || !p->bActive || !p->bInSector || p->stats.bLife < OKLIFE || (p->usSoldierFlagMask & SOLDIER_POW))
+				continue;
+			INT32 score = (p->ubSoldierClass == SOLDIER_CLASS_ELITE ? 10000 : 0) +
+				(NUM_SKILL_TRAITS(p, SQUADLEADER_NT) * 2000) + p->stats.bExpLevel * 100 + p->stats.bLeadership;
+			if (score > bestScore) { bestScore = score; pBest = p; }
+		}
+		if (pBest)
+			pBest->usSoldierFlagMask |= (SOLDIER_VIP | SOLDIER_ENEMY_OFFICER);
+	}
+
+	// Bodyguards are a tactical role, not bonus units magically appearing mid-fight.
+	// The strategic layer already added the escort to the sector population.
+	if (gGameExternalOptions.fEnemyGenerals && NumSoldiersWithFlagInSector(ENEMY_TEAM, SOLDIER_VIP) > 0)
+	{
+		while (bodyguardCount < gGameExternalOptions.usEnemyGeneralsBodyGuardsNumber)
+		{
+			SOLDIERTYPE* pBest = NULL;
+			INT32 bestScore = -1;
+			for (INT32 i = gTacticalStatus.Team[ENEMY_TEAM].bFirstID; i <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++i)
+			{
+				SOLDIERTYPE* p = MercPtrs[i];
+				if (!p || !p->bActive || !p->bInSector || p->stats.bLife < OKLIFE ||
+					(p->usSoldierFlagMask & (SOLDIER_POW | SOLDIER_VIP | SOLDIER_BODYGUARD)))
+					continue;
+				INT32 score = (p->ubSoldierClass == SOLDIER_CLASS_ELITE ? 5000 : 0) + p->stats.bExpLevel * 100 + p->stats.bLeadership;
+				if (score > bestScore) { bestScore = score; pBest = p; }
+			}
+			if (!pBest)
+				break;
+			pBest->usSoldierFlagMask |= SOLDIER_BODYGUARD;
+			++bodyguardCount;
+		}
+	}
+
+	if (!gGameExternalOptions.fEnemyOfficers || !enemyCount)
+		return;
+
+	UINT16 desired = min(gGameExternalOptions.usEnemyOfficersMax,
+		(UINT16)(enemyCount / max((UINT16)1, gGameExternalOptions.usEnemyOfficersPerTeamSize)));
+
+	// Promote the best existing Squadleaders until the sector has its configured
+	// officer density. This fixes stock 1.13's creation-order dependency.
+	while (officerCount < desired)
+	{
+		SOLDIERTYPE* pBest = NULL;
+		INT32 bestScore = -1;
+		for (INT32 i = gTacticalStatus.Team[ENEMY_TEAM].bFirstID; i <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++i)
+		{
+			SOLDIERTYPE* p = MercPtrs[i];
+			if (!p || !p->bActive || !p->bInSector || p->stats.bLife < OKLIFE ||
+				(p->usSoldierFlagMask & (SOLDIER_POW | SOLDIER_VIP | SOLDIER_ENEMY_OFFICER)) ||
+				!HAS_SKILL_TRAIT(p, SQUADLEADER_NT))
+				continue;
+			INT32 score = NUM_SKILL_TRAITS(p, SQUADLEADER_NT) * 10000 + p->stats.bExpLevel * 100 + p->stats.bLeadership;
+			if (score > bestScore) { bestScore = score; pBest = p; }
+		}
+		if (!pBest)
+			break;
+		pBest->usSoldierFlagMask |= SOLDIER_ENEMY_OFFICER;
+		++officerCount;
+	}
+}
+
 UINT16 GetNumberOfPrisoners( SECTORINFO *pSectorInfo, UINT8* apSpecial, UINT8* apElite, UINT8* apRegular, UINT8* apAdmin )
 {
 	if ( !pSectorInfo )
