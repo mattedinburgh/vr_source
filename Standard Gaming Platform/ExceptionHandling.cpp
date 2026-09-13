@@ -89,6 +89,8 @@ static volatile LONG gBlackBoxFramePhase = BLACKBOX_PHASE_UNKNOWN;
 static DWORD gBlackBoxMainThreadId = 0;
 static DWORD gBlackBoxLastHealthCheckpointTick = 0;
 static DWORD gBlackBoxLastHealthEventTick = 0;
+static LONG gBlackBoxDumpMode = 0; // 0=none/failed, 1=base fallback, 2=enhanced
+static DWORD gBlackBoxDumpLastError = ERROR_SUCCESS;
 
 static const char *BlackBoxPhaseName( LONG phase )
 {
@@ -447,6 +449,8 @@ void BlackBoxInitialize( void )
 	gBlackBoxMainThreadId = GetCurrentThreadId();
 	gBlackBoxLastHealthCheckpointTick = gBlackBoxStartTick;
 	gBlackBoxLastHealthEventTick = gBlackBoxStartTick;
+	gBlackBoxDumpMode = 0;
+	gBlackBoxDumpLastError = ERROR_SUCCESS;
 	memset( gBlackBoxEvents, 0, sizeof( gBlackBoxEvents ) );
 	memset( gBlackBoxCheckpoints, 0, sizeof( gBlackBoxCheckpoints ) );
 	memset( gBlackBoxSubsystems, 0, sizeof( gBlackBoxSubsystems ) );
@@ -963,6 +967,8 @@ static void BlackBoxDumpToCrashReport( HWFILE hFile, const EXCEPTION_RECORD *pRe
 		gBlackBoxEventSequence, gBlackBoxCheckpointSequence, gBlackBoxExceptionSequence,
 		gBlackBoxHeartbeatSequence, gBlackBoxDiskWriteFailures, gBlackBoxFlushFailures,
 		gBlackBoxFile != INVALID_HANDLE_VALUE ? "yes" : "no" );
+	ErrorLog( hFile, "Minidump: mode=%ld (0=failed,1=base-fallback,2=enhanced) lastError=%lu\r\n",
+		gBlackBoxDumpMode, gBlackBoxDumpLastError );
 	ErrorLog( hFile, "Main-loop heartbeat: mainTid=%lu lastTick=%lu lastScreen=%ld phase=%s(%ld) ageMs=%lu watchdog=%s\r\n",
 		gBlackBoxMainThreadId, (DWORD)gBlackBoxHeartbeatTick, gBlackBoxHeartbeatScreen,
 		BlackBoxPhaseName( gBlackBoxFramePhase ), gBlackBoxFramePhase,
@@ -1830,53 +1836,91 @@ static BOOL ERRestorePriv(HANDLE hToken, TOKEN_PRIVILEGES* ptpOld)
 static BOOL ERGenerateMiniDump(CHAR *szFileName, PEXCEPTION_POINTERS pExceptionInfo)
 {
 	BOOL bRet = FALSE;
-	DWORD dwLastError = 0;
+	DWORD dwLastError = ERROR_SUCCESS;
 	HANDLE hDumpFile = 0;
 	MINIDUMP_EXCEPTION_INFORMATION stInfo = {0};
 	TOKEN_PRIVILEGES tp;
 	HANDLE hImpersonationToken = NULL;
 	BOOL bPrivilegeEnabled;
+	MINIDUMP_TYPE baseDumpType;
+	MINIDUMP_TYPE enhancedDumpType;
+
+	gBlackBoxDumpMode = 0;
+	gBlackBoxDumpLastError = ERROR_SUCCESS;
 
 	if(!ERGetImpersonationToken(&hImpersonationToken))
 	{
+		gBlackBoxDumpLastError = GetLastError();
 		return FALSE;
 	}
 
-	// Create the dump file
-	hDumpFile = CreateFileA(szFileName, 
-		GENERIC_READ | GENERIC_WRITE, 
-		FILE_SHARE_WRITE | FILE_SHARE_READ, 
+	hDumpFile = CreateFileA(szFileName,
+		GENERIC_READ | GENERIC_WRITE,
+		FILE_SHARE_WRITE | FILE_SHARE_READ,
 		0, CREATE_ALWAYS, 0, 0);
 	if(hDumpFile == INVALID_HANDLE_VALUE)
 	{
+		gBlackBoxDumpLastError = GetLastError();
 		CloseHandle(hImpersonationToken);
 		return FALSE;
 	}
 
-	// Write the dump
 	stInfo.ThreadId = GetCurrentThreadId();
 	stInfo.ExceptionPointers = pExceptionInfo;
 	stInfo.ClientPointers = FALSE;
 
-	// We need the SeDebugPrivilege to be able to run MiniDumpWriteDump
 	bPrivilegeEnabled = EREnablePriv(SE_DEBUG_NAME, hImpersonationToken, &tp);
 
-// VS 2008 and VS 2010
 #if _MSC_VER >= 1500
-	bRet = ERMiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hDumpFile
-		, (MINIDUMP_TYPE)(MiniDumpWithHandleData|MiniDumpWithThreadInfo|MiniDumpWithDataSegs), &stInfo, NULL, NULL);
-// VS 2005
+	baseDumpType = (MINIDUMP_TYPE)(MiniDumpWithHandleData | MiniDumpWithThreadInfo | MiniDumpWithDataSegs);
+	enhancedDumpType = (MINIDUMP_TYPE)(
+		baseDumpType |
+		MiniDumpWithIndirectlyReferencedMemory |
+		MiniDumpScanMemory |
+		MiniDumpWithUnloadedModules |
+		MiniDumpWithProcessThreadData |
+		MiniDumpWithFullMemoryInfo |
+		MiniDumpWithCodeSegs );
+
+	bRet = ERMiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hDumpFile,
+		enhancedDumpType, &stInfo, NULL, NULL);
+	if( bRet )
+	{
+		gBlackBoxDumpMode = 2;
+		gBlackBoxDumpLastError = ERROR_SUCCESS;
+	}
+	else
+	{
+		dwLastError = GetLastError();
+
+		SetFilePointer( hDumpFile, 0, NULL, FILE_BEGIN );
+		SetEndOfFile( hDumpFile );
+		bRet = ERMiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hDumpFile,
+			baseDumpType, &stInfo, NULL, NULL);
+		if( bRet )
+		{
+			gBlackBoxDumpMode = 1;
+			gBlackBoxDumpLastError = dwLastError;
+		}
+		else
+		{
+			gBlackBoxDumpMode = 0;
+			gBlackBoxDumpLastError = GetLastError();
+		}
+	}
 #else
-	bRet = ERMiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hDumpFile
-		, (MINIDUMP_TYPE)(MiniDumpWithHandleData|MiniDumpWithDataSegs), &stInfo, NULL, NULL);
+	baseDumpType = (MINIDUMP_TYPE)(MiniDumpWithHandleData | MiniDumpWithDataSegs);
+	bRet = ERMiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hDumpFile,
+		baseDumpType, &stInfo, NULL, NULL);
+	gBlackBoxDumpMode = bRet ? 1 : 0;
+	gBlackBoxDumpLastError = bRet ? ERROR_SUCCESS : GetLastError();
 #endif
 
 	if(bPrivilegeEnabled)
 	{
-		// Restore the privilege
 		ERRestorePriv(hImpersonationToken, &tp);
 	}
-	
+
 	CloseHandle(hDumpFile);
 	CloseHandle(hImpersonationToken);
 
