@@ -466,8 +466,11 @@ static BOOLEAN AIAvailableMedicForCasualty( SOLDIERTYPE *pRescuer, SOLDIERTYPE *
 			AIPersonalRisk( pMedic ) > AIPersonalRiskTolerance( pMedic ) )
 			continue;
 
-		if ( PythSpacesAway( pMedic->sGridNo, pPatient->sGridNo ) <= DAY_VISION_RANGE / 2 )
+		if ( AIResponderKnowsCasualty( pMedic, pPatient ) &&
+			PythSpacesAway( pMedic->sGridNo, pPatient->sGridNo ) <= DAY_VISION_RANGE / 2 )
+		{
 			return TRUE;
+		}
 	}
 
 	return FALSE;
