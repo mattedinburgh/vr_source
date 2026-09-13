@@ -6002,11 +6002,10 @@ static void DropVRDirectionalBloodTrail( SOLDIERTYPE *pSoldier, UINT8 ubSprayDir
 }
 
 
-// VR cinematic gunshot reactions: deliberately exaggerated test baseline.
-// Surviving merc-body hits get a physical reaction instead of always playing the
-// stock in-place hit. Running victims lose their footing immediately; standing
-// victims can be driven one or two tiles away from the incoming shot or collapse
-// sideways/forward. Probabilities are intentionally aggressive for visual testing.
+// VR cinematic gunshot reactions: thirty additional non-fatal reaction sequences.
+// These deliberately reuse living-safe JA2 hit/fall states rather than death-only
+// animation states. Direction, momentum and damage class create readable variety
+// without adding new savegame fields or bypassing JA2's collision-checked fallbacks.
 static BOOLEAN HandleVRCinematicGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWeaponIndex, INT16 sDamage, UINT16 bDirection )
 {
 	if ( pSoldier == NULL || pSoldier->stats.bLife <= 0 || pSoldier->ubBodyType >= 4 )
@@ -6019,50 +6018,219 @@ static BOOLEAN HandleVRCinematicGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 u
 		return FALSE;
 
 	UINT8 ubIncomingDirection = (UINT8)( bDirection % NUM_WORLD_DIRECTIONS );
+	UINT8 ubOriginalDirection = pSoldier->ubDirection;
+	UINT8 ubOppositeDirection = gOppositeDirection[ ubIncomingDirection ];
+	UINT8 ubLeftDirection = (UINT8)( ( ubIncomingDirection + 6 ) % NUM_WORLD_DIRECTIONS );
+	UINT8 ubRightDirection = (UINT8)( ( ubIncomingDirection + 2 ) % NUM_WORLD_DIRECTIONS );
+	UINT8 ubSoftLeftDirection = (UINT8)( ( ubIncomingDirection + 7 ) % NUM_WORLD_DIRECTIONS );
+	UINT8 ubSoftRightDirection = (UINT8)( ( ubIncomingDirection + 1 ) % NUM_WORLD_DIRECTIONS );
 
-	// Preserve the visual direction of travel when a running soldier is hit. The
-	// forward-fall animation then reads as momentum carrying the body into a trip.
-	if ( pSoldier->usAnimState == RUNNING || pSoldier->usAnimState == RUNNING_W_PISTOL )
+	BOOLEAN fRunning = ( pSoldier->usAnimState == RUNNING || pSoldier->usAnimState == RUNNING_W_PISTOL );
+	UINT8 ubMomentumDirection = ubOriginalDirection;
+	if ( fRunning && pSoldier->pathing.usPathIndex < pSoldier->pathing.usPathDataSize )
+		ubMomentumDirection = (UINT8)( pSoldier->pathing.usPathingData[ pSoldier->pathing.usPathIndex ] % NUM_WORLD_DIRECTIONS );
+
+	UINT8 ubReaction = 0;
+
+	// Damage-aware families. Light wounds mostly produce flinches/stumbles; medium
+	// wounds add gentle collapses; heavy wounds unlock the checked flyback family.
+	// Running victims use momentum-heavy variants so they do not snap to a stationary pose.
+	if ( fRunning )
+		ubReaction = (UINT8)( 20 + Random( 10 ) );
+	else if ( sDamage <= 7 )
+		ubReaction = (UINT8)Random( 12 );
+	else if ( sDamage <= 17 )
+		ubReaction = (UINT8)( 6 + Random( 17 ) );
+	else
+		ubReaction = (UINT8)( 12 + Random( 18 ) );
+
+	DebugMsg( TOPIC_JA2, DBG_LEVEL_3, String(
+		"VR_HIT variant=%u soldier=%u damage=%d running=%u incomingDir=%u momentumDir=%u",
+		ubReaction, pSoldier->ubID, sDamage, fRunning ? 1 : 0, ubIncomingDirection, ubMomentumDirection ) );
+
+	switch ( ubReaction )
 	{
-		UINT8 ubMomentumDirection = pSoldier->ubDirection;
-		if ( pSoldier->pathing.usPathIndex < pSoldier->pathing.usPathDataSize )
-			ubMomentumDirection = (UINT8)( pSoldier->pathing.usPathingData[ pSoldier->pathing.usPathIndex ] % NUM_WORLD_DIRECTIONS );
-
-		pSoldier->EVENT_SetSoldierDirection( ubMomentumDirection );
-		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
-		pSoldier->BeginTyingToFall();
-		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+	// --- light / upright reactions -------------------------------------------------
+	case 0: // compact generic torso flinch
+		pSoldier->EVENT_InitNewSoldierAnim( GENERIC_HIT_STAND, 0, FALSE );
 		return TRUE;
-	}
 
-	// Extreme test mix. Later this will be scaled by energy, damage, armour,
-	// hit location, stance and current movement speed.
-	UINT8 ubReaction = (UINT8)Random( 100 );
-
-	if ( ubReaction < 45 )
-	{
-		// Hard two-tile displacement. Existing FLYBACK_HIT already owns the
-		// collision/path checks and gracefully degrades when space is blocked.
-		pSoldier->ChangeToFlybackAnimation( ubIncomingDirection );
+	case 1: // weapon-bearing shoulder recoil
+		pSoldier->EVENT_InitNewSoldierAnim(
+			pSoldier->SoldierCarriesTwoHandedWeapon() ? RIFLE_STAND_HIT : GENERIC_HIT_STAND, 0, FALSE );
 		return TRUE;
-	}
-	else if ( ubReaction < 75 )
-	{
-		// Shorter one-tile stagger/fallback.
+
+	case 2: // sharper burst-style full-body flinch
+		pSoldier->EVENT_SetSoldierDirection( ubIncomingDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->EVENT_InitNewSoldierAnim( STANDING_BURST_HIT, 0, FALSE );
+		return TRUE;
+
+	case 3: // left shoulder twist, then restore facing
+		pSoldier->EVENT_SetSoldierDirection( ubSoftLeftDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->EVENT_InitNewSoldierAnim( GENERIC_HIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 4: // right shoulder twist
+		pSoldier->EVENT_SetSoldierDirection( ubSoftRightDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->EVENT_InitNewSoldierAnim( GENERIC_HIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 5: // stronger left rotational flinch
+		pSoldier->EVENT_SetSoldierDirection( ubLeftDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->EVENT_InitNewSoldierAnim( STANDING_BURST_HIT, 0, FALSE );
+		return TRUE;
+
+	case 6: // stronger right rotational flinch
+		pSoldier->EVENT_SetSoldierDirection( ubRightDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->EVENT_InitNewSoldierAnim( STANDING_BURST_HIT, 0, FALSE );
+		return TRUE;
+
+	case 7: // momentarily turns away from impact
+		pSoldier->EVENT_SetSoldierDirection( ubOppositeDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->EVENT_InitNewSoldierAnim( GENERIC_HIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 8: // short one-tile backward stagger
 		pSoldier->ChangeToFallbackAnimation( ubIncomingDirection );
 		return TRUE;
-	}
-	else
-	{
-		// Directional collapse: mostly sideways so repeated hits do not all look
-		// identical. Existing fall code handles the transition to the ground.
-		UINT8 ubFallDirection = (UINT8)( ( ubIncomingDirection + ( Random( 2 ) ? 2 : 6 ) ) % NUM_WORLD_DIRECTIONS );
-		pSoldier->EVENT_SetSoldierDirection( ubFallDirection );
-		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
+
+	case 9: // oblique stagger left
+		pSoldier->ChangeToFallbackAnimation( ubSoftLeftDirection );
+		return TRUE;
+
+	case 10: // oblique stagger right
+		pSoldier->ChangeToFallbackAnimation( ubSoftRightDirection );
+		return TRUE;
+
+	case 11: // straight recoil while preserving weapon-hit visual where possible
+		pSoldier->EVENT_SetSoldierDirection( ubIncomingDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->EVENT_InitNewSoldierAnim(
+			pSoldier->SoldierCarriesTwoHandedWeapon() ? RIFLE_STAND_HIT : STANDING_BURST_HIT, 0, FALSE );
+		return TRUE;
+
+	// --- medium / soft-collapse reactions -----------------------------------------
+	case 12: // gentle forward fold in current facing direction
+		pSoldier->EVENT_SetSoldierDirection( ubOriginalDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 13: // gentle forward fall aligned with incoming impulse
+		pSoldier->EVENT_SetSoldierDirection( ubIncomingDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 14: // soft diagonal-left collapse
+		pSoldier->EVENT_SetSoldierDirection( ubSoftLeftDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 15: // soft diagonal-right collapse
+		pSoldier->EVENT_SetSoldierDirection( ubSoftRightDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 16: // pronounced left-side loss of balance
+		pSoldier->EVENT_SetSoldierDirection( ubLeftDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 17: // pronounced right-side loss of balance
+		pSoldier->EVENT_SetSoldierDirection( ubRightDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 18: // restrained backward collapse
+		pSoldier->ChangeToFallbackAnimation( ubIncomingDirection );
+		return TRUE;
+
+	case 19: // backward collapse angled by impact
+		pSoldier->ChangeToFallbackAnimation( Random( 2 ) ? ubSoftLeftDirection : ubSoftRightDirection );
+		return TRUE;
+
+	// --- running / momentum reactions ---------------------------------------------
+	case 20: // running trip: preserve direction of travel
+		pSoldier->EVENT_SetSoldierDirection( ubMomentumDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 21: // running fall veers slightly left
+		pSoldier->EVENT_SetSoldierDirection( (UINT8)( ( ubMomentumDirection + 7 ) % NUM_WORLD_DIRECTIONS ) );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 22: // running fall veers slightly right
+		pSoldier->EVENT_SetSoldierDirection( (UINT8)( ( ubMomentumDirection + 1 ) % NUM_WORLD_DIRECTIONS ) );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 23: // running sideways spill left
+		pSoldier->EVENT_SetSoldierDirection( (UINT8)( ( ubMomentumDirection + 6 ) % NUM_WORLD_DIRECTIONS ) );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 24: // running sideways spill right
+		pSoldier->EVENT_SetSoldierDirection( (UINT8)( ( ubMomentumDirection + 2 ) % NUM_WORLD_DIRECTIONS ) );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	// --- heavy reactions -----------------------------------------------------------
+	case 25: // checked hard flyback
+		pSoldier->ChangeToFlybackAnimation( ubIncomingDirection );
+		return TRUE;
+
+	case 26: // checked oblique flyback left
+		pSoldier->ChangeToFlybackAnimation( ubSoftLeftDirection );
+		return TRUE;
+
+	case 27: // checked oblique flyback right
+		pSoldier->ChangeToFlybackAnimation( ubSoftRightDirection );
+		return TRUE;
+
+	case 28: // heavy hit but body simply folds rather than launching
+		pSoldier->EVENT_SetSoldierDirection( Random( 2 ) ? ubSoftLeftDirection : ubSoftRightDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 29: // limp-looking straight collapse
+		pSoldier->EVENT_SetSoldierDirection( ubOriginalDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
 		pSoldier->BeginTyingToFall();
 		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
 		return TRUE;
 	}
+
+	return FALSE;
 }
 
 // VR fatal-reaction pack: thirty distinct in-game gunshot death sequences built from
