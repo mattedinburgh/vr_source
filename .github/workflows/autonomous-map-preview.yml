@@ -118,14 +118,22 @@ jobs:
           if (-not (Test-Path (Join-Path $gameRoot 'JA2_EN_Release.exe'))) { throw "Live JA2 game root not found: $gameRoot" }
           New-Item -ItemType Directory -Force -Path $sandbox | Out-Null
           & robocopy $gameRoot $sandbox /MIR /R:1 /W:1 /XD (Join-Path $gameRoot '00000') (Join-Path $gameRoot 'Profiles') (Join-Path $gameRoot 'MAP_PREVIEWS') /XF '*.log'
-          if ($LASTEXITCODE -gt 7) { throw "Sandbox refresh failed: robocopy $LASTEXITCODE" }
+          $rc = $LASTEXITCODE
+          if ($rc -gt 7) { throw "Sandbox refresh failed: robocopy $rc" }
+          Write-Host "Sandbox refresh robocopy exit code $rc (0-7 = success)."
+          $global:LASTEXITCODE = 0
+
           & robocopy (Join-Path $gamedir 'Data-Maps-Tiles') (Join-Path $sandbox 'Data-Maps-Tiles') /MIR /R:1 /W:1
-          if ($LASTEXITCODE -gt 7) { throw "Map asset overlay failed: robocopy $LASTEXITCODE" }
+          $rc = $LASTEXITCODE
+          if ($rc -gt 7) { throw "Map asset overlay failed: robocopy $rc" }
+          Write-Host "Map asset overlay robocopy exit code $rc (0-7 = success)."
+          $global:LASTEXITCODE = 0
           $editor = Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\MapEditor_EN_Release.exe'
           Copy-Item -Force $editor (Join-Path $sandbox 'MapEditor_EN_Release.exe')
           $previewDir = Join-Path $sandbox 'MAP_PREVIEWS'
           New-Item -ItemType Directory -Force -Path $previewDir | Out-Null
           Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $previewDir 'A3_overview.bmp')
+          exit 0
 
       - name: Render A3 with the real JA2 engine
         shell: powershell
