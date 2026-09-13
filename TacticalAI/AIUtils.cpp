@@ -7151,11 +7151,10 @@ UINT8 AIGetDoctrineProfile(SOLDIERTYPE *pSoldier)
 		return AI_DOCTRINE_ELITE_MOBILE;
 
 	case SOLDIER_CLASS_ARMY:
-		if (AICheckIsLeader(pSoldier) ||
-			pSoldier->stats.bExpLevel >= 6 ||
-			(pSoldier->stats.bExpLevel >= 5 &&
-			 (pSoldier->aiData.bAttitude == CUNNINGAID ||
-			  pSoldier->aiData.bAttitude == CUNNINGSOLO)))
+		// Training/doctrine must come from rank/experience, not a randomly assigned
+		// tactical personality. CUNNING still affects risk/decision style elsewhere,
+		// but it does not promote a line soldier into the veteran doctrine layer.
+		if (AICheckIsLeader(pSoldier) || pSoldier->stats.bExpLevel >= 6)
 			return AI_DOCTRINE_VETERAN;
 		return AI_DOCTRINE_LINE;
 
