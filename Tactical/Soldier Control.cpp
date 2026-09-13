@@ -10032,14 +10032,14 @@ void SOLDIERTYPE::StopDraggingBleedoutCasualty( void )
 	if ( this->ubDraggedCasualtyID != NOBODY )
 	{
 		SOLDIERTYPE *pCasualty = MercPtrs[ this->ubDraggedCasualtyID ];
-		if ( pCasualty )
+		if ( pCasualty && pCasualty->ubDraggedByID == this->ubID )
 		{
-			if ( pCasualty->ubDraggedByID == this->ubID )
-				pCasualty->ubDraggedByID = NOBODY;
+			pCasualty->ubDraggedByID = NOBODY;
 
 			// Match current 1.13's CancelDrag safety: leave the casualty centered
 			// on its actual tile so an interrupted/sub-tile drag cannot leave the
-			// animation or occupancy position offset.
+			// animation or occupancy position offset. Only the reciprocal owner may
+			// reposition the casualty; stale one-sided links must be side-effect free.
 			if ( !TileIsOutOfBounds( pCasualty->sGridNo ) )
 			{
 				INT16 sWorldX = 0;
