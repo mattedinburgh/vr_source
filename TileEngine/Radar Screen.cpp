@@ -90,8 +90,8 @@ MOUSE_REGION gRadarRegionSquadList[ NUMBER_OF_SQUADS ];
 
 void InitRadarScreenCoords( )
 {
-	RADAR_WINDOW_TM_X 		= xResOffset + (xResSize - 97);
-	RADAR_WINDOW_SM_X 		= xResOffset + (xResSize - 97);
+	RADAR_WINDOW_TM_X 		= INTERFACE_START_X + (INTERFACE_WIDTH - 97);
+	RADAR_WINDOW_SM_X 		= INTERFACE_START_X + (INTERFACE_WIDTH - 97);
 	RADAR_WINDOW_STRAT_X 	= xResOffset + (xResSize - 97);
 	RADAR_WINDOW_STRAT_Y 	= (SCREEN_HEIGHT - 107);
 
@@ -799,8 +799,8 @@ BOOLEAN CreateDestroyMouseRegionsForSquadList( void )
 
 		GetVideoObject(&hHandle, uiHandle);
 
-		BltVideoObject( guiSAVEBUFFER , hHandle, 0,(xResOffset + xResSize - 102 - 1), gsVIEWPORT_END_Y, VO_BLT_SRCTRANSPARENCY,NULL );
-		RestoreExternBackgroundRect ((xResOffset + xResSize - 102 - 1), gsVIEWPORT_END_Y, 102,( INT16 ) ( SCREEN_HEIGHT - gsVIEWPORT_END_Y ) );
+		BltVideoObject( guiSAVEBUFFER , hHandle, 0,(INTERFACE_START_X + INTERFACE_WIDTH - 102 - 1), gsVIEWPORT_END_Y, VO_BLT_SRCTRANSPARENCY,NULL );
+		RestoreExternBackgroundRect ((INTERFACE_START_X + INTERFACE_WIDTH - 102 - 1), gsVIEWPORT_END_Y, 102,( INT16 ) ( SCREEN_HEIGHT - gsVIEWPORT_END_Y ) );
 
 		for( sCounter = 0; sCounter < NUMBER_OF_SQUADS; sCounter++ )
 		{
