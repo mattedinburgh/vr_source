@@ -72,7 +72,6 @@
 	#include "Editor Taskbar Utils.h"
 #endif
 
-#include "message.h"
 
 #define	SET_MOVEMENTCOST( a, b, c, d )				( ( gubWorldMovementCosts[ a ][ b ][ c ] < d ) ? ( gubWorldMovementCosts[ a ][ b ][ c ] = d ) : 0 );
 #define	FORCE_SET_MOVEMENTCOST( a, b, c, d )	( gubWorldMovementCosts[ a ][ b ][ c ] = d )
@@ -799,6 +798,24 @@ static BOOLEAN ValidateB1MapTileReference( UINT8 ubType, UINT16 usSubIndex, INT3
 	return TRUE;
 }
 
+static BOOLEAN IsMandatoryB1StructureType( UINT32 ubType )
+{
+	switch ( ubType )
+	{
+		case THIRDOSTRUCT:
+		case FIRSTWALL:
+		case SECONDWALL:
+		case THIRDWALL:
+		case FOURTHWALL:
+		case FIRSTROOF:
+		case FIRSTONROOF:
+		case SECONDONROOF:
+			return TRUE;
+		default:
+			return FALSE;
+	}
+}
+
 BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLEAN fGetFromRoot )
 {
 	// Add tile surface
@@ -865,6 +882,29 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 		{
 			FatalError( "B1 remaster is incomplete. Mandatory asset missing: %s", cAdjustedFile );
 			return( FALSE );
+		}
+
+		if ( IsMandatoryB1StructureType( ubType ) )
+		{
+			CHAR8 cMandatoryJSD[128];
+			strcpy( cMandatoryJSD, cAdjustedFile );
+			STR cExt = strchr( cMandatoryJSD, '.' );
+			if ( cExt != NULL )
+			{
+				cExt++;
+				*cExt = '\0';
+			}
+			else
+			{
+				strcat( cMandatoryJSD, "." );
+			}
+			strcat( cMandatoryJSD, STRUCTURE_FILE_EXTENSION );
+
+			if ( !FileExists( cMandatoryJSD ) )
+			{
+				FatalError( "B1 remaster is incomplete. Mandatory structure data missing: %s", cMandatoryJSD );
+				return( FALSE );
+			}
 		}
 	}
 	else if ( !fGetFromRoot )
@@ -3654,9 +3694,6 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	MemFree(pBufferHead);
 	MemFree(bCounts);
 
-	// Temporary runtime confirmation for the Oronegro B1 remaster test.
-	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
-		ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, L"B1 REMASTER ASSETS LOADED" );
 
 	return(TRUE);
 }
