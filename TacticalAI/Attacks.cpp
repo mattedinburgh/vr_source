@@ -1168,27 +1168,41 @@ static UINT8 AIRecentTossSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, IN
 			pFriend->bBreathCollapsed ||
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
 			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
-			pFriend->pathing.bLevel != bTargetLevel ||
 			!AISameFireteam(pSoldier, pFriend))
 		{
 			continue;
 		}
 
 		INT32 sRecentTarget = NOWHERE;
+		INT8 bRecentTargetLevel = -1;
 
 		if (pFriend->aiData.bAction == AI_ACTION_TOSS_PROJECTILE &&
 			!TileIsOutOfBounds(pFriend->aiData.usActionData))
 		{
 			sRecentTarget = pFriend->aiData.usActionData;
+			bRecentTargetLevel = pFriend->bTargetLevel;
+		}
+		else if (pFriend->aiData.bNextAction == AI_ACTION_TOSS_PROJECTILE &&
+			!TileIsOutOfBounds(pFriend->aiData.usNextActionData))
+		{
+			// A stance/facing change can queue the toss before it becomes the current
+			// action. Treat that as a real commitment so the next soldier does not
+			// independently choose the same blast area.
+			sRecentTarget = pFriend->aiData.usNextActionData;
+			bRecentTargetLevel = pFriend->aiData.bNextTargetLevel;
 		}
 		else if (pFriend->aiData.bLastAction == AI_ACTION_TOSS_PROJECTILE &&
 			pFriend->bActionPoints < pFriend->bInitialActionPoints &&
 			!TileIsOutOfBounds(pFriend->sLastTarget))
 		{
 			sRecentTarget = pFriend->sLastTarget;
+			bRecentTargetLevel = pFriend->bTargetLevel;
 		}
 
+		// Compare the grenade target elevation, not the thrower's own elevation.
+		// Ground troops can legitimately throw/launch onto a roof and vice versa.
 		if (!TileIsOutOfBounds(sRecentTarget) &&
+			bRecentTargetLevel == bTargetLevel &&
 			PythSpacesAway(sRecentTarget, sTargetSpot) <= 2)
 		{
 			++ubCount;
