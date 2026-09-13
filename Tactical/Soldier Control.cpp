@@ -9030,6 +9030,15 @@ void SetSoldierAniSpeed( SOLDIERTYPE *pSoldier )
 		//pSoldier->sAniDelay = 1000;
 	}
 
+	// Current 1.13 also slows the drag animation itself. Keep visual/realtime
+	// movement aligned with our +50% tile AP burden.
+	if ( pSoldier->sAniDelay > 0 &&
+		(gAnimControl[pSoldier->usAnimState].uiFlags & ANIM_MOVING) &&
+		pSoldier->IsDraggingBleedoutCasualty() )
+	{
+		pSoldier->sAniDelay = max( (INT16)1, (INT16)((3 * pSoldier->sAniDelay + 1) / 2) );
+	}
+
 	if ( gTacticalStatus.uiFlags & TURNBASED && gTacticalStatus.uiFlags & INCOMBAT )
 		if( GetSpeedUpFactor() )
 			pSoldier->sAniDelay = (INT16)((FLOAT)pSoldier->sAniDelay * GetSpeedUpFactor());
@@ -9638,7 +9647,10 @@ void SOLDIERTYPE::BeginSoldierGetup( void )
 	{
 		if ( this->stats.bLife >= OKLIFE && this->bBreath >= OKBREATH && (this->bSleepDrugCounter == 0) )
 		{
-			// get up you hoser!
+			// get up you hoser! A recovering casualty can no longer be dragged.
+			// Clear both directions before the stance/animation transition.
+			if ( this->ubDraggedByID != NOBODY || this->ubDraggedCasualtyID != NOBODY )
+				this->ClearBleedoutDragLinks();
 
 			this->bCollapsed = FALSE;
 			this->bTurnsCollapsed = 0;
@@ -9883,8 +9895,21 @@ BOOLEAN SOLDIERTYPE::CanDragBleedoutCasualty( SOLDIERTYPE *pCasualty )
 		pCasualty->ubServiceCount > 0 || SpacesAway( this->sGridNo, pCasualty->sGridNo ) != 1 )
 		return FALSE;
 
+	// Current 1.13 drag-person rules reject non-human body types and do not
+	// allow grabbing somebody through a solid wall or closed door.
+	if ( pCasualty->ubBodyType >= COW || pCasualty->ubBodyType == QUEENMONSTER ||
+		(pCasualty->flags.uiStatusFlags & (SOLDIER_VEHICLE | SOLDIER_ROBOT)) )
+		return FALSE;
+
 	if ( this->MercInHighWater() || pCasualty->MercInHighWater() )
 		return FALSE;
+
+	UINT8 ubDragDirection = AIDirection( this->sGridNo, pCasualty->sGridNo );
+	if ( ubDragDirection == DIRECTION_IRRELEVANT ||
+		gubWorldMovementCosts[pCasualty->sGridNo][ubDragDirection][this->pathing.bLevel] >= TRAVELCOST_BLOCKED )
+	{
+		return FALSE;
+	}
 
 	if ( this->ubDraggedCasualtyID != NOBODY )
 	{
@@ -9951,8 +9976,25 @@ void SOLDIERTYPE::StopDraggingBleedoutCasualty( void )
 	if ( this->ubDraggedCasualtyID != NOBODY )
 	{
 		SOLDIERTYPE *pCasualty = MercPtrs[ this->ubDraggedCasualtyID ];
-		if ( pCasualty && pCasualty->ubDraggedByID == this->ubID )
-			pCasualty->ubDraggedByID = NOBODY;
+		if ( pCasualty )
+		{
+			if ( pCasualty->ubDraggedByID == this->ubID )
+				pCasualty->ubDraggedByID = NOBODY;
+
+			// Match current 1.13's CancelDrag safety: leave the casualty centered
+			// on its actual tile so an interrupted/sub-tile drag cannot leave the
+			// animation or occupancy position offset.
+			if ( !TileIsOutOfBounds( pCasualty->sGridNo ) )
+			{
+				INT16 sWorldX = 0;
+				INT16 sWorldY = 0;
+				ConvertGridNoToCenterCellXY( pCasualty->sGridNo, &sWorldX, &sWorldY );
+				pCasualty->EVENT_InternalSetSoldierPosition( (FLOAT)sWorldX, (FLOAT)sWorldY, FALSE, FALSE, FALSE );
+				pCasualty->pathing.sDestination = pCasualty->sGridNo;
+				pCasualty->pathing.sFinalDestination = pCasualty->sGridNo;
+				pCasualty->sAbsoluteFinalDestination = pCasualty->sGridNo;
+			}
+		}
 	}
 	this->ubDraggedCasualtyID = NOBODY;
 }
