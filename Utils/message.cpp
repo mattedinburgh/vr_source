@@ -569,13 +569,13 @@ static void BattleLogContentCallback( MOUSE_REGION *pRegion, INT32 iReason )
 		UINT32 available = guiBattleLogSequence >= oldest ? guiBattleLogSequence - oldest + 1 : 0;
 		UINT32 maxOffset = available > 0 ? available - 1 : 0;
 		gusBattleLogScrollOffset = (UINT16)__min( maxOffset, (UINT32)gusBattleLogScrollOffset + 3 );
-		BattleLogRebuildOverlay();
+		InvalidateRegion( gsBattleLogX, gsBattleLogY, gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH );
 		return;
 	}
 	if ( iReason & MSYS_CALLBACK_REASON_WHEEL_DOWN )
 	{
 		gusBattleLogScrollOffset = gusBattleLogScrollOffset > 3 ? gusBattleLogScrollOffset - 3 : 0;
-		BattleLogRebuildOverlay();
+		InvalidateRegion( gsBattleLogX, gsBattleLogY, gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH );
 		return;
 	}
 	if ( iReason & MSYS_CALLBACK_REASON_RBUTTON_UP )
@@ -663,10 +663,16 @@ static void BattleLogRemoveRegions( void )
 	gfBattleLogRegionsCreated = FALSE;
 }
 
+static UINT8 *gpBattleLogDestBuf = NULL;
+static UINT32 guiBattleLogDestPitchBYTES = 0;
+
 static void BattleLogPrintInspectorLine( INT16 x, INT16 y, UINT16 color, STR16 text )
 {
+	if ( gpBattleLogDestBuf == NULL || text == NULL )
+		return;
+
 	SetFontForeground( color );
-	mprintf( x, y, L"%s", text );
+	mprintf_buffer( gpBattleLogDestBuf, guiBattleLogDestPitchBYTES, TINYFONT1, x, y, L"%s", text );
 }
 
 static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
@@ -688,14 +694,16 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 	ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, gsBattleLogX, gsBattleLogY, gsBattleLogX + 1, gsBattleLogY + gsBattleLogH, borderHi );
 	ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, gsBattleLogX + gsBattleLogW - 1, gsBattleLogY, gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH, border );
 
+	gpBattleLogDestBuf = LockVideoSurface( pBlitter->uiDestBuff, &guiBattleLogDestPitchBYTES );
+	if ( gpBattleLogDestBuf == NULL )
+		return;
+
 	SetFont( TINYFONT1 );
 	SetFontBackground( FONT_MCOLOR_BLACK );
 	SetFontShadow( DEFAULT_SHADOW );
-	SetFontForeground( FONT_MCOLOR_WHITE );
-	mprintf( gsBattleLogX + 6, gsBattleLogY + 4, L"BATTLE LOG" );
-	SetFontForeground( FONT_MCOLOR_LTGRAY );
-	mprintf( gsBattleLogX + 82, gsBattleLogY + 4, L"ALL  |  COMBAT  |  SQUAD  |  RADIO" );
-	mprintf( gsBattleLogX + gsBattleLogW - 26, gsBattleLogY + 4, L"::" );
+	BattleLogPrintInspectorLine( gsBattleLogX + 6, gsBattleLogY + 4, FONT_MCOLOR_WHITE, L"BATTLE LOG" );
+	BattleLogPrintInspectorLine( gsBattleLogX + 82, gsBattleLogY + 4, FONT_MCOLOR_LTGRAY, L"ALL  |  COMBAT  |  SQUAD  |  RADIO" );
+	BattleLogPrintInspectorLine( gsBattleLogX + gsBattleLogW - 26, gsBattleLogY + 4, FONT_MCOLOR_LTGRAY, L"::" );
 
 	UINT32 endExclusive = 0;
 	UINT32 seq = BattleLogFirstVisibleSequence( &endExclusive );
@@ -706,16 +714,14 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		BATTLE_LOG_ENTRY *pEntry = BattleLogEntryBySequence( seq );
 		if ( pEntry )
 		{
-			SetFontForeground( pEntry->usColor );
-			mprintf( gsBattleLogX + 6, y, L"%s", pEntry->zText );
+			BattleLogPrintInspectorLine( gsBattleLogX + 6, y, pEntry->usColor, pEntry->zText );
 		}
 		seq++;
 		y += lineH;
 	}
 
 	// Resize grip.
-	SetFontForeground( FONT_MCOLOR_LTGRAY );
-	mprintf( gsBattleLogX + gsBattleLogW - 12, gsBattleLogY + gsBattleLogH - 10, L"//" );
+	BattleLogPrintInspectorLine( gsBattleLogX + gsBattleLogW - 12, gsBattleLogY + gsBattleLogH - 10, FONT_MCOLOR_LTGRAY, L"//" );
 
 	if ( gfBattleLogInspectorVisible )
 	{
@@ -732,8 +738,7 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, ix + iw - 1, iy, ix + iw, iy + BATTLE_LOG_INSPECTOR_H, border );
 		ColorFillVideoSurfaceArea( pBlitter->uiDestBuff, ix, iy + BATTLE_LOG_INSPECTOR_H - 1, ix + iw, iy + BATTLE_LOG_INSPECTOR_H, border );
 
-		SetFontForeground( FONT_MCOLOR_LTYELLOW );
-		mprintf( ix + 6, iy + 4, L"SHOT INSPECTOR - MISS" );
+		BattleLogPrintInspectorLine( ix + 6, iy + 4, FONT_MCOLOR_LTYELLOW, L"SHOT INSPECTOR - MISS" );
 
 		INT16 sy = iy + BATTLE_LOG_HEADER_H + 3;
 		swprintf( z, L"Aim %d | range %.1f tiles | NCTH %.1f | muzzle sway %.1f",
@@ -815,6 +820,10 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTRED, z );
 	}
 
+	UnLockVideoSurface( pBlitter->uiDestBuff );
+	gpBattleLogDestBuf = NULL;
+	guiBattleLogDestPitchBYTES = 0;
+
 	InvalidateRegion( gsBattleLogX, __max(0, gsBattleLogY - BATTLE_LOG_INSPECTOR_H - 4),
 		gsBattleLogX + gsBattleLogW + 1, gsBattleLogY + gsBattleLogH + 1 );
 }
@@ -891,7 +900,10 @@ void BattleLogAddText( UINT16 usColor, STR16 pString )
 	gusBattleLogScrollOffset = 0;
 
 	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
-		BattleLogRebuildOverlay();
+	{
+		BattleLogEnsureUI();
+		InvalidateRegion( gsBattleLogX, gsBattleLogY, gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH );
+	}
 }
 
 void BattleLogAddNCTHMiss( INT32 iBullet )
@@ -918,7 +930,10 @@ void BattleLogAddNCTHMiss( INT32 iBullet )
 	gusBattleLogScrollOffset = 0;
 
 	if ( guiCurrentScreen == GAME_SCREEN && gfBattleLogVisible )
-		BattleLogRebuildOverlay();
+	{
+		BattleLogEnsureUI();
+		InvalidateRegion( gsBattleLogX, gsBattleLogY, gsBattleLogX + gsBattleLogW, gsBattleLogY + gsBattleLogH );
+	}
 }
 
 void ScrollString( )
