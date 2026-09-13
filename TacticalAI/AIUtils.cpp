@@ -35,6 +35,8 @@
 	#include "Interface.h"
 #endif
 
+#include "Strategic Movement.h"
+
 //////////////////////////////////////////////////////////////////////////////
 // SANDRO - In this file, all APBPConstants[AP_CROUCH] and APBPConstants[AP_PRONE] were changed to GetAPsCrouch() and GetAPsProne()
 //			On the bottom here, there are these functions made
@@ -6172,6 +6174,11 @@ static BOOLEAN AIShouldStartEscapeFromState(SOLDIERTYPE *pSoldier, INT8 bSituati
 
 BOOLEAN AIShouldStartEscape(SOLDIERTYPE *pSoldier)
 {
+	// A force that already escaped from the previous sector has spent its
+	// strategic retreat. Local fallback remains legal, but another map-edge
+	// escape during this pursuit battle is not.
+	if (EnemyRetreatLockedInSector((UINT8)gWorldSectorX, (UINT8)gWorldSectorY))
+		return FALSE;
 	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM || pSoldier->IsZombie() ||
 		pSoldier->ubProfile != NO_PROFILE ||
 		pSoldier->aiData.bAlertStatus < STATUS_RED ||
@@ -6217,7 +6224,8 @@ static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituati
 		guiAIEscapeStartTurn[ubID] = 0;
 	}
 
-	if (pSoldier->bTeam != ENEMY_TEAM || pSoldier->IsZombie() ||
+	if (EnemyRetreatLockedInSector((UINT8)gWorldSectorX, (UINT8)gWorldSectorY) ||
+		pSoldier->bTeam != ENEMY_TEAM || pSoldier->IsZombie() ||
 		pSoldier->ubProfile != NO_PROFILE ||
 		pSoldier->aiData.bAlertStatus < STATUS_RED ||
 		pSoldier->aiData.bAttitude == ATTACKSLAYONLY ||
