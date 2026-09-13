@@ -11273,6 +11273,7 @@ void HandleTakeDamageDeath( SOLDIERTYPE *pSoldier, UINT8 bOldLife, UINT8 ubReaso
 // Battlefield casualty audio
 // -----------------------------------------------------------------------------
 static UINT32 guiLastBattlefieldMedicCall = 0;
+static UINT32 guiLastBattlefieldAgonyCall = 0;
 static UINT32 guiLastEnemyBattlefieldReaction = 0;
 
 static BOOLEAN CanUseBattlefieldCasualtyVoice( SOLDIERTYPE *pSoldier )
@@ -11405,10 +11406,13 @@ static void MaybePlayBattlefieldCasualtyAudio( SOLDIERTYPE *pCasualty, INT8 bOld
 	}
 	else if ( pCasualty->ubProfile == NO_PROFILE &&
 		( pCasualty->bTeam == gbPlayerNum || pCasualty->bTeam == MILITIA_TEAM ) &&
-		pCasualty->stats.bLife >= CONSCIOUSNESS && Random( 100 ) < 55 )
+		pCasualty->stats.bLife >= CONSCIOUSNESS &&
+		( uiNow - guiLastBattlefieldMedicCall ) > 6000 && Random( 100 ) < 55 )
 	{
 		// Shared English casualty callouts are allied-only. Enemy Army voices
-		// remain Spanish and use the Army voice-taunt bank.
+		// remain Spanish and use the Army voice-taunt bank. The same sector-wide
+		// cooldown is used whether the wounded soldier or a nearby teammate calls,
+		// so a burst hitting several allies cannot produce a stack of "Medic!" lines.
 		fMedicCalled = pCasualty->DoMercBattleSound( BATTLE_SOUND_MEDIC );
 		if ( fMedicCalled )
 			guiLastBattlefieldMedicCall = uiNow;
@@ -11429,10 +11433,15 @@ static void MaybePlayBattlefieldCasualtyAudio( SOLDIERTYPE *pCasualty, INT8 bOld
 	MaybePlayEnemyCasualtyReaction( pCasualty, uiNow );
 
 	// Nonfatal agony reuses DYING/BADx_DIE but does not consume the real death cue.
-	if ( Random( 100 ) < 70 )
+	// A short battlefield-wide spacing prevents several casualties from groaning on
+	// the exact same impact frame while retaining the much longer medic-call cooldown.
+	if ( ( uiNow - guiLastBattlefieldAgonyCall ) > 1500 && Random( 100 ) < 70 )
 	{
-		pCasualty->uiTimeSinceLastBleedGrunt = uiNow;
-		pCasualty->DoMercBattleSound( BATTLE_SOUND_AGONY );
+		if ( pCasualty->DoMercBattleSound( BATTLE_SOUND_AGONY ) )
+		{
+			pCasualty->uiTimeSinceLastBleedGrunt = uiNow;
+			guiLastBattlefieldAgonyCall = uiNow;
+		}
 	}
 }
 
