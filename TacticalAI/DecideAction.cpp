@@ -1307,7 +1307,8 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 				pSoldier->pathing.bLevel == MercPtrs[ubPerson]->pathing.bLevel &&
 				pSoldier->CanInspect( MercPtrs[ubPerson] ) &&
 				MercPtrs[ubPerson]->SuspicionPercent() >= 50 &&
-				Random(100) < (MercPtrs[ubPerson]->SuspicionPercent() - 25) )
+				( MercPtrs[ubPerson]->SuspicionPercent() >= 75 ||
+				  Random(100) < (MercPtrs[ubPerson]->SuspicionPercent() - 25) ) )
 			{
 				UINT8 ubFriendsNearby = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE/4);
 				UINT8 ubSoldierDifficulty = SoldierDifficultyLevel(pSoldier);				
@@ -2033,7 +2034,8 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 				pSoldier->pathing.bLevel == MercPtrs[ubPerson]->pathing.bLevel &&
 				pSoldier->CanInspect( MercPtrs[ubPerson] ) &&
 				MercPtrs[ubPerson]->SuspicionPercent() >= 50 &&
-				Random(100) < (MercPtrs[ubPerson]->SuspicionPercent() - 25) )
+				( MercPtrs[ubPerson]->SuspicionPercent() >= 75 ||
+				  Random(100) < (MercPtrs[ubPerson]->SuspicionPercent() - 25) ) )
 			{
 				UINT8 ubFriendsNearby = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE/4);
 				UINT8 ubSoldierDifficulty = SoldierDifficultyLevel(pSoldier);				
