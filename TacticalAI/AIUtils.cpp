@@ -37,6 +37,8 @@
 
 #include "Strategic Movement.h"
 
+#include <map>
+
 //////////////////////////////////////////////////////////////////////////////
 // SANDRO - In this file, all APBPConstants[AP_CROUCH] and APBPConstants[AP_PRONE] were changed to GetAPsCrouch() and GetAPsProne()
 //			On the bottom here, there are these functions made
@@ -8113,31 +8115,76 @@ static INT32 AIVisibleTargetNCTHQuality(SOLDIERTYPE *pSoldier, INT32 sTargetSpot
 	pSoldier->ubAttackingHand = HANDPOS;
 	pSoldier->usAttackingWeapon = pSoldier->inv[HANDPOS].usItem;
 	pSoldier->bWeaponMode = WM_NORMAL;
-	pSoldier->bScopeMode = USE_BEST_SCOPE;
 
-	INT16 sMinAttackAP = MinAPsToAttack(pSoldier, sTargetSpot, ADDTURNCOST, 0, TRUE);
+	std::map<INT8, OBJECTTYPE*> ObjList;
+	GetScopeLists(pSoldier, &pSoldier->inv[HANDPOS], ObjList);
+
 	INT32 iBestQuality = -1;
-	// A zero-aim shot is still a valid practical firing solution when the minimum
-	// attack cost consumes all remaining AP. Do not misclassify it as 'cannot shoot'.
-	if (sMinAttackAP > 0 && sMinAttackAP <= pSoldier->bActionPoints)
-	{
-		iBestQuality = 0;
-		INT8 bAimLevels = CalcAimingLevelsAvailableWithAP(
-			pSoldier, sTargetSpot, (INT8)__max(0, pSoldier->bActionPoints - sMinAttackAP));
+	UINT8 ubDirection = AIDirection(pSoldier->sGridNo, sTargetSpot);
+	INT8 bFirstScopeMode =
+		(gGameExternalOptions.ubAllowAlternativeWeaponHolding == 3 ?
+		 USE_ALT_WEAPON_HOLD : USE_BEST_SCOPE);
+	INT8 bLastScopeMode =
+		(gGameExternalOptions.fScopeModes ? NUM_SCOPE_MODES - 1 : USE_BEST_SCOPE);
 
-		UINT8 ubDirection = AIDirection(pSoldier->sGridNo, sTargetSpot);
-		if (pSoldier->InternalIsValidStance(ubDirection, ANIM_STAND))
+	// Movement evaluation must search the same sight choices as attack selection.
+	// Otherwise a rifleman can move because USE_BEST_SCOPE is poor at close range
+	// even though irons/another optic would produce a perfectly viable shot.
+	for (INT8 bScopeMode = bFirstScopeMode; bScopeMode <= bLastScopeMode; ++bScopeMode)
+	{
+		if (bScopeMode == USE_ALT_WEAPON_HOLD)
+		{
+			if (Item[pSoldier->usAttackingWeapon].usItemClass & IC_THROWING_KNIFE)
+				continue;
+
+			// Match CalcBestShot()'s current eligibility rule exactly.
+			if (IS_MERC_BODY_TYPE(pSoldier))
+				continue;
+		}
+		else if (bScopeMode < USE_BEST_SCOPE || ObjList[bScopeMode] == NULL)
+		{
+			continue;
+		}
+
+		pSoldier->bScopeMode = bScopeMode;
+
+		INT16 sMinAttackAP = MinAPsToAttack(pSoldier, sTargetSpot, ADDTURNCOST, 0, TRUE);
+		if (sMinAttackAP <= 0 || sMinAttackAP > pSoldier->bActionPoints)
+			continue;
+
+		INT8 bAimLevels = CalcAimingLevelsAvailableWithAP(
+			pSoldier, sTargetSpot,
+			(INT8)__max(0, pSoldier->bActionPoints - sMinAttackAP));
+
+		if (pSoldier->InternalIsValidStance(ubDirection, ANIM_STAND) &&
+			(bScopeMode == USE_ALT_WEAPON_HOLD ||
+			 !Weapon[pSoldier->usAttackingWeapon].HeavyGun ||
+			 !Item[pSoldier->usAttackingWeapon].twohanded ||
+			 !gGameExternalOptions.ubAllowAlternativeWeaponHolding))
+		{
 			iBestQuality = __max(iBestQuality, (INT32)AICalcChanceToHitGun(
 				pSoldier, sTargetSpot, bAimLevels, AIM_SHOT_TORSO,
 				pTarget->pathing.bLevel, STANDING));
-		if (pSoldier->InternalIsValidStance(ubDirection, ANIM_CROUCH))
-			iBestQuality = __max(iBestQuality, (INT32)AICalcChanceToHitGun(
-				pSoldier, sTargetSpot, bAimLevels, AIM_SHOT_TORSO,
-				pTarget->pathing.bLevel, CROUCHING));
-		if (pSoldier->InternalIsValidStance(ubDirection, ANIM_PRONE))
-			iBestQuality = __max(iBestQuality, (INT32)AICalcChanceToHitGun(
-				pSoldier, sTargetSpot, bAimLevels, AIM_SHOT_TORSO,
-				pTarget->pathing.bLevel, PRONE));
+		}
+
+		// CalcBestShot() does not evaluate crouch/prone while using alternate
+		// weapon holding, so keep the movement model identical.
+		if (bScopeMode != USE_ALT_WEAPON_HOLD)
+		{
+			if (pSoldier->InternalIsValidStance(ubDirection, ANIM_CROUCH))
+			{
+				iBestQuality = __max(iBestQuality, (INT32)AICalcChanceToHitGun(
+					pSoldier, sTargetSpot, bAimLevels, AIM_SHOT_TORSO,
+					pTarget->pathing.bLevel, CROUCHING));
+			}
+
+			if (pSoldier->InternalIsValidStance(ubDirection, ANIM_PRONE))
+			{
+				iBestQuality = __max(iBestQuality, (INT32)AICalcChanceToHitGun(
+					pSoldier, sTargetSpot, bAimLevels, AIM_SHOT_TORSO,
+					pTarget->pathing.bLevel, PRONE));
+			}
+		}
 	}
 
 	pSoldier->usAttackingWeapon = usOldAttackingWeapon;
