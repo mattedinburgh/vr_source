@@ -41,6 +41,7 @@
 	#include "AIInternals.h"		//dnl ch69 150913
 	#include "CampaignStats.h"		// added by Flugente
 #endif
+#include "../TileEngine/environment.h"
 #include "connect.h"
 //rain
 //#define BREATH_GAIN_REDUCTION_PER_RAIN_INTENSITY 25
