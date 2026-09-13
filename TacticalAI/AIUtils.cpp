@@ -4595,7 +4595,7 @@ static BOOLEAN AIFireteamPredominantlyFixed(UINT8 ubFireteam)
 	return ubFixed > ubMobile;
 }
 
-static INT32 AIFireteamMergeDistance(UINT8 ubFirst, UINT8 ubSecond)
+static INT32 AIFireteamMergeDistance(UINT8 ubFirst, UINT8 ubSecond, SOLDIERTYPE *pJoiningSoldier)
 {
 	INT32 iBest = 10000;
 
@@ -4603,6 +4603,7 @@ static INT32 AIFireteamMergeDistance(UINT8 ubFirst, UINT8 ubSecond)
 		i <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++i)
 	{
 		SOLDIERTYPE *pFirst = MercPtrs[i];
+		BOOLEAN fJoiningLead = (pFirst == pJoiningSoldier);
 		if (!AIEnemyFireteamEligible(pFirst) ||
 			pFirst->ubID >= MAX_NUM_SOLDIERS ||
 			guiAIFireteamIdentity[pFirst->ubID] != pFirst->uiUniqueSoldierIdValue ||
@@ -4612,7 +4613,7 @@ static INT32 AIFireteamMergeDistance(UINT8 ubFirst, UINT8 ubSecond)
 			pFirst->bBreathCollapsed ||
 			(pFirst->usSoldierFlagMask & SOLDIER_POW) ||
 			(pFirst->flags.uiStatusFlags & SOLDIER_COWERING) ||
-			AIDisengagementActive(pFirst) || AIEscapeActive(pFirst))
+			(!fJoiningLead && (AIDisengagementActive(pFirst) || AIEscapeActive(pFirst))))
 		{
 			continue;
 		}
@@ -4652,6 +4653,16 @@ static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 		return FALSE;
 	UINT8 ubOld = AIFireteamId(pSoldier);
 	UINT8 ubReady = AIFireteamOperationalCountById(ubOld);
+	// The soldier asking to reattach may already carry stale disengagement/escape
+	// intent from the previous decision. Count him as part of the regrouping remnant
+	// even though operational-strength helpers correctly discount retreating troops.
+	if ((AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier)) &&
+		pSoldier->stats.bLife >= OKLIFE && !pSoldier->bCollapsed && !pSoldier->bBreathCollapsed &&
+		!(pSoldier->usSoldierFlagMask & SOLDIER_POW) &&
+		!(pSoldier->flags.uiStatusFlags & SOLDIER_COWERING))
+	{
+		++ubReady;
+	}
 	if (ubReady == 0 || ubReady > 2)
 		return FALSE;
 
@@ -4676,7 +4687,7 @@ static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
 		if (ubTargetReady + ubReady > AI_FIRETEAM_MAX_MERGED)
 			continue;
 
-		INT32 iDistance = AIFireteamMergeDistance(ubOld, ubTeam);
+		INT32 iDistance = AIFireteamMergeDistance(ubOld, ubTeam, pSoldier);
 		if (iDistance >= 10000)
 			continue;
 
@@ -5129,7 +5140,12 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	// A shattered one/two-man element gets first refusal on joining a viable
 	// neighbouring fireteam. Only if no such element exists should ordinary
 	// disengagement/escape logic take over.
-	UINT8 ubBefore = AIFireteamAliveCount(pSoldier);
+	UINT8 ubBefore = AIFireteamCombatReadyCount(pSoldier);
+	if ((AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier)) &&
+		pSoldier->stats.bLife >= OKLIFE && !pSoldier->bCollapsed && !pSoldier->bBreathCollapsed)
+	{
+		++ubBefore;
+	}
 	BOOLEAN fWasRemnant = (ubBefore > 0 && ubBefore <= 2);
 	if (fWasRemnant)
 		AIAbsorbFireteamRemnant(pSoldier);
