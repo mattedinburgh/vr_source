@@ -293,6 +293,17 @@ void CountPeopleInBoxingRingAndDoActions( void )
 						pInRing[uiLoop]->flags.uiStatusFlags |= SOLDIER_BOXER;
 					}
 				}
+				// Vengeance 100-AP economy: boxing can be entered from a save created under
+				// the old 25-AP scale. Current AP is serialized in saves, so without an
+				// explicit refresh a merc can begin the bout with values such as 8-12 AP.
+				// Recalculate both boxers while we are still in PRE_BOXING; CalcActionPoints()
+				// then applies the normal boxing pacing reduction to the modern 100-AP base.
+				for ( uiLoop = 0; uiLoop < 2; ++uiLoop )
+				{
+					pInRing[uiLoop]->bActionPoints = pInRing[uiLoop]->CalcActionPoints();
+					pInRing[uiLoop]->bInitialActionPoints = pInRing[uiLoop]->bActionPoints;
+				}
+
 				// start match!
 				SetBoxingState(BOXING);
 				gfLastBoxingMatchWonByPlayer = FALSE;
