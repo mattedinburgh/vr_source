@@ -253,9 +253,8 @@ void GameLoop(void)
 	clock_t		startTime = clock(); // decrease CPU load patch from defrog
 	static BOOLEAN fBlackBoxGlobalErrorReported = FALSE;
 
-	// Recorder v3 heartbeat: one very cheap lock-free update per loop. The
-	// watchdog can now detect a main-thread stall even while this function is
-	// blocked inside a screen handler, renderer, input path or asset load.
+	// Recorder v3 heartbeat: cheap lock-free state updated every loop.
+	BlackBoxFramePhase( BLACKBOX_PHASE_FRAME_BEGIN );
 	BlackBoxHeartbeat( guiCurrentScreen );
 
 	if(_LeftButtonDown | _RightButtonDown)//dnl ch77 191113 to prevent memory corruption during resize
@@ -272,6 +271,7 @@ void GameLoop(void)
 	MusicPoll( FALSE );
 
 	//DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"GameLoop: check for mouse events");
+	BlackBoxFramePhase( BLACKBOX_PHASE_INPUT );
 	//*** dddd
 	//while (DequeueSpecificEvent(&InputEvent, LEFT_BUTTON_REPEAT|RIGHT_BUTTON_REPEAT|LEFT_BUTTON_DOWN|LEFT_BUTTON_UP|RIGHT_BUTTON_DOWN|RIGHT_BUTTON_UP ) == TRUE )
 	while (DequeueSpecificEvent(&InputEvent, 
@@ -280,6 +280,9 @@ void GameLoop(void)
 		RIGHT_BUTTON_DOWN|RIGHT_BUTTON_UP|MIDDLE_BUTTON_DOWN|X1_BUTTON_DOWN|X2_BUTTON_DOWN|
 		MOUSE_WHEEL_UP|MOUSE_WHEEL_DOWN) == TRUE )
 	{
+		BlackBoxCheckpoint( "INPUT", "event=%u x=%d y=%d left=%u right=%u screen=%u",
+			(UINT32)InputEvent.usEvent, (INT32)MousePos.x, (INT32)MousePos.y,
+			(UINT32)_LeftButtonDown, (UINT32)_RightButtonDown, guiCurrentScreen );
 		// HOOK INTO MOUSE HOOKS
 	//DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("GameLoop: mouse event %d", InputEvent.usEvent ));
 		MouseSystemHook(InputEvent.usEvent, (UINT16)MousePos.x ,(UINT16)MousePos.y ,_LeftButtonDown, _RightButtonDown);
@@ -417,6 +420,7 @@ void GameLoop(void)
 	}
 
 	//DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"GameLoop: screen changed");
+	BlackBoxFramePhase( BLACKBOX_PHASE_SCREEN_HANDLER );
 	AssertNotNIL (GameScreens[guiCurrentScreen].HandleScreen);
 	uiOldScreen = (*(GameScreens[guiCurrentScreen].HandleScreen))();
 
@@ -429,6 +433,7 @@ void GameLoop(void)
 	}
 
 	// rain
+	BlackBoxFramePhase( BLACKBOX_PHASE_RENDER );
 	RenderRain();
 
 	//DEBUG MODE : DEBUG RENDER ENTRY : point to drop in debugging render code
@@ -477,6 +482,7 @@ void GameLoop(void)
 	guiGameCycleCounter++;
 
 	//DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"GameLoop: update clock");
+	BlackBoxFramePhase( BLACKBOX_PHASE_CLOCK );
 	UpdateClock();
 
 #ifdef JA2BETAVERSION
@@ -505,11 +511,13 @@ void GameLoop(void)
 	}
 	*/
 
+	BlackBoxFramePhase( BLACKBOX_PHASE_NETWORK );
 	if ( is_networked )
 	{
 		client_packet();
 		server_packet();
 	}
+	BlackBoxFramePhase( BLACKBOX_PHASE_FRAME_END );
 	//DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"GameLoop done");
 }
 
