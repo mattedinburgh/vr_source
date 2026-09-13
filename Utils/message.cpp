@@ -379,7 +379,7 @@ void ClearDisplayedListOfTacticalStrings( void )
 #define BATTLE_LOG_MAX_ENTRIES 128
 #define BATTLE_LOG_HEADER_H 18
 #define BATTLE_LOG_RESIZE_GRIP 12
-#define BATTLE_LOG_INSPECTOR_H 256
+#define BATTLE_LOG_INSPECTOR_H 268
 
 #define BATTLELOG_OUTCOME_NONE    0
 #define BATTLELOG_OUTCOME_MISS    1
@@ -935,10 +935,16 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 			d.fLimitCorrectionX, d.fLimitCorrectionY );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
 
-		swprintf( z, L"Team/difficulty modifiers: base %+0.1f%% | aim %+0.1f%%",
-			d.fBaseSpecial, d.fAimSpecial );
+		swprintf( z, L"Accuracy extras: class %+0.1f%% | special NPC %+0.1f%%",
+			d.fClassAccuracyBonus, d.fSpecialNPCAccuracyBonus );
 		BattleLogPrintInspectorLine( ix + 7, sy,
-			(d.fBaseSpecial != 0.0f || d.fAimSpecial != 0.0f) ? FONT_MCOLOR_LTYELLOW : FONT_MCOLOR_LTGRAY, z );
+			(d.fClassAccuracyBonus != 0.0f || d.fSpecialNPCAccuracyBonus != 0.0f) ? FONT_MCOLOR_LTYELLOW : FONT_MCOLOR_LTGRAY, z );
+		sy += lineH;
+
+		swprintf( z, L"Difficulty bonuses: base %+0.1f%% | aim %+0.1f%% | combined special %.1f / %.1f",
+			d.fBaseDifficultyBonus, d.fAimDifficultyBonus, d.fBaseSpecial, d.fAimSpecial );
+		BattleLogPrintInspectorLine( ix + 7, sy,
+			(d.fBaseDifficultyBonus != 0.0f || d.fAimDifficultyBonus != 0.0f) ? FONT_MCOLOR_LTYELLOW : FONT_MCOLOR_LTGRAY, z );
 		sy += lineH;
 
 		// Player-readable dominant formula factor. The raw values above remain
