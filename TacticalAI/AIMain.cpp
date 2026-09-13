@@ -1124,12 +1124,13 @@ UINT8 GetMostThreateningOpponent( SOLDIERTYPE *pSoldier )
 			continue;
 		}
 
-		if (!ValidOpponent(pSoldier, pTargetSoldier))
+		if (pSoldier->aiData.bOppList[pTargetSoldier->ubID] != SEEN_CURRENTLY ||
+			LOS_Raised(pSoldier, pTargetSoldier, CALC_FROM_ALL_DIRS) <= 0)
 		{
 			continue;
 		}
 
-		if (pSoldier->aiData.bOppList[pTargetSoldier->ubID] != SEEN_CURRENTLY)
+		if (!ValidOpponent(pSoldier, pTargetSoldier))
 			continue;
 
 		iThreatVal = CalcManThreatValue(pTargetSoldier, pSoldier->sGridNo, TRUE, pSoldier);
