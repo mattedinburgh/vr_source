@@ -575,7 +575,7 @@ INT32 CalcCoverValue(SOLDIERTYPE *pMe, INT32 sMyGridNo, INT32 iMyThreat, INT32 i
 
 				// sevenfm: reduce range bonus depending on cover
 				if( !AnyCoverFromSpot(sMyGridNo, bMyLevel, sHisGridNo, bHisLevel) && 
-					CountSeenEnemiesLastTurn(pMe) > CountNearbyFriends(pMe, sMyGridNo, DAY_VISION_RANGE / 2) )
+					CountSeenEnemiesLastTurn(pMe) > AICountNearbyOperationalFriends(pMe, sMyGridNo, DAY_VISION_RANGE / 2) )
 					//CountPublicKnownEnemies( pSoldier, sHisGridNo, DAY_VISION_RANGE ) > CountNearbyFriends(pSoldier, sHisGridNo, DAY_VISION_RANGE / 2) )
 				{
 					iRangeFactor = iRangeFactor * (100 - bHisCTGT * __min(Threat[uiThreatIndex].iAPs, APBPConstants[AP_MAXIMUM]) / APBPConstants[AP_MAXIMUM]) / 100;
