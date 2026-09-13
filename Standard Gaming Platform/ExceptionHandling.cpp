@@ -836,7 +836,10 @@ DWORD BlackBoxOperationBegin( const char *subsystem, const char *name )
 
 	token = InterlockedIncrement( &gBlackBoxOperationToken );
 	if( token <= 0 )
-		token = InterlockedExchange( &gBlackBoxOperationToken, 1 );
+	{
+		InterlockedExchange( &gBlackBoxOperationToken, 1 );
+		token = 1;
+	}
 	slot = ( token - 1 ) % BLACKBOX_OPERATION_SLOTS;
 	op = &gBlackBoxOperations[slot];
 	InterlockedExchange( &op->committedToken, 0 );
