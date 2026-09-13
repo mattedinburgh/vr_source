@@ -5019,10 +5019,6 @@ BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, U
 	return (usNeeded < usReleaseThreshold);
 }
 
-// Defined with the escape-state helpers below; forward declaration is needed
-// because remnant cohesion deliberately outranks stale escape intent.
-static void AIClearEscapeState(SOLDIERTYPE *pSoldier);
-
 INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 {
 	if (!fCanMove || !gfTurnBasedAI || !AIEnemyFireteamEligible(pSoldier) ||
