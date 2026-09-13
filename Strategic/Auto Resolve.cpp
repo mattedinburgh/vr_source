@@ -2805,6 +2805,24 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Autoresolve2");
 		}
 	}
 
+	// Merc-won autoresolve should leave a believable battlefield to loot. This is
+	// deliberately not enabled for militia-only victories, and not if every merc
+	// retreated before the militia finished the battle.
+	BOOLEAN fMercVictoryLoot = FALSE;
+	if ( fDeleteForGood && gpAR->ubBattleStatus == BATTLE_VICTORY && gpAR->ubMercs > 0 )
+	{
+		for ( INT32 iMerc = 0; iMerc < gpAR->ubMercs; ++iMerc )
+		{
+			if ( gpMercs[iMerc].pSoldier &&
+				gpMercs[iMerc].pSoldier->stats.bLife >= OKLIFE &&
+				!(gpMercs[iMerc].uiFlags & (CELL_RETREATED | CELL_RETREATING)) )
+			{
+				fMercVictoryLoot = TRUE;
+				break;
+			}
+		}
+	}
+
 	//Record and process all enemy deaths
 	for( i = 0; i < MAX_AR_TEAM_SIZE; i++ )
 	{
@@ -2815,7 +2833,11 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Autoresolve2");
 				TrackEnemiesKilled( ENEMY_KILLED_IN_AUTO_RESOLVE, gpEnemies[ i ].pSoldier->ubSoldierClass );
 				if( ProcessLoyalty() )HandleGlobalLoyaltyEvent( GLOBAL_LOYALTY_ENEMY_KILLED, gpAR->ubSectorX, gpAR->ubSectorY, 0 );
 				ProcessQueenCmdImplicationsOfDeath( gpEnemies[ i ].pSoldier );
-				AddDeadSoldierToUnLoadedSector( gpAR->ubSectorX, gpAR->ubSectorY, 0, gpEnemies[ i ].pSoldier, RandomGridNo(), ADD_DEAD_SOLDIER_TO_SWEETSPOT );
+				UINT32 uiCorpseFlags = ADD_DEAD_SOLDIER_TO_SWEETSPOT;
+				if ( fMercVictoryLoot )
+					uiCorpseFlags |= ADD_DEAD_SOLDIER_PLAYER_AUTORESOLVE_LOOT;
+				AddDeadSoldierToUnLoadedSector( gpAR->ubSectorX, gpAR->ubSectorY, 0,
+					gpEnemies[ i ].pSoldier, RandomGridNo(), uiCorpseFlags );
 			}
 		}
 	}
