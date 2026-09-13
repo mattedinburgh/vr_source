@@ -9852,6 +9852,7 @@ INT8 DecideUseWirecutters(SOLDIERTYPE *pSoldier)
 
 	if (bWirecutterSlot != NO_SLOT &&
 		SoldierAI(pSoldier) &&
+		!AIShouldAvoidAdvance(pSoldier) &&
 		(pSoldier->CheckInitialAP() || gfTurnBasedAI) &&
 		!pSoldier->aiData.bUnderFire &&
 		pSoldier->pathing.bLevel == 0 &&
@@ -9993,6 +9994,7 @@ INT8 DecideUseGrenadeSpecial(SOLDIERTYPE *pSoldier)
 
 	DebugAI(AI_MSG_TOPIC, pSoldier, String("[Grenade for special purpose]"));		
 	if (gfTurnBasedAI &&
+		!AIShouldAvoidAdvance(pSoldier) &&
 		!gfHiddenInterrupt &&
 		!gTacticalStatus.fInterruptOccurred &&
 		pSoldier->bActionPoints >= APBPConstants[AP_MINIMUM] &&
@@ -10059,7 +10061,7 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 
 	// Movement smoke is a coordinated support task. Emergency casualty/self-
 	// protection smoke remains available to lower-quality troops elsewhere.
-	if (pSoldier && pSoldier->bTeam == ENEMY_TEAM && !AIAllowsProactiveSupport(pSoldier))
+	if (pSoldier && AICombatTeam(pSoldier) && !AIAllowsProactiveSupport(pSoldier))
 		return -1;
 
 	ATTACKTYPE BestThrow;
