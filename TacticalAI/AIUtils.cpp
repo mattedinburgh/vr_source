@@ -4141,12 +4141,22 @@ UINT8 AICountNearbyOperationalFriends(SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT
 		return 0;
 
 	UINT8 ubCount = 0;
-	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
-		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	for (UINT16 iCounter = 0; iCounter < MAX_NUM_SOLDIERS; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
-		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
-			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
+		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector)
+			continue;
+
+		BOOLEAN fOperationalAlly = (pFriend->bTeam == pSoldier->bTeam);
+		// Militia should recognize nearby player mercs as real local support for
+		// isolation/risk/fallback decisions. This does not share knowledge or make
+		// mercs part of militia fireteams; coordinated maneuvers remain team-local.
+		if (!fOperationalAlly && pSoldier->bTeam == MILITIA_TEAM && pFriend->bTeam == OUR_TEAM)
+			fOperationalAlly = TRUE;
+		if (!fOperationalAlly)
+			continue;
+
+		if (pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
 			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend) ||
