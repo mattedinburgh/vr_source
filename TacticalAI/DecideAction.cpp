@@ -10448,8 +10448,12 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 			iValue += 35;
 		if (fLongRangeFireLane)
 			iValue += 45;
-		if (!AnyCoverAtSpot(pFriend, pFriend->sGridNo))
+		// Score exposure from the acting soldier's knowledge rather than asking the
+		// protected soldier's private cover model. This keeps support decisions local.
+		if (usKnownExposure >= 100)
 			iValue += 20;
+		else if (usKnownExposure >= 50)
+			iValue += 10;
 		iValue += __min((INT32)20, (INT32)pFriend->bBleeding / 2);
 		iValue -= iDistance * 2;
 
