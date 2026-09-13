@@ -113,7 +113,7 @@ jobs:
         shell: powershell
         run: |
           $gameRoot = 'C:\VENGENCE\Jagged Alliance 2'
-          $sandbox = 'C:\VENGENCE\JA2_RENDER_SANDBOX'
+          $sandbox = "C:\VENGENCE\JA2_RENDER_SANDBOX_$env:GITHUB_RUN_ID"
           $gamedir = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
           if (-not (Test-Path (Join-Path $gameRoot 'JA2_EN_Release.exe'))) { throw "Live JA2 game root not found: $gameRoot" }
 
@@ -195,7 +195,7 @@ jobs:
       - name: Bake and render A3 through Vengeance MapEditor
         shell: powershell
         run: |
-          $sandbox = 'C:\VENGENCE\JA2_RENDER_SANDBOX'
+          $sandbox = "C:\VENGENCE\JA2_RENDER_SANDBOX_$env:GITHUB_RUN_ID"
           $editor = Join-Path $sandbox 'MapEditor_Vengeance.exe'
           $previewDir = Join-Path $sandbox 'MAP_PREVIEWS'
           $statusFile = Join-Path $previewDir 'mapshot_status.txt'
