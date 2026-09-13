@@ -3038,6 +3038,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			// spotters haven't already been called for, then DO SO!
 
 			if ((BestThrow.bWeaponIn != NO_SLOT) &&
+				!AIDisengagementActive(pSoldier) && !AIEscapeActive(pSoldier) &&
 				(CalcMaxTossRange(pSoldier, pSoldier->inv[BestThrow.bWeaponIn].usItem, TRUE) > MaxNormalDistanceVisible()) &&
 				(pSoldier->bTeam == ENEMY_TEAM ? AIFireteamCombatReadyCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
 				(gTacticalStatus.ubSpottersCalledForBy == NOBODY))
@@ -3095,7 +3096,8 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 				OBJECTTYPE * gun = &pSoldier->inv[BestShot.bWeaponIn];
 				DebugMsg(TOPIC_JA2, DBG_LEVEL_3, String("decideactionred: men in sector %d, ubspotters called by %d, nobody %d", gTacticalStatus.Team[pSoldier->bTeam].bMenInSector, gTacticalStatus.ubSpottersCalledForBy, NOBODY));
 
-				if (GunRange(gun, pSoldier) > MaxNormalDistanceVisible() &&
+				if (!AIDisengagementActive(pSoldier) && !AIEscapeActive(pSoldier) &&
+					GunRange(gun, pSoldier) > MaxNormalDistanceVisible() &&
 					(IsScoped(gun) || pSoldier->aiData.bOrders == SNIPER) &&
 					(pSoldier->bTeam == ENEMY_TEAM ? AIFireteamCombatReadyCount(pSoldier) > 1 : gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
 					(gTacticalStatus.ubSpottersCalledForBy == NOBODY))
@@ -7159,7 +7161,9 @@ L_NEWAIM:
 	// (we never want NPCs to choose to radio if they would have to wait a turn)
 	// and we're not swimming in deep water, and somebody has called for spotters
 	// and we see the location of at least 2 opponents
-	if ( !(pSoldier->usSoldierFlagMask & SOLDIER_RAISED_REDALERT) && (gTacticalStatus.ubSpottersCalledForBy != NOBODY) &&
+	if ( !(pSoldier->usSoldierFlagMask & SOLDIER_RAISED_REDALERT) &&
+		!AIDisengagementActive(pSoldier) && !AIEscapeActive(pSoldier) &&
+		(gTacticalStatus.ubSpottersCalledForBy != NOBODY) &&
 		MercPtrs[gTacticalStatus.ubSpottersCalledForBy] &&
 		AISameFireteam(pSoldier, MercPtrs[gTacticalStatus.ubSpottersCalledForBy]) &&
 		(pSoldier->bActionPoints >= APBPConstants[AP_RADIO]) &&
