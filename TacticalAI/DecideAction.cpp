@@ -2958,7 +2958,9 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 						{
 							// sevenfm: check if we can reach this gridno
 							INT32 iPathCost = EstimatePlotPath(pSoldier, sCheckGridNo, FALSE, FALSE, FALSE, DetermineMovementMode(pSoldier, AI_ACTION_GET_CLOSER), pSoldier->bStealthMode, FALSE, 0);
-							if (iPathCost != 0 && iPathCost + BestThrow.ubAPCost + GetAPsToLook(pSoldier) + GetAPsCrouch(pSoldier, FALSE) <= pSoldier->bActionPoints)
+							if (!AIShouldAvoidAdvance(pSoldier) &&
+								iPathCost != 0 &&
+								iPathCost + BestThrow.ubAPCost + GetAPsToLook(pSoldier) + GetAPsCrouch(pSoldier, FALSE) <= pSoldier->bActionPoints)
 							{
 								DebugAI(AI_MSG_INFO, pSoldier, String("moving backwards to have more room to deploy mortar"));
 								pSoldier->aiData.usActionData = sCheckGridNo;
@@ -7003,7 +7005,9 @@ L_NEWAIM:
 					{
 						// sevenfm: check if we can reach this gridno
 						INT32 iPathCost = EstimatePlotPath(pSoldier, sCheckGridNo, FALSE, FALSE, FALSE, DetermineMovementMode(pSoldier, AI_ACTION_GET_CLOSER), pSoldier->bStealthMode, FALSE, 0);
-						if (iPathCost != 0 && iPathCost + BestAttack.ubAPCost + GetAPsToLook(pSoldier) + GetAPsCrouch(pSoldier, FALSE) <= pSoldier->bActionPoints)
+						if (!AIShouldAvoidAdvance(pSoldier) &&
+							iPathCost != 0 &&
+							iPathCost + BestAttack.ubAPCost + GetAPsToLook(pSoldier) + GetAPsCrouch(pSoldier, FALSE) <= pSoldier->bActionPoints)
 						{
 							DebugAI(AI_MSG_INFO, pSoldier, String("moving backwards to have more room to deploy mortar"));
 							pSoldier->aiData.usActionData = sCheckGridNo;
