@@ -220,18 +220,69 @@ static void BlackBoxRotateRunLogs( void )
 static void BlackBoxWriteHangEvidence( DWORD elapsedMs, LONG heartbeatSequence, LONG currentScreen )
 {
 	HANDLE hFile;
+	HANDLE hMainThread;
 	DWORD bytesWritten;
 	CHAR8 timestamp[32];
 	CHAR8 checkpoint[BLACKBOX_CHECKPOINT_CHARS];
 	CHAR8 line[1400];
 	DWORD length;
+	CONTEXT context;
+	BOOL contextCaptured = FALSE;
+	DWORD stackWords[32];
+	DWORD stackWordCount = 0;
+	SIZE_T stackBytesRead = 0;
+	DWORD suspendResult = (DWORD)-1;
+	DWORD captureError = ERROR_SUCCESS;
+
+	memset( &context, 0, sizeof( context ) );
+	memset( stackWords, 0, sizeof( stackWords ) );
+
+	// For a real hang, capture the main thread's raw execution context. Keep
+	// the suspended window tiny: no CRT formatting, no file I/O and no symbol
+	// handling until after the main thread has been resumed.
+	hMainThread = OpenThread( THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION,
+		FALSE, gBlackBoxMainThreadId );
+	if( hMainThread != NULL )
+	{
+		suspendResult = SuspendThread( hMainThread );
+		if( suspendResult != (DWORD)-1 )
+		{
+			context.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
+			if( GetThreadContext( hMainThread, &context ) )
+			{
+				contextCaptured = TRUE;
+#if defined(_M_IX86) || defined(_X86_)
+				if( ReadProcessMemory( GetCurrentProcess(), (LPCVOID)context.Esp,
+					stackWords, sizeof( stackWords ), &stackBytesRead ) )
+				{
+					stackWordCount = (DWORD)( stackBytesRead / sizeof( DWORD ) );
+				}
+#endif
+			}
+			else
+			{
+				captureError = GetLastError();
+			}
+			ResumeThread( hMainThread );
+		}
+		else
+		{
+			captureError = GetLastError();
+		}
+		CloseHandle( hMainThread );
+	}
+	else
+	{
+		captureError = GetLastError();
+	}
 
 	BlackBoxFormatTime( timestamp, sizeof( timestamp ) );
 	lstrcpynA( checkpoint, gBlackBoxCheckpoint, BLACKBOX_CHECKPOINT_CHARS );
 	_snprintf( line, sizeof( line ) - 1,
-		"[%s] [+%lums] [WATCHDOG] main-thread stall elapsedMs=%lu mainTid=%lu heartbeat=%ld screen=%ld phase=%s(%ld) latest=%s\r\n",
+		"[%s] [+%lums] [WATCHDOG] main-thread stall elapsedMs=%lu mainTid=%lu heartbeat=%ld screen=%ld phase=%s(%ld) context=%s captureError=%lu latest=%s\r\n",
 		timestamp, BlackBoxUptimeMs(), elapsedMs, gBlackBoxMainThreadId,
-		heartbeatSequence, currentScreen, BlackBoxPhaseName( gBlackBoxFramePhase ), gBlackBoxFramePhase, checkpoint );
+		heartbeatSequence, currentScreen, BlackBoxPhaseName( gBlackBoxFramePhase ), gBlackBoxFramePhase,
+		contextCaptured ? "yes" : "no", captureError, checkpoint );
 	line[ sizeof( line ) - 1 ] = 0;
 
 	hFile = CreateFileA(
@@ -248,6 +299,53 @@ static void BlackBoxWriteHangEvidence( DWORD elapsedMs, LONG heartbeatSequence, 
 
 	length = (DWORD)strlen( line );
 	WriteFile( hFile, line, length, &bytesWritten, NULL );
+
+	if( contextCaptured )
+	{
+#if defined(_M_IX86) || defined(_X86_)
+		_snprintf( line, sizeof( line ) - 1,
+			"  REGISTERS EIP=%08lx ESP=%08lx EBP=%08lx EAX=%08lx EBX=%08lx ECX=%08lx EDX=%08lx ESI=%08lx EDI=%08lx EFLAGS=%08lx\r\n",
+			context.Eip, context.Esp, context.Ebp, context.Eax, context.Ebx,
+			context.Ecx, context.Edx, context.Esi, context.Edi, context.EFlags );
+		line[ sizeof( line ) - 1 ] = 0;
+		length = (DWORD)strlen( line );
+		WriteFile( hFile, line, length, &bytesWritten, NULL );
+
+		if( stackWordCount > 0 )
+		{
+			DWORD i;
+			for( i = 0; i < stackWordCount; i += 8 )
+			{
+				DWORD remaining = stackWordCount - i;
+				DWORD count = remaining > 8 ? 8 : remaining;
+				CHAR8 *out = line;
+				INT32 left = sizeof( line );
+				INT32 written;
+				DWORD j;
+
+				written = _snprintf( out, left - 1, "  STACK %08lx:", context.Esp + i * sizeof( DWORD ) );
+				if( written < 0 )
+					written = 0;
+				out += written;
+				left -= written;
+
+				for( j = 0; j < count && left > 16; ++j )
+				{
+					written = _snprintf( out, left - 1, " %08lx", stackWords[i + j] );
+					if( written < 0 )
+						break;
+					out += written;
+					left -= written;
+				}
+				_snprintf( out, left - 1, "\r\n" );
+				line[ sizeof( line ) - 1 ] = 0;
+				length = (DWORD)strlen( line );
+				WriteFile( hFile, line, length, &bytesWritten, NULL );
+			}
+		}
+#endif
+	}
+
 	FlushFileBuffers( hFile );
 	CloseHandle( hFile );
 }
