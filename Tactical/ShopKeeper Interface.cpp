@@ -951,8 +951,19 @@ BOOLEAN EnterShopKeeperInterface()
 	}
 
 
-	// make sure current merc is close enough and eligible to talk to the shopkeeper.
-	AssertMsg( CanMercInteractWithSelectedShopkeeper( MercPtrs[ gusSelectedSoldier ] ), "Selected merc can't interact with shopkeeper.  Send save AM-1");
+	// Make sure the current merc is actually eligible to talk to the shopkeeper.
+	// Legacy code asserted here. That can be reached when the merc is already within
+	// NPC_TALK_RADIUS but has no valid LOS to the dealer (for example while clicking
+	// or picking up items near a dealer in San Mona), turning a harmless interaction
+	// mismatch into a fatal runtime error.
+	//
+	// Fail gracefully instead: do not enter the shopkeeper screen and let the tactical
+	// interface continue processing normally.
+	if ( !CanMercInteractWithSelectedShopkeeper( pSoldier ) )
+	{
+		ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_UI_FEEDBACK, L"Can't interact with shopkeeper from here." );
+		return( FALSE );
+	}
 
 	// Create a video surface to blt corner of the tactical screen that still shines through
 	vs_desc.fCreateFlags = VSURFACE_CREATE_DEFAULT | VSURFACE_SYSTEM_MEM_USAGE;
