@@ -1,0 +1,140 @@
+#ifndef __ENEMY_LOADOUT_PLANNER_H
+#define __ENEMY_LOADOUT_PLANNER_H
+
+#include "types.h"
+
+// Experimental enemy equipment planning layer.
+//
+// This module is intentionally not wired into Tactical.vcxproj or
+// GenerateRandomEquipment() yet.  It can therefore be reviewed and tuned
+// without changing live Vengeance behaviour.
+//
+// Design rule:
+//   squad doctrine -> soldier role -> weapon family -> attachments -> LBE/load
+// rather than:
+//   equipment coolness -> random weapon/LBE/attachments.
+
+enum ENEMY_LOADOUT_ROLE
+{
+	ENEMY_ROLE_RIFLEMAN = 0,
+	ENEMY_ROLE_ASSAULT,
+	ENEMY_ROLE_AUTOMATIC_RIFLEMAN,
+	ENEMY_ROLE_MARKSMAN,
+	ENEMY_ROLE_SNIPER,
+	ENEMY_ROLE_GRENADIER,
+	ENEMY_ROLE_AT_SPECIALIST,
+	ENEMY_ROLE_MEDIC,
+	ENEMY_ROLE_RADIO_OPERATOR,
+	ENEMY_ROLE_SQUAD_LEADER,
+	ENEMY_ROLE_SCOUT,
+	ENEMY_ROLE_MORTAR,
+	ENEMY_ROLE_MAX
+};
+
+enum ENEMY_LBE_PROFILE
+{
+	ENEMY_LBE_LIGHT = 0,
+	ENEMY_LBE_STANDARD_RIFLE,
+	ENEMY_LBE_ASSAULT,
+	ENEMY_LBE_AUTOMATIC,
+	ENEMY_LBE_GRENADIER,
+	ENEMY_LBE_MEDIC,
+	ENEMY_LBE_RADIO,
+	ENEMY_LBE_HEAVY_SUPPORT
+};
+
+enum ENEMY_OPTIC_PROFILE
+{
+	ENEMY_OPTIC_IRONS = 0,
+	ENEMY_OPTIC_CLOSE_COMBAT,
+	ENEMY_OPTIC_LOW_POWER,
+	ENEMY_OPTIC_MARKSMAN,
+	ENEMY_OPTIC_SNIPER
+};
+
+struct ENEMY_ROLE_TARGETS
+{
+	UINT8 ubDesired[ENEMY_ROLE_MAX];
+	UINT8 ubMaximum[ENEMY_ROLE_MAX];
+};
+
+struct ENEMY_SQUAD_LOADOUT_STATE
+{
+	UINT8 ubPlannedSoldiers;
+	UINT8 ubAssignedSoldiers;
+	UINT8 ubAssigned[ENEMY_ROLE_MAX];
+	ENEMY_ROLE_TARGETS Targets;
+};
+
+struct ENEMY_LOADOUT_PLAN
+{
+	ENEMY_LOADOUT_ROLE Role;
+	ENEMY_LBE_PROFILE LBEProfile;
+	ENEMY_OPTIC_PROFILE OpticProfile;
+
+	// Carry/load targets.  The actual item chooser will translate these to
+	// concrete magazines, belts, rockets, grenades and LBE pocket layouts.
+	UINT8 ubAmmoMinimum;
+	UINT8 ubAmmoMaximum;
+	UINT8 ubGrenadeMinimum;
+	UINT8 ubGrenadeMaximum;
+	UINT8 ubSmokeMinimum;
+	UINT8 ubSmokeMaximum;
+
+	// Attachment budget is a useful upper bound, not a command to fill every
+	// available attachment slot.
+	UINT8 ubAttachmentMinimum;
+	UINT8 ubAttachmentMaximum;
+
+	BOOLEAN fPreferBipod;
+	BOOLEAN fPreferLaser;
+	BOOLEAN fAllowSuppressor;
+	BOOLEAN fPreferNightEquipment;
+	BOOLEAN fUseBackpack;
+	BOOLEAN fHeavyWeapon;
+};
+
+// Builds squad-level role targets.  Progress is 0..100.
+// Equipment rating uses the existing GenerateRandomEquipment 0..4 scale.
+void BuildEnemyRoleTargets(
+	ENEMY_ROLE_TARGETS *pTargets,
+	INT8 bSoldierClass,
+	UINT8 ubSquadSize,
+	UINT8 ubProgress,
+	INT8 bEquipmentRating);
+
+// Initializes per-squad state for role allocation.
+void InitEnemySquadLoadoutState(
+	ENEMY_SQUAD_LOADOUT_STATE *pState,
+	INT8 bSoldierClass,
+	UINT8 ubSquadSize,
+	UINT8 ubProgress,
+	INT8 bEquipmentRating);
+
+// Chooses the next role while respecting desired composition and hard caps.
+// The caller records the result via RecordEnemyLoadoutRole().
+ENEMY_LOADOUT_ROLE ChooseEnemyLoadoutRole(
+	const ENEMY_SQUAD_LOADOUT_STATE *pState,
+	INT8 bSoldierClass,
+	UINT8 ubProgress,
+	INT8 bEquipmentRating,
+	INT8 bExpLevel);
+
+// Records a role after the caller accepts it.
+void RecordEnemyLoadoutRole(
+	ENEMY_SQUAD_LOADOUT_STATE *pState,
+	ENEMY_LOADOUT_ROLE Role);
+
+// Converts a role + progression into LBE, ammunition and attachment intent.
+void BuildEnemyLoadoutPlan(
+	ENEMY_LOADOUT_PLAN *pPlan,
+	ENEMY_LOADOUT_ROLE Role,
+	INT8 bSoldierClass,
+	UINT8 ubProgress,
+	INT8 bEquipmentRating,
+	INT8 bExpLevel,
+	BOOLEAN fNight);
+
+const char *EnemyLoadoutRoleName(ENEMY_LOADOUT_ROLE Role);
+
+#endif
