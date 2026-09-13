@@ -1202,7 +1202,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 	BOOLEAN fSkipLocation;
 	INT8	bPayloadPocket;
 	INT8	bMaxLeft,bMaxRight,bMaxUp,bMaxDown,bXOffset,bYOffset;
-	INT8	bPersOL, bPublOL, bKnowledge;
+	INT8	bPersOL, bKnowledge;
 	SOLDIERTYPE *pOpponent, *pFriend;
 	static INT16	sExcludeTile[100]; // This array is for storing tiles that we have
 	UINT8	ubNumExcludedTiles = 0;		// already considered, to prevent duplication of effort
@@ -1402,7 +1402,6 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 		}
 
 		bPersOL = pSoldier->aiData.bOppList[pOpponent->ubID];
-		bPublOL = gbPublicOpplist[pSoldier->bTeam][pOpponent->ubID];
 		bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
 
 		// We know nothing about this opponent.
@@ -1414,8 +1413,6 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 		const BOOLEAN fDirectVisualContact =
 			(bPersOL == SEEN_CURRENTLY) &&
 			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
-		const BOOLEAN fCurrentTeamReport = (bPublOL == SEEN_CURRENTLY);
-		const BOOLEAN fCurrentContact = fDirectVisualContact || fCurrentTeamReport;
 		const BOOLEAN fPersonalStateKnown = fDirectVisualContact;
 
 		// Relation/identity filters are safe for remembered contacts. Mutable hidden
