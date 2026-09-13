@@ -108,6 +108,7 @@ UINT32 guiCurrMaxAmountOfRainDrops = 0;
 UINT32 guiCurrAmountOfDeadRainDrops = 0;
 
 INT8 gbCurrentRainIntensity = 0;
+UINT8 gubLastAdvancedRainPrecipitation = 0;
 
 FLOAT fpCurrDropAngleOfFalling = 0;
 FLOAT fpCurrDropLength = 0;
@@ -138,9 +139,15 @@ INT8 GetRainIntensityFromEnvWeather()
 {
 	INT8 bRes = 0;
 
-	// Debug!!!
-//	guiEnvWeather |= WEATHER_FORECAST_THUNDERSHOWERS;
+	if ( gGameExternalOptions.gfEnableAdvancedWeather )
+	{
+		UINT8 ubPrecipitation = WeatherGetPrecipitationPercent();
+		if ( ubPrecipitation < 18 )
+			return 0;
+		return ( ubPrecipitation >= 65 ) ? 2 : 1;
+	}
 
+	// Legacy Vengeance rain mapping.
 	if( guiEnvWeather & WEATHER_FORECAST_SHOWERS ) bRes += 1;
 	if( guiEnvWeather & WEATHER_FORECAST_THUNDERSHOWERS ) bRes += 2;
 
@@ -204,8 +211,19 @@ void ResetRain()
 
 void GenerateRainDropsList()
 {
-	// HEADROCK HAM 5 XMAS: More snow than rain.
-	guiCurrMaxAmountOfRainDrops = (UINT32)(BASE_MAXIMUM_DROPS) * gbCurrentRainIntensity;
+	// Advanced weather uses the continuous 0-100 precipitation state. At 100%
+	// precipitation density matches the old intensity-2 storm; drizzle is sparse.
+	if ( gGameExternalOptions.gfEnableAdvancedWeather )
+	{
+		UINT8 ubPrecipitation = WeatherGetPrecipitationPercent();
+		guiCurrMaxAmountOfRainDrops = (UINT32)( BASE_MAXIMUM_DROPS * ( (FLOAT)ubPrecipitation * 2.0f / 100.0f ) );
+		guiCurrMaxAmountOfRainDrops = __max( 1, guiCurrMaxAmountOfRainDrops );
+	}
+	else
+	{
+		// Legacy Vengeance behaviour.
+		guiCurrMaxAmountOfRainDrops = (UINT32)(BASE_MAXIMUM_DROPS) * gbCurrentRainIntensity;
+	}
 
 	pRainDrops = (TRainDrop *)MemAlloc( sizeof( TRainDrop ) * guiCurrMaxAmountOfRainDrops );
 	memset( pRainDrops, 0, sizeof( TRainDrop ) * guiCurrMaxAmountOfRainDrops );
@@ -555,6 +573,27 @@ void RenderRain()
 		return;
 	else
 		guiLastRainUpdate = GetJA2Clock();
+
+	// Regenerate the drop population when continuous precipitation moves enough to
+	// be visibly different, even if it remains inside the same legacy intensity band.
+	if ( gGameExternalOptions.gfEnableAdvancedWeather )
+	{
+		UINT8 ubPrecipitation = WeatherGetPrecipitationPercent();
+		UINT8 ubDifference = ( ubPrecipitation > gubLastAdvancedRainPrecipitation ) ?
+			( ubPrecipitation - gubLastAdvancedRainPrecipitation ) :
+			( gubLastAdvancedRainPrecipitation - ubPrecipitation );
+		if ( ubDifference >= 10 )
+		{
+			gubLastAdvancedRainPrecipitation = ubPrecipitation;
+			gbCurrentRainIntensity = GetRainIntensityFromEnvWeather();
+			ResetRain();
+			GenerateRainDropsList();
+			GenerateRainMaximums();
+			guiCurrAmountOfDeadRainDrops = guiCurrMaxAmountOfRainDrops;
+			CreateRainDrops();
+			RandomizeRainDropsPosition();
+		}
+	}
 
 	if( gbCurrentRainIntensity != GetRainIntensityFromEnvWeather() )
 	{
