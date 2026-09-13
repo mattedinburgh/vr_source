@@ -33,7 +33,7 @@
 #endif
 
 #include "SaveLoadScreen.h"
-#include "ExceptionHandling.h"
+#include "Standard Gaming Platform/ExceptionHandling.h"
 
 #include "Lua Interpreter.h"
 //**ddd direct link libraries
