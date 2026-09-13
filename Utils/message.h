@@ -119,6 +119,36 @@ void DisplayLastMessage( void );
 
 
 
+// Vengeance: exact runtime snapshot for hand-to-hand / blade battle-log hover diagnostics.
+typedef struct
+{
+	BOOLEAN fValid;
+	BOOLEAN fBlade;
+	UINT8 ubAttackerID;
+	UINT8 ubTargetID;
+	UINT8 ubAimLocation;
+	UINT8 ubAimTime;
+	UINT16 usWeapon;
+	INT16 sHitChance;
+	INT16 sRoll;
+	INT16 sHitMargin;
+	INT16 sBaseImpact;
+	INT16 sFlukePercent;
+	INT16 sAccuracyPercent;
+	INT16 sAfterHitQuality;
+	INT16 sTraitSituationPercent;
+	INT16 sSpecialFlatDamage;
+	INT16 sAfterBonuses;
+	INT16 sResistancePercent;
+	INT16 sAfterResistance;
+	INT16 sWeaponConditionPercent;
+	INT16 sAfterCondition;
+	INT16 sAfterHitLocation;
+	INT16 sSurprisePercent;
+	INT16 sAfterSurprise;
+	INT16 sFinalDamage;
+} MELEE_DIAGNOSTIC;
+
 // Vengeance: persistent tactical battle log. MISS entries can carry an exact
 // runtime NCTH snapshot and open the shot inspector when clicked.
 #define BATTLELOG_BLOCK_STRUCTURE 0
@@ -128,7 +158,7 @@ void DisplayLastMessage( void );
 void BattleLogAddNCTHMiss( INT32 iBullet );
 void BattleLogAddNCTHBlocked( INT32 iBullet, UINT8 ubReason );
 void BattleLogAddNCTHHit( INT32 iBullet, UINT8 ubTargetID, INT16 sDamage );
-void BattleLogAddMeleeHit( UINT8 ubAttackerID, UINT8 ubTargetID, INT16 sDamage );
+void BattleLogAddMeleeHit( const MELEE_DIAGNOSTIC *pDiagnostic );
 void BattleLogAddText( UINT16 usColor, STR16 pString );
 void BattleLogSetVisible( BOOLEAN fVisible );
 
