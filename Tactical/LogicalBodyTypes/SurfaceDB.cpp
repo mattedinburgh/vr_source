@@ -103,7 +103,7 @@ void XMLCALL SurfaceDB::StartElementHandle(void* userData, const XML_Char* name,
 				if (strlen(aFile) > sizeof(sType->Filename) - 1) throw XMLParseException("Filename must not me longer than 49 characters!", name, data->pParser);
 				strcpy(sType->Filename, aFile);
 				if (!ConvertStringToUINT8(aFlgs, &(sType->ubFlags))) throw XMLParseException("Invalid flags attribute!", name, data->pParser);
-				if (!ConvertStringToINT8(aFrms, &(sType->bProfile))) throw XMLParseException("Attribute 'profile' doesn't have a valid value!", name, data->pParser);
+				if (!ConvertStringToINT8(aProf, &(sType->bProfile))) throw XMLParseException("Attribute 'profile' doesn't have a valid value!", name, data->pParser);
 				if (!ConvertStringToUINT32(aDirs, &(sType->uiNumDirections))) throw XMLParseException("Attribute 'directions' doesn't have a valid value!", name, data->pParser);
 				if (!ConvertStringToUINT32(aFrms, &(sType->uiNumFramesPerDir))) throw XMLParseException("Attribute 'framesperdir' doesn't have a valid value!", name, data->pParser);
 				if (!FileExists(sType->Filename)) {
