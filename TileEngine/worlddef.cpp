@@ -721,7 +721,7 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 		  ubType == FIRSTVEHICLE || ubType == SECONDVEHICLE ||
 		  ubType == TENTHOSTRUCT || ubType == FENCESTRUCT );
 	const BOOLEAN fB1Interior = fB1Profile && ( ubType >= FIRSTISTRUCT && ubType <= FIRSTCISTRUCT );
-	const BOOLEAN fB1Decal = fB1Profile && ( ubType >= FIRSTWALLDECAL && ubType <= FOURTHWALLDECAL );
+	const BOOLEAN fB1Decal = fB1Profile && ( ubType >= FIRSTWALLDECAL && ubType <= EIGTHWALLDECAL );
 
 	if ( fB1Profile )
 	{
@@ -729,151 +729,151 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 		// humid tropical oil infrastructure, hard sun, salt/rain oxidation, dirty
 		// vegetation and black industrial surfaces.  Successful replacement STIs
 		// are graded too; the previous pass skipped them and was visually too subtle.
-		saturationPercent = 110;
-		contrastPercent = 126;
-		redBias = 5;
+		saturationPercent = 104;
+		contrastPercent = 114;
+		redBias = 3;
 		greenBias = 2;
-		blueBias = -5;
+		blueBias = -2;
 
 		if ( fSectorReplacementLoaded )
-			contrastPercent += 6;
+			contrastPercent += 2;
 
 		if ( fB1Water )
 		{
 			// Heavy tropical teal/blue water with obvious depth and reflected sky.
-			saturationPercent = 152;
-			contrastPercent = 136;
-			redBias = -24;
-			greenBias = 8;
-			blueBias = 29;
+			saturationPercent = 118;
+			contrastPercent = 116;
+			redBias = -10;
+			greenBias = 5;
+			blueBias = 13;
 		}
 		else if ( fB1GreenTerrain )
 		{
 			// Wet, dirty tropical growth around an industrial site.
-			saturationPercent = 124;
-			contrastPercent = 131;
-			redBias = -1;
-			greenBias = 12;
-			blueBias = -10;
+			saturationPercent = 114;
+			contrastPercent = 116;
+			redBias = -2;
+			greenBias = 8;
+			blueBias = -5;
 		}
 		else if ( fB1Terrain )
 		{
 			// Sun-bleached ochre sand/trails with baked, warm highlights.
-			saturationPercent = 123;
-			contrastPercent = 130;
-			redBias = 15;
-			greenBias = 8;
-			blueBias = -15;
+			saturationPercent = 110;
+			contrastPercent = 116;
+			redBias = 8;
+			greenBias = 5;
+			blueBias = -8;
 		}
 		else if ( fB1Floor )
 		{
 			// Oil-stained concrete / steel plate: cool graphite shadows, hard edges.
-			saturationPercent = 84;
-			contrastPercent = 142;
-			redBias = 4;
-			greenBias = 2;
-			blueBias = -9;
+			saturationPercent = 92;
+			contrastPercent = 120;
+			redBias = 2;
+			greenBias = 1;
+			blueBias = -4;
 		}
 		else if ( fB1Roof )
 		{
 			// Hot oxidised roofing.  Warm highlights and rusty mids separate roof
 			// planes clearly from the building sides.
-			saturationPercent = 116;
-			contrastPercent = 146;
-			redBias = 17;
-			greenBias = 4;
-			blueBias = -16;
+			saturationPercent = 105;
+			contrastPercent = 122;
+			redBias = 8;
+			greenBias = 2;
+			blueBias = -7;
 		}
 		else if ( fB1OnRoof )
 		{
 			// Fans/tanks/process equipment: darkest and punchiest metal family.
-			saturationPercent = 120;
-			contrastPercent = 150;
-			redBias = 18;
-			greenBias = 2;
-			blueBias = -17;
+			saturationPercent = 108;
+			contrastPercent = 124;
+			redBias = 8;
+			greenBias = 1;
+			blueBias = -8;
 		}
 		else if ( fB1Wall )
 		{
 			// Weathered industrial facades: faded paint, rust streaks, hard sunlight.
-			saturationPercent = 106;
-			contrastPercent = 139;
-			redBias = 13;
-			greenBias = 5;
-			blueBias = -12;
+			saturationPercent = 98;
+			contrastPercent = 118;
+			redBias = 6;
+			greenBias = 3;
+			blueBias = -5;
 		}
 		else if ( fB1Road )
 		{
 			// Blackened service roads / oily hardstanding.
-			saturationPercent = 80;
-			contrastPercent = 141;
-			redBias = 4;
+			saturationPercent = 88;
+			contrastPercent = 118;
+			redBias = 2;
 			greenBias = 1;
-			blueBias = -10;
+			blueBias = -4;
 		}
 		else if ( fB1Vegetation )
 		{
 			// Humid coastal tropical growth: deep wet greens, bright sun tips.
 			// The contrast against rust/ochre industrial materials is intentional.
-			saturationPercent = 136;
-			contrastPercent = 134;
-			redBias = -5;
-			greenBias = 17;
-			blueBias = -7;
+			saturationPercent = 116;
+			contrastPercent = 118;
+			redBias = -3;
+			greenBias = 9;
+			blueBias = -4;
 		}
 		else if ( fB1Machinery )
 		{
 			// Oil lamps, process plant, cranes and railings: soot-black steel with
 			// oxidised/rusty mids and hard specular-looking highlights.
-			saturationPercent = 116;
-			contrastPercent = 149;
-			redBias = 15;
+			saturationPercent = 104;
+			contrastPercent = 124;
+			redBias = 7;
 			greenBias = 1;
-			blueBias = -16;
+			blueBias = -7;
 		}
 		else if ( fB1Interior )
 		{
 			// Industrial furniture/crates: dark worn paint, wood and steel.
-			saturationPercent = 98;
-			contrastPercent = 137;
-			redBias = 9;
-			greenBias = 3;
-			blueBias = -10;
+			saturationPercent = 96;
+			contrastPercent = 116;
+			redBias = 4;
+			greenBias = 2;
+			blueBias = -4;
 		}
 		else if ( fB1Decal )
 		{
 			// Faded warning paint/signage should remain readable against the facades.
-			saturationPercent = 126;
-			contrastPercent = 138;
-			redBias = 11;
-			greenBias = 5;
-			blueBias = -9;
+			saturationPercent = 112;
+			contrastPercent = 120;
+			redBias = 6;
+			greenBias = 3;
+			blueBias = -4;
 		}
 		else if ( ubType == DEBRISROCKS || ubType == DEBRISMISC )
 		{
 			// Bleached concrete, gravel and pale industrial rubble.
-			saturationPercent = 80;
-			contrastPercent = 137;
-			redBias = 7;
-			greenBias = 5;
-			blueBias = -7;
+			saturationPercent = 90;
+			contrastPercent = 118;
+			redBias = 4;
+			greenBias = 3;
+			blueBias = -3;
 		}
 		else if ( ubType == DEBRISWOOD || ubType == DEBRISSAND || ubType == DEBRIS2MISC )
 		{
 			// Rust, soot, old wood and discarded industrial scrap.
-			saturationPercent = 120;
-			contrastPercent = 142;
-			redBias = 17;
-			greenBias = 2;
-			blueBias = -17;
+			saturationPercent = 108;
+			contrastPercent = 122;
+			redBias = 8;
+			greenBias = 1;
+			blueBias = -8;
 		}
 		else if ( ubType == DEBRISWEEDS || ubType == DEBRISGRASS )
 		{
-			saturationPercent = 114;
-			contrastPercent = 134;
-			redBias = 0;
-			greenBias = 10;
-			blueBias = -9;
+			saturationPercent = 108;
+			contrastPercent = 116;
+			redBias = -1;
+			greenBias = 6;
+			blueBias = -4;
 		}
 	}
 	else if ( ubType >= FIRSTTEXTURE && ubType <= LASTTEXTURE )
@@ -905,26 +905,26 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 		{
 			// Strong luma-dependent split tone: cool damp shadows and hot sunlit
 			// highlights. This gives the low-resolution art more perceived depth.
-			if ( luma < 92 )
+			if ( luma < 84 )
 			{
-				const INT32 depth = 92 - luma;
-				outR -= 6 + depth / 10;
-				outG -= 2 + depth / 24;
-				outB += fB1Water ? (12 + depth / 7) : (5 + depth / 15);
+				const INT32 depth = 84 - luma;
+				outR -= 3 + depth / 18;
+				outG -= 1 + depth / 30;
+				outB += fB1Water ? (6 + depth / 14) : (2 + depth / 24);
 			}
-			else if ( luma > 164 )
+			else if ( luma > 176 )
 			{
-				const INT32 light = luma - 164;
+				const INT32 light = luma - 176;
 				if ( fB1Water )
 				{
-					outG += 6 + light / 13;
-					outB += 10 + light / 9;
+					outG += 3 + light / 20;
+					outB += 5 + light / 15;
 				}
 				else
 				{
-					outR += 9 + light / 10;
-					outG += 5 + light / 15;
-					outB += light / 30;
+					outR += 4 + light / 18;
+					outG += 2 + light / 24;
+					outB += light / 40;
 				}
 			}
 
@@ -932,21 +932,19 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 			// compared with the main grade, but make adjacent materials read apart.
 			if ( fB1Floor || fB1Road )
 			{
-				outR -= 4;
-				outG -= 3;
-				outB -= 1;
+				outR -= 2;
+				outG -= 2;
 			}
 			else if ( fB1Roof || fB1OnRoof || fB1Machinery )
 			{
-				outR += 5;
-				outG -= 1;
-				outB -= 5;
+				outR += 3;
+				outB -= 3;
 			}
 			else if ( fB1Vegetation )
 			{
-				outR -= 4;
-				outG += 6;
-				outB -= 2;
+				outR -= 2;
+				outG += 4;
+				outB -= 1;
 			}
 		}
 
@@ -3613,7 +3611,7 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG )
 	{
 		TraceB1RemasterLoad( "BEGIN", puiFilename );
-		TraceB1RemasterLoad( "VISUAL PROFILE", "hero-v3 tropical-industrial" );
+		TraceB1RemasterLoad( "VISUAL PROFILE", "hero-v4 authored-textures tropical-industrial" );
 	}
 
 #ifdef JA2TESTVERSION
