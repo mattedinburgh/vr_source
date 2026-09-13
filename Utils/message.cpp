@@ -379,7 +379,7 @@ void ClearDisplayedListOfTacticalStrings( void )
 #define BATTLE_LOG_MAX_ENTRIES 128
 #define BATTLE_LOG_HEADER_H 18
 #define BATTLE_LOG_RESIZE_GRIP 12
-#define BATTLE_LOG_INSPECTOR_H 244
+#define BATTLE_LOG_INSPECTOR_H 256
 
 #define BATTLELOG_OUTCOME_NONE    0
 #define BATTLELOG_OUTCOME_MISS    1
@@ -930,6 +930,10 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		swprintf( z, L"Weapon dispersion: %+0.2f,%+0.2f (radius %.2f) | final %+0.2f,%+0.2f",
 			d.fDeviationX, d.fDeviationY, d.fBulletDeviation, d.fShotOffsetX, d.fShotOffsetY );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTRED, z ); sy += lineH;
+
+		swprintf( z, L"Trajectory limiter correction: %+0.2f,%+0.2f",
+			d.fLimitCorrectionX, d.fLimitCorrectionY );
+		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
 
 		swprintf( z, L"Team/difficulty modifiers: base %+0.1f%% | aim %+0.1f%%",
 			d.fBaseSpecial, d.fAimSpecial );
