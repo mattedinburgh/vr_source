@@ -3319,6 +3319,8 @@ BOOLEAN UseBlade( SOLDIERTYPE *pSoldier , INT32 sTargetGridNo )
 			if ( pTargetSoldier->ubProfile != NO_PROFILE )
 				gMercProfiles[ pTargetSoldier->ubProfile ].records.usTimesWoundedStabbed++;
 
+			BattleLogAddMeleeHit( pSoldier->ubID, pTargetSoldier->ubID, (INT16)iImpact );
+
 			// Send event for getting hit
 			memset( &(SWeaponHit), 0, sizeof( SWeaponHit ) );
 			SWeaponHit.usSoldierID			= pTargetSoldier->ubID;
@@ -4076,6 +4078,8 @@ BOOLEAN UseHandToHand( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo, BOOLEAN fStea
 				// SANDRO - new merc records - times wounded (punched)
 				if ( pTargetSoldier->ubProfile != NO_PROFILE )
 					gMercProfiles[ pTargetSoldier->ubProfile ].records.usTimesWoundedPunched++;
+
+				BattleLogAddMeleeHit( pSoldier->ubID, pTargetSoldier->ubID, (INT16)iImpact );
 
 				// Send event for getting hit
 				memset( &(SWeaponHit), 0, sizeof( SWeaponHit ) );
