@@ -961,6 +961,40 @@ BOOLEAN CheckVideoObjectScreenCoordinateInData( HVOBJECT hSrcVObject, UINT16 usI
 	iStartPos	= 0;
 	LineSkip	= usWidth;
 
+	// True-colour tile objects do not use the legacy compressed ETRLE pixel
+	// stream in pPixData.  Keep the exact legacy flattened test coordinate,
+	// but query the true-colour region buffer directly.
+	if( hSrcVObject->ubBitDepth == 16 || hSrcVObject->ubBitDepth == 32 )
+	{
+		if( hSrcVObject->p16BPPObject == NULL ||
+			usIndex >= hSrcVObject->usNumberOf16BPPObjects )
+		{
+			return(FALSE);
+		}
+
+		SixteenBPPObjectInfo *pObject = &(hSrcVObject->p16BPPObject[ usIndex ]);
+		if( pObject->p16BPPData == NULL || pObject->usWidth == 0 || pObject->usHeight == 0 )
+		{
+			return(FALSE);
+		}
+
+		const INT32 iPixelCount = (INT32)pObject->usWidth * (INT32)pObject->usHeight;
+		if( iTestPos < 0 || iTestPos >= iPixelCount )
+		{
+			return(FALSE);
+		}
+
+		if( hSrcVObject->ubBitDepth == 32 )
+		{
+			const UINT8 *pSource = (const UINT8*)pObject->p16BPPData;
+			return( pSource[(iTestPos * 4) + 3] != 0 );
+		}
+
+		// 16 BPP true-colour regions have no alpha channel. Zero is the
+		// transparent/background value used by this path.
+		return( pObject->p16BPPData[iTestPos] != 0 );
+	}
+
 	SrcPtr= (UINT8 *)hSrcVObject->pPixData + uiOffset;
 
 	__asm {
