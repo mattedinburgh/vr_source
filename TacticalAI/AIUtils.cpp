@@ -3937,6 +3937,8 @@ UINT8 CountFriendsInDirection(SOLDIERTYPE *pSoldier, UINT8 ubDirection, INT16 sD
 			!pFriend->bCollapsed &&
 			!pFriend->bBreathCollapsed &&
 			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
+			!(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) &&
+			!AIDisengagementActive(pFriend) && !AIEscapeActive(pFriend) &&
 			AIDirection(pSoldier->sGridNo, pFriend->sGridNo) == ubDirection &&
 			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) <= sDistance &&
 			(!fCheckSight || LocationToLocationLineOfSightTest(pSoldier->sGridNo, pSoldier->pathing.bLevel, pFriend->sGridNo, pFriend->pathing.bLevel, TRUE, MAX_VISION_RANGE)))
@@ -3974,6 +3976,8 @@ UINT8 CountFriendsInDirectionFromSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, UINT8 
 			!pFriend->bCollapsed &&
 			!pFriend->bBreathCollapsed &&
 			!(pFriend->usSoldierFlagMask & SOLDIER_POW) &&
+			!(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) &&
+			!AIDisengagementActive(pFriend) && !AIEscapeActive(pFriend) &&
 			AIDirection(sSpot, pFriend->sGridNo) == ubDirection &&
 			PythSpacesAway(sSpot, pFriend->sGridNo) <= sDistance)
 		{
