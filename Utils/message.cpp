@@ -786,20 +786,24 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 		INT16 iy = inspectorY;
 		INT16 iw = inspectorW;
 		CHAR16 z[256];
+		UINT8 ubRound = d.ubVolleyShot > 0 ? d.ubVolleyShot : 1;
+		const CHAR16 *pStance = L"standing";
+		if ( d.ubStance == ANIM_CROUCH ) pStance = L"crouched";
+		else if ( d.ubStance == ANIM_PRONE ) pStance = L"prone";
 
 		BattleLogPrintInspectorLine( ix + 6, iy + 4, FONT_MCOLOR_LTYELLOW, L"SHOT INSPECTOR - MISS" );
 
 		INT16 sy = iy + BATTLE_LOG_HEADER_H + 3;
-		swprintf( z, L"Aim %d | volley round %d | range %.1f tiles | NCTH %.1f | muzzle sway %.1f",
-			d.ubAimTime, d.ubVolleyShot, d.fRange / (FLOAT)CELL_X_SIZE, d.fFinalChance, d.fMuzzleSway );
+		swprintf( z, L"Aim %d | round %d | range %.1f tiles | NCTH %.1f | muzzle sway %.1f",
+			d.ubAimTime, ubRound, d.fRange / (FLOAT)CELL_X_SIZE, d.fFinalChance, d.fMuzzleSway );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
 
 		swprintf( z, L"Skill: MRK %d  DEX %d  WIS %d  EXP %d | breath %d  shock %d",
 			d.bMarksmanship, d.bDexterity, d.bWisdom, d.bExperience, d.bBreath, d.bShock );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_WHITE, z ); sy += lineH;
 
-		swprintf( z, L"Handling: %d | base difficulty %.2f  aim difficulty %.2f | stance %d",
-			d.ubModifiedHandling, d.fGunBaseDifficulty, d.fGunAimDifficulty, d.ubStance );
+		swprintf( z, L"Handling: %d | base difficulty %.2f  aim difficulty %.2f | %s",
+			d.ubModifiedHandling, d.fGunBaseDifficulty, d.fGunAimDifficulty, pStance );
 		BattleLogPrintInspectorLine( ix + 7, sy, FONT_MCOLOR_LTGRAY, z ); sy += lineH;
 
 		swprintf( z, L"Base: attributes %.1f  flat %+0.1f  -> %.1f", d.fBaseAttribute, d.fFlatBase, d.fBaseChance );
