@@ -1,0 +1,151 @@
+name: Port proven Map Factory to canonical branch
+
+on:
+  push:
+    branches:
+      - install/all-2026-09-12
+    paths:
+      - 'MapPreviewTrigger/PORT_MAP_FACTORY.txt'
+      - '.github/workflows/port-map-factory.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: map-factory-port
+  cancel-in-progress: false
+
+jobs:
+  port-and-build:
+    runs-on: [self-hosted, Windows, X64, ja2-render]
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out canonical integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: install/all-2026-09-12
+          fetch-depth: 0
+
+      - name: Locate Git
+        id: git
+        shell: powershell
+        run: |
+          $git = $null
+          $cmd = Get-Command git.exe -ErrorAction SilentlyContinue
+          if ($cmd) { $git = $cmd.Source }
+          if (-not $git) {
+            $git = Get-ChildItem "$env:LOCALAPPDATA\GitHubDesktop" -Recurse -Filter git.exe -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\resources\\app\\git\\cmd\\git\.exe$' } |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $git -or -not (Test-Path $git)) { throw 'Git not found.' }
+          "path=$git" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Replay only proven map-factory commits
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $git = '${{ steps.git.outputs.path }}'
+          & $git config user.name 'github-actions[bot]'
+          & $git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          & $git fetch origin install/all-2026-09-12
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $git reset --hard origin/install/all-2026-09-12
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          # Oldest -> newest. Trigger-only commits are intentionally excluded.
+          $commits = @(
+            'c7bd66dea44eeb3cb98554492d654112e57425bf',
+            'ce74df771d1f5bac9675edd40c11f8475c0b0ef4',
+            '5a2a520f8ac2ec37ef7a2624639d2546a7368eda',
+            'abb89f13ead25a3ed2fa0aed59ecca4b1b81ff9b',
+            '179c23dfb7c141a561e4fccc9753ae8f1ecfdb3a',
+            '6962bb0daa3b2c50a65602b8317ce74af3617cd2',
+            '2b5a88d3d04d8f9ce71d2949dc41f81b402b5a9e',
+            '2aac2a35cdae9e6588d96413b0fe583a4dfb99c9',
+            'b7e3b122147ef814e935e0dd048b2f457921a114',
+            '4b4655f37bbf37d34bdda90efd71d955d4f12589',
+            '12f12c9c898a685c543ac2b1c82c122db476b7f9',
+            'c96b9408a5fdedd832e72a6ccfd60dc1c65ef629',
+            'f208260e4ad2683951e29239afc0346b60d8a881',
+            'd4d7cf27b0be6753863dd3205cfad379c4d4707f',
+            '735e805760867807a914f54b15a464508788b502',
+            'f90eb98026d035c1bac32b7b0f6b86c44eda5a82',
+            '3845808e1259c717b2d261d27387b2ce942fcc31'
+          )
+
+          foreach ($sha in $commits) {
+            Write-Host "Fetching map commit $sha"
+            & $git fetch origin $sha
+            if ($LASTEXITCODE -ne 0) { throw "Could not fetch $sha" }
+
+            Write-Host "Cherry-picking $sha"
+            & $git cherry-pick $sha
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host '--- CHERRY-PICK CONFLICT ---'
+              & $git status --short
+              & $git diff --name-only --diff-filter=U
+              & $git cherry-pick --abort
+              throw "Map Factory port conflicted at $sha; canonical branch was not modified."
+            }
+          }
+
+          & $git log --oneline -20
+
+      - name: Retarget projects to v120 for render-PC build
+        shell: powershell
+        run: |
+          Get-ChildItem $env:GITHUB_WORKSPACE -Recurse -Filter '*.vcxproj' -File | ForEach-Object {
+            $path = $_.FullName
+            $text = [System.IO.File]::ReadAllText($path)
+            $newText = $text.Replace('<PlatformToolset>v120_xp</PlatformToolset>', '<PlatformToolset>v120</PlatformToolset>')
+            if ($newText -ne $text) {
+              [System.IO.File]::WriteAllText($path, $newText, (New-Object System.Text.UTF8Encoding($false)))
+            }
+          }
+
+      - name: Find MSBuild
+        id: msbuild
+        shell: powershell
+        run: |
+          $candidates = @(
+            'C:\Program Files (x86)\MSBuild\12.0\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe'
+          )
+          $msbuild = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $msbuild) {
+            $cmd = Get-Command msbuild.exe -ErrorAction SilentlyContinue
+            if ($cmd) { $msbuild = $cmd.Source }
+          }
+          if (-not $msbuild) { throw 'MSBuild not found.' }
+          "path=$msbuild" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Compile MapEditor integration
+        shell: powershell
+        run: |
+          & '${{ steps.msbuild.outputs.path }}' '.\ja2_VS2013.sln' /m /t:ja2 /p:Configuration=MapEditor /p:Platform=Win32
+          if ($LASTEXITCODE -ne 0) { throw "Map Factory port failed MapEditor build with exit code $LASTEXITCODE" }
+          $editor = Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\MapEditor_EN_Release.exe'
+          if (-not (Test-Path $editor)) { throw "MapEditor binary not produced: $editor" }
+
+      - name: Rebase onto latest canonical head and push
+        shell: powershell
+        run: |
+          $git = '${{ steps.git.outputs.path }}'
+          & $git fetch origin install/all-2026-09-12
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          & $git rebase origin/install/all-2026-09-12
+          if ($LASTEXITCODE -ne 0) {
+            & $git rebase --abort
+            throw 'Canonical branch changed incompatibly during validation; no push performed.'
+          }
+
+          & $git push origin HEAD:install/all-2026-09-12
+          if ($LASTEXITCODE -ne 0) { throw 'Validated Map Factory port could not be pushed.' }
