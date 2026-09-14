@@ -7,7 +7,7 @@ on:
     paths:
       - '.github/workflows/a3-tile-art-inspection.yml'
       - 'Tools/ComposeA3CropMaster.ps1'
-      - 'Tools/compose_a3_soil_beds.py'
+      - 'Tools/compose_a3_field_beds.py'
       - 'Tools/audit_rural_sti.py'
   workflow_dispatch:
 
@@ -59,21 +59,21 @@ jobs:
           & '.\Tools\ComposeA3CropMaster.ps1' -DataMapsTilesRoot $dataRoot
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Set up Python for A3 soil-bed composition
+      - name: Set up Python for A3 field-bed composition
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install A3 soil-bed image dependency
+      - name: Install A3 field-bed image dependency
         shell: powershell
         run: python -m pip install --disable-pip-version-check pillow
 
-      - name: Compose A3 raised-soil bed family
+      - name: Compose A3 irrigated field-bed family
         shell: powershell
         run: |
           $tilesets = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir\Data-Maps-Tiles\Tilesets'
           $target = Join-Path $tilesets '38'
-          python '.\Tools\compose_a3_soil_beds.py' --tilesets-root $tilesets --target-38 $target
+          python '.\Tools\compose_a3_field_beds.py' --tilesets-root $tilesets --target-38 $target
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Decode A3 B1TC families to contact sheets
@@ -161,7 +161,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           $assets = @(
             'VR_CROP_MASTER',
-            'A3_SOIL_BEDS',
+            'A3_FIELD_BEDS',
             'A3_CROP_ROWS',
             'A3_MUD_RUTS',
             'A3_LANDMARKS',
