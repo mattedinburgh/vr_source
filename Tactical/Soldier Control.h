@@ -1498,15 +1498,18 @@ public:
 	UINT32	usSkillCooldown[SOLDIER_COOLDOWN_MAX];	// cooldown used for various skill/trait/taint effects
 	
 	// Downed/bleed-out system. A lethal but survivable combat wound leaves the soldier
-	// incapacitated at 1 life for a limited number of full tactical rounds.
-	UINT8	ubBleedoutTurns;		// internal countdown; active casualties use 5-7 to guarantee 4-6 rescue turns
-	UINT8	ubBleedoutState;		// BLEEDOUT_NONE / BLEEDOUT_ACTIVE / BLEEDOUT_STABILIZED
-	UINT8	ubDraggedCasualtyID;	// rescuer -> downed casualty, NOBODY when inactive
-	UINT8	ubDraggedByID;			// casualty -> rescuer, NOBODY when inactive
+	// incapacitated at 1 life for a visible rescue window. Trauma accumulates across
+	// the full tactical round; sufficiently catastrophic trauma bypasses bleed-out.
+	UINT8	ubBleedoutTurns;			// visible full-round rescue countdown (0 when stabilized/inactive)
+	UINT8	ubBleedoutState;			// BLEEDOUT_NONE / BLEEDOUT_ACTIVE / BLEEDOUT_STABILIZED
+	UINT8	ubBleedoutTraumaThisRound;	// cumulative qualifying HP trauma this full tactical round
+	UINT8	ubBleedoutGraceRound;		// newly downed casualty does not lose a rescue turn at the current round end
+	UINT8	ubDraggedCasualtyID;		// rescuer -> downed casualty, NOBODY when inactive
+	UINT8	ubDraggedByID;				// casualty -> rescuer, NOBODY when inactive
 
 	// Flugente: Decrease this filler by 1 for each new UINT8 / BOOLEAN variable, so we can maintain savegame compatibility!!
 	// Note that we also have to account for padding, so you might need to substract more than just the size of the new variables
-	UINT8	ubFiller[16];
+	UINT8	ubFiller[14];
 
 	UINT32	usSoldierFlagMask2;		// anv: another usSoldierFlagMask
 
