@@ -6678,8 +6678,10 @@ UINT8 StealItems(SOLDIERTYPE* pSoldier,SOLDIERTYPE* pOpponent, UINT8* ubIndexRet
 		fStealItem = FALSE;
 
 		pObject=&pOpponent->inv[i];
-		if ((pObject->exists() == true) && !(Item[pObject->usItem].defaultundroppable  )) // CHECK! Undroppable items cannot be stolen - SANDRO
+		if ( (pObject->exists() == true) &&
+			 (pOpponent->bTeam != gbPlayerNum || !(Item[pObject->usItem].defaultundroppable)) )
 		{
+			// Enemy inventory is physical loot: default-undroppable only protects friendly/player-team items.
 			// Is the enemy collapsed
 			if ( pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed )
 			{
