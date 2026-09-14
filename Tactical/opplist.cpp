@@ -2181,7 +2181,12 @@ void ManSeesMan(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent, INT32 sOppGridNo,
 	if ( pOpponent->UsesScubaGear() )
 		return;
 	// Flugente: update our sight concerning this guy, otherwise we could get way with open attacks because this does not get updated
-	pSoldier->RecognizeAsCombatant(pOpponent->ubID);
+	if ( pSoldier->RecognizeAsCombatant(pOpponent->ubID) )
+	{
+		// 1.13 enemy roles: sustained player observation reveals specialist identity.
+		if ( pOpponent->bTeam == ENEMY_TEAM && pSoldier->bTeam == OUR_TEAM )
+			pOpponent->usSoldierFlagMask |= SOLDIER_ENEMY_OBSERVEDTHISTURN;
+	}
 
 	// if we're seeing a guy we didn't see on our last chance to look for him
 	if (pSoldier->aiData.bOppList[pOpponent->ubID] != SEEN_CURRENTLY)
