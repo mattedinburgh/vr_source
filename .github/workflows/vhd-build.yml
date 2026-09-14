@@ -81,3 +81,38 @@ jobs:
           name: vhd-msbuild-log-${{ github.run_number }}
           path: vhd-msbuild.log
           if-no-files-found: warn
+
+
+  hosted-smoke:
+    runs-on: windows-2022
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out VHD source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Compile VHD with hosted MSVC Win32
+        shell: powershell
+        run: |
+          $log = Join-Path $env:GITHUB_WORKSPACE 'vhd-hosted-msbuild.log'
+          msbuild '.\ja2_VS2013.sln' /m /t:ja2 /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /fl "/flp:logfile=$log;verbosity=normal"
+          $buildExit = $LASTEXITCODE
+          if (Test-Path $log) {
+            Write-Host '----- Hosted MSBuild tail -----'
+            Get-Content $log -Tail 250
+          }
+          if ($buildExit -ne 0) { exit $buildExit }
+
+      - name: Upload hosted smoke-build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vhd-hosted-msbuild-log-${{ github.run_number }}
+          path: vhd-hosted-msbuild.log
+          if-no-files-found: warn
