@@ -17987,6 +17987,11 @@ BOOLEAN		SOLDIERTYPE::RecognizeAsCombatant(UINT8 ubTargetID)
 // loose covert property
 void	SOLDIERTYPE::LooseDisguise( void )
 {	
+	// Blowing cover must never physically ruin otherwise clean clothes. Keep the
+	// current vest/pants damage state exactly as it was before the disguise is
+	// removed; actual wounds are the only code path allowed to set these flags.
+	const UINT32 uiClothingDamageBefore = this->usSoldierFlagMask & (SOLDIER_DAMAGED_VEST | SOLDIER_DAMAGED_PANTS);
+
 	// loose any covert flags
 	this->usSoldierFlagMask &= ~(SOLDIER_COVERT_CIV | SOLDIER_COVERT_SOLDIER | SOLDIER_COVERT_NPC_SPECIAL);
 
@@ -18000,6 +18005,11 @@ void	SOLDIERTYPE::LooseDisguise( void )
 			RecalculateOppCntsDueToNoLongerNeutral( pSoldier );
 		}
 	}
+	// Sight/neutrality recalculation must not convert an exposure event into
+	// permanently damaged clothing. Restore only the damage state that existed
+	// before cover was blown.
+	this->usSoldierFlagMask = (this->usSoldierFlagMask & ~(SOLDIER_DAMAGED_VEST | SOLDIER_DAMAGED_PANTS)) | uiClothingDamageBefore;
+
 	DirtyMercPanelInterface( this, DIRTYLEVEL2 );
 }
 
