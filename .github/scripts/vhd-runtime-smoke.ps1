@@ -18,6 +18,18 @@ $runAttempt = if ($env:GITHUB_RUN_ATTEMPT) { $env:GITHUB_RUN_ATTEMPT } else { '1
 $smokeRoot = Join-Path $env:RUNNER_TEMP ("VHD_SMOKE_" + $env:GITHUB_RUN_ID + "_" + $runAttempt)
 $logOut = Join-Path $env:GITHUB_WORKSPACE 'vhd-runtime-smoke-logs'
 
+# Safely reclaim old VHD smoke sandboxes from prior runs. Remove junctions first
+# so cleanup can never recurse into the real game-data directories.
+Get-ChildItem -LiteralPath $env:RUNNER_TEMP -Directory -Filter 'VHD_SMOKE_*' -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -ne $smokeRoot } |
+    ForEach-Object {
+        $oldRoot = $_.FullName
+        Get-ChildItem -LiteralPath $oldRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.LinkType -eq 'Junction' } |
+            ForEach-Object { & cmd.exe /c rmdir "$($_.FullName)" | Out-Null }
+        Remove-Item -LiteralPath $oldRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
 if (Test-Path $smokeRoot) {
     throw "Refusing to reuse an existing VHD smoke directory: $smokeRoot"
 }
@@ -123,27 +135,59 @@ finally {
         Write-Host "Process cleanup: $($_.Exception.Message)"
     }
 
-    # Collect only smoke-root logs; never modify or traverse the real data junctions.
-    Get-ChildItem -LiteralPath $smokeRoot -File |
-        Where-Object { $_.Extension -in @('.log','.dmp') -or $_.Name -match 'BlackBox|Crash|error' } |
-        ForEach-Object {
-            Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $logOut $_.Name) -Force
-        }
+    # Collect compact diagnostics only. Large JA2 logs can be hundreds of MB;
+    # keep at most the last 2 MiB of each text log and skip large dump files.
+    $diagFiles = @()
+    $diagFiles += Get-ChildItem -LiteralPath $smokeRoot -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Extension -in @('.log','.txt','.dmp') -or $_.Name -match 'BlackBox|Crash|error' }
 
     if (Test-Path $smokeProfile) {
-        Get-ChildItem -LiteralPath $smokeProfile -File -Recurse |
-            Where-Object { $_.Extension -in @('.log','.dmp') -or $_.Name -match 'BlackBox|Crash|error' } |
-            ForEach-Object {
-                Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $logOut ("profile_" + $_.Name)) -Force
+        $diagFiles += Get-ChildItem -LiteralPath $smokeProfile -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -in @('.log','.txt','.dmp') -or $_.Name -match 'BlackBox|Crash|error' }
+    }
+
+    foreach ($diag in $diagFiles) {
+        $safeName = ($diag.FullName.Substring($smokeRoot.Length).TrimStart('\') -replace '[\\/:*?"<>| ]','_')
+        $dest = Join-Path $logOut $safeName
+
+        if ($diag.Extension -ieq '.dmp') {
+            if ($diag.Length -le 20MB) {
+                Copy-Item -LiteralPath $diag.FullName -Destination $dest -Force
             }
+            else {
+                "Skipped large dump: $($diag.FullName) size=$($diag.Length)" |
+                    Add-Content -LiteralPath (Join-Path $logOut 'skipped-large-files.txt')
+            }
+            continue
+        }
+
+        if ($diag.Length -le 2MB) {
+            Copy-Item -LiteralPath $diag.FullName -Destination $dest -Force
+        }
+        else {
+            $fs = [System.IO.File]::Open($diag.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+            try {
+                $tailBytes = [Math]::Min([Int64](2MB), $fs.Length)
+                $fs.Seek(-$tailBytes, [System.IO.SeekOrigin]::End) | Out-Null
+                $buffer = New-Object byte[] $tailBytes
+                [void]$fs.Read($buffer, 0, $buffer.Length)
+                [System.IO.File]::WriteAllBytes($dest, $buffer)
+            }
+            finally {
+                $fs.Dispose()
+            }
+        }
     }
 
     # Remove junctions explicitly with rmdir; never recurse through them.
     Get-ChildItem -LiteralPath $smokeRoot -Directory |
         Where-Object { $_.LinkType -eq 'Junction' } |
         ForEach-Object {
-            & cmd.exe /c rmdir "$($_.FullName)"
+            & cmd.exe /c rmdir "$($_.FullName)" | Out-Null
         }
+
+    # With junctions removed, deleting the sandbox cannot touch the installed game.
+    Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
 
     @(
         "started=$($started.ToString('o'))"
