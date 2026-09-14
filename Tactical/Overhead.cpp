@@ -8086,7 +8086,6 @@ BOOLEAN CheckForLosingEndOfBattle( )
                 fDoCapture = TRUE;
                 BeginCaptureSquence();
             }
-            }
 
             gfKillingGuysForLosingBattle = TRUE;
 
