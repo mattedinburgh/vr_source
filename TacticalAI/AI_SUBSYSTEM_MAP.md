@@ -15,7 +15,7 @@ implemented in several places or on several permanent branches.
 | Casualty/medical AI | `TacticalAI/Medical.cpp` | Evacuation, medic rescue, buddy aid, self-aid |
 | Attack evaluation/execution helpers | `TacticalAI/Attacks.cpp` | Attack candidates and weapon-use execution support |
 | Movement candidate generation | `TacticalAI/FindLocations.cpp` | Cover/advance/retreat/flank location search |
-| Dormant CQB/building planner | `TacticalAI/CQBBuildingDoctrine.cpp/.h` | Compiled staging only; runtime hard-disabled; no `DecideAction` hook |
+| CQB/building planner | `TacticalAI/CQBBuildingDoctrine.cpp/.h` | Building context/utility/action adapter; top-level priority remains owned by `DecideAction.cpp` |
 | Shared analytics | `VRAnalytics.cpp`, `VRAnalytics.h` | Tactical + strategic Black Box event stream |
 | Architecture policy | `UNIFIED_AI_FRAMEWORK.md` | Single-source architecture and branch rules |
 | Strategic staged work | `Strategic/STRATEGIC_AI_STAGING_MANIFEST.md` | Inactive strategic-AI forward-port plan |
@@ -37,6 +37,7 @@ A behaviour may call helpers from several files, but it has exactly one orchestr
 | Suppression response | `DecideAction.cpp` |
 | Alert-state priority | `DecideAction.cpp` |
 | Flank decision gate | `DecideAction.cpp` |
+| Building/CQB behavior | `DecideAction.cpp` (priority) + `CQBBuildingDoctrine.cpp` (building planner) |
 | Casualty response | `Medical.cpp` through `DecideCombatCasualtyResponse` |
 | Medic rescue | `Medical.cpp` |
 | Buddy aid | `Medical.cpp` |
@@ -58,8 +59,9 @@ High-priority state can pre-empt ordinary combat:
 6. suppression response;
 7. viable casualty response;
 8. tactical fallback / self-preservation;
-9. coordinated attack/support/movement;
-10. legacy execution.
+9. immediate viable attack in direct BLACK contact;
+10. building-aware CQB movement when context applies;
+11. generic coordinated attack/support/movement and legacy movement execution.
 
 The exact details may evolve, but a new behaviour must be deliberately placed in this hierarchy.
 
