@@ -3137,18 +3137,27 @@ void ScrollBackground(UINT32 uiDirection, INT16 sScrollXIncrement, INT16 sScroll
 #define OCCLUSION_BUBBLE_SCAN_RADIUS       4
 #define OCCLUSION_BUBBLE_INNER_RADIUS_SQ   1
 #define OCCLUSION_BUBBLE_OUTER_RADIUS_SQ   5
+#define OCCLUSION_BUBBLE_MAX_MARKED_GRIDS  ( ( OCCLUSION_BUBBLE_SCAN_RADIUS * 2 + 1 ) * ( OCCLUSION_BUBBLE_SCAN_RADIUS * 2 + 1 ) )
 
 static INT32  gsOcclusionBubbleLastGridNo = NOWHERE;
 static INT8   gbOcclusionBubbleLastLevel = -1;
 static UINT16 gusOcclusionBubbleLastSoldier = NOBODY;
 static BOOLEAN gfOcclusionBubbleActive = FALSE;
+static INT32  gsOcclusionBubbleMarkedGrids[ OCCLUSION_BUBBLE_MAX_MARKED_GRIDS ];
+static UINT16 gusOcclusionBubbleMarkedGridCount = 0;
 
 static BOOLEAN ClearSelectedMercOcclusionBubble( )
 {
 	BOOLEAN fChanged = FALSE;
 
-	for ( INT32 sGridNo = 0; sGridNo < WORLD_MAX; ++sGridNo )
+	// Only grids touched by the previous bubble can contain our transient bits.
+	// Do not scan WORLD_MAX here: 1.13/Vengeance supports very large maps.
+	for ( UINT16 usIndex = 0; usIndex < gusOcclusionBubbleMarkedGridCount; ++usIndex )
 	{
+		const INT32 sGridNo = gsOcclusionBubbleMarkedGrids[ usIndex ];
+		if ( TileIsOutOfBounds( sGridNo ) )
+			continue;
+
 		LEVELNODE *pNode = gpWorldLevelData[ sGridNo ].pStructHead;
 		while ( pNode != NULL )
 		{
@@ -3161,6 +3170,7 @@ static BOOLEAN ClearSelectedMercOcclusionBubble( )
 		}
 	}
 
+	gusOcclusionBubbleMarkedGridCount = 0;
 	return fChanged;
 }
 
@@ -3253,6 +3263,7 @@ static void UpdateSelectedMercOcclusionBubble( )
 
 				const INT32 sGridNo = iRow * WORLD_COLS + iCol;
 				LEVELNODE *pNode = gpWorldLevelData[ sGridNo ].pStructHead;
+				BOOLEAN fGridMarked = FALSE;
 
 				while ( pNode != NULL )
 				{
@@ -3281,12 +3292,18 @@ static void UpdateSelectedMercOcclusionBubble( )
 									pNode->uiFlags |= LEVELNODE_OCCLUSION_FADE;
 								}
 
+								fGridMarked = TRUE;
 								fChanged = TRUE;
 							}
 						}
 					}
 
 					pNode = pNode->pNext;
+				}
+
+				if ( fGridMarked && gusOcclusionBubbleMarkedGridCount < OCCLUSION_BUBBLE_MAX_MARKED_GRIDS )
+				{
+					gsOcclusionBubbleMarkedGrids[ gusOcclusionBubbleMarkedGridCount++ ] = sGridNo;
 				}
 			}
 		}
