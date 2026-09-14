@@ -3157,6 +3157,11 @@ INT32 FindAdvanceSpot(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bAction, UI
 	INT32	iPathCost, iBestPathCost = 0;
 	INT32	iBestUtility = -100000, iUtility;
 	INT8	bTacticalIntent, bTacticalRole;
+	const UINT8 ubMaxUtilityCandidates = 12;
+	INT32 sUtilityCandidates[12];
+	INT32 iUtilityScores[12];
+	INT32 iUtilityFutureCosts[12];
+	UINT8 ubUtilityCount = 0;
 	INT16	usMovementMode;
 	INT32	iRoamRange, iDistFromOrigin, sOrigin;
 	//BOOLEAN	fClimbingNecessary;
@@ -3429,13 +3434,53 @@ INT32 FindAdvanceSpot(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bAction, UI
 			else if (ubType == ADVANCE_SPOT_PRONE_COVER)
 				iUtility += 6;
 
-			if (sBestSpot == NOWHERE || iUtility > iBestUtility ||
-				(iUtility == iBestUtility && iPathCost < iBestPathCost))
+			// Keep only the strongest endpoint candidates. Full path-risk analysis is
+			// deliberately deferred until after the scan so we can afford to examine
+			// actual routes without pathfinding hundreds of times per soldier.
+			UINT8 ubCandidateSlot = ubUtilityCount;
+			if (ubUtilityCount < ubMaxUtilityCandidates)
 			{
-				sBestSpot = sGridNo;
-				iBestUtility = iUtility;
-				iBestPathCost = iPathCost;
+				++ubUtilityCount;
 			}
+			else
+			{
+				UINT8 ubWorst = 0;
+				for (UINT8 ubCheck = 1; ubCheck < ubMaxUtilityCandidates; ++ubCheck)
+				{
+					if (iUtilityScores[ubCheck] < iUtilityScores[ubWorst])
+						ubWorst = ubCheck;
+				}
+
+				if (iUtility <= iUtilityScores[ubWorst])
+					continue;
+				ubCandidateSlot = ubWorst;
+			}
+
+			sUtilityCandidates[ubCandidateSlot] = sGridNo;
+			iUtilityScores[ubCandidateSlot] = iUtility;
+			iUtilityFutureCosts[ubCandidateSlot] = iPathCost;
+		}
+	}
+
+	// Expensive second stage: evaluate the real route to the best endpoint shortlist.
+	// Consecutive exposed tiles compound danger, which strongly disfavors crossing a
+	// kill zone unless the positional gain is exceptional or smoke makes it viable.
+	iBestUtility = -100000;
+	iBestPathCost = 0x7fffffff;
+	for (UINT8 ubCandidate = 0; ubCandidate < ubUtilityCount; ++ubCandidate)
+	{
+		INT32 sCandidate = sUtilityCandidates[ubCandidate];
+		INT32 iRouteExposure = AIPathExposureCost(pSoldier, sCandidate, usMovementMode);
+		if (iRouteExposure >= 10000)
+			continue;
+
+		INT32 iFinalUtility = iUtilityScores[ubCandidate] - __min((INT32)120, iRouteExposure);
+		if (sBestSpot == NOWHERE || iFinalUtility > iBestUtility ||
+			(iFinalUtility == iBestUtility && iUtilityFutureCosts[ubCandidate] < iBestPathCost))
+		{
+			sBestSpot = sCandidate;
+			iBestUtility = iFinalUtility;
+			iBestPathCost = iUtilityFutureCosts[ubCandidate];
 		}
 	}
 
