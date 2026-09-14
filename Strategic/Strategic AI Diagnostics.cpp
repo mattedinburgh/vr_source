@@ -14,6 +14,12 @@
 #endif
 
 #include "Strategic AI Diagnostics.h"
+#include "Strategic AI.h"
+#include "Strategic Movement.h"
+#include "Strategic Operational AI.h"
+#include "Game Clock.h"
+#include "strategic.h"
+#include "strategicmap.h"
 #include <stdio.h>
 #include <string.h>
 
