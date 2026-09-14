@@ -1,0 +1,1 @@
+# Python entrypoint for Map Factory
