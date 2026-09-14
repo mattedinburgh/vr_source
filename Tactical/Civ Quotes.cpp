@@ -2159,6 +2159,8 @@ static BOOLEAN AICivilianNearActionTarget( SOLDIERTYPE *pCiv )
 		SOLDIERTYPE *pOther = MercPtrs[ubID];
 		if ( !pOther || !pOther->bActive || !pOther->bInSector || pOther->stats.bLife <= 0 )
 			continue;
+		if ( !pOther->aiData.bNeutral || !IS_MERC_BODY_TYPE( pOther ) )
+			continue;
 		if ( pOther->pathing.bLevel != pCiv->bTargetLevel )
 			continue;
 		if ( PythSpacesAway( pCiv->aiData.usActionData, pOther->sGridNo ) <= 2 )
