@@ -6517,6 +6517,15 @@ void MoveSAIGroupToSector( GROUP **pGroup, UINT8 ubSectorID, UINT32 uiMoveCode, 
 	ubDstSectorX = (UINT8)SECTORX( ubSectorID );
 	ubDstSectorY = (UINT8)SECTORY( ubSectorID );
 
+	VRAnalyticsStrategicMoveOrdered(
+		GetWorldTotalMin(),
+		(*pGroup)->ubGroupID,
+		SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY ),
+		ubSectorID,
+		(*pGroup)->ubGroupSize,
+		uiMoveCode,
+		ubIntention );
+
 	if( (*pGroup)->fBetweenSectors )
 	{
 		SetEnemyGroupSector( *pGroup, (UINT8)SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY ) );
