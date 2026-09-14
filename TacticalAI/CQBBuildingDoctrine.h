@@ -161,6 +161,13 @@ BOOLEAN VRCQB_HasCapability(const VRCQB_TRAINING_MODEL *pModel, UINT32 uiCapabil
 
 BOOLEAN VRCQB_BuildContext(SOLDIERTYPE *pSoldier, VRCQB_CONTEXT *pContext);
 BOOLEAN VRCQB_Assess(SOLDIERTYPE *pSoldier, const VRCQB_CONTEXT *pContext, VRCQB_ASSESSMENT *pAssessment);
+
+// Runtime adapter. This never bypasses environmental survival, disengagement,
+// casualty or suppression priorities; callers invoke it only after those systems
+// have had first refusal. fAllowAssault lets close-contact callers preserve a
+// desirable immediate attack before asking CQB to move.
+INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowAssault);
+
 INT32 VRCQB_ScorePosition(SOLDIERTYPE *pSoldier, const VRCQB_CONTEXT *pContext,
 	const VRCQB_TRAINING_MODEL *pModel, VRCQB_STATE eState, VRCQB_ROLE eRole,
 	INT32 sCandidateGridNo);
