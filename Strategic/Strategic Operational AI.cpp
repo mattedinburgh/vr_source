@@ -352,7 +352,7 @@ void VR_UpdateOperationalReadinessHourly()
 	}
 }
 
-void VR_RecordFormationRetreat( GROUP *pGroup, UINT8 ubDestinationSectorID )
+void VR_RecordFormationRetreat( GROUP *pGroup, UINT8 ubSourceSectorID, UINT8 ubDestinationSectorID )
 {
 	VR_EnsureEnemyFormationState( pGroup );
 	if( !VR_FormationStateIsInitialized( pGroup ) )
@@ -364,12 +364,25 @@ void VR_RecordFormationRetreat( GROUP *pGroup, UINT8 ubDestinationSectorID )
 	pEnemy->ubOperationalReserveRole = VR_RESERVE_NONE;
 	pEnemy->usOperationalFlags |=
 		VR_OPFLAG_RETREATED_ONCE | VR_OPFLAG_REGROUPING | VR_OPFLAG_RECENT_CONTACT;
-	// A formation that has just broken contact is not immediately reusable as a
-	// reserve even if its abstract supply/morale remain healthy. Preserve any
-	// stronger existing report; otherwise keep a short-lived generic contact
-	// confidence that decays through the normal hourly intel path.
+
+	// Breaking contact is itself a direct operational observation: the formation
+	// knows where the fight happened, but not necessarily exact surviving player
+	// or militia strength. Never carry a strength estimate from another sector.
+	if( pEnemy->ubOperationalLastKnownPlayerSectorID != ubSourceSectorID )
+	{
+		pEnemy->ubOperationalLastKnownPlayerStrength =
+			VR_OPERATIONAL_STRENGTH_UNKNOWN;
+		pEnemy->ubOperationalLastKnownMilitiaStrength =
+			VR_OPERATIONAL_STRENGTH_UNKNOWN;
+	}
+	pEnemy->ubOperationalLastKnownPlayerSectorID = ubSourceSectorID;
+
+	// A routed formation needs real recovery time. Confidence decays through the
+	// normal local-intel path and morale damage persists into regrouping.
 	if( pEnemy->ubOperationalIntelConfidence < 80 )
 		pEnemy->ubOperationalIntelConfidence = 80;
+	pEnemy->ubOperationalMorale =
+		VR_ClampOperationalPercent( (INT32)pEnemy->ubOperationalMorale - 12 );
 	if( pEnemy->ubOperationalRetreatCount < 255 )
 		++pEnemy->ubOperationalRetreatCount;
 	pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_RETREAT;
@@ -380,6 +393,7 @@ void VR_RecordFormationRetreat( GROUP *pGroup, UINT8 ubDestinationSectorID )
 	if( uiDecision )
 	{
 		VRAnalyticsStateInt( uiDecision, "group_id", pGroup->ubGroupID );
+		VRAnalyticsStateInt( uiDecision, "source_sector", ubSourceSectorID );
 		VRAnalyticsStateInt( uiDecision, "destination_sector", ubDestinationSectorID );
 		VRAnalyticsStateInt( uiDecision, "retreat_count",
 			pEnemy->ubOperationalRetreatCount );
@@ -504,7 +518,7 @@ BOOLEAN VR_RegisterTacticalRetreatSoldier( UINT8 ubSourceX, UINT8 ubSourceY,
 			return FALSE;
 
 		pGroup->pEnemyGroup->ubOperationalHomeSectorID = ubSourceSectorID;
-		VR_RecordFormationRetreat( pGroup, ubDestinationSectorID );
+		VR_RecordFormationRetreat( pGroup, ubSourceSectorID, ubDestinationSectorID );
 	}
 
 	const unsigned long uiDecision = VRAnalyticsBeginDecision(
