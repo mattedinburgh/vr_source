@@ -389,6 +389,7 @@ enum
 
 #define SOLDIER_BATTLE_PARTICIPATION		0x01000000	//16777216	// campaign stats: soldier took part in this battle
 #define SOLDIER_RAISED_REDALERT				0x02000000	//33554432	// this (AI) soldier has raised red alert. Don't allow him to do so again this turn - either it already worked, or the signal is blocked
+#define SOLDIER_ENEMY_OBSERVEDTHISTURN		0x08000000	//134217728 // enemy soldier was seen by the player this turn; used to uncover specialist roles
 /*#define PLAYER_NET_3_LVL_3		0x04000000	//67108864
 #define PLAYER_NET_4_LVL_3		0x08000000	//134217728
 
@@ -580,6 +581,7 @@ enum {
 	SOLDIER_COUNTER_SUSPICION,				// suspicion counter
 	SOLDIER_COUNTER_COVER,					// number of times soldier executed AI_ACTION_TAKE_COVER this turn
 	SOLDIER_COUNTER_FOCUS,					// vision bonus for scopes
+	SOLDIER_COUNTER_ROLE_OBSERVED,			// accumulated observed turns used to reveal an enemy specialist role
 
 	SOLDIER_COUNTER_MAX = 20,				// enough space for fillers
 };
