@@ -39,6 +39,12 @@ jobs:
         shell: powershell
         run: |
           $log = Join-Path $env:GITHUB_WORKSPACE 'vhd-hosted-msbuild.log'
+
+          # RakNetLibStatic.lib was built against the VS2013 CRT and still references
+          # legacy stdio exports. Keep this compatibility shim CI-only; do not modify
+          # VHD source or the actual v120 production configuration.
+          $env:LINK = '/DEFAULTLIB:legacy_stdio_definitions.lib'
+
           msbuild '.\ja2_VS2013.sln' /m /t:ja2 /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /fl "/flp:logfile=$log;verbosity=normal"
           $buildExit = $LASTEXITCODE
 
@@ -56,3 +62,12 @@ jobs:
           name: vhd-hosted-msbuild-log-${{ github.run_number }}
           path: vhd-hosted-msbuild.log
           if-no-files-found: warn
+
+
+      - name: Upload hosted VHD executable
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vhd-hosted-exe-${{ github.run_number }}
+          path: bin/VS2013/JA2_EN_Release.exe
+          if-no-files-found: error
