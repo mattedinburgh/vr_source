@@ -553,7 +553,7 @@ BOOLEAN RenderItemInPoolSlot( INT32 iCurrentSlot, INT32 iFirstSlotOnPage )
 
 	GetVideoObject( &hHandle, GetInterfaceGraphicForItem( &(Item[ pInventoryPoolList[ iCurrentSlot + iFirstSlotOnPage ].object.usItem ] ) ) );
 
-	UINT16 usGraphicNum = g_bUsePngItemImages ? 0 : Item[pInventoryPoolList[ iCurrentSlot + iFirstSlotOnPage ].object.usItem ].ubGraphicNum;
+	UINT16 usGraphicNum = GetInterfaceGraphicSubIndex(Item[pInventoryPoolList[ iCurrentSlot + iFirstSlotOnPage ].object.usItem ].ubGraphicType, Item[pInventoryPoolList[ iCurrentSlot + iFirstSlotOnPage ].object.usItem ].ubGraphicNum);
 	pTrav = &( hHandle->pETRLEObject[ usGraphicNum ] );
 	usHeight				= (UINT16)pTrav->usHeight;
 	usWidth					= (UINT16)pTrav->usWidth;
@@ -1658,7 +1658,7 @@ void MapInvenPoolSlots(MOUSE_REGION * pRegion, INT32 iReason )
 					// update ptr
 					// now set the cursor
 					guiExternVo = GetInterfaceGraphicForItem( &(Item[ gpItemPointer->usItem ]) );
-					gusExternVoSubIndex = g_bUsePngItemImages ? 0 : Item[ gpItemPointer->usItem ].ubGraphicNum;
+					gusExternVoSubIndex = GetInterfaceGraphicSubIndex(Item[ gpItemPointer->usItem ].ubGraphicType, Item[ gpItemPointer->usItem ].ubGraphicNum);
 
 					fMapInventoryItem = TRUE;
 					MSYS_ChangeRegionCursor( &gMPanelRegion , EXTERN_CURSOR );
@@ -2403,7 +2403,7 @@ void BeginInventoryPoolPtr( OBJECTTYPE *pInventorySlot )
 
 						// now set the cursor
 						guiExternVo = GetInterfaceGraphicForItem( &(Item[ gpItemPointer->usItem ]) );
-						gusExternVoSubIndex = g_bUsePngItemImages ? 0 : Item[ gpItemPointer->usItem ].ubGraphicNum;
+						gusExternVoSubIndex = GetInterfaceGraphicSubIndex(Item[ gpItemPointer->usItem ].ubGraphicType, Item[ gpItemPointer->usItem ].ubGraphicNum);
 
 						fMapInventoryItem = TRUE;
 						MSYS_ChangeRegionCursor( &gMPanelRegion , EXTERN_CURSOR );
@@ -2471,7 +2471,7 @@ void BeginInventoryPoolPtr( OBJECTTYPE *pInventorySlot )
 
 			// now set the cursor
 			guiExternVo = GetInterfaceGraphicForItem( &(Item[ gpItemPointer->usItem ]) );
-			gusExternVoSubIndex = g_bUsePngItemImages ? 0 : Item[ gpItemPointer->usItem ].ubGraphicNum;
+			gusExternVoSubIndex = GetInterfaceGraphicSubIndex(Item[ gpItemPointer->usItem ].ubGraphicType, Item[ gpItemPointer->usItem ].ubGraphicNum);
 
 			fMapInventoryItem = TRUE;
 			MSYS_ChangeRegionCursor( &gMPanelRegion , EXTERN_CURSOR );
