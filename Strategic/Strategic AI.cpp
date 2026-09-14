@@ -1790,6 +1790,19 @@ BOOLEAN HandlePlayerGroupNoticedByPatrolGroup( GROUP *pPlayerGroup, GROUP *pEnem
 	UINT8 ubSectorID;
 
 	ubSectorID = (BOOLEAN)SECTOR( pPlayerGroup->ubSectorX, pPlayerGroup->ubSectorY );
+
+	// This patrol has genuinely detected this strategic player group. Record a
+	// coarse local strength estimate only for the observing formation; no global
+	// Queen-wide broadcast occurs at this stage.
+	UINT16 usObservedStrength = (UINT16)pPlayerGroup->ubGroupSize * 10;
+	if( usObservedStrength > 100 )
+		usObservedStrength = 100;
+	VR_RecordOperationalContact(
+		pEnemyGroup,
+		ubSectorID,
+		(UINT8)usObservedStrength,
+		VR_OPERATIONAL_STRENGTH_UNKNOWN,
+		90 );
 	usOffensePoints = pEnemyGroup->pEnemyGroup->ubNumAdmins * 2 +
 										pEnemyGroup->pEnemyGroup->ubNumTroops * 4 +
 										pEnemyGroup->pEnemyGroup->ubNumElites * 6;
