@@ -845,10 +845,148 @@ static BOOLEAN MapFactoryStageRemasteredMap( const STR8 pMapName )
 	return fCopied;
 }
 
-static void MapFactoryRunPilotSector( const STR8 pMapName, UINT8 ubArchetype )
+
+static UINT32 MapFactoryReadLE32( const UINT8 *p )
+{
+	return (UINT32)p[0] | ((UINT32)p[1] << 8) | ((UINT32)p[2] << 16) | ((UINT32)p[3] << 24);
+}
+
+static BOOLEAN MapFactoryComparePreviewBmp( const STR8 pLeftName, const STR8 pRightName,
+	FLOAT *pChangedPercent )
+{
+	if ( pChangedPercent != NULL ) *pChangedPercent = 100.0f;
+	if ( pLeftName == NULL || pRightName == NULL )
+		return FALSE;
+
+	CHAR8 zPreviewDir[MAX_PATH + 32];
+	if ( !GetMapPreviewDirectory( zPreviewDir, sizeof(zPreviewDir) ) )
+		return FALSE;
+
+	CHAR8 zLeft[MAX_PATH + 384], zRight[MAX_PATH + 384];
+	_snprintf( zLeft, sizeof(zLeft) - 1, "%s\\%s", zPreviewDir, pLeftName );
+	_snprintf( zRight, sizeof(zRight) - 1, "%s\\%s", zPreviewDir, pRightName );
+	zLeft[sizeof(zLeft) - 1] = 0;
+	zRight[sizeof(zRight) - 1] = 0;
+
+	FILE *pA = fopen( zLeft, "rb" );
+	FILE *pB = fopen( zRight, "rb" );
+	if ( pA == NULL || pB == NULL )
+	{
+		if ( pA != NULL ) fclose( pA );
+		if ( pB != NULL ) fclose( pB );
+		return FALSE;
+	}
+
+	UINT8 hA[54], hB[54];
+	const BOOLEAN fHeaders = fread( hA, 1, 54, pA ) == 54 && fread( hB, 1, 54, pB ) == 54;
+	if ( !fHeaders || hA[0] != 'B' || hA[1] != 'M' || hB[0] != 'B' || hB[1] != 'M' )
+	{
+		fclose( pA ); fclose( pB ); return FALSE;
+	}
+
+	const UINT32 uiOffsetA = MapFactoryReadLE32( &hA[10] );
+	const UINT32 uiOffsetB = MapFactoryReadLE32( &hB[10] );
+	const UINT32 uiWidthA = MapFactoryReadLE32( &hA[18] );
+	const UINT32 uiWidthB = MapFactoryReadLE32( &hB[18] );
+	const UINT32 uiHeightA = MapFactoryReadLE32( &hA[22] );
+	const UINT32 uiHeightB = MapFactoryReadLE32( &hB[22] );
+	if ( uiWidthA == 0 || uiHeightA == 0 || uiWidthA != uiWidthB || uiHeightA != uiHeightB ||
+		 hA[28] != 24 || hB[28] != 24 )
+	{
+		fclose( pA ); fclose( pB ); return FALSE;
+	}
+
+	const UINT32 uiRowBytes = (uiWidthA * 3u + 3u) & ~3u;
+	UINT8 *pRowA = (UINT8*)MemAlloc( uiRowBytes );
+	UINT8 *pRowB = (UINT8*)MemAlloc( uiRowBytes );
+	if ( pRowA == NULL || pRowB == NULL )
+	{
+		if ( pRowA != NULL ) MemFree( pRowA );
+		if ( pRowB != NULL ) MemFree( pRowB );
+		fclose( pA ); fclose( pB ); return FALSE;
+	}
+
+	fseek( pA, (LONG)uiOffsetA, SEEK_SET );
+	fseek( pB, (LONG)uiOffsetB, SEEK_SET );
+	UINT64 uiChangedPixels = 0;
+	UINT64 uiTotalPixels = (UINT64)uiWidthA * (UINT64)uiHeightA;
+	BOOLEAN fReadOK = TRUE;
+
+	for ( UINT32 y = 0; y < uiHeightA; ++y )
+	{
+		if ( fread( pRowA, 1, uiRowBytes, pA ) != uiRowBytes ||
+			 fread( pRowB, 1, uiRowBytes, pB ) != uiRowBytes )
+		{
+			fReadOK = FALSE;
+			break;
+		}
+		for ( UINT32 x = 0; x < uiWidthA; ++x )
+		{
+			const UINT32 k = x * 3u;
+			if ( pRowA[k] != pRowB[k] || pRowA[k + 1] != pRowB[k + 1] || pRowA[k + 2] != pRowB[k + 2] )
+				++uiChangedPixels;
+		}
+	}
+
+	MemFree( pRowA ); MemFree( pRowB );
+	fclose( pA ); fclose( pB );
+
+	if ( !fReadOK || uiTotalPixels == 0 )
+		return FALSE;
+	if ( pChangedPercent != NULL )
+		*pChangedPercent = (FLOAT)(100.0 * (DOUBLE)uiChangedPixels / (DOUBLE)uiTotalPixels);
+	return TRUE;
+}
+
+static BOOLEAN MapFactoryScorePilotSector( const STR8 pSourceMap, const STR8 pPristineMap,
+	const STR8 pRemasteredMap )
+{
+	FLOAT dChangeSum = 0.0f, dReloadSum = 0.0f;
+	UINT8 ubPairs = 0, ubMaterialSlots = 0, ubStableSlots = 0;
+
+	for ( UINT8 i = 1; i <= 6; ++i )
+	{
+		CHAR8 zPristine[384], zDressed[384], zReloaded[384];
+		_snprintf( zPristine, sizeof(zPristine) - 1, "%s_tactical_%02u.bmp", pPristineMap, (UINT16)i );
+		_snprintf( zDressed, sizeof(zDressed) - 1, "%s_tactical_%02u.bmp", pSourceMap, (UINT16)i );
+		_snprintf( zReloaded, sizeof(zReloaded) - 1, "%s_tactical_%02u.bmp", pRemasteredMap, (UINT16)i );
+		zPristine[sizeof(zPristine) - 1] = zDressed[sizeof(zDressed) - 1] =
+			zReloaded[sizeof(zReloaded) - 1] = 0;
+
+		FLOAT dChanged = 0.0f, dReload = 100.0f;
+		if ( !MapFactoryComparePreviewBmp( zPristine, zDressed, &dChanged ) ||
+			 !MapFactoryComparePreviewBmp( zDressed, zReloaded, &dReload ) )
+			continue;
+
+		++ubPairs;
+		dChangeSum += dChanged;
+		dReloadSum += dReload;
+		if ( dChanged >= 0.50f ) ++ubMaterialSlots;
+		if ( dReload <= 0.05f ) ++ubStableSlots;
+	}
+
+	const FLOAT dAverageChange = ubPairs ? dChangeSum / ubPairs : 0.0f;
+	const FLOAT dAverageReload = ubPairs ? dReloadSum / ubPairs : 100.0f;
+
+	// "Material" means a player can actually see the redesign in normal tactical
+	// views. The old generic pass measured ~0.00-0.23%, which is explicitly rejected.
+	const BOOLEAN fPass = ubPairs == 6 && dAverageChange >= 0.75f &&
+		ubMaterialSlots >= 3 && dAverageReload <= 0.05f && ubStableSlots >= 5;
+
+	CHAR8 zStatus[256];
+	_snprintf( zStatus, sizeof(zStatus) - 1,
+		"PILOT_SCORE source=%s avgChange=%.3f materialSlots=%u/6 avgReloadDiff=%.3f stableSlots=%u/6 verdict=%s",
+		pSourceMap, dAverageChange, ubMaterialSlots, dAverageReload, ubStableSlots,
+		fPass ? "PASS" : "FAIL" );
+	zStatus[sizeof(zStatus) - 1] = 0;
+	MapPreviewWriteStatus( zStatus );
+	return fPass;
+}
+
+static BOOLEAN MapFactoryRunPilotSector( const STR8 pMapName, UINT8 ubArchetype )
 {
 	if ( pMapName == NULL )
-		return;
+		return FALSE;
 
 	CHAR8 zBase[260];
 	MapFactoryBaseName( pMapName, zBase, sizeof(zBase) );
@@ -859,7 +997,7 @@ static void MapFactoryRunPilotSector( const STR8 pMapName, UINT8 ubArchetype )
 		_snprintf( zFail, sizeof(zFail) - 1, "PILOT_FAIL load %s", pMapName );
 		zFail[sizeof(zFail) - 1] = 0;
 		MapPreviewWriteStatus( zFail );
-		return;
+		return FALSE;
 	}
 
 	CHAR8 zPristine[320];
@@ -886,6 +1024,9 @@ static void MapFactoryRunPilotSector( const STR8 pMapName, UINT8 ubArchetype )
 		fSaved ? "OK" : "FAIL", zBase, uiPieces, zRemastered );
 	zDone[sizeof(zDone) - 1] = 0;
 	MapPreviewWriteStatus( zDone );
+	if ( !fSaved )
+		return FALSE;
+	return MapFactoryScorePilotSector( pMapName, zPristine, zRemastered );
 }
 
 static void MapFactoryRunFiveSectorPilot( const STR8 pTriggerMap )
@@ -908,11 +1049,16 @@ static void MapFactoryRunFiveSectorPilot( const STR8 pTriggerMap )
 	fPilotAlreadyRun = TRUE;
 
 	MapPreviewWriteStatus( "PILOT_BEGIN A8,A12,B13,F15" );
-	MapFactoryRunPilotSector( "A8.dat", MAP_FACTORY_MILITARY );
-	MapFactoryRunPilotSector( "A12.DAT", MAP_FACTORY_WILDERNESS );
-	MapFactoryRunPilotSector( "b13.dat", MAP_FACTORY_INDUSTRIAL );
-	MapFactoryRunPilotSector( "f15.dat", MAP_FACTORY_MILITARY );
-	MapPreviewWriteStatus( "PILOT_DONE A8,A12,B13,F15" );
+	UINT8 ubPasses = 0;
+	if ( MapFactoryRunPilotSector( "A8.dat", MAP_FACTORY_MILITARY ) ) ++ubPasses;
+	if ( MapFactoryRunPilotSector( "A12.DAT", MAP_FACTORY_WILDERNESS ) ) ++ubPasses;
+	if ( MapFactoryRunPilotSector( "b13.dat", MAP_FACTORY_INDUSTRIAL ) ) ++ubPasses;
+	if ( MapFactoryRunPilotSector( "f15.dat", MAP_FACTORY_MILITARY ) ) ++ubPasses;
+	CHAR8 zPilotDone[128];
+	_snprintf( zPilotDone, sizeof(zPilotDone) - 1,
+		"PILOT_DONE passes=%u/4 nonA3 threshold=3", ubPasses );
+	zPilotDone[sizeof(zPilotDone) - 1] = 0;
+	MapPreviewWriteStatus( zPilotDone );
 }
 
 void GenerateAllMapsInit(void)
