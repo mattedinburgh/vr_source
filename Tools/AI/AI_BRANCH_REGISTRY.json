@@ -172,6 +172,11 @@
       "name": "telemetry/companion-sessions",
       "pinned_sha": "da8b19d54f58d9f9d197d5efd1c133e9de2c3d65",
       "classification": "superseded-telemetry"
+    },
+    {
+      "name": "validation/cqb-live-2026-09-14",
+      "pinned_sha": "693dda2c5bd081e3f92a8cad3ade789551371eed",
+      "classification": "validation-only"
     }
   ]
 }
