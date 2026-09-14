@@ -1,0 +1,49 @@
+name: Map display routing smoke test
+
+on:
+  push:
+    branches:
+      - install/all-2026-09-12
+    paths:
+      - 'Tools/VRMapDisplayRouting.ps1'
+      - 'Tools/Invoke-OnSecondaryMonitor.ps1'
+      - 'RENDER_MAP_PREVIEW.cmd'
+      - '.github/workflows/map-display-routing-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  validate-routing-script:
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out canonical branch revision
+        uses: actions/checkout@v4
+
+      - name: Parse and exercise display-routing helpers
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . '.\Tools\VRMapDisplayRouting.ps1'
+
+          foreach ($name in @(
+            'Get-VRSecondaryScreen',
+            'Test-VRSecondaryScreen',
+            'Move-VRProcessWindowsToSecondary',
+            'Start-VRProcessOnSecondary',
+            'Invoke-VRProcessOnSecondary'
+          )) {
+            if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
+              throw "Missing display-routing command: $name"
+            }
+          }
+
+          $status = Test-VRSecondaryScreen
+          Write-Host ("UserInteractive={0}; SecondaryAvailable={1}; Device={2}" -f $status.UserInteractive, $status.Available, $status.DeviceName)
+
+          $rc = Invoke-VRProcessOnSecondary -FilePath $env:ComSpec -ArgumentList @('/c','exit 0') -WorkingDirectory $env:TEMP
+          if ($rc -ne 0) {
+            throw "Secondary-display process wrapper smoke test returned $rc"
+          }
+
+          Write-Host 'Display-routing helper smoke test passed.'
