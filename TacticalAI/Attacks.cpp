@@ -886,33 +886,76 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 				iAttackValue = iAttackValue * (100 + iCoverBonus) / 100;
 			}
 		}
-		// Lightweight target allocation: when several local teammates have just fired
-		// at this target area, prefer spreading fire to another viable threat. This is
-		// deliberately a soft penalty, so a very dangerous target can still justify focus fire.
+		// Local fire plan. Sequential JA2 turns are converted into a lightweight
+		// fireteam allocation: support/screen roles may deliberately keep multiple
+		// weapons on a suppressive threat, while maneuver roles normally spread fire.
+		// Basic troops fall back to the simpler saturation penalty.
 		if (AICombatTeam(pSoldier) && pSoldier->aiData.bOppCnt > 1)
 		{
 			UINT8 ubSaturation = AITargetSaturation(pSoldier, sTarget);
-			if (ubSaturation > 0)
+			INT8 bFireRole = AITacticalRole(pSoldier, sTarget);
+			BOOLEAN fCoordinatedFire = AIAllowsPlanComplexity(pSoldier,
+				AI_PLAN_COORDINATED, (UINT32)(sTarget + 911));
+
+			if (fCoordinatedFire)
 			{
-				INT32 iPenaltyPercent = 15 * ubSaturation;
+				UINT8 ubDesiredCommitment = 0;
 
-				// Do not waste several shooters finishing an already disabled opponent.
-				if (fPersonalStateKnown && (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed || pOpponent->bBreathCollapsed))
-					iPenaltyPercent = 30 * ubSaturation;
+				if (bFireRole == AI_ROLE_SUPPORT || bFireRole == AI_ROLE_SCREEN)
+					ubDesiredCommitment = 1;
 
-				// Immediate self-defence still justifies concentrated fire.
+				if (fSuppression || fCoveringAdvance || fCoveringWithdrawal)
+					ubDesiredCommitment = 2;
+
+				if (AIFriendNeedsCoveringFire(pSoldier, pOpponent->ubID))
+					ubDesiredCommitment = __max((UINT8)1, ubDesiredCommitment);
+
+				// Immediate self-defence can justify concentrated lethal fire.
 				if (fCurrentContact &&
 					(pSoldier->ubPreviousAttackerID == pOpponent->ubID ||
 					 pSoldier->ubNextToPreviousAttackerID == pOpponent->ubID))
 				{
-					iPenaltyPercent /= 2;
+					ubDesiredCommitment = __max((UINT8)1, ubDesiredCommitment);
 				}
 
-				// Concentrated fire is less wasteful when it is deliberately covering
-				// a teammate's movement or withdrawal.
-				if (fCoveringAdvance || fCoveringWithdrawal)
-					iPenaltyPercent /= 2;
-				iPenaltyPercent = __min(75, iPenaltyPercent);
+				if (fPersonalStateKnown &&
+					(pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed ||
+					 pOpponent->bBreathCollapsed))
+				{
+					ubDesiredCommitment = 0;
+				}
+
+				if (ubSaturation > ubDesiredCommitment)
+				{
+					INT32 iExcess = ubSaturation - ubDesiredCommitment;
+					INT32 iPenaltyPercent = __min((INT32)75, 20 * iExcess);
+					if (fPersonalStateKnown &&
+						(pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed ||
+						 pOpponent->bBreathCollapsed))
+					{
+						iPenaltyPercent = __min((INT32)85, 35 * iExcess);
+					}
+					iAttackValue = iAttackValue * (100 - iPenaltyPercent) / 100;
+				}
+				else if (ubSaturation < ubDesiredCommitment &&
+					(bFireRole == AI_ROLE_SUPPORT || bFireRole == AI_ROLE_SCREEN))
+				{
+					// Reward filling an unoccupied suppression/covering-fire slot.
+					INT32 iBonusPercent = __min((INT32)20,
+						8 * (INT32)(ubDesiredCommitment - ubSaturation));
+					iAttackValue = iAttackValue * (100 + iBonusPercent) / 100;
+				}
+			}
+			else if (ubSaturation > 0)
+			{
+				INT32 iPenaltyPercent = 12 * ubSaturation;
+				if (fPersonalStateKnown &&
+					(pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed ||
+					 pOpponent->bBreathCollapsed))
+				{
+					iPenaltyPercent = 28 * ubSaturation;
+				}
+				iPenaltyPercent = __min(70, iPenaltyPercent);
 				iAttackValue = iAttackValue * (100 - iPenaltyPercent) / 100;
 			}
 		}
