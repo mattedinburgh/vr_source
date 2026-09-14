@@ -14,6 +14,9 @@
 #endif
 
 #include "Campaign Tactical Telemetry.h"
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
 
 static BOOLEAN gfVRTacticalTelemetryEnabled = TRUE;
 static BOOLEAN gfVRTacticalBattleActive = FALSE;
@@ -408,10 +411,11 @@ void VR_TacticalTelemetryProjectileHit( UINT8 ubAttackerID, UINT16 usTargetID, U
 	if( fHit && iTeam >= 0 )
 		guiVRProjectileHits[iTeam]++;
 
+	CHAR8 zReason[160];
+	sprintf( zReason, "projectile collision before final mitigation; hit_location=%u", ubHitLocation );
 	VR_TacticalWrite( fHit ? "PROJECTILE_HIT" : "PROJECTILE_CONTACT",
 		pAttacker, pTarget, iTeam, usWeaponIndex,
-		sDamage, sBreathLoss, ((INT32)ubHitLocation << 16) | (UINT16)sRange,
-		"projectile collision before final armour/resistance/life deductions" );
+		sDamage, sBreathLoss, sRange, zReason );
 }
 
 void VR_TacticalTelemetryDamage( SOLDIERTYPE *pTarget, UINT8 ubAttackerID, UINT8 ubReason,
