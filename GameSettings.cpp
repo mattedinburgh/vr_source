@@ -46,6 +46,7 @@
 #include "sgp_logger.h"
 
 #include "Map Information.h"
+#include "Isometric Utils.h"
 
 #include <vfs/Core/vfs.h>
 #include <vfs/Core/vfs_file_raii.h>
@@ -979,6 +980,13 @@ void LoadGameExternalOptions()
 
 	//################# Graphics Settings #################
 	gGameExternalOptions.gfVSync = iniReader.ReadBoolean("Graphics Settings","VERTICAL_SYNC",0);
+
+	// Vengeance HD (VHD): experimental world-render scaling. 1x remains the safe default.
+	gGameExternalOptions.ubVHDRenderScale = iniReader.ReadInteger("Graphics Settings", "VHD_RENDER_SCALE", 1, 1, 4);
+	if ( gGameExternalOptions.ubVHDRenderScale != 1 && gGameExternalOptions.ubVHDRenderScale != 2 && gGameExternalOptions.ubVHDRenderScale != 4 )
+		gGameExternalOptions.ubVHDRenderScale = 1;
+	gGameExternalOptions.fVHDPreferNativeAssets = iniReader.ReadBoolean("Graphics Settings", "VHD_PREFER_NATIVE_ASSETS", TRUE);
+	SetVHDRenderScale( gGameExternalOptions.ubVHDRenderScale );
 
 	gGameExternalOptions.giPlayerTurnSpeedUpFactor		= iniReader.ReadFloat("Graphics Settings","PLAYER_TURN_SPEED_UP_FACTOR",1.0, 0, 1.0);
 	gGameExternalOptions.giEnemyTurnSpeedUpFactor		= iniReader.ReadFloat("Graphics Settings","ENEMY_TURN_SPEED_UP_FACTOR",1.0, 0, 1.0);
