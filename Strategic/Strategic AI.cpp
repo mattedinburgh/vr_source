@@ -2125,6 +2125,11 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Strategic5");
 		return FALSE;
 	}
 	Assert( !pGroup->fPlayer );
+	VR_EnsureEnemyFormationState( pGroup );
+	if( pGroup->pEnemyGroup->ubOperationalMission == VR_OPMISSION_RESERVE )
+	{
+		return FALSE;
+	}
 	if( pGroup->pEnemyGroup->ubIntention == PURSUIT )
 	{ //Lost the player group that he was going to attack.	Return to original position.
 		SetThisSectorAsEnemyControlled( pGroup->ubSectorX, pGroup->ubSectorY, 0, TRUE );
@@ -5141,6 +5146,16 @@ void ExecuteStrategicAIAction( UINT16 usActionCode, INT16 sSectorX, INT16 sSecto
 void HourlyCheckStrategicAI()
 {
 	VR_HourlyOperationalUpdate();
+
+	if( giRequestPoints > 0 )
+	{
+		GROUP *pReserve = VR_FindReadyOperationalReserve();
+		if( pReserve )
+		{
+			VR_LogOperationalDecision( pReserve, "RESERVE_DISPATCH_POLL", NULL );
+			ReassignAIGroup( &pReserve );
+		}
+	}
 }
 
 
@@ -6112,12 +6127,22 @@ void SendGroupToPool( GROUP **pGroup )
 {
 	if( (*pGroup)->ubSectorX == gModSettings.ubSAISpawnSectorX && (*pGroup)->ubSectorY == gModSettings.ubSAISpawnSectorY )
 	{
+		if( VR_HoldFormationAsReserve( *pGroup, VR_RESERVE_CENTRAL ) )
+			return;
+
 		TransferGroupToPool( pGroup );
 	}
 	else
 	{
 		(*pGroup)->ubSectorIDOfLastReassignment = (UINT8)SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY );
 		MoveSAIGroupToSector( pGroup, SECTOR( gModSettings.ubSAISpawnSectorX, gModSettings.ubSAISpawnSectorY ), EVASIVE, REINFORCEMENTS );
+		if( pGroup && *pGroup )
+		{
+			VR_SetFormationMission( *pGroup, VR_OPMISSION_REGROUP, VR_OPREASON_REGROUP );
+			VR_SetFormationReserveRole( *pGroup, VR_RESERVE_CENTRAL, VR_OPREASON_REGROUP );
+			(*pGroup)->pEnemyGroup->usOperationalFlags |= VR_OPFLAG_REGROUPING;
+			VR_LogOperationalDecision( *pGroup, "RETURN_TO_RESERVE", NULL );
+		}
 	}
 }
 
