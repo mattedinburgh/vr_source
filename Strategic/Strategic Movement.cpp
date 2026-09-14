@@ -4512,6 +4512,11 @@ void RetreatGroupToPreviousSector( GROUP *pGroup )
 	pGroup->fBetweenSectors = TRUE;
 	pGroup->uiFlags |= GROUPFLAG_JUST_RETREATED_FROM_BATTLE;
 
+	if( !pGroup->fPlayer )
+	{
+		VR_OnEnemyGroupRetreated( pGroup );
+	}
+
 	if( pGroup->fVehicle == TRUE )
 	{
 		// vehicle, set fact it is between sectors too
