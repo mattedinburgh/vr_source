@@ -6626,6 +6626,7 @@ void MoveSAIGroupToSector( GROUP **pGroup, UINT8 ubSectorID, UINT32 uiMoveCode, 
 	}
 
 	(*pGroup)->pEnemyGroup->ubIntention = ubIntention;
+	VR_OnEnemyGroupAssigned( *pGroup, ubSectorID, ubIntention );
 	(*pGroup)->ubMoveType = ONE_WAY;
 
 	if( (*pGroup)->ubSectorX == ubDstSectorX && (*pGroup)->ubSectorY == ubDstSectorY )
