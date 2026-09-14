@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $AgentVersion = "1"
-$TelemetryBranch = "telemetry/companion-sessions"
+$TelemetryBranch = "main"
 $PollSeconds = 2
 $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $RunValueName = "VengeanceTelemetryAgent"
@@ -19,9 +19,10 @@ $GameRoot = Split-Path -Parent $SourceRepo
 
 $StateRoot = Join-Path $env:LOCALAPPDATA "VengeanceTelemetry"
 $StateFile = Join-Path $StateRoot "state.json"
+$ConfigFile = Join-Path $StateRoot "config.json"
 $AgentLog = Join-Path $StateRoot "agent.log"
 $PendingRoot = Join-Path $StateRoot "pending"
-$UploadWorktree = Join-Path $StateRoot "upload-worktree"
+$UploadRepo = Join-Path $StateRoot "private-upload-repo"
 
 $TrackedLogs = @(
     "Campaign Tactical Black Box.tsv",
@@ -40,6 +41,103 @@ function Write-AgentLog([string]$Message) {
     Ensure-Directory $StateRoot
     $stamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     Add-Content -LiteralPath $AgentLog -Value "[$stamp] $Message" -Encoding UTF8
+}
+
+function Save-Config($Config) {
+    Ensure-Directory $StateRoot
+    $Config | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ConfigFile -Encoding UTF8
+}
+
+function Load-Config {
+    Ensure-Directory $StateRoot
+    if (Test-Path -LiteralPath $ConfigFile) {
+        try {
+            return Get-Content -LiteralPath $ConfigFile -Raw | ConvertFrom-Json
+        } catch {
+            Write-AgentLog "Config file unreadable; private upload will remain disabled until repaired."
+        }
+    }
+
+    $config = [pscustomobject]@{
+        version = 1
+        telemetry_repository = ""
+        telemetry_repository = (Load-Config).telemetry_repository
+        telemetry_branch = $TelemetryBranch
+    }
+    Save-Config $config
+    return $config
+}
+
+function Invoke-Gh {
+    param(
+        [Parameter(Mandatory=$true)][string[]]$Arguments,
+        [switch]$AllowFailure
+    )
+
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        if ($AllowFailure) {
+            return [pscustomobject]@{ ExitCode = 127; Output = @("gh.exe not available") }
+        }
+        throw "gh.exe is not available."
+    }
+
+    $output = & gh @Arguments 2>&1
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0 -and -not $AllowFailure) {
+        throw "gh $($Arguments -join ' ') failed ($exitCode): $($output -join [Environment]::NewLine)"
+    }
+    return [pscustomobject]@{ ExitCode = $exitCode; Output = $output }
+}
+
+function Ensure-PrivateTelemetryDestination {
+    $config = Load-Config
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$config.telemetry_repository)) {
+        $view = Invoke-Gh -Arguments @("repo", "view", [string]$config.telemetry_repository, "--json", "visibility", "--jq", ".visibility") -AllowFailure
+        if ($view.ExitCode -eq 0) {
+            $visibility = (($view.Output | Select-Object -First 1) -as [string]).Trim().ToUpperInvariant()
+            if ($visibility -eq "PRIVATE") {
+                return $config
+            }
+            throw "Configured telemetry repository is not private: $($config.telemetry_repository)"
+        }
+    }
+
+    $auth = Invoke-Gh -Arguments @("auth", "status") -AllowFailure
+    if ($auth.ExitCode -ne 0) {
+        throw "GitHub CLI is not authenticated; telemetry stays in the local queue."
+    }
+
+    [void](Invoke-Gh -Arguments @("auth", "setup-git") -AllowFailure)
+
+    $who = Invoke-Gh -Arguments @("api", "user", "--jq", ".login")
+    $owner = (($who.Output | Select-Object -First 1) -as [string]).Trim()
+    if ([string]::IsNullOrWhiteSpace($owner)) {
+        throw "Could not determine authenticated GitHub user."
+    }
+
+    $repoName = "$owner/vr-ai-telemetry"
+    $view = Invoke-Gh -Arguments @("repo", "view", $repoName, "--json", "visibility", "--jq", ".visibility") -AllowFailure
+
+    if ($view.ExitCode -ne 0) {
+        [void](Invoke-Gh -Arguments @(
+            "repo", "create", $repoName,
+            "--private",
+            "--add-readme",
+            "--description", "Private Vengeance AI Black Box and Campaign Companion telemetry"
+        ))
+        Write-AgentLog "Created private telemetry repository $repoName."
+    } else {
+        $visibility = (($view.Output | Select-Object -First 1) -as [string]).Trim().ToUpperInvariant()
+        if ($visibility -ne "PRIVATE") {
+            throw "$repoName exists but is not private. Refusing automatic telemetry upload."
+        }
+    }
+
+    $config.telemetry_repository = $repoName
+    $config.telemetry_branch = $TelemetryBranch
+    Save-Config $config
+    return $config
 }
 
 function Invoke-Git {
