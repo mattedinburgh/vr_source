@@ -68,6 +68,7 @@ void VRAnalyticsDiagnostic(
 // Battle lifecycle. A battle remains open across temporary exits/re-entries
 // into turn-based combat in the same sector.
 void VRAnalyticsBattleStarted(
+	unsigned long worldMinutes,
 	int sectorX,
 	int sectorY,
 	int sectorZ,
@@ -77,6 +78,7 @@ void VRAnalyticsBattleStarted(
 
 void VRAnalyticsBattleEnded(
 	const char* result,
+	unsigned long worldMinutes,
 	int sectorX,
 	int sectorY,
 	int sectorZ,
