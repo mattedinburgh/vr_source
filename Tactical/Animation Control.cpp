@@ -97,6 +97,17 @@ static UINT16 FOCUSED_HTH_KICK_AnimationScript[MAX_FRAMES_PER_ANIM] = { 757,1,1,
 //static UINT16 LONG_JUMP_AnimationScript[MAX_FRAMES_PER_ANIM] = { 1,2,3,703,4,5,6,6,7,8,9,10,11,704,12,13,14,501,999,0,0,0,0  };
 static UINT16 LONG_JUMP_AnimationScript[MAX_FRAMES_PER_ANIM] = { 2,703,3,4,5,6,6,7,7,8,704,9,501,999,0,0,0,0  };
 
+// VR soft gunshot reactions, informed by modern additive hit-reaction design.
+// These use the wounded-standing surfaces rather than JA2 death/flyback sheets.
+// The impact pose is reached immediately, with progressively longer recovery as
+// severity rises. 433/472/499 preserve the normal hit/death/aim return plumbing.
+static UINT16 VR_HIT_MICRO_STAND_AnimationScript[MAX_FRAMES_PER_ANIM] =
+{ 432,431,438,2,3,439,442,433,2,1,442,472,499,0 };
+static UINT16 VR_HIT_BODYCHECK_STAND_AnimationScript[MAX_FRAMES_PER_ANIM] =
+{ 432,431,438,3,4,5,439,442,433,4,3,2,1,442,472,499,0 };
+static UINT16 VR_HIT_STUMBLE_STAND_AnimationScript[MAX_FRAMES_PER_ANIM] =
+{ 432,431,438,4,5,6,7,439,442,433,6,5,4,3,2,1,442,472,499,0 };
+
 ANI_SPEED_DEF gubAnimCrawlSpeeds[ TOTALBODYTYPES ];
 //Block for anim file
 UINT16	gusAnimInst[ MAX_ANIMATIONS ][ MAX_FRAMES_PER_ANIM ];
@@ -1077,6 +1088,12 @@ ANIMCONTROLTYPE		gAnimControl[ NUMANIMATIONSTATES ] =
 	// LONG JUMP 
 	"LONG JUMP"					, 0,			100, (FLOAT)3.4,	ANIM_SPECIALMOVE | ANIM_NORESTART | ANIM_LOWER_WEAPON | ANIM_MODERATE_EFFORT | ANIM_TURNING,			ANIM_STAND,	ANIM_STAND, -1,
 
+	// VR soft gunshot reactions. Unlike STANDING_BURST_HIT these never use
+	// S_DIEHD/M_DIEHD hard-death art and never change stance by themselves.
+	{"VR HIT MICRO STAND"			, 0,			55,	(FLOAT)0,	ANIM_STATIONARY | ANIM_HITSTART | ANIM_TURNING | ANIM_NONINTERRUPT | ANIM_NO_EFFORT | ANIM_NOCHANGE_WEAPON | ANIM_IGNORE_AUTOSTANCE | ANIM_ATTACK,	ANIM_STAND, ANIM_STAND, -1},
+	{"VR HIT BODYCHECK STAND"		, 0,			65,	(FLOAT)0,	ANIM_STATIONARY | ANIM_HITSTART | ANIM_TURNING | ANIM_NONINTERRUPT | ANIM_NO_EFFORT | ANIM_NOCHANGE_WEAPON | ANIM_IGNORE_AUTOSTANCE | ANIM_ATTACK,	ANIM_STAND, ANIM_STAND, -1},
+	{"VR HIT STUMBLE STAND"			, 0,			75,	(FLOAT)0,	ANIM_STATIONARY | ANIM_HITSTART | ANIM_TURNING | ANIM_NONINTERRUPT | ANIM_NO_EFFORT | ANIM_NOCHANGE_WEAPON | ANIM_IGNORE_AUTOSTANCE | ANIM_ATTACK,	ANIM_STAND, ANIM_STAND, -1},
+
 };
 
 ANI_SPEED_DEF gubAnimWalkSpeeds[ TOTALBODYTYPES ] =
@@ -1432,6 +1449,9 @@ void	InitAnimationSurfacesPerBodytype( )
 	gubAnimSurfaceIndex[ REGMALE ][ CHARIOTS_OF_FIRE ]							= RGMBURN;
 	gubAnimSurfaceIndex[ REGMALE ][ AI_PULL_SWITCH ]								= RGMOPEN;
 	gubAnimSurfaceIndex[ REGMALE ][ MERC_HURT_IDLE_ANIM ]						= RGMHURTSTANDINGR;
+	gubAnimSurfaceIndex[ REGMALE ][ VR_HIT_MICRO_STAND ]						= RGMHURTSTANDINGR;
+	gubAnimSurfaceIndex[ REGMALE ][ VR_HIT_BODYCHECK_STAND ]				= RGMHURTSTANDINGR;
+	gubAnimSurfaceIndex[ REGMALE ][ VR_HIT_STUMBLE_STAND ]					= RGMHURTSTANDINGR;
 	gubAnimSurfaceIndex[ REGMALE ][ END_HURT_WALKING ]							= RGMHURTSTANDINGR;
 	gubAnimSurfaceIndex[ REGMALE ][ PASS_OBJECT ]										= RGMOPEN;
 	gubAnimSurfaceIndex[ REGMALE ][ DROP_ADJACENT_OBJECT ]					= RGMOPEN;
@@ -1636,6 +1656,9 @@ void	InitAnimationSurfacesPerBodytype( )
 	gubAnimSurfaceItemSubIndex[ REGMALE ][ CROUCHED_BURST ]						= RGMHANDGUN_C_SHOT;
 	gubAnimSurfaceItemSubIndex[ REGMALE ][ PRONE_BURST ]							= RGMHANDGUN_PRONE;
 	gubAnimSurfaceItemSubIndex[ REGMALE ][ MERC_HURT_IDLE_ANIM ]			= RGMHURTSTANDINGN;
+	gubAnimSurfaceItemSubIndex[ REGMALE ][ VR_HIT_MICRO_STAND ]			= RGMHURTSTANDINGN;
+	gubAnimSurfaceItemSubIndex[ REGMALE ][ VR_HIT_BODYCHECK_STAND ]		= RGMHURTSTANDINGN;
+	gubAnimSurfaceItemSubIndex[ REGMALE ][ VR_HIT_STUMBLE_STAND ]			= RGMHURTSTANDINGN;
 	gubAnimSurfaceItemSubIndex[ REGMALE ][ END_HURT_WALKING ]					= RGMHURTSTANDINGN;
 	gubAnimSurfaceItemSubIndex[ REGMALE ][ WALK_BACKWARDS ]						= RGMNOTHING_WALK;
 	gubAnimSurfaceItemSubIndex[ REGMALE ][ DRUNK_IDLE ]								= RGMPISTOLDRUNK;
@@ -1871,6 +1894,9 @@ void	InitAnimationSurfacesPerBodytype( )
 	gubAnimSurfaceIndex[ BIGMALE ][ CHARIOTS_OF_FIRE ]							= RGMBURN;
 	gubAnimSurfaceIndex[ BIGMALE ][ AI_PULL_SWITCH ]								= BGMOPEN;
 	gubAnimSurfaceIndex[ BIGMALE ][ MERC_HURT_IDLE_ANIM ]						= BGMHURTSTANDINGR;
+	gubAnimSurfaceIndex[ BIGMALE ][ VR_HIT_MICRO_STAND ]						= BGMHURTSTANDINGR;
+	gubAnimSurfaceIndex[ BIGMALE ][ VR_HIT_BODYCHECK_STAND ]				= BGMHURTSTANDINGR;
+	gubAnimSurfaceIndex[ BIGMALE ][ VR_HIT_STUMBLE_STAND ]					= BGMHURTSTANDINGR;
 	gubAnimSurfaceIndex[ BIGMALE ][ END_HURT_WALKING ]							= BGMHURTSTANDINGR;
 	gubAnimSurfaceIndex[ BIGMALE ][ PASS_OBJECT ]										= BGMOPEN;
 	gubAnimSurfaceIndex[ BIGMALE ][ DROP_ADJACENT_OBJECT ]					= BGMOPEN;
@@ -1996,6 +2022,9 @@ void	InitAnimationSurfacesPerBodytype( )
 	gubAnimSurfaceItemSubIndex[ BIGMALE ][ CROUCHED_BURST ]						= BGMHANDGUN_C_SHOT;
 	gubAnimSurfaceItemSubIndex[ BIGMALE ][ PRONE_BURST ]							= BGMHANDGUN_PRONE;
 	gubAnimSurfaceItemSubIndex[ BIGMALE ][ MERC_HURT_IDLE_ANIM ]			= BGMHURTSTANDINGN;
+	gubAnimSurfaceItemSubIndex[ BIGMALE ][ VR_HIT_MICRO_STAND ]			= BGMHURTSTANDINGN;
+	gubAnimSurfaceItemSubIndex[ BIGMALE ][ VR_HIT_BODYCHECK_STAND ]		= BGMHURTSTANDINGN;
+	gubAnimSurfaceItemSubIndex[ BIGMALE ][ VR_HIT_STUMBLE_STAND ]			= BGMHURTSTANDINGN;
 	gubAnimSurfaceItemSubIndex[ BIGMALE ][ END_HURT_WALKING ]					= BGMHURTSTANDINGN;
 	gubAnimSurfaceItemSubIndex[ BIGMALE ][ WALK_BACKWARDS ]						= BGMNOTHING_WALK;
 	gubAnimSurfaceItemSubIndex[ BIGMALE ][ DRUNK_IDLE ]								= BGMPISTOLDRUNK;
@@ -2334,6 +2363,9 @@ void	InitAnimationSurfacesPerBodytype( )
 	gubAnimSurfaceIndex[ STOCKYMALE ][ CHARIOTS_OF_FIRE ]								= RGMBURN;
 	gubAnimSurfaceIndex[ STOCKYMALE ][ AI_PULL_SWITCH ]									= RGMOPEN;
 	gubAnimSurfaceIndex[ STOCKYMALE ][ MERC_HURT_IDLE_ANIM ]						= RGMHURTSTANDINGR;
+	gubAnimSurfaceIndex[ STOCKYMALE ][ VR_HIT_MICRO_STAND ]						= RGMHURTSTANDINGR;
+	gubAnimSurfaceIndex[ STOCKYMALE ][ VR_HIT_BODYCHECK_STAND ]				= RGMHURTSTANDINGR;
+	gubAnimSurfaceIndex[ STOCKYMALE ][ VR_HIT_STUMBLE_STAND ]					= RGMHURTSTANDINGR;
 	gubAnimSurfaceIndex[ STOCKYMALE ][ END_HURT_WALKING ]								= RGMHURTSTANDINGR;
 	gubAnimSurfaceIndex[ STOCKYMALE ][ PASS_OBJECT ]										= RGMOPEN;
 	gubAnimSurfaceIndex[ STOCKYMALE ][ DROP_ADJACENT_OBJECT ]						= RGMOPEN;
@@ -2457,6 +2489,9 @@ void	InitAnimationSurfacesPerBodytype( )
 	gubAnimSurfaceItemSubIndex[ STOCKYMALE ][ CROUCHED_BURST ]					= RGMHANDGUN_C_SHOT;
 	gubAnimSurfaceItemSubIndex[ STOCKYMALE ][ PRONE_BURST ]							= RGMHANDGUN_PRONE;
 	gubAnimSurfaceItemSubIndex[ STOCKYMALE ][ MERC_HURT_IDLE_ANIM ]			= RGMHURTSTANDINGN;
+	gubAnimSurfaceItemSubIndex[ STOCKYMALE ][ VR_HIT_MICRO_STAND ]			= RGMHURTSTANDINGN;
+	gubAnimSurfaceItemSubIndex[ STOCKYMALE ][ VR_HIT_BODYCHECK_STAND ]		= RGMHURTSTANDINGN;
+	gubAnimSurfaceItemSubIndex[ STOCKYMALE ][ VR_HIT_STUMBLE_STAND ]			= RGMHURTSTANDINGN;
 	gubAnimSurfaceItemSubIndex[ STOCKYMALE ][ END_HURT_WALKING ]				= RGMHURTSTANDINGN;
 	gubAnimSurfaceItemSubIndex[ STOCKYMALE ][ WALK_BACKWARDS ]					= RGMNOTHING_WALK;
 	gubAnimSurfaceItemSubIndex[ STOCKYMALE ][ DRUNK_IDLE ]							= RGMPISTOLDRUNK;
@@ -2768,6 +2803,9 @@ void	InitAnimationSurfacesPerBodytype( )
 	gubAnimSurfaceIndex[ REGFEMALE ][ CHARIOTS_OF_FIRE ]							= RGMBURN;
 	gubAnimSurfaceIndex[ REGFEMALE ][ AI_PULL_SWITCH ]								= RGFOPEN;
 	gubAnimSurfaceIndex[ REGFEMALE ][ MERC_HURT_IDLE_ANIM ]						= RGFHURTSTANDINGR;
+	gubAnimSurfaceIndex[ REGFEMALE ][ VR_HIT_MICRO_STAND ]						= RGFHURTSTANDINGR;
+	gubAnimSurfaceIndex[ REGFEMALE ][ VR_HIT_BODYCHECK_STAND ]				= RGFHURTSTANDINGR;
+	gubAnimSurfaceIndex[ REGFEMALE ][ VR_HIT_STUMBLE_STAND ]					= RGFHURTSTANDINGR;
 	gubAnimSurfaceIndex[ REGFEMALE ][ END_HURT_WALKING ]							= RGFHURTSTANDINGR;
 	gubAnimSurfaceIndex[ REGFEMALE ][ PASS_OBJECT ]										= RGFOPEN;
 	gubAnimSurfaceIndex[ REGFEMALE ][ DROP_ADJACENT_OBJECT ]					= RGFOPEN;
@@ -2891,6 +2929,9 @@ void	InitAnimationSurfacesPerBodytype( )
 	gubAnimSurfaceItemSubIndex[ REGFEMALE ][ CROUCHED_BURST ]						= RGFHANDGUN_C_SHOT;
 	gubAnimSurfaceItemSubIndex[ REGFEMALE ][ PRONE_BURST ]							= RGFHANDGUN_PRONE;
 	gubAnimSurfaceItemSubIndex[ REGFEMALE ][ MERC_HURT_IDLE_ANIM ]			= RGFHURTSTANDINGN;
+	gubAnimSurfaceItemSubIndex[ REGFEMALE ][ VR_HIT_MICRO_STAND ]			= RGFHURTSTANDINGN;
+	gubAnimSurfaceItemSubIndex[ REGFEMALE ][ VR_HIT_BODYCHECK_STAND ]		= RGFHURTSTANDINGN;
+	gubAnimSurfaceItemSubIndex[ REGFEMALE ][ VR_HIT_STUMBLE_STAND ]			= RGFHURTSTANDINGN;
 	gubAnimSurfaceItemSubIndex[ REGFEMALE ][ END_HURT_WALKING ]					= RGFHURTSTANDINGN;
 	gubAnimSurfaceItemSubIndex[ REGFEMALE ][ WALK_BACKWARDS ]						= RGFNOTHING_WALK;
 	gubAnimSurfaceItemSubIndex[ REGFEMALE ][ DRUNK_IDLE ]								= RGMPISTOLDRUNK;
@@ -3643,6 +3684,9 @@ BOOLEAN LoadAnimationStateInstructions( )
 	memcpy(gusAnimInst[FOCUSED_HTH_KICK],FOCUSED_HTH_KICK_AnimationScript,sizeof(FOCUSED_HTH_KICK_AnimationScript));
 
 	memcpy(gusAnimInst[LONG_JUMP],LONG_JUMP_AnimationScript,sizeof(LONG_JUMP_AnimationScript));
+	memcpy(gusAnimInst[VR_HIT_MICRO_STAND], VR_HIT_MICRO_STAND_AnimationScript, sizeof(VR_HIT_MICRO_STAND_AnimationScript));
+	memcpy(gusAnimInst[VR_HIT_BODYCHECK_STAND], VR_HIT_BODYCHECK_STAND_AnimationScript, sizeof(VR_HIT_BODYCHECK_STAND_AnimationScript));
+	memcpy(gusAnimInst[VR_HIT_STUMBLE_STAND], VR_HIT_STUMBLE_STAND_AnimationScript, sizeof(VR_HIT_STUMBLE_STAND_AnimationScript));
 
 	// NOTE: Careful here... keep in mind you have to increase MAX_ANIMATIONS whenever you would go over 399(currently) animation numbers 
 
