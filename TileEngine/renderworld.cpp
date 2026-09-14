@@ -50,6 +50,8 @@
 
 #include "LogicalBodyTypes/BodyTypeDB.h"
 #include "LogicalBodyTypes/Layers.h"
+#include <string>
+#include <cstring>
 
 ///////////////////////////
 // C file include here
