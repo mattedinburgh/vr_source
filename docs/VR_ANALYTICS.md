@@ -34,6 +34,9 @@ tactical  strategic      tactical strategic
 
 The shared event stream is append-only JSONL using schema
 `vr-blackbox-1`. Every record has a session identifier and sequence number.
+Black Box v2 remains schema-compatible: the session-start record carries
+`blackbox_version: 2` and newer event kinds/fields are additive, so older
+Companion tooling can still read the stream.
 
 ## Current causal chains
 
@@ -51,6 +54,21 @@ The current implementation records:
 - life/breath change
 - last-attack-hit flag
 - selected attack-vs-cover candidate scores
+- Black Box v2 retreat/hold decision inputs:
+  - perceived friendly and enemy strength
+  - known-opponent count
+  - global and local casualty percentage
+  - hold-ground confidence
+  - local stress, personal risk and risk tolerance
+  - rout pressure and sustained-collapse streak
+  - nearby operational friends and stable-leader presence
+  - cover/sight-cover state
+  - weapon deadliness, ammunition, marksmanship and experience
+  - recent hit/suppression success
+- explicit `hold_ground`, `organized_disengagement` and `sector_escape`
+  candidates with eligibility and rejection/selection reasons
+- once-per-turn omniscient formation snapshots (living/combat-ready troops,
+  cowering, disengaging, escaping, leaders, casualties and average stress)
 - battle start
 - battle result
 - start/end team counts
@@ -60,7 +78,8 @@ The current implementation records:
 The core chain is:
 
 ```text
-candidate evaluation
+actor perception / formation context
+    -> candidate evaluation and rejection reasons
     -> selected tactical action
     -> action execution
     -> completion/rejection/supersession
@@ -75,7 +94,12 @@ The current implementation records:
 - campaign time
 - reinforcement pool/request/available points
 - player progress and difficulty
-- eligible garrison and patrol targets
+- all garrison and patrol targets considered
+- explicit rejection reasons (non-positive weight, pending reinforcement,
+  forbidden sector, below minimum request, approval denied)
+- applicable garrison/patrol counts and request points
+- Queen alertness, force percentage, awareness, scheduling delay and Generals
+- weighted-selection roll
 - target sector and score
 - selected reinforcement target
 - explicit no-action reasons
@@ -99,6 +123,33 @@ Queen evaluation
 ```
 
 ## Black Box
+
+The Black Box is the raw forensic layer.
+
+### Black Box v2: decision forensics
+
+Black Box v2 distinguishes two information scopes:
+
+1. **Actor perception** — what the AI soldier was actually allowed to know and
+   therefore could legitimately use when deciding.
+2. **Omniscient troubleshooting snapshot** — what really existed in the
+   formation/sector, used only by post-session analysis.
+
+Never feed omniscient snapshot values back into tactical AI logic. Their purpose
+is to identify perception or coordination errors after the fact.
+
+For retreat/courage decisions the intended reconstruction is:
+
+```text
+perceived force balance + position + equipment + leadership
+    -> hold confidence
+    -> hold / organized disengagement / sector-escape candidates
+    -> rejection or eligibility reason
+    -> selected action
+    -> execution
+    -> local outcome
+    -> formation-level state on later turns
+```
 
 The Black Box is the raw forensic layer. It must preserve evidence rather than
 decide whether a game mechanic is good or bad.
@@ -173,6 +224,10 @@ Current analysis includes:
 - unmatched/outstanding strategic movements
 - before/after metric deltas
 - reinforcement-to-battle cross-layer analysis
+- Black Box v2 perceived force-ratio and hold-confidence analysis
+- eligible hold/disengagement/escape candidate counts
+- formation combat-ready rate, stress and casualty summaries
+- peak simultaneous cowering/disengagement/escape states
 
 The initial cross-layer test classifies a battle as recently reinforced when an
 enemy strategic group arrived in the same sector during the preceding 48
@@ -244,22 +299,25 @@ Current tests cover:
 - redirected strategic groups
 - strategic reinforcement-to-battle linkage
 - exclusion of stale reinforcement events
+- Black Box v2 retreat state, perceived force ratio and formation snapshots
+- C++03 logger compilation and end-to-end JSONL/Companion smoke testing
 
 ## Next instrumentation priorities
 
-The current branch is a foundation, not complete coverage. The next high-value
-hooks are:
+Black Box v2 now covers the high-value retreat/courage and reinforcement
+decision chains. The next instrumentation priorities are:
 
-1. tactical suppression, smoke, flank and retreat candidate scoring
+1. suppression, smoke and flank candidate scoring at the same depth as retreat
 2. target selection and NCTH/optic calculation traces
-3. squad-level objectives and cooperation requests
-4. tactical casualties, ammunition and grenade expenditure
+3. squad/fireteam objectives, cooperation requests and plan changes
+4. tactical ammunition, grenade and medical-resource expenditure
 5. strategic formation creation/split/merge/destruction
-6. strategic objectives beyond reinforcement
-7. battle reinforcement entry timing
+6. strategic objectives beyond reinforcement (attack, defend, stage, probe,
+   transport/convoy and withdrawal)
+7. battle reinforcement entry timing and tactical spawn/route rationale
 8. save/load continuity markers
 9. parameter snapshots so a result can be reproduced against the exact AI,
-    NCTH, weapon, optics, morale and suppression configuration
+   NCTH, weapon, optics, morale and suppression configuration
 
 These should extend the same event schema rather than introduce separate log
 files for each subsystem.
