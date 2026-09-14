@@ -17,6 +17,8 @@ void VR_TacticalTelemetryDamage( SOLDIERTYPE *pTarget, UINT8 ubAttackerID, UINT8
 	INT8 bOldLife, INT16 sBreathLoss, INT32 sSourceGrid );
 void VR_TacticalTelemetrySuppression( SOLDIERTYPE *pTarget, UINT8 ubAttackerID,
 	UINT8 ubSuppressionPoints, UINT8 ubAPLost, UINT8 ubNewStance );
+void VR_TacticalTelemetryExplosion( UINT8 ubOwner, INT32 sGridNo, UINT16 usItem, INT8 bLevel );
+void VR_TacticalTelemetrySmoke( UINT8 ubOwner, INT32 sGridNo, UINT16 usItem, INT8 bLevel );
 
 BOOLEAN VR_TacticalTelemetryBattleActive();
 
