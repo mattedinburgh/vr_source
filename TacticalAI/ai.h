@@ -355,6 +355,7 @@ INT32 AIManeuverRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT32 sTargetSpot, INT8 bIntent, INT8 bRole);
+INT32 AIPathExposureCost(SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMovementMode);
 INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT32 sTargetSpot, INT8 bTargetLevel);
 INT8 AIEngagementRangeModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
