@@ -124,14 +124,14 @@ foreach ($map in $Maps) {
         continue
     }
 
-    $pLuma = ($pairs | Measure-Object -Property { $_.Pristine.Luma } -Average).Average
-    $rLuma = ($pairs | Measure-Object -Property { $_.Remaster.Luma } -Average).Average
-    $pSat = ($pairs | Measure-Object -Property { $_.Pristine.Saturation } -Average).Average
-    $rSat = ($pairs | Measure-Object -Property { $_.Remaster.Saturation } -Average).Average
-    $pGreen = ($pairs | Measure-Object -Property { $_.Pristine.GreenDominance } -Average).Average
-    $rGreen = ($pairs | Measure-Object -Property { $_.Remaster.GreenDominance } -Average).Average
-    $pDark = ($pairs | Measure-Object -Property { $_.Pristine.DarkPct } -Average).Average
-    $rDark = ($pairs | Measure-Object -Property { $_.Remaster.DarkPct } -Average).Average
+    $pLuma = ($pairs | ForEach-Object { $_.Pristine.Luma } | Measure-Object -Average).Average
+    $rLuma = ($pairs | ForEach-Object { $_.Remaster.Luma } | Measure-Object -Average).Average
+    $pSat = ($pairs | ForEach-Object { $_.Pristine.Saturation } | Measure-Object -Average).Average
+    $rSat = ($pairs | ForEach-Object { $_.Remaster.Saturation } | Measure-Object -Average).Average
+    $pGreen = ($pairs | ForEach-Object { $_.Pristine.GreenDominance } | Measure-Object -Average).Average
+    $rGreen = ($pairs | ForEach-Object { $_.Remaster.GreenDominance } | Measure-Object -Average).Average
+    $pDark = ($pairs | ForEach-Object { $_.Pristine.DarkPct } | Measure-Object -Average).Average
+    $rDark = ($pairs | ForEach-Object { $_.Remaster.DarkPct } | Measure-Object -Average).Average
 
     $dLuma = $rLuma - $pLuma
     $dSat = $rSat - $pSat
