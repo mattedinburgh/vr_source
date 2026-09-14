@@ -308,15 +308,62 @@ static void ApplyEnemyInventoryLogisticsVariability( SOLDIERCREATE_STRUCT *pp, I
 	}
 }
 
-static INT8 CapGeneratedGrenadeLoad( INT8 bGrenades )
+static INT8 LimitGeneratedGrenadeLoad( INT8 bGrenades, INT8 bSoldierClass,
+	BOOLEAN fGrenadeLauncher, BOOLEAN fMortar, BOOLEAN fRPG )
 {
-	// Vengeance doctrine: grenades are useful but scarce.  The same bGrenades
-	// counter is also reused for GL rounds, RPG rockets and mortar shells, so
-	// this cap prevents both hand-grenade spam and overstocked specialists.
+	// Vengeance doctrine: grenades are useful but scarce. The same bGrenades
+	// counter is also reused for GL rounds, RPG rockets and mortar shells.
 	if ( bGrenades < 0 )
-		return 0;
+		bGrenades = 0;
 	if ( bGrenades > 2 )
-		return 2;
+		bGrenades = 2;
+
+	// Dedicated launcher crews need ammunition for their specialist weapon,
+	// but two rounds is enough for one generated soldier.
+	if ( fGrenadeLauncher || fMortar || fRPG )
+		return bGrenades;
+
+	// Hand grenades should be unevenly issued. Regular troops usually carry
+	// zero or one; elites are more likely to carry two, but never exceed two.
+	switch ( bSoldierClass )
+	{
+		case SOLDIER_CLASS_ADMINISTRATOR:
+			if ( bGrenades > 1 )
+				bGrenades = 1;
+			else if ( bGrenades == 1 && Chance( 35 ) )
+				bGrenades = 0;
+			break;
+
+		case SOLDIER_CLASS_ARMY:
+			if ( bGrenades == 2 && Chance( 60 ) )
+				bGrenades = 1;
+			else if ( bGrenades == 1 && Chance( 20 ) )
+				bGrenades = 0;
+			break;
+
+		case SOLDIER_CLASS_ELITE:
+			if ( bGrenades == 2 && Chance( 35 ) )
+				bGrenades = 1;
+			else if ( bGrenades == 1 && Chance( 10 ) )
+				bGrenades = 0;
+			break;
+
+		case SOLDIER_CLASS_GREEN_MILITIA:
+		case SOLDIER_CLASS_REG_MILITIA:
+			if ( bGrenades == 2 && Chance( 70 ) )
+				bGrenades = 1;
+			else if ( bGrenades == 1 && Chance( 30 ) )
+				bGrenades = 0;
+			break;
+
+		case SOLDIER_CLASS_ELITE_MILITIA:
+			if ( bGrenades == 2 && Chance( 50 ) )
+				bGrenades = 1;
+			else if ( bGrenades == 1 && Chance( 15 ) )
+				bGrenades = 0;
+			break;
+	}
+
 	return bGrenades;
 }
 
@@ -1044,10 +1091,11 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 		bMiscClass, bBombClass, bLBEClass,
 		bAmmoClips, bGrenades, fGrenadeLauncher, fMortar, fRPG );
 
-	// Final hard ceiling after all class/difficulty/logistics modifiers.
-	// Random generation may issue fewer, but never more than two grenade-class
-	// rounds/items to one soldier.
-	bGrenades = CapGeneratedGrenadeLoad( bGrenades );
+	// Final scarcity pass after all class/difficulty/logistics modifiers.
+	// Generated hand grenades top out at two and usually land at zero or one;
+	// dedicated launcher users can carry at most two rounds.
+	bGrenades = LimitGeneratedGrenadeLoad( bGrenades, bSoldierClass,
+		fGrenadeLauncher, fMortar, fRPG );
 
 	UINT32 invsize = pp->Inv.size();
 	for( i = 0; i < invsize; ++i )
