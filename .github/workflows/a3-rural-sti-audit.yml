@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/a3-rural-sti-audit.yml'
       - 'Tools/audit_rural_sti.py'
+      - 'Tools/compose_a3_rural_props.py'
   workflow_dispatch:
 
 jobs:
@@ -46,7 +47,7 @@ jobs:
         run: |
           $root = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir\Data-Maps-Tiles\Tilesets'
           $out = Join-Path $env:GITHUB_WORKSPACE 'MapPreviews\A3RuralAudit'
-          $files = @('10/CratewPallet.sti','35/DRUM_01.STI','36/O_SIGN1.STI','50/I_CRATES.STI','53/FL_WEED.STI','54/TANK.STI','54/P-FENCE.STI','58/JUNKFEN.STI','60/GRASS1.STI','9/Tide_Pumps.sti')
+          $files = @('10/CratewPallet.sti','35/DRUM_01.STI','35/2_GENS.STI','36/O_SIGN1.STI','50/I_CRATES.STI','50/W-GARDN.STI','50/HARDWARE.STI','50/GASTUF1.STI','53/FL_WEED.STI','53/FURN_MIX.STI','53/HARDWARE.STI','54/FURN_9.STI','54/P-FENCE.STI','58/JUNKFEN.STI','58/WORKSHOP.STI','58/O_FURN.STI','58/WP_STUF1.STI','60/GRASS1.STI','60/HACIENDA.sti','9/Tide_Pumps.sti')
           & python '.\Tools\audit_rural_sti.py' --root $root --out $out @files
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
