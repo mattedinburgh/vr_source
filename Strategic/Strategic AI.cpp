@@ -6759,6 +6759,7 @@ void MoveSAIGroupToSector( GROUP **pGroup, UINT8 ubSectorID, UINT32 uiMoveCode, 
 	}
 
 	(*pGroup)->pEnemyGroup->ubIntention = ubIntention;
+	VR_CampaignStartOrRefreshPlan( *pGroup, ubSectorID, ubIntention, uiMoveCode );
 	VR_OnEnemyGroupAssigned( *pGroup, ubSectorID, ubIntention );
 	(*pGroup)->ubMoveType = ONE_WAY;
 
