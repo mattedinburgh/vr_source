@@ -21,6 +21,9 @@
 	#include "vobject_blitters.h"
 #endif
 
+#include "STIConvert.h"
+#include <vector>
+
 #include <vfs/Core/vfs.h>
 
 const vfs::String::str_t CONST_DOTJPC(L".jpc.7z");
@@ -311,6 +314,229 @@ BOOLEAN DestroyImage( HIMAGE hImage )
 	MemFree( hImage );
 
 	return( TRUE );
+}
+
+static BOOLEAN VHDUnpackETRLERegion( HIMAGE hImage, UINT16 usIndex, std::vector<UINT8> &out )
+{
+	if ( hImage == NULL || hImage->pETRLEObject == NULL || hImage->pPixData8 == NULL ||
+		 usIndex >= hImage->usNumberOfObjects )
+		return FALSE;
+
+	const ETRLEObject *pRegion = &hImage->pETRLEObject[ usIndex ];
+	const UINT32 uiPixelCount = (UINT32)pRegion->usWidth * (UINT32)pRegion->usHeight;
+	out.assign( uiPixelCount, 0 );
+
+	const UINT8 *pSrc = hImage->pPixData8 + pRegion->uiDataOffset;
+	const UINT8 *pEnd = pSrc + pRegion->uiDataLength;
+	UINT32 uiPos = 0;
+
+	while ( uiPos < uiPixelCount && pSrc < pEnd )
+	{
+		const UINT8 ubCode = *pSrc++;
+		const UINT8 ubCount = ubCode & 0x7F;
+
+		if ( ubCode & 0x80 )
+		{
+			if ( uiPos + ubCount > uiPixelCount )
+				return FALSE;
+			uiPos += ubCount;
+		}
+		else
+		{
+			// A zero-length opaque run is the ETRLE end-of-line marker.
+			if ( ubCount == 0 )
+				continue;
+			if ( uiPos + ubCount > uiPixelCount || pSrc + ubCount > pEnd )
+				return FALSE;
+			memcpy( &out[ uiPos ], pSrc, ubCount );
+			pSrc += ubCount;
+			uiPos += ubCount;
+		}
+	}
+
+	return uiPos == uiPixelCount;
+}
+
+BOOLEAN ScaleImageNearestForVHD( HIMAGE hImage, UINT8 ubScale )
+{
+	if ( hImage == NULL )
+		return FALSE;
+	if ( ubScale == 1 )
+		return TRUE;
+	if ( ubScale != 2 && ubScale != 4 )
+		return FALSE;
+	if ( !( hImage->fFlags & IMAGE_BITMAPDATA ) || hImage->usNumberOfObjects == 0 ||
+		 hImage->pETRLEObject == NULL )
+		return FALSE;
+
+	const UINT16 usCount = hImage->usNumberOfObjects;
+	std::vector<ETRLEObject> newRegions( usCount );
+	UINT32 uiTotalBytes = 0;
+	UINT16 usMaxWidth = 0;
+	UINT16 usMaxHeight = 0;
+
+	if ( hImage->ubBitDepth == 8 && ( hImage->fFlags & IMAGE_TRLECOMPRESSED ) )
+	{
+		std::vector< std::vector<UINT8> > compressed( usCount );
+
+		for ( UINT16 i = 0; i < usCount; ++i )
+		{
+			const ETRLEObject &srcRegion = hImage->pETRLEObject[i];
+			const UINT32 uiNewWidth32 = (UINT32)srcRegion.usWidth * ubScale;
+			const UINT32 uiNewHeight32 = (UINT32)srcRegion.usHeight * ubScale;
+			const INT32 iNewOffsetX = (INT32)srcRegion.sOffsetX * ubScale;
+			const INT32 iNewOffsetY = (INT32)srcRegion.sOffsetY * ubScale;
+
+			if ( uiNewWidth32 > 65535 || uiNewHeight32 > 65535 ||
+				 iNewOffsetX < -32768 || iNewOffsetX > 32767 ||
+				 iNewOffsetY < -32768 || iNewOffsetY > 32767 )
+				return FALSE;
+
+			std::vector<UINT8> srcPixels;
+			if ( !VHDUnpackETRLERegion( hImage, i, srcPixels ) )
+				return FALSE;
+
+			const UINT16 usNewWidth = (UINT16)uiNewWidth32;
+			const UINT16 usNewHeight = (UINT16)uiNewHeight32;
+			std::vector<UINT8> scaled( uiNewWidth32 * uiNewHeight32, 0 );
+
+			for ( UINT16 y = 0; y < usNewHeight; ++y )
+			{
+				const UINT16 srcY = (UINT16)( y / ubScale );
+				for ( UINT16 x = 0; x < usNewWidth; ++x )
+				{
+					const UINT16 srcX = (UINT16)( x / ubScale );
+					scaled[ (UINT32)y * usNewWidth + x ] =
+						srcPixels[ (UINT32)srcY * srcRegion.usWidth + srcX ];
+				}
+			}
+
+			// Existing STI code uses 3x raw size as a safe ETRLE work buffer.
+			compressed[i].resize( scaled.size() * 3 + usNewHeight + 16, 0 );
+			STCISubImage tempSub;
+			memset( &tempSub, 0, sizeof(tempSub) );
+			const UINT32 uiCompressed = ETRLECompressSubImage(
+				&compressed[i][0], (UINT32)compressed[i].size(), &scaled[0],
+				usNewWidth, usNewHeight, &tempSub );
+			if ( uiCompressed == 0 )
+				return FALSE;
+			compressed[i].resize( uiCompressed );
+
+			ETRLEObject &dstRegion = newRegions[i];
+			memset( &dstRegion, 0, sizeof(dstRegion) );
+			dstRegion.uiDataOffset = uiTotalBytes;
+			dstRegion.uiDataLength = uiCompressed;
+			dstRegion.sOffsetX = (INT16)iNewOffsetX;
+			dstRegion.sOffsetY = (INT16)iNewOffsetY;
+			dstRegion.usWidth = usNewWidth;
+			dstRegion.usHeight = usNewHeight;
+
+			uiTotalBytes += uiCompressed;
+			usMaxWidth = __max( usMaxWidth, usNewWidth );
+			usMaxHeight = __max( usMaxHeight, usNewHeight );
+		}
+
+		UINT8 *pNewData = (UINT8*)MemAlloc( uiTotalBytes );
+		ETRLEObject *pNewRegions = (ETRLEObject*)MemAlloc( sizeof(ETRLEObject) * usCount );
+		if ( pNewData == NULL || pNewRegions == NULL )
+		{
+			if ( pNewData ) MemFree( pNewData );
+			if ( pNewRegions ) MemFree( pNewRegions );
+			return FALSE;
+		}
+
+		for ( UINT16 i = 0; i < usCount; ++i )
+		{
+			memcpy( pNewData + newRegions[i].uiDataOffset, &compressed[i][0], compressed[i].size() );
+			pNewRegions[i] = newRegions[i];
+		}
+
+		MemFree( hImage->pPixData8 );
+		MemFree( hImage->pETRLEObject );
+		hImage->pPixData8 = pNewData;
+		hImage->pETRLEObject = pNewRegions;
+		hImage->uiSizePixData = uiTotalBytes;
+		hImage->usWidth = usMaxWidth;
+		hImage->usHeight = usMaxHeight;
+		return TRUE;
+	}
+
+	if ( hImage->ubBitDepth == 16 || hImage->ubBitDepth == 32 )
+	{
+		const UINT32 uiBytesPerPixel = ( hImage->ubBitDepth == 32 ) ? 4 : 2;
+		const UINT8 *pOldData = (const UINT8*)hImage->pImageData;
+		if ( pOldData == NULL )
+			return FALSE;
+
+		for ( UINT16 i = 0; i < usCount; ++i )
+		{
+			const ETRLEObject &srcRegion = hImage->pETRLEObject[i];
+			const UINT32 uiNewWidth32 = (UINT32)srcRegion.usWidth * ubScale;
+			const UINT32 uiNewHeight32 = (UINT32)srcRegion.usHeight * ubScale;
+			const INT32 iNewOffsetX = (INT32)srcRegion.sOffsetX * ubScale;
+			const INT32 iNewOffsetY = (INT32)srcRegion.sOffsetY * ubScale;
+
+			if ( uiNewWidth32 > 65535 || uiNewHeight32 > 65535 ||
+				 iNewOffsetX < -32768 || iNewOffsetX > 32767 ||
+				 iNewOffsetY < -32768 || iNewOffsetY > 32767 )
+				return FALSE;
+
+			ETRLEObject &dstRegion = newRegions[i];
+			memset( &dstRegion, 0, sizeof(dstRegion) );
+			dstRegion.uiDataOffset = uiTotalBytes;
+			dstRegion.uiDataLength = uiNewWidth32 * uiNewHeight32 * uiBytesPerPixel;
+			dstRegion.sOffsetX = (INT16)iNewOffsetX;
+			dstRegion.sOffsetY = (INT16)iNewOffsetY;
+			dstRegion.usWidth = (UINT16)uiNewWidth32;
+			dstRegion.usHeight = (UINT16)uiNewHeight32;
+
+			if ( 0xFFFFFFFFu - uiTotalBytes < dstRegion.uiDataLength )
+				return FALSE;
+			uiTotalBytes += dstRegion.uiDataLength;
+			usMaxWidth = __max( usMaxWidth, dstRegion.usWidth );
+			usMaxHeight = __max( usMaxHeight, dstRegion.usHeight );
+		}
+
+		UINT8 *pNewData = (UINT8*)MemAlloc( uiTotalBytes );
+		ETRLEObject *pNewRegions = (ETRLEObject*)MemAlloc( sizeof(ETRLEObject) * usCount );
+		if ( pNewData == NULL || pNewRegions == NULL )
+		{
+			if ( pNewData ) MemFree( pNewData );
+			if ( pNewRegions ) MemFree( pNewRegions );
+			return FALSE;
+		}
+
+		for ( UINT16 i = 0; i < usCount; ++i )
+		{
+			const ETRLEObject &srcRegion = hImage->pETRLEObject[i];
+			const ETRLEObject &dstRegion = newRegions[i];
+			for ( UINT16 y = 0; y < dstRegion.usHeight; ++y )
+			{
+				const UINT16 srcY = (UINT16)( y / ubScale );
+				for ( UINT16 x = 0; x < dstRegion.usWidth; ++x )
+				{
+					const UINT16 srcX = (UINT16)( x / ubScale );
+					const UINT8 *pSrcPixel = pOldData + srcRegion.uiDataOffset +
+						( ( (UINT32)srcY * srcRegion.usWidth + srcX ) * uiBytesPerPixel );
+					UINT8 *pDstPixel = pNewData + dstRegion.uiDataOffset +
+						( ( (UINT32)y * dstRegion.usWidth + x ) * uiBytesPerPixel );
+					memcpy( pDstPixel, pSrcPixel, uiBytesPerPixel );
+				}
+			}
+			pNewRegions[i] = dstRegion;
+		}
+
+		MemFree( hImage->pImageData );
+		MemFree( hImage->pETRLEObject );
+		hImage->pImageData = pNewData;
+		hImage->pETRLEObject = pNewRegions;
+		hImage->uiSizePixData = uiTotalBytes;
+		hImage->usWidth = usMaxWidth;
+		hImage->usHeight = usMaxHeight;
+		return TRUE;
+	}
+
+	return FALSE;
 }
 
 BOOLEAN ReleaseImageData( HIMAGE hImage, UINT16 fContents )
