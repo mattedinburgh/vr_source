@@ -2977,6 +2977,63 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 		saturationPercent -= 2;
 	}
 
+	if ( fMapFactoryProfile && fMFWall )
+	{
+		const UINT8 ubVariant = (UINT8)((ubType - FIRSTWALL) % 5);
+		if ( gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_SETTLEMENT )
+		{
+			// Cheap painted plaster varies building-to-building.  Weathering/contrast
+			// keeps these colours grounded in a poor, sun-beaten Latin-American town.
+			switch ( ubVariant )
+			{
+				case 0: saturationPercent = 128; redBias += 13; greenBias += 7; blueBias -= 11; break; // ochre
+				case 1: saturationPercent = 126; redBias -= 9; greenBias += 10; blueBias += 8; break; // turquoise
+				case 2: saturationPercent = 130; redBias += 15; greenBias -= 2; blueBias -= 4; break; // salmon
+				case 3: saturationPercent = 122; redBias -= 7; greenBias += 12; blueBias -= 5; break; // faded green
+				default:saturationPercent = 92;  redBias += 9;  greenBias += 8; blueBias += 4; break; // dirty ivory
+			}
+		}
+		else if ( gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_MILITARY )
+		{
+			switch ( ubVariant % 3 )
+			{
+				case 0: saturationPercent = 104; redBias -= 4; greenBias += 8; blueBias -= 5; break; // olive
+				case 1: saturationPercent = 100; redBias += 8; greenBias += 7; blueBias -= 6; break; // khaki
+				default:saturationPercent = 84;  redBias += 7; greenBias += 7; blueBias += 4; break; // dirty white
+			}
+		}
+		else if ( gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_INDUSTRIAL )
+		{
+			switch ( ubVariant % 3 )
+			{
+				case 0: saturationPercent = 124; redBias += 14; greenBias += 2; blueBias -= 12; break; // oxidised/rust
+				case 1: saturationPercent = 118; redBias -= 8; greenBias += 9; blueBias += 8; break; // faded teal
+				default:saturationPercent = 120; redBias += 12; greenBias += 9; blueBias -= 10; break; // hazard ochre
+			}
+		}
+	}
+
+	if ( fMapFactoryProfile && fMFRoof )
+	{
+		const UINT8 ubVariant = (UINT8)((ubType - FIRSTROOF) % 4);
+		if ( ubVariant == 0 )
+		{
+			saturationPercent += 8; redBias += 11; greenBias += 1; blueBias -= 10; // terracotta/rust
+		}
+		else if ( ubVariant == 1 )
+		{
+			saturationPercent += 5; redBias -= 6; greenBias += 5; blueBias += 7; // faded blue/galvanised repair
+		}
+		else if ( ubVariant == 2 )
+		{
+			saturationPercent -= 8; redBias += 4; greenBias += 4; blueBias += 2; // bleached zinc
+		}
+		else
+		{
+			saturationPercent += 4; redBias += 8; greenBias += 3; blueBias -= 7; // warm weathered metal
+		}
+	}
+
 	// Palette index 0 is commonly used as transparency; preserve it exactly.
 	for ( UINT16 i = 1; i < 256; ++i )
 	{
