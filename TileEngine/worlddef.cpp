@@ -1203,6 +1203,12 @@ static void DressA3FarmEnvironment( void )
 	if ( gubSectorVisualProfile != SECTOR_VISUAL_A3_FARM || gpWorldLevelData == NULL )
 		return;
 
+	// Hand-authored V2 baseline. The earlier hash-driven dressing pass is kept
+	// below for reference, but is deliberately suppressed while A3 is rebuilt
+	// composition-by-composition from screenshot feedback.
+	TraceA3FarmLoad( "HAND AUTHORED V2", "procedural farm dressing disabled; clean authored-map baseline" );
+	return;
+
 	UINT32 uiCropRows = 0, uiCropBlocks = 0, uiDenseBeds = 0, uiHarvestBreaks = 0;
 	UINT32 uiFurrows = 0, uiFieldClutter = 0, uiFarmyardClutter = 0, uiYardBlocks = 0;
 	UINT32 uiMudBlocks = 0, uiTractorTurns = 0, uiDrainageBlocks = 0, uiIrrigationJunctions = 0;
