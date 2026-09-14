@@ -6151,8 +6151,18 @@ static BOOLEAN VR_TryOperationalGarrisonReassignment( GROUP **pGroup )
 	if( !VR_OPERATIONAL_GARRISON_REASSIGNMENT_ENABLED || !pGroup || !(*pGroup) || !(*pGroup)->pEnemyGroup )
 		return FALSE;
 
-	// Preserve strategic uncertainty: one decision in five deliberately falls back to legacy weighted selection.
-	if( Chance( 20 ) )
+	// Deidranna's mobile formations are not uniformly professional. Low-quality formations
+	// misread situations and fall back to crude legacy weighting far more often than elite groups.
+	UINT8 ubCommandQuality = VR_GetFormationCommandQuality( *pGroup );
+	UINT8 ubLegacyFallbackChance = 45;
+	if( ubCommandQuality >= 70 )
+		ubLegacyFallbackChance = 10;
+	else if( ubCommandQuality >= 55 )
+		ubLegacyFallbackChance = 18;
+	else if( ubCommandQuality >= 35 )
+		ubLegacyFallbackChance = 28;
+
+	if( Chance( ubLegacyFallbackChance ) )
 	{
 		VR_LogOperationalDecision( *pGroup, "LEGACY_WEIGHTED_FALLBACK", NULL );
 		return FALSE;
@@ -6180,7 +6190,15 @@ static BOOLEAN VR_TryOperationalGarrisonReassignment( GROUP **pGroup )
 
 		// Existing Queen need remains important; operational context modifies rather than replaces it.
 		INT32 iQueenNeedBonus = iWeight * 3;
-		INT32 iUncertainty = (INT32)Random( 31 ) - 15;
+		INT32 iUncertaintyRange = 28;
+		if( ubCommandQuality >= 70 )
+			iUncertaintyRange = 8;
+		else if( ubCommandQuality >= 55 )
+			iUncertaintyRange = 13;
+		else if( ubCommandQuality >= 35 )
+			iUncertaintyRange = 20;
+
+		INT32 iUncertainty = (INT32)Random( iUncertaintyRange * 2 + 1 ) - iUncertaintyRange;
 		iOperationalScore += iQueenNeedBonus + iUncertainty;
 
 		// Log the actual decision score, including legacy need and uncertainty, without changing the live target yet.
