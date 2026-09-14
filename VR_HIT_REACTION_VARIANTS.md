@@ -1,62 +1,62 @@
 # VR Hit Reaction Variants
 
-This pack adds 30 non-fatal gunshot reaction sequences on top of the 30 fatal cinematic variants.
+This pack now provides **80 non-fatal gunshot reaction IDs** plus the separate fatal-reaction system.
 
-These are in-game reaction sequences built from existing JA2 living-safe animation states, direction changes, momentum, checked fallback/flyback movement, and fall states. They are not 30 newly hand-drawn sprite sheets.
+These are in-game reaction sequences assembled from existing JA2 living-safe animation states, facing changes, checked fallback/flyback movement, momentum and fall states. They are not 80 newly hand-drawn sprite sheets.
 
-## Selection logic
+## Severity model
 
-- Light damage (1-7): mostly upright flinches and short staggers.
-- Medium damage (8-17): upright reactions dominate; soft collapses are possible.
-- Heavy damage (18+): normal falls and hard checked flybacks become common.
-- Running: reaction selection preserves movement momentum.
-- Leg hits: modest bias toward balance loss / soft collapse.
-- Head hits: modest bias toward rotational flinches.
-- Torso hits: full mixed pool.
-- All checked displacement continues through JA2's existing fallback/flyback collision logic.
+Reaction selection is no longer in demo mode. It now uses:
 
-Every selected variant is logged as:
+- HP damage from the hit;
+- breath/stamina lost on that hit (`sBreathLoss / 100`);
+- remaining stamina after the hit;
+- hit location;
+- whether the victim was running;
+- a small random cinematic term.
 
-`VR_HIT variant=<id> soldier=<id> damage=<n> hitloc=<n> running=<0/1> incomingDir=<n> momentumDir=<n>`
+Low remaining stamina matters independently of HP damage. An exhausted soldier therefore has a substantially higher chance to stagger, buckle or fall from the same bullet impact.
 
-## 30 reaction IDs
+Critical reactions receive a deliberate small cinematic probability boost above the strict severity threshold. This affects body motion only; it does **not** increase ordinary hit blood volume.
 
-| ID | Reaction |
+## Probability behaviour
+
+- Fresh + light wound: overwhelmingly upright flinches, shoulder reactions and short staggers.
+- Moderate wound or moderate stamina loss: wider rotational reactions and balance checks become common.
+- Low stamina: strong reactions rise sharply even when HP damage is not extreme.
+- Heavy wound + low stamina: falls, collapses and checked flybacks become plausible.
+- Running: dedicated momentum reactions preserve travel direction where possible.
+- Head hits: bias toward upper-body rotational reactions and a modest critical boost.
+- Leg hits: bias toward balance-loss reactions and a modest critical boost.
+- Crouched/prone targets use stance-safe severity mapping instead of being forced to fall on every hit.
+
+## Reaction families
+
+| IDs | Family |
 |---:|---|
-| 0 | Compact generic torso flinch |
-| 1 | Weapon-bearing shoulder recoil |
-| 2 | Sharper full-body burst-style flinch |
-| 3 | Soft left shoulder twist |
-| 4 | Soft right shoulder twist |
-| 5 | Stronger left rotational flinch |
-| 6 | Stronger right rotational flinch |
-| 7 | Brief turn-away recoil |
-| 8 | Short straight backward stagger |
-| 9 | Oblique backward stagger left |
-| 10 | Oblique backward stagger right |
-| 11 | Straight weapon-hit recoil |
-| 12 | Gentle forward fold in current facing |
-| 13 | Gentle forward fall aligned to impact |
-| 14 | Soft diagonal-left collapse |
-| 15 | Soft diagonal-right collapse |
-| 16 | Pronounced left-side loss of balance |
-| 17 | Pronounced right-side loss of balance |
-| 18 | Restrained backward collapse |
-| 19 | Angled backward collapse |
-| 20 | Running trip preserving momentum |
-| 21 | Running fall veering left |
-| 22 | Running fall veering right |
-| 23 | Running sideways spill left |
-| 24 | Running sideways spill right |
-| 25 | Checked hard flyback |
-| 26 | Checked oblique flyback left |
-| 27 | Checked oblique flyback right |
-| 28 | Heavy hit that folds instead of launching |
-| 29 | Limp-looking straight collapse |
+| 0-11 | Original light/upright flinches and short staggers |
+| 12-19 | Soft collapses / balance loss |
+| 20-24 | Original running spills |
+| 25-29 | Original heavy checked reactions |
+| 30-39 | New nuanced torso/shoulder rotations and directional flinches |
+| 40-49 | New balance checks and short upright staggers |
+| 50-59 | New stamina-sensitive buckles and recoverable falls |
+| 60-64 | New running momentum flinches/stumbles |
+| 65-69 | New running momentum spills/falls |
+| 70-79 | New cinematic critical reactions: hard collapse/flyback/fall |
 
-## Current total
+The extra 50 variants are intentionally weighted toward **normal hit behaviour**, not spectacular deaths.
 
-- 30 fatal cinematic variants
-- 30 non-fatal hit / soft-fall variants
+## Diagnostics
 
-That gives 60 explicit reaction IDs before considering facing direction, hit location, momentum, gore-layer timing, stance, and weapon/body-type visual differences.
+Every selected hit reaction logs:
+
+`VR_HIT variant=<id> soldier=<id> damage=<hp> breathloss=<breath points> stamina=<remaining> severity=<score> criticalchance=<pct> ...`
+
+This makes it possible to compare the animation outcome against actual damage and stamina state during black-box review.
+
+## Current totals
+
+- 80 non-fatal gunshot reaction IDs
+- 35 fatal cinematic variants
+- stance, direction, momentum, weapon-holding and hit-location permutations on top of those IDs
