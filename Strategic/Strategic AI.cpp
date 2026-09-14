@@ -4381,6 +4381,19 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Strategic7");
 void ExecuteStrategicAIAction( UINT16 usActionCode, INT16 sSectorX, INT16 sSectorY, 
 							   INT32 option1, INT32 option2 )
 {
+	BOOLEAN fOwnDecision = FALSE;
+	INT32 iTelemetryTarget = -1;
+	if( sSectorX >= 1 && sSectorX <= 16 && sSectorY >= 1 && sSectorY <= 16 )
+		iTelemetryTarget = SECTOR( sSectorX, sSectorY );
+	if( !VR_CampaignDecisionActive() )
+	{
+		VR_CampaignBeginDecision( "scripted strategic action" );
+		fOwnDecision = TRUE;
+	}
+	VR_CampaignRecord( "SCRIPTED_ACTION", "action_code", usActionCode, -1, -1,
+		iTelemetryTarget, option1, option2,
+		"campaign trigger requested a strategic AI action" );
+
 	GROUP *pGroup, *pGroup0, *pGroup1, *pGroup2, *pGroup3, *pPendingGroup = NULL;
 	SECTORINFO *pSector;
 	UINT8 ubSectorID;
