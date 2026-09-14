@@ -10,7 +10,7 @@ on:
 
 jobs:
   inspect-a3-art:
-    runs-on: [self-hosted, Windows, X64, ja2-render]
+    runs-on: windows-latest
     timeout-minutes: 10
 
     steps:
