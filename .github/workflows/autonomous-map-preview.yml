@@ -46,6 +46,29 @@ jobs:
           Write-Host "Using Git: $git"
           & $git --version
 
+      - name: Rehydrate repository metadata when checkout used REST archive
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $git = '${{ steps.git.outputs.path }}'
+          if (Test-Path (Join-Path $env:GITHUB_WORKSPACE '.git')) {
+            Write-Host 'Git metadata already present.'
+            exit 0
+          }
+
+          Write-Host 'Checkout is an archive; rebuilding .git with GitHub Desktop Git.'
+          & $git -C $env:GITHUB_WORKSPACE init
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $git -C $env:GITHUB_WORKSPACE remote add origin "https://x-access-token:$env:GH_TOKEN@github.com/mattedinburgh/vr_source.git"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $git -C $env:GITHUB_WORKSPACE fetch origin install/all-2026-09-12
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $git -C $env:GITHUB_WORKSPACE clean -fdx
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $git -C $env:GITHUB_WORKSPACE checkout -f -B render-source '${{ github.sha }}'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Fetch only map assets from vr_gamedir
         id: gamedir
         shell: powershell
@@ -279,7 +302,15 @@ jobs:
           $previewDir = Join-Path $sandbox 'MAP_PREVIEWS'
           $statusFile = Join-Path $previewDir 'mapshot_status.txt'
           $sourceBmp = Join-Path $previewDir 'A3_overview.bmp'
+          $pristineBmp = Join-Path $previewDir 'A3_PRISTINE_overview.bmp'
           $finalBmp = Join-Path $previewDir 'A3_REMASTERED_overview.bmp'
+
+          $pilotOut = Join-Path $env:GITHUB_WORKSPACE 'MapPreviews\Pilot5'
+          $pilotMaps = Join-Path $pilotOut 'Maps'
+          New-Item -ItemType Directory -Force -Path $pilotOut | Out-Null
+          New-Item -ItemType Directory -Force -Path $pilotMaps | Out-Null
+          $env:JA2_MAP_FACTORY_OUTPUT = $pilotMaps
+          Write-Host "Map Factory staged-map output: $pilotMaps"
 
           function Invoke-VengeanceMapshot {
             param(
@@ -360,9 +391,18 @@ jobs:
             return $forcedExitAfterSuccess
           }
 
+          # Pass 0: create a byte-identical source alias whose name does not
+          # activate the A3 visual profile.  After the Map Factory port this gives
+          # us six genuine pristine tactical views for side-by-side QA.
+          $sourceMap = Join-Path $sandbox 'Data-Maps-Tiles\maps\A3.dat'
+          $pristineMap = Join-Path $sandbox 'Data-Maps-Tiles\maps\A3_PRISTINE.dat'
+          Copy-Item -Force $sourceMap $pristineMap
+          $forcedPristineExit = Invoke-VengeanceMapshot -MapName 'A3_PRISTINE.dat' -ExpectedBmp $pristineBmp
+
           # Pass 1: load the authoritative A3.dat through the Vengeance VFS.
           # MapUtility applies the A3 dressing and SaveWorld() persists that exact
           # in-memory sector as A3_REMASTERED.dat in the isolated writable profile.
+          # The generic Map Factory path also runs A8/A12/B13/F15 in this invocation.
           $forcedBakeExit = Invoke-VengeanceMapshot -MapName 'A3.dat' -ExpectedBmp $sourceBmp
 
           # SaveWorld writes through the VFS writable UserProf. Require that
@@ -374,7 +414,6 @@ jobs:
           }
           $baked = Get-Item $bakedPath
           $bakedHash = (Get-FileHash $baked.FullName -Algorithm SHA256).Hash
-          $sourceMap = Join-Path $sandbox 'Data-Maps-Tiles\maps\A3.dat'
           $sourceHash = (Get-FileHash $sourceMap -Algorithm SHA256).Hash
           if ($bakedHash -eq $sourceHash) {
             throw 'Fresh A3_REMASTERED.dat is byte-identical to A3.dat; farm dressing was not persisted.'
@@ -400,6 +439,132 @@ jobs:
           $forcedFinalExit = Invoke-VengeanceMapshot -MapName 'A3_REMASTERED.dat' -ExpectedBmp $finalBmp
 
           Add-Type -AssemblyName System.Drawing
+
+          # Collect every tactical view emitted by the Map Factory pilot.  Keep
+          # raw BMPs for deterministic metric analysis and generate PNG copies for
+          # fast human review.
+          Get-ChildItem -LiteralPath $previewDir -File -Filter '*_tactical_*_overview.bmp' -ErrorAction SilentlyContinue |
+            ForEach-Object {
+              $dstBmp = Join-Path $pilotOut $_.Name
+              Copy-Item -Force $_.FullName $dstBmp
+
+              $pngName = ($_.BaseName -replace '_overview
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          $png = Join-Path $outDir 'A3_latest.png'
+          $img = [System.Drawing.Image]::FromFile($finalBmp)
+          try { $img.Save($png, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $img.Dispose() }
+
+          if (Test-Path $statusFile) {
+            Copy-Item -Force $statusFile (Join-Path $outDir 'A3_mapshot_status.txt')
+          }
+          Copy-Item -Force $baked.FullName (Join-Path $outDir 'A3_REMASTERED.dat')
+
+          @{
+            sector = 'A3_REMASTERED'
+            source_sha = '${{ github.sha }}'
+            gamedir_sha = '${{ steps.gamedir.outputs.sha }}'
+            generated_utc = (Get-Date).ToUniversalTime().ToString('o')
+            renderer = 'Vengeance MapEditor two-pass MAPSHOT'
+            editor = 'MapEditor_Vengeance.exe'
+            vfs = 'vfs_config.Vengeance.ini'
+            sandbox = $sandbox
+            baked_map_bytes = $baked.Length
+            pristine_pass_forced_exit = $forcedPristineExit
+            source_pass_forced_exit = $forcedBakeExit
+            final_pass_forced_exit = $forcedFinalExit
+          } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $outDir 'A3_latest.json')
+
+          Write-Host "A3 baked map validated by reload and rendered: $png"
+
+      - name: Build five-map side-by-side contact sheets
+        shell: powershell
+        run: |
+          & '.\Tools\New-MapFactoryContactSheets.ps1' -PreviewDir '.\MapPreviews\Pilot5'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run perceptual five-map visual QA
+        id: visualqa
+        continue-on-error: true
+        shell: powershell
+        run: |
+          & '.\Tools\Test-MapFactoryVisualQA.ps1' -PreviewDir '.\MapPreviews\Pilot5'
+          exit $LASTEXITCODE
+
+      - name: Upload render and five-map pilot artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vengeance-five-map-remaster-pilot
+          path: |
+            MapPreviews/Auto/
+            MapPreviews/Pilot5/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish latest preview to repository
+        shell: powershell
+        run: |
+          $git = '${{ steps.git.outputs.path }}'
+          & $git -C $env:GITHUB_WORKSPACE add MapPreviews/Auto/A3_latest.png MapPreviews/Auto/A3_latest.json
+          Get-ChildItem '.\MapPreviews\Pilot5' -Filter '*_contact.png' -File -ErrorAction SilentlyContinue | ForEach-Object {
+            & $git -C $env:GITHUB_WORKSPACE add -- $_.FullName
+          }
+          foreach ($qa in @('.\MapPreviews\Pilot5\map_factory_visual_qa.csv','.\MapPreviews\Pilot5\map_factory_visual_qa.json')) {
+            if (Test-Path $qa) { & $git -C $env:GITHUB_WORKSPACE add -- $qa }
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $git -C $env:GITHUB_WORKSPACE diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) { Write-Host 'Preview is unchanged.'; exit 0 }
+          & $git -C $env:GITHUB_WORKSPACE config user.name 'github-actions[bot]'
+          & $git -C $env:GITHUB_WORKSPACE config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          & $git -C $env:GITHUB_WORKSPACE commit -m 'Update autonomous A3 engine preview'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          for ($attempt = 1; $attempt -le 5; $attempt++) {
+            & $git -C $env:GITHUB_WORKSPACE pull --rebase origin install/all-2026-09-12
+            if ($LASTEXITCODE -eq 0) {
+              & $git -C $env:GITHUB_WORKSPACE push origin HEAD:install/all-2026-09-12
+              if ($LASTEXITCODE -eq 0) { exit 0 }
+            }
+            Start-Sleep -Seconds ($attempt * 2)
+          }
+          throw 'Could not publish A3 preview after 5 attempts.'
+      - name: Enforce five-map visual QA result
+        if: always()
+        shell: powershell
+        run: |
+          if ('${{ steps.visualqa.outcome }}' -ne 'success') {
+            throw 'Five-map remaster visual QA failed. Artifact and contact sheets were preserved for iteration.'
+          }
+
+      - name: Remove render sandbox
+        if: always()
+        shell: powershell
+        run: |
+          $sandbox = "C:\VENGENCE\JA2_RENDER_SANDBOX_$env:GITHUB_RUN_ID"
+          if (-not (Test-Path $sandbox)) { exit 0 }
+
+          Get-ChildItem -LiteralPath $sandbox -Force -Directory -ErrorAction SilentlyContinue |
+            Where-Object { ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 } |
+            ForEach-Object {
+              cmd /c rmdir "$($_.FullName)"
+              if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Could not remove junction: $($_.FullName)"
+                $global:LASTEXITCODE = 0
+              }
+            }
+
+          Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue
+          Write-Host "Removed render sandbox: $sandbox"
+
+,'') + '.png'
+              $pngPath = Join-Path $pilotOut $pngName
+              $img = [System.Drawing.Image]::FromFile($_.FullName)
+              try { $img.Save($pngPath, [System.Drawing.Imaging.ImageFormat]::Png) }
+              finally { $img.Dispose() }
+            }
+
+          Copy-Item -Force $baked.FullName (Join-Path $pilotMaps 'A3_REMASTERED.dat')
+
           $outDir = Join-Path $env:GITHUB_WORKSPACE 'MapPreviews\Auto'
           New-Item -ItemType Directory -Force -Path $outDir | Out-Null
           $png = Join-Path $outDir 'A3_latest.png'
