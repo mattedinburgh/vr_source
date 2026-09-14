@@ -36,6 +36,23 @@ namespace
 	unsigned long gSessionId = 0;
 	TacticalDecisionTrace gTacticalTrace[256];
 
+	struct DecisionMeta
+	{
+		unsigned long id;
+		VRAnalyticsLayer layer;
+		DecisionMeta() : id(0), layer(VR_ANALYTICS_TACTICAL) {}
+	};
+	const unsigned int DECISION_META_CAPACITY = 8192;
+	DecisionMeta gDecisionMeta[DECISION_META_CAPACITY];
+
+	VRAnalyticsLayer DecisionLayer( unsigned long decisionId )
+	{
+		DecisionMeta& meta = gDecisionMeta[ decisionId % DECISION_META_CAPACITY ];
+		if( meta.id == decisionId )
+			return meta.layer;
+		return VR_ANALYTICS_TACTICAL;
+	}
+
 	const char* LayerName( VRAnalyticsLayer layer )
 	{
 		switch( layer )
@@ -187,6 +204,8 @@ unsigned long VRAnalyticsBeginDecision(
 		return 0;
 
 	decisionId = ++gDecisionSequence;
+	gDecisionMeta[ decisionId % DECISION_META_CAPACITY ].id = decisionId;
+	gDecisionMeta[ decisionId % DECISION_META_CAPACITY ].layer = layer;
 	file = BeginEvent( layer, "decision_begin", decisionId );
 	if( !file )
 		return 0;
@@ -204,7 +223,7 @@ void VRAnalyticsStateInt(
 	const char* key,
 	long value )
 {
-	FILE* file = BeginEvent( VR_ANALYTICS_TACTICAL, "state", decisionId );
+	FILE* file = BeginEvent( DecisionLayer( decisionId ), "state", decisionId );
 	if( !file )
 		return;
 
@@ -228,7 +247,7 @@ void VRAnalyticsCandidate(
 	// Generic candidate events are layer-neutral at the API boundary. The
 	// layer is recoverable from decision_begin; use strategic here only for
 	// display grouping when no tactical wrapper is involved.
-	file = BeginEvent( VR_ANALYTICS_STRATEGIC, "candidate", decisionId );
+	file = BeginEvent( DecisionLayer( decisionId ), "candidate", decisionId );
 	if( !file )
 		return;
 
@@ -248,7 +267,7 @@ void VRAnalyticsCommitDecision(
 	long score,
 	const char* reason )
 {
-	FILE* file = BeginEvent( VR_ANALYTICS_STRATEGIC, "decision_commit", decisionId );
+	FILE* file = BeginEvent( DecisionLayer( decisionId ), "decision_commit", decisionId );
 	if( !file )
 		return;
 
@@ -269,7 +288,7 @@ void VRAnalyticsOutcome(
 	long valueB,
 	const char* detail )
 {
-	FILE* file = BeginEvent( VR_ANALYTICS_STRATEGIC, "outcome", decisionId );
+	FILE* file = BeginEvent( DecisionLayer( decisionId ), "outcome", decisionId );
 	if( !file )
 		return;
 
