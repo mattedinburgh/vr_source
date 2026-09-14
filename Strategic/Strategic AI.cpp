@@ -5520,6 +5520,10 @@ void StrategicHandleQueenLosingControlOfSector( INT16 sSectorX, INT16 sSectorY, 
 
 	ubSectorID = SECTOR( sSectorX, sSectorY );
 	pSector = &SectorInfo[ ubSectorID ];
+	VR_CampaignRecord( "OBSERVATION", "sector_lost", ubSectorID, -1,
+		ubSectorID, ubSectorID, pSector->ubGarrisonID, 65,
+		"queen lost surface control; command receives an imperfect report and priorities may change" );
+	VR_ReportOperationalIntel( ubSectorID, 65 );
 
 	//Keep track of victories and wake up the queen after x number of battles.
 	gusPlayerBattleVictories++;
