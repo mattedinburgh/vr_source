@@ -124,6 +124,39 @@ void VRAnalyticsTacticalStateInt(
 	const char* key,
 	long value );
 
+// Compact Black Box v2 assessment. All fields are actor-perceived/current
+// decision inputs and are emitted as one JSONL event to avoid dozens of disk
+// flushes per soldier evaluation.
+void VRAnalyticsTacticalRetreatAssessment(
+	unsigned int soldierId,
+	unsigned long turn,
+	int battleSituation,
+	long perceivedFriendlyStrength,
+	long perceivedEnemyStrength,
+	int knownOpponents,
+	int friendlyCasualtyPct,
+	int localCasualtyPct,
+	int holdConfidence,
+	int localStress,
+	int personalRisk,
+	int riskTolerance,
+	int routPressure,
+	int collapseStreak,
+	bool lastSurvivorPressure,
+	int nearbyOperationalFriends,
+	bool stableLeaderNearby,
+	bool hasCover,
+	bool hasSightCover,
+	bool underFire,
+	int lifePct,
+	int marksmanship,
+	int experienceLevel,
+	int gunDeadliness,
+	int gunAmmo,
+	bool lastAttackHit,
+	bool lastTargetSuppressed,
+	bool escapeIntentActive );
+
 // Omniscient team snapshot for troubleshooting. This is intentionally separate
 // from soldier perception telemetry so analysis never confuses what really
 // existed in the sector with what an AI actor was allowed to know.
