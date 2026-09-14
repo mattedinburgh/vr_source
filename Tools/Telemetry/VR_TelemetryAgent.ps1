@@ -133,7 +133,7 @@ function Get-GameProcesses {
 
             if (-not $lowerExe.StartsWith($rootPrefix)) { continue }
             if ($lowerName -notmatch "(ja2|vengeance)") { continue }
-            if ($lowerName -match "(editor|mapeditor|updater|setup|installer)") { continue }
+            if ($lowerName -match "(editor|mapeditor|updater|setup|installer|launcher)") { continue }
 
             $matches += [pscustomobject]@{
                 ProcessId = [int]$p.ProcessId
@@ -345,7 +345,21 @@ function Try-UploadPending {
             Copy-Item -LiteralPath $dir.FullName -Destination $dest -Recurse -Force
             Remove-Item -LiteralPath (Join-Path $dest ".pending") -Force -ErrorAction SilentlyContinue
 
-            [void](Invoke-Git -Arguments @("-C", $UploadWorktree, "add", "--", $relativeDest))
+            # Stable discovery pointers for the daily analyst.
+            $latestPath = Join-Path $UploadWorktree "sessions\LATEST.txt"
+            Ensure-Directory (Split-Path -Parent $latestPath)
+            Set-Content -LiteralPath $latestPath -Value ($relativeDest -replace "\\","/") -Encoding ASCII
+
+            $indexPath = Join-Path $UploadWorktree "sessions\index.tsv"
+            if (-not (Test-Path -LiteralPath $indexPath)) {
+                Set-Content -LiteralPath $indexPath -Value "session_id\tday\tpath\tuploaded_at" -Encoding UTF8
+            }
+            $alreadyIndexed = Select-String -LiteralPath $indexPath -SimpleMatch -Pattern ($sessionId + [char]9) -Quiet -ErrorAction SilentlyContinue
+            if (-not $alreadyIndexed) {
+                Add-Content -LiteralPath $indexPath -Value ($sessionId + [char]9 + $day + [char]9 + ($relativeDest -replace "\\","/") + [char]9 + (Get-Date).ToString("o")) -Encoding UTF8
+            }
+
+            [void](Invoke-Git -Arguments @("-C", $UploadWorktree, "add", "--", $relativeDest, "sessions/LATEST.txt", "sessions/index.tsv"))
             $status = Invoke-Git -Arguments @("-C", $UploadWorktree, "status", "--porcelain", "--", $relativeDest) -AllowFailure
             if (@($status.Output).Count -eq 0) {
                 Remove-Item -LiteralPath (Join-Path $dir.FullName ".pending") -Force -ErrorAction SilentlyContinue
@@ -408,6 +422,34 @@ $state = Load-State
 Write-AgentLog "Agent started. Watching $GameRoot"
 
 $active = $null
+
+# Recover a session if Windows, the game, or the agent terminated before the normal
+# exit transition could be observed. If the original PID is still alive, resume
+# watching it; otherwise package everything since the last saved offsets.
+if ($null -ne $state.active_session) {
+    $startupProcesses = @(Get-GameProcesses)
+    $resume = $startupProcesses | Where-Object { [int]$_.ProcessId -eq [int]$state.active_session.pid } | Select-Object -First 1
+
+    if ($null -ne $resume) {
+        $active = [pscustomobject]@{
+            pid = [int]$state.active_session.pid
+            name = [string]$state.active_session.name
+            executable = [string]$state.active_session.executable
+            started_at = [datetime]$state.active_session.started_at
+        }
+        Write-AgentLog "Resumed monitoring active game session pid=$($active.pid)."
+    } else {
+        $recovered = [pscustomobject]@{
+            pid = [int]$state.active_session.pid
+            name = [string]$state.active_session.name
+            executable = [string]$state.active_session.executable
+            started_at = [datetime]$state.active_session.started_at
+        }
+        Write-AgentLog "Recovering unclosed game session pid=$($recovered.pid)."
+        [void](New-SessionPackage -State $state -Session $recovered)
+        Try-UploadPending
+    }
+}
 
 while ($true) {
     Try-UploadPending
