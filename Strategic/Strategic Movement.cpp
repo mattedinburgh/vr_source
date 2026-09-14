@@ -1834,6 +1834,11 @@ void GroupArrivedAtSector( UINT8 ubGroupID, BOOLEAN fCheckForBattle, BOOLEAN fNe
 		return;
 	}
 
+	if( !pGroup->fPlayer )
+	{
+		VR_OnEnemyGroupArrived( pGroup );
+	}
+
 	if( pGroup->fPlayer )
 	{
 		if( pGroup->ubSectorZ == 0 )
