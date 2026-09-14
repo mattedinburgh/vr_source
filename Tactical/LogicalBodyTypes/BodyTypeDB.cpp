@@ -576,7 +576,10 @@ namespace LogicalBodyTypes {
 			FOCUSED_STAB,
 			HTH_KICK,
 			FOCUSED_HTH_KICK,
-			LONG_JUMP
+			LONG_JUMP,
+			VR_HIT_MICRO_STAND,
+			VR_HIT_BODYCHECK_STAND,
+			VR_HIT_STUMBLE_STAND
 		);
 
 		/*****************************************
