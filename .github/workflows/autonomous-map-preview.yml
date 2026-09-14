@@ -67,6 +67,13 @@ jobs:
           "sha=$sha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "vr_gamedir SHA: $sha"
 
+      - name: Compose richer A3 crop master
+        shell: powershell
+        run: |
+          $dataRoot = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir\Data-Maps-Tiles'
+          & '.\Tools\ComposeA3CropMaster.ps1' -DataMapsTilesRoot $dataRoot
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Retarget VS2013 projects to v120
         shell: powershell
         run: |
