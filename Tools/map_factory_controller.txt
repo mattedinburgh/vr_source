@@ -1,1 +1,130 @@
-# Python entrypoint for Map Factory
+from __future__ import annotations
+import argparse, csv, json
+from dataclasses import dataclass
+from pathlib import Path
+
+STRATEGIES=("authored_modules","strong_modules","manual_required")
+PILOT=("A3","A8","A12","B13","F15")
+RULES=[
+ (("farm","farmland"),"farmland"),
+ (("forest","woods","tropical","swamp"),"wilderness"),
+ (("checkpoint","outpost","training camp","army"),"military"),
+ (("airport","distribution","oil rig"),"industrial"),
+ (("omerta","oronegro","drassen","salinas"),"settlement"),
+ (("road",),"roadside"),
+ (("hills","plains"),"open_country"),
+]
+MODULES={
+ "farmland":[("SECONDDECORATIONS",1),("SECONDDECORATIONS",2),("DEBRISWEEDS",9),("DEBRISGRASS",2)],
+ "wilderness":[("DEBRISWEEDS",1),("DEBRISROCKS",2),("DEBRISWOOD",3),("DEBRISGRASS",1)],
+ "military":[("DEBRISMISC",5),("DEBRISWOOD",1),("DEBRISROCKS",4),("DEBRISMISC",7)],
+ "industrial":[("DEBRISMISC",1),("DEBRISMISC",5),("DEBRISWOOD",4),("DEBRISROCKS",4)],
+ "settlement":[("DEBRISMISC",1),("DEBRISWOOD",3),("DEBRISWEEDS",5),("DEBRISROCKS",3)],
+ "roadside":[("DEBRISSAND",3),("DEBRISROCKS",3),("DEBRISWEEDS",8),("DEBRISWOOD",2)],
+ "open_country":[("DEBRISWEEDS",2),("DEBRISROCKS",2),("DEBRISGRASS",3),("DEBRISWOOD",5)],
+}
+
+@dataclass(frozen=True)
+class C:
+    kind:str; grid:int; row:int; col:int; near_structure:bool; near_water:bool; near_trail:bool
+
+def key(v): return v.strip().upper().replace(".DAT","")
+def archetype(name):
+    t=(name or "").lower()
+    for needles,a in RULES:
+        if any(n in t for n in needles): return a
+    return "open_country"
+
+def manifest(path):
+    with Path(path).open(newline="",encoding="utf-8-sig") as f: rows=list(csv.DictReader(f))
+    for r in rows:
+        r["key"]=key(r["map_file"]); r["archetype"]=archetype(r.get("campaign_name",""))
+    return rows
+
+def profile(path):
+    out=[]
+    with Path(path).open(newline="",encoding="utf-8-sig") as f:
+        for r in csv.DictReader(f):
+            out.append(C(r["kind"],int(r["grid"]),int(r["row"]),int(r["col"]),r.get("near_structure")=="1",r.get("near_water")=="1",r.get("near_trail")=="1"))
+    return out
+
+def spread(xs,n,d):
+    xs=sorted(xs,key=lambda c:(c.row,c.col,c.grid))
+    if not xs:return []
+    zig=[]; lo=0; hi=len(xs)-1
+    while lo<=hi:
+        zig.append(xs[lo]); lo+=1
+        if lo<=hi: zig.append(xs[hi]); hi-=1
+    chosen=[]
+    for c in zig:
+        if all(abs(c.row-x.row)+abs(c.col-x.col)>=d for x in chosen):
+            chosen.append(c)
+            if len(chosen)>=n: break
+    return chosen
+
+def cameras(p):
+    roofs=[c for c in p if c.kind=="roof"]; opens=[c for c in p if c.kind=="open"]
+    out=spread(roofs,4,26)
+    used={x.grid for x in out}
+    out += [x for x in spread(opens,6,30) if x.grid not in used]
+    return [x.grid for x in out[:6]]
+
+def pool(p,a):
+    xs=[c for c in p if c.kind=="open"]
+    if a in ("settlement","military","industrial"):
+        y=[c for c in xs if c.near_structure]; return y or xs
+    if a=="roadside":
+        y=[c for c in xs if c.near_trail]; return y or xs
+    if a=="farmland":
+        y=[c for c in xs if not c.near_structure and not c.near_water]; return y or xs
+    if a=="wilderness":
+        y=[c for c in xs if not c.near_structure]; return y or xs
+    return xs
+
+def make_recipe(sec,a,strategy,p):
+    cams=cameras(p)
+    lines=["# Vengeance Map Factory",f"# sector={sec}",f"# archetype={a}",f"# strategy={strategy}"]+[f"CAMERA,{g}" for g in cams]
+    if strategy=="manual_required":
+        return lines,{"placements":0,"cameras":cams,"strategy":strategy}
+    xs=pool(p,a); count=5 if strategy=="authored_modules" else 9; dist=24 if strategy=="authored_modules" else 16
+    anchors=spread(xs,count,dist); placements=0; module=MODULES[a]
+    for an in anchors:
+        near=sorted((c for c in xs if abs(c.row-an.row)<=8 and abs(c.col-an.col)<=8),key=lambda c:(abs(c.row-an.row)+abs(c.col-an.col),c.grid))
+        for (tile,sub),cand in zip(module,near):
+            lines.append(f"ADD_OBJECT,{cand.grid},{tile},{sub}"); placements+=1
+    return lines,{"placements":placements,"cameras":cams,"strategy":strategy,"candidates":len(xs),"modules":len(anchors)}
+
+def cmd_plan(a):
+    rows=[r for r in manifest(a.manifest) if r.get("priority")=="surface"]
+    if a.pilot: rows=[r for r in rows if r["key"] in PILOT]
+    for r in rows: print(f"{r['key']:4} {r['archetype']:13} {r.get('campaign_name','')}")
+    print("TOTAL="+str(len(rows))); return 0
+
+def cmd_recipe(a):
+    rows=manifest(a.manifest); sec=key(a.sector)
+    r=next((x for x in rows if x["key"]==sec and x.get("priority")=="surface"),None)
+    if not r: raise SystemExit("Unknown surface sector "+sec)
+    lines,meta=make_recipe(sec,r["archetype"],a.strategy,profile(a.profile))
+    out=Path(a.output); out.parent.mkdir(parents=True,exist_ok=True); out.write_text("\n".join(lines)+"\n",encoding="ascii")
+    meta.update({"sector":sec,"archetype":r["archetype"]})
+    if a.meta: Path(a.meta).write_text(json.dumps(meta,indent=2)+"\n",encoding="utf-8")
+    print(json.dumps(meta,sort_keys=True))
+    return 0 if meta["placements"] or a.strategy=="manual_required" else 3
+
+def cmd_next(a):
+    cur=a.strategy
+    ok=a.bake_ok and a.visual_changed
+    if ok: nxt=cur; status="accepted"
+    else:
+        i=STRATEGIES.index(cur); nxt=STRATEGIES[min(i+1,len(STRATEGIES)-1)]
+        status="manual" if nxt=="manual_required" else "retry"
+    print(json.dumps({"current":cur,"next":nxt,"status":status,"reason":a.reason}))
+    return 0
+
+def main():
+    p=argparse.ArgumentParser(); s=p.add_subparsers(dest="cmd",required=True)
+    q=s.add_parser("plan"); q.add_argument("--manifest",default="MapFactory/top_rows_A-F.csv"); q.add_argument("--pilot",action="store_true"); q.set_defaults(fn=cmd_plan)
+    q=s.add_parser("recipe"); q.add_argument("--manifest",default="MapFactory/top_rows_A-F.csv"); q.add_argument("--sector",required=True); q.add_argument("--profile",required=True); q.add_argument("--output",required=True); q.add_argument("--meta"); q.add_argument("--strategy",choices=STRATEGIES,default=STRATEGIES[0]); q.set_defaults(fn=cmd_recipe)
+    q=s.add_parser("next"); q.add_argument("--strategy",choices=STRATEGIES,required=True); q.add_argument("--bake-ok",action="store_true"); q.add_argument("--visual-changed",action="store_true"); q.add_argument("--reason",default=""); q.set_defaults(fn=cmd_next)
+    a=p.parse_args(); return a.fn(a)
+if __name__=="__main__": raise SystemExit(main())
