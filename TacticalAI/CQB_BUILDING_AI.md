@@ -115,3 +115,9 @@ The canonical planner now has two active advanced entry actions in addition to n
 - **Alternate window entry:** only profiles carrying `VRCQB_CAP_ALTERNATE_ENTRY` may deliberately select a jumpable adjacent window. Candidate windows are scored against the desired foothold/building and known-threat exposure; the actor faces the selected opening before the native `AI_ACTION_JUMP_WINDOW` executor is used.
 
 Basic security and ordinary uncommanded line troops therefore continue to use simpler doorway/cover behaviour rather than receiving expert room-entry tactics for free.
+
+### Team entry sequencing
+
+`VRCQB_CAP_TWO_MAN_ENTRY` is now active behavior rather than metadata. When the role selector assigns a soldier to SUPPORT during an assault, that soldier establishes a local cover position instead of following the point element through the same threshold. The existing mover budget remains a second anti-queue safeguard.
+
+`VRCQB_CAP_COMPLEX_ROOM_FLOW` is also active for elite-mobile elements. If an elite-mobile element has already assaulted/secured one room and legally knows of a threat elsewhere in the same building, the planner may preserve clearing momentum into the next valid room at a slightly lower re-plan confidence threshold. This changes planning continuity only; it provides no AP, accuracy, sight or hidden-information bonus.
