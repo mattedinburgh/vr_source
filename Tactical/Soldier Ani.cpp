@@ -64,6 +64,8 @@
 #include "CampaignStats.h"				// added by Flugente
 #endif
 
+#include "../VRAnalytics.h"
+
 // anv: for enemy taunts
 #include "Civ Quotes.h"
 
@@ -1167,6 +1169,63 @@ BOOLEAN AdjustToNextAnimationFrame( SOLDIERTYPE *pSoldier )
 					}
 
 					INT32 iRealObjectID = CreatePhysicalObject( pSoldier->pTempObject, pSoldier->pThrowParams->dLifeSpan, pSoldier->pThrowParams->dX, pSoldier->pThrowParams->dY, pSoldier->pThrowParams->dZ, pSoldier->pThrowParams->dForceX, pSoldier->pThrowParams->dForceY, pSoldier->pThrowParams->dForceZ, pSoldier->ubID, pSoldier->pThrowParams->ubActionCode, pSoldier->pThrowParams->uiActionData, FALSE );
+
+					// Black Box grenade fairness audit: record only AI-controlled hand throws.
+					// This is emitted at the animation frame that actually creates the projectile,
+					// not when the planner merely considers a grenade action.
+					if ( iRealObjectID >= 0 &&
+						 pSoldier->bTeam != gbPlayerNum &&
+						 pSoldier->pThrowParams->ubActionCode == THROW_ARM_ITEM &&
+						 ( Item[usThrownItem].usItemClass & IC_GRENADE ) &&
+						 Item[usThrownItem].ubCursor == TOSSCURS )
+					{
+						int iNearestPlayerId = -1;
+						int iDistanceToNearestPlayer = -1;
+						int iTargetOffsetToNearestPlayer = -1;
+						for ( INT32 iPlayer = gTacticalStatus.Team[ gbPlayerNum ].bFirstID;
+							  iPlayer <= gTacticalStatus.Team[ gbPlayerNum ].bLastID;
+							  ++iPlayer )
+						{
+							SOLDIERTYPE* pPlayer = MercPtrs[ iPlayer ];
+							if ( pPlayer && OK_INSECTOR_MERC( pPlayer ) &&
+								 pPlayer->stats.bLife > 0 &&
+								 !TileIsOutOfBounds( pPlayer->sGridNo ) )
+							{
+								const int iTargetOffset = PythSpacesAway( pSoldier->sTargetGridNo, pPlayer->sGridNo );
+								if ( iNearestPlayerId < 0 || iTargetOffset < iTargetOffsetToNearestPlayer )
+								{
+									iNearestPlayerId = iPlayer;
+									iTargetOffsetToNearestPlayer = iTargetOffset;
+									iDistanceToNearestPlayer = PythSpacesAway( pSoldier->sGridNo, pPlayer->sGridNo );
+								}
+							}
+						}
+
+						int iThrowingTraits = 0;
+						if ( gGameOptions.fNewTraitSystem )
+							iThrowingTraits = NUM_SKILL_TRAITS( pSoldier, THROWING_NT );
+						else
+							iThrowingTraits = NUM_SKILL_TRAITS( pSoldier, THROWING_OT );
+
+						VRAnalyticsTacticalGrenadeThrowLaunched(
+							pSoldier->ubID,
+							pSoldier->bTeam,
+							iRealObjectID,
+							usThrownItem,
+							pSoldier->sGridNo,
+							pSoldier->sTargetGridNo,
+							PythSpacesAway( pSoldier->sGridNo, pSoldier->sTargetGridNo ),
+							iNearestPlayerId,
+							iDistanceToNearestPlayer,
+							iTargetOffsetToNearestPlayer,
+							CalcMaxTossRange( pSoldier, usThrownItem, TRUE, pSoldier->pTempObject ),
+							EffectiveStrength( pSoldier, FALSE ),
+							pSoldier->bBreath,
+							pSoldier->bBreathMax,
+							gAnimControl[ pSoldier->usAnimState ].ubEndHeight,
+							iThrowingTraits,
+							Item[usThrownItem].ubWeight );
+					}
 
 					// OJW - 20091002 - Explosives
 					if (is_networked && is_client)
