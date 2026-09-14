@@ -67,11 +67,16 @@ foreach ($map in $Maps) {
 
     $headerHeight = 32
     $totalHeight = $headerHeight + (($rows | Measure-Object -Property Height -Sum).Sum)
-    $sheet = New-Object System.Drawing.Bitmap ($ColumnWidth * 2), $totalHeight,
-        ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $sheet = New-Object -TypeName System.Drawing.Bitmap -ArgumentList @(
+        ($ColumnWidth * 2),
+        [int]$totalHeight,
+        [System.Drawing.Imaging.PixelFormat]::Format32bppArgb
+    )
     $g = [System.Drawing.Graphics]::FromImage($sheet)
-    $font = New-Object System.Drawing.Font 'Arial', 12, ([System.Drawing.FontStyle]::Bold)
-    $small = New-Object System.Drawing.Font 'Arial', 9
+    $font = New-Object -TypeName System.Drawing.Font -ArgumentList @(
+        'Arial', 12, [System.Drawing.FontStyle]::Bold
+    )
+    $small = New-Object -TypeName System.Drawing.Font -ArgumentList @('Arial', 9)
     $white = [System.Drawing.Brushes]::White
     $black = [System.Drawing.Brushes]::Black
 
