@@ -810,6 +810,24 @@ static BOOLEAN MapFactoryLoadPilotMap( const STR8 pMapName )
 	zTelemetry[sizeof(zTelemetry) - 1] = 0;
 	MapPreviewWriteStatus( zTelemetry );
 
+	const UINT32 uiKeyTypes[] =
+	{
+		FIRSTTEXTURE, SECONDTEXTURE, THIRDTEXTURE, FOURTHTEXTURE, FIFTHTEXTURE, SIXTHTEXTURE, SEVENTHTEXTURE,
+		FIRSTWALL, FIRSTROOF, FIRSTROAD, ROADPIECES,
+		FIRSTOSTRUCT, SECONDOSTRUCT, THIRDOSTRUCT,
+		DEBRISROCKS, DEBRISWOOD, DEBRISWEEDS, DEBRISGRASS, DEBRISMISC
+	};
+	for ( UINT32 k = 0; k < sizeof(uiKeyTypes) / sizeof(uiKeyTypes[0]); ++k )
+	{
+		const UINT32 uiType = uiKeyTypes[k];
+		CHAR8 zSurface[160];
+		_snprintf( zSurface, sizeof(zSurface) - 1,
+			"FACTORY_SURFACE map=%s type=%lu file=%s",
+			pMapName, uiType, TileSurfaceFilenames[uiType] );
+		zSurface[sizeof(zSurface) - 1] = 0;
+		MapPreviewWriteStatus( zSurface );
+	}
+
 	LightReset();
 	LightSpriteRenderAll();
 	return TRUE;
