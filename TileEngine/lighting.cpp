@@ -3689,7 +3689,7 @@ UINT16 CreateTilePaletteTables(HVOBJECT pObj, UINT32 uiTileIndex, BOOLEAN fForce
 
 			//We paid to generate the shade table, so now save it, so we don't have to regenerate it ever
 			//again!
-			if( !gfForceBuildShadeTables && !gpLightColors[0].peRed && !gpLightColors[0].peGreen && !gpLightColors[0].peBlue )
+			if( !gfForceBuildShadeTables && !fForce && !gpLightColors[0].peRed && !gpLightColors[0].peGreen && !gpLightColors[0].peBlue )
 			{
 				SaveShadeTable( pObj, uiTileIndex );
 			}
