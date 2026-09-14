@@ -1906,6 +1906,9 @@ static const CHAR8 * AICombatCalloutName( AI_BATTLE_CALLOUT ubCallout )
 	}
 }
 
+// Semantic callout timing is intentionally independent from uiTauntFinishTimes:
+// the latter throttles legacy/voice taunts and must not discard a queued grenade,
+// medic or withdrawal warning before the visual slot becomes available.
 static void ShowAICombatCalloutNow( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout )
 {
 	CHAR16 zText[320];
@@ -1918,9 +1921,6 @@ static void ShowAICombatCalloutNow( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallo
 	guiLastAIActionPopupTime = GetJA2Clock();
 	gubLastAICombatCalloutEvent[pCiv->ubID] = (UINT8)ubCallout;
 	guiLastAICombatCalloutEventTime[pCiv->ubID] = guiLastAIActionPopupTime;
-	uiTauntFinishTimes[pCiv->ubID] = guiLastAIActionPopupTime +
-		min( gTauntsSettings.sMaxDelay,
-			max( gTauntsSettings.sMinDelay, FindDelayForString( zText ) + gTauntsSettings.sModDelay ) );
 }
 
 void QueueAICombatCallout( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout )
@@ -1950,8 +1950,7 @@ void QueueAICombatCallout( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout )
 	}
 
 	if ( gCivQuoteData.bActive == FALSE &&
-		(guiLastAIActionPopupTime == 0 || (uiNow - guiLastAIActionPopupTime) >= 900) &&
-		uiTauntFinishTimes[pCiv->ubID] <= uiNow )
+		(guiLastAIActionPopupTime == 0 || (uiNow - guiLastAIActionPopupTime) >= 900) )
 	{
 		ShowAICombatCalloutNow( pCiv, ubCallout );
 		return;
@@ -1992,7 +1991,7 @@ static void FlushPendingAICombatCallout()
 	if ( ubSoldierID >= TOTAL_SOLDIERS )
 		return;
 	SOLDIERTYPE *pCiv = MercPtrs[ubSoldierID];
-	if ( !AICombatCalloutSpeakerValid( pCiv ) || uiTauntFinishTimes[pCiv->ubID] > uiNow )
+	if ( !AICombatCalloutSpeakerValid( pCiv ) )
 		return;
 
 	ShowAICombatCalloutNow( pCiv, ubCallout );
