@@ -4,61 +4,94 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$ArchivedBranches = @(
-    "ai/ap-budgeting",
-    "ai/combat-dispersion",
-    "ai/combat-medic-rescue",
-    "ai/covering-fire-cooperation",
-    "ai/deidranna-doctrine",
-    "ai/emergency-casualty-smoke",
-    "ai/fireteam-cohesion",
-    "ai/human-tactical-final",
-    "ai/individual-self-preservation",
-    "ai/legacy-core-modernization",
-    "ai/local-advance-cooperation",
-    "ai/no-weapon-self-preservation",
-    "ai/radio-support-doctrine",
-    "ai/range-aware-positioning",
-    "ai/search-confidence-decay",
-    "ai/shared-enemy-militia-brain",
-    "ai/support-aware-withdrawal",
-    "ai/target-allocation",
-    "ai/team-coordination",
-    "ai/utility-squad-planner",
-    "ai/wound-self-preservation",
-    "ai/wounded-tactical-withdrawal",
-    "final-human-ai-modern-113",
-    "integration/unified-ai-fireteams-doctrine-2026-09-14",
-    "integration/unified-ai-framework-2026-09-14",
-    "integration/unified-strategic-companion-2026-09-14",
-    "consolidation/install-all-2026-09-14",
-    "inactive/strategic-modernization"
-)
+$RegistryPath = Join-Path $PSScriptRoot "AI_BRANCH_REGISTRY.json"
 
 function Test-Ancestor([string]$Older, [string]$Newer) {
     & git merge-base --is-ancestor $Older $Newer 2>$null
     return ($LASTEXITCODE -eq 0)
 }
 
+function Get-CommitSha([string]$Ref) {
+    $value = & git rev-parse --verify $Ref 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return $null
+    }
+    return ($value | Select-Object -First 1).Trim()
+}
+
 Write-Host "AI consolidation audit"
 Write-Host "Canonical: $Canonical"
 
-& git rev-parse --verify $Canonical *> $null
-if ($LASTEXITCODE -ne 0) {
+$canonicalSha = Get-CommitSha $Canonical
+if (-not $canonicalSha) {
     throw "Canonical ref '$Canonical' is unavailable. Fetch origin with full history before running this audit."
 }
 
-$refs = @(& git for-each-ref --format="%(refname:short)" refs/remotes/origin/ai/ refs/remotes/origin/integration/ refs/remotes/origin/consolidation/ refs/remotes/origin/inactive/ refs/remotes/origin/final-human-ai-modern-113) |
-    Where-Object { $_ -and $_ -notmatch '/HEAD$' } |
-    Sort-Object -Unique
+if (-not (Test-Path $RegistryPath)) {
+    throw "AI branch registry is missing: $RegistryPath"
+}
 
-$fragments = @()
+$registry = Get-Content $RegistryPath -Raw | ConvertFrom-Json
+if ($registry.canonical_branch -ne "install/all-2026-09-12") {
+    throw "AI branch registry canonical branch does not match policy."
+}
 
-foreach ($ref in $refs) {
+$registryByName = @{}
+foreach ($entry in $registry.branches) {
+    if ($registryByName.ContainsKey($entry.name)) {
+        throw "Duplicate branch entry in AI registry: $($entry.name)"
+    }
+    $registryByName[$entry.name] = $entry
+}
+
+$failed = $false
+
+Write-Host ""
+Write-Host "Frozen historical AI branches"
+
+foreach ($entry in $registry.branches) {
+    $branch = [string]$entry.name
+    $ref = "origin/$branch"
+    $actualSha = Get-CommitSha $ref
+
+    if (-not $actualSha) {
+        # Deleting an obsolete archive branch is allowed and improves repository hygiene.
+        Write-Host ("ABSENT     {0} [{1}]" -f $branch, $entry.classification)
+        continue
+    }
+
+    if ($actualSha -ne [string]$entry.pinned_sha) {
+        Write-Warning ("ARCHIVE MOVED {0}: pinned={1} actual={2}" -f $branch, $entry.pinned_sha, $actualSha)
+        $failed = $true
+        continue
+    }
+
+    Write-Host ("FROZEN     {0} [{1}]" -f $branch, $entry.classification)
+}
+
+Write-Host ""
+Write-Host "Searching for unregistered AI integration lines"
+
+$allRefs = @(
+    & git for-each-ref --format="%(refname:short)" refs/remotes/origin/
+) | Where-Object { $_ -and $_ -notmatch '/HEAD$' } | Sort-Object -Unique
+
+# Branch names that imply AI architecture, tactical doctrine, Companion/Black Box integration,
+# CQB or strategic-AI work. Non-AI feature branches are deliberately outside this audit.
+$aiBranchPattern = '(?i)(^ai/|ai-|/ai|cqb|companion|strategic|consolidation/install-all)'
+
+foreach ($ref in $allRefs) {
     $branch = $ref -replace '^origin/', ''
 
-    if ($ArchivedBranches -contains $branch) {
-        Write-Host ("ARCHIVE    {0}" -f $branch)
+    if ($branch -eq "install/all-2026-09-12") {
+        continue
+    }
+
+    if ($registryByName.ContainsKey($branch)) {
+        continue
+    }
+
+    if ($branch -notmatch $aiBranchPattern) {
         continue
     }
 
@@ -67,26 +100,16 @@ foreach ($ref in $refs) {
         continue
     }
 
-    if (Test-Ancestor $Canonical $ref) {
-        $state = "AHEAD"
-    }
-    else {
-        $state = "DIVERGED"
-    }
-
-    Write-Warning ("FRAGMENT {0,-8} {1}" -f $state, $branch)
-    $fragments += $branch
-}
-
-if ($fragments.Count -gt 0) {
-    Write-Host ""
-    Write-Host "Unclassified AI fragmentation detected:"
-    $fragments | ForEach-Object { Write-Host " - $_" }
-    Write-Host ""
-    Write-Host "Integrate the unique behaviour into install/all-2026-09-12 or classify the branch as archaeology in UNIFIED_AI_FRAMEWORK.md and this audit."
-    exit 1
+    Write-Warning ("UNREGISTERED AI FRAGMENT: {0}" -f $branch)
+    $failed = $true
 }
 
 Write-Host ""
-Write-Host "PASS: no unclassified AI integration branch exists outside $Canonical."
+if ($failed) {
+    Write-Host "FAIL: AI branch drift or an unregistered integration line was detected."
+    Write-Host "Forward-port unique work into install/all-2026-09-12, then either delete the old branch or deliberately update AI_BRANCH_REGISTRY.json."
+    exit 1
+}
+
+Write-Host "PASS: historical AI branches are frozen and no unregistered AI integration line exists."
 exit 0
