@@ -15076,7 +15076,7 @@ UINT32 SOLDIERTYPE::SoldierDressWound( SOLDIERTYPE *pVictim, INT16 sKitPts, INT1
 	bInitialBleeding = pVictim->bBleeding;
 	// Vengeance: item 1022 is the improvised cloth rag. It uses the normal
 	// first-aid wound path, but is intentionally far slower and more wasteful.
-	fImprovisedRag = (this->inv[ HANDPOS ].exists() && this->inv[ HANDPOS ].usItem == 1022);
+	fImprovisedRag = (this->inv[ HANDPOS ].exists() && ItemIsImprovisedBandage( this->inv[ HANDPOS ].usItem ));
 
 	// in case he has multiple kits in hand, limit influence of kit status to 100%!
 	if (sStatus >= 100)
