@@ -201,6 +201,24 @@ def battle_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     )
     unresolved_ids = [f"{session}:{battle_id}" for session, battle_id in unresolved_keys]
 
+    decision_counts = Counter(
+        (event.get("session"), event.get("battle_id"))
+        for event in events
+        if event.get("layer") == "tactical"
+        and event.get("kind") == "decision_begin"
+        and isinstance(event.get("battle_id"), int)
+    )
+
+    durations: List[float] = []
+    for event in ends:
+        start = starts.get((event.get("session"), event.get("battle_id")))
+        if not start:
+            continue
+        start_minute = start.get("world_minutes")
+        end_minute = event.get("world_minutes")
+        if isinstance(start_minute, (int, float)) and isinstance(end_minute, (int, float)):
+            durations.append(max(0.0, float(end_minute) - float(start_minute)))
+
     player_deltas = [
         float(event.get("player_count_delta", 0))
         for event in ends
@@ -230,6 +248,8 @@ def battle_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         "avg_player_count_delta": safe_mean(player_deltas),
         "avg_enemy_count_delta": safe_mean(enemy_deltas),
         "avg_militia_count_delta": safe_mean(militia_deltas),
+        "avg_duration_minutes": safe_mean(durations),
+        "avg_tactical_decisions": safe_mean(decision_counts.values()),
     }
 
 
@@ -257,6 +277,15 @@ def interaction_summary(
     reinforced_battles = 0
     unreinforced_battles = 0
     reinforcement_sizes: List[float] = []
+    reinforced_decisions: List[float] = []
+    unreinforced_decisions: List[float] = []
+    decision_counts = Counter(
+        (event.get("session"), event.get("battle_id"))
+        for event in events
+        if event.get("layer") == "tactical"
+        and event.get("kind") == "decision_begin"
+        and isinstance(event.get("battle_id"), int)
+    )
     records: List[Dict[str, Any]] = []
 
     for key, start in starts.items():
@@ -288,11 +317,14 @@ def interaction_summary(
             if isinstance(event.get("group_size"), (int, float))
         )
 
+        tactical_decisions = float(decision_counts.get(key, 0))
         if reinforced:
             reinforced_battles += 1
             reinforcement_sizes.append(arrived_troops)
+            reinforced_decisions.append(tactical_decisions)
         else:
             unreinforced_battles += 1
+            unreinforced_decisions.append(tactical_decisions)
 
         result = end.get("result") if end else None
         if result:
@@ -309,6 +341,7 @@ def interaction_summary(
                 "world_minutes": world_minutes,
                 "recent_reinforcement_groups": len(recent),
                 "recent_reinforcement_troops": arrived_troops,
+                "tactical_decisions": tactical_decisions,
                 "result": result,
             }
         )
@@ -329,6 +362,8 @@ def interaction_summary(
         "reinforced_battles": reinforced_battles,
         "unreinforced_battles": unreinforced_battles,
         "avg_recent_reinforcement_troops": safe_mean(reinforcement_sizes),
+        "avg_tactical_decisions_reinforced": safe_mean(reinforced_decisions),
+        "avg_tactical_decisions_unreinforced": safe_mean(unreinforced_decisions),
         "reinforced_player_success_rate": pct(
             reinforced_player_success, reinforced_resolved
         ),
@@ -501,6 +536,8 @@ def comparison_rows(current: Dict[str, Any], baseline: Dict[str, Any]) -> List[T
         ("Battle player success rate %", "battle", "player_success_rate"),
         ("Battle average player-count delta", "battle", "avg_player_count_delta"),
         ("Battle average enemy-count delta", "battle", "avg_enemy_count_delta"),
+        ("Battle average duration minutes", "battle", "avg_duration_minutes"),
+        ("Battle average tactical decisions", "battle", "avg_tactical_decisions"),
         ("Player success after recent enemy reinforcement %", "interaction", "reinforced_player_success_rate"),
         ("Player success without recent enemy reinforcement %", "interaction", "unreinforced_player_success_rate"),
         ("Cover - attack adjusted score", "tactical", "avg_cover_minus_attack_score"),
@@ -676,6 +713,8 @@ def render_markdown(
         f"| Mean player-count delta | {fmt(battle['avg_player_count_delta'])} |",
         f"| Mean enemy-count delta | {fmt(battle['avg_enemy_count_delta'])} |",
         f"| Mean militia-count delta | {fmt(battle['avg_militia_count_delta'])} |",
+        f"| Mean battle duration | {fmt(battle['avg_duration_minutes'])} campaign minutes |",
+        f"| Mean tactical decisions / battle | {fmt(battle['avg_tactical_decisions'])} |",
         "",
         "#### Results",
         "",
@@ -712,6 +751,8 @@ def render_markdown(
         f"| Battles after recent enemy reinforcement | {interaction['reinforced_battles']} |",
         f"| Battles without recent enemy reinforcement | {interaction['unreinforced_battles']} |",
         f"| Mean recently arrived enemy troops | {fmt(interaction['avg_recent_reinforcement_troops'])} |",
+        f"| Mean tactical decisions after reinforcement | {fmt(interaction['avg_tactical_decisions_reinforced'])} |",
+        f"| Mean tactical decisions without reinforcement | {fmt(interaction['avg_tactical_decisions_unreinforced'])} |",
         f"| Player success after recent reinforcement | {interaction['reinforced_player_success_rate']:.1f}% ({interaction['reinforced_resolved']} resolved) |",
         f"| Player success without recent reinforcement | {interaction['unreinforced_player_success_rate']:.1f}% ({interaction['unreinforced_resolved']} resolved) |",
         "",
