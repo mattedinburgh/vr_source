@@ -3,7 +3,7 @@ name: Autonomous JA2 map visual QA
 on:
   push:
     branches:
-      - install/all-2026-09-12
+      - a3/hand-authored-v2
     paths:
       - 'MapPreviewTrigger/A3_RENDER.txt'
       - '.github/workflows/autonomous-map-preview.yml'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: ja2-render-shared
+  group: a3-hand-authored-render
   cancel-in-progress: true
 
 jobs:
@@ -454,7 +454,7 @@ jobs:
           for ($attempt = 1; $attempt -le 5; $attempt++) {
             & $git pull --rebase origin install/all-2026-09-12
             if ($LASTEXITCODE -eq 0) {
-              & $git push origin HEAD:install/all-2026-09-12
+              & $git push origin HEAD:a3/hand-authored-v2
               if ($LASTEXITCODE -eq 0) { exit 0 }
             }
             Start-Sleep -Seconds ($attempt * 2)
