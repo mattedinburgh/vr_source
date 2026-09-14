@@ -20387,6 +20387,13 @@ BOOLEAN SOLDIERTYPE::OrderArtilleryStrike( UINT32 usSectorNr, INT32 sTargetGridN
 			usHeShellIndex = findHeShellIndex;
 		}
 
+		// Match current 1.13: never let a calculated barrage outlive its signal marker.
+		// This caps unusually large supporting formations instead of allowing excessive
+		// back-to-back waves simply because the adjacent sector contains many troops.
+		const INT16 numwavesMax = (INT16)Explosive[Item[usSignalShellIndex].ubClassIndex].ubDuration;
+		if ( numwavesMax > 0 )
+			numwaves = min( numwaves, numwavesMax );
+
 		// send a signal shell first. This marks the area that the barrage will cover.
 		ArtilleryStrike( usSignalShellIndex, this->ubID + 2, sStartingGridNo, sTargetGridNo );
 
