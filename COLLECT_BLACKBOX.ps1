@@ -45,6 +45,10 @@ function Copy-NewestMatches {
 
 # Core recorder evidence. Preserve current and rotated runs.
 @(
+    'VR_BlackBox.jsonl',
+    'VR_Companion_Report.md',
+    'VR_Companion_Summary.json',
+    'VR_Analytics_Experiment.txt',
     'BlackBox_LastRun.log',
     'BlackBox_PreviousRun.log',
     'BlackBox_PreviousRun_2.log',
