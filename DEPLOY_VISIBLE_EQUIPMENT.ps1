@@ -22,6 +22,8 @@ $VrRaw = "https://raw.githubusercontent.com/mattedinburgh/vr_gamedir/$VrRef/Data
 # same filenames and bytes. Do not deploy against a moving upstream master.
 $UpstreamRef = "bdcf501e6b4db072933357a71f97243b7ab759e1"
 $UpstreamRaw = "https://raw.githubusercontent.com/1dot13/gamedir/$UpstreamRef/Data"
+$Upstream113Raw = "https://raw.githubusercontent.com/1dot13/gamedir/$UpstreamRef/Data-1.13"
+$VrGameRaw = "https://raw.githubusercontent.com/mattedinburgh/vr_gamedir/$VrRef/Data-AIMv53"
 $UpstreamApi = "https://api.github.com/repos/1dot13/gamedir"
 
 Write-Host "Vengeance visible-equipment deployment"
@@ -132,6 +134,259 @@ foreach ($relative in $configFiles) {
     $destination = Join-Path $TableRoot $relative
     Get-UrlFile -Url "$VrRaw/$urlRel" -Destination $destination
 }
+
+
+# Cross-reference the upstream 1.13 item IDs used by Filters.xml against the
+# actual AIMv53 item table used by this Vengeance install.  Never assume an
+# upstream numeric uiIndex still means the same object.
+function Normalize-EquipmentItemName {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return "" }
+
+    $s = $Value.Trim().ToLowerInvariant().Normalize([Text.NormalizationForm]::FormD)
+    $builder = New-Object Text.StringBuilder
+    foreach ($ch in $s.ToCharArray()) {
+        if ([Globalization.CharUnicodeInfo]::GetUnicodeCategory($ch) -ne [Globalization.UnicodeCategory]::NonSpacingMark) {
+            [void]$builder.Append($ch)
+        }
+    }
+
+    $s = $builder.ToString().Replace("&", " and ")
+    $s = [regex]::Replace($s, '[^a-z0-9]+', ' ')
+    return [regex]::Replace($s.Trim(), '\s+', ' ')
+}
+
+function Read-EquipmentItemCatalog {
+    param([Parameter(Mandatory=$true)][string]$Path)
+
+    [xml]$doc = [System.IO.File]::ReadAllText($Path)
+    $byId = @{}
+    $lookups = @{
+        Name = @{}
+        Long = @{}
+        BR = @{}
+    }
+
+    foreach ($node in $doc.ITEMLIST.ITEM) {
+        $id = 0
+        if (-not [int]::TryParse([string]$node.uiIndex, [ref]$id)) { continue }
+
+        $record = [pscustomobject]@{
+            Id = $id
+            Name = [string]$node.szItemName
+            Long = [string]$node.szLongItemName
+            BR = [string]$node.szBRName
+            ItemClass = [string]$node.usItemClass
+        }
+        $byId[$id] = $record
+
+        foreach ($spec in @(
+            @("Name", $record.Name),
+            @("Long", $record.Long),
+            @("BR", $record.BR)
+        )) {
+            $key = Normalize-EquipmentItemName $spec[1]
+            if (-not $key) { continue }
+            $table = $lookups[$spec[0]]
+            if (-not $table.ContainsKey($key)) {
+                $table[$key] = New-Object System.Collections.ArrayList
+            }
+            if (-not $table[$key].Contains($id)) {
+                [void]$table[$key].Add($id)
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        ById = $byId
+        Lookups = $lookups
+    }
+}
+
+function Test-EquipmentItemSemanticMatch {
+    param($A, $B)
+    if ($null -eq $A -or $null -eq $B) { return $false }
+
+    foreach ($pair in @(
+        @($A.Long, $B.Long),
+        @($A.BR, $B.BR),
+        @($A.Name, $B.Name)
+    )) {
+        $left = Normalize-EquipmentItemName $pair[0]
+        $right = Normalize-EquipmentItemName $pair[1]
+        if ($left -and $left -eq $right) { return $true }
+    }
+    return $false
+}
+
+function Resolve-EquipmentTargetIds {
+    param(
+        [int]$SourceId,
+        $SourceCatalog,
+        $TargetCatalog
+    )
+
+    if (-not $SourceCatalog.ById.ContainsKey($SourceId)) {
+        # Target-only AIMNAS/Vengeance IDs are deliberately left untouched.
+        return @($SourceId)
+    }
+
+    $src = $SourceCatalog.ById[$SourceId]
+    if ($TargetCatalog.ById.ContainsKey($SourceId) -and
+        (Test-EquipmentItemSemanticMatch $src $TargetCatalog.ById[$SourceId])) {
+        return @($SourceId)
+    }
+
+    $candidates = New-Object "System.Collections.Generic.HashSet[int]"
+    foreach ($spec in @(
+        @("Long", $src.Long),
+        @("BR", $src.BR),
+        @("Name", $src.Name)
+    )) {
+        $key = Normalize-EquipmentItemName $spec[1]
+        if (-not $key) { continue }
+        $table = $TargetCatalog.Lookups[$spec[0]]
+        if ($table.ContainsKey($key)) {
+            foreach ($id in $table[$key]) { [void]$candidates.Add([int]$id) }
+        }
+    }
+
+    if ($candidates.Count -eq 0) { return @() }
+
+    $bestScore = -1
+    $best = New-Object System.Collections.ArrayList
+    foreach ($id in $candidates) {
+        $dst = $TargetCatalog.ById[$id]
+        $score = 0
+        if ((Normalize-EquipmentItemName $src.Long) -and
+            (Normalize-EquipmentItemName $src.Long) -eq (Normalize-EquipmentItemName $dst.Long)) { $score += 16 }
+        if ((Normalize-EquipmentItemName $src.BR) -and
+            (Normalize-EquipmentItemName $src.BR) -eq (Normalize-EquipmentItemName $dst.BR)) { $score += 8 }
+        if ((Normalize-EquipmentItemName $src.Name) -and
+            (Normalize-EquipmentItemName $src.Name) -eq (Normalize-EquipmentItemName $dst.Name)) { $score += 4 }
+        if ($src.ItemClass -and $src.ItemClass -eq $dst.ItemClass) { $score += 2 }
+
+        if ($score -gt $bestScore) {
+            $bestScore = $score
+            $best.Clear()
+            [void]$best.Add([int]$id)
+        }
+        elseif ($score -eq $bestScore) {
+            [void]$best.Add([int]$id)
+        }
+    }
+
+    return @($best | Sort-Object -Unique)
+}
+
+function Add-IdsToNamedFilter {
+    param(
+        [Parameter(Mandatory=$true)][xml]$Document,
+        [Parameter(Mandatory=$true)][string]$FilterName,
+        [Parameter(Mandatory=$true)][string]$TagName,
+        [Parameter(Mandatory=$true)][int[]]$Ids
+    )
+
+    $filter = $Document.Filters.Filter | Where-Object { $_.name -eq $FilterName } | Select-Object -First 1
+    if ($null -eq $filter) { throw "LOBOT filter not found: $FilterName" }
+
+    $node = $filter.SelectSingleNode(".//$TagName")
+    if ($null -eq $node) { throw "LOBOT criterion $TagName not found in filter $FilterName" }
+
+    $all = New-Object "System.Collections.Generic.HashSet[int]"
+    foreach ($token in ([string]$node.InnerText -split '[,\s]+')) {
+        $n = 0
+        if ([int]::TryParse($token, [ref]$n)) { [void]$all.Add($n) }
+    }
+    foreach ($id in $Ids) { [void]$all.Add([int]$id) }
+    $node.InnerText = (@($all) | Sort-Object) -join ", "
+}
+
+Write-Host "Cross-referencing 1.13 equipment IDs against AIMv53..."
+
+$sourceItemsTemp = Join-Path $env:TEMP "vr_lobot_source_items_$PID.xml"
+$targetItemsTemp = $null
+try {
+    Get-UrlFile -Url "$Upstream113Raw/TableData/Items/Items.xml" -Destination $sourceItemsTemp
+
+    $targetItemsPath = Join-Path $GameRoot "Data-AIMv53\TableData\Items\Items.xml"
+    if (-not (Test-Path $targetItemsPath)) {
+        $targetItemsTemp = Join-Path $env:TEMP "vr_lobot_target_items_$PID.xml"
+        Get-UrlFile -Url "$VrGameRaw/TableData/Items/Items.xml" -Destination $targetItemsTemp
+        $targetItemsPath = $targetItemsTemp
+        Write-Host "AIMv53 item table source       : pinned vr_gamedir"
+    }
+    else {
+        Write-Host "AIMv53 item table source       : local game install"
+    }
+
+    $sourceCatalog = Read-EquipmentItemCatalog $sourceItemsTemp
+    $targetCatalog = Read-EquipmentItemCatalog $targetItemsPath
+
+    $filtersPath = Join-Path $TableRoot "Filters.xml"
+    $filtersText = [System.IO.File]::ReadAllText($filtersPath)
+    $inventoryTags = @(
+        "HELMETPOS","VESTPOS","LEGPOS","HEAD1POS","HEAD2POS","HANDPOS","SECONDHANDPOS",
+        "VESTPOCKPOS","LTHIGHPOCKPOS","RTHIGHPOCKPOS","CPACKPOCKPOS","BPACKPOCKPOS",
+        "GUNSLINGPOCKPOS","KNIFEPOCKPOS",
+        "HELMETPOSATTACHMENT0","HELMETPOSATTACHMENT1","HELMETPOSATTACHMENT2","HELMETPOSATTACHMENT3",
+        "LEGPOSATTACHMENT0","LEGPOSATTACHMENT1","LEGPOSATTACHMENT2","LEGPOSATTACHMENT3",
+        "VESTPOSATTACHMENT0","VESTPOSATTACHMENT1","VESTPOSATTACHMENT2","VESTPOSATTACHMENT3"
+    )
+    $tagAlternation = ($inventoryTags | ForEach-Object { [regex]::Escape($_) }) -join "|"
+    $criterionPattern = "(?is)<(?<tag>$tagAlternation)(?<attrs>\b[^>]*)>(?<ids>[^<]*)</\k<tag>>"
+
+    $changedIds = 0
+    $unresolvedIds = New-Object "System.Collections.Generic.HashSet[int]"
+    $filtersText = [regex]::Replace($filtersText, $criterionPattern, {
+        param($m)
+
+        $mapped = New-Object "System.Collections.Generic.HashSet[int]"
+        foreach ($token in ($m.Groups["ids"].Value -split '[,\s]+')) {
+            $sourceId = 0
+            if (-not [int]::TryParse($token, [ref]$sourceId)) { continue }
+
+            $resolved = @(Resolve-EquipmentTargetIds $sourceId $sourceCatalog $targetCatalog)
+            if ($resolved.Count -eq 0) {
+                [void]$unresolvedIds.Add($sourceId)
+                [void]$mapped.Add(65535)
+                $changedIds++
+                continue
+            }
+
+            foreach ($targetId in $resolved) {
+                [void]$mapped.Add([int]$targetId)
+                if ([int]$targetId -ne $sourceId) { $changedIds++ }
+            }
+        }
+
+        $newIds = (@($mapped) | Sort-Object) -join ", "
+        return "<$($m.Groups["tag"].Value)$($m.Groups["attrs"].Value)>$newIds</$($m.Groups["tag"].Value)>"
+    })
+
+    [System.IO.File]::WriteAllText($filtersPath, $filtersText, (New-Object System.Text.UTF8Encoding($false)))
+
+    # AIMNAS-only equipment has no upstream 1.13 ID to translate.  Map those
+    # items explicitly to the nearest stock LOBOT silhouette.
+    [xml]$filtersDoc = [System.IO.File]::ReadAllText($filtersPath)
+    Add-IdsToNamedFilter $filtersDoc "ZylonVest" "VESTPOS" @(2539,2540)
+    Add-IdsToNamedFilter $filtersDoc "KevlarVest" "VESTPOS" @(2527,2528,2529)
+    Add-IdsToNamedFilter $filtersDoc "SpectraVest" "VESTPOS" @(2523)
+    Add-IdsToNamedFilter $filtersDoc "SWATHelmet" "HELMETPOS" @(2531)
+    $filtersDoc.Save($filtersPath)
+
+    Write-Host ("Cross-reference ID rewrites   : {0}" -f $changedIds)
+    Write-Host ("Unmatched upstream item IDs   : {0}" -f $unresolvedIds.Count)
+    if ($unresolvedIds.Count -gt 0) {
+        Write-Host ("  safely disabled (65535)     : {0}" -f ((@($unresolvedIds) | Sort-Object) -join ", "))
+    }
+    Write-Host "AIMNAS armour mappings        : FrackTac, Polyurethane, Zylon, Ballistic Mask"
+}
+finally {
+    if (Test-Path $sourceItemsTemp) { Remove-Item $sourceItemsTemp -Force -ErrorAction SilentlyContinue }
+    if ($targetItemsTemp -and (Test-Path $targetItemsTemp)) { Remove-Item $targetItemsTemp -Force -ErrorAction SilentlyContinue }
+}
+
 
 # LOBOT LayerProp palette attributes are not cosmetic metadata: 1.13 uses
 # these palette tables to recolour equipment sprites.  Without them the raw
