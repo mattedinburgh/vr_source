@@ -3197,7 +3197,7 @@ void ScrollBackground(UINT32 uiDirection, INT16 sScrollXIncrement, INT16 sScroll
 #define OCCLUSION_BUBBLE_CLASSIFY_RADIUS_X 168
 #define OCCLUSION_BUBBLE_CLASSIFY_RADIUS_Y 118
 #define OCCLUSION_BUBBLE_CLIP_BAND_HEIGHT  4
-#define OCCLUSION_BUBBLE_MAX_CLIP_RECTS    64
+#define OCCLUSION_BUBBLE_MAX_CLIP_RECTS    128
 #define OCCLUSION_BUBBLE_MAX_MARKED_GRIDS  ( ( OCCLUSION_BUBBLE_SCAN_RADIUS * 2 + 1 ) * ( OCCLUSION_BUBBLE_SCAN_RADIUS * 2 + 1 ) )
 
 static INT32  gsOcclusionBubbleLastGridNo = NOWHERE;
@@ -3377,6 +3377,48 @@ static BOOLEAN AddOcclusionBubbleClipRect(
 	return TRUE;
 }
 
+static BOOLEAN GetOcclusionBubbleSpriteBounds(
+	HVOBJECT hVObject, INT16 sXPos, INT16 sYPos, UINT16 usImageIndex,
+	INT32 *piLeft, INT32 *piTop, INT32 *piRight, INT32 *piBottom )
+{
+	if ( hVObject == NULL || piLeft == NULL || piTop == NULL ||
+		 piRight == NULL || piBottom == NULL )
+	{
+		return FALSE;
+	}
+
+	ETRLEObject *pTrav = &( hVObject->pETRLEObject[ usImageIndex ] );
+	*piLeft = __max(
+		(INT32)gClippingRect.iLeft, (INT32)sXPos + (INT32)pTrav->sOffsetX );
+	*piTop = __max(
+		(INT32)gClippingRect.iTop, (INT32)sYPos + (INT32)pTrav->sOffsetY );
+	*piRight = __min(
+		(INT32)gClippingRect.iRight,
+		(INT32)sXPos + (INT32)pTrav->sOffsetX + (INT32)pTrav->usWidth );
+	*piBottom = __min(
+		(INT32)gClippingRect.iBottom,
+		(INT32)sYPos + (INT32)pTrav->sOffsetY + (INT32)pTrav->usHeight );
+
+	return *piRight > *piLeft && *piBottom > *piTop;
+}
+
+static INT32 OcclusionBubbleEllipseHalfWidthAtY(
+	INT32 iY, INT32 iRadiusX, INT32 iRadiusY )
+{
+	if ( iRadiusX <= 0 || iRadiusY <= 0 )
+		return 0;
+
+	const double dY =
+		( (double)iY - (double)gsOcclusionBubbleScreenCenterY ) /
+		(double)iRadiusY;
+	const double dInside = 1.0 - dY * dY;
+
+	if ( dInside <= 0.0 )
+		return 0;
+
+	return (INT32)( (double)iRadiusX * sqrt( dInside ) + 0.5 );
+}
+
 static UINT8 BuildOcclusionBubbleOutsideEllipseClipRects(
 	HVOBJECT hVObject, INT16 sXPos, INT16 sYPos, UINT16 usImageIndex,
 	INT32 iRadiusX, INT32 iRadiusY,
@@ -3385,20 +3427,16 @@ static UINT8 BuildOcclusionBubbleOutsideEllipseClipRects(
 	if ( hVObject == NULL || pRects == NULL || ubMaxRects == 0 )
 		return 0;
 
-	ETRLEObject *pTrav = &( hVObject->pETRLEObject[ usImageIndex ] );
-	const INT32 iSpriteLeft = __max(
-		(INT32)gClippingRect.iLeft, (INT32)sXPos + (INT32)pTrav->sOffsetX );
-	const INT32 iSpriteTop = __max(
-		(INT32)gClippingRect.iTop, (INT32)sYPos + (INT32)pTrav->sOffsetY );
-	const INT32 iSpriteRight = __min(
-		(INT32)gClippingRect.iRight,
-		(INT32)sXPos + (INT32)pTrav->sOffsetX + (INT32)pTrav->usWidth );
-	const INT32 iSpriteBottom = __min(
-		(INT32)gClippingRect.iBottom,
-		(INT32)sYPos + (INT32)pTrav->sOffsetY + (INT32)pTrav->usHeight );
-
-	if ( iSpriteRight <= iSpriteLeft || iSpriteBottom <= iSpriteTop )
+	INT32 iSpriteLeft = 0;
+	INT32 iSpriteTop = 0;
+	INT32 iSpriteRight = 0;
+	INT32 iSpriteBottom = 0;
+	if ( !GetOcclusionBubbleSpriteBounds(
+			hVObject, sXPos, sYPos, usImageIndex,
+			&iSpriteLeft, &iSpriteTop, &iSpriteRight, &iSpriteBottom ) )
+	{
 		return 0;
+	}
 
 	UINT8 ubCount = 0;
 
@@ -3492,6 +3530,7 @@ static void BlitOcclusionBubble8BitWallZStrip(
 	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
 	UINT16 usImageIndex, INT16 sZStripIndex )
 {
+	// Zone 1: wall remains fully opaque outside the outer ellipse.
 	SGPRect ClipRects[ OCCLUSION_BUBBLE_MAX_CLIP_RECTS ];
 	const UINT8 ubCount = BuildOcclusionBubbleOutsideEllipseClipRects(
 		hVObject, sXPos, sYPos, usImageIndex,
@@ -3503,6 +3542,80 @@ static void BlitOcclusionBubble8BitWallZStrip(
 		Blt8BPPDataTo16BPPBufferTransZIncClipZSameZBurnsThrough(
 			pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
 			hVObject, sXPos, sYPos, usImageIndex, &ClipRects[ ubRect ], sZStripIndex );
+	}
+
+	// Zone 2: half-tone feather between outer and inner ellipses.
+	// Zone 3 (inside inner ellipse) is deliberately not drawn.
+	INT32 iLeft = 0, iTop = 0, iRight = 0, iBottom = 0;
+	if ( !GetOcclusionBubbleSpriteBounds(
+			hVObject, sXPos, sYPos, usImageIndex,
+			&iLeft, &iTop, &iRight, &iBottom ) )
+	{
+		return;
+	}
+
+	INT32 iY = __max(
+		iTop, (INT32)gsOcclusionBubbleScreenCenterY - OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+	const INT32 iEndY = __min(
+		iBottom, (INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+
+	if ( ( iY ^ gsOcclusionBubbleScreenCenterY ) & 1 )
+		++iY;
+
+	for ( ; iY < iEndY; iY += 2 )
+	{
+		const INT32 iOuterHalf = OcclusionBubbleEllipseHalfWidthAtY(
+			iY, OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+		if ( iOuterHalf <= 0 )
+			continue;
+
+		const INT32 iInnerHalf = OcclusionBubbleEllipseHalfWidthAtY(
+			iY, OCCLUSION_BUBBLE_INNER_RADIUS_X, OCCLUSION_BUBBLE_INNER_RADIUS_Y );
+		const INT32 iOuterLeft = __max(
+			iLeft, (INT32)gsOcclusionBubbleScreenCenterX - iOuterHalf );
+		const INT32 iOuterRight = __min(
+			iRight, (INT32)gsOcclusionBubbleScreenCenterX + iOuterHalf );
+
+		SGPRect ClipRect;
+		ClipRect.iTop = iY;
+		ClipRect.iBottom = __min( iY + 1, iBottom );
+
+		if ( iInnerHalf > 0 )
+		{
+			const INT32 iInnerLeft =
+				(INT32)gsOcclusionBubbleScreenCenterX - iInnerHalf;
+			const INT32 iInnerRight =
+				(INT32)gsOcclusionBubbleScreenCenterX + iInnerHalf;
+
+			ClipRect.iLeft = iOuterLeft;
+			ClipRect.iRight = __min( iOuterRight, iInnerLeft );
+			if ( ClipRect.iRight > ClipRect.iLeft )
+			{
+				Blt8BPPDataTo16BPPBufferTransZIncClipZSameZBurnsThrough(
+					pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
+					hVObject, sXPos, sYPos, usImageIndex, &ClipRect, sZStripIndex );
+			}
+
+			ClipRect.iLeft = __max( iOuterLeft, iInnerRight );
+			ClipRect.iRight = iOuterRight;
+			if ( ClipRect.iRight > ClipRect.iLeft )
+			{
+				Blt8BPPDataTo16BPPBufferTransZIncClipZSameZBurnsThrough(
+					pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
+					hVObject, sXPos, sYPos, usImageIndex, &ClipRect, sZStripIndex );
+			}
+		}
+		else
+		{
+			ClipRect.iLeft = iOuterLeft;
+			ClipRect.iRight = iOuterRight;
+			if ( ClipRect.iRight > ClipRect.iLeft )
+			{
+				Blt8BPPDataTo16BPPBufferTransZIncClipZSameZBurnsThrough(
+					pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
+					hVObject, sXPos, sYPos, usImageIndex, &ClipRect, sZStripIndex );
+			}
+		}
 	}
 }
 
@@ -3525,6 +3638,84 @@ static void BlitOcclusionBubbleTrueColorWallZStrip(
 			hVObject, sXPos, sYPos, usImageIndex, &ClipRects[ ubRect ],
 			ubShadeLevel, sZStripIndex, Z_STRIP_DELTA_Y,
 			fSameZBurnsThrough, FALSE, TRUE, ubViewSoftening );
+	}
+
+	INT32 iLeft = 0, iTop = 0, iRight = 0, iBottom = 0;
+	if ( !GetOcclusionBubbleSpriteBounds(
+			hVObject, sXPos, sYPos, usImageIndex,
+			&iLeft, &iTop, &iRight, &iBottom ) )
+	{
+		return;
+	}
+
+	INT32 iY = __max(
+		iTop, (INT32)gsOcclusionBubbleScreenCenterY - OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+	const INT32 iEndY = __min(
+		iBottom, (INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+
+	if ( ( iY ^ gsOcclusionBubbleScreenCenterY ) & 1 )
+		++iY;
+
+	for ( ; iY < iEndY; iY += 2 )
+	{
+		const INT32 iOuterHalf = OcclusionBubbleEllipseHalfWidthAtY(
+			iY, OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+		if ( iOuterHalf <= 0 )
+			continue;
+
+		const INT32 iInnerHalf = OcclusionBubbleEllipseHalfWidthAtY(
+			iY, OCCLUSION_BUBBLE_INNER_RADIUS_X, OCCLUSION_BUBBLE_INNER_RADIUS_Y );
+		const INT32 iOuterLeft = __max(
+			iLeft, (INT32)gsOcclusionBubbleScreenCenterX - iOuterHalf );
+		const INT32 iOuterRight = __min(
+			iRight, (INT32)gsOcclusionBubbleScreenCenterX + iOuterHalf );
+
+		SGPRect ClipRect;
+		ClipRect.iTop = iY;
+		ClipRect.iBottom = __min( iY + 1, iBottom );
+
+		if ( iInnerHalf > 0 )
+		{
+			const INT32 iInnerLeft =
+				(INT32)gsOcclusionBubbleScreenCenterX - iInnerHalf;
+			const INT32 iInnerRight =
+				(INT32)gsOcclusionBubbleScreenCenterX + iInnerHalf;
+
+			ClipRect.iLeft = iOuterLeft;
+			ClipRect.iRight = __min( iOuterRight, iInnerLeft );
+			if ( ClipRect.iRight > ClipRect.iLeft )
+			{
+				BltTrueColorDataTo16BPPBufferZStrip(
+					pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
+					hVObject, sXPos, sYPos, usImageIndex, &ClipRect,
+					ubShadeLevel, sZStripIndex, Z_STRIP_DELTA_Y,
+					fSameZBurnsThrough, FALSE, TRUE, ubViewSoftening );
+			}
+
+			ClipRect.iLeft = __max( iOuterLeft, iInnerRight );
+			ClipRect.iRight = iOuterRight;
+			if ( ClipRect.iRight > ClipRect.iLeft )
+			{
+				BltTrueColorDataTo16BPPBufferZStrip(
+					pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
+					hVObject, sXPos, sYPos, usImageIndex, &ClipRect,
+					ubShadeLevel, sZStripIndex, Z_STRIP_DELTA_Y,
+					fSameZBurnsThrough, FALSE, TRUE, ubViewSoftening );
+			}
+		}
+		else
+		{
+			ClipRect.iLeft = iOuterLeft;
+			ClipRect.iRight = iOuterRight;
+			if ( ClipRect.iRight > ClipRect.iLeft )
+			{
+				BltTrueColorDataTo16BPPBufferZStrip(
+					pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
+					hVObject, sXPos, sYPos, usImageIndex, &ClipRect,
+					ubShadeLevel, sZStripIndex, Z_STRIP_DELTA_Y,
+					fSameZBurnsThrough, FALSE, TRUE, ubViewSoftening );
+			}
+		}
 	}
 }
 
