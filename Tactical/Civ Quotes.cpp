@@ -1078,6 +1078,7 @@ void InitCivQuoteSystem( )
 	gCivQuoteData.bActive				= FALSE;
 	gCivQuoteData.iVideoOverlay	= -1;
 	gCivQuoteData.iDialogueBox	= -1;
+	guiLastAIActionPopupTime = 0;
 }
 
 //--------------------------------------------------------------
@@ -1101,8 +1102,9 @@ BOOLEAN LoadCivQuotesFromLoadGameFile( HWFILE hFile )
 {
 	UINT32	uiNumBytesRead;
 
-	// anv: reset uiTauntFinishTimes after game is loaded (so enemies can taunt after guiBaseJA2Clock is decreased)
+	// anv: reset taunt timers after game is loaded (guiBaseJA2Clock can decrease)
 	memset( &uiTauntFinishTimes, 0, sizeof( uiTauntFinishTimes ) );
+	guiLastAIActionPopupTime = 0;
 
 	FileRead( hFile, &gCivQuotes, sizeof( gCivQuotes ), &uiNumBytesRead );
 	if( uiNumBytesRead != sizeof( gCivQuotes ) )
@@ -1345,7 +1347,7 @@ static BOOLEAN BuildVoiceTauntPopupText( TAUNTTYPE iTauntType, STR16 zText )
 
 	switch ( iTauntType )
 	{
-		case TAUNT_FIRE_GUN: swprintf( zText, L"\"Contact!\"" ); return TRUE;
+		case TAUNT_FIRE_GUN: swprintf( zText, L"\"Engaging!\"" ); return TRUE;
 		case TAUNT_FIRE_LAUNCHER: swprintf( zText, L"\"Launcher! Get down!\"" ); return TRUE;
 		case TAUNT_THROW_GRENADE: swprintf( zText, L"\"Grenade! Take cover!\"" ); return TRUE;
 		case TAUNT_OUT_OF_AMMO: swprintf( zText, L"\"Out of ammo! Cover me!\"" ); return TRUE;
@@ -1443,10 +1445,11 @@ void ShowAIActionPopup( SOLDIERTYPE *pCiv, INT8 bAction )
 {
 	CHAR16 zActionText[320];
 	UINT32 uiNow;
+	UINT8 ubChance = 0;
 
 	if ( is_networked || pCiv == NULL )
 		return;
-	if ( gGameSettings.fOptions[TOPTION_ALLOW_TAUNTS] == FALSE )
+	if ( gGameSettings.fOptions[TOPTION_ALLOW_TAUNTS] == FALSE || gTauntsSettings.fTauntShowPopupBox == FALSE )
 		return;
 	if ( !( gTacticalStatus.uiFlags & INCOMBAT ) )
 		return;
@@ -1457,14 +1460,41 @@ void ShowAIActionPopup( SOLDIERTYPE *pCiv, INT8 bAction )
 	if ( gCivQuoteData.bActive == TRUE )
 		return;
 
+	// Important manoeuvres should usually be audible/visible; routine movement
+	// should only occasionally create chatter. The message still always
+	// describes the action the AI actually selected.
+	switch ( bAction )
+	{
+		case AI_ACTION_FLANK_LEFT:
+		case AI_ACTION_FLANK_RIGHT:
+		case AI_ACTION_WITHDRAW:
+			ubChance = 75;
+			break;
+		case AI_ACTION_TAKE_COVER:
+			ubChance = 35;
+			break;
+		case AI_ACTION_GET_CLOSER:
+			ubChance = 25;
+			break;
+		default:
+			return;
+	}
+
+	if ( Random( 100 ) >= ubChance )
+		return;
+
 	uiNow = GetJA2Clock();
 	if ( guiLastAIActionPopupTime != 0 && ( uiNow - guiLastAIActionPopupTime ) < 1200 )
+		return;
+	if ( uiTauntFinishTimes[pCiv->ubID] > uiNow )
 		return;
 	if ( !BuildAIActionPopupText( bAction, zActionText ) )
 		return;
 
 	ShowTauntPopupBox( pCiv, zActionText );
 	guiLastAIActionPopupTime = uiNow;
+	uiTauntFinishTimes[pCiv->ubID] = uiNow + min( gTauntsSettings.sMaxDelay,
+		max( gTauntsSettings.sMinDelay, FindDelayForString( zActionText ) + gTauntsSettings.sModDelay ) );
 }
 
 // SANDRO - soldier taunts 
