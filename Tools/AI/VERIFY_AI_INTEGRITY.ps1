@@ -11,6 +11,7 @@ $decideAction = Join-Path $tacticalAI "DecideAction.cpp"
 $frameworkDoc = Join-Path $root "UNIFIED_AI_FRAMEWORK.md"
 $cqbSource = Join-Path $tacticalAI "CQBBuildingDoctrine.cpp"
 $cqbHeader = Join-Path $tacticalAI "CQBBuildingDoctrine.h"
+$cqbProject = Join-Path $tacticalAI "TacticalAI_VS2013.vcxproj"
 
 function Fail([string]$Message) {
     Write-Error $Message
@@ -59,6 +60,7 @@ $decideText = Read-Text $decideAction
 $frameworkText = Read-Text $frameworkDoc
 $cqbText = Read-Text $cqbSource
 $cqbHeaderText = Read-Text $cqbHeader
+$cqbProjectText = Read-Text $cqbProject
 
 Write-Host "Unified AI integrity audit"
 Write-Host "Repository: $root"
@@ -175,18 +177,71 @@ if ($frameworkText -notmatch "(?i)single") {
     Fail "UNIFIED_AI_FRAMEWORK.md no longer clearly describes a single-source AI architecture"
 }
 
-# 6. Dormant CQB module must remain compiled-but-disabled until explicit activation review.
+# 6. Active CQB module must remain integrated through the canonical decision hierarchy.
 if (-not $cqbText.Contains("BOOLEAN VRCQB_IsRuntimeEnabled(void)")) {
-    Fail "Dormant CQB module is missing its runtime gate."
+    Fail "CQB module is missing its runtime gate."
 }
-if ($cqbText -notmatch "BOOLEAN\s+VRCQB_IsRuntimeEnabled\s*\(void\)\s*\{\s*return\s+FALSE\s*;\s*\}") {
-    Fail "CQB runtime gate no longer hard-returns FALSE. Activation requires explicit integration review."
+if ($cqbText -notmatch "BOOLEAN\s+VRCQB_IsRuntimeEnabled\s*\(void\)\s*\{\s*return\s+TRUE\s*;\s*\}") {
+    Fail "CQB runtime gate is not enabled after explicit activation approval."
 }
-if ($decideText.Contains("VRCQB_")) {
-    Fail "DecideAction.cpp references VRCQB_* while CQB is classified as dormant staging."
+
+$cqbAdapterDefs = [regex]::Matches(
+    $cqbText,
+    "(?m)^\s*INT8\s+VRCQB_DecideAction\s*\("
+).Count
+if ($cqbAdapterDefs -ne 1) {
+    Fail "Expected exactly one VRCQB_DecideAction definition; found $cqbAdapterDefs."
 }
-if ($cqbText.Contains("VRCQB_DecideAction") -or $cqbHeaderText.Contains("VRCQB_DecideAction")) {
-    Fail "Dormant CQB staging exposes a runtime decision adapter before activation review."
+
+$cqbAdapterDecls = Count-HeaderDeclarations "VRCQB_DecideAction" $cqbHeaderText
+if ($cqbAdapterDecls -ne 1) {
+    Fail "Expected exactly one VRCQB_DecideAction declaration in CQBBuildingDoctrine.h; found $cqbAdapterDecls."
+}
+
+$cqbCallCount = [regex]::Matches($decideText, "VRCQB_DecideAction\s*\(").Count
+if ($cqbCallCount -ne 2) {
+    Fail "Expected exactly two CQB runtime hooks in DecideAction.cpp (RED and BLACK); found $cqbCallCount."
+}
+
+if (-not $decideText.Contains('#include "CQBBuildingDoctrine.h"')) {
+    Fail "DecideAction.cpp does not include the canonical CQB interface."
+}
+if (-not $cqbProjectText.Contains('ClCompile Include="CQBBuildingDoctrine.cpp"')) {
+    Fail "CQBBuildingDoctrine.cpp is not compiled by TacticalAI_VS2013.vcxproj."
+}
+if (-not $cqbProjectText.Contains('ClInclude Include="CQBBuildingDoctrine.h"')) {
+    Fail "CQBBuildingDoctrine.h is not registered in TacticalAI_VS2013.vcxproj."
+}
+if (-not $cqbText.Contains("VRAnalyticsBeginDecision") -or
+    -not $cqbText.Contains("VRAnalyticsCommitDecision")) {
+    Fail "Active CQB planner is not connected to canonical VRAnalytics telemetry."
+}
+
+$redStart = $decideText.IndexOf("INT8 DecideActionRed(SOLDIERTYPE *pSoldier)")
+$blackStart = $decideText.IndexOf("INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)")
+if ($redStart -lt 0 -or $blackStart -le $redStart) {
+    Fail "Could not isolate RED/BLACK decision functions for CQB ordering audit."
+}
+else {
+    $redText = $decideText.Substring($redStart, $blackStart - $redStart)
+    $redCQB = $redText.IndexOf("VRCQB_DecideAction")
+    foreach ($senior in @(
+        "DecideDisengagementAction",
+        "DecideTacticalFallback",
+        "DecideCombatCasualtyResponse"
+    )) {
+        $seniorPos = $redText.IndexOf($senior)
+        if ($seniorPos -lt 0 -or $redCQB -lt 0 -or $seniorPos -gt $redCQB) {
+            Fail "RED CQB hook no longer sits below senior '$senior' logic."
+        }
+    }
+
+    $blackText = $decideText.Substring($blackStart)
+    $blackCQB = $blackText.IndexOf("VRCQB_DecideAction")
+    $attackPriority = $blackText.IndexOf("if (ubBestAttackAction != AI_ACTION_NONE)")
+    if ($blackCQB -lt 0 -or $attackPriority -lt 0 -or $attackPriority -gt $blackCQB) {
+        Fail "BLACK CQB hook no longer preserves desirable immediate attacks."
+    }
 }
 
 # 7. No tracked duplicate canonical architecture document in TacticalAI under an old name.
