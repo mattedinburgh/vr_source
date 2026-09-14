@@ -3,7 +3,7 @@
 #else
 #include "Types.h"
 #include "Windows.h"
-//#include "Soldier Control.h"
+#include "Soldier Control.h"
 #include "Input.h"
 #include "english.h"
 #include "Isometric Utils.h"
@@ -106,8 +106,30 @@ void SoldierTooltip( SOLDIERTYPE* pSoldier )
 	INT16		a1,a2;
 	BOOLEAN		fDrawTooltip = FALSE;
 
-	if ( gfKeyState[ALT] && pSoldier &&
-		IsPointInScreenRectWithRelative( gusMouseXPos, gusMouseYPos, &aRect, &a1, &a2 ) )
+	BOOLEAN		fMouseOverSoldier =
+		IsPointInScreenRectWithRelative( gusMouseXPos, gusMouseYPos, &aRect, &a1, &a2 );
+
+	// Casualty status is tactical information, not equipment intelligence. For
+	// friendly/allied downed soldiers show the rescue clock on ordinary hover so
+	// the player can make a medic/drag decision without holding ALT.
+	if ( !gfKeyState[ALT] && fMouseOverSoldier && pSoldier->bSide == gbPlayerNum &&
+		(pSoldier->ubBleedoutState == BLEEDOUT_ACTIVE ||
+		 pSoldier->ubBleedoutState == BLEEDOUT_STABILIZED) )
+	{
+		MOUSETT *pRegion = &mouseTT;
+		if ( pSoldier->ubBleedoutState == BLEEDOUT_ACTIVE && IsBleedoutCasualty( pSoldier ) )
+			swprintf( pRegion->FastHelpText, L"DOWNED - %u turns", pSoldier->ubBleedoutTurns );
+		else
+			wcscpy( pRegion->FastHelpText, L"STABILIZED" );
+
+		pRegion->iX = gusMouseXPos;
+		pRegion->iY = gusMouseYPos;
+		DrawMouseTooltip();
+		SetRenderFlags( RENDER_FLAG_FULL );
+		return;
+	}
+
+	if ( gfKeyState[ALT] && pSoldier && fMouseOverSoldier )
 	{
 		MOUSETT		*pRegion = &mouseTT;
 		//CHAR16		pStrInfo[ sizeof( pRegion->FastHelpText ) ];
@@ -248,6 +270,25 @@ void SoldierTooltip( SOLDIERTYPE* pSoldier )
 		}
 
 		swprintf( pStrInfo, L"" );
+
+		// Always put casualty state at the top of the detailed tooltip. Exact rescue
+		// time is shown only for friendly/allied troops; hostile casualties merely
+		// reveal that they are no longer an active combatant.
+		if ( pSoldier->ubBleedoutState == BLEEDOUT_ACTIVE && IsBleedoutCasualty( pSoldier ) )
+		{
+			if ( pSoldier->bSide == gbPlayerNum )
+				swprintf( pStrInfo, L"%sDOWNED - %u turns\n", pStrInfo, pSoldier->ubBleedoutTurns );
+			else
+				swprintf( pStrInfo, L"%sCRITICALLY WOUNDED\n", pStrInfo );
+		}
+		else if ( pSoldier->ubBleedoutState == BLEEDOUT_STABILIZED && pSoldier->stats.bLife > 0 )
+		{
+			if ( pSoldier->bSide == gbPlayerNum )
+				swprintf( pStrInfo, L"%sSTABILIZED\n", pStrInfo );
+			else
+				swprintf( pStrInfo, L"%sINCAPACITATED\n", pStrInfo );
+		}
+
 		if ( ubTooltipDetailLevel == DL_Debug )
 		{
 			//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
