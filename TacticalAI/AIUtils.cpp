@@ -5716,17 +5716,36 @@ UINT16 AIPerceivedFriendlyStrength(SOLDIERTYPE *pSoldier)
 		if (pFriend->flags.uiStatusFlags & SOLDIER_COWERING)
 			iReadiness = iReadiness * 50 / 100;
 
-		// AI combatants already have explicit withdrawal state. Player mercs simply
-		// contribute their visible current readiness; they are never put into AI escape state.
+		// Current combat power matters more than historical body count. Experienced,
+		// accurate troops with good weapons and a defensible firing position should
+		// correctly perceive that they can still dominate a battered opposing force.
+		INT32 iCombatQuality = 100;
+		iCombatQuality += ((INT32)pFriend->stats.bMarksmanship - 70) / 3;
+		iCombatQuality += ((INT32)pFriend->stats.bExpLevel - 5) * 3;
+
+		if (Item[pFriend->inv[HANDPOS].usItem].usItemClass & IC_WEAPON)
+			iCombatQuality += ((INT32)Weapon[pFriend->inv[HANDPOS].usItem].ubDeadliness - 20) / 3;
+
+		if (AnyCoverAtSpot(pFriend, pFriend->sGridNo))
+			iCombatQuality += 10;
+		if (SightCoverAtSpot(pFriend, pFriend->sGridNo, FALSE))
+			iCombatQuality += 5;
+
+		iCombatQuality = __max(85, __min(140, iCombatQuality));
+		iReadiness = iReadiness * iCombatQuality / 100;
+
+		// Do not let retreat state create a runaway feedback loop. A soldier who has
+		// started disengaging is still armed and contributes covering fire until he
+		// actually leaves the local fight. Distance naturally removes him afterwards.
 		if (fSameTeam)
 		{
 			if (AIEscapeActive(pFriend))
-				iReadiness = iReadiness * 35 / 100;
-			else if (AIDisengagementActive(pFriend))
 				iReadiness = iReadiness * 60 / 100;
+			else if (AIDisengagementActive(pFriend))
+				iReadiness = iReadiness * 80 / 100;
 		}
 
-		uiStrength += (UINT32)__max(20, __min(100, iReadiness));
+		uiStrength += (UINT32)__max(20, __min(140, iReadiness));
 	}
 
 	return (UINT16)__min((UINT32)65535, uiStrength);
@@ -5803,16 +5822,22 @@ INT8 AIBattleSituation(SOLDIERTYPE *pSoldier)
 
 	UINT8 ubCasualties = AIFriendlyCasualtyPercent(pSoldier);
 
+	// Historical losses matter, but they must not override the force that is still
+	// standing in front of the player. A formation that retains superior current
+	// combat power is not "losing" merely because half of its original roster died.
 	if (uiFriends * 2 <= uiEnemies ||
-		(ubCasualties >= 75 && uiFriends <= uiEnemies))
+		(ubCasualties >= 85 && uiFriends * 4 < uiEnemies * 5))
 	{
 		return AI_BATTLE_CATASTROPHIC;
 	}
 
-	if (uiFriends * 5 < uiEnemies * 4 || ubCasualties >= 50)
+	if (uiFriends * 5 < uiEnemies * 4 ||
+		(ubCasualties >= 65 && uiFriends * 10 < uiEnemies * 11))
+	{
 		return AI_BATTLE_LOSING;
+	}
 
-	if (uiFriends * 4 >= uiEnemies * 5 && ubCasualties < 40)
+	if (uiFriends * 4 >= uiEnemies * 5 && ubCasualties < 75)
 		return AI_BATTLE_WINNING;
 
 	return AI_BATTLE_EVEN;
@@ -6190,49 +6215,52 @@ static BOOLEAN AIShouldStartEscapeFromState(SOLDIERTYPE *pSoldier, INT8 bSituati
 	if (fLastSurvivor)
 		return TRUE;
 
-	if (ubCasualties >= 75 && bSituation != AI_BATTLE_WINNING)
+	// Near-annihilation can still cause a general flight, but ordinary heavy losses
+	// no longer override a viable or superior surviving force.
+	if (ubCasualties >= 90 && bSituation != AI_BATTLE_WINNING)
 		return TRUE;
 
-	INT32 iRoutThreshold = 60 +
+	INT32 iRoutThreshold = 70 +
 		(AIPersonalRiskTolerance(pSoldier) - 50) / 2 +
 		AIBoundedDecisionJitter(pSoldier, 211u, 4);
-	iRoutThreshold = __max(45, __min(75, iRoutThreshold));
+	iRoutThreshold = __max(60, __min(85, iRoutThreshold));
 
 	if (bSituation == AI_BATTLE_CATASTROPHIC)
 	{
-		INT32 iCasualtyThreshold = 30 + AIProfessionalismModifier(pSoldier) / 2 +
-			AIBoundedDecisionJitter(pSoldier, 223u, 3);
-		iCasualtyThreshold = __max(25, __min(38, iCasualtyThreshold));
+		INT32 iCasualtyThreshold = 45 + AIProfessionalismModifier(pSoldier) / 2 +
+			AIBoundedDecisionJitter(pSoldier, 223u, 4);
+		iCasualtyThreshold = __max(40, __min(58, iCasualtyThreshold));
 
 		if (ubCasualties >= iCasualtyThreshold)
 			return TRUE;
 
 		if (AISeverelyIsolated(pSoldier) &&
-			AILocalStress(pSoldier) >= 50 &&
-			AIPersonalRisk(pSoldier) >= AIPersonalRiskTolerance(pSoldier))
+			AILocalStress(pSoldier) >= 65 &&
+			AIPersonalRisk(pSoldier) >= AIPersonalRiskTolerance(pSoldier) + 10)
 		{
 			return TRUE;
 		}
 
-		// A catastrophic fight can become a rout even before the raw casualty
-		// threshold if several nearby comrades are already breaking contact.
-		if (ubRoutPressure >= __max(40, iRoutThreshold - 10) &&
-			AILocalStress(pSoldier) >= 25)
+		// Social collapse can accelerate a genuinely catastrophic battle, but a couple
+		// of nervous men are not enough to turn a functioning platoon into a rout.
+		if (ubRoutPressure >= __max(55, iRoutThreshold - 5) &&
+			AILocalStress(pSoldier) >= 40)
 		{
 			return TRUE;
 		}
 	}
 
-	// In a merely losing fight, social collapse can push a soldier from
-	// disengagement into full escape, but only after substantial losses.
-	INT32 iLosingEscapeThreshold = 40 + AIProfessionalismModifier(pSoldier) / 2 +
-		AIBoundedDecisionJitter(pSoldier, 227u, 3);
-	iLosingEscapeThreshold = __max(35, __min(48, iLosingEscapeThreshold));
+	// A merely losing fight requires both major losses and a strong local rout
+	// cascade before soldiers abandon the entire sector. Tactical withdrawal and
+	// regrouping remain available well before this threshold.
+	INT32 iLosingEscapeThreshold = 60 + AIProfessionalismModifier(pSoldier) / 2 +
+		AIBoundedDecisionJitter(pSoldier, 227u, 4);
+	iLosingEscapeThreshold = __max(55, __min(72, iLosingEscapeThreshold));
 
 	if (bSituation == AI_BATTLE_LOSING &&
 		ubCasualties >= iLosingEscapeThreshold &&
 		ubRoutPressure >= iRoutThreshold &&
-		AILocalStress(pSoldier) >= 30)
+		AILocalStress(pSoldier) >= 45)
 	{
 		return TRUE;
 	}
