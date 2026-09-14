@@ -5442,8 +5442,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 			 _stricmp( SectorVisualLeafName( gubFilename ), "A3_REMASTERED.dat" ) != 0 )
 			DressA3FarmEnvironment();
 
-		if ( IsSanMonaVisualProfile() )
-			DressSanMonaEnvironment();
+		// San Mona remaster invariant: graphics only. Do not add, move or remove
+		// runtime map objects; the authored DAT layout remains byte-for-byte authoritative.
 
 		// Layer deterministic, non-structural environmental storytelling over the
 		// authored oil-rig map without touching B1.dat or any destruction geometry.
