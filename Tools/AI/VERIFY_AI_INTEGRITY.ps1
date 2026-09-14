@@ -281,7 +281,7 @@ if ($operationalSourceText.Contains("->usFormationID") -or
     $operationalSourceText.Contains("->usOperationalFlags")) {
     Fail "Strategic operational source bypasses save-compatible byte-pair accessors."
 }
-$operationalGatePattern = "(?m)^\\s*#define\\s+VR_OPERATIONAL_DECISION_LOOP_ENABLED\\s+0\\s*$"
+$operationalGatePattern = "(?m)^\s*#define\s+VR_OPERATIONAL_DECISION_LOOP_ENABLED\s+0\s*$"
 if (-not [regex]::IsMatch($operationalHeaderText, $operationalGatePattern)) {
     Fail "Operational strategic movement gate was enabled without explicit integration approval."
 }
