@@ -1395,7 +1395,7 @@ static void A3WriteArchitectureSurvey( void )
 		FILE *pUsage = fopen( "MAP_PREVIEWS\\A3_tile_usage.csv", "w" );
 		if ( pUsage != NULL )
 		{
-			fprintf( pUsage, "tile_type,land,object,struct,shadow,roof,onroof,total\n" );
+			fprintf( pUsage, "tile_type,name,loaded_surface,frames,bitdepth,land,object,struct,shadow,roof,onroof,total\n" );
 			for ( UINT16 usType = 0; usType < NUMBEROFTILETYPES; ++usType )
 			{
 				const UINT32 uiTotal = uiLandCount[usType] + uiObjectCount[usType] +
@@ -1403,8 +1403,14 @@ static void A3WriteArchitectureSurvey( void )
 					uiRoofCount[usType] + uiOnRoofCount[usType];
 				if ( uiTotal == 0 )
 					continue;
-				fprintf( pUsage, "%u,%lu,%lu,%lu,%lu,%lu,%lu,%lu\n",
-					usType, uiLandCount[usType], uiObjectCount[usType],
+				const UINT16 usFrames = ( gTileSurfaceArray[usType] != NULL && gTileSurfaceArray[usType]->vo != NULL )
+					? gTileSurfaceArray[usType]->vo->usNumberOfObjects : 0;
+				const UINT8 ubBitDepth = ( gTileSurfaceArray[usType] != NULL && gTileSurfaceArray[usType]->vo != NULL )
+					? gTileSurfaceArray[usType]->vo->ubBitDepth : 0;
+				fprintf( pUsage, "%u,%s,%s,%u,%u,%lu,%lu,%lu,%lu,%lu,%lu,%lu\n",
+					usType, gTileSurfaceName[usType], TileSurfaceFilenames[usType],
+					usFrames, ubBitDepth,
+					uiLandCount[usType], uiObjectCount[usType],
 					uiStructCount[usType], uiShadowCount[usType],
 					uiRoofCount[usType], uiOnRoofCount[usType], uiTotal );
 			}
