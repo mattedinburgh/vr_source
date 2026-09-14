@@ -4685,7 +4685,12 @@ BOOLEAN ProcessNextEnemyRetreatConflict( void )
 			// or get silently pulled into autoresolve.
 			if( !fMercBattlePresent && !fMilitiaPresent )
 			{
+				// The escape reached an uncontested adjacent sector. Resolve both the
+				// transient queue and the save-persistent pursuit lock, then let any
+				// persistent retreat formation enter REGROUP state.
 				gfPendingEnemyRetreatConflict[ ubX ][ ubY ] = FALSE;
+				SectorInfo[ SECTOR( ubX, ubY ) ].uiFlags &= ~SF_ENEMY_RETREAT_LOCKED;
+				VR_CompleteRetreatInSector( ubX, ubY );
 				continue;
 			}
 
