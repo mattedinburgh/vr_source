@@ -140,7 +140,14 @@ enum SectorVisualProfile
 	SECTOR_VISUAL_SAN_MONA_C6_EAST,
 	SECTOR_VISUAL_SAN_MONA_D4_MINE,
 	SECTOR_VISUAL_SAN_MONA_D5_KINGPIN,
-	SECTOR_VISUAL_SAN_MONA_UNDERGROUND
+	SECTOR_VISUAL_SAN_MONA_UNDERGROUND,
+	SECTOR_VISUAL_MAPFACTORY_MILITARY,
+	SECTOR_VISUAL_MAPFACTORY_WILDERNESS,
+	SECTOR_VISUAL_MAPFACTORY_INDUSTRIAL,
+	SECTOR_VISUAL_MAPFACTORY_SETTLEMENT,
+	SECTOR_VISUAL_MAPFACTORY_ROADSIDE,
+	SECTOR_VISUAL_MAPFACTORY_FARMLAND,
+	SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY
 };
 
 static UINT8 gubSectorVisualProfile = SECTOR_VISUAL_DEFAULT;
@@ -725,6 +732,19 @@ static UINT8 DetermineSectorVisualProfile( const CHAR8 *pFilename )
 		return SECTOR_VISUAL_SAN_MONA_D5_KINGPIN;
 	if ( _stricmp( pFilename, "D4_B1.dat" ) == 0 || _stricmp( pFilename, "D5_B1.dat" ) == 0 )
 		return SECTOR_VISUAL_SAN_MONA_UNDERGROUND;
+
+	// Map Factory macro-remaster profiles are deliberately active only in the
+	// automated preview/remaster path until the methodology passes visual QA.
+	if ( gfMapPreviewCaptureMode )
+	{
+		if ( _stricmp( pFilename, "A8.dat" ) == 0 || _stricmp( pFilename, "A8_REMASTERED.dat" ) == 0 ||
+			 _stricmp( pFilename, "f15.dat" ) == 0 || _stricmp( pFilename, "f15_REMASTERED.dat" ) == 0 )
+			return SECTOR_VISUAL_MAPFACTORY_MILITARY;
+		if ( _stricmp( pFilename, "A12.DAT" ) == 0 || _stricmp( pFilename, "A12_REMASTERED.dat" ) == 0 )
+			return SECTOR_VISUAL_MAPFACTORY_WILDERNESS;
+		if ( _stricmp( pFilename, "b13.dat" ) == 0 || _stricmp( pFilename, "b13_REMASTERED.dat" ) == 0 )
+			return SECTOR_VISUAL_MAPFACTORY_INDUSTRIAL;
+	}
 
 	return SECTOR_VISUAL_DEFAULT;
 }
@@ -2327,6 +2347,32 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 		  ubType == DEBRISWEEDS || ubType == DEBRISGRASS || ubType == DEBRISMISC ||
 		  ubType == DEBRIS2MISC );
 
+	const BOOLEAN fMapFactoryProfile =
+		gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_MILITARY ||
+		gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_WILDERNESS ||
+		gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_INDUSTRIAL ||
+		gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_SETTLEMENT ||
+		gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_ROADSIDE ||
+		gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_FARMLAND ||
+		gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY;
+	const BOOLEAN fMFTerrain = fMapFactoryProfile && ( ubType >= FIRSTTEXTURE && ubType <= SEVENTHTEXTURE );
+	const BOOLEAN fMFGreen = fMapFactoryProfile &&
+		( (ubType >= THIRDTEXTURE && ubType <= SIXTHTEXTURE) ||
+		  (ubType >= FIRSTOSTRUCT && ubType <= SEVENTHOSTRUCT) ||
+		  ubType == FIRSTFULLSTRUCT || ubType == SECONDFULLSTRUCT );
+	const BOOLEAN fMFWall = fMapFactoryProfile && ( ubType >= FIRSTWALL && ubType <= LASTDOOR );
+	const BOOLEAN fMFRoof = fMapFactoryProfile && ( ubType >= FIRSTROOF && ubType <= LASTSLANTROOF );
+	const BOOLEAN fMFFloor = fMapFactoryProfile && ( ubType >= FIRSTFLOOR && ubType <= LASTFLOOR );
+	const BOOLEAN fMFRoad = fMapFactoryProfile && ( (ubType >= FIRSTROAD && ubType <= LASTROAD) || ubType == ROADPIECES );
+	const BOOLEAN fMFDebris = fMapFactoryProfile &&
+		( ubType == DEBRISROCKS || ubType == DEBRISWOOD || ubType == DEBRISSAND ||
+		  ubType == DEBRISWEEDS || ubType == DEBRISGRASS || ubType == DEBRISMISC ||
+		  ubType == DEBRIS2MISC );
+	const BOOLEAN fMFMachinery = fMapFactoryProfile &&
+		( ubType == EIGHTOSTRUCT || ubType == THRIDISTRUCT ||
+		  ubType == FIRSTVEHICLE || ubType == SECONDVEHICLE ||
+		  ubType == TENTHOSTRUCT || ubType == FENCESTRUCT );
+
 	if ( fSanMonaProfile )
 	{
 		// All San Mona districts share hard sun and a lawless, hand-built visual language,
@@ -2587,6 +2633,70 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 			redBias = -1;
 			greenBias = 6;
 			blueBias = -4;
+		}
+	}
+	else if ( fMapFactoryProfile )
+	{
+		// Macro-remaster art direction: change the sector's material language at
+		// normal tactical zoom. Composition kits then add local authored detail.
+		if ( gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_MILITARY )
+		{
+			saturationPercent = 94; contrastPercent = 119;
+			redBias = 1; greenBias = 2; blueBias = -2;
+			if ( fMFGreen ) { saturationPercent = 103; greenBias = 7; redBias = -3; blueBias = -5; }
+			else if ( fMFTerrain ) { saturationPercent = 92; contrastPercent = 117; redBias = 5; greenBias = 4; blueBias = -7; }
+			else if ( fMFWall ) { saturationPercent = 82; contrastPercent = 121; redBias = 1; greenBias = 2; blueBias = -2; }
+			else if ( fMFRoof || fMFMachinery ) { saturationPercent = 80; contrastPercent = 126; redBias = -1; greenBias = 0; blueBias = 1; }
+			else if ( fMFRoad || fMFFloor ) { saturationPercent = 72; contrastPercent = 120; redBias = 0; greenBias = 1; blueBias = -1; }
+			else if ( fMFDebris ) { saturationPercent = 90; contrastPercent = 122; redBias = 5; greenBias = 2; blueBias = -5; }
+		}
+		else if ( gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_WILDERNESS )
+		{
+			saturationPercent = 116; contrastPercent = 114;
+			redBias = -3; greenBias = 7; blueBias = -3;
+			if ( fMFGreen ) { saturationPercent = 126; contrastPercent = 116; redBias = -6; greenBias = 14; blueBias = -7; }
+			else if ( fMFTerrain ) { saturationPercent = 110; contrastPercent = 113; redBias = 2; greenBias = 7; blueBias = -5; }
+			else if ( fMFWall || fMFRoof ) { saturationPercent = 90; contrastPercent = 118; redBias = 4; greenBias = 2; blueBias = -4; }
+			else if ( fMFDebris ) { saturationPercent = 112; contrastPercent = 117; redBias = 1; greenBias = 7; blueBias = -5; }
+		}
+		else if ( gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_INDUSTRIAL )
+		{
+			saturationPercent = 88; contrastPercent = 121;
+			redBias = 2; greenBias = 1; blueBias = -2;
+			if ( fMFGreen ) { saturationPercent = 104; contrastPercent = 116; redBias = -3; greenBias = 8; blueBias = -5; }
+			else if ( fMFTerrain ) { saturationPercent = 86; contrastPercent = 118; redBias = 4; greenBias = 3; blueBias = -5; }
+			else if ( fMFRoad || fMFFloor ) { saturationPercent = 62; contrastPercent = 125; redBias = -1; greenBias = 0; blueBias = 1; }
+			else if ( fMFWall ) { saturationPercent = 78; contrastPercent = 123; redBias = 4; greenBias = 2; blueBias = -3; }
+			else if ( fMFRoof || fMFMachinery ) { saturationPercent = 82; contrastPercent = 128; redBias = 6; greenBias = 0; blueBias = -6; }
+			else if ( fMFDebris ) { saturationPercent = 92; contrastPercent = 124; redBias = 7; greenBias = 1; blueBias = -7; }
+		}
+		else if ( gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_SETTLEMENT )
+		{
+			saturationPercent = 104; contrastPercent = 116; redBias = 5; greenBias = 2; blueBias = -4;
+			if ( fMFGreen ) { saturationPercent = 114; greenBias = 9; redBias = -3; blueBias = -5; }
+			else if ( fMFWall ) { saturationPercent = 92; contrastPercent = 120; redBias = 7; greenBias = 3; blueBias = -5; }
+			else if ( fMFRoof ) { saturationPercent = 96; contrastPercent = 123; redBias = 8; greenBias = 1; blueBias = -7; }
+			else if ( fMFRoad || fMFFloor ) { saturationPercent = 82; contrastPercent = 117; redBias = 4; greenBias = 3; blueBias = -4; }
+		}
+		else if ( gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_FARMLAND )
+		{
+			saturationPercent = 112; contrastPercent = 114; redBias = 4; greenBias = 5; blueBias = -5;
+			if ( fMFGreen ) { saturationPercent = 122; greenBias = 12; redBias = -4; blueBias = -6; }
+			else if ( fMFTerrain ) { saturationPercent = 110; contrastPercent = 116; redBias = 9; greenBias = 5; blueBias = -9; }
+			else if ( fMFWall || fMFRoof ) { saturationPercent = 94; contrastPercent = 119; redBias = 6; greenBias = 3; blueBias = -5; }
+		}
+		else if ( gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_ROADSIDE )
+		{
+			saturationPercent = 102; contrastPercent = 117; redBias = 4; greenBias = 3; blueBias = -4;
+			if ( fMFRoad ) { saturationPercent = 78; contrastPercent = 122; redBias = 2; greenBias = 1; blueBias = -3; }
+			else if ( fMFGreen ) { saturationPercent = 112; greenBias = 9; redBias = -3; blueBias = -5; }
+			else if ( fMFTerrain ) { saturationPercent = 102; redBias = 7; greenBias = 4; blueBias = -7; }
+		}
+		else
+		{
+			saturationPercent = 104; contrastPercent = 116; redBias = 4; greenBias = 3; blueBias = -4;
+			if ( fMFGreen ) { saturationPercent = 112; greenBias = 8; redBias = -2; blueBias = -5; }
+			else if ( fMFTerrain ) { redBias = 6; greenBias = 4; blueBias = -6; }
 		}
 	}
 	else if ( ubType >= FIRSTTEXTURE && ubType <= LASTTEXTURE )
