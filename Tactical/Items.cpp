@@ -1732,14 +1732,26 @@ INT8 FindObjInObjRange( SOLDIERTYPE * pSoldier, UINT16 usItem1, UINT16 usItem2 )
 INT8 FindObjClass( SOLDIERTYPE * pSoldier, 	UINT32 usItemClass )
 {
 	INT8 invsize = (INT8)pSoldier->inv.size();
+	INT8 bImprovisedRagSlot = NO_SLOT;
+
 	for (INT8 bLoop = 0; bLoop < invsize; ++bLoop)
 	{
-		if (Item[pSoldier->inv[bLoop].usItem].usItemClass & usItemClass && pSoldier->inv[bLoop].exists() == true)
+		if (pSoldier->inv[bLoop].exists() == true && (Item[pSoldier->inv[bLoop].usItem].usItemClass & usItemClass))
 		{
+			// Vengeance: improvised rag (item 1022) is emergency medical fallback.
+			// When searching for medical supplies, always prefer any proper kit first.
+			if (usItemClass == IC_MEDKIT && pSoldier->inv[bLoop].usItem == 1022)
+			{
+				if (bImprovisedRagSlot == NO_SLOT)
+					bImprovisedRagSlot = bLoop;
+				continue;
+			}
+
 			return( bLoop );
 		}
 	}
-	return( NO_SLOT );
+
+	return( bImprovisedRagSlot );
 }
 
 INT8 FindAIUsableObjClass(SOLDIERTYPE * pSoldier, UINT32 usItemClass, BOOLEAN fSidearm)
