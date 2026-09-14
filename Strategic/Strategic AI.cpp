@@ -39,7 +39,8 @@
 
 // Lion Paratroops
 #include "Strategic Town Loyalty.h"
-#include "VRAnalytics.h"\r\n// End Lion
+#include "VRAnalytics.h"
+// End Lion
 
 #define SAI_VERSION		29
 
