@@ -3638,6 +3638,8 @@ void ReplaceExtendedGuns( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass )
 UINT16 SelectStandardArmyGun( UINT8 uiGunLevel, INT8 bSoldierClass )
 {
 	ARMY_GUN_CHOICE_TYPE *pGunChoiceTable;
+	ARMY_GUN_CHOICE_TYPE *pClassGunChoiceTable;
+	BOOLEAN fUsingBroadEnemyGunPool = FALSE;
 	int uiChoice;
 	int usGunIndex;
 	INT8 bOriginalSoldierClass = bSoldierClass;
@@ -3656,7 +3658,8 @@ UINT16 SelectStandardArmyGun( UINT8 uiGunLevel, INT8 bSoldierClass )
 		if ( bSoldierClass >= SOLDIER_GUN_CHOICE_SELECTIONS || bSoldierClass < SOLDIER_CLASS_NONE || !gGameExternalOptions.fSoldierClassSpecificItemTables )
 			bSoldierClass = SOLDIER_CLASS_NONE;
 
-		pGunChoiceTable = &(gExtendedArmyGunChoices[bSoldierClass][0]);
+		pClassGunChoiceTable = &(gExtendedArmyGunChoices[bSoldierClass][0]);
+		pGunChoiceTable = pClassGunChoiceTable;
 
 		// VR: broaden enemy weapon variety without throwing away class doctrine.
 		// The generic table is the much larger AIMNAS/Vengeance catalogue; class-
@@ -3667,6 +3670,7 @@ UINT16 SelectStandardArmyGun( UINT8 uiGunLevel, INT8 bSoldierClass )
 			 EnemyShouldUseBroadEquipmentPool( bOriginalSoldierClass ) )
 		{
 			pGunChoiceTable = &(gExtendedArmyGunChoices[SOLDIER_CLASS_NONE][0]);
+			fUsingBroadEnemyGunPool = TRUE;
 		}
 
 		// Defensive fallback for sparse class-specific XML rows.
@@ -3674,6 +3678,7 @@ UINT16 SelectStandardArmyGun( UINT8 uiGunLevel, INT8 bSoldierClass )
 			 gExtendedArmyGunChoices[SOLDIER_CLASS_NONE][uiGunLevel].ubChoices > 0 )
 		{
 			pGunChoiceTable = &(gExtendedArmyGunChoices[SOLDIER_CLASS_NONE][0]);
+			fUsingBroadEnemyGunPool = ( bSoldierClass != SOLDIER_CLASS_NONE );
 		}
 	//}
 	//else
@@ -3708,8 +3713,15 @@ UINT16 SelectStandardArmyGun( UINT8 uiGunLevel, INT8 bSoldierClass )
 		}
 		usGunIndex = pGunChoiceTable[ uiGunLevel ].bItemNo[ uiChoice ];
 
-		if (!ItemIsLegal(usGunIndex)) //Madd: check for tons of guns
+		// Broad-pool diversity must never bypass the campaign equipment curve.
+		// The gun table row is already selected from bWeaponClass/progress; this is a
+		// defensive guard against a future XML edit placing a too-cool gun in that row.
+		if ( !ItemIsLegal( usGunIndex ) ||
+			 ( fUsingBroadEnemyGunPool && Item[usGunIndex].ubCoolness > 0 &&
+			   Item[usGunIndex].ubCoolness > (UINT8)min( (INT32)MAX_EQUIPMENT_CLASS, (INT32)uiGunLevel + 1 ) ) )
+		{
 			usGunIndex = -1;
+		}
 
 		//Check to avoid an endless loop looking for "normal" guns
 		if (usGunIndex == -1)
@@ -3722,8 +3734,12 @@ UINT16 SelectStandardArmyGun( UINT8 uiGunLevel, INT8 bSoldierClass )
 				uiChoice = Random(pGunChoiceTable[ uiGunLevel ].ubChoices);
 				usGunIndex = pGunChoiceTable[ uiGunLevel ].bItemNo[ uiChoice ];
 
-				if (!ItemIsLegal(usGunIndex)) //Madd: check for tons of guns
+				if ( !ItemIsLegal( usGunIndex ) ||
+					 ( fUsingBroadEnemyGunPool && Item[usGunIndex].ubCoolness > 0 &&
+					   Item[usGunIndex].ubCoolness > (UINT8)min( (INT32)MAX_EQUIPMENT_CLASS, (INT32)uiGunLevel + 1 ) ) )
+				{
 					usGunIndex = -1;
+				}
 
 				numTries++;
 			}
@@ -3738,15 +3754,30 @@ UINT16 SelectStandardArmyGun( UINT8 uiGunLevel, INT8 bSoldierClass )
 					if ( ( isnight && Item[usGunIndex].usItemChoiceTimeSetting == 1 ) || ( !isnight && Item[usGunIndex].usItemChoiceTimeSetting == 2 ) )
 						continue;
 
-					if (!ItemIsLegal(usGunIndex))
+					if ( !ItemIsLegal( usGunIndex ) ||
+						 ( fUsingBroadEnemyGunPool && Item[usGunIndex].ubCoolness > 0 &&
+						   Item[usGunIndex].ubCoolness > (UINT8)min( (INT32)MAX_EQUIPMENT_CLASS, (INT32)uiGunLevel + 1 ) ) )
+					{
 						usGunIndex = -1;
+					}
 					else
+					{
 						break;
+					}
 				}
 			}
 
 			if ( usGunIndex == -1 )
 			{
+				// If a broadened generic row was mis-tiered, fall back to the original
+				// class doctrine instead of leaking late-game power or issuing a bad item.
+				if ( fUsingBroadEnemyGunPool && pClassGunChoiceTable[uiGunLevel].ubChoices > 0 )
+				{
+					pGunChoiceTable = pClassGunChoiceTable;
+					fUsingBroadEnemyGunPool = FALSE;
+					continue;
+				}
+
 				//Still nothing?  Then he gets a glock
 				usGunIndex = GLOCK_17;
 			}
@@ -3981,7 +4012,7 @@ UINT16 PickARandomAttachment(UINT8 typeIndex, INT8 bSoldierClass, UINT16 usBaseI
 				fDefaultAttachment = TRUE;
 			}
 		}
-		if ( usItem >= 0 && Item[usItem].ubCoolness <= maxCoolness && ValidAttachment(usItem,usBaseItem) && !fDefaultAttachment)
+		if ( usItem >= 0 && Item[usItem].ubCoolness <= maxCoolness && ItemIsLegal(usItem) && ValidAttachment(usItem,usBaseItem) && !fDefaultAttachment)
 		{
 			// pick a default item in case we don't find anything with a matching coolness, but pick the coolest item we can find
 			if ( defaultItem == 0 || Item[usItem].ubCoolness > Item[defaultItem].ubCoolness )
