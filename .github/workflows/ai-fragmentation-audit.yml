@@ -27,3 +27,7 @@ jobs:
       - name: Verify single AI integration line
         shell: pwsh
         run: ./Tools/AI/VERIFY_AI_BRANCH_CONSOLIDATION.ps1
+
+      - name: Verify unified AI source integrity
+        shell: pwsh
+        run: ./Tools/AI/VERIFY_AI_INTEGRITY.ps1 -RepositoryRoot .
