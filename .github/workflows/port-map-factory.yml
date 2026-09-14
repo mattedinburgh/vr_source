@@ -96,6 +96,25 @@ jobs:
 
           & $git log --oneline -20
 
+      - name: Apply Map Factory v2 visual and composition refinement
+        shell: powershell
+        run: |
+          $python = Get-Command python.exe -ErrorAction SilentlyContinue
+          if (-not $python) { $python = Get-Command py.exe -ErrorAction SilentlyContinue }
+          if (-not $python) { throw 'Python is required for the strict Map Factory v2 patch.' }
+          if ($python.Name -ieq 'py.exe') {
+            & $python.Source -3 '.\Tools\map_factory_v2_patch.py'
+          } else {
+            & $python.Source '.\Tools\map_factory_v2_patch.py'
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Map Factory v2 refinement failed with exit code $LASTEXITCODE" }
+
+          $git = '${{ steps.git.outputs.path }}'
+          & $git add Utils/MapUtility.cpp TileEngine/worlddef.cpp
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $git commit -m 'Map Factory v2: authored pilot layouts and restrained colour'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not commit Map Factory v2 refinement.' }
+
       - name: Retarget projects to v120 for render-PC build
         shell: powershell
         run: |
