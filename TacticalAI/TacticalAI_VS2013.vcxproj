@@ -24,6 +24,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AI All.h" />
+    <ClInclude Include="AI Diagnostics.h" />
     <ClInclude Include="ai.h" />
     <ClInclude Include="AIInternals.h" />
     <ClInclude Include="AIList.h" />
@@ -31,6 +32,7 @@
     <ClInclude Include="QuestDebug.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="AI Diagnostics.cpp" />
     <ClCompile Include="AIList.cpp" />
     <ClCompile Include="AIMain.cpp" />
     <ClCompile Include="AIUtils.cpp" />
