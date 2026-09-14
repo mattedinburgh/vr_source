@@ -2364,8 +2364,35 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Strategic5");
 	}
 	Assert( !pGroup->fPlayer );
 	VR_EnsureEnemyFormationState( pGroup );
+
+	{
+		CHAR8 zReason[320];
+		sprintf( zReason,
+			"group arrived/repolling: intention=%u mission=%s reserve=%s supply=%u morale=%u intel=%u last_known=%c%d pstr=%u mstr=%u",
+			pGroup->pEnemyGroup->ubIntention,
+			VR_OperationalMissionName( pGroup->pEnemyGroup->ubOperationalMission ),
+			VR_OperationalReserveRoleName( pGroup->pEnemyGroup->ubOperationalReserveRole ),
+			pGroup->pEnemyGroup->ubOperationalSupply,
+			pGroup->pEnemyGroup->ubOperationalMorale,
+			pGroup->pEnemyGroup->ubOperationalIntelConfidence,
+			SECTORY( pGroup->pEnemyGroup->ubOperationalLastKnownPlayerSectorID ) + 'A' - 1,
+			SECTORX( pGroup->pEnemyGroup->ubOperationalLastKnownPlayerSectorID ),
+			pGroup->pEnemyGroup->ubOperationalLastKnownPlayerStrength,
+			pGroup->pEnemyGroup->ubOperationalLastKnownMilitiaStrength );
+		SAICampaignRecord( "GROUP_EVALUATE", "mobile_group",
+			pGroup->pEnemyGroup->ubOperationalMission, pGroup->ubGroupID,
+			SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ), pGroup->ubOriginalSector,
+			pGroup->ubGroupSize, pGroup->pEnemyGroup->ubIntention, zReason );
+	}
+
 	if( pGroup->pEnemyGroup->ubOperationalMission == VR_OPMISSION_RESERVE )
 	{
+		SAICampaignRecord( "RESERVE_HOLD", "mobile_group",
+			pGroup->pEnemyGroup->ubOperationalReserveRole, pGroup->ubGroupID,
+			SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ),
+			SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ),
+			pGroup->ubGroupSize, pGroup->pEnemyGroup->ubOperationalSupply,
+			"persistent reserve formation reached/occupies its reserve location; no legacy reassignment is required" );
 		return FALSE;
 	}
 	if( pGroup->pEnemyGroup->ubIntention == PURSUIT )
@@ -2445,7 +2472,12 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Strategic5");
 					}
 				}
 
+				SAICampaignRecord( "GROUP_OUTCOME", "garrison", i, pGroup->ubGroupID,
+					pGroup->ubCreatedSectorID, gGarrisonGroup[ i ].ubSectorID,
+					pGroup->ubGroupSize, gGarrisonGroup[ i ].bWeight,
+					"reinforcement mission completed: mobile group absorbed into destination garrison" );
 				SetThisSectorAsEnemyControlled( pGroup->ubSectorX, pGroup->ubSectorY, 0, TRUE );
+				SAICampaignClosePlan( pGroup, "reinforcement group reached destination and was absorbed into garrison" );
 				RemovePGroup( pGroup );
 				RecalculateGarrisonWeight( i );
 
@@ -2508,6 +2540,11 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Strategic5");
 										pPatrolGroup->pEnemyGroup->ubNumTroops +
 										pPatrolGroup->pEnemyGroup->ubNumElites == iMaxEnemyGroupSize );
 					}
+					SAICampaignRecord( "GROUP_OUTCOME", "patrol", i, pGroup->ubGroupID,
+						pGroup->ubCreatedSectorID, gPatrolGroup[ i ].ubSectorID[1],
+						pGroup->ubGroupSize, pPatrolGroup->ubGroupSize,
+						"reinforcement mission completed: arriving group merged into existing patrol" );
+					SAICampaignClosePlan( pGroup, "reinforcement group merged into existing patrol" );
 					RemovePGroup( pGroup );
 					RecalculatePatrolWeight( i );
 					ValidateLargeGroup( pPatrolGroup );
@@ -2535,6 +2572,12 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Strategic5");
 							pGroup->pEnemyGroup->ubNumTroops + pGroup->pEnemyGroup->ubNumElites + pGroup->pEnemyGroup->ubNumAdmins,
 							pGroup->ubSectorY + 'A' - 1, pGroup->ubSectorX );
 					#endif
+					SAICampaignRecord( "GROUP_OUTCOME", "patrol", i, pGroup->ubGroupID,
+						pGroup->ubCreatedSectorID, gPatrolGroup[ i ].ubSectorID[1],
+						pGroup->ubGroupSize, gPatrolGroup[ i ].bWeight,
+						"reinforcement mission completed; arriving group became the active patrol" );
+					SAICampaignClosePlan( pGroup, "reinforcement mission completed; group converted into active patrol" );
+					SAICampaignStartOrRefreshPlan( pGroup, gPatrolGroup[ i ].ubSectorID[1], PATROL, 254 );
 					RecalculatePatrolWeight( i );
 				}
 				return TRUE;
@@ -5478,15 +5521,121 @@ void ExecuteStrategicAIAction( UINT16 usActionCode, INT16 sSectorX, INT16 sSecto
 // WDS - New AI
 void HourlyCheckStrategicAI()
 {
+	GROUP *pGroup;
+	INT32 iGroups = 0;
+	INT32 iTroops = 0;
+	INT32 iPursuit = 0;
+	INT32 iStaging = 0;
+	INT32 iPatrol = 0;
+	INT32 iReinforcements = 0;
+	INT32 iAssault = 0;
+	INT32 iReserve = 0;
+	INT32 iRegroup = 0;
+	INT32 iLowSupply = 0;
+	INT32 iLowMorale = 0;
+	INT32 iPendingGarrisons = 0;
+	INT32 iPendingPatrols = 0;
+	INT32 i;
+	CHAR8 zReason[512];
+
+	// Let the modern operational AI update supply, morale, intel and formation state first.
 	VR_HourlyOperationalUpdate();
 
+	Ensure_RepairedGarrisonGroup( &gGarrisonGroup, &giGarrisonArraySize );
+	for( i = 0; i < giGarrisonArraySize; ++i )
+	{
+		if( gGarrisonGroup[ i ].ubPendingGroupID )
+			++iPendingGarrisons;
+	}
+	for( i = 0; i < giPatrolArraySize; ++i )
+	{
+		if( gPatrolGroup[ i ].ubPendingGroupID )
+			++iPendingPatrols;
+	}
+
+	pGroup = gpGroupList;
+	while( pGroup )
+	{
+		if( !pGroup->fPlayer && pGroup->pEnemyGroup )
+		{
+			INT32 iTarget = -1;
+			WAYPOINT *pFinal = GetFinalWaypoint( pGroup );
+			CHAR8 zGroupReason[384];
+
+			VR_EnsureEnemyFormationState( pGroup );
+			++iGroups;
+			iTroops += pGroup->ubGroupSize;
+
+			switch( pGroup->pEnemyGroup->ubIntention )
+			{
+				case PURSUIT:        ++iPursuit; break;
+				case STAGING:        ++iStaging; break;
+				case PATROL:         ++iPatrol; break;
+				case REINFORCEMENTS: ++iReinforcements; break;
+				case ASSAULT:        ++iAssault; break;
+			}
+			if( pGroup->pEnemyGroup->ubOperationalMission == VR_OPMISSION_RESERVE )
+				++iReserve;
+			if( pGroup->pEnemyGroup->ubOperationalMission == VR_OPMISSION_REGROUP )
+				++iRegroup;
+			if( pGroup->pEnemyGroup->ubOperationalSupply < 30 )
+				++iLowSupply;
+			if( pGroup->pEnemyGroup->ubOperationalMorale < 40 )
+				++iLowMorale;
+
+			if( pFinal )
+				iTarget = SECTOR( pFinal->x, pFinal->y );
+			else if( pGroup->pEnemyGroup->ubOperationalTargetSectorID < 256 )
+				iTarget = pGroup->pEnemyGroup->ubOperationalTargetSectorID;
+
+			if( !guiSAIGroupPlanID[ pGroup->ubGroupID ] && iTarget >= 0 )
+				SAICampaignStartOrRefreshPlan( pGroup, (UINT8)iTarget, pGroup->pEnemyGroup->ubIntention, 255 );
+
+			sprintf( zGroupReason,
+				"hourly group state: mission=%s reserve=%s supply=%u morale=%u intel=%u known=%c%d pstr=%u mstr=%u between=%d original=%u last_reassign=%u pending=%u",
+				VR_OperationalMissionName( pGroup->pEnemyGroup->ubOperationalMission ),
+				VR_OperationalReserveRoleName( pGroup->pEnemyGroup->ubOperationalReserveRole ),
+				pGroup->pEnemyGroup->ubOperationalSupply,
+				pGroup->pEnemyGroup->ubOperationalMorale,
+				pGroup->pEnemyGroup->ubOperationalIntelConfidence,
+				SECTORY( pGroup->pEnemyGroup->ubOperationalLastKnownPlayerSectorID ) + 'A' - 1,
+				SECTORX( pGroup->pEnemyGroup->ubOperationalLastKnownPlayerSectorID ),
+				pGroup->pEnemyGroup->ubOperationalLastKnownPlayerStrength,
+				pGroup->pEnemyGroup->ubOperationalLastKnownMilitiaStrength,
+				pGroup->fBetweenSectors,
+				pGroup->ubOriginalSector,
+				pGroup->ubSectorIDOfLastReassignment,
+				pGroup->pEnemyGroup->ubPendingReinforcements );
+
+			SAICampaignRecord( "GROUP_STATUS", "mobile_group",
+				pGroup->pEnemyGroup->ubOperationalMission, pGroup->ubGroupID,
+				SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ), iTarget,
+				pGroup->ubGroupSize, pGroup->pEnemyGroup->ubOperationalSupply, zGroupReason );
+		}
+		pGroup = pGroup->next;
+	}
+
+	sprintf( zReason,
+		"hourly campaign heartbeat: groups=%d troops=%d legacy[pursuit=%d staging=%d patrol=%d reinforcement=%d assault=%d] operational[reserve=%d regroup=%d low_supply=%d low_morale=%d] pending[garrison=%d patrol=%d]",
+		iGroups, iTroops, iPursuit, iStaging, iPatrol, iReinforcements, iAssault,
+		iReserve, iRegroup, iLowSupply, iLowMorale, iPendingGarrisons, iPendingPatrols );
+	SAICampaignRecord( "CAMPAIGN_SNAPSHOT", "enemy_army", iGroups, -1, -1, -1,
+		iTroops, giReinforcementPool, zReason );
+
+	// Persistent reserves are explicitly considered after the hourly operational update.
 	if( giRequestPoints > 0 )
 	{
-		GROUP *pReserve = VR_FindReadyOperationalReserve();
-		if( pReserve )
+		GROUP *pReserveGroup = VR_FindReadyOperationalReserve();
+		if( pReserveGroup )
 		{
-			VR_LogOperationalDecision( pReserve, "RESERVE_DISPATCH_POLL", NULL );
-			ReassignAIGroup( &pReserve );
+			VR_LogOperationalDecision( pReserveGroup, "RESERVE_DISPATCH_POLL", NULL );
+			SAICampaignRecord( "RESERVE_DISPATCH", "mobile_group",
+				pReserveGroup->pEnemyGroup->ubOperationalReserveRole,
+				pReserveGroup->ubGroupID,
+				SECTOR( pReserveGroup->ubSectorX, pReserveGroup->ubSectorY ), -1,
+				pReserveGroup->ubGroupSize, giRequestPoints,
+				"hourly strategic demand exists and a persistent reserve formation is combat-ready; poll it for reassignment" );
+			ReassignAIGroup( &pReserveGroup );
 		}
 	}
 }
@@ -5740,6 +5889,9 @@ void StrategicHandleQueenLosingControlOfSector( INT16 sSectorX, INT16 sSectorY, 
 
 	ubSectorID = SECTOR( sSectorX, sSectorY );
 	pSector = &SectorInfo[ ubSectorID ];
+	SAICampaignRecord( "OBSERVATION", "sector_lost", ubSectorID, -1,
+		ubSectorID, ubSectorID, pSector->ubGarrisonID, 65,
+		"queen lost surface control; command receives an imperfect intelligence report and strategic priorities may change" );
 	// Operational intel: loss of a surface sector is known to command, but exact hostile strength is uncertain.
 	VR_ReportOperationalIntel( ubSectorID, 65 );
 
@@ -6458,10 +6610,31 @@ void TransferGroupToPool( GROUP **pGroup )
 //NOTE:	Make sure you call SetEnemyGroupSector() first if the group is between sectors!!	See example in ReassignAIGroup()...
 void SendGroupToPool( GROUP **pGroup )
 {
+	if( !pGroup || !*pGroup )
+		return;
+
+	SAICampaignRecord( "REASSIGNMENT", "mobile_group",
+		(*pGroup)->pEnemyGroup ? (*pGroup)->pEnemyGroup->ubOperationalMission : 0,
+		(*pGroup)->ubGroupID,
+		SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY ),
+		SECTOR( gModSettings.ubSAISpawnSectorX, gModSettings.ubSAISpawnSectorY ),
+		(*pGroup)->ubGroupSize,
+		(*pGroup)->pEnemyGroup ? (*pGroup)->pEnemyGroup->ubOperationalSupply : 0,
+		"field assignment ended or no suitable target exists; return/regroup toward central reserve" );
+
 	if( (*pGroup)->ubSectorX == gModSettings.ubSAISpawnSectorX && (*pGroup)->ubSectorY == gModSettings.ubSAISpawnSectorY )
 	{
 		if( VR_HoldFormationAsReserve( *pGroup, VR_RESERVE_CENTRAL ) )
+		{
+			SAICampaignRecord( "RESERVE_HOLD", "mobile_group", VR_RESERVE_CENTRAL,
+				(*pGroup)->ubGroupID,
+				SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY ),
+				SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY ),
+				(*pGroup)->ubGroupSize, (*pGroup)->pEnemyGroup->ubOperationalSupply,
+				"formation retained as a persistent central reserve instead of being dissolved into the abstract pool" );
+			SAICampaignClosePlan( *pGroup, "field mission ended; formation is now holding as persistent central reserve" );
 			return;
+		}
 
 		TransferGroupToPool( pGroup );
 	}
@@ -6475,6 +6648,13 @@ void SendGroupToPool( GROUP **pGroup )
 			VR_SetFormationReserveRole( *pGroup, VR_RESERVE_CENTRAL, VR_OPREASON_REGROUP );
 			(*pGroup)->pEnemyGroup->usOperationalFlags |= VR_OPFLAG_REGROUPING;
 			VR_LogOperationalDecision( *pGroup, "RETURN_TO_RESERVE", NULL );
+			SAICampaignRecord( "OPERATIONAL_OVERRIDE", "regroup", VR_OPMISSION_REGROUP,
+				(*pGroup)->ubGroupID,
+				SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY ),
+				SECTOR( gModSettings.ubSAISpawnSectorX, gModSettings.ubSAISpawnSectorY ),
+				(*pGroup)->pEnemyGroup->ubOperationalSupply,
+				(*pGroup)->pEnemyGroup->ubOperationalMorale,
+				"operational layer marked the returning formation as regrouping and assigned it a central-reserve role" );
 		}
 	}
 }
