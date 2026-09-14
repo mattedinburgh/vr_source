@@ -78,7 +78,7 @@ Preferred migration direction:
 - retain legacy 8-bit path at scale 1
 - use the existing true-colour C++ renderer as the VHD path
 - extend true-colour image/package loading to support multi-subimage assets
-- allow legacy imagery to be converted/cached into the VHD representation where no native HD art exists
+- keep legacy indexed fallback compact; scale ETRLE imagery and use scale-aware indexed C++ multi-Z blitters where no native HD art exists
 
 This gives one maintainable scale-aware C++ path for:
 - clipping
@@ -111,7 +111,7 @@ Status: renderer plumbing implemented; build/runtime validation pending.
 Implemented foundations:
 - native `VHD2/` and `VHD4/` tactical tile lookup with legacy JSD identity preserved
 - scale-aware JSD generation and true-colour per-pixel Z lookup
-- legacy indexed map-tile fallback promoted to RGBA at 2x/4x, avoiding source-pixel-coupled assembly multi-Z blitters
+- legacy indexed map-tile fallback remains compressed ETRLE; scaled multi-Z map rendering is diverted to a scale-aware C++ indexed path
 - legacy soldier animation fallback scaling while preserving palette recolouring
 - scale-aware C++ multi-Z palette path for scaled `SOLDIER_MULTITILE_Z`/corpse-style rendering, including palette index 254 trans-shadow semantics
 - scaled roof/height, render-origin, mouse, scrolling and occlusion-bubble screen-space offsets
@@ -135,7 +135,7 @@ Requirements:
 ### VHD-2 — generated legacy fallback
 Status: runtime nearest-neighbour fallback is implemented; persistent cache/quality upgrade remains future work.
 
-Missing native tile art is currently enlarged in memory. Indexed map packages are promoted to RGBA so structure depth remains scale-aware; indexed soldier animation packages stay palette-based.
+Missing native tile art is enlarged in memory with nearest-neighbour ETRLE scaling while remaining indexed/compressed. Scale-aware C++ multi-Z rendering maps 2x/4x source pixels back to legacy JSD coordinates. Soldier animation packages likewise remain palette-based.
 
 ### VHD-3 — tactical actors/effects
 
