@@ -38,6 +38,7 @@
 #endif
 
 #include "Strategic Modernization.h"
+#include "Strategic Operational AI.h"
 
 // Lion Paratroops
 #include "Strategic Town Loyalty.h"
@@ -5139,7 +5140,7 @@ void ExecuteStrategicAIAction( UINT16 usActionCode, INT16 sSectorX, INT16 sSecto
 // WDS - New AI
 void HourlyCheckStrategicAI()
 {
-	// Nothing (yet!)
+	VR_HourlyOperationalUpdate();
 }
 
 
@@ -6494,6 +6495,7 @@ void MoveSAIGroupToSector( GROUP **pGroup, UINT8 ubSectorID, UINT32 uiMoveCode, 
 	}
 
 	(*pGroup)->pEnemyGroup->ubIntention = ubIntention;
+	VR_OnEnemyGroupAssigned( *pGroup, ubSectorID, ubIntention );
 	(*pGroup)->ubMoveType = ONE_WAY;
 
 	if( (*pGroup)->ubSectorX == ubDstSectorX && (*pGroup)->ubSectorY == ubDstSectorY )
