@@ -980,9 +980,31 @@ static BOOLEAN RenderFullLogicalMercModel(
 		}
 	}
 
-	Layers::LayerGraphIterator layerIter = Layers::Instance().GetIterator( pSoldier->bMovementDirection );
+	// Validation pass. Nothing is drawn until every selected layer for this
+	// frame is known to be compatible with the Vengeance renderer. This makes
+	// the full-model path atomic: failure means a completely clean fallback.
+	Layers::LayerGraphIterator validateIter = Layers::Instance().GetIterator( pSoldier->bMovementDirection );
 	Layers::LayerGraphIterator layerEnd = Layers::Instance().GetIterationEnd( pSoldier->bMovementDirection );
 
+	for ( ; validateIter != layerEnd; ++validateIter )
+	{
+		const Layers::LayerProperties *pLayerProperties =
+			pBodyType->GetLayerProperties( validateIter->index );
+		if ( pLayerProperties == NULL || !pLayerProperties->render )
+			continue;
+
+		BodyType::LogicalSurfaceType *pLogicalSurface =
+			pBodyType->GetLogicalSurfaceType( validateIter->index, pSoldier );
+		if ( pLogicalSurface == NULL )
+			continue;
+
+		if ( !LogicalMercSurfaceFrameUsable( pLogicalSurface, usImageIndex ) )
+			return FALSE;
+	}
+
+	// Drawing pass. At this point every selected logical surface has been
+	// validated, so this cannot leave a partially rendered logical merc.
+	Layers::LayerGraphIterator layerIter = Layers::Instance().GetIterator( pSoldier->bMovementDirection );
 	for ( ; layerIter != layerEnd; ++layerIter )
 	{
 		const Layers::LayerProperties *pLayerProperties =
@@ -992,17 +1014,10 @@ static BOOLEAN RenderFullLogicalMercModel(
 
 		BodyType::LogicalSurfaceType *pLogicalSurface =
 			pBodyType->GetLogicalSurfaceType( layerIter->index, pSoldier );
-		if ( pLogicalSurface == NULL || pLogicalSurface->physicalSurfaceType == NULL )
+		if ( pLogicalSurface == NULL )
 			continue;
-
-		// Never half-render an alpha-backed layer with the old VR blitters.
-		if ( pLogicalSurface->alphaSurfaceType != NULL )
-			return FALSE;
 
 		HVOBJECT hLayer = pLogicalSurface->physicalSurfaceType->hVideoObject;
-		if ( hLayer == NULL || hLayer->ubBitDepth != 8 || usImageIndex >= hLayer->usNumberOfObjects )
-			continue;
-
 		UINT16 *pLayerShadeTable = ResolveVisibleEquipmentShadeTable(
 			pSoldier, pLogicalSurface->paletteTable, pDefaultShadeTable );
 		const BOOLEAN fIgnoreLayerShadows = pLayerProperties->renderShadows ? FALSE : TRUE;
