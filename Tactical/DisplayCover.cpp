@@ -228,17 +228,20 @@ CHAR16* GetTerrainName( const UINT8& ubTerrainType )
 
 TileDefines GetTileCoverIndex( const INT8& bCover )
 {
+	// Soft tactical ramp: deliberately avoid the stock hard red tile.
+	// These nodes are rendered through JA2's translucent reveal path, so the
+	// colours read as a faint wash over the world rather than painted terrain.
 	switch(bCover) {
 		case NO_COVER:
-			return SPECIALTILE_COVER_1; // red
+			return SPECIALTILE_COVER_2; // soft amber / orange
 		case MIN_COVER:
-			return SPECIALTILE_COVER_2; // orange
+			return SPECIALTILE_COVER_3; // pale yellow
 		case MED_COVER:
-			return SPECIALTILE_COVER_3; // yellow
+			return SPECIALTILE_COVER_4; // light green
 		case MAX_COVER:
 			return SPECIALTILE_COVER_5; // green
 		default:
-			return SPECIALTILE_COVER_4; // light green, can be used to denote that you just don't know.
+			return SPECIALTILE_COVER_4; // neutral light green for unknown
 	}
 }
 
@@ -259,16 +262,16 @@ void AddCoverObjectToWorld( const INT32& sGridNo, const UINT16& usGraphic, const
 
 	pNode->uiFlags |= LEVELNODE_REVEAL;
 
-	// Deliberately ultra-gentle visibility / cover overlay. The stock SPECIAL
-	// tiles are highly saturated; push them deep into the shade table so the
-	// colours become a barely-there tactical hint rather than a painted map.
-	// Display only: cover/LOS calculations are unchanged. Mine and trait-range
-	// overlays keep their original rendering because they run with cover draw off.
+	// Keep the source colour clean and let LEVELNODE_REVEAL do the softening.
+	// The reveal renderer blends the overlay with the tactical scene; forcing a
+	// very dark shade here turned warm colours muddy/brown. A near-normal shade
+	// preserves a clean, pastel-like translucent wash in both day and night.
+	// Display only: cover/LOS calculations are unchanged.
 	if( gubDrawMode != COVER_DRAW_OFF )
 	{
-		const UINT8 ubUltraGentleOverlayShade = DEFAULT_SHADE_LEVEL + 8;
-		pNode->ubShadeLevel = ubUltraGentleOverlayShade;
-		pNode->ubNaturalShadeLevel = ubUltraGentleOverlayShade;
+		const UINT8 ubSoftOverlayShade = DEFAULT_SHADE_LEVEL + 1;
+		pNode->ubShadeLevel = ubSoftOverlayShade;
+		pNode->ubNaturalShadeLevel = ubSoftOverlayShade;
 	}
 	else if( NightTime() )
 	{
