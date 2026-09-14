@@ -5593,6 +5593,10 @@ INT32 AIPathExposureCost(SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMov
 			break;
 
 		UINT16 usExposure = AIKnownThreatExposure(pSoldier, sPathSpot, pSoldier->pathing.bLevel);
+		// Existing smoke should make an otherwise exposed crossing substantially safer.
+		// Keep some residual risk because stale contacts can still fire through concealment.
+		if (InSmoke(sPathSpot, pSoldier->pathing.bLevel))
+			usExposure /= 3;
 		if (usExposure > 0)
 		{
 			++iExposedStreak;
