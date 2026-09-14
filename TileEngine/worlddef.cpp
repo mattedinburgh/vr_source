@@ -670,7 +670,7 @@ static void TraceSanMonaLoad( const STR8 pStage, const STR8 pDetail )
 		pSafeDetail[0] != '\0' ? ": " : "", pSafeDetail );
 }
 
-static const CHAR8 *SectorVisualLeafName( const STR8 pFilename )
+static const CHAR8 *SectorVisualLeafName( const CHAR8 *pFilename )
 {
 	if ( pFilename == NULL )
 		return "";
