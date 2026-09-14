@@ -2,7 +2,7 @@
 """Compose A3-only dark irrigated-soil art from the authored tropical water family.
 
 The south farm beds are built from WATER1 land tiles bounded by POOL/ANOTHERDEBRIS
-pieces.  Recolouring only the pool edge therefore leaves a bright blue interior.
+pieces. Recolouring only the pool edge therefore leaves a bright blue interior.
 This preserves every TR_WATER frame's dimensions, offsets and alpha but turns the
 water pixels into damp tropical loam. Terrain identity stays WATER1 for now; this
 pass is deliberately visual-only until gameplay movement is audited.
@@ -42,7 +42,9 @@ def remap(frame, frame_index: int):
                 nb = 12 + (lum * 12) // 100
                 # Faint longitudinal texture reads as shallow furrows rather than flat paint.
                 if ((x + frame_index * 3) % 11) in (0, 1):
-                    nr -= 6; ng -= 5; nb -= 2
+                    nr -= 6
+                    ng -= 5
+                    nb -= 2
             else:
                 # Foam/neutral pixels become packed, slightly drier soil.
                 nr = 45 + (lum * 42) // 100 + noise
@@ -72,15 +74,41 @@ def write_b1tc(path: Path, frames, meta):
             fh.write(raw)
 
 
+def resolve_water_source(tilesets_root: Path, preferred_tileset: Path) -> Path:
+    """Find the real TR_WATER source in the fetched Vengeance tile library.
+
+    Tileset 38 is an A3 composition target and does not necessarily carry every
+    legacy tropical source STI. Prefer it when present, then fall back to the
+    actual source family elsewhere in the same disposable Data-Maps-Tiles tree.
+    """
+    for name in ("TR_WATER.STI", "tr_water.sti"):
+        candidate = preferred_tileset / name
+        if candidate.is_file():
+            return candidate
+
+    matches = sorted(
+        p for p in tilesets_root.rglob("*")
+        if p.is_file() and p.name.lower() == "tr_water.sti"
+    )
+    if not matches:
+        raise FileNotFoundError(
+            f"TR_WATER.STI was not found anywhere under fetched tilesets root: {tilesets_root}"
+        )
+
+    # Deterministic choice. All candidates are from the freshly fetched,
+    # disposable map/tile repository; never consult the live game installation.
+    source = matches[0]
+    print(f"Tileset 38 has no TR_WATER.STI; using authored source {source}")
+    return source
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tilesets-root", required=True, type=Path)
     ap.add_argument("--target-38", required=True, type=Path)
     ns = ap.parse_args()
 
-    source = ns.tilesets_root / "38" / "TR_WATER.STI"
-    if not source.exists():
-        source = ns.tilesets_root / "38" / "tr_water.sti"
+    source = resolve_water_source(ns.tilesets_root, ns.target_38)
     frames, meta, _ = decode_sti(source)
     if not frames:
         raise ValueError(f"{source}: no frames decoded")
