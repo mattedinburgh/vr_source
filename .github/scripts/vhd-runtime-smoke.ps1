@@ -37,7 +37,7 @@ Get-ChildItem -LiteralPath $GameRoot -File | ForEach-Object {
 
 # Reuse large, read-only game data through directory junctions.
 $readOnlyDirs = Get-ChildItem -LiteralPath $GameRoot -Directory |
-    Where-Object { $_.Name -like 'Data-*' -or $_.Name -eq 'Shaders' }
+    Where-Object { $_.Name -eq 'Data' -or $_.Name -like 'Data-*' -or $_.Name -eq 'Shaders' }
 
 foreach ($dir in $readOnlyDirs) {
     $link = Join-Path $smokeRoot $dir.Name
