@@ -228,20 +228,19 @@ CHAR16* GetTerrainName( const UINT8& ubTerrainType )
 
 TileDefines GetTileCoverIndex( const INT8& bCover )
 {
-	// Soft tactical ramp: deliberately avoid the stock hard red tile.
-	// These nodes are rendered through JA2's translucent reveal path, so the
-	// colours read as a faint wash over the world rather than painted terrain.
+	// Preserve the familiar full tactical scale. Transparency is handled by
+	// the renderer, not by desaturating or replacing the underlying colours.
 	switch(bCover) {
 		case NO_COVER:
-			return SPECIALTILE_COVER_2; // soft amber / orange
+			return SPECIALTILE_COVER_1; // red
 		case MIN_COVER:
-			return SPECIALTILE_COVER_3; // pale yellow
+			return SPECIALTILE_COVER_2; // orange
 		case MED_COVER:
-			return SPECIALTILE_COVER_4; // light green
+			return SPECIALTILE_COVER_3; // yellow
 		case MAX_COVER:
 			return SPECIALTILE_COVER_5; // green
 		default:
-			return SPECIALTILE_COVER_4; // neutral light green for unknown
+			return SPECIALTILE_COVER_4; // light green / unknown
 	}
 }
 
@@ -262,16 +261,13 @@ void AddCoverObjectToWorld( const INT32& sGridNo, const UINT16& usGraphic, const
 
 	pNode->uiFlags |= LEVELNODE_REVEAL;
 
-	// Keep the source colour clean and let LEVELNODE_REVEAL do the softening.
-	// The reveal renderer blends the overlay with the tactical scene; forcing a
-	// very dark shade here turned warm colours muddy/brown. A near-normal shade
-	// preserves a clean, pastel-like translucent wash in both day and night.
-	// Display only: cover/LOS calculations are unchanged.
+	// Keep the tactical colours clean. The dedicated cover-overlay blitter
+	// supplies the very high transparency, so colour intensity should stay
+	// neutral instead of being darkened into muddy reds/browns.
 	if( gubDrawMode != COVER_DRAW_OFF )
 	{
-		const UINT8 ubSoftOverlayShade = DEFAULT_SHADE_LEVEL + 1;
-		pNode->ubShadeLevel = ubSoftOverlayShade;
-		pNode->ubNaturalShadeLevel = ubSoftOverlayShade;
+		pNode->ubShadeLevel = DEFAULT_SHADE_LEVEL;
+		pNode->ubNaturalShadeLevel = DEFAULT_SHADE_LEVEL;
 	}
 	else if( NightTime() )
 	{
