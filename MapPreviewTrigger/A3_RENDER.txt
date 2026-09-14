@@ -5,3 +5,4 @@ Trigger: five-sector Map Factory pilot 2026-09-14T10:42Z
 Trigger: rebuild five-sector Map Factory pilot after worldman include fix
 Trigger: five-sector pilot after tile surface include fix
 Trigger: composition-kit methodology pilot under bounded optimization policy
+Trigger: macro-remaster methodology pilot with automated scoring
