@@ -42,6 +42,7 @@
 #include "opplist.h"
 #include "Items.h"
 #include "Weapons.h"
+#include "Isometric Utils.h"
 #include "LOS.h"
 
 // sevenfm: for voice taunts
