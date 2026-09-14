@@ -9,6 +9,7 @@
 #include "Screens.h"
 #include "Maputility.h"
 #include "worlddef.h"
+#include "worldman.h"
 #include "overhead.h"
 #include "fileman.h"
 #include "loadscreen.h"
