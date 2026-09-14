@@ -14,7 +14,7 @@ permissions:
 
 concurrency:
   group: map-factory-port
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   port-and-build:
@@ -46,15 +46,29 @@ jobs:
 
       - name: Replay only proven map-factory commits
         shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
           $git = '${{ steps.git.outputs.path }}'
-          & $git config user.name 'github-actions[bot]'
-          & $git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-          & $git fetch origin install/all-2026-09-12
+          # actions/checkout can fall back to a REST archive when git.exe is not
+          # on PATH.  Rehydrate a real repository with the GitHub Desktop Git we
+          # located above instead of assuming .git exists.
+          if (-not (Test-Path (Join-Path $env:GITHUB_WORKSPACE '.git'))) {
+            Write-Host 'Checkout is an archive; initializing repository metadata.'
+            & $git -C $env:GITHUB_WORKSPACE init
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            & $git -C $env:GITHUB_WORKSPACE remote add origin "https://x-access-token:$env:GH_TOKEN@github.com/mattedinburgh/vr_source.git"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+          & $git -C $env:GITHUB_WORKSPACE config user.name 'github-actions[bot]'
+          & $git -C $env:GITHUB_WORKSPACE config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          & $git -C $env:GITHUB_WORKSPACE fetch origin install/all-2026-09-12
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $git reset --hard origin/install/all-2026-09-12
+          & $git -C $env:GITHUB_WORKSPACE checkout -B map-factory-port FETCH_HEAD
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Oldest -> newest. Trigger-only commits are intentionally excluded.
@@ -80,21 +94,21 @@ jobs:
 
           foreach ($sha in $commits) {
             Write-Host "Fetching map commit $sha"
-            & $git fetch origin $sha
+            & $git -C $env:GITHUB_WORKSPACE fetch origin $sha
             if ($LASTEXITCODE -ne 0) { throw "Could not fetch $sha" }
 
             Write-Host "Cherry-picking $sha"
-            & $git cherry-pick $sha
+            & $git -C $env:GITHUB_WORKSPACE cherry-pick $sha
             if ($LASTEXITCODE -ne 0) {
               Write-Host '--- CHERRY-PICK CONFLICT ---'
-              & $git status --short
-              & $git diff --name-only --diff-filter=U
-              & $git cherry-pick --abort
+              & $git -C $env:GITHUB_WORKSPACE status --short
+              & $git -C $env:GITHUB_WORKSPACE diff --name-only --diff-filter=U
+              & $git -C $env:GITHUB_WORKSPACE cherry-pick --abort
               throw "Map Factory port conflicted at $sha; canonical branch was not modified."
             }
           }
 
-          & $git log --oneline -20
+          & $git -C $env:GITHUB_WORKSPACE log --oneline -20
 
       - name: Apply Map Factory v2 visual and composition refinement
         shell: powershell
@@ -110,9 +124,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Map Factory v2 refinement failed with exit code $LASTEXITCODE" }
 
           $git = '${{ steps.git.outputs.path }}'
-          & $git add Utils/MapUtility.cpp TileEngine/worlddef.cpp
+          & $git -C $env:GITHUB_WORKSPACE add Utils/MapUtility.cpp TileEngine/worlddef.cpp
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $git commit -m 'Map Factory v2: authored pilot layouts and restrained colour'
+          & $git -C $env:GITHUB_WORKSPACE commit -m 'Map Factory v2: authored pilot layouts and restrained colour'
           if ($LASTEXITCODE -ne 0) { throw 'Could not commit Map Factory v2 refinement.' }
 
       - name: Retarget projects to v120 for render-PC build
@@ -157,14 +171,14 @@ jobs:
         shell: powershell
         run: |
           $git = '${{ steps.git.outputs.path }}'
-          & $git fetch origin install/all-2026-09-12
+          & $git -C $env:GITHUB_WORKSPACE fetch origin install/all-2026-09-12
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          & $git rebase origin/install/all-2026-09-12
+          & $git -C $env:GITHUB_WORKSPACE rebase origin/install/all-2026-09-12
           if ($LASTEXITCODE -ne 0) {
-            & $git rebase --abort
+            & $git -C $env:GITHUB_WORKSPACE rebase --abort
             throw 'Canonical branch changed incompatibly during validation; no push performed.'
           }
 
-          & $git push origin HEAD:install/all-2026-09-12
+          & $git -C $env:GITHUB_WORKSPACE push origin HEAD:install/all-2026-09-12
           if ($LASTEXITCODE -ne 0) { throw 'Validated Map Factory port could not be pushed.' }
