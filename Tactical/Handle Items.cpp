@@ -247,7 +247,7 @@ INT32 HandleItem( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel, UINT16 usHa
 	{
 		pTargetSoldier = MercPtrs[ usSoldierIndex ];
 
-		if (fFromUI && Item[usHandItem].usItemClass != IC_MEDKIT)
+		if (fFromUI && !ItemCanGiveFirstAid( usHandItem ))
 		{
 			INT32 sInteractiveGridNo;
 
@@ -290,7 +290,7 @@ INT32 HandleItem( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel, UINT16 usHa
 	// sevenfm: r8451
 	if ( fFromUI && pSoldier->bTeam == gbPlayerNum && pTargetSoldier && 
 		(pTargetSoldier->bTeam == gbPlayerNum || pTargetSoldier->aiData.bNeutral) && pTargetSoldier->ubBodyType != CROW && 
-		Item[usHandItem].usItemClass != IC_MEDKIT && !Item[usHandItem].gascan &&
+		!ItemCanGiveFirstAid( usHandItem ) && !Item[usHandItem].gascan &&
 		!ItemCanBeAppliedToOthers( usHandItem ) )
 	{
 		// Current 1.13 safety fix: never let an attack resolve against the acting soldier.
@@ -810,7 +810,7 @@ INT32 HandleItem( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel, UINT16 usHa
 	}
 
 	//USING THE MEDKIT
-	if ( Item[ usHandItem ].usItemClass == IC_MEDKIT )
+	if ( ItemCanGiveFirstAid( usHandItem ) )
 	{
 		// ATE: AI CANNOT GO THROUGH HERE!
 		INT32 usMapPos;
@@ -5507,7 +5507,7 @@ BOOLEAN HandItemWorks( SOLDIERTYPE *pSoldier, INT8 bSlot )
 	// shape to be usable, and doesn't break during use.
 	// Exception: land mines.	You can bury them broken, they just won't blow!
 	//	if ( (Item[ pObj->usItem ].fFlags & ITEM_DAMAGEABLE) && (pObj->usItem != MINE) && (Item[ pObj->usItem ].usItemClass != IC_MEDKIT) && pObj->usItem != GAS_CAN )
-	if ( (Item[ pObj->usItem ].damageable ) && (!Item[pObj->usItem].mine ) && (Item[ pObj->usItem ].usItemClass != IC_MEDKIT) && !Item[pObj->usItem].gascan )
+	if ( (Item[ pObj->usItem ].damageable ) && (!Item[pObj->usItem].mine ) && (!ItemCanGiveFirstAid( pObj->usItem )) && !Item[pObj->usItem].gascan )
 	{
 		// if it's still usable, check whether it breaks
 		if ( (*pObj)[0]->data.objectStatus >= USABLE)
@@ -6775,9 +6775,10 @@ void SoldierStealItemFromSoldier( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
 	BOOLEAN			fShouldSayCoolQuote = FALSE;
 	BOOLEAN			fDidSayCoolQuote = FALSE;
 
-	// The steal action itself is charged once in Weapons.cpp.  Selecting several
-	// items from the steal menu must not silently add another pickup AP charge per
-	// item; this was the source of the remaining excessive AP drain.
+	// Vengeance/1.13-style scaling: the close-contact steal attempt has its own
+	// interaction cost, while every inventory entry actually taken costs the
+	// normal item-handling AP as well.  This keeps taking one item cheap, but
+	// prevents stripping an entire enemy inventory for the price of one action.
 	if ( iItemIndex == ITEM_PICKUP_ACTION_ALL || iItemIndex == ITEM_PICKUP_SELECTION )
 	{
 		pTempItemPool = pItemPool;
@@ -6795,6 +6796,16 @@ void SoldierStealItemFromSoldier( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
 
 			if ( fPickup )
 			{
+				// Match 1.13's multi-item stealing behaviour: each successfully taken
+				// inventory entry consumes another normal pickup/handling cost.
+				const INT16 sPerItemAPCost = max( 1, GetBasicAPsToPickupItem( pSoldier ) );
+				if ( pSoldier->bActionPoints < sPerItemAPCost )
+				{
+					// Once we cannot afford the next selected item, later selected items
+					// cannot be afforded either.  Leave them on the opponent.
+					break;
+				}
+
 				// Work on a copy first.  AutoPlaceObjectAnywhere consumes what fits
 				// into inventory and routes any remainder to the sector/world inventory.
 				// This also handles partial stacks correctly when the merc has almost
@@ -6811,9 +6822,11 @@ void SoldierStealItemFromSoldier( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
 
 					if ( pSoldier->ubProfile != NO_PROFILE )
 						gMercProfiles[ pSoldier->ubProfile ].records.usItemsStolen++;
+
+					DeductPoints( pSoldier, sPerItemAPCost, 0, AFTERACTION_INTERRUPT );
 				}
 				// If even world placement failed, leave the opponent's original item
-				// untouched instead of deleting or losing it.
+				// untouched and do not charge AP for an item that was not taken.
 			}
 
 			pTempItemPool = pTempItemPool->pNext;

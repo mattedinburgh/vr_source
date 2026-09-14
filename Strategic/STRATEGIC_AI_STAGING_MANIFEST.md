@@ -2,7 +2,7 @@
 
 Canonical integration branch: `install/all-2026-09-12`
 
-Status: **TRACKED, INACTIVE, NOT PART OF THE CURRENT PLAYABLE AI**
+Status: **FOUNDATION FORWARD-PORTED TO CANONICAL; OPERATIONAL ORDER ISSUANCE REMAINS GATED OFF**
 
 ## Why this exists
 
@@ -19,91 +19,97 @@ The relevant historical branches are:
 - `diagnostics/strategic-campaign-blackbox`
 - `diagnostics/strategic-campaign-companion`
 
-## Unique staged work
+## Current canonical status
 
-The historical strategic branches contain preparation for:
+The safe foundation has now been forward-ported directly onto `install/all-2026-09-12`:
 
-- team-owned strategic groups / compatibility bridge;
-- persistent enemy formation identity;
-- operational missions and reserve roles;
-- formation supply and morale;
-- delayed/degraded operational intelligence;
-- target scoring for towns, mines, SAM sites, ownership and distance;
-- retreat -> regroup -> reserve lifecycle;
-- staged transport groups / convoys;
-- staged enemy helicopters;
-- staged ASD purchasing/asset logic;
-- strategic decision telemetry.
+- save-compatible team ownership bridge for strategic groups;
+- persistent enemy formation identity/state stored inside former raw-save padding;
+- explicit 29-byte `ENEMYGROUP` compile guard;
+- byte-pair storage for 16-bit formation IDs/flags so alignment cannot enlarge legacy saves;
+- persistent mission, reserve role, supply, morale, contact confidence and retreat state;
+- local/degrading operational intelligence with no target-scoring access to live player positions;
+- auditable target scoring for ownership, garrisons, towns, mines, SAM sites, distance and known force risk;
+- tactical map-edge escape -> persistent strategic retreat formation handoff;
+- existing pursuit/PBI/autoresolve path retained, with legacy static-counter fallback on allocation failure;
+- RETREAT -> REGROUP -> RESERVE recovery lifecycle;
+- movement supply consumption, friendly-hub resupply and morale recovery/erosion;
+- pure reserve-readiness and reserve-selection queries;
+- a compiled but runtime-OFF reserve-release hook ahead of palace reinforcement spawning;
+- shared `VRAnalytics` / Black Box telemetry only;
+- integrity checks enforcing save layout, knowledge fairness, retreat handoff and the OFF movement gate.
 
-The core operational-AI prototypes include interfaces such as:
+The operational decision gate remains:
 
-- `VR_EnsureEnemyFormationState`
-- `VR_SetFormationMission`
-- `VR_SetFormationReserveRole`
-- `VR_ReportOperationalIntel`
-- `VR_ScoreOperationalTarget`
-- `VR_FindBestOperationalTarget`
-- `VR_OnEnemyGroupAssigned`
-- `VR_OnEnemyGroupArrived`
-- `VR_OnEnemyGroupRetreated`
-- `VR_HourlyOperationalUpdate`
+```cpp
+#define VR_OPERATIONAL_DECISION_LOOP_ENABLED 0
+```
 
-## Why it is not compiled into the canonical branch yet
+Thus the new state/intelligence/scoring systems are active foundations, but they do **not** yet replace the
+legacy Queen as the authority that issues strategic movement orders.
 
-The strategic prototype is **not safe to forward-copy as active code**.
+## Historical staging still not integrated
 
-It depends on structural changes that are absent from the current canonical branch, including operational fields
-inside strategic enemy-group state and the staged team-group compatibility bridge. The old strategic branch was
-also created from a much older repository base.
+The historical branches remain useful only for optional/advanced consumers not yet forward-ported:
 
-Blindly replacing current `Strategic Movement.*`, `Strategic AI.*`, or project files with those historical
-versions would undo newer canonical changes and create savegame/serialization risk.
+- transport groups / convoys;
+- enemy helicopters;
+- ASD purchasing/asset logic;
+- broader operational mission issuance beyond the prepared reserve-reinforcement hook.
 
-Therefore:
+Several historical prototype choices were deliberately **not** copied:
 
-1. tactical AI from those branches is treated as superseded;
-2. strategic modernization is explicitly classified as **inactive staged work**;
-3. old branches remain archaeology/reference until the prerequisites are ported forward;
-4. no strategic prototype may silently become a second active AI integration line.
+- no random/time-derived formation IDs;
+- no global `PlayerMercsInSector()` intelligence broadcast;
+- no separate `Strategic Operational BlackBox.txt`;
+- no wholesale replacement of current Strategic Movement / Strategic AI files;
+- no second strategic AI integration branch.
 
-## Required forward-integration sequence
+## Why the remaining prototype is not copied wholesale
 
-When strategic modernization is resumed, port it into `install/all-2026-09-12` in this order:
+The remaining historical code was created from a much older repository base. Blindly replacing current
+`Strategic Movement.*`, `Strategic AI.*`, or project files would undo newer canonical retreat, pursuit,
+autoresolve, analytics and build work. Only audited concepts may be forward-ported into current files.
 
-1. **Team-group compatibility bridge**
-   - audit raw `fPlayer` assumptions;
-   - preserve save size/layout where possible;
-   - prove old-save compatibility.
+## Forward-integration sequence
 
-2. **Persistent formation state**
-   - formation ID;
-   - mission;
-   - reserve role;
-   - supply/morale;
-   - operational intel snapshot.
+1. **Team-group compatibility bridge — DONE**
+   - old-save normalization and unchanged GROUP byte footprint.
 
-3. **Operational intelligence**
-   - local reports only;
-   - confidence degradation with time/distance;
-   - no global omniscience.
+2. **Persistent formation state — DONE**
+   - deterministic identity, mission, reserve role, supply/morale and intel snapshot;
+   - raw-save layout guarded at compile time.
 
-4. **Operational mission loop**
-   - garrison/patrol/recon/attack/reinforce/relieve/intercept;
-   - retreat/regroup/reserve;
-   - bounded reserve release.
+3. **Operational intelligence — FOUNDATION DONE**
+   - observer-local contact reports;
+   - hourly confidence decay;
+   - target scorer prohibited from querying live player/militia presence.
 
-5. **Strategic telemetry**
-   - use the canonical shared analytics/Black Box path;
-   - do not restore a separate strategic logging architecture if the shared system can represent the decision.
+4. **Retreat/regroup/reserve lifecycle — FOUNDATION DONE**
+   - tactical edge escape becomes a persistent remnant formation;
+   - pursuit/autoresolve behavior preserved;
+   - uncontested escape completes into REGROUP;
+   - fresh-contact and morale recovery gate later RESERVE readiness.
 
-6. **Optional modernization consumers**
+5. **Operational mission issuance — PREPARED, OFF**
+   - target recommendations are advisory;
+   - reserve selection is pure;
+   - high-priority garrison reserve release is compiled behind
+     `VR_OPERATIONAL_DECISION_LOOP_ENABLED == 0`;
+   - palace spawning remains the fallback.
+
+6. **Strategic telemetry — DONE**
+   - canonical shared `VRAnalytics` only.
+
+7. **Optional modernization consumers — NOT STARTED**
    - transport groups first;
    - enemy helicopters second;
    - ASD purchasing last.
 
-7. **Enable one consumer at a time**
-   - each remains OFF by default until save/load, autoresolve, reinforcement, retreat and simultaneous-arrival
-     regression tests pass.
+8. **Activation requirement**
+   - obtain a clean Release Win32 integration build;
+   - validate save/load, pursuit, autoresolve and simultaneous-arrival behavior;
+   - then enable only the narrow reserve-reinforcement consumer before considering broader mission control.
 
 ## Branch policy
 

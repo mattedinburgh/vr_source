@@ -12941,14 +12941,44 @@ INT8 FindFirstAidKit( SOLDIERTYPE * pSoldier )
 	INT8 invsize = (INT8)pSoldier->inv.size();
 	for ( INT8 bLoop = 0; bLoop < invsize; ++bLoop)
 	{
-		if (pSoldier->inv[bLoop].exists() == true) {
-			if (Item[pSoldier->inv[bLoop].usItem].firstaidkit  )
-			{
+		if (pSoldier->inv[bLoop].exists() == true)
+		{
+			UINT16 usItem = pSoldier->inv[bLoop].usItem;
+			if ( ItemIsFirstAidKit( usItem ) && !ItemIsImprovisedBandage( usItem ) )
 				return( bLoop );
-			}
 		}
 	}
 	return( NO_SLOT );
+}
+
+INT8 FindImprovisedBandage( SOLDIERTYPE * pSoldier )
+{
+	INT8 invsize = (INT8)pSoldier->inv.size();
+	for ( INT8 bLoop = 0; bLoop < invsize; ++bLoop)
+	{
+		if ( pSoldier->inv[bLoop].exists() &&
+			 ItemIsImprovisedBandage( pSoldier->inv[bLoop].usItem ) &&
+			 pSoldier->inv[bLoop][0]->data.objectStatus >= USABLE )
+		{
+			return bLoop;
+		}
+	}
+	return NO_SLOT;
+}
+
+INT8 FindBestFirstAidItem( SOLDIERTYPE * pSoldier )
+{
+	// Preserve 1.13's deliberate preference for a first-aid kit over a medical
+	// bag, while making the improvised rag a true last-resort fallback.
+	INT8 bSlot = FindFirstAidKit( pSoldier );
+	if ( bSlot != NO_SLOT )
+		return bSlot;
+
+	bSlot = FindMedKit( pSoldier );
+	if ( bSlot != NO_SLOT )
+		return bSlot;
+
+	return FindImprovisedBandage( pSoldier );
 }
 
 INT8 FindCamoKit( SOLDIERTYPE * pSoldier )
@@ -16336,6 +16366,41 @@ BOOLEAN HasItemFlag( UINT16 usItem, UINT32 aFlag )
 {
 	return( (Item[usItem].usItemFlag & aFlag) != 0 );
 }
+
+BOOLEAN ItemIsFirstAidKit( UINT16 usItem )
+{
+	return ( usItem < MAXITEMS && Item[usItem].firstaidkit );
+}
+
+BOOLEAN ItemIsMedicalKit( UINT16 usItem )
+{
+	return ( usItem < MAXITEMS && Item[usItem].medicalkit );
+}
+
+BOOLEAN ItemIsImprovisedBandage( UINT16 usItem )
+{
+	if ( usItem >= MAXITEMS )
+		return FALSE;
+
+	if ( HasItemFlag( usItem, IMPROVISED_BANDAGE ) )
+		return TRUE;
+
+	// Compatibility with pre-feature Vengeance data: rag has been item 1022
+	// throughout the 1.13/VR data lineage and already carries CAMO_REMOVAL.
+	// New data should use IMPROVISED_BANDAGE explicitly.
+	return ( usItem == 1022 && HasItemFlag( usItem, CAMO_REMOVAL ) );
+}
+
+BOOLEAN ItemCanGiveFirstAid( UINT16 usItem )
+{
+	if ( usItem >= MAXITEMS )
+		return FALSE;
+
+	return ( Item[usItem].usItemClass == IC_MEDKIT ||
+		ItemIsFirstAidKit( usItem ) ||
+		ItemIsImprovisedBandage( usItem ) );
+}
+
 
 // Flugente: get first item number that has this flag. Use with caution, as we search in all items
 BOOLEAN GetFirstItemWithFlag( UINT16* pusItem, UINT32 aFlag )

@@ -60,6 +60,7 @@
 	#include "Queen Command.h"
 	// HEADROCK HAM 4: Included for new CTH indicator
 	#include "weapons.h"
+#include "Items.h"
 	#include "Map Screen Interface.h"	// added by Flugente for SquadNames
 	#include "environment.h"
 	#include "SkillCheck.h"				// added by Flugente
@@ -998,7 +999,7 @@ void PopupMovementMenu( UI_EVENT *pUIEvent )
 		else
 		{
 			// Create button based on what is in our hands at the moment!
-			switch( Item[ pSoldier->inv[ HANDPOS ].usItem ].usItemClass )
+			switch( ItemCanGiveFirstAid( pSoldier->inv[ HANDPOS ].usItem ) ? IC_MEDKIT : Item[ pSoldier->inv[ HANDPOS ].usItem ].usItemClass )
 			{
 				case IC_PUNCH:
 

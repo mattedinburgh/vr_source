@@ -204,7 +204,7 @@ BOOLEAN CanCharacterAutoBandageTeammate( SOLDIERTYPE *pSoldier )
 	}
 
 	// they must have oklife or more, not be collapsed, have some level of medical competence, and have a med kit of some sort
-	if ( (pSoldier->stats.bLife >= OKLIFE) && !(pSoldier->bCollapsed) && (pSoldier->stats.bMedical > 0) && (FindObjClass( pSoldier, IC_MEDKIT ) != NO_SLOT) )
+	if ( (pSoldier->stats.bLife >= OKLIFE) && !(pSoldier->bCollapsed) && (pSoldier->stats.bMedical > 0) && (FindBestFirstAidItem( pSoldier ) != NO_SLOT) )
 	{
 		return( TRUE );
 	}
@@ -725,7 +725,7 @@ INT8 DecideEmergencySelfAid(SOLDIERTYPE *pSoldier)
 	if (pSoldier->bBleeding < 15 && iHealthPercent >= 60)
 		return AI_ACTION_NONE;
 
-	INT8 bMedKitSlot = FindObjClass(pSoldier, IC_MEDKIT);
+	INT8 bMedKitSlot = FindBestFirstAidItem( pSoldier );
 	if (bMedKitSlot == NO_SLOT)
 		return AI_ACTION_NONE;
 
@@ -761,7 +761,7 @@ INT8 DecideEmergencyBuddyAid(SOLDIERTYPE *pSoldier)
 		return AI_ACTION_NONE;
 	}
 
-	INT8 bMedKitSlot = FindObjClass(pSoldier, IC_MEDKIT);
+	INT8 bMedKitSlot = FindBestFirstAidItem( pSoldier );
 	if (bMedKitSlot == NO_SLOT)
 		return AI_ACTION_NONE;
 
@@ -828,7 +828,7 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 		return AI_ACTION_NONE;
 	}
 
-	INT8 bMedKitSlot = FindObjClass(pSoldier, IC_MEDKIT);
+	INT8 bMedKitSlot = FindBestFirstAidItem( pSoldier );
 	if (bMedKitSlot == NO_SLOT)
 		return AI_ACTION_NONE;
 
@@ -1062,7 +1062,7 @@ INT8 DecideAutoBandage( SOLDIERTYPE * pSoldier )
 		return( AI_ACTION_NONE );
 	}
 
-	bSlot = FindObjClass( pSoldier, IC_MEDKIT );
+	bSlot = FindBestFirstAidItem( pSoldier );
 	if (bSlot == NO_SLOT)
 	{
 		// no medical kit!

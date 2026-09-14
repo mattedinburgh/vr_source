@@ -97,6 +97,10 @@ class SOLDIERTYPE;
 #define LEVELNODE_WIREFRAME									0x00100000
 #define LEVELNODE_ITEM											0x00200000
 #define LEVELNODE_IGNOREHEIGHT							0x00400000
+// Fallout-style selected-merc occlusion cutaway. These are transient render
+// state bits only; they never alter structure, LOS, cover, pathing or ballistics.
+#define LEVELNODE_OCCLUSION_FADE					0x00800000
+#define LEVELNODE_OCCLUSION_CUTOUT					0x01000000
 #define LEVELNODE_DYNAMIC										0x02000000
 #define LEVELNODE_LASTDYNAMIC								0x04000000
 #define LEVELNODE_PHYSICSOBJECT							0x08000000
@@ -357,6 +361,7 @@ BOOLEAN NewWorld( INT32 nMapRows,  INT32 nMapCols );
 BOOLEAN SaveWorld(const STR8 puiFilename, FLOAT dMajorMapVersion=MAJOR_MAP_VERSION, UINT8 ubMinorMapVersion=MINOR_MAP_VERSION);//dnl ch33 150909
 BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion=NULL, UINT8* pMinorMapVersion=NULL);//dnl ch44 290909
 void TraceB1RemasterLoad( const STR8 pStage, const STR8 pDetail );
+BOOLEAN IsSanMonaC5GraphicsOnlyProfile( void );
 
 void CompileWorldMovementCosts(void);//dnl ch56 151009
 void RecompileLocalMovementCosts( INT32 sCentreGridNo );

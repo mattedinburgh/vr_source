@@ -128,3 +128,16 @@ The branch now contains one deliberately narrow source-side visual change:
 No health, damage, warning, morale or other semantic gameplay colours were changed.
 
 Map-screen palette-index text and Bobby Ray palette-index text remain untouched until the real asset preview sheets are reviewed, because changing those indices without seeing the themed backgrounds would be guesswork.
+
+
+## Staged cold source harmonisation — refreshed against canonical c487b822
+
+The non-live branch now reapplies the cold item-condition bars on top of the current canonical source and also stages the remaining low-risk decorative colour changes:
+
+- item condition/status bars: steel-blue highlight and dark steel shadow;
+- map bottom titles: metal gray;
+- map sector/balance/income/zero-expense values: light blue;
+- Bobby Ray order/title text: light blue;
+- Bobby Ray static catalogue labels: metal gray.
+
+Semantic feedback colours are deliberately preserved: expense red, health/status reds, warning orange/yellow, positive green and ammo-specific colours remain unchanged. No layout, mouse-region, gameplay or asset-loading logic is changed.

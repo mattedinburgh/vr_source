@@ -31,6 +31,7 @@
 #include "Interactive Tiles.h"
 #include "interface cursors.h"
 #include "weapons.h"
+#include "Items.h"
 #include "lighting.h"
 #include "sound control.h"
 #include "environment.h"
@@ -8534,7 +8535,7 @@ INT32 InvItemType( UINT16 usItem )
 {
 	if( usItem == XRAY_DEVICE )
 		return INV_ITEM_TYPE_XRAY;
-	if( Item[ usItem ].firstaidkit )
+	if( ItemIsFirstAidKit( usItem ) || ItemIsImprovisedBandage( usItem ) )
 		return INV_ITEM_TYPE_FIRSTAID;
 	if( Item[ usItem ].usItemClass == IC_BLADE )
 		return INV_ITEM_TYPE_MELEE;

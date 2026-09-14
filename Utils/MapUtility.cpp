@@ -27,6 +27,8 @@
 #include "Text Input.h"
 #include "Cursor Control.h"//dnl ch78 271113
 #include "lighting.h"//dnl ch79 301113
+#include "renderworld.h"
+#include "Isometric Utils.h"
 
 #define MINIMAP_X_SIZE	88//RADAR_WINDOW_WIDTH
 #define MINIMAP_Y_SIZE	44//RADAR_WINDOW_HEIGHT

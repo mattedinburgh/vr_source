@@ -659,6 +659,11 @@ static BOOLEAN IsSanMonaVisualProfile( void )
 		gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_UNDERGROUND;
 }
 
+BOOLEAN IsSanMonaC5GraphicsOnlyProfile( void )
+{
+	return gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C5_STRIP;
+}
+
 static void TraceSanMonaLoad( const STR8 pStage, const STR8 pDetail )
 {
 	const STR8 pSafeStage = ( pStage != NULL ) ? pStage : "";
@@ -5442,8 +5447,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 			 _stricmp( SectorVisualLeafName( gubFilename ), "A3_REMASTERED.dat" ) != 0 )
 			DressA3FarmEnvironment();
 
-		if ( IsSanMonaVisualProfile() )
-			DressSanMonaEnvironment();
+		// San Mona remaster invariant: graphics only. Do not add, move or remove
+		// runtime map objects; the authored DAT layout remains byte-for-byte authoritative.
 
 		// Layer deterministic, non-structural environmental storytelling over the
 		// authored oil-rig map without touching B1.dat or any destruction geometry.

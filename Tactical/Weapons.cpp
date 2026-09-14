@@ -3761,10 +3761,11 @@ BOOLEAN UseHandToHand( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo, BOOLEAN fStea
 				fFailure=TRUE;
 			}
 
-			// Vengeance: one stealing interaction, one AP charge.
-			// This deliberately does not depend on EnhancedCloseCombatSystem: the
-			// cursor preview (GetAPsToStealItem) and the actual deduction must use
-			// the same rule under every option set.
+			// Vengeance: charge the close-contact stealing interaction once here.
+			// Full-inventory stealing then charges normal pickup/handling AP for
+			// every item actually taken in SoldierStealItemFromSoldier().
+			// Keep this independent of EnhancedCloseCombatSystem so preview and
+			// execution use the same initiation cost under every option set.
 			if ( fStealAttempt || fFailure )
 			{
 				DeductPoints( pSoldier, GetBaseAPsToStealItem( pSoldier, pTargetSoldier ), 0, AFTERACTION_INTERRUPT );

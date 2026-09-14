@@ -1436,6 +1436,7 @@ UINT32 VirtualSoldierDressWound( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pVictim, OB
 {
 	UINT32 uiDressSkill, uiPossible, uiActual, uiMedcost, uiDeficiency, uiAvailAPs, uiUsedAPs;
 	UINT8 bBelowOKlife, bPtsLeft;
+	BOOLEAN fImprovisedRag = FALSE;
 	INT8 bInitialBleeding;
 
 	if( pVictim->bBleeding < 1 && !fOnSurgery )
@@ -1446,6 +1447,8 @@ UINT32 VirtualSoldierDressWound( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pVictim, OB
 		return 0;
 
 	bInitialBleeding = pVictim->bBleeding;
+	// Vengeance: keep crude rag bandaging consistent with tactical combat.
+	fImprovisedRag = (pKit && pKit->exists() && ItemIsImprovisedBandage( pKit->usItem ));
 
 	if ( !gGameOptions.fNewTraitSystem && fOnSurgery) // cannot make surgery if not new traits
 		fOnSurgery = FALSE;
@@ -1490,6 +1493,13 @@ UINT32 VirtualSoldierDressWound( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pVictim, OB
 	{
 		uiPossible = uiPossible * (100 - gSkillTraitValues.bSpeedModifierBandaging) / 100;
 		uiPossible += ( uiPossible * gSkillTraitValues.ubDOBandagingSpeedPercent * NUM_SKILL_TRAITS( pSoldier, DOCTOR_NT ) + pSoldier->GetBackgroundValue(BG_PERC_BANDAGING) ) / 100;
+	}
+
+	// Improvised rags use the normal wound-stabilisation path, but at only
+	// 20% of normal first-aid treatment speed.
+	if ( fImprovisedRag )
+	{
+		uiPossible = (uiPossible + 4) / 5;
 	}
 
 	uiActual = uiPossible;		// start by assuming maximum possible
@@ -1538,11 +1548,25 @@ UINT32 VirtualSoldierDressWound( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pVictim, OB
 	}
 	else
 	{
-		uiMedcost = uiActual;
-		if ( uiMedcost == 0 && uiActual > 0)
-			uiMedcost = 1;
-		if ( uiMedcost > (UINT32)sKitPts)		// can't afford it
-			uiMedcost = uiActual = sKitPts;		// recalc cost AND aid
+		if ( fImprovisedRag )
+		{
+			// Five rag condition points are required for each one point of actual
+			// wound treatment. A full rag therefore secures about 20 wound points.
+			uiMedcost = uiActual * 5;
+			if ( uiMedcost > (UINT32)sKitPts )
+			{
+				uiActual = (UINT32)sKitPts / 5;
+				uiMedcost = uiActual * 5;
+			}
+		}
+		else
+		{
+			uiMedcost = uiActual;
+			if ( uiMedcost == 0 && uiActual > 0)
+				uiMedcost = 1;
+			if ( uiMedcost > (UINT32)sKitPts)		// can't afford it
+				uiMedcost = uiActual = sKitPts;		// recalc cost AND aid
+		}
 	}
 
 	bPtsLeft = (INT8)uiActual;
@@ -1781,7 +1805,7 @@ OBJECTTYPE* FindMedicalKit()
 	INT32 iSlot;
 	for( i = 0; i < gpAR->ubMercs; i++ )
 	{
-		iSlot = FindObjClass( gpMercs[ i ].pSoldier, IC_MEDKIT );
+		iSlot = FindBestFirstAidItem( gpMercs[ i ].pSoldier );
 		if( iSlot != NO_SLOT )
 		{
 			return( &gpMercs[ i ].pSoldier->inv[ iSlot ] );
@@ -1808,7 +1832,7 @@ UINT32 AutoBandageMercs()
 		if( gpMercs[ i ].pSoldier->stats.bLife >= OKLIFE &&
 			!gpMercs[ i ].pSoldier->bCollapsed &&
 				gpMercs[ i ].pSoldier->stats.bMedical > 0 &&
-				( bSlot = FindObjClass( gpMercs[ i ].pSoldier, IC_MEDKIT ) ) != NO_SLOT )
+				( bSlot = FindBestFirstAidItem( gpMercs[ i ].pSoldier ) ) != NO_SLOT )
 		{
 			fFound = TRUE;
 			//bandage self first!
@@ -1820,7 +1844,7 @@ UINT32 AutoBandageMercs()
 				usKitPts = TotalPoints( pKit );
 				if( !usKitPts )
 				{ //attempt to find another kit before stopping
-					if( ( bSlot = FindObjClass( gpMercs[ i ].pSoldier, IC_MEDKIT ) ) != NO_SLOT )
+					if( ( bSlot = FindBestFirstAidItem( gpMercs[ i ].pSoldier ) ) != NO_SLOT )
 					continue;
 					break;
 				}

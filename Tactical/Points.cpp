@@ -3637,13 +3637,15 @@ INT16 GetAPsToBeginFirstAid( SOLDIERTYPE *pSoldier )
 	return(	GetAPsToChangeStance( pSoldier, ANIM_CROUCH ) + APBPConstants[AP_START_FIRST_AID] );
 }
 
-// 1.13-style window breaking uses the normal close-combat swing cost.
+// Breaking an adjacent pane is an environmental interaction, not a full melee attack.
+// Keep its AP cost predictable: one quick committed swing, independent of weapon
+// handling speed, aim skill or melee traits.  AP_PUNCH is 16 in Vengeance, compared
+// with 12 to open a door, 32 to boot one and 40 to pry one with a crowbar.
 INT16 GetAPsToBreakWindow( SOLDIERTYPE *pSoldier, BOOLEAN fStance )
 {
-	if ( fStance )
-		return MinAPsToPunch( pSoldier, pSoldier->sGridNo, FALSE );
-
-	return MinAPsToPunch( pSoldier, NOWHERE, FALSE );
+	(void)pSoldier;
+	(void)fStance;
+	return APBPConstants[AP_PUNCH];
 }
 
 INT16 GetAPsToBeginRepair( SOLDIERTYPE *pSoldier )
@@ -3888,8 +3890,9 @@ INT16 GetAPsToStealItem( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pTargetSoldier, INT
 		sAPCost = PlotPath( pSoldier, sMapPos, NO_COPYROUTE, NO_PLOT, TEMPORARY, (UINT16)pSoldier->usUIMovementMode, NOT_STEALTH, FORWARD, pSoldier->bActionPoints );
 	}
 
-	// One transparent interaction charge.  The inventory selection menu must not
-	// add another pickup charge for every selected item.
+	// Charge the close-contact steal interaction here.  Multi-item inventory
+	// stealing adds a normal pickup/handling cost for each item actually taken
+	// inside SoldierStealItemFromSoldier(), matching the 1.13 scaling model.
 	sAPCost += GetBaseAPsToStealItem( pSoldier, pTargetSoldier );
 
 	// CJC August 13 2002: added cost to stand into equation

@@ -228,6 +228,8 @@ CHAR16* GetTerrainName( const UINT8& ubTerrainType )
 
 TileDefines GetTileCoverIndex( const INT8& bCover )
 {
+	// Preserve the familiar full tactical scale. Transparency is handled by
+	// the renderer, not by desaturating or replacing the underlying colours.
 	switch(bCover) {
 		case NO_COVER:
 			return SPECIALTILE_COVER_1; // red
@@ -238,7 +240,7 @@ TileDefines GetTileCoverIndex( const INT8& bCover )
 		case MAX_COVER:
 			return SPECIALTILE_COVER_5; // green
 		default:
-			return SPECIALTILE_COVER_4; // light green, can be used to denote that you just don't know.
+			return SPECIALTILE_COVER_4; // light green / unknown
 	}
 }
 
@@ -259,15 +261,13 @@ void AddCoverObjectToWorld( const INT32& sGridNo, const UINT16& usGraphic, const
 
 	pNode->uiFlags |= LEVELNODE_REVEAL;
 
-	// Keep the visibility / cover overlay readable without the very bright,
-	// saturated look of the stock SPECIAL tiles. This is display-only:
-	// cover/LOS calculations are unchanged. Mine and trait-range overlays
-	// still use their original rendering because they run with cover draw off.
+	// Keep the tactical colours clean. The dedicated cover-overlay blitter
+	// supplies the very high transparency, so colour intensity should stay
+	// neutral instead of being darkened into muddy reds/browns.
 	if( gubDrawMode != COVER_DRAW_OFF )
 	{
-		const UINT8 ubSoftOverlayShade = DEFAULT_SHADE_LEVEL + 2;
-		pNode->ubShadeLevel = ubSoftOverlayShade;
-		pNode->ubNaturalShadeLevel = ubSoftOverlayShade;
+		pNode->ubShadeLevel = DEFAULT_SHADE_LEVEL;
+		pNode->ubNaturalShadeLevel = DEFAULT_SHADE_LEVEL;
 	}
 	else if( NightTime() )
 	{

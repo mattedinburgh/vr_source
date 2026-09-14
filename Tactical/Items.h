@@ -414,6 +414,8 @@ BOOLEAN IsRemoteDetonatorAttached( OBJECTTYPE * pObj );		// Flugente: no more ne
 OBJECTTYPE* FindAttachedBatteries( OBJECTTYPE * pObj );
 INT8 FindMedKit( SOLDIERTYPE * pSoldier );
 INT8 FindFirstAidKit( SOLDIERTYPE * pSoldier );
+INT8 FindImprovisedBandage( SOLDIERTYPE * pSoldier );
+INT8 FindBestFirstAidItem( SOLDIERTYPE * pSoldier );
 INT8 FindDisarmKit( SOLDIERTYPE * pSoldier );	//JMich_SkillsModifiers: Added function to check for disarm bonus
 INT8 FindLocksmithKit( SOLDIERTYPE * pSoldier );
 INT8 FindCamoKit( SOLDIERTYPE * pSoldier );
@@ -510,6 +512,12 @@ void CheckBombSpecifics( OBJECTTYPE * pObj, INT8* detonatortype, INT8* setting, 
 
 // Flugente: check for specific flags
 BOOLEAN HasItemFlag( UINT16 usItem, UINT32 aFlag );
+
+// Medical capability helpers. Keep treatment capability separate from broad item class.
+BOOLEAN ItemIsFirstAidKit( UINT16 usItem );
+BOOLEAN ItemIsMedicalKit( UINT16 usItem );
+BOOLEAN ItemIsImprovisedBandage( UINT16 usItem );
+BOOLEAN ItemCanGiveFirstAid( UINT16 usItem );
 
 // Flugente: get first item number that has this flag. Use with caution, as we search in all items
 BOOLEAN GetFirstItemWithFlag( UINT16* pusItem, UINT32 aFlag );

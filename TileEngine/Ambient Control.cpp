@@ -125,11 +125,12 @@ static BOOLEAN IsVRAmbienceCombat( )
 
 static void StopVRSectorAmbienceLoop( )
 {
-	if ( gVRAmbience.uiLoopHandle != NO_SAMPLE )
-	{
+	// Static storage starts zeroed, while NO_SAMPLE is 0xffffffff.  Do not let
+	// the first sector load accidentally interpret handle 0 as ours.
+	if ( gVRAmbience.fActive && gVRAmbience.uiLoopHandle != NO_SAMPLE )
 		SoundStop( gVRAmbience.uiLoopHandle );
-		gVRAmbience.uiLoopHandle = NO_SAMPLE;
-	}
+
+	gVRAmbience.uiLoopHandle = NO_SAMPLE;
 	gVRAmbience.szCurrentLoop[ 0 ] = 0;
 }
 
@@ -226,14 +227,18 @@ static void ReadVRAmbiencePhaseData( CIniReader &ini, STR8 szSection, const CHAR
 static void ReadVRAmbienceLoopData( CIniReader &ini, STR8 szSection, const CHAR8 *szPrefix, const CHAR8 *szFallbackLoop, UINT32 uiFallbackVolume, CHAR8 *szOutLoop, UINT32 *puiOutVolume )
 {
 	CHAR8 szKey[ 64 ];
+	CHAR8 szDefaultLoop[ VR_AMBIENCE_PATH_SIZE ];
 	UINT32 uiGeneralVolume;
 
-	szOutLoop[ 0 ] = 0;
+	szDefaultLoop[ 0 ] = 0;
 	if ( szFallbackLoop && szFallbackLoop[ 0 ] )
-		strcpy( szOutLoop, szFallbackLoop );
+	{
+		strncpy( szDefaultLoop, szFallbackLoop, VR_AMBIENCE_PATH_SIZE - 1 );
+		szDefaultLoop[ VR_AMBIENCE_PATH_SIZE - 1 ] = 0;
+	}
 
 	sprintf( szKey, "%s_LOOP", szPrefix );
-	ini.ReadString( szSection, szKey, szOutLoop, szOutLoop, VR_AMBIENCE_PATH_SIZE );
+	ini.ReadString( szSection, szKey, szDefaultLoop, szOutLoop, VR_AMBIENCE_PATH_SIZE );
 
 	uiGeneralVolume = (UINT32)ini.ReadInteger( szSection, "LOOP_VOLUME", uiFallbackVolume, 0, 127 );
 	sprintf( szKey, "%s_LOOP_VOLUME", szPrefix );
@@ -275,7 +280,9 @@ static BOOLEAN StartVRSectorAmbienceLoopForPhase( UINT8 ubPhase )
 
 	// If dawn/day or dusk/night share the same bed, keep it running and only
 	// alter the target volume.  This avoids an audible restart at phase edges.
-	if ( gVRAmbience.uiLoopHandle != NO_SAMPLE && strcmp( gVRAmbience.szCurrentLoop, szLoop ) == 0 )
+	if ( gVRAmbience.uiLoopHandle != NO_SAMPLE &&
+		 SoundIsPlaying( gVRAmbience.uiLoopHandle ) &&
+		 strcmp( gVRAmbience.szCurrentLoop, szLoop ) == 0 )
 	{
 		gVRAmbience.uiTargetLoopVolume = GetVRAmbienceTargetLoopVolume( ubPhase );
 		return TRUE;
@@ -303,7 +310,7 @@ static BOOLEAN StartVRSectorAmbienceLoopForPhase( UINT8 ubPhase )
 
 static void ScheduleNextVRAmbienceOneShot( )
 {
-	const VR_AMBIENCE_PHASE_DATA *pPhase;
+	VR_AMBIENCE_PHASE_DATA *pPhase;
 	UINT32 uiMinTime;
 	UINT32 uiMaxTime;
 	UINT32 uiRange;
@@ -403,7 +410,8 @@ static void PlayVRAmbienceOneShot( )
 	spParms.uiLoop = 1;
 	spParms.uiPriority = GROUP_AMBIENT;
 
-	SoundPlay( pPhase->szSound[ ubIndex ], &spParms );
+	// Legacy SoundPlay takes mutable STR even though it only reads the filename.
+	SoundPlay( (STR)pPhase->szSound[ ubIndex ], &spParms );
 	gVRAmbience.bLastOneShot = (INT8)ubIndex;
 }
 
