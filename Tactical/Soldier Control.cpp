@@ -6009,63 +6009,80 @@ static BOOLEAN HandleVRCinematicGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 u
 	if ( fRunning && pSoldier->pathing.usPathIndex < pSoldier->pathing.usPathDataSize )
 		ubMomentumDirection = (UINT8)( pSoldier->pathing.usPathingData[ pSoldier->pathing.usPathIndex ] % NUM_WORLD_DIRECTIONS );
 
-	// Breath damage is stored in hundredths of a breath point. Use both the amount
-	// lost on this hit and the victim's remaining stamina. A fresh soldier can absorb
-	// a moderate hit with a flinch; an exhausted soldier is much more likely to stagger,
-	// buckle or fall from the same wound.
+	// Breath damage is stored in hundredths of a breath point. Damage determines the
+	// basic reaction class, while stamina loss and remaining breath control how likely
+	// the victim is to actually lose balance. A routine gunshot should usually read as
+	// a flinch/stagger, not as an automatic knockdown.
 	INT16 sStaminaLost = (INT16)__max( 0, sBreathLoss / 100 );
 	sStaminaLost = (INT16)__min( 100, sStaminaLost );
 	INT16 sStaminaNow = (INT16)__max( 0, __min( 100, (INT16)pSoldier->bBreath ) );
 	INT16 sStaminaDeficit = (INT16)( 100 - sStaminaNow );
 
-	INT16 sSeverity = (INT16)( sDamage * 2 + sStaminaLost * 2 + sStaminaDeficit / 4 );
+	INT16 sSeverity = (INT16)( sDamage + sStaminaLost + sStaminaDeficit / 5 );
 	if ( ubHitLocation == AIM_SHOT_HEAD )
-		sSeverity += 7;
-	else if ( ubHitLocation == AIM_SHOT_LEGS )
 		sSeverity += 5;
-	if ( fRunning )
+	else if ( ubHitLocation == AIM_SHOT_LEGS )
 		sSeverity += 4;
+	if ( fRunning )
+		sSeverity += 3;
 	if ( sStaminaNow <= 20 )
-		sSeverity += 15;
+		sSeverity += 10;
 	else if ( sStaminaNow <= 40 )
-		sSeverity += 8;
+		sSeverity += 5;
 
-	// Small cinematic bias: reactions are a little more expressive than strict
-	// physics would imply, but light wounds still overwhelmingly remain light.
-	sSeverity += (INT16)Random( 9 );
+	// Keep a small cinematic spread, but do not let randomness turn a light wound into
+	// a spectacular reaction by itself.
+	sSeverity += (INT16)Random( 6 );
 	sSeverity = (INT16)__max( 0, __min( 100, sSeverity ) );
 
-	INT16 sCriticalChance = 7; // roughly +5 percentage points of deliberate cinematic bias
-	if ( sSeverity > 25 )
-		sCriticalChance += ( sSeverity - 25 ) / 3;
-	if ( ubHitLocation == AIM_SHOT_HEAD )
-		sCriticalChance += 4;
-	else if ( ubHitLocation == AIM_SHOT_LEGS )
-		sCriticalChance += 2;
+	// Knockdown is now its own gate. Only after this test succeeds can the selector
+	// choose a fall, flyback, collapse or running spill. This prevents fall animations
+	// from leaking into the ordinary light/medium hit pools.
+	INT16 sKnockdownChance = 1;
+	if ( sDamage > 10 )
+		sKnockdownChance += ( sDamage - 10 ) / 3;
+	if ( sStaminaLost > 5 )
+		sKnockdownChance += ( sStaminaLost - 5 ) / 2;
+	if ( sStaminaDeficit > 40 )
+		sKnockdownChance += ( sStaminaDeficit - 40 ) / 5;
+	if ( ubHitLocation == AIM_SHOT_LEGS )
+		sKnockdownChance += 4;
+	else if ( ubHitLocation == AIM_SHOT_HEAD )
+		sKnockdownChance += 2;
+	if ( fRunning )
+		sKnockdownChance += 4;
+	if ( sDamage >= 35 )
+		sKnockdownChance += 5;
+	if ( sDamage >= 50 )
+		sKnockdownChance += 7;
 	if ( sStaminaNow <= 20 )
-		sCriticalChance += 8;
+		sKnockdownChance += 10;
 	else if ( sStaminaNow <= 40 )
-		sCriticalChance += 4;
-	if ( sStaminaLost >= 12 )
-		sCriticalChance += 4;
-	sCriticalChance = (INT16)__min( 48, sCriticalChance );
+		sKnockdownChance += 5;
 
-	INT16 sStrongChance = (INT16)( 10 + sSeverity / 2 + sStaminaLost / 2 );
-	if ( sStaminaNow <= 25 )
-		sStrongChance += 12;
-	sStrongChance = (INT16)__min( 72, sStrongChance );
+	// Hard caps by wound class keep routine rifle/pistol hits upright most of the time.
+	INT16 sKnockdownCap =
+		( sDamage < 10 ) ? 3 :
+		( sDamage < 20 ) ? 8 :
+		( sDamage < 30 ) ? 15 :
+		( sDamage < 40 ) ? 25 : 45;
+	sKnockdownChance = (INT16)__max( 0, __min( sKnockdownCap, sKnockdownChance ) );
 
-	static const UINT8 aubLightPool[ 32 ] =
+	static const UINT8 aubUprightPool[ 29 ] =
 	{
-		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+		0, 1, 2, 3, 4, 5, 6, 7, 11,
 		30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-		40, 41, 42, 43, 44, 45, 46, 47, 48, 49
+		40, 41, 42, 43, 47, 48, 49,
+		60, 61, 62
 	};
-	static const UINT8 aubMediumPool[ 30 ] =
+	static const UINT8 aubKnockdownPool[ 36 ] =
 	{
-		8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-		36, 37, 38, 39, 44, 45, 46, 47,
-		50, 51, 52, 53, 54, 55, 56, 57, 58, 59
+		8, 9, 10,
+		12, 13, 14, 15, 16, 17, 18, 19,
+		20, 21, 22, 23, 24,
+		44, 45, 46,
+		50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
+		63, 64, 65, 66, 67, 68, 69
 	};
 	static const UINT8 aubCriticalPool[ 15 ] =
 	{
@@ -6075,40 +6092,40 @@ static BOOLEAN HandleVRCinematicGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 u
 
 	UINT8 ubReaction = 0;
 	BOOLEAN fCriticalReaction = FALSE;
-	BOOLEAN fStrongReaction = FALSE;
+	BOOLEAN fKnockdownReaction = ( Random( 100 ) < (UINT16)sKnockdownChance );
 
-	if ( Random( 100 ) < (UINT16)sCriticalChance )
+	if ( fKnockdownReaction )
 	{
-		ubReaction = aubCriticalPool[ Random( 15 ) ];
-		fCriticalReaction = TRUE;
-	}
-	else if ( fRunning && Random( 100 ) < (UINT16)__min( 85, 20 + sSeverity ) )
-	{
-		// Running hits get ten dedicated momentum reactions. The lower half are
-		// stumbles/flinches; the upper half are actual spills/falls.
-		if ( sSeverity < 48 && sStaminaNow > 30 )
-			ubReaction = (UINT8)( 60 + Random( 5 ) );
+		INT16 sCriticalShare = 10;
+		if ( sSeverity > 40 )
+			sCriticalShare += ( sSeverity - 40 );
+		sCriticalShare = (INT16)__min( 55, sCriticalShare );
+
+		if ( sSeverity >= 45 && Random( 100 ) < (UINT16)sCriticalShare )
+		{
+			ubReaction = aubCriticalPool[ Random( 15 ) ];
+			fCriticalReaction = TRUE;
+		}
 		else
 		{
-			// Keep both generations of momentum-fall reactions active.
-			ubReaction = ( Random( 100 ) < 40 ) ? (UINT8)( 20 + Random( 5 ) ) : (UINT8)( 65 + Random( 5 ) );
-			fStrongReaction = TRUE;
+			ubReaction = aubKnockdownPool[ Random( 36 ) ];
 		}
 	}
-	else if ( Random( 100 ) < (UINT16)sStrongChance )
+	else if ( fRunning && Random( 100 ) < (UINT16)__min( 50, 8 + sSeverity / 2 ) )
 	{
-		ubReaction = aubMediumPool[ Random( 30 ) ];
-		fStrongReaction = ( ubReaction >= 12 && ubReaction <= 19 ) || ubReaction >= 50;
+		// Running victims still get momentum-aware reactions, but the non-knockdown
+		// branch is restricted to upright stumbles 60-62.
+		ubReaction = (UINT8)( 60 + Random( 3 ) );
 	}
 	else
 	{
-		ubReaction = aubLightPool[ Random( 32 ) ];
+		ubReaction = aubUprightPool[ Random( 29 ) ];
 
-		// Location-specific flavour without forcing a critical animation.
-		if ( ubHitLocation == AIM_SHOT_HEAD && Random( 100 ) < 35 )
+		// Location-specific flavour without converting the hit into a fall.
+		if ( ubHitLocation == AIM_SHOT_HEAD && Random( 100 ) < 30 )
 			ubReaction = (UINT8)( 30 + Random( 10 ) );
-		else if ( ubHitLocation == AIM_SHOT_LEGS && Random( 100 ) < 35 )
-			ubReaction = (UINT8)( 40 + Random( 10 ) );
+		else if ( ubHitLocation == AIM_SHOT_LEGS && Random( 100 ) < 30 )
+			ubReaction = (UINT8)( 40 + Random( 4 ) );
 	}
 
 	// Crouched and prone soldiers do not have enough unique living-safe source frames
@@ -6123,26 +6140,26 @@ static BOOLEAN HandleVRCinematicGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 u
 		else if ( ubTurn == 4 ) pSoldier->EVENT_SetSoldierDirection( ubOppositeDirection );
 		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
 
-		if ( fCriticalReaction || ( fStrongReaction && sSeverity >= 55 && Random( 100 ) < 55 ) )
+		if ( fKnockdownReaction )
 			pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_CROUCH, 0, FALSE );
 		else
 			pSoldier->EVENT_InitNewSoldierAnim( GENERIC_HIT_CROUCH, 0, FALSE );
 
 		DebugMsg( TOPIC_JA2, DBG_LEVEL_3, String(
-			"VR_HIT variant=%u soldier=%u damage=%d breathloss=%d stamina=%d severity=%d criticalchance=%d stance=crouch",
-			ubReaction, pSoldier->ubID, sDamage, sStaminaLost, sStaminaNow, sSeverity, sCriticalChance ) );
+			"VR_HIT variant=%u soldier=%u damage=%d breathloss=%d stamina=%d severity=%d knockdownchance=%d stance=crouch",
+			ubReaction, pSoldier->ubID, sDamage, sStaminaLost, sStaminaNow, sSeverity, sKnockdownChance ) );
 		return TRUE;
 	}
 	else if ( ubCurrentHeight == ANIM_PRONE )
 	{
-		if ( fCriticalReaction || ( fStrongReaction && sSeverity >= 60 && Random( 100 ) < 45 ) )
+		if ( fKnockdownReaction )
 			pSoldier->EVENT_InitNewSoldierAnim( PRONE_LAY_FROMHIT, 0, FALSE );
 		else
 			pSoldier->EVENT_InitNewSoldierAnim( GENERIC_HIT_PRONE, 0, FALSE );
 
 		DebugMsg( TOPIC_JA2, DBG_LEVEL_3, String(
-			"VR_HIT variant=%u soldier=%u damage=%d breathloss=%d stamina=%d severity=%d criticalchance=%d stance=prone",
-			ubReaction, pSoldier->ubID, sDamage, sStaminaLost, sStaminaNow, sSeverity, sCriticalChance ) );
+			"VR_HIT variant=%u soldier=%u damage=%d breathloss=%d stamina=%d severity=%d knockdownchance=%d stance=prone",
+			ubReaction, pSoldier->ubID, sDamage, sStaminaLost, sStaminaNow, sSeverity, sKnockdownChance ) );
 		return TRUE;
 	}
 	else if ( ubCurrentHeight != ANIM_STAND )
@@ -6151,8 +6168,8 @@ static BOOLEAN HandleVRCinematicGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 u
 	}
 
 	DebugMsg( TOPIC_JA2, DBG_LEVEL_3, String(
-		"VR_HIT variant=%u soldier=%u damage=%d breathloss=%d stamina=%d severity=%d criticalchance=%d running=%u hitloc=%u incomingDir=%u momentumDir=%u",
-		ubReaction, pSoldier->ubID, sDamage, sStaminaLost, sStaminaNow, sSeverity, sCriticalChance,
+		"VR_HIT variant=%u soldier=%u damage=%d breathloss=%d stamina=%d severity=%d knockdownchance=%d running=%u hitloc=%u incomingDir=%u momentumDir=%u",
+		ubReaction, pSoldier->ubID, sDamage, sStaminaLost, sStaminaNow, sSeverity, sKnockdownChance,
 		fRunning ? 1 : 0, ubHitLocation, ubIncomingDirection, ubMomentumDirection ) );
 
 	switch ( ubReaction )
@@ -6514,12 +6531,12 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	if ( sDamage >= 18 )
 	{
 		UINT8 ubDismemberChance =
-			( sDamage >= 60 ) ? 52 :
-			( sDamage >= 45 ) ? 38 :
-			( sDamage >= 30 ) ? 24 : 10;
+			( sDamage >= 60 ) ? 24 :
+			( sDamage >= 45 ) ? 15 :
+			( sDamage >= 30 ) ? 8 : 3;
 
 		if ( ubHitLocation == AIM_SHOT_HEAD || ubHitLocation == AIM_SHOT_LEGS )
-			ubDismemberChance = (UINT8)__min( 60, ubDismemberChance + 5 );
+			ubDismemberChance = (UINT8)__min( 28, ubDismemberChance + 3 );
 
 		if ( Random( 100 ) < ubDismemberChance )
 		{
@@ -6574,8 +6591,10 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	if ( ubHeight == ANIM_CROUCH && sFatalGoreZ > 28 ) sFatalGoreZ = 28;
 	else if ( ubHeight == ANIM_PRONE ) sFatalGoreZ = 10;
 
-	DropBlood( pSoldier, 2, pSoldier->bVisible );
-	SpawnVRSprinklerGoreBurst( pSoldier, ubExitDirection, ubIncomingDirection, sFatalGoreZ, TRUE );
+	DropBlood( pSoldier, 1, pSoldier->bVisible );
+	INT16 sFatalHeavyChance = ( sDamage >= 30 ) ? (INT16)__min( 70, 15 + ( sDamage - 30 ) * 2 ) : 0;
+	BOOLEAN fFatalHeavyImpact = ( sFatalHeavyChance > 0 && Random( 100 ) < (UINT16)sFatalHeavyChance );
+	SpawnVRSprinklerGoreBurst( pSoldier, ubExitDirection, ubIncomingDirection, sFatalGoreZ, fFatalHeavyImpact );
 
 	// Prone and crouched mercs use stance-safe death states, while still receiving
 	// all supported gore families while finishing through stance-safe death states.
@@ -6628,7 +6647,7 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	case 0: // forward fold, dense exit spray
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_FALL_FORWARD.STI", ubExitDirection, 31, 43, 0 );
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, 29, 48, 35 );
-		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 4 );
+		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 3, 3 );
 		pSoldier->EVENT_SetSoldierDirection( ubRagdollBaseDirection );
 		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
 		pSoldier->BeginTyingToFall();
@@ -6644,7 +6663,7 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	case 2: // hard two-tile flyback with trailing chunks
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_FALL_BACK.STI", ubExitDirection, 32, 38, 0 );
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubExitDirection, 28, 48, 45 );
-		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 6 );
+		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 4, 4 );
 		pSoldier->ChangeToFlybackAnimation( ubIncomingDirection );
 		return TRUE;
 
@@ -6667,7 +6686,7 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	case 5: // head destruction, classic JFK drop
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_HEAD_GIB.STI", ubExitDirection, 51, 34, 0 );
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, 48, 42, 35 );
-		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 6 );
+		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 4, 4 );
 		pSoldier->EVENT_InitNewSoldierAnim( JFK_HITDEATH, 0, FALSE );
 		return TRUE;
 
@@ -6699,7 +6718,7 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	case 9: // head impact launches body backward
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_HEAD_GIB.STI", ubExitDirection, 51, 32, 0 );
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubExitDirection, 43, 41, 50 );
-		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 6 );
+		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 4, 4 );
 		pSoldier->ChangeToFlybackAnimation( ubIncomingDirection );
 		return TRUE;
 
@@ -6724,7 +6743,7 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	case 12: // arm loss plus violent flyback
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_ARM_GIB.STI", ubExitDirection, 36, 34, 0 );
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubExitDirection, 31, 44, 45 );
-		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 5 );
+		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 4, 3 );
 		pSoldier->ChangeToFlybackAnimation( ubIncomingDirection );
 		return TRUE;
 
@@ -6746,7 +6765,7 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	case 15: // leg sever, vertical buckle/crumple
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_LEG_GIB.STI", ubExitDirection, 17, 36, 0 );
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CRUMPLE.STI", ubExitDirection, 20, 45, 20 );
-		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 4 );
+		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 3, 3 );
 		SoldierCollapse( pSoldier );
 		return TRUE;
 
@@ -6786,7 +6805,7 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	case 20: // torso chunk, one-tile backward drop
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_TORSO_GIB.STI", ubExitDirection, 31, 34, 0 );
 		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_MEDIUM.STI", ubExitDirection, 29, 42, 35 );
-		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 6, 5 );
+		DropVRDirectionalBloodTrail( pSoldier, ubExitDirection, 4, 3 );
 		pSoldier->ChangeToFallbackAnimation( ubIncomingDirection );
 		return TRUE;
 
@@ -7290,10 +7309,23 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 		else if ( gAnimControl[ this->usAnimState ].ubEndHeight == ANIM_PRONE )
 			sGoreZ = 10;
 
-		// A surviving head hit is not automatically a gore burst. Reserve the second
-		// tiny layer for genuinely hard impacts; fatal hits use the separate death-gore path.
-		BOOLEAN fHeavyImpact = ( sDamage >= 25 );
-		SpawnVRSprinklerGoreBurst( this, ubSprayDirection, ubIncomingDirection, sGoreZ, fHeavyImpact );
+		// Scale visible impact mist with actual wound severity. Light and armour-muted
+		// hits often show no custom spray at all; heavy wounds are progressively wetter.
+		INT16 sGoreChance = (INT16)( 5 + ( sDamage * 3 ) / 2 );
+		if ( ubHitLocation == AIM_SHOT_HEAD )
+			sGoreChance += 8;
+		else if ( ubHitLocation == AIM_SHOT_LEGS )
+			sGoreChance += 3;
+		sGoreChance = (INT16)__min( 75, sGoreChance );
+
+		if ( Random( 100 ) < (UINT16)sGoreChance )
+		{
+			INT16 sHeavyChance = 0;
+			if ( sDamage >= 28 )
+				sHeavyChance = (INT16)__min( 60, 10 + ( sDamage - 28 ) * 2 );
+			BOOLEAN fHeavyImpact = ( sHeavyChance > 0 && Random( 100 ) < (UINT16)sHeavyChance );
+			SpawnVRSprinklerGoreBurst( this, ubSprayDirection, ubIncomingDirection, sGoreZ, fHeavyImpact );
+		}
 	}
 
 	// ATE: OK, Let's check our ASSIGNMENT state,
