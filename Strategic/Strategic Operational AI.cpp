@@ -156,6 +156,15 @@ static UINT8 VR_ClampOperationalValue( UINT8 ubValue )
 	return ubValue > 100 ? 100 : ubValue;
 }
 
+static UINT8 VR_ClampOperationalPercent( INT32 iValue )
+{
+	if( iValue < 0 )
+		return 0;
+	if( iValue > 100 )
+		return 100;
+	return (UINT8)iValue;
+}
+
 void VR_RecordOperationalContact( GROUP *pObserver, UINT8 ubSectorID,
 	UINT8 ubObservedPlayerStrength, UINT8 ubObservedMilitiaStrength, UINT8 ubConfidence )
 {
@@ -244,6 +253,38 @@ void VR_UpdateOperationalReadinessHourly()
 			continue;
 
 		ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+		const UINT8 ubCurrentSector =
+			(UINT8)SECTOR( pGroup->ubSectorX, pGroup->ubSectorY );
+
+		// Logistics model is intentionally information-independent: it depends only
+		// on the formation's own movement and Queen-controlled infrastructure.
+		if( pGroup->fBetweenSectors )
+		{
+			pEnemy->ubOperationalSupply =
+				VR_ClampOperationalPercent( (INT32)pEnemy->ubOperationalSupply - 1 );
+		}
+		else
+		{
+			const BOOLEAN fEnemyControlled =
+				StrategicMap[
+					CALCULATE_STRATEGIC_INDEX(
+						pGroup->ubSectorX, pGroup->ubSectorY ) ].fEnemyControlled;
+
+			if( fEnemyControlled && ubCurrentSector == pEnemy->ubOperationalHomeSectorID )
+			{
+				pEnemy->ubOperationalSupply =
+					VR_ClampOperationalPercent( (INT32)pEnemy->ubOperationalSupply + 5 );
+			}
+			else if( fEnemyControlled &&
+				( SectorInfo[ ubCurrentSector ].ubGarrisonID != NO_GARRISON ||
+				  SectorInfo[ ubCurrentSector ].ubTraversability[ 4 ] == TOWN ||
+				  IsThereAMineInThisSector( pGroup->ubSectorX, pGroup->ubSectorY ) ||
+				  IsThisSectorASAMSector( pGroup->ubSectorX, pGroup->ubSectorY, 0 ) ) )
+			{
+				pEnemy->ubOperationalSupply =
+					VR_ClampOperationalPercent( (INT32)pEnemy->ubOperationalSupply + 2 );
+			}
+		}
 
 		if( pEnemy->ubOperationalSupply < 25 )
 		{
@@ -596,6 +637,63 @@ UINT8 VR_FindBestOperationalTarget( GROUP *pGroup, INT32 *piBestScore )
 	return ubBestSector;
 }
 
+
+
+BOOLEAN VR_IsReadyOperationalReserve( GROUP *pGroup )
+{
+	VR_EnsureEnemyFormationState( pGroup );
+	if( !VR_FormationStateIsInitialized( pGroup ) ||
+		pGroup->fBetweenSectors ||
+		pGroup->ubGroupSize == 0 )
+	{
+		return FALSE;
+	}
+
+	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+	return pEnemy->ubOperationalMission == VR_OPMISSION_RESERVE &&
+		pEnemy->ubOperationalReserveRole != VR_RESERVE_NONE &&
+		pEnemy->ubOperationalSupply >= 60 &&
+		pEnemy->ubOperationalMorale >= 55 &&
+		!(pEnemy->usOperationalFlags &
+			(VR_OPFLAG_SUPPLY_CRITICAL | VR_OPFLAG_REGROUPING |
+			 VR_OPFLAG_RECENT_CONTACT));
+}
+
+GROUP *VR_FindReadyOperationalReserveForSector( UINT8 ubTargetSectorID )
+{
+	GROUP *pBest = NULL;
+	INT32 iBestScore = -32767;
+	const UINT8 ubTargetX = (UINT8)SECTORX( ubTargetSectorID );
+	const UINT8 ubTargetY = (UINT8)SECTORY( ubTargetSectorID );
+
+	for( GROUP *pGroup = gpGroupList; pGroup; pGroup = pGroup->next )
+	{
+		if( !VR_IsReadyOperationalReserve( pGroup ) )
+			continue;
+
+		ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+		const INT32 iDistance =
+			VR_OperationalAbs( (INT32)pGroup->ubSectorX - (INT32)ubTargetX ) +
+			VR_OperationalAbs( (INT32)pGroup->ubSectorY - (INT32)ubTargetY );
+
+		// Pure readiness query: closer formations are preferred, with modest
+		// credit for strength/readiness. Reserve role is descriptive here, not
+		// a magical movement or combat bonus.
+		INT32 iScore =
+			-( iDistance * 10 ) +
+			(INT32)pGroup->ubGroupSize +
+			(INT32)pEnemy->ubOperationalSupply / 10 +
+			(INT32)pEnemy->ubOperationalMorale / 10;
+
+		if( iScore > iBestScore )
+		{
+			iBestScore = iScore;
+			pBest = pGroup;
+		}
+	}
+
+	return pBest;
+}
 
 void VR_TraceOperationalRecommendationsHourly()
 {
