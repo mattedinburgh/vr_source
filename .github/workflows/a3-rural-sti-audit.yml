@@ -28,7 +28,7 @@ jobs:
           git -c core.longpaths=true clone --depth 1 --single-branch --branch install/all-2026-09-12 --filter=blob:none --no-checkout https://github.com/mattedinburgh/vr_gamedir.git $gamedir
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           git -C $gamedir sparse-checkout init --cone
-          $paths = @('Data-Maps-Tiles/Tilesets/9','Data-Maps-Tiles/Tilesets/10','Data-Maps-Tiles/Tilesets/35','Data-Maps-Tiles/Tilesets/36','Data-Maps-Tiles/Tilesets/37','Data-Maps-Tiles/Tilesets/50','Data-Maps-Tiles/Tilesets/53','Data-Maps-Tiles/Tilesets/54','Data-Maps-Tiles/Tilesets/58','Data-Maps-Tiles/Tilesets/60')
+          $paths = @('Data-Maps-Tiles/Tilesets/0','Data-Maps-Tiles/Tilesets/9','Data-Maps-Tiles/Tilesets/10','Data-Maps-Tiles/Tilesets/35','Data-Maps-Tiles/Tilesets/36','Data-Maps-Tiles/Tilesets/37','Data-Maps-Tiles/Tilesets/50','Data-Maps-Tiles/Tilesets/52','Data-Maps-Tiles/Tilesets/53','Data-Maps-Tiles/Tilesets/54','Data-Maps-Tiles/Tilesets/58','Data-Maps-Tiles/Tilesets/60')
           & git -C $gamedir sparse-checkout set @paths
           git -C $gamedir checkout install/all-2026-09-12
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -47,7 +47,7 @@ jobs:
         run: |
           $root = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir\Data-Maps-Tiles\Tilesets'
           $out = Join-Path $env:GITHUB_WORKSPACE 'MapPreviews\A3RuralAudit'
-          $files = @('37/POOL.STI','10/CratewPallet.sti','35/DRUM_01.STI','35/2_GENS.STI','36/O_SIGN1.STI','50/I_CRATES.STI','50/W-GARDN.STI','50/HARDWARE.STI','50/GASTUF1.STI','53/FL_WEED.STI','53/FURN_MIX.STI','53/HARDWARE.STI','54/FURN_9.STI','54/P-FENCE.STI','58/JUNKFEN.STI','58/WORKSHOP.STI','58/O_FURN.STI','58/WP_STUF1.STI','60/GRASS1.STI','60/HACIENDA.sti','9/Tide_Pumps.sti')
+          $files = @('0/FLAT_R3.sti','37/POOL.STI','50/BUILD_31.STI','50/BUILD_40.STI','52/BUILD_31.STI','52/BUILD_40.STI','10/CratewPallet.sti','35/DRUM_01.STI','35/2_GENS.STI','36/O_SIGN1.STI','50/I_CRATES.STI','50/W-GARDN.STI','50/HARDWARE.STI','50/GASTUF1.STI','53/FL_WEED.STI','53/FURN_MIX.STI','53/HARDWARE.STI','54/FURN_9.STI','54/P-FENCE.STI','58/JUNKFEN.STI','58/WORKSHOP.STI','58/O_FURN.STI','58/WP_STUF1.STI','60/GRASS1.STI','60/HACIENDA.sti','9/Tide_Pumps.sti')
           & python '.\Tools\audit_rural_sti.py' --root $root --out $out @files
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
