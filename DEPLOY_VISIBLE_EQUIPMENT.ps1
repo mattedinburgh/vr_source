@@ -574,7 +574,7 @@ function Expand-VengeanceFullModelLayers {
 
         $result = New-Object System.Collections.ArrayList
         $sourceLayer = $SourceDocument.SelectSingleNode("/LogicalAnimationSurfaces/Layer[@name='$LayerName']")
-        if ($null -eq $sourceLayer) { return ,$result }
+        if ($null -eq $sourceLayer) { return @($result) }
 
         foreach ($prop in @($sourceLayer.SelectNodes("./LayerProp"))) {
             $clone = $prop.CloneNode($true)
@@ -598,7 +598,7 @@ function Expand-VengeanceFullModelLayers {
             }
         }
 
-        return ,$result
+        return @($result)
     }
 
     function Append-SourceLayerProps {
