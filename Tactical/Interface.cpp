@@ -6090,7 +6090,7 @@ void DrawItemPic(INVTYPE *pItem, INT16 sX, INT16 sY )
 {
 	UINT16			usGraphicNum;
 
-	usGraphicNum = g_bUsePngItemImages ? 0 : pItem->ubGraphicNum;	
+	usGraphicNum = GetInterfaceGraphicSubIndex(pItem->ubGraphicType, pItem->ubGraphicNum);	
 
 	HVOBJECT		hVObject;
 	ETRLEObject     *pTrav;
@@ -6106,7 +6106,7 @@ void GetItemDimensions( INVTYPE *pItem, INT16 &sWidth, INT16 &sHeight )
 	ETRLEObject     *pTrav;
 	UINT16			usGraphicNum;
 
-	usGraphicNum = g_bUsePngItemImages ? 0 : pItem->ubGraphicNum;	
+	usGraphicNum = GetInterfaceGraphicSubIndex(pItem->ubGraphicType, pItem->ubGraphicNum);	
 	GetVideoObject( &hVObject, GetInterfaceGraphicForItem( pItem ) );
 	pTrav = &(hVObject->pETRLEObject[ usGraphicNum ] );
 
