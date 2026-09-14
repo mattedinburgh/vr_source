@@ -1472,6 +1472,19 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 										fRenderTile = TRUE;
 									}
 
+									// TILES_DOALL is a legacy override used by several full/marked render
+									// paths. Re-apply the cutaway at the final gate so an inner wall can
+									// never leak back into the static buffer, while a fade node remains
+									// dynamic-only.
+									if ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_HIDE )
+									{
+										fRenderTile = FALSE;
+									}
+									else if ( ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_FADE ) && !fDynamic )
+									{
+										fRenderTile = FALSE;
+									}
+
 									// If we are on the struct layer, check for if it's hidden!
 									if ( uiRowFlags & ( TILES_STATIC_STRUCTURES | TILES_DYNAMIC_STRUCTURES | TILES_STATIC_SHADOWS | TILES_DYNAMIC_SHADOWS ) )
 									{
