@@ -7417,9 +7417,10 @@ void CorrectRenderCenter( INT16 sRenderX, INT16 sRenderY, INT16 *pSNewX, INT16 *
 	sScreenX = (INT16) sRenderX;
 	sScreenY = (INT16) sRenderY;
 
-	// Adjust for offsets!
+	// Adjust for offsets. This is the same tactical render-origin correction
+	// used by mouse/world projection, so it must scale with VHD.
 	sScreenX += 0;
-	sScreenY += 10;
+	sScreenY += VHDScaleScreenValue( 10 );
 
 	// Adjust to viewport start!
 	sScreenX -= ( ( gsVIEWPORT_END_X - gsVIEWPORT_START_X ) /2 );
