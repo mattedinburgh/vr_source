@@ -22,6 +22,45 @@
 
 UINT32 guiForceRefreshMousePositionCalculation = 0;
 
+// Vengeance HD (VHD) experimental tactical rendering scale.
+// Keep disabled by default until sprite scaling/fallback is validated.
+static UINT8 gubVHDRenderScale = 1;
+
+UINT8 GetVHDRenderScale( void )
+{
+	return gubVHDRenderScale;
+}
+
+BOOLEAN SetVHDRenderScale( UINT8 ubScale )
+{
+	if ( ubScale != 1 && ubScale != 2 && ubScale != 4 )
+		return FALSE;
+
+	gubVHDRenderScale = ubScale;
+	guiForceRefreshMousePositionCalculation = 1;
+	return TRUE;
+}
+
+INT16 VHDScaleScreenValue( INT16 sValue )
+{
+	return (INT16)( (INT32)sValue * (INT32)gubVHDRenderScale );
+}
+
+INT16 VHDUnscaleScreenValue( INT16 sValue )
+{
+	return (INT16)( sValue / (INT16)gubVHDRenderScale );
+}
+
+FLOAT VHDScaleScreenValueF( FLOAT dValue )
+{
+	return dValue * (FLOAT)gubVHDRenderScale;
+}
+
+FLOAT VHDUnscaleScreenValueF( FLOAT dValue )
+{
+	return dValue / (FLOAT)gubVHDRenderScale;
+}
+
 // GLOBALS
 INT16 DirIncrementer[8] =
 {
@@ -528,15 +567,20 @@ static GridNode::MapXY_t *pMapXY = GridNode::initGridNodes(); // A hack to initi
 
 void FromCellToScreenCoordinates( INT16 sCellX, INT16 sCellY, INT16 *psScreenX, INT16 *psScreenY )
 {
-	*psScreenX = ( 2 * sCellX ) - ( 2 * sCellY );
-	*psScreenY = sCellX + sCellY;
+	const INT32 iScreenX = ( 2 * (INT32)sCellX ) - ( 2 * (INT32)sCellY );
+	const INT32 iScreenY = (INT32)sCellX + (INT32)sCellY;
 
+	*psScreenX = (INT16)( iScreenX * (INT32)gubVHDRenderScale );
+	*psScreenY = (INT16)( iScreenY * (INT32)gubVHDRenderScale );
 }
 
 void FromScreenToCellCoordinates( INT16 sScreenX, INT16 sScreenY, INT16 *psCellX, INT16 *psCellY )
 {
-	*psCellX = ( ( sScreenX + ( 2 * sScreenY ) + 2 ) / 4 );
-	*psCellY = ( ( 2 * sScreenY ) - sScreenX + 2 ) / 4;
+	const INT32 iScreenX = (INT32)sScreenX / (INT32)gubVHDRenderScale;
+	const INT32 iScreenY = (INT32)sScreenY / (INT32)gubVHDRenderScale;
+
+	*psCellX = (INT16)( ( iScreenX + ( 2 * iScreenY ) + 2 ) / 4 );
+	*psCellY = (INT16)( ( ( 2 * iScreenY ) - iScreenX + 2 ) / 4 );
 }
 
 // These two functions take into account that our world is projected and attached
@@ -547,8 +591,8 @@ void FloatFromCellToScreenCoordinates( FLOAT dCellX, FLOAT dCellY, FLOAT *pdScre
 {
 	FLOAT		dScreenX, dScreenY;
 
-	dScreenX = ( 2 * dCellX ) - ( 2 * dCellY );
-	dScreenY = dCellX + dCellY;
+	dScreenX = ( ( 2 * dCellX ) - ( 2 * dCellY ) ) * (FLOAT)gubVHDRenderScale;
+	dScreenY = ( dCellX + dCellY ) * (FLOAT)gubVHDRenderScale;
 
 	*pdScreenX = dScreenX;
 	*pdScreenY = dScreenY;
@@ -558,6 +602,8 @@ void FloatFromScreenToCellCoordinates( FLOAT dScreenX, FLOAT dScreenY, FLOAT *pd
 {
 	FLOAT dCellX, dCellY;
 
+	dScreenX /= (FLOAT)gubVHDRenderScale;
+	dScreenY /= (FLOAT)gubVHDRenderScale;
 	dCellX = ( ( dScreenX + ( 2 * dScreenY ) ) / 4 );
 	dCellY = ( ( 2 * dScreenY ) - dScreenX ) / 4;
 
@@ -803,10 +849,8 @@ void GetWorldXYAbsoluteScreenXY( INT32 sWorldCellX, INT32 sWorldCellY, INT16 *ps
 
 	// From render center in world coords, convert to render center in "screen" coords
 
-	// ATE: We should call the fowllowing function but I'm putting it here verbatim for speed
-	//FromCellToScreenCoordinates( sDistToCenterX , sDistToCenterY, &sScreenCenterX, &sScreenCenterY );
-	sScreenCenterX = ( 2 * sDistToCenterX ) - ( 2 * sDistToCenterY );
-	sScreenCenterY = sDistToCenterX + sDistToCenterY;
+	// VHD: keep absolute world/screen conversion on the same projection path.
+	FromCellToScreenCoordinates( sDistToCenterX, sDistToCenterY, &sScreenCenterX, &sScreenCenterY );
 
 	// Subtract screen center
 	*psWorldScreenX = sScreenCenterX + gsCX - gsTLX;
@@ -826,10 +870,8 @@ void GetFromAbsoluteScreenXYWorldXY( INT32 *psWorldCellX, INT32* psWorldCellY, I
 
 	// From render center in world coords, convert to render center in "screen" coords
 
-	// ATE: We should call the fowllowing function but I'm putting it here verbatim for speed
-	//FromCellToScreenCoordinates( sDistToCenterX , sDistToCenterY, &sScreenCenterX, &sScreenCenterY );
-	sWorldCenterX = ( ( sDistToCenterX + ( 2 * sDistToCenterY ) ) / 4 );
-	sWorldCenterY = ( ( 2 * sDistToCenterY ) - sDistToCenterX ) / 4;
+	// VHD: inverse must mirror the scaled tactical projection exactly.
+	FromScreenToCellCoordinates( sDistToCenterX, sDistToCenterY, &sWorldCenterX, &sWorldCenterY );
 
 	// Goto center again
 	*psWorldCellX = sWorldCenterX + gCenterWorldX;
