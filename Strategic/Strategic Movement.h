@@ -117,7 +117,13 @@ typedef struct GROUP
 	UINT32 uiFlags;								//various conditions that apply to the group
 	UINT8 ubCreatedSectorID;			//used for debugging strategic AI for keeping track of the sector ID a group was created in.
 	UINT8 ubSectorIDOfLastReassignment;	//used for debuggin strategic AI.	Records location of any reassignments.
-	INT8 bPadding[29];						//***********************************************//
+	// VR strategic-modernization staging: preserve legacy fPlayer while adding team ownership.
+	// These four bytes consume former padding, so sizeof(GROUP) remains unchanged for old saves.
+	UINT8 usGroupTeam;						// OUR_TEAM / ENEMY_TEAM / MILITIA_TEAM / other tactical team
+	UINT8 ubStrategicTeamMagic0;		// 'S' when usGroupTeam is initialized
+	UINT8 ubStrategicTeamMagic1;		// 'T'
+	UINT8 ubStrategicTeamMagic2;		// 'G'
+	INT8 bPadding[25];						//***********************************************//
 
 	union
 	{
@@ -128,6 +134,15 @@ typedef struct GROUP
 }GROUP;
 
 extern GROUP *gpGroupList;
+
+// VR strategic-modernization compatibility bridge.
+// New strategic systems must use these helpers rather than reading/writing fPlayer directly.
+BOOLEAN VR_StrategicGroupTeamIsInitialized( const GROUP *pGroup );
+void VR_SetStrategicGroupTeam( GROUP *pGroup, UINT8 ubTeam );
+void VR_NormalizeStrategicGroupTeam( GROUP *pGroup );
+UINT8 VR_GetStrategicGroupTeam( const GROUP *pGroup );
+BOOLEAN VR_IsPlayerStrategicGroup( const GROUP *pGroup );
+BOOLEAN VR_IsEnemyStrategicGroup( const GROUP *pGroup );
 
 
 //General utility functions
