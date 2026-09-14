@@ -358,6 +358,11 @@ BOOLEAN SaveWorld(const STR8 puiFilename, FLOAT dMajorMapVersion=MAJOR_MAP_VERSI
 BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion=NULL, UINT8* pMinorMapVersion=NULL);//dnl ch44 290909
 void TraceB1RemasterLoad( const STR8 pStage, const STR8 pDetail );
 
+UINT8 GetMapFactoryCurrentVisualProfile( void );
+UINT32 GetMapFactorySurfaceSeenCount( void );
+UINT32 GetMapFactoryPaletteGradedCount( void );
+UINT32 GetMapFactoryNonPaletteSkippedCount( void );
+
 void CompileWorldMovementCosts(void);//dnl ch56 151009
 void RecompileLocalMovementCosts( INT32 sCentreGridNo );
 void RecompileLocalMovementCostsFromRadius( INT32 sCentreGridNo, INT8 bRadius );
