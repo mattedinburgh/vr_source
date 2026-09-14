@@ -15,6 +15,7 @@ implemented in several places or on several permanent branches.
 | Casualty/medical AI | `TacticalAI/Medical.cpp` | Evacuation, medic rescue, buddy aid, self-aid |
 | Attack evaluation/execution helpers | `TacticalAI/Attacks.cpp` | Attack candidates and weapon-use execution support |
 | Movement candidate generation | `TacticalAI/FindLocations.cpp` | Cover/advance/retreat/flank location search |
+| Dormant CQB/building planner | `TacticalAI/CQBBuildingDoctrine.cpp/.h` | Compiled staging only; runtime hard-disabled; no `DecideAction` hook |
 | Shared analytics | `VRAnalytics.cpp`, `VRAnalytics.h` | Tactical + strategic Black Box event stream |
 | Architecture policy | `UNIFIED_AI_FRAMEWORK.md` | Single-source architecture and branch rules |
 | Strategic staged work | `Strategic/STRATEGIC_AI_STAGING_MANIFEST.md` | Inactive strategic-AI forward-port plan |
