@@ -86,8 +86,8 @@ extern	BOOLEAN	gfTopMessageDirty;
 // VIEWPORT OFFSET VALUES
 // NOTE:
 // THESE VALUES MUST BE MULTIPLES OF TILE SIZES!
-#define	VIEWPORT_XOFFSET_S					WORLD_TILE_X*1
-#define	VIEWPORT_YOFFSET_S					WORLD_TILE_Y*2
+#define	VIEWPORT_XOFFSET_S					( WORLD_TILE_X * GetVHDRenderScale() )
+#define	VIEWPORT_YOFFSET_S					( WORLD_TILE_Y * 2 * GetVHDRenderScale() )
 #define LARGER_VIEWPORT_XOFFSET_S			( VIEWPORT_XOFFSET_S * 3 )
 #define LARGER_VIEWPORT_YOFFSET_S			( VIEWPORT_YOFFSET_S * 5 )
 
@@ -1768,7 +1768,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 									sZLevel = RoofZLevel( iTempPosX_M, iTempPosY_M, sWorldY );
 
 									// Automatically adjust height!
-									sYPos -= WALL_HEIGHT;
+									sYPos -= VHDScaleScreenValue( WALL_HEIGHT );
 
 									// ATE: Added for shadows on roofs
 									if ( fUseTileElem && ( TileElem->uiFlags & ROOFSHADOW_TILE ) )
@@ -1780,7 +1780,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 
 									sZLevel = OnRoofZLevel( iTempPosX_M, iTempPosY_M, sWorldY, uiLevelNodeFlags );
 									// Automatically adjust height!
-									sYPos -= WALL_HEIGHT;
+									sYPos -= VHDScaleScreenValue( WALL_HEIGHT );
 									break;
 
 								case TILES_STATIC_TOPMOST:
@@ -1831,7 +1831,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 									break;
 								case TILES_DYNAMIC_ROOF:
 
-									sYPos -= WALL_HEIGHT;
+									sYPos -= VHDScaleScreenValue( WALL_HEIGHT );
 
 									sZLevel = RoofZLevel( iTempPosX_M, iTempPosY_M, sWorldY );
 									uiDirtyFlags=BGND_FLAG_SINGLE|BGND_FLAG_ANIMATED;
@@ -1847,7 +1847,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 									sZLevel = OnRoofZLevel( iTempPosX_M, iTempPosY_M, sWorldY, uiLevelNodeFlags );
 									uiDirtyFlags=BGND_FLAG_SINGLE|BGND_FLAG_ANIMATED;
 									// Automatically adjust height!
-									sYPos -= WALL_HEIGHT;
+									sYPos -= VHDScaleScreenValue( WALL_HEIGHT );
 									break;
 
 								case TILES_DYNAMIC_TOPMOST:
@@ -3356,7 +3356,7 @@ static void GetOcclusionBubbleWallAnchor(
 
 	// Grid position is at floor level; move the test point into the wall face so
 	// distance is measured against what actually covers the merc on screen.
-	*psAnchorY = (INT16)( *psAnchorY - WALL_HEIGHT / 2 );
+	*psAnchorY = (INT16)( *psAnchorY - VHDScaleScreenValue( WALL_HEIGHT / 2 ) );
 }
 
 static void SetOcclusionBubbleNodeState(
@@ -5320,13 +5320,13 @@ void InitRenderParams( UINT8 ubRestrictionID )
 		FromCellToScreenCoordinates( gCenterWorldX , gCenterWorldY, &gsCX, &gsCY );
 
 		// Adjust for interface height tabbing!
-		gsTLY += ROOF_LEVEL_HEIGHT;
-		gsTRY += ROOF_LEVEL_HEIGHT;
-		gsCY  += ( ROOF_LEVEL_HEIGHT / 2 );
+		gsTLY += VHDScaleScreenValue( ROOF_LEVEL_HEIGHT );
+		gsTRY += VHDScaleScreenValue( ROOF_LEVEL_HEIGHT );
+		gsCY  += VHDScaleScreenValue( ROOF_LEVEL_HEIGHT / 2 );
 
 		// Take these spaning distances and determine # tiles spaning
-		gsTilesX = ( gsTRX - gsTLX ) / WORLD_TILE_X;
-		gsTilesY = ( gsBRY - gsTRY ) / WORLD_TILE_Y;
+		gsTilesX = ( gsTRX - gsTLX ) / VHDScaleScreenValue( WORLD_TILE_X );
+		gsTilesY = ( gsBRY - gsTRY ) / VHDScaleScreenValue( WORLD_TILE_Y );
 
 		DebugMsg(TOPIC_JA2, DBG_LEVEL_0, String("World Screen Width %d Height %d", ( gsTRX - gsTLX ), ( gsBRY - gsTRY )));
 
