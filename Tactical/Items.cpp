@@ -16359,11 +16359,10 @@ BOOLEAN ItemIsImprovisedBandage( UINT16 usItem )
 	if ( usItem >= MAXITEMS )
 		return FALSE;
 
-	// Vengeance currently uses CAMO_REMOVAL only for the cloth rag.  Keep this
-	// compatibility fallback so existing saves/data installs gain the ability
-	// even before their Items.xml is refreshed.
-	return ( Item[usItem].firstaidkit ||
-		(HasItemFlag( usItem, CAMO_REMOVAL ) && Item[usItem].usItemClass == IC_MISC) );
+	// In the current Vengeance item table CAMO_REMOVAL is unique to the cloth rag.
+	// Using the existing capability flag also keeps old saves/data installs working
+	// before their Items.xml is refreshed, without hard-coding item index 1022.
+	return HasItemFlag( usItem, CAMO_REMOVAL );
 }
 
 BOOLEAN ItemCanGiveFirstAid( UINT16 usItem )
