@@ -234,7 +234,7 @@ namespace
 			JsonString( gFile, recentChanges[i] );
 		}
 		fputc( ']', gFile );
-		fputs( ",\"blackbox_version\":3,\"decision_forensics\":true,\"build_provenance_version\":1", gFile );
+		fputs( ",\"blackbox_version\":2,\"decision_forensics\":true,\"build_provenance_version\":1", gFile );
 		fputs( "}\n", gFile );
 		fflush( gFile );
 	}
@@ -775,6 +775,26 @@ void VRAnalyticsTacticalDecisionSelected(
 		action, actionData, gridNo, actionPoints, life, breath,
 		alertStatus, aiMorale, orders, attitude );
 	EndEvent( file );
+}
+
+void VRAnalyticsTacticalDecisionSelected(
+	unsigned int soldierId,
+	int team,
+	int action,
+	long actionData,
+	long gridNo,
+	int actionPoints,
+	int life,
+	int breath,
+	int alertStatus,
+	int aiMorale,
+	int orders,
+	int attitude )
+{
+	VRAnalyticsTacticalDecisionSelected(
+		soldierId, team, -1, false, -1, -1,
+		action, actionData, gridNo, actionPoints,
+		life, breath, alertStatus, aiMorale, orders, attitude );
 }
 
 void VRAnalyticsTacticalActionDone(

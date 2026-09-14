@@ -194,6 +194,20 @@ void VRAnalyticsTacticalDecisionSelected(
 	int orders,
 	int attitude );
 
+void VRAnalyticsTacticalDecisionSelected(
+	unsigned int soldierId,
+	int team,
+	int action,
+	long actionData,
+	long gridNo,
+	int actionPoints,
+	int life,
+	int breath,
+	int alertStatus,
+	int aiMorale,
+	int orders,
+	int attitude );
+
 void VRAnalyticsTacticalActionDone(
 	unsigned int soldierId,
 	int action,
