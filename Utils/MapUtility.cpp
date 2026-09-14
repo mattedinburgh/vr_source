@@ -294,8 +294,8 @@ static BOOLEAN MapFactoryVisualGridSafe( INT32 sGridNo )
 		return FALSE;
 
 	MAP_ELEMENT *pMap = &gpWorldLevelData[sGridNo];
-	if ( pMap->pLandHead == NULL || pMap->pStructHead != NULL ||
-		 pMap->pRoofHead != NULL || pMap->pOnRoofHead != NULL )
+	if ( pMap->pLandHead == NULL || pMap->pObjectHead != NULL ||
+		 pMap->pStructHead != NULL || pMap->pRoofHead != NULL || pMap->pOnRoofHead != NULL )
 		return FALSE;
 
 	UINT32 uiLandType = 0;
@@ -308,8 +308,16 @@ static BOOLEAN MapFactoryVisualGridSafe( INT32 sGridNo )
 
 static BOOLEAN MapFactoryAddVisual( INT32 sGridNo, UINT32 uiType, UINT16 usSubIndex, BOOLEAN fOnRoof )
 {
-	if ( sGridNo < 0 || sGridNo >= WORLD_MAX || uiType >= NUMBEROFTILETYPES ||
-		 usSubIndex == 0 || !MapFactoryVisualGridSafe( sGridNo ) )
+	if ( sGridNo < 0 || sGridNo >= WORLD_MAX || uiType >= NUMBEROFTILETYPES || usSubIndex == 0 )
+		return FALSE;
+
+	if ( fOnRoof )
+	{
+		if ( gpWorldLevelData == NULL || gpWorldLevelData[sGridNo].pRoofHead == NULL ||
+			 gpWorldLevelData[sGridNo].pOnRoofHead != NULL )
+			return FALSE;
+	}
+	else if ( !MapFactoryVisualGridSafe( sGridNo ) )
 		return FALSE;
 
 	UINT16 usTileIndex = NO_TILE;
@@ -599,6 +607,237 @@ static void SaveMapFactoryTacticalPreviewSet( const STR8 pMapFilename )
 	MapPreviewWriteStatus( zStatus );
 }
 
+
+enum MAP_FACTORY_ARCHETYPE
+{
+	MAP_FACTORY_FARMLAND = 0,
+	MAP_FACTORY_WILDERNESS,
+	MAP_FACTORY_MILITARY,
+	MAP_FACTORY_INDUSTRIAL,
+	MAP_FACTORY_SETTLEMENT,
+	MAP_FACTORY_ROADSIDE,
+	MAP_FACTORY_OPEN_COUNTRY
+};
+
+static UINT16 MapFactoryPickSubIndex( UINT32 uiType, UINT32 uiSeed )
+{
+	if ( uiType >= NUMBEROFTILETYPES || gTileSurfaceArray[uiType] == NULL ||
+		 gTileSurfaceArray[uiType]->vo == NULL )
+		return 0;
+
+	UINT16 usCapacity = (UINT16)gTileSurfaceArray[uiType]->vo->usNumberOfObjects;
+	if ( gNumTilesPerType[uiType] < usCapacity )
+		usCapacity = gNumTilesPerType[uiType];
+	if ( usCapacity == 0 )
+		return 0;
+	if ( usCapacity > 8 )
+		usCapacity = 8;
+	return (UINT16)(1 + (uiSeed % usCapacity));
+}
+
+static BOOLEAN MapFactoryAnchorMatches( INT32 sGridNo, UINT8 ubArchetype )
+{
+	if ( !MapFactoryVisualGridSafe( sGridNo ) )
+		return FALSE;
+
+	BOOLEAN fNearStruct = FALSE, fNearWater = FALSE, fNearTrail = FALSE;
+	MapFactoryNeighbourFlags( sGridNo, &fNearStruct, &fNearWater, &fNearTrail );
+
+	switch ( ubArchetype )
+	{
+		case MAP_FACTORY_MILITARY:
+		case MAP_FACTORY_INDUSTRIAL:
+		case MAP_FACTORY_SETTLEMENT:
+			return fNearStruct && !fNearWater;
+		case MAP_FACTORY_ROADSIDE:
+			return fNearTrail && !fNearWater;
+		case MAP_FACTORY_FARMLAND:
+			return !fNearStruct && !fNearWater;
+		case MAP_FACTORY_WILDERNESS:
+			return !fNearStruct && !fNearWater;
+		default:
+			return !fNearWater;
+	}
+}
+
+static UINT16 MapFactoryPlacePilotModule( INT32 sAnchor, UINT8 ubArchetype, UINT32 uiSeed )
+{
+	const INT32 sRow = sAnchor / WORLD_COLS;
+	const INT32 sCol = sAnchor % WORLD_COLS;
+	const INT8 bDx[4] = { 0, 2, 0, 2 };
+	const INT8 bDy[4] = { 0, 0, 2, 2 };
+
+	UINT32 uiTypes[4];
+	switch ( ubArchetype )
+	{
+		case MAP_FACTORY_MILITARY:
+			uiTypes[0] = DEBRISMISC; uiTypes[1] = DEBRISWOOD;
+			uiTypes[2] = DEBRISROCKS; uiTypes[3] = DEBRISMISC; break;
+		case MAP_FACTORY_INDUSTRIAL:
+			uiTypes[0] = DEBRISMISC; uiTypes[1] = DEBRISWOOD;
+			uiTypes[2] = DEBRISROCKS; uiTypes[3] = DEBRISGRASS; break;
+		case MAP_FACTORY_SETTLEMENT:
+			uiTypes[0] = DEBRISMISC; uiTypes[1] = DEBRISWOOD;
+			uiTypes[2] = DEBRISWEEDS; uiTypes[3] = DEBRISROCKS; break;
+		case MAP_FACTORY_ROADSIDE:
+			uiTypes[0] = DEBRISSAND; uiTypes[1] = DEBRISROCKS;
+			uiTypes[2] = DEBRISWEEDS; uiTypes[3] = DEBRISWOOD; break;
+		case MAP_FACTORY_FARMLAND:
+			uiTypes[0] = DEBRISGRASS; uiTypes[1] = DEBRISWEEDS;
+			uiTypes[2] = DEBRISSAND; uiTypes[3] = DEBRISWOOD; break;
+		case MAP_FACTORY_WILDERNESS:
+			uiTypes[0] = DEBRISWEEDS; uiTypes[1] = DEBRISROCKS;
+			uiTypes[2] = DEBRISGRASS; uiTypes[3] = DEBRISWOOD; break;
+		default:
+			uiTypes[0] = DEBRISWEEDS; uiTypes[1] = DEBRISROCKS;
+			uiTypes[2] = DEBRISGRASS; uiTypes[3] = DEBRISWOOD; break;
+	}
+
+	INT32 sGrid[4];
+	UINT16 usSub[4];
+	for ( UINT8 i = 0; i < 4; ++i )
+	{
+		const INT32 r = sRow + bDy[i];
+		const INT32 col = sCol + bDx[i];
+		if ( r < 0 || col < 0 || col >= WORLD_COLS )
+			return 0;
+		sGrid[i] = r * WORLD_COLS + col;
+		if ( sGrid[i] < 0 || sGrid[i] >= WORLD_MAX || !MapFactoryVisualGridSafe( sGrid[i] ) )
+			return 0;
+		usSub[i] = MapFactoryPickSubIndex( uiTypes[i], uiSeed + i * 17u );
+		if ( usSub[i] == 0 )
+			return 0;
+	}
+
+	UINT16 usPlaced = 0;
+	for ( UINT8 i = 0; i < 4; ++i )
+		if ( MapFactoryAddVisual( sGrid[i], uiTypes[i], usSub[i], FALSE ) )
+			++usPlaced;
+	return usPlaced;
+}
+
+static UINT32 MapFactoryApplyPilotDesign( UINT8 ubArchetype )
+{
+	if ( gpWorldLevelData == NULL )
+		return 0;
+
+	const INT32 sRows = WORLD_MAX / WORLD_COLS;
+	INT32 sLastRow = -1000, sLastCol = -1000;
+	UINT32 uiModules = 0, uiPieces = 0;
+
+	for ( INT32 sRow = 5; sRow < sRows - 5 && uiModules < 8; sRow += 3 )
+	{
+		for ( INT32 sCol = 5; sCol < WORLD_COLS - 5 && uiModules < 8; sCol += 3 )
+		{
+			const INT32 sGridNo = sRow * WORLD_COLS + sCol;
+			if ( !MapFactoryAnchorMatches( sGridNo, ubArchetype ) )
+				continue;
+
+			if ( abs( sRow - sLastRow ) + abs( sCol - sLastCol ) < 24 )
+				continue;
+
+			const UINT32 uiHash = (UINT32)sGridNo * 2654435761u + (UINT32)ubArchetype * 2246822519u;
+			if ( (uiHash & 3u) != 0u )
+				continue;
+
+			const UINT16 usPlaced = MapFactoryPlacePilotModule( sGridNo, ubArchetype, uiHash );
+			if ( usPlaced == 4 )
+			{
+				++uiModules;
+				uiPieces += usPlaced;
+				sLastRow = sRow;
+				sLastCol = sCol;
+			}
+		}
+	}
+
+	CHAR8 zStatus[160];
+	_snprintf( zStatus, sizeof(zStatus) - 1, "PILOT_DESIGN archetype=%u modules=%lu pieces=%lu",
+		(UINT16)ubArchetype, uiModules, uiPieces );
+	zStatus[sizeof(zStatus) - 1] = 0;
+	MapPreviewWriteStatus( zStatus );
+	return uiPieces;
+}
+
+static BOOLEAN MapFactoryLoadPilotMap( const STR8 pMapName )
+{
+	FLOAT dMajorMapVersion = 0.0f;
+	UINT8 ubMinorMapVersion = 0;
+	if ( !LoadWorld( (STR8)pMapName, &dMajorMapVersion, &ubMinorMapVersion ) )
+		return FALSE;
+	LightReset();
+	LightSpriteRenderAll();
+	return TRUE;
+}
+
+static void MapFactoryRunPilotSector( const STR8 pMapName, UINT8 ubArchetype )
+{
+	if ( pMapName == NULL )
+		return;
+
+	CHAR8 zBase[260];
+	MapFactoryBaseName( pMapName, zBase, sizeof(zBase) );
+
+	if ( !MapFactoryLoadPilotMap( pMapName ) )
+	{
+		CHAR8 zFail[320];
+		_snprintf( zFail, sizeof(zFail) - 1, "PILOT_FAIL load %s", pMapName );
+		zFail[sizeof(zFail) - 1] = 0;
+		MapPreviewWriteStatus( zFail );
+		return;
+	}
+
+	CHAR8 zPristine[320];
+	_snprintf( zPristine, sizeof(zPristine) - 1, "%s_PRISTINE.dat", zBase );
+	zPristine[sizeof(zPristine) - 1] = 0;
+	MapFactoryWriteProfile( pMapName );
+	SaveMapFactoryTacticalPreviewSet( zPristine );
+
+	const UINT32 uiPieces = MapFactoryApplyPilotDesign( ubArchetype );
+	SaveMapFactoryTacticalPreviewSet( pMapName );
+
+	CHAR8 zRemastered[320];
+	_snprintf( zRemastered, sizeof(zRemastered) - 1, "%s_REMASTERED.dat", zBase );
+	zRemastered[sizeof(zRemastered) - 1] = 0;
+	const BOOLEAN fSaved = ( uiPieces > 0 ) ? SaveWorld( zRemastered ) : FALSE;
+
+	if ( fSaved && MapFactoryLoadPilotMap( zRemastered ) )
+		SaveMapFactoryTacticalPreviewSet( zRemastered );
+
+	CHAR8 zDone[384];
+	_snprintf( zDone, sizeof(zDone) - 1, "PILOT_%s sector=%s pieces=%lu output=%s",
+		fSaved ? "OK" : "FAIL", zBase, uiPieces, zRemastered );
+	zDone[sizeof(zDone) - 1] = 0;
+	MapPreviewWriteStatus( zDone );
+}
+
+static void MapFactoryRunFiveSectorPilot( const STR8 pTriggerMap )
+{
+	if ( pTriggerMap == NULL )
+		return;
+
+	CHAR8 zBase[260];
+	MapFactoryBaseName( pTriggerMap, zBase, sizeof(zBase) );
+	if ( _stricmp( zBase, "A3" ) != 0 )
+		return;
+
+	const CHAR8 *pActions = getenv( "GITHUB_ACTIONS" );
+	if ( pActions == NULL || _stricmp( pActions, "true" ) != 0 )
+		return;
+
+	static BOOLEAN fPilotAlreadyRun = FALSE;
+	if ( fPilotAlreadyRun )
+		return;
+	fPilotAlreadyRun = TRUE;
+
+	MapPreviewWriteStatus( "PILOT_BEGIN A8,A12,B13,F15" );
+	MapFactoryRunPilotSector( "A8.dat", MAP_FACTORY_MILITARY );
+	MapFactoryRunPilotSector( "A12.DAT", MAP_FACTORY_WILDERNESS );
+	MapFactoryRunPilotSector( "b13.dat", MAP_FACTORY_INDUSTRIAL );
+	MapFactoryRunPilotSector( "f15.dat", MAP_FACTORY_MILITARY );
+	MapPreviewWriteStatus( "PILOT_DONE A8,A12,B13,F15" );
+}
+
 void GenerateAllMapsInit(void)
 {
 	GETFILESTRUCT FileInfo;
@@ -829,6 +1068,12 @@ UINT32 MapUtilScreenHandle(void)
 		zDone[sizeof(zDone) - 1] = 0;
 		MapPreviewWriteStatus( zDone );
 	}
+
+	// Run the representative cross-archetype Map Factory pilot inside the same
+	// editor invocation. The existing CI artifact glob already captures all
+	// tactical screenshots, so no workflow-specific batching is required.
+	if ( gfMapPreviewCaptureMode )
+		MapFactoryRunFiveSectorPilot( zFilename );
 
 	// MAPSHOT is a single-purpose automation path. Do not spend another pass
 	// generating/quantizing the tiny radar STI; stop immediately after the
