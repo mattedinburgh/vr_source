@@ -1198,6 +1198,114 @@ static BOOLEAN A3FarmVisualGridSafe( INT32 sGridNo )
 	return ( uiLandType >= FIRSTTEXTURE && uiLandType <= SEVENTHTEXTURE );
 }
 
+
+static void A3WriteArchitectureSurvey( void )
+{
+	if ( gubSectorVisualProfile != SECTOR_VISUAL_A3_FARM || gpWorldLevelData == NULL )
+		return;
+
+	UINT8 *pVisited = (UINT8*)MemAlloc( WORLD_MAX );
+	INT32 *pQueue = (INT32*)MemAlloc( sizeof(INT32) * WORLD_MAX );
+	if ( pVisited == NULL || pQueue == NULL )
+	{
+		if ( pVisited != NULL ) MemFree( pVisited );
+		if ( pQueue != NULL ) MemFree( pQueue );
+		TraceA3FarmLoad( "ARCHITECTURE SURVEY", "allocation failed" );
+		return;
+	}
+	memset( pVisited, 0, WORLD_MAX );
+
+	FILE *pCsv = fopen( "MAP_PREVIEWS\\A3_architecture.csv", "w" );
+	if ( pCsv != NULL )
+		fprintf( pCsv, "cluster,roof_tiles,min_row,max_row,min_col,max_col,width,height,struct_grids,floor_grids,center_grid\n" );
+
+	UINT16 usCluster = 0;
+	for ( INT32 sStart = 0; sStart < WORLD_MAX; ++sStart )
+	{
+		if ( pVisited[sStart] || gpWorldLevelData[sStart].pRoofHead == NULL )
+			continue;
+
+		INT32 iHead = 0, iTail = 0;
+		pQueue[iTail++] = sStart;
+		pVisited[sStart] = 1;
+
+		UINT32 uiRoofTiles = 0, uiStructGrids = 0, uiFloorGrids = 0;
+		INT32 sMinRow = 32767, sMaxRow = -1, sMinCol = 32767, sMaxCol = -1;
+		INT64 iRowSum = 0, iColSum = 0;
+
+		while ( iHead < iTail )
+		{
+			const INT32 sGridNo = pQueue[iHead++];
+			const INT32 sRow = sGridNo / WORLD_COLS;
+			const INT32 sCol = sGridNo % WORLD_COLS;
+
+			++uiRoofTiles;
+			iRowSum += sRow;
+			iColSum += sCol;
+			if ( sRow < sMinRow ) sMinRow = sRow;
+			if ( sRow > sMaxRow ) sMaxRow = sRow;
+			if ( sCol < sMinCol ) sMinCol = sCol;
+			if ( sCol > sMaxCol ) sMaxCol = sCol;
+			if ( gpWorldLevelData[sGridNo].pStructHead != NULL ) ++uiStructGrids;
+			if ( FloorAtGridNo( sGridNo ) ) ++uiFloorGrids;
+
+			const INT32 sNeighbours[4] =
+			{
+				sGridNo - WORLD_COLS,
+				sGridNo + WORLD_COLS,
+				sGridNo - 1,
+				sGridNo + 1
+			};
+			for ( UINT8 i = 0; i < 4; ++i )
+			{
+				const INT32 sNext = sNeighbours[i];
+				if ( sNext < 0 || sNext >= WORLD_MAX || pVisited[sNext] )
+					continue;
+				if ( i == 2 && sCol == 0 ) continue;
+				if ( i == 3 && sCol + 1 >= WORLD_COLS ) continue;
+				if ( gpWorldLevelData[sNext].pRoofHead == NULL )
+					continue;
+				pVisited[sNext] = 1;
+				pQueue[iTail++] = sNext;
+			}
+		}
+
+		++usCluster;
+		const INT32 sCenterRow = (INT32)( iRowSum / (INT64)uiRoofTiles );
+		const INT32 sCenterCol = (INT32)( iColSum / (INT64)uiRoofTiles );
+		const INT32 sCenterGrid = sCenterRow * WORLD_COLS + sCenterCol;
+
+		if ( pCsv != NULL )
+		{
+			fprintf( pCsv, "%u,%lu,%d,%d,%d,%d,%d,%d,%lu,%lu,%d\n",
+				usCluster, uiRoofTiles, sMinRow, sMaxRow, sMinCol, sMaxCol,
+				sMaxCol - sMinCol + 1, sMaxRow - sMinRow + 1,
+				uiStructGrids, uiFloorGrids, sCenterGrid );
+		}
+
+		CHAR8 zCluster[256];
+		sprintf( zCluster,
+			"cluster=%u roof=%lu bbox=r%d-%d c%d-%d size=%dx%d structs=%lu floors=%lu center=%d",
+			usCluster, uiRoofTiles, sMinRow, sMaxRow, sMinCol, sMaxCol,
+			sMaxCol - sMinCol + 1, sMaxRow - sMinRow + 1,
+			uiStructGrids, uiFloorGrids, sCenterGrid );
+		TraceA3FarmLoad( "ARCHITECTURE", zCluster );
+	}
+
+	if ( pCsv != NULL )
+	{
+		fflush( pCsv );
+		fclose( pCsv );
+	}
+
+	CHAR8 zSummary[96];
+	sprintf( zSummary, "roofClusters=%u", usCluster );
+	TraceA3FarmLoad( "ARCHITECTURE SURVEY DONE", zSummary );
+
+	MemFree( pQueue );
+	MemFree( pVisited );
+}
+
 static void DressA3FarmEnvironment( void )
 {
 	if ( gubSectorVisualProfile != SECTOR_VISUAL_A3_FARM || gpWorldLevelData == NULL )
@@ -1206,6 +1314,7 @@ static void DressA3FarmEnvironment( void )
 	// Hand-authored V2 baseline. The earlier hash-driven dressing pass is kept
 	// below for reference, but is deliberately suppressed while A3 is rebuilt
 	// composition-by-composition from screenshot feedback.
+	A3WriteArchitectureSurvey();
 	TraceA3FarmLoad( "HAND AUTHORED V2", "procedural farm dressing disabled; clean authored-map baseline" );
 	return;
 
