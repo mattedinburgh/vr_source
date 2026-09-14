@@ -1,30 +1,29 @@
-# CQB / Building AI — canonical dormant staging
+# CQB / Building AI — canonical live integration
 
 Canonical branch: `install/all-2026-09-12`
 
-Status: **COMPILED / RUNTIME DISABLED**
+Status: **LIVE / RUNTIME ENABLED**
 
-The former `inactive/cqb-building-doctrine-2026-09-14` implementation has been forward-ported onto the canonical
-branch so the code is no longer stranded on a second AI line.
+The former `inactive/cqb-building-doctrine-2026-09-14` branch is now archaeology/reference only.
+Its implementation has been forward-ported into the single canonical AI line and activated after
+explicit user approval on 2026-09-14.
 
-## Safety gate
+## Runtime contract
 
-`VRCQB_IsRuntimeEnabled()` must return `FALSE` until an explicit activation review.
+`VRCQB_IsRuntimeEnabled()` returns `TRUE`.
 
-There are currently:
+CQB is not a parallel top-level AI. It is called from the normal canonical tactical hierarchy:
 
-- no `DecideAction` call sites;
-- no returned CQB-specific `AI_ACTION_*`;
-- no automatic CQB smoke/suppression task;
-- no destructive breaching;
-- no window-entry action layer;
-- no CQB savegame state.
+- RED: only after emergency smoke, dispersion, cohesion, disengagement, suppression response,
+  tactical fallback, self-aid and casualty response have had first refusal;
+- BLACK: only after normal attack selection/arbitration has failed to produce an executable,
+  desirable immediate attack.
 
-Compiling this module must therefore have no gameplay effect.
+This preserves the rule that survival and a good shot outrank building choreography.
 
-## What is staged
+## Active states
 
-The module contains knowledge-safe building/CQB assessment for:
+The live module can produce building-aware movement for:
 
 - ASSAULT;
 - HOLD;
@@ -32,60 +31,75 @@ The module contains knowledge-safe building/CQB assessment for:
 - COUNTERATTACK;
 - SECURE.
 
-It reuses the canonical AI architecture:
-
-- `AIGetDoctrineProfile`;
-- `AIHasLocalCommandSupport`;
-- `AICompetenceTier`;
-- `AIPlannerReliability`;
-- `AIKnownThreatExposure`;
-- existing morale/risk/disengagement systems;
-- current personal/public opponent knowledge.
-
-It does **not** create a second fireteam system or a second combat AI.
+Movement uses existing JA2 actions (`SEEK_OPPONENT`, `TAKE_COVER`, `WITHDRAW`) rather than
+inventing a second action engine.
 
 ## Training model
 
-Profiles are behavioural capability bands, not combat-stat bonuses:
+CQB behaviour remains competence-dependent rather than stat-cheated:
 
-- SECURITY_BASIC;
-- LINE_BASIC;
-- LINE_COMMANDED;
-- VETERAN;
-- ELITE_MOBILE;
-- ELITE_GUARD.
+- SECURITY_BASIC — noticeably better at guarding than clearing;
+- LINE_BASIC — basic buddy/entry discipline;
+- LINE_COMMANDED — simple coordinated assault/support/security;
+- VETERAN — stronger sector discipline, replanning and alternate-entry reasoning;
+- ELITE_MOBILE — strongest assault/room-flow profile;
+- ELITE_GUARD — strongest depth/strongpoint profile.
 
-They control planning sophistication such as threshold awareness, alternate-entry reasoning, sector
-deconfliction, defense in depth and local counterattack permission.
+No CQB profile grants hidden CTH, AP, perception, damage or reaction bonuses.
 
-## Performance bounds
+## Coordination
 
-The dormant planner is intentionally local:
+The live adapter uses short-lived fireteam-local plan reservations so excess movers do not all queue
+through the same entry. When the mover budget is full, another soldier is redirected toward a local
+support/hold position instead of joining the doorway stack.
+
+## Knowledge and performance
+
+The planner remains knowledge-safe:
+
+- opponent geometry comes from personal/public known locations;
+- no unseen live position, stance, AP, health or equipment is read.
+
+Performance remains bounded:
 
 - local position scan radius: 6 tiles;
 - entry search radius: 8 tiles around the known indoor threat;
+- cheap first-pass scoring;
+- detailed exposure/crossfire scoring only for shortlisted candidates;
 - no full-map room graph;
-- no second global pathfinder;
-- transient plan memory only.
+- no second global pathfinder.
 
-## Activation sequence
+## Black Box / Companion
 
-Do not activate the complete system at once.
+Every live CQB assessment can write to the canonical `VRAnalytics` stream, including:
 
-1. Keep compiled and disabled while canonical builds are validated.
-2. Add `VRAnalytics` shadow telemetry.
-3. Run diagnostic-only shadow evaluation while existing AI still acts.
-4. Compare shadow decisions with Black Box/Companion battle outcomes.
-5. Activate HOLD / SECURE first.
-6. Activate building-aware fallback.
-7. Activate ASSAULT only after stable results.
-8. Activate local counterattack last.
+- state and role;
+- doctrine/training profile;
+- reason;
+- room/building and entry;
+- known-threat count;
+- local support;
+- confidence/reliability/effective skill;
+- selected movement;
+- current/desired score;
+- route rejection reasons.
 
-Any activation must enter the normal canonical priority hierarchy in `DecideAction.cpp`. CQB must never
-become a parallel top-level decision engine.
+This is intended for after-battle tuning with the Black Box/Companion workflow.
+
+## Not yet part of CQB
+
+Activation does **not** add:
+
+- destructive breaching logic;
+- window-entry choreography;
+- automatic grenade-as-default room clearing;
+- extra smoke inventory;
+- new savegame state;
+- a second fireteam or perception system.
+
+Those remain separate future refinements.
 
 ## Branch status
 
-The old CQB branch is now archaeology/reference only. New CQB work starts from
-`install/all-2026-09-12` and modifies the canonical module directly or through a short-lived branch that
-returns to canonical.
+All new active CQB work belongs on `install/all-2026-09-12`.
+The old inactive CQB branch is frozen historical reference and must not become a competing AI line.
