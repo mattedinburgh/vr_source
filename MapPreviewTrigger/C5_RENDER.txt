@@ -1,4 +1,5 @@
 San Mona C5 graphics-only engine validation
-requested_utc=2026-09-14T17:52:00Z
+requested_utc=2026-09-14T18:03:00Z
 rule=do not modify c5.dat or gameplay metadata
-reason=fresh baseline after build-info quoting fix
+gamedir_target=8d8a1a8956f913499ac2e7926ecd2ab0e9042a87
+qa=6 full-colour tactical views plus contact sheet
