@@ -34,9 +34,9 @@ tactical  strategic      tactical strategic
 
 The shared event stream is append-only JSONL using schema
 `vr-blackbox-1`. Every record has a session identifier and sequence number.
-Black Box v3 remains schema-compatible: the session-start record carries
-`blackbox_version: 3` and newer event kinds/fields are additive, so older
-Companion tooling can still read the stream. v3 adds exact build provenance,
+Black Box v2 remains schema-compatible: the session-start record continues to
+carry `blackbox_version: 2`. The new provenance capability is additive and is
+identified by `build_provenance_version: 1`. It adds exact build provenance,
 actor identity/context, direct weapon-hit records, AP-refresh detection and
 explicit rejection of redundant tactical setup actions.
 
