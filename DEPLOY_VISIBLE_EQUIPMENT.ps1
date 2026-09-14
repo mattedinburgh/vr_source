@@ -546,6 +546,235 @@ foreach ($spec in $bodySpecs) {
     Expand-VengeanceEquipmentLayers -Key $spec.Key -GearRelative $spec.Gear -CatalogRelatives $spec.Catalogs -TargetBodyRelative $spec.TargetBody -TargetCatalogRelative $spec.TargetCatalog -UnsupportedAnimations $spec.Unsupported
 }
 
+
+# Add the matching 1.13 base-body and gun layers. These layers are used by the
+# renderer only when the complete logical model for the current frame is
+# available; Vengeance-native rendering remains the fallback for VR-only
+# animations and AIMNAS weapons without a safe 1.13 visual mapping.
+function Expand-VengeanceFullModelLayers {
+    param(
+        [Parameter(Mandatory=$true)][string]$Key,
+        [Parameter(Mandatory=$true)][string]$BaseRelative,
+        [Parameter(Mandatory=$true)][string]$GearRelative,
+        [Parameter(Mandatory=$true)][string]$GunsRelative,
+        [Parameter(Mandatory=$true)][string]$GunPaletteRelative,
+        [Parameter(Mandatory=$true)][string[]]$CatalogRelatives,
+        [Parameter(Mandatory=$true)][string]$TargetBodyRelative,
+        [Parameter(Mandatory=$true)][string]$TargetCatalogRelative,
+        [Parameter(Mandatory=$true)][string[]]$UnsupportedAnimations
+    )
+
+    $temps = New-Object System.Collections.ArrayList
+
+    function Get-PrunedLayerProps {
+        param(
+            [Parameter(Mandatory=$true)][xml]$SourceDocument,
+            [Parameter(Mandatory=$true)][string]$LayerName
+        )
+
+        $result = New-Object System.Collections.ArrayList
+        $sourceLayer = $SourceDocument.SelectSingleNode("/LogicalAnimationSurfaces/Layer[@name='$LayerName']")
+        if ($null -eq $sourceLayer) { return ,$result }
+
+        foreach ($prop in @($sourceLayer.SelectNodes("./LayerProp"))) {
+            $clone = $prop.CloneNode($true)
+
+            foreach ($surface in @($clone.SelectNodes(".//Surface"))) {
+                $animationName = ""
+                if ($surface.HasAttribute("animsurface")) {
+                    $animationName = $surface.GetAttribute("animsurface")
+                }
+                elseif ($surface.HasAttribute("animstate")) {
+                    $animationName = $surface.GetAttribute("animstate")
+                }
+
+                if ($animationName -and ($UnsupportedAnimations -contains $animationName)) {
+                    [void]$surface.ParentNode.RemoveChild($surface)
+                }
+            }
+
+            if ($clone.SelectNodes(".//Surface").Count -gt 0) {
+                [void]$result.Add($clone)
+            }
+        }
+
+        return ,$result
+    }
+
+    function Append-SourceLayerProps {
+        param(
+            [Parameter(Mandatory=$true)][xml]$TargetDocument,
+            [Parameter(Mandatory=$true)][xml]$SourceDocument,
+            [Parameter(Mandatory=$true)][string]$LayerName
+        )
+
+        $props = @(Get-PrunedLayerProps -SourceDocument $SourceDocument -LayerName $LayerName)
+        if ($props.Count -eq 0) { return 0 }
+
+        $targetLayer = $TargetDocument.SelectSingleNode("/LogicalAnimationSurfaces/Layer[@name='$LayerName']")
+        if ($null -eq $targetLayer) {
+            $targetLayer = $TargetDocument.CreateElement("Layer")
+            [void]$targetLayer.SetAttribute("name", $LayerName)
+            [void]$TargetDocument.DocumentElement.AppendChild($targetLayer)
+        }
+
+        $added = 0
+        foreach ($prop in $props) {
+            [void]$targetLayer.AppendChild($TargetDocument.ImportNode($prop, $true))
+            $added++
+        }
+        return $added
+    }
+
+    try {
+        $sources = @{}
+        foreach ($spec in @(
+            @("base", $BaseRelative),
+            @("gear", $GearRelative),
+            @("guns", $GunsRelative),
+            @("gunpal", $GunPaletteRelative)
+        )) {
+            $temp = Join-Path $env:TEMP ("vr_lobot_" + $Key + "_" + $spec[0] + "_" + $PID + ".xml")
+            [void]$temps.Add($temp)
+            Get-UrlFile -Url "$UpstreamRaw/TableData/LogicalBodyTypes/$($spec[1])" -Destination $temp
+            [xml]$doc = [System.IO.File]::ReadAllText($temp)
+            $sources[$spec[0]] = $doc
+        }
+
+        $targetBodyPath = Join-Path $TableRoot $TargetBodyRelative
+        [xml]$targetDoc = [System.IO.File]::ReadAllText($targetBodyPath)
+
+        $addedProps = 0
+
+        # Preserve upstream precedence: specialised gear/gun filters before
+        # the base body's empty/default filters.
+        foreach ($layerName in @("legs","body","head","hands","arms")) {
+            $addedProps += Append-SourceLayerProps -TargetDocument $targetDoc -SourceDocument $sources["gear"] -LayerName $layerName
+            $addedProps += Append-SourceLayerProps -TargetDocument $targetDoc -SourceDocument $sources["base"] -LayerName $layerName
+        }
+
+        foreach ($layerName in @("blood","shadow")) {
+            $addedProps += Append-SourceLayerProps -TargetDocument $targetDoc -SourceDocument $sources["base"] -LayerName $layerName
+        }
+
+        foreach ($layerName in @("gun","gunleft")) {
+            $addedProps += Append-SourceLayerProps -TargetDocument $targetDoc -SourceDocument $sources["gunpal"] -LayerName $layerName
+            $addedProps += Append-SourceLayerProps -TargetDocument $targetDoc -SourceDocument $sources["guns"] -LayerName $layerName
+        }
+
+        $neededSurfaceNames = New-Object "System.Collections.Generic.HashSet[string]" ([System.StringComparer]::Ordinal)
+        foreach ($surface in @($targetDoc.SelectNodes("/LogicalAnimationSurfaces/Layer/LayerProp/Surface"))) {
+            [void]$neededSurfaceNames.Add($surface.GetAttribute("name"))
+        }
+
+        $targetCatalogPath = Join-Path $TableRoot $TargetCatalogRelative
+        $targetCatalogText = [System.IO.File]::ReadAllText($targetCatalogPath)
+
+        $existingNames = New-Object "System.Collections.Generic.HashSet[string]" ([System.StringComparer]::Ordinal)
+        foreach ($entry in [regex]::Matches($targetCatalogText, '(?is)<AnimSurface\b.*?/>')) {
+            $nameMatch = [regex]::Match($entry.Value, '\bname="([^"]+)"')
+            if ($nameMatch.Success) { [void]$existingNames.Add($nameMatch.Groups[1].Value) }
+        }
+
+        $upstreamDefinitions = @{}
+        $catalogNumber = 0
+        foreach ($catalogRelative in $CatalogRelatives) {
+            $catalogNumber++
+            $catalogTemp = Join-Path $env:TEMP ("vr_lobot_" + $Key + "_fullcat_" + $catalogNumber + "_" + $PID + ".xml")
+            [void]$temps.Add($catalogTemp)
+            Get-UrlFile -Url "$UpstreamRaw/TableData/LogicalBodyTypes/$catalogRelative" -Destination $catalogTemp
+            $catalogText = [System.IO.File]::ReadAllText($catalogTemp)
+
+            foreach ($entry in [regex]::Matches($catalogText, '(?is)<AnimSurface\b.*?/>')) {
+                $nameMatch = [regex]::Match($entry.Value, '\bname="([^"]+)"')
+                if ($nameMatch.Success) {
+                    $upstreamDefinitions[$nameMatch.Groups[1].Value] = $entry.Value.Trim()
+                }
+            }
+        }
+
+        $append = New-Object System.Collections.ArrayList
+        $missing = New-Object System.Collections.ArrayList
+        foreach ($name in @($neededSurfaceNames | Sort-Object)) {
+            if ($existingNames.Contains($name)) { continue }
+            if (-not $upstreamDefinitions.ContainsKey($name)) {
+                [void]$missing.Add($name)
+                continue
+            }
+
+            [void]$append.Add($upstreamDefinitions[$name])
+            [void]$existingNames.Add($name)
+        }
+
+        if ($missing.Count -gt 0) {
+            Write-Host "Missing full-model animation definitions for ${Key}:" -ForegroundColor Red
+            $missing | Select-Object -First 30 | ForEach-Object { Write-Host "  $_" }
+            throw "$Key full logical model is incomplete."
+        }
+
+        $targetDoc.Save($targetBodyPath)
+        if ($append.Count -gt 0) {
+            $nl = [Environment]::NewLine
+            $targetCatalogText = $targetCatalogText.TrimEnd() + $nl + ($append -join $nl) + $nl
+            [System.IO.File]::WriteAllText($targetCatalogPath, $targetCatalogText, (New-Object System.Text.UTF8Encoding($false)))
+        }
+
+        Write-Host ("{0} full-model layer props     : +{1} (surface defs +{2})" -f $Key, $addedProps, $append.Count)
+    }
+    finally {
+        foreach ($temp in $temps) {
+            if (Test-Path $temp) { Remove-Item $temp -Force -ErrorAction SilentlyContinue }
+        }
+    }
+}
+
+Write-Host "Adding matched 1.13 body and weapon layers..."
+
+$fullModelSpecs = @(
+    [pscustomobject]@{
+        Key = "RGM"
+        Base = "LBT_RGM/LogicalBodyType_LBT_RGM.xml"
+        Gear = "LBT_RGM/LogicalBodyType_RGM_gear.xml"
+        Guns = "LBT_RGM/LogicalBodyType_RGM_guns.xml"
+        GunPal = "LBT_RGM/LogicalBodyType_RGM_gun_paletteswaps.xml"
+        Catalogs = @("LBT_RGM/AnimationSurfaces_LBT_RGM.xml","LBT_RGM/AnimationSurfaces_LBT_RGM_sawnoff.xml","LBT_RGM/AnimationSurfaces_LBT_RGM_moreguns.xml","LBT_RGM/AnimationSurfaces_LBT_RGM_moregear.xml","LBT_RGM/AnimationSurfaces_LBT_RGM_moremelee.xml")
+        TargetBody = "LBT_RGM/LogicalBodyType_RGM_VR_equipment.xml"
+        TargetCatalog = "LBT_RGM/AnimationSurfaces_RGM_VR_equipment.xml"
+        Unsupported = @("RGMBAYONET_S_P","RGMBAYONET_S_S","RGMCROUCH_D_RDY","RGMCROUCH_P_RDY","RGMCROUCH_R_RDY")
+    },
+    [pscustomobject]@{
+        Key = "BGM"
+        Base = "LBT_BGM/LogicalBodyType_BGM.xml"
+        Gear = "LBT_BGM/LogicalBodyType_BGM_gear.xml"
+        Guns = "LBT_BGM/LogicalBodyType_BGM_guns.xml"
+        GunPal = "LBT_BGM/LogicalBodyType_BGM_gun_paletteswaps.xml"
+        Catalogs = @("LBT_BGM/AnimationSurfaces_BGM.xml","LBT_BGM/AnimationSurfaces_BGM_sawnoff.xml","LBT_BGM/AnimationSurfaces_BGM_moreguns.xml","LBT_BGM/AnimationSurfaces_BGM_moregear.xml","LBT_BGM/AnimationSurfaces_BGM_moremelee.xml")
+        TargetBody = "LBT_BGM/LogicalBodyType_BGM_VR_equipment.xml"
+        TargetCatalog = "LBT_BGM/AnimationSurfaces_BGM_VR_equipment.xml"
+        Unsupported = @("BGMBAYONET_S_P","BGMBAYONET_S_S","BGMCROUCH_D_RDY","BGMCROUCH_P_RDY","BGMCROUCH_R_RDY")
+    },
+    [pscustomobject]@{
+        Key = "RGF"
+        Base = "LBT_RGF/LogicalBodyType_LBT_RGF.xml"
+        Gear = "LBT_RGF/LogicalBodyType_RGF_gear.xml"
+        Guns = "LBT_RGF/LogicalBodyType_RGF_guns.xml"
+        GunPal = "LBT_RGF/LogicalBodyType_RGF_gun_paletteswaps.xml"
+        Catalogs = @("LBT_RGF/AnimationSurfaces_LBT_RGF.xml","LBT_RGF/AnimationSurfaces_LBT_RGF_SAWNOFF.xml","LBT_RGF/AnimationSurfaces_LBT_RGF_moreguns.xml","LBT_RGF/AnimationSurfaces_LBT_RGF_moregear.xml","LBT_RGF/AnimationSurfaces_LBT_RGF_moremelee.xml")
+        TargetBody = "LBT_RGF/LogicalBodyType_RGF_VR_equipment.xml"
+        TargetCatalog = "LBT_RGF/AnimationSurfaces_RGF_VR_equipment.xml"
+        Unsupported = @("RGFBAYONET_S_P","RGFBAYONET_S_S","RGFCROUCH_D_RDY","RGFCROUCH_P_RDY","RGFCROUCH_R_RDY","RGFLOWKICK","RGFSPINKICK","RGF_LOOK","RGF_PULL","RGF_SPIT","RGF_SQUISH")
+    }
+)
+
+foreach ($spec in $fullModelSpecs) {
+    Expand-VengeanceFullModelLayers -Key $spec.Key -BaseRelative $spec.Base -GearRelative $spec.Gear -GunsRelative $spec.Guns -GunPaletteRelative $spec.GunPal -CatalogRelatives $spec.Catalogs -TargetBodyRelative $spec.TargetBody -TargetCatalogRelative $spec.TargetCatalog -UnsupportedAnimations $spec.Unsupported
+}
+
+$logicalBodyTypesPath = Join-Path $TableRoot "LogicalBodyTypes.xml"
+$logicalBodyTypesText = [System.IO.File]::ReadAllText($logicalBodyTypesPath)
+$logicalBodyTypesText = $logicalBodyTypesText.Replace('cachesize="4096"', 'cachesize="8192"')
+[System.IO.File]::WriteAllText($logicalBodyTypesPath, $logicalBodyTypesText, (New-Object System.Text.UTF8Encoding($false)))
+
 Write-Host "Cross-referencing 1.13 equipment IDs against AIMv53..."
 
 $sourceItemsTemp = Join-Path $env:TEMP "vr_lobot_source_items_$PID.xml"
