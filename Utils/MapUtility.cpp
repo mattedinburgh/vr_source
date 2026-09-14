@@ -983,7 +983,7 @@ static BOOLEAN MapFactoryScorePilotSector( const STR8 pSourceMap, const STR8 pPr
 	return fPass;
 }
 
-static BOOLEAN MapFactoryRunPilotSector( const STR8 pMapName, UINT8 ubArchetype )
+static BOOLEAN MapFactoryRunSector( const STR8 pMapName, UINT8 ubArchetype )
 {
 	if ( pMapName == NULL )
 		return FALSE;
@@ -1029,6 +1029,32 @@ static BOOLEAN MapFactoryRunPilotSector( const STR8 pMapName, UINT8 ubArchetype 
 	return MapFactoryScorePilotSector( pMapName, zPristine, zRemastered );
 }
 
+
+static void MapFactoryRunProductionWaveOne( void )
+{
+	MapPreviewWriteStatus( "WAVE1_BEGIN 12 sectors" );
+	UINT8 ubPasses = 0;
+
+	if ( MapFactoryRunSector( "A11.dat", MAP_FACTORY_FARMLAND ) ) ++ubPasses;
+	if ( MapFactoryRunSector( "A14.DAT", MAP_FACTORY_OPEN_COUNTRY ) ) ++ubPasses;
+	if ( MapFactoryRunSector( "B1.dat", MAP_FACTORY_INDUSTRIAL ) ) ++ubPasses;
+	if ( MapFactoryRunSector( "b10.dat", MAP_FACTORY_SETTLEMENT ) ) ++ubPasses;
+	if ( MapFactoryRunSector( "b12.dat", MAP_FACTORY_ROADSIDE ) ) ++ubPasses;
+	if ( MapFactoryRunSector( "C3.DAT", MAP_FACTORY_ROADSIDE ) ) ++ubPasses;
+	if ( MapFactoryRunSector( "c11.dat", MAP_FACTORY_MILITARY ) ) ++ubPasses;
+	if ( MapFactoryRunSector( "D6.DAT", MAP_FACTORY_FARMLAND ) ) ++ubPasses;
+	if ( MapFactoryRunSector( "d9.dat", MAP_FACTORY_SETTLEMENT ) ) ++ubPasses;
+	if ( MapFactoryRunSector( "E4.DAT", MAP_FACTORY_OPEN_COUNTRY ) ) ++ubPasses;
+	if ( MapFactoryRunSector( "f7.dat", MAP_FACTORY_SETTLEMENT ) ) ++ubPasses;
+	if ( MapFactoryRunSector( "f14.dat", MAP_FACTORY_ROADSIDE ) ) ++ubPasses;
+
+	CHAR8 zDone[160];
+	_snprintf( zDone, sizeof(zDone) - 1,
+		"WAVE1_DONE passes=%u/12 keepMethodThreshold=9 optimizeThreshold=6", ubPasses );
+	zDone[sizeof(zDone) - 1] = 0;
+	MapPreviewWriteStatus( zDone );
+}
+
 static void MapFactoryRunFiveSectorPilot( const STR8 pTriggerMap )
 {
 	if ( pTriggerMap == NULL )
@@ -1050,10 +1076,10 @@ static void MapFactoryRunFiveSectorPilot( const STR8 pTriggerMap )
 
 	MapPreviewWriteStatus( "PILOT_BEGIN A8,A12,B13,F15" );
 	UINT8 ubPasses = 0;
-	if ( MapFactoryRunPilotSector( "A8.dat", MAP_FACTORY_MILITARY ) ) ++ubPasses;
-	if ( MapFactoryRunPilotSector( "A12.DAT", MAP_FACTORY_WILDERNESS ) ) ++ubPasses;
-	if ( MapFactoryRunPilotSector( "b13.dat", MAP_FACTORY_INDUSTRIAL ) ) ++ubPasses;
-	if ( MapFactoryRunPilotSector( "f15.dat", MAP_FACTORY_MILITARY ) ) ++ubPasses;
+	if ( MapFactoryRunSector( "A8.dat", MAP_FACTORY_MILITARY ) ) ++ubPasses;
+	if ( MapFactoryRunSector( "A12.DAT", MAP_FACTORY_WILDERNESS ) ) ++ubPasses;
+	if ( MapFactoryRunSector( "b13.dat", MAP_FACTORY_INDUSTRIAL ) ) ++ubPasses;
+	if ( MapFactoryRunSector( "f15.dat", MAP_FACTORY_MILITARY ) ) ++ubPasses;
 	CHAR8 zPilotDone[128];
 	_snprintf( zPilotDone, sizeof(zPilotDone) - 1,
 		"PILOT_DONE passes=%u/4 nonA3 threshold=3", ubPasses );
