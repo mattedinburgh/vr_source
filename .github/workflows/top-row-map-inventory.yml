@@ -1,0 +1,52 @@
+name: Top-row map remaster inventory
+
+on:
+  push:
+    branches:
+      - a3/hand-authored-v2
+    paths:
+      - '.github/workflows/top-row-map-inventory.yml'
+      - 'Tools/build_top_rows_map_queue.py'
+  workflow_dispatch:
+
+jobs:
+  inventory:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source tools
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Fetch Vengeance maps and sector names
+        shell: powershell
+        run: |
+          $gamedir = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
+          git -c core.longpaths=true clone --depth 1 --single-branch --branch install/all-2026-09-12 --filter=blob:none --no-checkout https://github.com/mattedinburgh/vr_gamedir.git $gamedir
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C $gamedir sparse-checkout init --cone
+          git -C $gamedir sparse-checkout set Data-Maps-Tiles/maps Data-Vengeance/TableData/Map
+          git -C $gamedir checkout install/all-2026-09-12
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build A-F remaster queue
+        shell: powershell
+        run: |
+          $gamedir = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
+          $out = Join-Path $env:GITHUB_WORKSPACE 'MapPreviews\TopRows\top_rows_A-F.csv'
+          python '.\Tools\build_top_rows_map_queue.py' `
+            --maps-root (Join-Path $gamedir 'Data-Maps-Tiles\maps') `
+            --sector-names (Join-Path $gamedir 'Data-Vengeance\TableData\Map\SectorNames.xml') `
+            --last-row F `
+            --out $out
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload top-row inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: top-row-map-remaster-inventory
+          path: MapPreviews/TopRows/top_rows_A-F.csv
+          if-no-files-found: error
+          retention-days: 30
