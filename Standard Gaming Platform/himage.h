@@ -167,9 +167,6 @@ BOOLEAN ReleaseImageData( HIMAGE hImage, UINT16 fContents );
 // Used as a visual fallback when no native VHD2/VHD4 asset exists.
 BOOLEAN ScaleImageNearestForVHD( HIMAGE hImage, UINT8 ubScale );
 
-// Vengeance HD: for tactical map tiles, promote indexed ETRLE fallback art to RGBA
-// while scaling. This routes HD walls/structures through the scale-aware C++ Z renderer.
-BOOLEAN ScaleIndexedImageToTrueColorForVHD( HIMAGE hImage, UINT8 ubScale );
 
 // This function will attept to Load data from an existing image object's filename
 // In this way, dynamic loading of image data can be done
