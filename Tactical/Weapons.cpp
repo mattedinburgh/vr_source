@@ -3607,13 +3607,23 @@ BOOLEAN UseHandToHand( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo, BOOLEAN fStea
 					// second pickup charge just because only one item was available.
 
 					ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, Message[ STR_STOLE_SOMETHING ], pSoldier->GetName(), ShortItemNames[ pTargetSoldier->inv[ubIndexRet].usItem ] );
-					if (pTargetSoldier->inv[ubIndexRet].MoveThisObjectTo(gTempObject, 1) == 0) {
-						// Stolen enemy equipment must remain usable even if it was marked undroppable.
-						gTempObject.fFlags &= ~OBJECT_UNDROPPABLE;
 
-						// Inventory first; if it does not fit (including a partial stack),
-						// route the remainder to the world/sector inventory.
-						AutoPlaceObjectAnywhere( pSoldier, &gTempObject, TRUE );
+					// Treat the single-slot case exactly like a selection from the full
+					// inventory menu.  A slot may contain a stack (magazines, grenades,
+					// etc.); stealing the slot must transfer the whole stack, not only
+					// the first object in it.
+					gTempObject = pTargetSoldier->inv[ubIndexRet];
+					gTempObject.fFlags &= ~OBJECT_UNDROPPABLE;
+
+					// AutoPlaceObjectAnywhere consumes everything that fits and drops any
+					// remainder into the reachable world/sector inventory.  Only remove
+					// the enemy's original slot after that transfer succeeds.
+					if ( AutoPlaceObjectAnywhere( pSoldier, &gTempObject, TRUE ) )
+					{
+						DeleteObj( &pTargetSoldier->inv[ubIndexRet] );
+
+						if ( pSoldier->ubProfile != NO_PROFILE )
+							gMercProfiles[ pSoldier->ubProfile ].records.usItemsStolen++;
 					}
 
 					// The item that the enemy holds in his hand before the stealing
