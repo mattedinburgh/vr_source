@@ -484,16 +484,21 @@ void HandleNewSectorAmbience( UINT8 ubAmbientID )
 
 	if( !gfBasement && !gfCaves )
 	{
-		if(	LoadAmbientControlFile( ubAmbientID ) )
+		// Do not make the Vengeance layer depend on a legacy tileset .bad file.
+		// Some custom maps intentionally have no legacy random-ambient definition.
+		gsNumAmbData = 0;
+		const BOOLEAN fLoadedLegacyAmbience = LoadAmbientControlFile( ubAmbientID );
+
+		if( !fLoadedLegacyAmbience )
 		{
-			// Preserve the tileset ambience, then add low-volume Vengeance sector identity.
-			AppendVengeanceSectorAmbience( );
+			gsNumAmbData = 0;
+			DebugMsg(TOPIC_JA2, DBG_LEVEL_0, String("Cannot load Ambient data for tileset; using Vengeance sector ambience only" ) );
+		}
+
+		AppendVengeanceSectorAmbience( );
+
+		if( gsNumAmbData > 0 )
 			BuildDayAmbientSounds( );
-		}
-		else
-		{
-			DebugMsg(TOPIC_JA2, DBG_LEVEL_0, String("Cannot load Ambient data for tileset" ) );
-		}
 	}
 }
 
