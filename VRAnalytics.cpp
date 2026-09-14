@@ -5,7 +5,30 @@
 #include <string.h>
 #include <time.h>
 
+#ifdef _MSC_VER
 #include ".generated/VRBuildInfo.generated.h"
+#else
+// Portable fallback used by the standalone C++03 logger regression test.
+// Real Windows game builds generate and require the header before compilation.
+#define VR_BUILD_BRANCH "standalone-test"
+#define VR_BUILD_COMMIT "unknown"
+#define VR_BUILD_COMMIT_SHORT "unknown"
+#define VR_BUILD_DIRTY 0
+#define VR_BUILD_SOURCE_FINGERPRINT "standalone-test"
+#define VR_BUILD_GENERATED_AT "unknown"
+#define VR_BUILD_CONFIGURATION "standalone-test"
+#define VR_BUILD_PLATFORM "standalone-test"
+#define VR_BUILD_TARGET "standalone-test"
+#define VR_BUILD_RECENT_CHANGE_COUNT 0
+#define VR_BUILD_RECENT_CHANGE_1 ""
+#define VR_BUILD_RECENT_CHANGE_2 ""
+#define VR_BUILD_RECENT_CHANGE_3 ""
+#define VR_BUILD_RECENT_CHANGE_4 ""
+#define VR_BUILD_RECENT_CHANGE_5 ""
+#define VR_BUILD_RECENT_CHANGE_6 ""
+#define VR_BUILD_RECENT_CHANGE_7 ""
+#define VR_BUILD_RECENT_CHANGE_8 ""
+#endif
 
 namespace
 {
