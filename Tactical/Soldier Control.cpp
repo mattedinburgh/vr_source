@@ -1,3 +1,4 @@
+#include "../VRAnalytics.h"
 #ifdef PRECOMPILEDHEADERS
 #include "Tactical All.h"
 #else
@@ -11839,6 +11840,14 @@ UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPo
 	UINT8		ubBlood;
 	UINT16		usItemFlags=0; // Kaiden: Needed for the reveal all items after combat code from UB.
 
+	// Preserve the raw incoming request and pre-damage state for Black Box
+	// forensics. SoldierTakeDamage applies armour/resistance/bleedout rules below,
+	// so the final event can distinguish requested damage from actual outcome.
+	const INT16 sVRIncomingLifeDamage = sLifeDeduct;
+	const INT16 sVRIncomingBreathLoss = sBreathLoss;
+	const INT16 sVRBreathBefore = this->bBreath;
+	const UINT8 ubVRBleedoutStateBefore = this->ubBleedoutState;
+
 	this->ubLastDamageReason = ubReason;
 
 	// check: poison damage cannot be higher than damage
@@ -12447,6 +12456,41 @@ UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPo
 	}
 
 	HandleTakeDamageDeath( this, bOldLife, ubReason );
+
+	// Canonical damage record. Direct bullet impacts also emit combat_hit with
+	// weapon/range/hit-location context; this event is the authoritative final
+	// health/breath/bleedout outcome for all ordinary soldier damage sources.
+	if (sVRIncomingLifeDamage != 0 ||
+		sVRIncomingBreathLoss != 0 ||
+		bOldLife != this->stats.bLife ||
+		sVRBreathBefore != this->bBreath ||
+		ubVRBleedoutStateBefore != this->ubBleedoutState)
+	{
+		INT8 bVRAttackerTeam = -1;
+		if (ubAttacker != NOBODY && ubAttacker < TOTAL_SOLDIERS && MercPtrs[ubAttacker])
+			bVRAttackerTeam = MercPtrs[ubAttacker]->bTeam;
+
+		VRAnalyticsTacticalDamageApplied(
+			this->ubID,
+			this->bTeam,
+			this->bSide,
+			this->aiData.bNeutral ? true : false,
+			this->ubProfile,
+			this->ubSoldierClass,
+			ubAttacker,
+			bVRAttackerTeam,
+			ubReason,
+			sSourceGrid,
+			sVRIncomingLifeDamage,
+			sVRIncomingBreathLoss,
+			bOldLife,
+			this->stats.bLife,
+			sVRBreathBefore,
+			this->bBreath,
+			ubVRBleedoutStateBefore,
+			this->ubBleedoutState,
+			this->ubBleedoutTurns );
+	}
 
 	// Check if we are < unconscious, and shutup if so! also wipe sight
 	if ( this->stats.bLife < CONSCIOUSNESS )

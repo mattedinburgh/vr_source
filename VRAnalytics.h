@@ -238,4 +238,28 @@ void VRAnalyticsTacticalCombatHit(
 	int targetBreathBefore,
 	int targetBreathAfter );
 
+// Canonical applied-damage event emitted by SoldierTakeDamage(). Unlike
+// combat_hit this includes non-bullet causes such as explosions, bleeding,
+// gas, falls and melee, and records bleedout/downed transitions.
+void VRAnalyticsTacticalDamageApplied(
+	unsigned int targetId,
+	int targetTeam,
+	int targetSide,
+	bool targetNeutral,
+	int targetProfile,
+	int targetSoldierClass,
+	unsigned int attackerId,
+	int attackerTeam,
+	int damageReason,
+	long sourceGrid,
+	int incomingLifeDamage,
+	int incomingBreathLoss,
+	int lifeBefore,
+	int lifeAfter,
+	int breathBefore,
+	int breathAfter,
+	int bleedoutStateBefore,
+	int bleedoutStateAfter,
+	int bleedoutTurns );
+
 #endif // VR_ANALYTICS_H

@@ -887,6 +887,54 @@ void VRAnalyticsTacticalCombatHit(
 	EndEvent( file );
 }
 
+void VRAnalyticsTacticalDamageApplied(
+	unsigned int targetId,
+	int targetTeam,
+	int targetSide,
+	bool targetNeutral,
+	int targetProfile,
+	int targetSoldierClass,
+	unsigned int attackerId,
+	int attackerTeam,
+	int damageReason,
+	long sourceGrid,
+	int incomingLifeDamage,
+	int incomingBreathLoss,
+	int lifeBefore,
+	int lifeAfter,
+	int breathBefore,
+	int breathAfter,
+	int bleedoutStateBefore,
+	int bleedoutStateAfter,
+	int bleedoutTurns )
+{
+	FILE* file = BeginEvent( VR_ANALYTICS_TACTICAL, "damage_applied", 0 );
+	if( !file )
+		return;
+
+	const int actualLifeLoss = lifeBefore - lifeAfter;
+	const int actualBreathLoss = breathBefore - breathAfter;
+	fprintf( file,
+		",\"target_id\":%u,\"target_team\":%d,\"target_side\":%d,\"target_neutral\":%s,"
+		"\"target_profile\":%d,\"target_soldier_class\":%d,"
+		"\"attacker_id\":%u,\"attacker_team\":%d,\"damage_reason\":%d,\"source_grid\":%ld,"
+		"\"incoming_life_damage\":%d,\"incoming_breath_loss\":%d,"
+		"\"life_before\":%d,\"life_after\":%d,\"actual_life_loss\":%d,"
+		"\"breath_before\":%d,\"breath_after\":%d,\"actual_breath_loss\":%d,"
+		"\"bleedout_state_before\":%d,\"bleedout_state_after\":%d,\"bleedout_turns\":%d,"
+		"\"entered_downed\":%s,\"killed\":%s",
+		targetId, targetTeam, targetSide, targetNeutral ? "true" : "false",
+		targetProfile, targetSoldierClass,
+		attackerId, attackerTeam, damageReason, sourceGrid,
+		incomingLifeDamage, incomingBreathLoss,
+		lifeBefore, lifeAfter, actualLifeLoss,
+		breathBefore, breathAfter, actualBreathLoss,
+		bleedoutStateBefore, bleedoutStateAfter, bleedoutTurns,
+		(bleedoutStateBefore != bleedoutStateAfter && bleedoutStateAfter != 0) ? "true" : "false",
+		lifeAfter <= 0 ? "true" : "false" );
+	EndEvent( file );
+}
+
 void VRAnalyticsTacticalActionRejected(
 	unsigned int soldierId,
 	int action,

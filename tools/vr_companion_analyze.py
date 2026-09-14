@@ -132,7 +132,11 @@ def tactical_summary(
         if outcome.get("metric_a") == "grid_delta":
             grid_delta.append(abs(float(outcome.get("value_a", 0))))
         if outcome.get("metric_b") == "ap_spent":
-            ap_spent.append(float(outcome.get("value_b", 0)))
+            value = float(outcome.get("value_b", 0))
+            # -1 means the action crossed an AP refresh/turn boundary and the
+            # delta is not a valid action cost. Never average it as real AP.
+            if value >= 0:
+                ap_spent.append(value)
         detail = parse_detail(outcome.get("detail"))
         if "last_attack_hit" in detail:
             completed_action_samples += 1
@@ -255,6 +259,30 @@ def tactical_summary(
         if event.get("layer") == "tactical" and event.get("kind") == "diagnostic"
     )
 
+    combat_hits = [
+        event for event in events
+        if event.get("layer") == "tactical" and event.get("kind") == "combat_hit"
+    ]
+    damage_events = [
+        event for event in events
+        if event.get("layer") == "tactical" and event.get("kind") == "damage_applied"
+    ]
+    damage_by_reason = Counter(
+        str(event.get("damage_reason", "unknown")) for event in damage_events
+    )
+    total_life_loss = sum(
+        max(0.0, float(event.get("actual_life_loss", 0)))
+        for event in damage_events
+        if isinstance(event.get("actual_life_loss"), (int, float))
+    )
+    total_breath_loss = sum(
+        max(0.0, float(event.get("actual_breath_loss", 0)))
+        for event in damage_events
+        if isinstance(event.get("actual_breath_loss"), (int, float))
+    )
+    entered_downed = sum(1 for event in damage_events if event.get("entered_downed"))
+    lethal_damage_events = sum(1 for event in damage_events if event.get("killed"))
+
     total_outcomes = sum(status.values())
     return {
         "decisions": len(tactical),
@@ -267,7 +295,15 @@ def tactical_summary(
         "rejected_rate": pct(status.get("rejected", 0), total_outcomes),
         "superseded_rate": pct(status.get("superseded", 0), total_outcomes),
         "avg_ap_spent": safe_mean(ap_spent),
+        "valid_ap_samples": len(ap_spent),
         "avg_abs_grid_delta": safe_mean(grid_delta),
+        "combat_hits": len(combat_hits),
+        "damage_events": len(damage_events),
+        "total_life_loss": total_life_loss,
+        "total_breath_loss": total_breath_loss,
+        "entered_downed": entered_downed,
+        "lethal_damage_events": lethal_damage_events,
+        "damage_by_reason": dict(damage_by_reason.most_common()),
         "last_attack_hit_flag_rate": pct(last_attack_hit_flags, completed_action_samples),
         "completed_action_samples": completed_action_samples,
         "action_counts": dict(actions.most_common()),
