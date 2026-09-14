@@ -6,6 +6,7 @@
 #include "Overhead.h"
 #include "Game Clock.h"
 #include "Campaign Tactical Telemetry.h"
+#include "strategicmap.h"
 #include <stdio.h>
 #include <string.h>
 #endif
