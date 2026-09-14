@@ -34,6 +34,7 @@
 #include "Random.h"
 #endif
 #include "connect.h"
+#include "VRAnalytics.h"
 
 // for enemy taunts
 #include "Soldier Profile.h"
@@ -1875,6 +1876,36 @@ static BOOLEAN AICombatCalloutSpeakerValid( SOLDIERTYPE *pCiv )
 		!pCiv->IsZombie();
 }
 
+static const CHAR8 * AICombatCalloutName( AI_BATTLE_CALLOUT ubCallout )
+{
+	switch ( ubCallout )
+	{
+		case AI_BATTLE_CALL_CONTACT: return "contact";
+		case AI_BATTLE_CALL_ADVANCE: return "advance";
+		case AI_BATTLE_CALL_TAKE_COVER: return "take_cover";
+		case AI_BATTLE_CALL_FLANK_LEFT: return "flank_left";
+		case AI_BATTLE_CALL_FLANK_RIGHT: return "flank_right";
+		case AI_BATTLE_CALL_WITHDRAW: return "withdraw";
+		case AI_BATTLE_CALL_REGROUP: return "regroup";
+		case AI_BATTLE_CALL_RALLY: return "rally";
+		case AI_BATTLE_CALL_SUPPRESS: return "suppress";
+		case AI_BATTLE_CALL_GRENADE: return "grenade";
+		case AI_BATTLE_CALL_SMOKE: return "smoke";
+		case AI_BATTLE_CALL_HEAVY_WEAPON: return "heavy_weapon";
+		case AI_BATTLE_CALL_MEDIC: return "medic";
+		case AI_BATTLE_CALL_RELOAD: return "reload";
+		case AI_BATTLE_CALL_OUT_OF_AMMO: return "out_of_ammo";
+		case AI_BATTLE_CALL_CASUALTY: return "casualty";
+		case AI_BATTLE_CALL_INCOMING: return "incoming";
+		case AI_BATTLE_CALL_SEARCH: return "search";
+		case AI_BATTLE_CALL_REINFORCE: return "reinforce";
+		case AI_BATTLE_CALL_VEHICLE: return "vehicle";
+		case AI_BATTLE_CALL_HOLD: return "hold";
+		case AI_BATTLE_CALL_TARGET_DOWN: return "target_down";
+		default: return "unknown";
+	}
+}
+
 static void ShowAICombatCalloutNow( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout )
 {
 	CHAR16 zText[320];
@@ -1882,6 +1913,8 @@ static void ShowAICombatCalloutNow( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallo
 		return;
 
 	ShowTauntPopupBox( pCiv, zText );
+	VRAnalyticsDiagnostic( VR_ANALYTICS_TACTICAL, "soldier", pCiv->ubID,
+		"battle_callout", AICombatCalloutName( ubCallout ) );
 	guiLastAIActionPopupTime = GetJA2Clock();
 	gubLastAICombatCalloutEvent[pCiv->ubID] = (UINT8)ubCallout;
 	guiLastAICombatCalloutEventTime[pCiv->ubID] = guiLastAIActionPopupTime;
@@ -2022,6 +2055,31 @@ static AI_BATTLE_CALLOUT AICombatCalloutFromTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE 
 	}
 }
 
+static BOOLEAN AIActionLooksLikeMedicRescue( SOLDIERTYPE *pCiv )
+{
+	if ( !pCiv || FindObjClass( pCiv, IC_MEDKIT ) == NO_SLOT ||
+		TileIsOutOfBounds( pCiv->aiData.usActionData ) )
+	{
+		return FALSE;
+	}
+
+	for ( UINT8 ubID = gTacticalStatus.Team[pCiv->bTeam].bFirstID;
+		ubID <= gTacticalStatus.Team[pCiv->bTeam].bLastID; ++ubID )
+	{
+		SOLDIERTYPE *pPatient = MercPtrs[ubID];
+		if ( !pPatient || pPatient == pCiv || !pPatient->bActive || !pPatient->bInSector )
+			continue;
+		if ( pPatient->stats.bLife <= 0 || pPatient->bBleeding <= 0 )
+			continue;
+		if ( pPatient->pathing.bLevel != pCiv->pathing.bLevel )
+			continue;
+		if ( PythSpacesAway( pCiv->aiData.usActionData, pPatient->sGridNo ) <= 1 )
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
 void ShowAIActionPopup( SOLDIERTYPE *pCiv, INT8 bAction )
 {
 	if ( !pCiv )
@@ -2032,6 +2090,8 @@ void ShowAIActionPopup( SOLDIERTYPE *pCiv, INT8 bAction )
 	{
 		case AI_ACTION_TAKE_COVER: ubCallout = AI_BATTLE_CALL_TAKE_COVER; break;
 		case AI_ACTION_GET_CLOSER:
+			ubCallout = AIActionLooksLikeMedicRescue( pCiv ) ? AI_BATTLE_CALL_MEDIC : AI_BATTLE_CALL_ADVANCE;
+			break;
 		case AI_ACTION_SEEK_OPPONENT: ubCallout = AI_BATTLE_CALL_ADVANCE; break;
 		case AI_ACTION_SEEK_FRIEND: ubCallout = AI_BATTLE_CALL_REGROUP; break;
 		case AI_ACTION_WITHDRAW:
@@ -2069,6 +2129,13 @@ void StartEnemyTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTar
 	if ( pCiv->IsZombie() )
 		return;
 
+	// Semantic visual reaction is independent of VOICE_TAUNTS.  This means hit,
+	// kill, contact, reload and other battlefield feedback still works in a
+	// text-only setup.
+	AI_BATTLE_CALLOUT ubSemanticCallout = AICombatCalloutFromTaunt( pCiv, iTauntType, pTarget );
+	if ( ubSemanticCallout != AI_BATTLE_CALL_NONE )
+		QueueAICombatCallout( pCiv, ubSemanticCallout );
+
 	// sevenfm: audio and visual combat communication are independent. Audio keeps
 	// the original Vengeance voice bank; semantic text goes through the priority
 	// queue so important calls are not lost behind an existing bubble.
@@ -2077,17 +2144,13 @@ void StartEnemyTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTar
 		PlayVoiceTaunt( pCiv, iTauntType, pTarget );
 
 		AI_BATTLE_CALLOUT ubVoiceCallout = AICombatCalloutFromTaunt( pCiv, iTauntType, pTarget );
-		if ( ubVoiceCallout != AI_BATTLE_CALL_NONE )
+		if ( ubVoiceCallout != AI_BATTLE_CALL_NONE &&
+			gTauntsSettings.fTauntShowInLog == TRUE &&
+			( gbPublicOpplist[gbPlayerNum][pCiv->ubID] == SEEN_CURRENTLY || gTauntsSettings.fTauntAlwaysShowInLog == TRUE ) )
 		{
-			QueueAICombatCallout( pCiv, ubVoiceCallout );
-
-			if ( gTauntsSettings.fTauntShowInLog == TRUE &&
-				( gbPublicOpplist[gbPlayerNum][pCiv->ubID] == SEEN_CURRENTLY || gTauntsSettings.fTauntAlwaysShowInLog == TRUE ) )
-			{
-				CHAR16 zVoiceLog[320];
-				if ( BuildAICombatCalloutText( ubVoiceCallout, zVoiceLog ) )
-					ScreenMsg( FONT_GRAY2, MSG_INTERFACE, L"%s: %s", pCiv->GetName(), zVoiceLog );
-			}
+			CHAR16 zVoiceLog[320];
+			if ( BuildAICombatCalloutText( ubVoiceCallout, zVoiceLog ) )
+				ScreenMsg( FONT_GRAY2, MSG_INTERFACE, L"%s: %s", pCiv->GetName(), zVoiceLog );
 		}
 
 		uiTauntFinishTimes[pCiv->ubID] = GetJA2Clock() + min( gTauntsSettings.sMaxDelay,
