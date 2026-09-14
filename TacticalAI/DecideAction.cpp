@@ -3184,20 +3184,6 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			return bCasualtyAction;
 	}
 
-	// Building-aware CQB sits below survival, suppression, cohesion, disengagement,
-	// tactical fallback and casualty response, but above generic investigation/
-	// scavenging movement. RED has no desirable immediate direct-fire attack to preserve.
-	if (!fCivilian &&
-		!gfHiddenInterrupt &&
-		!gTacticalStatus.fInterruptOccurred &&
-		pSoldier->bTeam == ENEMY_TEAM &&
-		AICombatTeam(pSoldier))
-	{
-		INT8 bCQBAction = VRCQB_DecideAction(pSoldier, ubCanMove, TRUE);
-		if (bCQBAction != AI_ACTION_NONE)
-			return bCQBAction;
-	}
-
 	// If we don't have a gun, enemy combatants may scavenge one when the local
 	// situation makes that movement reasonable. Militia never loot ground/sector
 	// items during a fight; they fight with the equipment they entered with.
@@ -3843,6 +3829,23 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 				return(AI_ACTION_WITHDRAW);
 			}
 		}
+	}
+
+
+	// Building-aware CQB is deliberately below *all* RED survival/fallback layers.
+	// At this point emergency protection, cohesion, disengagement, casualty response,
+	// hopeless-survivor logic, tactical fallback and personal-risk withdrawal have all
+	// had first refusal. CQB may now shape the remaining building fight before the
+	// generic RED radio/seek/help/hide movement tree.
+	if (!fCivilian &&
+		!gfHiddenInterrupt &&
+		!gTacticalStatus.fInterruptOccurred &&
+		pSoldier->bTeam == ENEMY_TEAM &&
+		AICombatTeam(pSoldier))
+	{
+		INT8 bCQBAction = VRCQB_DecideAction(pSoldier, ubCanMove, TRUE);
+		if (bCQBAction != AI_ACTION_NONE)
+			return bCQBAction;
 	}
 
 
