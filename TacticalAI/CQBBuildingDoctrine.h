@@ -4,13 +4,12 @@
 #include "Types.h"
 #include "Soldier Control.h"
 
-// Experimental CQB/building doctrine API.
+// Canonical CQB/building doctrine API.
 //
-// IMPORTANT:
-// - This module is intentionally inactive.
-// - It may be compiled on the inactive branch for build validation.
-// - No DecideAction call site references it.
-// - VRCQB_IsRuntimeEnabled() must remain FALSE until explicit activation review.
+// This module is part of the unified tactical AI. DecideAction owns the top-level
+// priority order; this module only evaluates and executes building-specific movement
+// after senior survival/casualty priorities (and, in BLACK, immediate attacks) have
+// had first refusal. It must not become a second top-level combat decision engine.
 
 enum VRCQB_STATE
 {
@@ -161,6 +160,8 @@ BOOLEAN VRCQB_HasCapability(const VRCQB_TRAINING_MODEL *pModel, UINT32 uiCapabil
 
 BOOLEAN VRCQB_BuildContext(SOLDIERTYPE *pSoldier, VRCQB_CONTEXT *pContext);
 BOOLEAN VRCQB_Assess(SOLDIERTYPE *pSoldier, const VRCQB_CONTEXT *pContext, VRCQB_ASSESSMENT *pAssessment);
+
+INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowAssault);
 
 
 INT32 VRCQB_ScorePosition(SOLDIERTYPE *pSoldier, const VRCQB_CONTEXT *pContext,
