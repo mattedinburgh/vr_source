@@ -27,6 +27,8 @@
 #include "Text Input.h"
 #include "Cursor Control.h"//dnl ch78 271113
 #include "lighting.h"//dnl ch79 301113
+#include "renderworld.h"
+#include "Isometric Utils.h"
 
 #define MINIMAP_X_SIZE	88//RADAR_WINDOW_WIDTH
 #define MINIMAP_Y_SIZE	44//RADAR_WINDOW_HEIGHT
@@ -223,6 +225,59 @@ static BOOLEAN SaveEngineMapPreviewBMP( const STR8 pMapFilename, UINT32 uiSurfac
 	return fWriteOK;
 }
 
+
+static void SaveA3TacticalPreviewSet( const STR8 pMapFilename )
+{
+	if ( !gfMapPreviewCaptureMode || pMapFilename == NULL )
+		return;
+
+	const CHAR8 *pLeaf = pMapFilename;
+	const CHAR8 *pBackslash = strrchr( pMapFilename, '\\' );
+	const CHAR8 *pSlash = strrchr( pMapFilename, '/' );
+	if ( pBackslash != NULL && pBackslash + 1 > pLeaf ) pLeaf = pBackslash + 1;
+	if ( pSlash != NULL && pSlash + 1 > pLeaf ) pLeaf = pSlash + 1;
+
+	if ( _stricmp( pLeaf, "A3.dat" ) != 0 && _stricmp( pLeaf, "A3_REMASTERED.dat" ) != 0 )
+		return;
+
+	// Real tactical-camera checkpoints, chosen to cover the major authored A3
+	// building/field groups.  These use the normal tactical renderer, not the
+	// low-detail overhead/radar renderer, and therefore show the actual art,
+	// palette, roofs, vegetation, clutter and Z ordering the player will see.
+	const INT32 sCameraGrid[] =
+	{
+		7290,   // north-west work/barn group
+		10914,  // western farmhouse/yard
+		17194,  // central/southern farm group
+		18794,  // fields / buildings
+		19430,  // south-east farm group
+		20232   // southern edge / approach
+	};
+
+	for ( UINT8 i = 0; i < (UINT8)(sizeof(sCameraGrid)/sizeof(sCameraGrid[0])); ++i )
+	{
+		if ( sCameraGrid[i] < 0 || sCameraGrid[i] >= WORLD_MAX )
+			continue;
+
+		INT16 sCellX = 0, sCellY = 0;
+		ConvertGridNoToCenterCellXY( sCameraGrid[i], &sCellX, &sCellY );
+		SetRenderCenter( sCellX, sCellY );
+		InvalidateWorldRedundency();
+		SetRenderFlags( RENDER_FLAG_FULL | RENDER_FLAG_SHADOWS );
+		RenderWorld();
+
+		CHAR8 zShotName[260];
+		_snprintf( zShotName, sizeof(zShotName) - 1, "%s_tactical_%02u.dat", pLeaf, (UINT16)(i + 1) );
+		zShotName[ sizeof(zShotName) - 1 ] = 0;
+
+		const UINT16 usCaptureHeight = ( gsVIEWPORT_END_Y > 0 && gsVIEWPORT_END_Y <= SCREEN_HEIGHT )
+			? (UINT16)gsVIEWPORT_END_Y : (UINT16)SCREEN_HEIGHT;
+		SaveEngineMapPreviewBMP( zShotName, FRAME_BUFFER, (UINT16)SCREEN_WIDTH, usCaptureHeight );
+	}
+
+	MapPreviewWriteStatus( "TACTICAL_OK six gameplay-view captures written" );
+}
+
 void GenerateAllMapsInit(void)
 {
 	GETFILESTRUCT FileInfo;
@@ -403,6 +458,11 @@ UINT32 MapUtilScreenHandle(void)
 		LightReset();
 		LightSpriteRenderAll();
 	}
+	// Capture normal tactical views first.  These are the primary visual-QA
+	// images for A3 art iteration; the overhead render below remains useful only
+	// for composition/navigation.
+	SaveA3TacticalPreviewSet( zFilename );
+
 	// Render small map
 	//iOffsetHorizontal = (SCREEN_WIDTH / 2) - (640 / 2);// Horizontal start postion of the overview map
 	//iOffsetVertical = (SCREEN_HEIGHT - 160) / 2 - 160;// Vertical start position of the overview map
