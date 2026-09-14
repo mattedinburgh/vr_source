@@ -7,6 +7,7 @@
 // disabled until their information, movement and save/load interactions are integrated.
 #define VR_OPERATIONAL_STATE_FOUNDATION_ENABLED 1
 #define VR_OPERATIONAL_DECISION_LOOP_ENABLED    0
+#define VR_OPERATIONAL_STRENGTH_UNKNOWN          0xff
 
 struct GROUP;
 
@@ -68,6 +69,9 @@ void VR_EnsureEnemyFormationState( GROUP *pGroup );
 void VR_EnsureAllEnemyFormationStates();
 void VR_SyncFormationMissionFromLegacy( GROUP *pGroup );
 void VR_RecordLegacyAssignment( GROUP *pGroup, UINT8 ubTargetSectorID, UINT8 ubLegacyIntention );
+void VR_RecordOperationalContact( GROUP *pObserver, UINT8 ubSectorID,
+	UINT8 ubObservedPlayerStrength, UINT8 ubObservedMilitiaStrength, UINT8 ubConfidence );
+void VR_DecayOperationalIntelHourly();
 
 UINT16 VR_GetFormationID( GROUP *pGroup );
 UINT8 VR_GetFormationMission( GROUP *pGroup );
