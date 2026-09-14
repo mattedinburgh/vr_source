@@ -12939,23 +12939,46 @@ INT8 FindMedKit( SOLDIERTYPE * pSoldier )
 INT8 FindFirstAidKit( SOLDIERTYPE * pSoldier )
 {
 	INT8 invsize = (INT8)pSoldier->inv.size();
-	INT8 bImprovisedFallback = NO_SLOT;
 	for ( INT8 bLoop = 0; bLoop < invsize; ++bLoop)
 	{
 		if (pSoldier->inv[bLoop].exists() == true)
 		{
 			UINT16 usItem = pSoldier->inv[bLoop].usItem;
-			if ( ItemIsImprovisedBandage( usItem ) )
-			{
-				if ( bImprovisedFallback == NO_SLOT )
-					bImprovisedFallback = bLoop;
-				continue;
-			}
-			if ( ItemIsFirstAidKit( usItem ) )
+			if ( ItemIsFirstAidKit( usItem ) && !ItemIsImprovisedBandage( usItem ) )
 				return( bLoop );
 		}
 	}
-	return( bImprovisedFallback );
+	return( NO_SLOT );
+}
+
+INT8 FindImprovisedBandage( SOLDIERTYPE * pSoldier )
+{
+	INT8 invsize = (INT8)pSoldier->inv.size();
+	for ( INT8 bLoop = 0; bLoop < invsize; ++bLoop)
+	{
+		if ( pSoldier->inv[bLoop].exists() &&
+			 ItemIsImprovisedBandage( pSoldier->inv[bLoop].usItem ) &&
+			 pSoldier->inv[bLoop][0]->data.objectStatus >= USABLE )
+		{
+			return bLoop;
+		}
+	}
+	return NO_SLOT;
+}
+
+INT8 FindBestFirstAidItem( SOLDIERTYPE * pSoldier )
+{
+	// Preserve 1.13's deliberate preference for a first-aid kit over a medical
+	// bag, while making the improvised rag a true last-resort fallback.
+	INT8 bSlot = FindFirstAidKit( pSoldier );
+	if ( bSlot != NO_SLOT )
+		return bSlot;
+
+	bSlot = FindMedKit( pSoldier );
+	if ( bSlot != NO_SLOT )
+		return bSlot;
+
+	return FindImprovisedBandage( pSoldier );
 }
 
 INT8 FindCamoKit( SOLDIERTYPE * pSoldier )
