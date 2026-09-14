@@ -43,8 +43,22 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 {
 	// Add tile surface
 	PTILE_IMAGERY	pTileSurf = NULL;
+	SGPFILENAME cVisualFilename;
+	strncpy( cVisualFilename, cFilename, sizeof(cVisualFilename) - 1 );
+	cVisualFilename[ sizeof(cVisualFilename) - 1 ] = 0;
+	BOOLEAN fC5VisualOverride = FALSE;
+	if ( IsSanMonaC5GraphicsOnlyProfile() && cFilename != NULL )
+	{
+		const CHAR8 *pLeaf = strrchr( cFilename, '\\' );
+		pLeaf = ( pLeaf != NULL ) ? pLeaf + 1 : cFilename;
+		if ( _stricmp( pLeaf, "FLAT_R3.STI" ) == 0 )
+		{
+			strcpy( cVisualFilename, "TILESETS\\18\\C5_FLAT_R3.STI" );
+			fC5VisualOverride = TRUE;
+		}
+	}
 	const BOOLEAN fTraceB1Asset = ( cFilename != NULL && strstr( cFilename, "B1_" ) != NULL );
-	const BOOLEAN fTraceC5Asset = IsSanMonaC5TilePath( cFilename );
+	const BOOLEAN fTraceC5Asset = IsSanMonaC5TilePath( cFilename ) || fC5VisualOverride;
 	if ( fTraceB1Asset )
 		TraceB1RemasterLoad( "TILE LOAD BEGIN", cFilename );
 	VOBJECT_DESC	VObjectDesc;
@@ -56,7 +70,13 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 	BOOLEAN								fOk;
 
 
-	hImage = CreateImage( cFilename, IMAGE_ALLDATA );
+	hImage = CreateImage( cVisualFilename, IMAGE_ALLDATA );
+	if ( hImage == NULL && fC5VisualOverride )
+	{
+		TraceSanMonaC5VisualAsset( "PIXEL_OVERRIDE_FALLBACK", cVisualFilename, 0, 0, cFilename, 0 );
+		hImage = CreateImage( cFilename, IMAGE_ALLDATA );
+		fC5VisualOverride = FALSE;
+	}
 	if (hImage == NULL)
 	{
 		if ( fTraceB1Asset )
