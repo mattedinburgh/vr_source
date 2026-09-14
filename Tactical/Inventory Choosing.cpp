@@ -264,7 +264,8 @@ static INT8 ApplyEnemySupplyBiasToClass( INT8 bClass, INT8 bSoldierClass, UINT8 
 
 static void ApplyEnemyInventoryLogisticsVariability( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass,
 	INT8 &bWeaponClass, INT8 &bHelmetClass, INT8 &bVestClass, INT8 &bLeggingClass,
-	INT8 &bAttachClass, INT8 &bGrenadeClass, INT8 &bKitClass, INT8 &bMiscClass,
+	INT8 &bAttachClass, INT8 &bGrenadeClass, INT8 &bKnifeClass, INT8 &bKitClass,
+	INT8 &bMiscClass, INT8 &bBombClass, INT8 &bLBEClass,
 	INT8 &bAmmoClips, INT8 &bGrenades,
 	BOOLEAN fGrenadeLauncher, BOOLEAN fMortar, BOOLEAN fRPG )
 {
@@ -281,8 +282,11 @@ static void ApplyEnemyInventoryLogisticsVariability( SOLDIERCREATE_STRUCT *pp, I
 	bVestClass    = ApplyEnemySupplyBiasToClass( bVestClass,    bSoldierClass, 1, sSectorX, sSectorY );
 	bLeggingClass = ApplyEnemySupplyBiasToClass( bLeggingClass, bSoldierClass, 1, sSectorX, sSectorY );
 	bAttachClass  = ApplyEnemySupplyBiasToClass( bAttachClass,  bSoldierClass, 2, sSectorX, sSectorY );
+	bKnifeClass   = ApplyEnemySupplyBiasToClass( bKnifeClass,   bSoldierClass, 0, sSectorX, sSectorY );
 	bKitClass     = ApplyEnemySupplyBiasToClass( bKitClass,     bSoldierClass, 4, sSectorX, sSectorY );
 	bMiscClass    = ApplyEnemySupplyBiasToClass( bMiscClass,    bSoldierClass, 5, sSectorX, sSectorY );
+	bBombClass    = ApplyEnemySupplyBiasToClass( bBombClass,    bSoldierClass, 3, sSectorX, sSectorY );
+	bLBEClass     = ApplyEnemySupplyBiasToClass( bLBEClass,     bSoldierClass, 5, sSectorX, sSectorY );
 
 	// Do not reinterpret special-ammunition class constants as normal coolness classes.
 	if ( bGrenadeClass != RPG_GRENADE_CLASS && bGrenadeClass != MORTAR_GRENADE_CLASS )
@@ -991,7 +995,8 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 
 	ApplyEnemyInventoryLogisticsVariability( pp, bSoldierClass,
 		bWeaponClass, bHelmetClass, bVestClass, bLeggingClass,
-		bAttachClass, bGrenadeClass, bKitClass, bMiscClass,
+		bAttachClass, bGrenadeClass, bKnifeClass, bKitClass,
+		bMiscClass, bBombClass, bLBEClass,
 		bAmmoClips, bGrenades, fGrenadeLauncher, fMortar, fRPG );
 
 	UINT32 invsize = pp->Inv.size();
