@@ -45,7 +45,7 @@ jobs:
           & $git -c core.longpaths=true clone --depth 1 --single-branch --branch install/all-2026-09-12 --filter=blob:none --no-checkout https://github.com/mattedinburgh/vr_gamedir.git $gamedir
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $git -C $gamedir sparse-checkout init --cone
-          & $git -C $gamedir sparse-checkout set Data-Maps-Tiles/Tilesets/38
+          & $git -C $gamedir sparse-checkout set Data-Maps-Tiles/Tilesets/38 Data-Maps-Tiles/FarmKit
           & $git -C $gamedir checkout install/all-2026-09-12
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -134,6 +134,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           $assets = @(
             'VR_CROP_MASTER',
+            'A3_CROP_ROWS',
             'A3_MUD_RUTS',
             'A3_LANDMARKS',
             'A3_FIELD_STONES',
@@ -144,6 +145,20 @@ jobs:
           )
           foreach ($name in $assets) {
             Decode-B1TC (Join-Path $src ($name+'.b1tc')) (Join-Path $out ($name+'.png')) (Join-Path $out ($name+'.json'))
+          }
+
+          $farmKit = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir\Data-Maps-Tiles\FarmKit'
+          $farmAssets = @(
+            'CROPS_LOW_ROWS',
+            'CROPS_MEDIUM_ROWS',
+            'CROPS_THICK_TALL',
+            'CROPS_TROPICAL_BROADLEAF',
+            'CROPS_DRY_DEAD',
+            'CROPS_TRAMPLED',
+            'CROPS_ROW_TRANSITIONS'
+          )
+          foreach ($name in $farmAssets) {
+            Decode-B1TC (Join-Path $farmKit ($name+'.b1tc')) (Join-Path $out ($name+'.png')) (Join-Path $out ($name+'.json'))
           }
 
       - name: Upload A3 art inspection
