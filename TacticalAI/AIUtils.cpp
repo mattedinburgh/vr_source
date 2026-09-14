@@ -5561,6 +5561,59 @@ INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 	return __max(-250, __min(250, iScore));
 }
 
+INT32 AIPathExposureCost(SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMovementMode)
+{
+	if (!pSoldier || TileIsOutOfBounds(sDestination) || sDestination == pSoldier->sGridNo)
+		return 0;
+
+	INT16 sOldAPBudget = gubNPCAPBudget;
+	UINT8 ubOldDistLimit = gubNPCDistLimit;
+	gubNPCAPBudget = 0;
+	gubNPCDistLimit = 0;
+
+	BOOLEAN fPath = FindBestPath(pSoldier, sDestination, pSoldier->pathing.bLevel,
+		usMovementMode, COPYROUTE, 0);
+
+	gubNPCAPBudget = sOldAPBudget;
+	gubNPCDistLimit = ubOldDistLimit;
+
+	if (!fPath)
+		return 10000;
+
+	INT32 sPathSpot = pSoldier->sGridNo;
+	INT32 iCost = 0;
+	INT32 iExposedStreak = 0;
+
+	for (INT16 sLoop = pSoldier->pathing.usPathIndex;
+		sLoop < pSoldier->pathing.usPathDataSize; ++sLoop)
+	{
+		sPathSpot = NewGridNo(sPathSpot,
+			DirectionInc((UINT8)pSoldier->pathing.usPathingData[sLoop]));
+		if (TileIsOutOfBounds(sPathSpot))
+			break;
+
+		UINT16 usExposure = AIKnownThreatExposure(pSoldier, sPathSpot, pSoldier->pathing.bLevel);
+		if (usExposure > 0)
+		{
+			++iExposedStreak;
+			iCost += __min((INT32)45, (INT32)usExposure / 8);
+			if (!SightCoverAtSpot(pSoldier, sPathSpot, FALSE))
+				iCost += 6;
+			if (!AnyCoverAtSpot(pSoldier, sPathSpot))
+				iCost += 4;
+			iCost += __min((INT32)12, 2 * iExposedStreak);
+			if (InLightAtNight(sPathSpot, pSoldier->pathing.bLevel))
+				iCost += 4;
+		}
+		else
+		{
+			iExposedStreak = 0;
+		}
+	}
+
+	return __min((INT32)500, iCost);
+}
+
 // Score how much a candidate position creates a useful crossfire around a known contact.
 // Positive scores favor roughly perpendicular/oblique angles; standing on the same axis
 // as the rest of the fireteam is mildly discouraged. Only teammates with their own
