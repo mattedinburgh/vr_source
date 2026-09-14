@@ -18,7 +18,7 @@ on:
 
 concurrency:
   group: vhd-renderer-build
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build-release:
