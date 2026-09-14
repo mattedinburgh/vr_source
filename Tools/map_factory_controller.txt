@@ -5,6 +5,7 @@ from pathlib import Path
 
 STRATEGIES=("authored_modules","strong_modules","composition_kits","manual_required")
 PILOT=("A3","A8","A12","B13","F15")
+WAVE1=("A11","A14","B1","B10","B12","C3","C11","D6","D9","E4","F7","F14")
 RULES=[
  (("farm","farmland"),"farmland"),
  (("forest","woods","tropical","swamp"),"wilderness"),
@@ -132,7 +133,10 @@ def make_recipe(sec,a,strategy,p):
 
 def cmd_plan(a):
     rows=[r for r in manifest(a.manifest) if r.get("priority")=="surface"]
-    if a.pilot: rows=[r for r in rows if r["key"] in PILOT]
+    if a.pilot:
+        rows=[r for r in rows if r["key"] in PILOT]
+    elif a.wave==1:
+        rows=[r for r in rows if r["key"] in WAVE1]
     for r in rows: print(f"{r['key']:4} {r['archetype']:13} {r.get('campaign_name','')}")
     print("TOTAL="+str(len(rows))); return 0
 
@@ -205,7 +209,7 @@ def cmd_gate(a):
 
 def main():
     p=argparse.ArgumentParser(); s=p.add_subparsers(dest="cmd",required=True)
-    q=s.add_parser("plan"); q.add_argument("--manifest",default=""); q.add_argument("--pilot",action="store_true"); q.set_defaults(fn=cmd_plan)
+    q=s.add_parser("plan"); q.add_argument("--manifest",default=""); q.add_argument("--pilot",action="store_true"); q.add_argument("--wave",type=int,choices=(1,),default=0); q.set_defaults(fn=cmd_plan)
     q=s.add_parser("recipe"); q.add_argument("--manifest",default=""); q.add_argument("--sector",required=True); q.add_argument("--profile",required=True); q.add_argument("--output",required=True); q.add_argument("--meta"); q.add_argument("--strategy",choices=STRATEGIES,default=STRATEGIES[0]); q.set_defaults(fn=cmd_recipe)
     q=s.add_parser("next"); q.add_argument("--strategy",choices=STRATEGIES,required=True); q.add_argument("--bake-ok",action="store_true"); q.add_argument("--visual-changed",action="store_true"); q.add_argument("--reason",default=""); q.set_defaults(fn=cmd_next)
     q=s.add_parser("gate"); q.add_argument("--phase",choices=("pilot","wave"),default="pilot"); q.add_argument("--attempted",type=int,required=True); q.add_argument("--accepted",type=int,required=True); q.add_argument("--optimization-cycles",type=int,default=0); q.add_argument("--minimum-wave",type=int,default=8); q.set_defaults(fn=cmd_gate)
