@@ -106,6 +106,203 @@ UINT16 PickARandomItem(UINT8 typeIndex, INT8 bSoldierClass, UINT8 maxCoolness);
 UINT16 PickARandomItem(UINT8 typeIndex, INT8 bSoldierClass, UINT8 maxCoolness, BOOLEAN getMatchingCoolness);
 UINT16 PickARandomAttachment(UINT8 typeIndex, INT8 bSoldierClass, UINT16 usBaseItem, UINT8 maxCoolness, BOOLEAN getMatchingCoolness);
 
+// Vengeance regional enemy supply model.
+// Existing difficulty/progress code sets the quality ceiling. This layer controls regional availability.
+// Profiles use 4x4 strategic regions + underground level + 25% campaign-progress bands, so neighbouring
+// sectors share recognisable stockpiles without changing the savegame format.
+enum ENEMY_SUPPLY_CATEGORY
+{
+	ENEMY_SUPPLY_WEAPONS = 0,
+	ENEMY_SUPPLY_ARMOUR,
+	ENEMY_SUPPLY_GRENADES,
+	ENEMY_SUPPLY_MEDICAL,
+	ENEMY_SUPPLY_UTILITY,
+	ENEMY_SUPPLY_OPTICS,
+	ENEMY_SUPPLY_ATTACHMENTS,
+	ENEMY_SUPPLY_LBE,
+	ENEMY_SUPPLY_SPECIAL,
+	ENEMY_SUPPLY_CATEGORY_MAX
+};
+
+struct ENEMY_SUPPLY_PROFILE
+{
+	UINT8 ubAvailability[ENEMY_SUPPLY_CATEGORY_MAX];
+};
+
+static UINT32 EnemySupplyMix(UINT32 x)
+{
+	x ^= x >> 16;
+	x *= 0x7feb352dU;
+	x ^= x >> 15;
+	x *= 0x846ca68bU;
+	x ^= x >> 16;
+	return x;
+}
+
+static UINT32 EnemySupplyRegionSeed(UINT32 uiSalt)
+{
+	UINT32 sx = (gWorldSectorX > 0) ? (UINT32)gWorldSectorX : 1U;
+	UINT32 sy = (gWorldSectorY > 0) ? (UINT32)gWorldSectorY : 1U;
+	UINT32 sz = (UINT32)((gbWorldSectorZ >= 0) ? gbWorldSectorZ : 0);
+	UINT32 regionX = (sx - 1U) / 4U;
+	UINT32 regionY = (sy - 1U) / 4U;
+	UINT32 progressBand = (UINT32)(HighestPlayerProgressPercentage() / 25);
+	UINT32 seed = 0x9e3779b9U;
+	seed ^= (regionX + 1U) * 0x85ebca6bU;
+	seed ^= (regionY + 1U) * 0xc2b2ae35U;
+	seed ^= (sz + 1U) * 0x27d4eb2fU;
+	seed ^= (progressBand + 1U) * 0x165667b1U;
+	return EnemySupplyMix(seed ^ uiSalt);
+}
+
+static INT16 EnemySupplyClamp(INT16 value, INT16 low, INT16 high)
+{
+	if (value < low) return low;
+	if (value > high) return high;
+	return value;
+}
+
+static UINT8 EnemySupplyBand(UINT32 uiSalt, UINT8 ubLow, UINT8 ubHigh)
+{
+	if (ubHigh <= ubLow) return ubLow;
+	return (UINT8)(ubLow + (EnemySupplyRegionSeed(uiSalt) % (UINT32)(ubHigh - ubLow + 1)));
+}
+
+static void EnemySupplyAdjustCategory(ENEMY_SUPPLY_PROFILE *pProfile, UINT8 ubCategory, INT16 sDelta)
+{
+	if (!pProfile || ubCategory >= ENEMY_SUPPLY_CATEGORY_MAX) return;
+	pProfile->ubAvailability[ubCategory] = (UINT8)EnemySupplyClamp((INT16)pProfile->ubAvailability[ubCategory] + sDelta, 25, 160);
+}
+
+static ENEMY_SUPPLY_PROFILE BuildEnemySupplyProfile(void)
+{
+	ENEMY_SUPPLY_PROFILE p;
+	p.ubAvailability[ENEMY_SUPPLY_WEAPONS]     = EnemySupplyBand(0x1001U, 85, 130);
+	p.ubAvailability[ENEMY_SUPPLY_ARMOUR]      = EnemySupplyBand(0x1002U, 70, 125);
+	p.ubAvailability[ENEMY_SUPPLY_GRENADES]    = EnemySupplyBand(0x1003U, 55, 130);
+	p.ubAvailability[ENEMY_SUPPLY_MEDICAL]     = EnemySupplyBand(0x1004U, 55, 125);
+	p.ubAvailability[ENEMY_SUPPLY_UTILITY]     = EnemySupplyBand(0x1005U, 55, 120);
+	p.ubAvailability[ENEMY_SUPPLY_OPTICS]      = EnemySupplyBand(0x1006U, 45, 115);
+	p.ubAvailability[ENEMY_SUPPLY_ATTACHMENTS] = EnemySupplyBand(0x1007U, 50, 120);
+	p.ubAvailability[ENEMY_SUPPLY_LBE]         = EnemySupplyBand(0x1008U, 60, 120);
+	p.ubAvailability[ENEMY_SUPPLY_SPECIAL]     = EnemySupplyBand(0x1009U, 45, 110);
+
+	UINT8 ubSurplus = (UINT8)(EnemySupplyRegionSeed(0x51a7U) % ENEMY_SUPPLY_CATEGORY_MAX);
+	UINT8 ubShortage = (UINT8)(EnemySupplyRegionSeed(0x5a17U) % ENEMY_SUPPLY_CATEGORY_MAX);
+	if (ubShortage == ubSurplus) ubShortage = (UINT8)((ubShortage + 1) % ENEMY_SUPPLY_CATEGORY_MAX);
+	EnemySupplyAdjustCategory(&p, ubSurplus, 25);
+	EnemySupplyAdjustCategory(&p, ubShortage, -25);
+	return p;
+}
+
+static UINT8 EnemySupplyAvailability(UINT8 ubCategory, INT8 bSoldierClass)
+{
+	if (ubCategory >= ENEMY_SUPPLY_CATEGORY_MAX || !SOLDIER_CLASS_ENEMY(bSoldierClass)) return 100;
+	ENEMY_SUPPLY_PROFILE p = BuildEnemySupplyProfile();
+	INT16 value = p.ubAvailability[ubCategory];
+
+	// Harder Vengeance difficulties still mean better overall access, not just better skill.
+	value += ((INT16)gGameOptions.ubDifficultyLevel - 2) * 4;
+
+	// Scarce premium equipment is preferentially routed to elites; admins feel shortages first.
+	if (bSoldierClass == SOLDIER_CLASS_ELITE)
+		value += (value < 100) ? 12 : 5;
+	else if (bSoldierClass == SOLDIER_CLASS_ADMINISTRATOR &&
+		(ubCategory == ENEMY_SUPPLY_OPTICS || ubCategory == ENEMY_SUPPLY_ATTACHMENTS ||
+		 ubCategory == ENEMY_SUPPLY_LBE || ubCategory == ENEMY_SUPPLY_SPECIAL))
+		value -= 8;
+
+	return (UINT8)EnemySupplyClamp(value, 20, 170);
+}
+
+static UINT8 EnemySupplyCategoryFromItemType(UINT8 typeIndex)
+{
+	switch (typeIndex)
+	{
+		case HELMET: case VEST: case LEGS: case ARMOURATTACHMENT: return ENEMY_SUPPLY_ARMOUR;
+		case GRENADE: return ENEMY_SUPPLY_GRENADES;
+		case KIT: return ENEMY_SUPPLY_MEDICAL;
+		case GASMASKS: case NVGLOW: case NVGHIGH: case HEARINGAIDS: case SCOPE: return ENEMY_SUPPLY_OPTICS;
+		case ATTACHMENTS: return ENEMY_SUPPLY_ATTACHMENTS;
+		case LBE: return ENEMY_SUPPLY_LBE;
+		case GRENADELAUNCHER: case SINGLESHOTROCKETLAUNCHER: case ROCKETLAUNCHER: case MORTARLAUNCHER: case BOMB: return ENEMY_SUPPLY_SPECIAL;
+		case ENEMYAMMOTYPES: return ENEMY_SUPPLY_WEAPONS;
+		case KNIVES: case MISCITEMS: default: return ENEMY_SUPPLY_UTILITY;
+	}
+}
+
+static BOOLEAN EnemySupplyAllowsCategory(UINT8 ubCategory, INT8 bSoldierClass)
+{
+	UINT8 availability = EnemySupplyAvailability(ubCategory, bSoldierClass);
+	if (availability >= 100) return TRUE;
+	return Chance(availability);
+}
+
+static UINT32 EnemySupplyWeaponWeight(UINT16 usItem, INT8 bSoldierClass)
+{
+	if (!SOLDIER_CLASS_ENEMY(bSoldierClass) || usItem == 0 || usItem >= MAXITEMS) return 100;
+
+	UINT32 familySalt = (UINT32)usItem * 0x45d9f3bU;
+	if (Item[usItem].usItemClass & IC_GUN)
+	{
+		familySalt = ((UINT32)Weapon[usItem].ubCalibre + 1U) * 0x27d4eb2dU;
+		familySalt ^= ((UINT32)Weapon[usItem].ubWeaponType + 1U) * 0x165667b1U;
+	}
+
+	UINT32 h = EnemySupplyRegionSeed(0x70000000U ^ familySalt);
+	INT32 weight = 35 + (INT32)(h % 166U); // 35..200 before class/difficulty adjustments.
+	weight += (INT32)(EnemySupplyMix(h ^ (UINT32)usItem) % 21U) - 10;
+	weight = weight * EnemySupplyAvailability(ENEMY_SUPPLY_WEAPONS, bSoldierClass) / 100;
+	if (bSoldierClass == SOLDIER_CLASS_ELITE && weight < 75) weight = 75;
+	else if (bSoldierClass == SOLDIER_CLASS_ADMINISTRATOR && weight > 160) weight = 160;
+	return (UINT32)EnemySupplyClamp((INT16)weight, 15, 300);
+}
+
+static void ApplyEnemySupplyToGeneratedLoadout(INT8 bSoldierClass, INT8 *pbWeaponClass, INT8 *pbAmmoClips,
+	INT8 *pbGrenades, BOOLEAN *pfGrenadeLauncher, BOOLEAN *pfLAW, BOOLEAN *pfMortar, BOOLEAN *pfRPG)
+{
+	if (!SOLDIER_CLASS_ENEMY(bSoldierClass)) return;
+	UINT8 weaponSupply = EnemySupplyAvailability(ENEMY_SUPPLY_WEAPONS, bSoldierClass);
+	UINT8 grenadeSupply = EnemySupplyAvailability(ENEMY_SUPPLY_GRENADES, bSoldierClass);
+	UINT8 specialSupply = EnemySupplyAvailability(ENEMY_SUPPLY_SPECIAL, bSoldierClass);
+
+	// Serious rifle shortages create hand-me-downs, not unarmed troops. Elites get first claim.
+	if (pbWeaponClass && *pbWeaponClass > MIN_EQUIPMENT_CLASS && weaponSupply < 60 && bSoldierClass != SOLDIER_CLASS_ELITE)
+		if (Chance((UINT8)(60 - weaponSupply))) --(*pbWeaponClass);
+	if (pbAmmoClips && *pbAmmoClips > 2 && weaponSupply < 55 && Chance((UINT8)(55 - weaponSupply))) --(*pbAmmoClips);
+
+	BOOLEAN fHasSpecial = (pfGrenadeLauncher && *pfGrenadeLauncher) || (pfLAW && *pfLAW) ||
+		(pfMortar && *pfMortar) || (pfRPG && *pfRPG);
+	if (fHasSpecial)
+	{
+		if (specialSupply < 100 && !Chance(specialSupply))
+		{
+			if (pfGrenadeLauncher) *pfGrenadeLauncher = FALSE;
+			if (pfLAW) *pfLAW = FALSE;
+			if (pfMortar) *pfMortar = FALSE;
+			if (pfRPG) *pfRPG = FALSE;
+			if (pbGrenades && *pbGrenades > 2) *pbGrenades = 2;
+		}
+		else if (pbGrenades && *pbGrenades > 0)
+			*pbGrenades = (INT8)EnemySupplyClamp((INT16)((*pbGrenades * specialSupply + 99) / 100), 1, 8);
+	}
+	else if (pbGrenades && *pbGrenades > 0)
+		*pbGrenades = (INT8)EnemySupplyClamp((INT16)((*pbGrenades * grenadeSupply + 99) / 100), 0, 6);
+}
+
+static void DebugEnemySupplyProfile(INT8 bSoldierClass)
+{
+	if (!SOLDIER_CLASS_ENEMY(bSoldierClass)) return;
+	DebugMsg(TOPIC_JA2, DBG_LEVEL_3, String(
+		"EnemySupply sector %d,%d,%d class %d W%d A%d G%d M%d U%d O%d T%d L%d S%d",
+		gWorldSectorX, gWorldSectorY, gbWorldSectorZ, bSoldierClass,
+		EnemySupplyAvailability(ENEMY_SUPPLY_WEAPONS, bSoldierClass), EnemySupplyAvailability(ENEMY_SUPPLY_ARMOUR, bSoldierClass),
+		EnemySupplyAvailability(ENEMY_SUPPLY_GRENADES, bSoldierClass), EnemySupplyAvailability(ENEMY_SUPPLY_MEDICAL, bSoldierClass),
+		EnemySupplyAvailability(ENEMY_SUPPLY_UTILITY, bSoldierClass), EnemySupplyAvailability(ENEMY_SUPPLY_OPTICS, bSoldierClass),
+		EnemySupplyAvailability(ENEMY_SUPPLY_ATTACHMENTS, bSoldierClass), EnemySupplyAvailability(ENEMY_SUPPLY_LBE, bSoldierClass),
+		EnemySupplyAvailability(ENEMY_SUPPLY_SPECIAL, bSoldierClass)));
+}
+
 
 void InitArmyGunTypes(void)
 {
@@ -849,6 +1046,10 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 			break;
 	}
 
+	DebugEnemySupplyProfile(bSoldierClass);
+	ApplyEnemySupplyToGeneratedLoadout(bSoldierClass, &bWeaponClass, &bAmmoClips, &bGrenades,
+		&fGrenadeLauncher, &fLAW, &fMortar, &fRPG);
+
 	UINT32 invsize = pp->Inv.size();
 	for( i = 0; i < invsize; ++i )
 	{
@@ -951,7 +1152,6 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 	ChooseMiscGearForSoldierCreateStruct( pp, bMiscClass );
 	ChooseBombsForSoldierCreateStruct( pp, bBombClass );
 	ChooseLocationSpecificGearForSoldierCreateStruct( pp );
-	RandomlyChooseWhichItemsAreDroppable( pp, bSoldierClass );
 
 	// sevenfm: extra items
 	if (gGameExternalOptions.fExtraItems)
@@ -1045,6 +1245,24 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 			if (Chance(20))
 				fAdrenaline = TRUE;
 			break;
+		}
+
+		// The late Vengeance extras obey the same regional shortages as the core loadout.
+		if (SOLDIER_CLASS_ENEMY(bSoldierClass))
+		{
+			if (fSmokeGrenade && !EnemySupplyAllowsCategory(ENEMY_SUPPLY_GRENADES, bSoldierClass)) fSmokeGrenade = FALSE;
+			if (fFlare && !EnemySupplyAllowsCategory(ENEMY_SUPPLY_GRENADES, bSoldierClass)) fFlare = FALSE;
+			if (fRedSmoke && !EnemySupplyAllowsCategory(ENEMY_SUPPLY_GRENADES, bSoldierClass)) fRedSmoke = FALSE;
+			if (fTear && !EnemySupplyAllowsCategory(ENEMY_SUPPLY_GRENADES, bSoldierClass)) fTear = FALSE;
+			if (fMini && !EnemySupplyAllowsCategory(ENEMY_SUPPLY_GRENADES, bSoldierClass)) fMini = FALSE;
+			if (fGrenade && !EnemySupplyAllowsCategory(ENEMY_SUPPLY_GRENADES, bSoldierClass)) fGrenade = FALSE;
+			if (fFirstAid && !EnemySupplyAllowsCategory(ENEMY_SUPPLY_MEDICAL, bSoldierClass)) fFirstAid = FALSE;
+			if (fRegen && !EnemySupplyAllowsCategory(ENEMY_SUPPLY_MEDICAL, bSoldierClass)) fRegen = FALSE;
+			if (fAdrenaline && !EnemySupplyAllowsCategory(ENEMY_SUPPLY_MEDICAL, bSoldierClass)) fAdrenaline = FALSE;
+			if (fCanteen && !EnemySupplyAllowsCategory(ENEMY_SUPPLY_UTILITY, bSoldierClass)) fCanteen = FALSE;
+			if (fAlcohol && !EnemySupplyAllowsCategory(ENEMY_SUPPLY_UTILITY, bSoldierClass)) fAlcohol = FALSE;
+			if (fWirecutter && !EnemySupplyAllowsCategory(ENEMY_SUPPLY_UTILITY, bSoldierClass)) fWirecutter = FALSE;
+			if (fShovel && !EnemySupplyAllowsCategory(ENEMY_SUPPLY_UTILITY, bSoldierClass)) fShovel = FALSE;
 		}
 
 		// mini grenade
@@ -1211,6 +1429,9 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 		PlaceObjectInSoldierCreateStruct( pp, &gTempObject );*/
 	}
 
+	// Loot/drop selection now sees the complete generated inventory, including Vengeance extras.
+	RandomlyChooseWhichItemsAreDroppable( pp, bSoldierClass );
+
 	DebugMsg(TOPIC_JA2,DBG_LEVEL_3,String("GenerateRandomEquipment done"));
 }
 
@@ -1356,6 +1577,12 @@ void ChooseWeaponForSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp, INT8 bWeaponC
 		break;
 	}
 
+	if (SOLDIER_CLASS_ENEMY(pp->ubSoldierClass))
+	{
+		UINT16 uiScaledScopeChance = (UINT16)ubScopeChance * EnemySupplyAvailability(ENEMY_SUPPLY_OPTICS, pp->ubSoldierClass) / 100;
+		ubScopeChance = (UINT8)min((UINT16)100, uiScaledScopeChance);
+	}
+
 	CreateItem( usGunIndex, bStatus, &(pp->Inv[ HANDPOS ]) );
 	pp->Inv[ HANDPOS ].fFlags |= OBJECT_UNDROPPABLE;
 
@@ -1429,6 +1656,8 @@ void ChooseWeaponForSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp, INT8 bWeaponC
 		{
 			//The total pool of coolness we have for all the attachments. If fAttachment is true, the chance of getting an attachment is boosted.
 			INT8 iMiscAttachmentChance = 60;
+			if (SOLDIER_CLASS_ENEMY(pp->ubSoldierClass))
+				iMiscAttachmentChance = (INT8)EnemySupplyClamp((INT16)(iMiscAttachmentChance * EnemySupplyAvailability(ENEMY_SUPPLY_ATTACHMENTS, pp->ubSoldierClass) / 100), 20, 85);
 			//Add a value equal to the avarage amount of attachments that will be on this gun.
 			//Because the guns scope does not subtract from this value, -1.
 			INT16 iAttachmentCoolnessPool = (bAttachClass * (gGameExternalOptions.iMaxEnemyAttachments-1) * iMiscAttachmentChance) / 100;
@@ -3392,93 +3621,47 @@ void ReplaceExtendedGuns( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass )
 UINT16 SelectStandardArmyGun( UINT8 uiGunLevel, INT8 bSoldierClass )
 {
 	ARMY_GUN_CHOICE_TYPE *pGunChoiceTable;
-	int uiChoice;
-	int usGunIndex;
-
-	// pick the standard army gun for this weapon class from table
-//	usGunIndex = gStrategicStatus.ubStandardArmyGunIndex[uiGunLevel];
-
-	// decided to randomize it afterall instead of repeating the same weapon over and over
-
-	// depending on selection of the gun nut option
-	//if (gGameOptions.fGunNut)
-	//{
-		// use table of extended gun choices
-
-		// Flugente: if accessing with wrong soldier class, or not using different selection choices, take default one
-		if ( bSoldierClass >= SOLDIER_GUN_CHOICE_SELECTIONS || bSoldierClass < SOLDIER_CLASS_NONE || !gGameExternalOptions.fSoldierClassSpecificItemTables )
-			bSoldierClass = SOLDIER_CLASS_NONE;
-
-		pGunChoiceTable = &(gExtendedArmyGunChoices[bSoldierClass][0]);
-	//}
-	//else
-	//{
-	//	// use table of regular gun choices
-	//	pGunChoiceTable = &(gRegularArmyGunChoices[0]);
-	//}
-
-	// choose one the of the possible gun choices
-	usGunIndex = -1;
-
+	INT8 bSupplyClass = bSoldierClass;
+	if ( bSoldierClass >= SOLDIER_GUN_CHOICE_SELECTIONS || bSoldierClass < SOLDIER_CLASS_NONE || !gGameExternalOptions.fSoldierClassSpecificItemTables )
+		bSoldierClass = SOLDIER_CLASS_NONE;
+	pGunChoiceTable = &(gExtendedArmyGunChoices[bSoldierClass][0]);
 	BOOLEAN isnight = NightTime();
 
-	while (usGunIndex == -1)
+	UINT32 uiWeights[50];
+	UINT32 uiTotalWeight = 0;
+	UINT8 ubChoices = pGunChoiceTable[uiGunLevel].ubChoices;
+	if (ubChoices > 50) ubChoices = 50;
+
+	for (UINT8 i = 0; i < ubChoices; ++i)
 	{
-		uiChoice = Random(pGunChoiceTable[ uiGunLevel ].ubChoices);
-		usGunIndex = pGunChoiceTable[ uiGunLevel ].bItemNo[ uiChoice ];
-
-		if (!ItemIsLegal(usGunIndex)) //Madd: check for tons of guns
-			usGunIndex = -1;
-
-		//Check to avoid an endless loop looking for "normal" guns
-		if (usGunIndex == -1)
-		{
-			//Madd: there better be something from the original JA2 guns here somewhere (biggunlist=0)!
-			int numTries = 0;
-			//Try 5 more times...
-			while (numTries < 5 && usGunIndex == -1)
-			{
-				uiChoice = Random(pGunChoiceTable[ uiGunLevel ].ubChoices);
-				usGunIndex = pGunChoiceTable[ uiGunLevel ].bItemNo[ uiChoice ];
-
-				if (!ItemIsLegal(usGunIndex)) //Madd: check for tons of guns
-					usGunIndex = -1;
-
-				numTries++;
-			}
-
-			if (usGunIndex == -1) //We still haven't found one!  Start just looping through the guns then
-			{
-				for (int i=0;i<pGunChoiceTable[uiGunLevel].ubChoices;i++)
-				{
-					usGunIndex = pGunChoiceTable[ uiGunLevel ].bItemNo[ i ];
-
-					// Flugente: ignore this item if we aren't allowed to pick it at this time of day
-					if ( ( isnight && Item[usGunIndex].usItemChoiceTimeSetting == 1 ) || ( !isnight && Item[usGunIndex].usItemChoiceTimeSetting == 2 ) )
-						continue;
-
-					if (!ItemIsLegal(usGunIndex))
-						usGunIndex = -1;
-					else
-						break;
-				}
-			}
-
-			if ( usGunIndex == -1 )
-			{
-				//Still nothing?  Then he gets a glock
-				usGunIndex = GLOCK_17;
-			}
-
-		}
-
+		uiWeights[i] = 0;
+		INT16 sCandidate = pGunChoiceTable[uiGunLevel].bItemNo[i];
+		if (sCandidate <= 0 || sCandidate >= MAXITEMS) continue;
+		UINT16 usCandidate = (UINT16)sCandidate;
+		if (!ItemIsLegal(usCandidate)) continue;
+		if ((isnight && Item[usCandidate].usItemChoiceTimeSetting == 1) || (!isnight && Item[usCandidate].usItemChoiceTimeSetting == 2)) continue;
+		uiWeights[i] = EnemySupplyWeaponWeight(usCandidate, bSupplyClass);
+		uiTotalWeight += uiWeights[i];
 	}
 
-	Assert(usGunIndex);
+	if (uiTotalWeight > 0)
+	{
+		UINT32 uiRoll = Random(uiTotalWeight);
+		for (UINT8 i = 0; i < ubChoices; ++i)
+		{
+			if (uiWeights[i] == 0) continue;
+			if (uiRoll < uiWeights[i]) return (UINT16)pGunChoiceTable[uiGunLevel].bItemNo[i];
+			uiRoll -= uiWeights[i];
+		}
+	}
 
-	return(usGunIndex);
+	for (UINT8 i = 0; i < ubChoices; ++i)
+	{
+		INT16 sCandidate = pGunChoiceTable[uiGunLevel].bItemNo[i];
+		if (sCandidate > 0 && sCandidate < MAXITEMS && ItemIsLegal((UINT16)sCandidate)) return (UINT16)sCandidate;
+	}
+	return GLOCK_17;
 }
-
 
 
 void EquipTank( SOLDIERCREATE_STRUCT *pp )
@@ -3532,12 +3715,17 @@ UINT16 PickARandomItem(UINT8 typeIndex, INT8 bSoldierClass, UINT8 maxCoolness, B
 	UINT32 uiChoice;
 	UINT16 defaultItem = 0;
 	BOOLEAN pickItem = FALSE;
+	INT8 bSupplyClass = bSoldierClass;
 
 	// Flugente: if accessing with wrong soldier class, or not using different selection choices, take default one
 	if ( bSoldierClass >= SOLDIER_GUN_CHOICE_SELECTIONS || bSoldierClass < SOLDIER_CLASS_NONE || !gGameExternalOptions.fSoldierClassSpecificItemTables )
 		bSoldierClass = SOLDIER_CLASS_NONE;
 
 	if ( gArmyItemChoices[bSoldierClass][ typeIndex ].ubChoices <= 0 )
+		return 0;
+
+	UINT8 ubSupplyAvailability = EnemySupplyAvailability(EnemySupplyCategoryFromItemType(typeIndex), bSupplyClass);
+	if (SOLDIER_CLASS_ENEMY(bSupplyClass) && ubSupplyAvailability < 100 && !Chance(ubSupplyAvailability))
 		return 0;
 
 	BOOLEAN isnight = NightTime();
@@ -3549,8 +3737,15 @@ UINT16 PickARandomItem(UINT8 typeIndex, INT8 bSoldierClass, UINT8 maxCoolness, B
 		if ( i > gArmyItemChoices[bSoldierClass][ typeIndex ].ubChoices )
 			break;
 
-		// a chance for nothing!
-		uiChoice = Random(gArmyItemChoices[bSoldierClass][ typeIndex ].ubChoices + (int) ( gArmyItemChoices[bSoldierClass][ typeIndex ].ubChoices / 3 ));
+		// Regional shortage widens the existing 'nothing' band; surplus narrows it.
+		UINT32 uiChoices = gArmyItemChoices[bSoldierClass][ typeIndex ].ubChoices;
+		UINT32 uiNothingChoices = uiChoices / 3;
+		if (uiNothingChoices > 0 && SOLDIER_CLASS_ENEMY(bSupplyClass))
+		{
+			uiNothingChoices = (uiNothingChoices * 100 + ubSupplyAvailability - 1) / ubSupplyAvailability;
+			if (ubSupplyAvailability >= 135 && uiNothingChoices > 0) --uiNothingChoices;
+		}
+		uiChoice = Random(uiChoices + uiNothingChoices);
 
 		if ( uiChoice >= gArmyItemChoices[bSoldierClass][ typeIndex ].ubChoices )
 		{
@@ -3629,6 +3824,7 @@ UINT16 PickARandomAttachment(UINT8 typeIndex, INT8 bSoldierClass, UINT16 usBaseI
 	UINT16 usItem = 0;
 	UINT32 uiChoice;
 	UINT16 defaultItem = 0;
+	INT8 bSupplyClass = bSoldierClass;
 
 	// Flugente: if accessing with wrong soldier class, or not using different selection choices, take default one
 	if ( bSoldierClass >= SOLDIER_GUN_CHOICE_SELECTIONS || bSoldierClass < SOLDIER_CLASS_NONE || !gGameExternalOptions.fSoldierClassSpecificItemTables )
@@ -3636,6 +3832,10 @@ UINT16 PickARandomAttachment(UINT8 typeIndex, INT8 bSoldierClass, UINT16 usBaseI
 
 //	DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("PickARandomAttachment: # choices = %d", gArmyItemChoices[ typeIndex ].ubChoices ));
 	if ( gArmyItemChoices[bSoldierClass][ typeIndex ].ubChoices <= 0 )
+		return 0;
+
+	UINT8 ubSupplyAvailability = EnemySupplyAvailability(EnemySupplyCategoryFromItemType(typeIndex), bSupplyClass);
+	if (SOLDIER_CLASS_ENEMY(bSupplyClass) && ubSupplyAvailability < 100 && !Chance(ubSupplyAvailability))
 		return 0;
 
 	BOOLEAN isnight = NightTime();
