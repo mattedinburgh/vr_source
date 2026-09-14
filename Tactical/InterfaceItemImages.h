@@ -12,8 +12,9 @@ public:
 	MDItemVideoObjects();
 
 	UINT32	getVObjectForItem(UINT32 key);
+	bool	hasItem(UINT32 key) const;
 	void	registerItem(UINT32 key, vfs::Path const& sFileName);
-	bool	registerItemsFromFilePattern(vfs::Path const& sFilePattern);
+	bool	registerItemsFromFilePattern(vfs::Path const& sFilePattern, bool optional = false);
 	void	unRegisterAllItems();
 private:
 	std::map<UINT32,UINT32> m_mapVObjects;
@@ -29,6 +30,11 @@ extern UINT32				guiPITEMS[MAX_PITEMS];
 // new item image handles
 extern MDItemVideoObjects	g_oGUNSM;
 extern MDItemVideoObjects	g_oPITEMS[MAX_PITEMS];
+
+// Sparse high-colour PNG overrides. These coexist with legacy STI sheets:
+// only graphics present under Interface/ItemOverrides are replaced.
+extern MDItemVideoObjects	g_oGUNSMOverrides;
+extern MDItemVideoObjects	g_oPITEMSOverrides[MAX_PITEMS];
 
 bool RegisterItemImages();
 
