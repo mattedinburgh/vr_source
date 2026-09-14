@@ -6789,11 +6789,14 @@ static UINT32 guiAIDisengageStartTurn[MAX_NUM_SOLDIERS] = { 0 };
 static UINT8 gubAITacticalFallbackUsed[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAITacticalFallbackIdentity[MAX_NUM_SOLDIERS] = { 0 };
 
-// Short sector-local memory for cover moves. It prevents low-value A->B->A
-// shuffling while still allowing an emergency reversal to markedly safer cover.
+// Short sector-local memory for tactical movement. It prevents low-value
+// A->B->A and A->B->C->A shuffling across cover, cohesion, flank and withdrawal
+// actions while still allowing a genuinely safer emergency reversal.
 static INT32 gsAICoverMoveFrom[MAX_NUM_SOLDIERS] = { 0 };
 static INT32 gsAICoverMoveTo[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAICoverMoveTurn[MAX_NUM_SOLDIERS] = { 0 };
+static INT32 gsAICoverMovePreviousFrom[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAICoverMovePreviousTurn[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAICoverMoveIdentity[MAX_NUM_SOLDIERS] = { 0 };
 static INT16 gsAICoverMemorySectorX = -1;
 static INT16 gsAICoverMemorySectorY = -1;
@@ -6943,6 +6946,8 @@ static void AIMaintainCoverMoveMemory(void)
 			gsAICoverMoveFrom[i] = NOWHERE;
 			gsAICoverMoveTo[i] = NOWHERE;
 			guiAICoverMoveTurn[i] = 0;
+			gsAICoverMovePreviousFrom[i] = NOWHERE;
+			guiAICoverMovePreviousTurn[i] = 0;
 			guiAICoverMoveIdentity[i] = 0;
 		}
 	}
@@ -6962,6 +6967,18 @@ void AIRegisterCoverMoveIntent(SOLDIERTYPE *pSoldier, INT32 sFromGrid, INT32 sTo
 		return;
 
 	UINT8 ubID = pSoldier->ubID;
+	if (guiAICoverMoveIdentity[ubID] == pSoldier->uiUniqueSoldierIdValue &&
+		guiAICoverMoveTurn[ubID] != 0)
+	{
+		gsAICoverMovePreviousFrom[ubID] = gsAICoverMoveFrom[ubID];
+		guiAICoverMovePreviousTurn[ubID] = guiAICoverMoveTurn[ubID];
+	}
+	else
+	{
+		gsAICoverMovePreviousFrom[ubID] = NOWHERE;
+		guiAICoverMovePreviousTurn[ubID] = 0;
+	}
+
 	gsAICoverMoveFrom[ubID] = sFromGrid;
 	gsAICoverMoveTo[ubID] = sToGrid;
 	guiAICoverMoveTurn[ubID] = guiTurnCnt + 1;
@@ -6983,11 +7000,23 @@ BOOLEAN AIShouldRejectCoverOscillation(SOLDIERTYPE *pSoldier, INT32 sCandidateGr
 	UINT32 uiNow = guiTurnCnt + 1;
 	UINT32 uiAge = uiNow >= guiAICoverMoveTurn[ubID] ?
 		uiNow - guiAICoverMoveTurn[ubID] : 99;
-	if (uiAge > 2 ||
-		pSoldier->sGridNo != gsAICoverMoveTo[ubID] ||
-		sCandidateGrid != gsAICoverMoveFrom[ubID])
+	UINT32 uiPreviousAge =
+		guiAICoverMovePreviousTurn[ubID] != 0 && uiNow >= guiAICoverMovePreviousTurn[ubID] ?
+		uiNow - guiAICoverMovePreviousTurn[ubID] : 99;
+
+	BOOLEAN fImmediateReverse =
+		uiAge <= 3 &&
+		pSoldier->sGridNo == gsAICoverMoveTo[ubID] &&
+		sCandidateGrid == gsAICoverMoveFrom[ubID];
+	BOOLEAN fReturnToRecentPosition =
+		uiPreviousAge <= 3 &&
+		!TileIsOutOfBounds(gsAICoverMovePreviousFrom[ubID]) &&
+		sCandidateGrid == gsAICoverMovePreviousFrom[ubID];
+
+	if (!fImmediateReverse && !fReturnToRecentPosition)
 		return FALSE;
 
+	// Immediate survival always beats hysteresis.
 	if (pSoldier->aiData.bUnderFire && ShockLevelPercent(pSoldier) >= 60)
 		return FALSE;
 
@@ -7208,6 +7237,18 @@ static BOOLEAN AIShouldStartDisengagementFromState(SOLDIERTYPE *pSoldier, INT8 b
 
 	if (bSituation == AI_BATTLE_CATASTROPHIC)
 	{
+		// A catastrophically beaten, isolated and uncovered element should not need
+		// another persistence/rout gate before it is allowed to break contact.
+		// This is organized disengagement only; sector escape still uses its stricter
+		// collapse-streak logic below the tactical layer.
+		BOOLEAN fCatastrophicLocalCollapse =
+			ubCasualties >= 40 &&
+			AISeverelyIsolated(pSoldier) &&
+			!AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) &&
+			iHoldConfidence < 50;
+		if (fCatastrophicLocalCollapse)
+			return TRUE;
+
 		// A strong covered element may keep fighting even when the wider ratio is bad.
 		// Otherwise organized disengagement is appropriate before full rout.
 		if (iHoldConfidence >= 50 && iRisk < iTolerance + 15)
