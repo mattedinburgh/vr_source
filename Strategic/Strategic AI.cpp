@@ -37,6 +37,8 @@
 	#include "interface dialogue.h"
 #endif
 
+#include "Strategic Modernization.h"
+
 // Lion Paratroops
 #include "Strategic Town Loyalty.h"
 // End Lion
@@ -1130,6 +1132,7 @@ void InitStrategicAI()
 	INT32 iPercentElitesBonus;
 	INT32 iMaxEnemyGroupSize = gGameExternalOptions.iMaxEnemyGroupSize;
 	DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Strategic3");
+	VR_InitStrategicModernization();
 
 	//Initialize the basic variables.
 
