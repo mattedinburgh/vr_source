@@ -33,6 +33,7 @@
 #include "opplist.h"
 #include "worldman.h"
 #include "weapons.h"
+#include "Items.h"
 #include "renderworld.h"
 #include "structure.h"
 #include "interface panels.h"
