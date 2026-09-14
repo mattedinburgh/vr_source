@@ -3599,7 +3599,7 @@ void BuildTileShadeTables(  )
 				if( gbNewTileSurfaceLoaded[ uiLoop ]  )
 			#endif
 				{
-					fForceRebuildForSlot = FALSE;
+					fForceRebuildForSlot = IsMapFactoryVisualProfileValue( gubSectorVisualProfile );
 
 					GetRootName( cRootFile, TileSurfaceFilenames[ uiLoop ] );
 
