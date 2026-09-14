@@ -362,29 +362,6 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			continue;
 		}
 
-		// Team AI target discipline: one or two local shooters reinforce a
-		// useful fire commitment, but a fourth rifleman is encouraged to cover
-		// something else.  Machine gunners may keep fixing an already-engaged
-		// target because suppression is their team contribution.
-		if (pSoldier->bTeam == ENEMY_TEAM && pOpponent->stats.bLife >= OKLIFE)
-		{
-			UINT8 ubLocalShooters = CountLocalFriendsTargetingOpponent(pSoldier, pOpponent);
-
-			if (ubLocalShooters == 1)
-				iAttackValue = iAttackValue * 115 / 100;
-			else if (ubLocalShooters == 2)
-				iAttackValue = iAttackValue * 108 / 100;
-			else if (ubLocalShooters >= 3 && !AICheckIsMachinegunner(pSoldier))
-				iAttackValue = iAttackValue * 85 / 100;
-
-			if (ubLocalShooters > 0)
-			{
-				DebugAI(AI_MSG_INFO, pSoldier,
-					String("[TeamAI] target discipline opponent=%d localShooters=%d value=%d",
-					pOpponent->ubID, ubLocalShooters, iAttackValue));
-			}
-		}
-
 #ifdef DEBUGATTACKS
 		DebugAI( String( "%s sees %s at gridno %d\n",pSoldier->GetName(),ExtMen[pOpponent->ubID].GetName(),pOpponent->sGridNo ) );
 #endif
@@ -716,6 +693,29 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		if (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed && pSoldier->bBreath == 0)
 		{
 			iAttackValue /= 4;
+		}
+
+		// Team AI target discipline: one or two local shooters reinforce a
+		// useful fire commitment, but a fourth rifleman is encouraged to cover
+		// something else.  Machine gunners may keep fixing an already-engaged
+		// target because suppression is their team contribution.
+		if (pSoldier->bTeam == ENEMY_TEAM && pOpponent->stats.bLife >= OKLIFE)
+		{
+			UINT8 ubLocalShooters = CountLocalFriendsTargetingOpponent(pSoldier, pOpponent);
+
+			if (ubLocalShooters == 1)
+				iAttackValue = iAttackValue * 115 / 100;
+			else if (ubLocalShooters == 2)
+				iAttackValue = iAttackValue * 108 / 100;
+			else if (ubLocalShooters >= 3 && !AICheckIsMachinegunner(pSoldier))
+				iAttackValue = iAttackValue * 85 / 100;
+
+			if (ubLocalShooters > 0)
+			{
+				DebugAI(AI_MSG_INFO, pSoldier,
+					String("[TeamAI] target discipline opponent=%d localShooters=%d value=%d",
+					pOpponent->ubID, ubLocalShooters, iAttackValue));
+			}
 		}
 
 #ifdef DEBUGATTACKS
