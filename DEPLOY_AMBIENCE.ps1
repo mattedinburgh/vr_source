@@ -14,7 +14,7 @@ $ManifestPath = Join-Path $SoundRoot "VR_AMBIENCE_DEPLOY.json"
 # Pin the exact Vengeance gamedir revision used by this source integration.
 # When this pin is advanced later, the per-file SHA manifest still ensures
 # only changed/new assets are transferred.
-$VrRef = "018033f498338e6b1c11a254e2686100efe04a2e"
+$VrRef = "4760ee14edf75b4a26886f3fa0493109b7fbf15e"
 $Repo = "mattedinburgh/vr_gamedir"
 $ApiBase = "https://api.github.com/repos/$Repo"
 $RawBase = "https://raw.githubusercontent.com/$Repo/$VrRef"
