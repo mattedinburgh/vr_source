@@ -990,6 +990,16 @@ static UINT16 A3PlaceFarmVisualBlock( INT32 sAnchor, const A3_FARM_VISUAL_PIECE 
 
 // Multi-tile compositions. The art lives in tileset 38 and can be reused by
 // future rural-sector profiles without baking A3 coordinates into the sprites.
+static const A3_FARM_VISUAL_PIECE gA3DomesticGarden[] =
+{
+	{0,0,FIRSTDECORATIONS,1},{2,0,FIRSTDECORATIONS,2},
+	{0,1,FIRSTDECORATIONS,3},{2,1,FIRSTDECORATIONS,4}
+};
+static const A3_FARM_VISUAL_PIECE gA3DomesticFlowerEdge[] =
+{
+	{0,0,FIRSTDECORATIONS,5},{2,0,FIRSTDECORATIONS,6}
+};
+
 static const A3_FARM_VISUAL_PIECE gA3CropStripA[] =
 {
 	{0,0,SECONDDECORATIONS,1},{1,0,SECONDDECORATIONS,2},
@@ -1450,6 +1460,7 @@ static void DressA3FarmEnvironment( void )
 		UINT32 uiYardBlocks = 0;
 		UINT32 uiPaddockBlocks = 0;
 		UINT32 uiIrrigationBlocks = 0;
+		UINT32 uiDomesticBlocks = 0;
 		UINT32 uiFieldEdges = 0;
 		UINT32 uiPieces = 0;
 
@@ -1561,6 +1572,22 @@ static void DressA3FarmEnvironment( void )
 			if ( usPlaced ) { ++uiPaddockBlocks; uiPieces += usPlaced; }
 		}
 
+		// Domestic farmhouse edges: a few loose shrubs and flowers close to houses,
+		// deliberately not sprayed across open farmland.
+		const INT32 sDomesticAnchors[] =
+		{
+			130 * WORLD_COLS + 64, 130 * WORLD_COLS + 77,
+			115 * WORLD_COLS + 67, 115 * WORLD_COLS + 78,
+			79 * WORLD_COLS + 89, 79 * WORLD_COLS + 101
+		};
+		for ( UINT8 i = 0; i < (UINT8)(sizeof(sDomesticAnchors)/sizeof(sDomesticAnchors[0])); ++i )
+		{
+			const UINT16 usPlaced = (i & 1)
+				? A3PlaceFarmVisualBlock( sDomesticAnchors[i], gA3DomesticFlowerEdge, 2, FALSE )
+				: A3PlaceFarmVisualBlock( sDomesticAnchors[i], gA3DomesticGarden, 4, FALSE );
+			if ( usPlaced ) { ++uiDomesticBlocks; uiPieces += usPlaced; }
+		}
+
 		// A few authored field-edge/breach pieces mark where machinery and people
 		// actually enter the fields.
 		const INT32 sEdgeAnchors[] =
@@ -1577,10 +1604,10 @@ static void DressA3FarmEnvironment( void )
 
 		CHAR8 zHandmade[256];
 		sprintf( zHandmade,
-			"cropBlocks=%lu fieldA=%lu fieldB=%lu fieldC=%lu harvest=%lu yard=%lu paddock=%lu irrigation=%lu edges=%lu pieces=%lu explicit-layout",
+			"cropBlocks=%lu fieldA=%lu fieldB=%lu fieldC=%lu harvest=%lu yard=%lu paddock=%lu irrigation=%lu domestic=%lu edges=%lu pieces=%lu explicit-layout",
 			uiCropBlocks, uiFieldABlocks, uiFieldBBlocks, uiFieldCBlocks,
 			uiHarvestBlocks, uiYardBlocks, uiPaddockBlocks,
-			uiIrrigationBlocks, uiFieldEdges, uiPieces );
+			uiIrrigationBlocks, uiDomesticBlocks, uiFieldEdges, uiPieces );
 		TraceA3FarmLoad( "HAND AUTHORED V2", zHandmade );
 
 		// Re-run the survey after dressing so A3_tile_usage.csv describes the
@@ -2837,6 +2864,7 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 		ubSectorReplacementTilesetID = 38;
 		switch ( ubType )
 		{
+			case FIRSTDECORATIONS:  pLoadFilename = "A3_DOMESTIC.STI"; break;
 			case SECONDDECORATIONS: pLoadFilename = "VR_CROP_MASTER.STI"; break;
 			case THIRDDECORATIONS:  pLoadFilename = "A3_MUD_RUTS.STI"; break;
 			case FOURTHDECORATIONS: pLoadFilename = "A3_LANDMARKS.STI"; break;
@@ -2845,6 +2873,7 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 			case DEBRISWEEDS:       pLoadFilename = "A3_EDGE_WEEDS.STI"; break;
 			case DEBRISGRASS:       pLoadFilename = "A3_IRRIGATION.STI"; break;
 			case DEBRISMISC:        pLoadFilename = "A3_FARM_JUNK.STI"; break;
+			case ANOTHERDEBRIS:     pLoadFilename = "A3_FIELD_BEDS.STI"; break;
 		}
 	}
 
