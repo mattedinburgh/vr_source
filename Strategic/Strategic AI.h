@@ -73,6 +73,10 @@ BOOLEAN PermittedToFillPatrolGroup( INT32 iPatrolID );
 extern BOOLEAN gfDisplayStrategicAILogs;
 extern BOOLEAN gfFirstBattleMeanwhileScenePending;
 
+// Diagnostic bridge used by the campaign tactical telemetry recorder.
+UINT32 VR_GetSAICampaignPlanID( UINT8 ubGroupID );
+UINT32 VR_GetSAICampaignPlanDecisionID( UINT8 ubGroupID );
+
 extern UINT8 gubSAIVersion;
 
 
