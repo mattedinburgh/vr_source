@@ -6258,11 +6258,26 @@ void ReassignAIGroup( GROUP **pGroup )
 	//strategic pathing can break if the group is between sectors upon reassignment.
 	SetEnemyGroupSector( *pGroup, ubSectorID );
 
+	VR_EnsureEnemyFormationState( *pGroup );
+	if( (*pGroup)->pEnemyGroup->ubOperationalSupply < 20 ||
+		(*pGroup)->pEnemyGroup->ubOperationalMorale < 30 )
+	{
+		VR_SetFormationMission( *pGroup, VR_OPMISSION_REGROUP,
+			(*pGroup)->pEnemyGroup->ubOperationalSupply < 20 ?
+				VR_OPREASON_LOW_SUPPLY : VR_OPREASON_REGROUP );
+		VR_LogOperationalDecision( *pGroup, "NOT_COMBAT_READY", NULL );
+		SendGroupToPool( pGroup );
+		return;
+	}
+
 	if( giRequestPoints <= 0	)
 	{ //we have no request for reinforcements, so send the group to Meduna for reassignment in the pool.
 		SendGroupToPool( pGroup );
 		return;
 	}
+
+	if( VR_TryOperationalGarrisonReassignment( pGroup ) )
+		return;
 
 	//now randomly choose who gets the reinforcements.
 	// giRequestPoints is the combined sum of all the individual weights of all garrisons and patrols requesting reinforcements
