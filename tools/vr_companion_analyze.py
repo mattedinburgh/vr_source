@@ -171,18 +171,43 @@ def tactical_summary(
     retreat_eligible = Counter()
 
     for decision in tactical:
-        for key, value in decision["states"].items():
-            if isinstance(value, (int, float)):
-                state_samples[str(key)].append(float(value))
+        # Prefer every compact v2 assessment sample. Fall back to the merged
+        # state dictionary for older logs and planner-only decisions.
+        assessments = decision.get("assessments", [])
+        if assessments:
+            for assessment in assessments:
+                for key, value in assessment.items():
+                    if key in {
+                        "schema", "seq", "session", "layer", "kind",
+                        "decision_id", "battle_id", "assessment_type", "actor_id",
+                    }:
+                        continue
+                    if isinstance(value, bool):
+                        state_samples[str(key)].append(1.0 if value else 0.0)
+                    elif isinstance(value, (int, float)):
+                        state_samples[str(key)].append(float(value))
 
-        friends = decision["states"].get("perceived_friendly_strength")
-        enemies = decision["states"].get("perceived_enemy_strength")
-        if (
-            isinstance(friends, (int, float))
-            and isinstance(enemies, (int, float))
-            and float(enemies) > 0
-        ):
-            perceived_force_ratios.append(float(friends) / float(enemies))
+                friends = assessment.get("perceived_friendly_strength")
+                enemies = assessment.get("perceived_enemy_strength")
+                if (
+                    isinstance(friends, (int, float))
+                    and isinstance(enemies, (int, float))
+                    and float(enemies) > 0
+                ):
+                    perceived_force_ratios.append(float(friends) / float(enemies))
+        else:
+            for key, value in decision["states"].items():
+                if isinstance(value, (int, float)):
+                    state_samples[str(key)].append(float(value))
+
+            friends = decision["states"].get("perceived_friendly_strength")
+            enemies = decision["states"].get("perceived_enemy_strength")
+            if (
+                isinstance(friends, (int, float))
+                and isinstance(enemies, (int, float))
+                and float(enemies) > 0
+            ):
+                perceived_force_ratios.append(float(friends) / float(enemies))
 
         for candidate in decision["candidates"]:
             name = str(candidate.get("candidate", "unknown"))
