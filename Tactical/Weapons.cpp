@@ -3258,54 +3258,11 @@ BOOLEAN UseBlade( SOLDIERTYPE *pSoldier , INT32 sTargetGridNo )
 			if ( iDiceRoll < iHitChance )
 			{
 				gMercProfiles[ pSoldier->ubProfile ].records.usShotsHit++;
-			}
-		}
-
-		// anv: taunt on attack
-		PossiblyStartEnemyTaunt( pSoldier, TAUNT_ATTACK_BLADE, pTargetSoldier->ubID ); 
-
-		// WDS 07/19/2008 - Random number use fix
-		if ( iDiceRoll < iHitChance )
-		{
-			fGonnaHit = TRUE;
-
-			// anv: taunts on hit
-			PossiblyStartEnemyTaunt( pSoldier, TAUNT_HIT_BLADE, pTargetSoldier->ubID ); 
-			PossiblyStartEnemyTaunt( pTargetSoldier, TAUNT_GOT_HIT_BLADE, pSoldier->ubID ); 
-
-			// CALCULATE DAMAGE! Capture the exact runtime chance, roll and every
-			// damage stage so the battle-log hover explains this specific strike.
-			MELEE_DIAGNOSTIC meleeDiag;
-			memset( &meleeDiag, 0, sizeof(meleeDiag) );
-			meleeDiag.fValid = TRUE;
-			meleeDiag.fBlade = TRUE;
-			meleeDiag.ubAttackerID = pSoldier->ubID;
-			meleeDiag.ubTargetID = pTargetSoldier->ubID;
-			meleeDiag.ubAimLocation = pSoldier->bAimShotLocation;
-			meleeDiag.ubAimTime = pSoldier->aiData.bAimTime;
-			meleeDiag.usWeapon = pSoldier->GetUsedWeaponNumber( &pSoldier->inv[pSoldier->ubAttackingHand] );
-			meleeDiag.sHitChance = (INT16)iHitChance;
-			meleeDiag.sRoll = (INT16)iDiceRoll;
-			meleeDiag.sHitMargin = (INT16)(iHitChance - iDiceRoll);
-			gpMeleeDiagnosticCapture = &meleeDiag;
-			iImpact = HTHImpact( pSoldier, pTargetSoldier, (iHitChance - iDiceRoll), TRUE );
-			gpMeleeDiagnosticCapture = NULL;
-
-			// Flugente: check for underbarrel weapons and use that object if necessary (think of bayonets)
-			OBJECTTYPE* pObj = pSoldier->GetUsedWeapon( &pSoldier->inv[pSoldier->ubAttackingHand] );
-
-			// modify this by the knife's condition (if it's dull, not much good)
-			meleeDiag.sWeaponConditionPercent = (INT16)WEAPON_STATUS_MOD( (*pObj)[0]->data.objectStatus );
-			iImpact = ( iImpact * meleeDiag.sWeaponConditionPercent ) / 100;
-			meleeDiag.sAfterCondition = (INT16)iImpact;
-			
-			// modify by hit location
-			AdjustImpactByHitLocation( iImpact, pSoldier->bAimShotLocation, &iImpact, &iImpactForCrits );
-			meleeDiag.sAfterHitLocation = (INT16)iImpact;
-
-			// bonus for surprise
-			meleeDiag.sSurprisePercent = fSurpriseAttack ? 50 : 0;
-			if ( fSurpriseAttack )
+			// Vengeance: every successful player steal opens the full-inventory steal menu.
+			// Collapsed targets and allowed teammates still grant guaranteed access;
+			// conscious enemies still require a successful steal roll.
+			if (AllowedToStealFromTeamMate(pSoldier->ubID, pTargetSoldier->ubID) ||
+				(pSoldier->bTeam == gbPlayerNum && (fSoldierCollapsed || (iHitChance > 0 && iDiceRoll < iHitChance))))
 			{
 				iImpact = (iImpact * 3) / 2;
 			}
