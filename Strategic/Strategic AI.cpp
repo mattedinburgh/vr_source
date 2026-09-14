@@ -5221,6 +5221,8 @@ void ExecuteStrategicAIAction( UINT16 usActionCode, INT16 sSectorX, INT16 sSecto
 			ScreenMsg( FONT_RED, MSG_DEBUG, L"QueenAI failed to handle action code %d.", usActionCode );
 			break;
 	}
+	if( fOwnDecision )
+		VR_CampaignEndDecision( "scripted strategic action processing complete" );
 }
 
 
