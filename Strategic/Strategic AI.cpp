@@ -2691,11 +2691,6 @@ void RecalculatePatrolWeight( INT32 iPatrolID )
 		if( iNeedPopulation < 0 )
 		{
 			gPatrolGroup[ iPatrolID ].bWeight = 0;
-			VRAnalyticsDiagnostic( VR_ANALYTICS_STRATEGIC, "queen", 0,
-		"reinforcement_selection_fallthrough", "weighted selection exhausted without choosing a candidate" );
-	VRAnalyticsOutcome( uiAnalyticsDecision, "failed", "applicable_request_points",
-		iApplicableRequestPoints, "request_points", giRequestPoints,
-		"reinforcement_selection_fallthrough" );
 	ValidateWeights( 27 );
 			return;
 		}
@@ -3425,6 +3420,11 @@ void EvaluateQueenSituation()
 		iRandom -= iWeight;
 	}
 
+	VRAnalyticsDiagnostic( VR_ANALYTICS_STRATEGIC, "queen", 0,
+		"reinforcement_selection_fallthrough", "weighted selection exhausted without choosing a candidate" );
+	VRAnalyticsOutcome( uiAnalyticsDecision, "failed", "applicable_request_points",
+		iApplicableRequestPoints, "request_points", giRequestPoints,
+		"reinforcement_selection_fallthrough" );
 	ValidateWeights( 27 );
 }
 
