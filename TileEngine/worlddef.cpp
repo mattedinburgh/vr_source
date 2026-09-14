@@ -859,9 +859,9 @@ static UINT8 DetermineSectorVisualProfile( const CHAR8 *pFilename )
 		return SECTOR_VISUAL_SAN_MONA_UNDERGROUND;
 
 	// Map Factory profiles stay QA-only until the methodology is accepted.
-	// Pristine files intentionally do not match the table; remastered files are
-	// normalized back to their source name by MapFactoryProfileForLeaf().
-	if ( gfMapPreviewCaptureMode )
+	// The original/source sector must remain visually pristine for a valid A/B
+	// comparison.  Only a baked *_REMASTERED.dat receives the macro art direction.
+	if ( gfMapPreviewCaptureMode && strstr( pFilename, "_REMASTERED" ) != NULL )
 	{
 		const UINT8 ubFactoryProfile = MapFactoryProfileForLeaf( pFilename );
 		if ( ubFactoryProfile != SECTOR_VISUAL_DEFAULT )
