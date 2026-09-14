@@ -322,6 +322,22 @@ enum
 	AI_ROLE_RESERVE
 };
 
+// Unified AI competence model. This controls reasoning complexity and execution
+// reliability only; it must never grant hidden CTH/AP/perception advantages.
+enum
+{
+	AI_COMPETENCE_BASIC = 0,		// administrators / green militia
+	AI_COMPETENCE_REGULAR,		// regular army / regular militia
+	AI_COMPETENCE_ELITE			// elites / elite militia
+};
+
+enum
+{
+	AI_PLAN_BASIC = 0,
+	AI_PLAN_COORDINATED,
+	AI_PLAN_ADVANCED
+};
+
 BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier);
 UINT8 AIObservedRecentCasualties(SOLDIERTYPE *pSoldier);
 UINT8 AILocalCasualtyPercent(SOLDIERTYPE *pSoldier);
@@ -349,6 +365,12 @@ INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
 INT32 AILocalStress(SOLDIERTYPE *pSoldier);
 INT32 AIPersonalRisk(SOLDIERTYPE *pSoldier);
 INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier);
+INT8 AICompetenceTier(SOLDIERTYPE *pSoldier);
+UINT8 AIPlannerReliability(SOLDIERTYPE *pSoldier);
+BOOLEAN AIAllowsPlanComplexity(SOLDIERTYPE *pSoldier, INT8 bComplexity, UINT32 uiSalt = 0);
+INT32 AICompetenceUtilityNoise(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, UINT32 uiSalt = 0);
+INT32 AIInferredReactionRisk(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT8 bLevel);
+UINT8 AILocalSmokeReserve(SOLDIERTYPE *pSoldier);
 INT32 AICrossfirePositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT32 sTargetSpot);
 INT32 AISupportRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT32 AIManeuverRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
