@@ -47,7 +47,7 @@ function Read-B1TCFrame {
     $expected = [uint32]$w * [uint32]$h * 4
 
     if ($len -ne $expected) {
-        throw "Frame payload mismatch in $Path frame $FrameIndex: $len vs $expected"
+        throw "Frame payload mismatch in $Path frame ${FrameIndex}: $len vs $expected"
     }
     if ([uint64]$src + [uint64]$len -gt [uint64]$bytes.Length) {
         throw "Frame payload exceeds file length in $Path frame $FrameIndex"
