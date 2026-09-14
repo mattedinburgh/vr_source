@@ -4581,8 +4581,11 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		return AI_ACTION_NONE;
 
 	pSoldier->aiData.usActionData = GoAsFarAsPossibleTowards(pSoldier, pAnchor->sGridNo, AI_ACTION_SEEK_FRIEND);
-	if (TileIsOutOfBounds(pSoldier->aiData.usActionData))
+	if (TileIsOutOfBounds(pSoldier->aiData.usActionData) ||
+		!CheckNPCDestination(pSoldier, pSoldier->aiData.usActionData))
+	{
 		return AI_ACTION_NONE;
+	}
 	return AI_ACTION_SEEK_FRIEND;
 }
 
@@ -10281,32 +10284,158 @@ BOOLEAN AICheckSpecialRole(SOLDIERTYPE *pSoldier)
 	return FALSE;
 }
 
+// Unified perceived hazard model. Environmental dangers use only visible/detected
+// information where appropriate; corpse warnings require actual LOS.
+BOOLEAN FindNearbyExplosiveStructure(INT32 sSpot, INT8 bLevel)
+{
+	if (TileIsOutOfBounds(sSpot))
+		return FALSE;
+
+	for (UINT8 ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ++ubDirection)
+	{
+		INT32 sTempGridNo = NewGridNo(sSpot, DirectionInc(ubDirection));
+		if (sTempGridNo != sSpot &&
+			FindStructFlag(sTempGridNo, bLevel, STRUCTURE_EXPLOSIVE))
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+UINT8 SpotDangerLevel(SOLDIERTYPE *pSoldier, INT32 sGridNo)
+{
+	if (!pSoldier || TileIsOutOfBounds(sGridNo))
+		return 0;
+
+	UINT8 ubLevel = 0;
+
+	// Mild hazards: tactically undesirable, but never worth trapping a soldier over.
+	if (Water(sGridNo, pSoldier->pathing.bLevel) && !pSoldier->IsFlanking())
+	{
+		ubLevel = 1;
+	}
+
+	// Once alerted, stepping into illumination at night is a meaningful exposure cost.
+	if ((pSoldier->aiData.bAlertStatus >= STATUS_RED ||
+		 pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE) &&
+		(InLightAtNight(sGridNo, pSoldier->pathing.bLevel) ||
+		 FindNearbyExplosiveStructure(sGridNo, pSoldier->pathing.bLevel)))
+	{
+		ubLevel = __max((UINT8)2, ubLevel);
+	}
+
+	// Severe terrain / area denial.
+	if ((DeepWater(sGridNo, pSoldier->pathing.bLevel) && !pSoldier->IsFlanking()) ||
+		RedSmokeDanger(sGridNo, pSoldier->pathing.bLevel))
+	{
+		ubLevel = __max((UINT8)3, ubLevel);
+	}
+
+	// Immediate hazards. FindBombNearby() only reacts to visible/detected armed bombs.
+	if (InGas(pSoldier, sGridNo) ||
+		FindBombNearby(pSoldier, sGridNo, BOMB_DETECTION_RANGE))
+	{
+		ubLevel = 4;
+	}
+
+	return ubLevel;
+}
+
+BOOLEAN CheckNPCDestination(SOLDIERTYPE *pSoldier, INT32 sGridNo)
+{
+	if (!pSoldier || TileIsOutOfBounds(sGridNo))
+		return FALSE;
+
+	const UINT8 ubCurrentDanger = SpotDangerLevel(pSoldier, pSoldier->sGridNo);
+	const UINT8 ubTargetDanger = SpotDangerLevel(pSoldier, sGridNo);
+
+	// Reject only a strictly worse destination.  Allow equal danger so a soldier
+	// already caught in smoke/water/light can still move laterally toward an exit
+	// instead of becoming artificially rooted in place.
+	return (ubTargetDanger <= ubCurrentDanger);
+}
+
+UINT8 AICorpseWarningKnown(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel)
+{
+	if (!pSoldier || TileIsOutOfBounds(sGridNo))
+		return 0;
+
+	UINT8 ubWarning = 0;
+	for (INT32 cnt = 0; cnt < giNumRottingCorpse; ++cnt)
+	{
+		ROTTING_CORPSE *pCorpse = &(gRottingCorpse[cnt]);
+		if (!pCorpse ||
+			!pCorpse->fActivated ||
+			pCorpse->def.ubType >= ROTTING_STAGE2 ||
+			pCorpse->def.ubBodyType > REGFEMALE ||
+			pCorpse->def.ubAIWarningValue <= ubWarning ||
+			pCorpse->def.bLevel != bLevel ||
+			TileIsOutOfBounds(pCorpse->def.sGridNo) ||
+			PythSpacesAway(sGridNo, pCorpse->def.sGridNo) > CORPSE_WARNING_DIST)
+		{
+			continue;
+		}
+
+		if (!(pSoldier->bTeam == ENEMY_TEAM && CorpseEnemyTeam(pCorpse) ||
+			  pSoldier->bTeam == MILITIA_TEAM && CorpseMilitiaTeam(pCorpse) ||
+			  pSoldier->bTeam != ENEMY_TEAM && pSoldier->bTeam != MILITIA_TEAM))
+		{
+			continue;
+		}
+
+		if (!SoldierToVirtualSoldierLineOfSightTest(
+			pSoldier, pCorpse->def.sGridNo, pCorpse->def.bLevel,
+			ANIM_PRONE, TRUE, CALC_FROM_ALL_DIRS))
+		{
+			continue;
+		}
+
+		ubWarning = pCorpse->def.ubAIWarningValue;
+	}
+
+	return ubWarning;
+}
+
 BOOLEAN SafeSpot(SOLDIERTYPE *pSoldier, INT32 sSpot)
 {
 	if (!pSoldier)
-	{
 		return FALSE;
-	}
 
 	if (sSpot == NOWHERE)
-	{
 		sSpot = pSoldier->sGridNo;
-	}
+
+	if (TileIsOutOfBounds(sSpot))
+		return FALSE;
 
 	INT8 bLevel = pSoldier->pathing.bLevel;
 	BOOLEAN fUnlimitedSightCover = SightCoverAtSpot(pSoldier, sSpot, TRUE);
 	BOOLEAN fProneSightCover = ProneSightCoverAtSpot(pSoldier, sSpot, FALSE);
 	BOOLEAN fAnyCover = AnyCoverAtSpot(pSoldier, sSpot);
 
-	if ((fUnlimitedSightCover || fProneSightCover && fAnyCover || InARoom(sSpot, NULL) && bLevel == 0 && (fAnyCover || fProneSightCover)) &&
-		!InLightAtNight(sSpot, pSoldier->pathing.bLevel) &&
-		!pSoldier->aiData.bUnderFire &&
-		GetNearestRottingCorpseAIWarning(sSpot) == 0)
-	{
-		return TRUE;
-	}
+	BOOLEAN fDefensible =
+		fUnlimitedSightCover ||
+		(fProneSightCover && fAnyCover) ||
+		(InARoom(sSpot, NULL) && bLevel == 0 && (fAnyCover || fProneSightCover));
 
-	return FALSE;
+	if (!fDefensible)
+		return FALSE;
+
+	if (pSoldier->aiData.bUnderFire)
+		return FALSE;
+
+	// Use the same environmental danger model as movement selection.  A position
+	// is not a true safe spot merely because it has cover if it is in gas, water,
+	// red smoke, dangerous light, beside explosive scenery, near a known bomb, or
+	// next to a fresh casualty the soldier can actually perceive.
+	if (Water(sSpot, bLevel) || SpotDangerLevel(pSoldier, sSpot) > 0)
+		return FALSE;
+
+	if (AICorpseWarningKnown(pSoldier, sSpot, bLevel) > 0)
+		return FALSE;
+
+	return TRUE;
 }
 
 BOOLEAN AbortFinalSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bAction, INT32 sClosestDisturbance, INT8 bDisturbanceLevel, INT32& sDangerousSpot)
@@ -10356,11 +10485,22 @@ BOOLEAN AbortFinalSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bAction, INT32 s
 		return TRUE;
 	}
 
+	// Do not choose a nominally useful destination that introduces a new
+	// environmental mobility hazard. Leaving an existing hazard is handled by
+	// the dedicated water/gas escape logic before ordinary RED movement.
+	if ((InGas(pSoldier, sSpot) && !InGas(pSoldier, pSoldier->sGridNo)) ||
+		(DeepWater(sSpot, pSoldier->pathing.bLevel) && !DeepWater(pSoldier->sGridNo, pSoldier->pathing.bLevel)))
+	{
+		DebugAI(AI_MSG_INFO, pSoldier, String("hazardous destination! abort!"));
+		sDangerousSpot = sSpot;
+		return TRUE;
+	}
+
 	// don't go into light at night (includes smoke check)
 	if (InLightAtNight(sSpot, bLevel) &&
 		!InLightAtNight(pSoldier->sGridNo, pSoldier->pathing.bLevel) &&
 		!InSmoke(sSpot, bLevel) &&
-		(pSoldier->aiData.bUnderFire || !fSeekEnemy || !fSightCover || GetNearestRottingCorpseAIWarning(pSoldier->sGridNo) > 0) &&
+		(pSoldier->aiData.bUnderFire || !fSeekEnemy || !fSightCover || AICorpseWarningKnown(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel) > 0) &&
 		(fFlankingFriends || !fSuccessfulAttack || !fSeekEnemy) &&
 		!fFriendsBlack)
 	{
@@ -10371,10 +10511,10 @@ BOOLEAN AbortFinalSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bAction, INT32 s
 
 	// abort seeking when soldier sees fresh corpse
 	if (fSafeSpot &&
-		CorpseWarning(pSoldier, sSpot, bLevel) &&
+		AICorpseWarningKnown(pSoldier, sSpot, bLevel) &&
 		!InSmoke(sSpot, bLevel) &&
 		!fFriendsBlack &&
-		(fFlankingFriends || !fSuccessfulAttack || !fSeekEnemy || EnemyCanAttackSpot(pSoldier, sSpot, bLevel) || InARoom(sSpot, NULL) && bLevel == 0 || CorpseWarning(pSoldier, sSpot, bLevel)))
+		(fFlankingFriends || !fSuccessfulAttack || !fSeekEnemy || EnemyCanAttackSpot(pSoldier, sSpot, bLevel) || InARoom(sSpot, NULL) && bLevel == 0 || AICorpseWarningKnown(pSoldier, sSpot, bLevel)))
 	{
 		DebugAI(AI_MSG_INFO, pSoldier, String("fresh corpse! abort!"));
 
