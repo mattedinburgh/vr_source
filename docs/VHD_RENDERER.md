@@ -19,6 +19,29 @@ VHD adds an independent tactical render scale:
 - 2x = HD target / first production milestone
 - 4x = later optional target
 
+## Test branch pairing
+
+Use these branches together for VHD testing:
+
+- source: `mattedinburgh/vr_source@feature/vhd-renderer`
+- gamedir: `mattedinburgh/vr_gamedir@feature/vhd-renderer-test`
+
+The gamedir test branch enables:
+
+- `VHD_RENDER_SCALE = 2`
+- `VHD_PREFER_NATIVE_ASSETS = TRUE`
+
+Neither branch is merged into its canonical/main branch.
+
+## Compile validation status
+
+- hosted MSVC Win32 full source compilation: PASS
+- hosted SGP / TileEngine / Tactical targeted build: PASS
+- hosted root `ja2` compile-only check: PASS
+- hosted full link: pending legacy RakNet CRT compatibility validation
+- VS2013/v120 compatibility build: pending self-hosted runner availability
+- in-game 2x validation: pending executable build
+
 ## Current implementation
 
 The branch currently provides:
