@@ -1805,7 +1805,7 @@ OBJECTTYPE* FindMedicalKit()
 	INT32 iSlot;
 	for( i = 0; i < gpAR->ubMercs; i++ )
 	{
-		iSlot = FindObjClass( gpMercs[ i ].pSoldier, IC_MEDKIT );
+		iSlot = FindBestFirstAidItem( gpMercs[ i ].pSoldier );
 		if( iSlot != NO_SLOT )
 		{
 			return( &gpMercs[ i ].pSoldier->inv[ iSlot ] );
@@ -1832,7 +1832,7 @@ UINT32 AutoBandageMercs()
 		if( gpMercs[ i ].pSoldier->stats.bLife >= OKLIFE &&
 			!gpMercs[ i ].pSoldier->bCollapsed &&
 				gpMercs[ i ].pSoldier->stats.bMedical > 0 &&
-				( bSlot = FindObjClass( gpMercs[ i ].pSoldier, IC_MEDKIT ) ) != NO_SLOT )
+				( bSlot = FindBestFirstAidItem( gpMercs[ i ].pSoldier ) ) != NO_SLOT )
 		{
 			fFound = TRUE;
 			//bandage self first!
@@ -1844,7 +1844,7 @@ UINT32 AutoBandageMercs()
 				usKitPts = TotalPoints( pKit );
 				if( !usKitPts )
 				{ //attempt to find another kit before stopping
-					if( ( bSlot = FindObjClass( gpMercs[ i ].pSoldier, IC_MEDKIT ) ) != NO_SLOT )
+					if( ( bSlot = FindBestFirstAidItem( gpMercs[ i ].pSoldier ) ) != NO_SLOT )
 					continue;
 					break;
 				}
