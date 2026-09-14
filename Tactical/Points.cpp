@@ -3637,13 +3637,15 @@ INT16 GetAPsToBeginFirstAid( SOLDIERTYPE *pSoldier )
 	return(	GetAPsToChangeStance( pSoldier, ANIM_CROUCH ) + APBPConstants[AP_START_FIRST_AID] );
 }
 
-// 1.13-style window breaking uses the normal close-combat swing cost.
+// Breaking an adjacent pane is an environmental interaction, not a full melee attack.
+// Keep its AP cost predictable: one quick committed swing, independent of weapon
+// handling speed, aim skill or melee traits.  AP_PUNCH is 16 in Vengeance, compared
+// with 12 to open a door, 32 to boot one and 40 to pry one with a crowbar.
 INT16 GetAPsToBreakWindow( SOLDIERTYPE *pSoldier, BOOLEAN fStance )
 {
-	if ( fStance )
-		return MinAPsToPunch( pSoldier, pSoldier->sGridNo, FALSE );
-
-	return MinAPsToPunch( pSoldier, NOWHERE, FALSE );
+	(void)pSoldier;
+	(void)fStance;
+	return APBPConstants[AP_PUNCH];
 }
 
 INT16 GetAPsToBeginRepair( SOLDIERTYPE *pSoldier )
