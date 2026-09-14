@@ -1,0 +1,59 @@
+name: A3 rural STI art audit
+
+on:
+  push:
+    branches:
+      - a3/hand-authored-v2
+    paths:
+      - '.github/workflows/a3-rural-sti-audit.yml'
+      - 'Tools/audit_rural_sti.py'
+  workflow_dispatch:
+
+jobs:
+  audit-rural-art:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source tools
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Fetch candidate Vengeance tilesets
+        shell: powershell
+        run: |
+          $gamedir = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
+          git -c core.longpaths=true clone --depth 1 --single-branch --branch install/all-2026-09-12 --filter=blob:none --no-checkout https://github.com/mattedinburgh/vr_gamedir.git $gamedir
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C $gamedir sparse-checkout init --cone
+          $paths = @('Data-Maps-Tiles/Tilesets/9','Data-Maps-Tiles/Tilesets/10','Data-Maps-Tiles/Tilesets/35','Data-Maps-Tiles/Tilesets/36','Data-Maps-Tiles/Tilesets/50','Data-Maps-Tiles/Tilesets/53','Data-Maps-Tiles/Tilesets/54','Data-Maps-Tiles/Tilesets/58','Data-Maps-Tiles/Tilesets/60')
+          & git -C $gamedir sparse-checkout set @paths
+          git -C $gamedir checkout install/all-2026-09-12
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install image dependency
+        shell: powershell
+        run: python -m pip install --disable-pip-version-check pillow
+
+      - name: Decode candidate rural STI families
+        shell: powershell
+        run: |
+          $root = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir\Data-Maps-Tiles\Tilesets'
+          $out = Join-Path $env:GITHUB_WORKSPACE 'MapPreviews\A3RuralAudit'
+          $files = @('10/CratewPallet.sti','35/DRUM_01.STI','36/O_SIGN1.STI','50/I_CRATES.STI','53/FL_WEED.STI','54/TANK.STI','54/P-FENCE.STI','58/JUNKFEN.STI','60/GRASS1.STI','9/Tide_Pumps.sti')
+          & python '.\Tools\audit_rural_sti.py' --root $root --out $out @files
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload rural art audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: A3-rural-sti-audit
+          path: MapPreviews/A3RuralAudit/
+          if-no-files-found: error
+          retention-days: 14
