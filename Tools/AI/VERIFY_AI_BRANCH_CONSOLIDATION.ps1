@@ -29,7 +29,10 @@ $ArchivedBranches = @(
     "ai/wounded-tactical-withdrawal",
     "final-human-ai-modern-113",
     "integration/unified-ai-fireteams-doctrine-2026-09-14",
-    "integration/unified-ai-framework-2026-09-14"
+    "integration/unified-ai-framework-2026-09-14",
+    "integration/unified-strategic-companion-2026-09-14",
+    "consolidation/install-all-2026-09-14",
+    "inactive/strategic-modernization"
 )
 
 function Test-Ancestor([string]$Older, [string]$Newer) {
@@ -45,7 +48,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Canonical ref '$Canonical' is unavailable. Fetch origin with full history before running this audit."
 }
 
-$refs = @(& git for-each-ref --format="%(refname:short)" refs/remotes/origin/ai/ refs/remotes/origin/integration/ refs/remotes/origin/final-human-ai-modern-113) |
+$refs = @(& git for-each-ref --format="%(refname:short)" refs/remotes/origin/ai/ refs/remotes/origin/integration/ refs/remotes/origin/consolidation/ refs/remotes/origin/inactive/ refs/remotes/origin/final-human-ai-modern-113) |
     Where-Object { $_ -and $_ -notmatch '/HEAD$' } |
     Sort-Object -Unique
 
