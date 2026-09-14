@@ -124,7 +124,8 @@ void VR_CampaignRecord(
 		ubGroupSize = pGroup->ubGroupSize;
 		if( !pGroup->fPlayer && pGroup->pEnemyGroup )
 		{
-			VR_EnsureEnemyFormationState( pGroup );
+			// Recorder never initializes gameplay state: it only observes state that the
+			// operational layer has already established. This prevents logging recursion.
 			usFormation = pGroup->pEnemyGroup->usFormationID;
 			ubMission = pGroup->pEnemyGroup->ubOperationalMission;
 			ubReserve = pGroup->pEnemyGroup->ubOperationalReserveRole;
