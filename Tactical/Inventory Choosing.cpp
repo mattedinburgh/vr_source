@@ -229,6 +229,27 @@ static UINT32 EnemyInventorySupplyHash( UINT32 uiValue )
 	return uiValue;
 }
 
+static UINT8 GetEnemyBroadEquipmentPoolChance( INT8 bSoldierClass )
+{
+	// Vengeance/AIMNAS contains far more usable equipment than the class-specific
+	// issue tables expose.  Keep class doctrine as the default, but deliberately
+	// draw part of the force from the generic catalogue so uncommon-but-valid
+	// weapons, attachments and support kit actually appear in battle.
+	switch ( bSoldierClass )
+	{
+		case SOLDIER_CLASS_ADMINISTRATOR: return 30;
+		case SOLDIER_CLASS_ARMY:          return 45;
+		case SOLDIER_CLASS_ELITE:         return 55;
+		default:                          return 0;
+	}
+}
+
+static BOOLEAN EnemyShouldUseBroadEquipmentPool( INT8 bSoldierClass )
+{
+	UINT8 ubChance = GetEnemyBroadEquipmentPoolChance( bSoldierClass );
+	return ( ubChance > 0 && Chance( ubChance ) );
+}
+
 static INT8 GetEnemySectorSupplyBias( INT8 bSoldierClass, UINT8 ubCategory, INT16 sSectorX, INT16 sSectorY )
 {
 	if ( !SOLDIER_CLASS_ENEMY( bSoldierClass ) )
@@ -1451,7 +1472,8 @@ void ChooseWeaponForSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp, INT8 bWeaponC
 
 	// Choose weapon:
 	// WEAPONS are very important, and are therefore handled differently using special pre-generated tables.
-	// It was requested that enemies use only a small subset of guns with a lot duplication of the same gun type.
+	// VR: retain recurring weapon families, but allow a controlled share of soldiers to draw from
+	// the broader AIMNAS/Vengeance catalogue so battles do not collapse into a tiny repeated gun set.
 
 	// if gun was pre-selected (rcvd negative weapon class) and needs ammo
 	if( bWeaponClass < 0 && bAmmoClips )
@@ -3635,6 +3657,24 @@ UINT16 SelectStandardArmyGun( UINT8 uiGunLevel, INT8 bSoldierClass )
 			bSoldierClass = SOLDIER_CLASS_NONE;
 
 		pGunChoiceTable = &(gExtendedArmyGunChoices[bSoldierClass][0]);
+
+		// VR: broaden enemy weapon variety without throwing away class doctrine.
+		// The generic table is the much larger AIMNAS/Vengeance catalogue; class-
+		// specific tables remain the majority source, especially for administrators.
+		if ( SOLDIER_CLASS_ENEMY( bOriginalSoldierClass ) &&
+			 bSoldierClass != SOLDIER_CLASS_NONE &&
+			 gExtendedArmyGunChoices[SOLDIER_CLASS_NONE][uiGunLevel].ubChoices > 0 &&
+			 EnemyShouldUseBroadEquipmentPool( bOriginalSoldierClass ) )
+		{
+			pGunChoiceTable = &(gExtendedArmyGunChoices[SOLDIER_CLASS_NONE][0]);
+		}
+
+		// Defensive fallback for sparse class-specific XML rows.
+		if ( pGunChoiceTable[uiGunLevel].ubChoices <= 0 &&
+			 gExtendedArmyGunChoices[SOLDIER_CLASS_NONE][uiGunLevel].ubChoices > 0 )
+		{
+			pGunChoiceTable = &(gExtendedArmyGunChoices[SOLDIER_CLASS_NONE][0]);
+		}
 	//}
 	//else
 	//{
@@ -3870,13 +3910,30 @@ UINT16 PickARandomAttachment(UINT8 typeIndex, INT8 bSoldierClass, UINT16 usBaseI
 	UINT16 usItem = 0;
 	UINT32 uiChoice;
 	UINT16 defaultItem = 0;
+	INT8 bOriginalSoldierClass = bSoldierClass;
 
 	// Flugente: if accessing with wrong soldier class, or not using different selection choices, take default one
 	if ( bSoldierClass >= SOLDIER_GUN_CHOICE_SELECTIONS || bSoldierClass < SOLDIER_CLASS_NONE || !gGameExternalOptions.fSoldierClassSpecificItemTables )
 		bSoldierClass = SOLDIER_CLASS_NONE;
 
 //	DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("PickARandomAttachment: # choices = %d", gArmyItemChoices[ typeIndex ].ubChoices ));
-	if ( gArmyItemChoices[bSoldierClass][ typeIndex ].ubChoices <= 0 )
+	ARMY_GUN_CHOICE_TYPE *pAttachmentChoice = &(gArmyItemChoices[bSoldierClass][ typeIndex ]);
+
+	if ( SOLDIER_CLASS_ENEMY( bOriginalSoldierClass ) &&
+		 bSoldierClass != SOLDIER_CLASS_NONE &&
+		 gArmyItemChoices[SOLDIER_CLASS_NONE][ typeIndex ].ubChoices > 0 &&
+		 EnemyShouldUseBroadEquipmentPool( bOriginalSoldierClass ) )
+	{
+		pAttachmentChoice = &(gArmyItemChoices[SOLDIER_CLASS_NONE][ typeIndex ]);
+	}
+
+	if ( pAttachmentChoice->ubChoices <= 0 &&
+		 gArmyItemChoices[SOLDIER_CLASS_NONE][ typeIndex ].ubChoices > 0 )
+	{
+		pAttachmentChoice = &(gArmyItemChoices[SOLDIER_CLASS_NONE][ typeIndex ]);
+	}
+
+	if ( pAttachmentChoice->ubChoices <= 0 )
 		return 0;
 
 	BOOLEAN isnight = NightTime();
@@ -3885,11 +3942,11 @@ UINT16 PickARandomAttachment(UINT8 typeIndex, INT8 bSoldierClass, UINT16 usBaseI
 	for (int i=0; i < 50; i++)
 	{
 		//if we've already tried more times then there are items + 1, limit the looping to speed up the game, and just plain give up
-		if ( i > gArmyItemChoices[bSoldierClass][ typeIndex ].ubChoices )
+		if ( i > pAttachmentChoice->ubChoices )
 			break;
 
-		uiChoice = Random(gArmyItemChoices[bSoldierClass][ typeIndex ].ubChoices);
-		usItem = gArmyItemChoices[bSoldierClass][ typeIndex ].bItemNo[ uiChoice ];
+		uiChoice = Random(pAttachmentChoice->ubChoices);
+		usItem = pAttachmentChoice->bItemNo[ uiChoice ];
 
 		// Flugente: ignore this item if we aren't allowed to pick it at this time of day
 		if ( ( isnight && Item[usItem].usItemChoiceTimeSetting == 1 ) || ( !isnight && Item[usItem].usItemChoiceTimeSetting == 2 ) )
