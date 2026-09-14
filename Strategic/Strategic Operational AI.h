@@ -67,6 +67,7 @@ BOOLEAN VR_FormationStateIsInitialized( const GROUP *pGroup );
 void VR_EnsureEnemyFormationState( GROUP *pGroup );
 void VR_EnsureAllEnemyFormationStates();
 void VR_SyncFormationMissionFromLegacy( GROUP *pGroup );
+void VR_RecordLegacyAssignment( GROUP *pGroup, UINT8 ubTargetSectorID, UINT8 ubLegacyIntention );
 
 UINT16 VR_GetFormationID( GROUP *pGroup );
 UINT8 VR_GetFormationMission( GROUP *pGroup );
