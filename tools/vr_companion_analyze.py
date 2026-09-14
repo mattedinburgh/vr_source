@@ -1086,6 +1086,8 @@ def render_markdown(
         f"| Targets beyond calculated max | {grenades['targeted_beyond_range']} |",
         f"| Actual flights beyond max + 1 tile | {grenades['actual_overrange']} |",
         f"| Unmatched launch records | {grenades['unmatched_launches']} |",
+        f"| Beyond-range target projectile IDs | {', '.join(str(r.get('projectile_id')) for r in grenades['targeted_beyond_records']) if grenades['targeted_beyond_records'] else 'none'} |",
+        f"| Over-range projectile IDs | {', '.join(str(r.get('projectile_id')) for r in grenades['overrange_records']) if grenades['overrange_records'] else 'none'} |",
         "",
         "A one-tile tolerance is used only for final flight auditing because the physics object records its first moved grid rather than the exact sub-tile release point. "
         "Committed targets are checked against max range with no tolerance.",
