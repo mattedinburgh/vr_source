@@ -1326,8 +1326,8 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 
 							fRenderTile=TRUE;
 							pDirtyBackPtr=NULL;
-							// The inner bubble removes ordinary wall art. The outer ring reuses
-							// JA2's established dynamic translucent reveal path. Door/window nodes
+							// The inner bubble clips ordinary wall pixels around the merc. The outer
+							// ring reuses JA2's established dynamic translucent reveal path. Door/window nodes
 							// are only ever assigned OCCLUSION_FADE by the updater above.
 							if ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_CUTOUT )
 							{
@@ -2209,6 +2209,15 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 									{
 										 fTileInvisible = TRUE;
 									}
+								}
+
+								// Nearly all JA2 wall art is multi-Z and receives the true ellipse.
+								// If a custom tileset supplies a wall without Z-strip data, fail safe
+								// to the old whole-sprite removal rather than letting it cover the merc.
+								if ( ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_CUTOUT ) &&
+									 fWallTile && !fMultiZBlitter )
+								{
+									fTileInvisible = TRUE;
 								}
 
 								BOOLEAN fRenderedHybridLogicalMerc = FALSE;
