@@ -1304,7 +1304,7 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 		usItem = GetHandGrenadeOfType(SMOKE_GRENADE, EXPLOSV_SMOKE);
 		if (fSmokeGrenade && usItem > 0)
 		{
-			CreateItems(usItem, (INT8)(80 + Random(20)), 1 + Random(max(ubDiff - 1, 0)), &gTempObject);
+			CreateItems(usItem, (INT8)(80 + Random(20)), 1, &gTempObject);
 			gTempObject.fFlags |= OBJECT_UNDROPPABLE;
 			PlaceObjectInSoldierCreateStruct(pp, &gTempObject);
 		}
@@ -1322,7 +1322,7 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 		usItem = GetHandGrenadeOfType(BREAK_LIGHT, EXPLOSV_FLARE);
 		if (fFlare && usItem > 0)
 		{
-			CreateItems(usItem, (INT8)(80 + Random(20)), 1 + Random(max(ubDiff - 1, 0)), &gTempObject);
+			CreateItems(usItem, (INT8)(80 + Random(20)), 1, &gTempObject);
 			gTempObject.fFlags |= OBJECT_UNDROPPABLE;
 			PlaceObjectInSoldierCreateStruct(pp, &gTempObject);
 		}
