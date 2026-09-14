@@ -43,9 +43,10 @@ jobs:
           int main()
           {
               VRAnalyticsBattleStarted(100, 1, 1, 0, 6, 10, 0);
-              VRAnalyticsTacticalStateInt(1, "hold_confidence", 72);
-              VRAnalyticsTacticalStateInt(1, "perceived_friendly_strength", 600);
-              VRAnalyticsTacticalStateInt(1, "perceived_enemy_strength", 300);
+              VRAnalyticsTacticalRetreatAssessment(
+                  1, 1, 2, 600, 300, 3, 35, 20, 72, 18, 20, 60, 10, 0,
+                  false, 4, true, true, true, false, 90, 82, 6, 35, 18,
+                  true, false, false);
               VRAnalyticsTacticalFormationSnapshot(1, 1, 1, 1, 0, 10, 8, 0, 1, 0, 1, 20, 3, 18);
               VRAnalyticsTacticalCandidate(1, "hold_ground", 1200, 72, 72, true, "smoke_test");
               VRAnalyticsTacticalCandidate(1, "sector_escape", 1200, 28, 35, false, "hold_confidence_high");
@@ -75,7 +76,14 @@ jobs:
           assert any(e.get("kind") == "session_start" and e.get("blackbox_version") == 2 for e in events)
           assert any(e.get("kind") == "battle_start" for e in events)
           assert any(e.get("kind") == "formation_snapshot" for e in events)
-          assert any(e.get("kind") == "state" and e.get("key") == "hold_confidence" for e in events)
+          assert any(
+              e.get("kind") == "assessment"
+              and e.get("assessment_type") == "retreat_courage"
+              and e.get("hold_confidence") == 72
+              and e.get("perceived_friendly_strength") == 600
+              and e.get("perceived_enemy_strength") == 300
+              for e in events
+          )
           assert any(e.get("kind") == "candidate" and e.get("candidate") == "sector_escape" for e in events)
           assert any(e.get("kind") == "decision_commit" for e in events)
           assert any(e.get("kind") == "strategic_move_order" for e in events)
