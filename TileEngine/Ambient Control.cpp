@@ -226,14 +226,18 @@ static void ReadVRAmbiencePhaseData( CIniReader &ini, STR8 szSection, const CHAR
 static void ReadVRAmbienceLoopData( CIniReader &ini, STR8 szSection, const CHAR8 *szPrefix, const CHAR8 *szFallbackLoop, UINT32 uiFallbackVolume, CHAR8 *szOutLoop, UINT32 *puiOutVolume )
 {
 	CHAR8 szKey[ 64 ];
+	CHAR8 szDefaultLoop[ VR_AMBIENCE_PATH_SIZE ];
 	UINT32 uiGeneralVolume;
 
-	szOutLoop[ 0 ] = 0;
+	szDefaultLoop[ 0 ] = 0;
 	if ( szFallbackLoop && szFallbackLoop[ 0 ] )
-		strcpy( szOutLoop, szFallbackLoop );
+	{
+		strncpy( szDefaultLoop, szFallbackLoop, VR_AMBIENCE_PATH_SIZE - 1 );
+		szDefaultLoop[ VR_AMBIENCE_PATH_SIZE - 1 ] = 0;
+	}
 
 	sprintf( szKey, "%s_LOOP", szPrefix );
-	ini.ReadString( szSection, szKey, szOutLoop, szOutLoop, VR_AMBIENCE_PATH_SIZE );
+	ini.ReadString( szSection, szKey, szDefaultLoop, szOutLoop, VR_AMBIENCE_PATH_SIZE );
 
 	uiGeneralVolume = (UINT32)ini.ReadInteger( szSection, "LOOP_VOLUME", uiFallbackVolume, 0, 127 );
 	sprintf( szKey, "%s_LOOP_VOLUME", szPrefix );
