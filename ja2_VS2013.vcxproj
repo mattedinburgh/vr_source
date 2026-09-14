@@ -350,9 +350,15 @@
              Text="Deploying $(TargetFileName) to detected Vengeance game directory: $(SolutionDir)..\" />
     <Copy SourceFiles="$(TargetPath)"
           DestinationFiles="$(SolutionDir)..\$(TargetFileName)"
-          SkipUnchangedFiles="false" />
+          SkipUnchangedFiles="false"
+          ContinueOnError="true">
+      <Output TaskParameter="CopiedFiles" ItemName="VengeanceDeployedFiles" />
+    </Copy>
     <Message Importance="High"
+             Condition="'@(VengeanceDeployedFiles)' != ''"
              Text="DEPLOYED: $(SolutionDir)..\$(TargetFileName)" />
+    <Warning Condition="'@(VengeanceDeployedFiles)' == ''"
+             Text="DEPLOY SKIPPED: $(SolutionDir)..\$(TargetFileName) is probably locked by a running game. The fresh executable is still available at $(TargetPath). Close Jagged Alliance 2 and build again before testing the new binary." />
   </Target>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
