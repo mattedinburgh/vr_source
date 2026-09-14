@@ -145,6 +145,9 @@ UINT16	gusCivQuoteBoxHeight;
 // anv: store times, when enemy taunt will be finished (so they won't taunt 50 times / second)
 UINT32	uiTauntFinishTimes[ TOTAL_SOLDIERS ];
 
+// VR: global anti-spam gate for action-driven battlefield command popups.
+static UINT32 guiLastAIActionPopupTime = 0;
+
 TAUNT_VALUES zApplicableTaunts[NUM_TAUNT];
 
 //--------------------------------------------------------------
@@ -1333,6 +1336,137 @@ void PossiblyStartEnemyTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, UINT32 ui
 
 }
 
+// VR: short semantic text for voice-taunt events. This exposes the tactical
+// meaning even when the event is delivered by an audio file.
+static BOOLEAN BuildVoiceTauntPopupText( TAUNTTYPE iTauntType, STR16 zText )
+{
+	if ( zText == NULL )
+		return FALSE;
+
+	switch ( iTauntType )
+	{
+		case TAUNT_FIRE_GUN: swprintf( zText, L"\"Contact!\"" ); return TRUE;
+		case TAUNT_FIRE_LAUNCHER: swprintf( zText, L"\"Launcher! Get down!\"" ); return TRUE;
+		case TAUNT_THROW_GRENADE: swprintf( zText, L"\"Grenade! Take cover!\"" ); return TRUE;
+		case TAUNT_OUT_OF_AMMO: swprintf( zText, L"\"Out of ammo! Cover me!\"" ); return TRUE;
+		case TAUNT_RELOAD: swprintf( zText, L"\"Reloading! Cover me!\"" ); return TRUE;
+		case TAUNT_RUN_AWAY: swprintf( zText, L"\"Fall back!\"" ); return TRUE;
+		case TAUNT_SEEK_NOISE: swprintf( zText, L"\"Check that noise!\"" ); return TRUE;
+		case TAUNT_ALERT: swprintf( zText, L"\"Contact! Take cover!\"" ); return TRUE;
+		case TAUNT_SUSPICIOUS: swprintf( zText, L"\"Stay alert!\"" ); return TRUE;
+		case TAUNT_NOTICED_UNSEEN: swprintf( zText, L"\"Incoming! Find cover!\"" ); return TRUE;
+		case TAUNT_INFORM_ABOUT: swprintf( zText, L"\"Enemy spotted!\"" ); return TRUE;
+		case TAUNT_GOT_HIT_BLOODLOSS: swprintf( zText, L"\"Medic! I'm bleeding!\"" ); return TRUE;
+		case TAUNT_GOT_HIT:
+		case TAUNT_GOT_HIT_GUNFIRE:
+		case TAUNT_GOT_HIT_BLADE:
+		case TAUNT_GOT_HIT_HTH:
+		case TAUNT_GOT_HIT_THROWING_KNIFE:
+			swprintf( zText, L"\"I'm hit!\"" ); return TRUE;
+		case TAUNT_GOT_HIT_EXPLOSION:
+		case TAUNT_GOT_HIT_STRUCTURE_EXPLOSION:
+		case TAUNT_GOT_HIT_FALLROOF:
+			swprintf( zText, L"\"Get down!\"" ); return TRUE;
+		case TAUNT_KILL:
+		case TAUNT_KILL_GUNFIRE:
+		case TAUNT_KILL_BLADE:
+		case TAUNT_KILL_HTH:
+		case TAUNT_KILL_THROWING_KNIFE:
+			swprintf( zText, L"\"Target down!\"" ); return TRUE;
+		default: return FALSE;
+	}
+}
+
+// VR: action-driven battlefield commands tied to actual tactical AI actions.
+static BOOLEAN BuildAIActionPopupText( INT8 bAction, STR16 zText )
+{
+	if ( zText == NULL )
+		return FALSE;
+
+	switch ( bAction )
+	{
+		case AI_ACTION_TAKE_COVER:
+			switch ( Random( 4 ) )
+			{
+				case 0: swprintf( zText, L"\"Take cover!\"" ); break;
+				case 1: swprintf( zText, L"\"Get behind something!\"" ); break;
+				case 2: swprintf( zText, L"\"Find cover!\"" ); break;
+				default: swprintf( zText, L"\"Keep your heads down!\"" ); break;
+			}
+			return TRUE;
+
+		case AI_ACTION_GET_CLOSER:
+			switch ( Random( 4 ) )
+			{
+				case 0: swprintf( zText, L"\"Move up!\"" ); break;
+				case 1: swprintf( zText, L"\"Advance!\"" ); break;
+				case 2: swprintf( zText, L"\"Push forward!\"" ); break;
+				default: swprintf( zText, L"\"Close the distance!\"" ); break;
+			}
+			return TRUE;
+
+		case AI_ACTION_WITHDRAW:
+			switch ( Random( 4 ) )
+			{
+				case 0: swprintf( zText, L"\"Fall back!\"" ); break;
+				case 1: swprintf( zText, L"\"Break contact!\"" ); break;
+				case 2: swprintf( zText, L"\"Pull back!\"" ); break;
+				default: swprintf( zText, L"\"Back! Back!\"" ); break;
+			}
+			return TRUE;
+
+		case AI_ACTION_FLANK_LEFT:
+			switch ( Random( 4 ) )
+			{
+				case 0: swprintf( zText, L"\"Flank left!\"" ); break;
+				case 1: swprintf( zText, L"\"Go left! Get around them!\"" ); break;
+				case 2: swprintf( zText, L"\"Left side! Move!\"" ); break;
+				default: swprintf( zText, L"\"Work around their left!\"" ); break;
+			}
+			return TRUE;
+
+		case AI_ACTION_FLANK_RIGHT:
+			switch ( Random( 4 ) )
+			{
+				case 0: swprintf( zText, L"\"Flank right!\"" ); break;
+				case 1: swprintf( zText, L"\"Go right! Get around them!\"" ); break;
+				case 2: swprintf( zText, L"\"Right side! Move!\"" ); break;
+				default: swprintf( zText, L"\"Work around their right!\"" ); break;
+			}
+			return TRUE;
+
+		default: return FALSE;
+	}
+}
+
+void ShowAIActionPopup( SOLDIERTYPE *pCiv, INT8 bAction )
+{
+	CHAR16 zActionText[320];
+	UINT32 uiNow;
+
+	if ( is_networked || pCiv == NULL )
+		return;
+	if ( gGameSettings.fOptions[TOPTION_ALLOW_TAUNTS] == FALSE )
+		return;
+	if ( !( gTacticalStatus.uiFlags & INCOMBAT ) )
+		return;
+	if ( pCiv->bTeam != ENEMY_TEAM && pCiv->bTeam != MILITIA_TEAM )
+		return;
+	if ( pCiv->bVisible == -1 || pCiv->stats.bLife < OKLIFE || pCiv->bCollapsed || pCiv->bBreathCollapsed )
+		return;
+	if ( gCivQuoteData.bActive == TRUE )
+		return;
+
+	uiNow = GetJA2Clock();
+	if ( guiLastAIActionPopupTime != 0 && ( uiNow - guiLastAIActionPopupTime ) < 1200 )
+		return;
+	if ( !BuildAIActionPopupText( bAction, zActionText ) )
+		return;
+
+	ShowTauntPopupBox( pCiv, zActionText );
+	guiLastAIActionPopupTime = uiNow;
+}
+
 // SANDRO - soldier taunts 
 void StartEnemyTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTarget )
 {
@@ -1344,13 +1478,28 @@ void StartEnemyTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTar
 	if ( pCiv->IsZombie() )
 		return;
 
-	// sevenfm: play audio taunt if possible
+	// sevenfm: play audio taunt if possible. VR keeps the visual semantic
+	// popup independent from audio so VOICE_TAUNTS no longer swallows it.
 	if( gGameExternalOptions.fVoiceTaunts )		
 	{		
-		// try to play voice taunt, use noise if gTauntsSettings.fTauntMakeNoise is TRUE
+		CHAR16 zVoicePopup[320];
 		PlayVoiceTaunt( pCiv, iTauntType, pTarget );
-		// block this enemy from taunting for a time being
-		uiTauntFinishTimes[pCiv->ubID] = GetJA2Clock() + min( gTauntsSettings.sMaxDelay , max( gTauntsSettings.sMinDelay, FindDelayForString( L"You're the disease and I'm the cure!" ) + gTauntsSettings.sModDelay ) ); 
+
+		if ( BuildVoiceTauntPopupText( iTauntType, zVoicePopup ) )
+		{
+			if ( gTauntsSettings.fTauntShowPopupBox == TRUE &&
+				( gbPublicOpplist[gbPlayerNum][pCiv->ubID] == SEEN_CURRENTLY || gTauntsSettings.fTauntAlwaysShowPopupBox == TRUE ) )
+			{
+				ShowTauntPopupBox( pCiv, zVoicePopup );
+			}
+			if ( gTauntsSettings.fTauntShowInLog == TRUE &&
+				( gbPublicOpplist[gbPlayerNum][pCiv->ubID] == SEEN_CURRENTLY || gTauntsSettings.fTauntAlwaysShowInLog == TRUE ) )
+			{
+				ScreenMsg( FONT_GRAY2, MSG_INTERFACE, L"%s: %s", pCiv->GetName(), zVoicePopup );
+			}
+		}
+
+		uiTauntFinishTimes[pCiv->ubID] = GetJA2Clock() + min( gTauntsSettings.sMaxDelay , max( gTauntsSettings.sMinDelay, FindDelayForString( L"You're the disease and I'm the cure!" ) + gTauntsSettings.sModDelay ) );
 		return;
 	}
 
