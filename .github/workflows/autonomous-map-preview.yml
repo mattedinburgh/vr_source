@@ -443,18 +443,18 @@ jobs:
         shell: powershell
         run: |
           $git = '${{ steps.git.outputs.path }}'
-          & $git add MapPreviews/Auto/A3_latest.png MapPreviews/Auto/A3_latest.json
+          & $git -C $env:GITHUB_WORKSPACE add MapPreviews/Auto/A3_latest.png MapPreviews/Auto/A3_latest.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $git diff --cached --quiet
+          & $git -C $env:GITHUB_WORKSPACE diff --cached --quiet
           if ($LASTEXITCODE -eq 0) { Write-Host 'Preview is unchanged.'; exit 0 }
-          & $git config user.name 'github-actions[bot]'
-          & $git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          & $git commit -m 'Update autonomous A3 engine preview'
+          & $git -C $env:GITHUB_WORKSPACE config user.name 'github-actions[bot]'
+          & $git -C $env:GITHUB_WORKSPACE config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          & $git -C $env:GITHUB_WORKSPACE commit -m 'Update autonomous A3 engine preview'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           for ($attempt = 1; $attempt -le 5; $attempt++) {
-            & $git pull --rebase origin install/all-2026-09-12
+            & $git -C $env:GITHUB_WORKSPACE pull --rebase origin install/all-2026-09-12
             if ($LASTEXITCODE -eq 0) {
-              & $git push origin HEAD:install/all-2026-09-12
+              & $git -C $env:GITHUB_WORKSPACE push origin HEAD:install/all-2026-09-12
               if ($LASTEXITCODE -eq 0) { exit 0 }
             }
             Start-Sleep -Seconds ($attempt * 2)
