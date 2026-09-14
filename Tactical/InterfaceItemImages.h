@@ -36,6 +36,8 @@ extern MDItemVideoObjects	g_oPITEMS[MAX_PITEMS];
 extern MDItemVideoObjects	g_oGUNSMOverrides;
 extern MDItemVideoObjects	g_oPITEMSOverrides[MAX_PITEMS];
 
+UINT16 GetInterfaceGraphicSubIndex(UINT8 ubGraphicType, UINT16 ubGraphicNum);
+
 bool RegisterItemImages();
 
 #endif // _ITERFACEITEMIMAGES_H_
