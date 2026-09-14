@@ -80,6 +80,7 @@ void VR_OnEnemyGroupAssigned( GROUP *pGroup, UINT8 ubTargetSectorID, UINT8 ubLeg
 void VR_OnEnemyGroupArrived( GROUP *pGroup );
 void VR_OnEnemyGroupRetreated( GROUP *pGroup );
 void VR_HourlyOperationalUpdate();
+void VR_ReportOperationalIntel( UINT8 ubSectorID, UINT8 ubConfidence );
 
 INT32 VR_ScoreOperationalTarget( GROUP *pGroup, UINT8 ubSectorID, VR_OPERATIONAL_SCORE *pBreakdown );
 UINT8 VR_FindBestOperationalTarget( GROUP *pGroup, INT32 *piBestScore );
