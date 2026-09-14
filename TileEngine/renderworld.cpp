@@ -924,8 +924,7 @@ static BOOLEAN RenderFullLogicalMercModel(
 	{
 		const Layers::LayerProperties *pLayerProperties =
 			pBodyType->GetLayerProperties( validateIter->index );
-		if ( pLayerProperties == NULL || !pLayerProperties->render ||
-			!IsVisibleEquipmentOverlayLayer( pLayerProperties->identifier ) )
+		if ( pLayerProperties == NULL || !pLayerProperties->render )
 			continue;
 
 		BodyType::LogicalSurfaceType *pLogicalSurface =
