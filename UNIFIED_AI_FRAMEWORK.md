@@ -265,6 +265,18 @@ New AI behaviour should record enough state to answer:
 - What was the outcome?
 - Which subsystem drove the decision?
 
+## Strategic AI staging
+
+Strategic modernization is tracked separately from the active tactical AI because it depends on savegame/group-state
+changes that are not yet safe to activate on the playable branch.
+
+The historical branches `inactive/strategic-modernization`,
+`integration/unified-strategic-companion-2026-09-14`, and
+`consolidation/install-all-2026-09-14` are classified as **inactive staging/archaeology**, not alternative active
+integration lines. Their tactical AI is superseded by the canonical branch; their genuinely unique strategic work
+is catalogued in `Strategic/STRATEGIC_AI_STAGING_MANIFEST.md` and must be forward-ported from the current canonical
+base when resumed.
+
 ## Branch policy
 
 1. All completed AI work ends on `install/all-2026-09-12`.
