@@ -69,6 +69,7 @@
 #include "CampaignStats.h"		// added by Flugente
 #endif
 
+#include "Campaign Tactical Telemetry.h"
 #include "Soldier Macros.h"
 #include "connect.h"
 #include "debug control.h"
@@ -420,6 +421,7 @@ void InternalIgniteExplosion( UINT8 ubOwner, INT16 sX, INT16 sY, INT16 sZ, INT32
 
 void IgniteExplosion( UINT8 ubOwner, INT16 sX, INT16 sY, INT16 sZ, INT32 sGridNo, UINT16 usItem, INT8 bLevel, UINT8 ubDirection, OBJECTTYPE * pObj )
 {
+	VR_TacticalTelemetryExplosion( ubOwner, sGridNo, usItem, bLevel );
 	InternalIgniteExplosion( ubOwner, sX, sY, sZ, sGridNo, usItem, TRUE, bLevel, ubDirection,  pObj );
 }
 
