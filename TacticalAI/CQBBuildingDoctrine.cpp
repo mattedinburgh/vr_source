@@ -5,6 +5,7 @@
 #include <string.h>
 
 extern UINT32 guiTurnCnt;
+extern BOOLEAN FindWindowJumpDirection(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bDirection, INT8 *pbDirection);
 
 #define VRCQB_LOCAL_SEARCH_RADIUS 6
 #define VRCQB_ENTRY_SEARCH_RADIUS 8
@@ -1132,6 +1133,189 @@ static UINT8 VRCQBCountCommittedMovers(SOLDIERTYPE *pSoldier,
 	return ubCount;
 }
 
+
+static INT8 VRCQBTryProactiveEntrySmoke(SOLDIERTYPE *pSoldier,
+	const VRCQB_CONTEXT *pContext, const VRCQB_ASSESSMENT *pAssessment,
+	const VRCQB_TRAINING_MODEL *pModel, UINT32 uiDecision)
+{
+	if (!pSoldier || !pContext || !pAssessment || !pModel ||
+		!VRCQB_HasCapability(pModel, VRCQB_CAP_PROACTIVE_SUPPORT) ||
+		(pAssessment->eState != VRCQB_STATE_ASSAULT &&
+		 pAssessment->eState != VRCQB_STATE_COUNTERATTACK) ||
+		!pContext->fEntryExposed ||
+		TileIsOutOfBounds(pContext->sPrimaryKnownThreat))
+	{
+		return AI_ACTION_NONE;
+	}
+
+	// Keep scarce smoke in reserve unless the element is already taking fire.
+	if (AILocalSmokeReserve(pSoldier) <= 1 && !pSoldier->aiData.bUnderFire)
+		return AI_ACTION_NONE;
+
+	INT32 sSmokeGrid = !TileIsOutOfBounds(pContext->sPreferredEntry) ?
+		pContext->sPreferredEntry : pContext->sPreferredFoothold;
+	if (TileIsOutOfBounds(sSmokeGrid) ||
+		Water(sSmokeGrid, pSoldier->pathing.bLevel) ||
+		InSmokeNearby(sSmokeGrid, pSoldier->pathing.bLevel))
+	{
+		return AI_ACTION_NONE;
+	}
+
+	ATTACKTYPE BestThrow;
+	memset(&BestThrow, 0, sizeof(BestThrow));
+	CheckTossGrenadeAt(pSoldier, &BestThrow, sSmokeGrid,
+		pSoldier->pathing.bLevel, EXPLOSV_SMOKE);
+	if (!BestThrow.ubPossible)
+		return AI_ACTION_NONE;
+
+	if (BestThrow.bWeaponIn != HANDPOS)
+		RearrangePocket(pSoldier, HANDPOS, BestThrow.bWeaponIn, FOREVER);
+
+	if (gAnimControl[pSoldier->usAnimState].ubEndHeight < BestThrow.ubStance &&
+		pSoldier->InternalIsValidStance(
+			AIDirection(pSoldier->sGridNo, BestThrow.sTarget), BestThrow.ubStance))
+	{
+		pSoldier->aiData.usActionData = BestThrow.ubStance;
+		pSoldier->aiData.bNextAction = AI_ACTION_TOSS_PROJECTILE;
+		pSoldier->aiData.usNextActionData = BestThrow.sTarget;
+		pSoldier->aiData.bNextTargetLevel = BestThrow.bTargetLevel;
+		pSoldier->aiData.bAimTime = BestThrow.ubAimTime;
+
+		if (uiDecision)
+		{
+			VRAnalyticsStateInt(uiDecision, "selected_action", AI_ACTION_CHANGE_STANCE);
+			VRAnalyticsStateInt(uiDecision, "cqb_support_action", EXPLOSV_SMOKE);
+			VRAnalyticsCandidate(uiDecision, "cqb_entry_smoke", BestThrow.sTarget,
+				pAssessment->iPositionScore, pAssessment->iPositionScore, true,
+				"prepare proactive smoke for exposed CQB entry");
+			VRAnalyticsCommitDecision(uiDecision, "cqb_entry_smoke", BestThrow.sTarget,
+				pAssessment->iPositionScore, "prepare proactive smoke for exposed CQB entry");
+		}
+		return AI_ACTION_CHANGE_STANCE;
+	}
+
+	pSoldier->aiData.usActionData = BestThrow.sTarget;
+	pSoldier->bTargetLevel = BestThrow.bTargetLevel;
+	pSoldier->aiData.bAimTime = BestThrow.ubAimTime;
+
+	if (uiDecision)
+	{
+		VRAnalyticsStateInt(uiDecision, "selected_action", AI_ACTION_TOSS_PROJECTILE);
+		VRAnalyticsStateInt(uiDecision, "cqb_support_action", EXPLOSV_SMOKE);
+		VRAnalyticsCandidate(uiDecision, "cqb_entry_smoke", BestThrow.sTarget,
+			pAssessment->iPositionScore, pAssessment->iPositionScore, true,
+			"proactive smoke for exposed CQB entry");
+		VRAnalyticsCommitDecision(uiDecision, "cqb_entry_smoke", BestThrow.sTarget,
+			pAssessment->iPositionScore, "proactive smoke for exposed CQB entry");
+	}
+
+	return AI_ACTION_TOSS_PROJECTILE;
+}
+
+static INT8 VRCQBTryAlternateWindowEntry(SOLDIERTYPE *pSoldier,
+	const VRCQB_CONTEXT *pContext, const VRCQB_ASSESSMENT *pAssessment,
+	const VRCQB_TRAINING_MODEL *pModel, INT32 sDesiredSpot, UINT32 uiDecision)
+{
+	if (!pSoldier || !pContext || !pAssessment || !pModel ||
+		!VRCQB_HasCapability(pModel, VRCQB_CAP_ALTERNATE_ENTRY) ||
+		(pAssessment->eState != VRCQB_STATE_ASSAULT &&
+		 pAssessment->eState != VRCQB_STATE_COUNTERATTACK) ||
+		pSoldier->pathing.bLevel != 0 ||
+		TileIsOutOfBounds(sDesiredSpot))
+	{
+		return AI_ACTION_NONE;
+	}
+
+	const INT8 bDirections[4] = { NORTH, EAST, SOUTH, WEST };
+	const INT8 bOldDirection = pSoldier->ubDirection;
+	INT8 bBestDirection = -1;
+	INT32 sBestLanding = NOWHERE;
+	INT32 iBestScore = VRCQB_INVALID_SCORE;
+
+	for (UINT8 i = 0; i < 4; ++i)
+	{
+		const INT8 bDirection = bDirections[i];
+		INT8 bWindowDirection = DIRECTION_IRRELEVANT;
+
+		// The legacy helper also consults the soldier's facing, so evaluate each
+		// cardinal window without leaving a temporary facing change behind.
+		pSoldier->ubDirection = bDirection;
+		const BOOLEAN fWindow = FindWindowJumpDirection(
+			pSoldier, pSoldier->sGridNo, bDirection, &bWindowDirection);
+		pSoldier->ubDirection = bOldDirection;
+
+		if (!fWindow || bWindowDirection != bDirection)
+			continue;
+
+		const INT32 sLanding = NewGridNo(
+			pSoldier->sGridNo, (UINT16)DirectionInc((UINT8)bDirection));
+		if (TileIsOutOfBounds(sLanding))
+			continue;
+
+		INT32 iScore = -4 * PythSpacesAway(sLanding, sDesiredSpot);
+		if (pContext->ubThreatBuildingID != NO_BUILDING &&
+			VRCQBGetBuildingId(sLanding) == pContext->ubThreatBuildingID)
+		{
+			iScore += 80;
+		}
+		if (VRCQBSameStructure(sLanding, sDesiredSpot))
+			iScore += 25;
+
+		// Alternate entry is useful only if it does not amount to jumping into a
+		// clearly worse known kill zone.
+		iScore -= __min((INT32)60,
+			(INT32)AIKnownThreatExposure(
+				pSoldier, sLanding, pSoldier->pathing.bLevel) / 6);
+
+		if (iScore > iBestScore)
+		{
+			iBestScore = iScore;
+			bBestDirection = bDirection;
+			sBestLanding = sLanding;
+		}
+	}
+
+	pSoldier->ubDirection = bOldDirection;
+	if (bBestDirection < 0 || TileIsOutOfBounds(sBestLanding))
+		return AI_ACTION_NONE;
+
+	// A deliberate entry faces the opening first. This also prevents the jump
+	// executor from selecting a different adjacent window from stale facing.
+	if (pSoldier->ubDirection != bBestDirection)
+	{
+		if (!pSoldier->InternalIsValidStance(
+			bBestDirection, gAnimControl[pSoldier->usAnimState].ubEndHeight))
+		{
+			return AI_ACTION_NONE;
+		}
+
+		pSoldier->aiData.usActionData = bBestDirection;
+		if (uiDecision)
+		{
+			VRAnalyticsStateInt(uiDecision, "selected_action", AI_ACTION_CHANGE_FACING);
+			VRAnalyticsStateInt(uiDecision, "cqb_window_entry", 1);
+			VRAnalyticsCandidate(uiDecision, "cqb_window_entry", sBestLanding,
+				iBestScore, iBestScore, true, "face selected alternate window entry");
+			VRAnalyticsCommitDecision(uiDecision, "cqb_window_entry", sBestLanding,
+				iBestScore, "face selected alternate window entry");
+		}
+		return AI_ACTION_CHANGE_FACING;
+	}
+
+	pSoldier->aiData.usActionData = sBestLanding;
+	if (uiDecision)
+	{
+		VRAnalyticsStateInt(uiDecision, "selected_action", AI_ACTION_JUMP_WINDOW);
+		VRAnalyticsStateInt(uiDecision, "cqb_window_entry", 1);
+		VRAnalyticsCandidate(uiDecision, "cqb_window_entry", sBestLanding,
+			iBestScore, iBestScore, true, "use alternate window entry");
+		VRAnalyticsCommitDecision(uiDecision, "cqb_window_entry", sBestLanding,
+			iBestScore, "use alternate window entry");
+	}
+	return AI_ACTION_JUMP_WINDOW;
+}
+
+
 static UINT32 VRCQBTraceBegin(SOLDIERTYPE *pSoldier,
 	const VRCQB_CONTEXT *pContext, const VRCQB_ASSESSMENT *pAssessment)
 {
@@ -1258,6 +1442,17 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 			"CQB confidence below action threshold");
 	}
 
+	// Commanded/experienced elements may deliberately obscure an exposed entry
+	// before committing movers. Basic security troops keep the simpler hold/cover
+	// behaviour and never gain this capability implicitly.
+	if (fAggressiveCQB)
+	{
+		INT8 bSmokeAction = VRCQBTryProactiveEntrySmoke(
+			pSoldier, &Context, &Assessment, &Model, uiDecision);
+		if (bSmokeAction != AI_ACTION_NONE)
+			return bSmokeAction;
+	}
+
 	VRCQB_STATE eMovementState = Assessment.eState;
 	VRCQB_ROLE eMovementRole = Assessment.eRole;
 	INT32 sDesiredSpot = Assessment.sTargetGridNo;
@@ -1283,6 +1478,14 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 		}
 		else
 		{
+			// Veteran/mobile elements can use a suitable adjacent window as an
+			// alternate entry instead of feeding the same doorway. This is an
+			// explicit capability; basic/ordinary line troops do not attempt it.
+			INT8 bWindowAction = VRCQBTryAlternateWindowEntry(
+				pSoldier, &Context, &Assessment, &Model, sDesiredSpot, uiDecision);
+			if (bWindowAction != AI_ACTION_NONE)
+				return bWindowAction;
+
 			bAction = AI_ACTION_SEEK_OPPONENT;
 		}
 	}
