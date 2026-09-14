@@ -3603,22 +3603,17 @@ BOOLEAN UseHandToHand( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo, BOOLEAN fStea
 				// We have only stolen 1 item, because the enemy has not more than one item.
 				if ( sNumStolenItems == 1)
 				{
-					// For a conscious target the base steal AP cost covers the first item.
-					// Collapsed/dying targets have no steal-attack surcharge, so charge normal pickup AP.
-					if ( gGameExternalOptions.fEnhancedCloseCombatSystem && fSoldierCollapsed )
-						DeductPoints( pSoldier, GetBasicAPsToPickupItem( pSoldier ), 0, AFTERACTION_INTERRUPT );
+					// AP is charged once for the steal interaction below.  Do not add a
+					// second pickup charge just because only one item was available.
 
 					ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, Message[ STR_STOLE_SOMETHING ], pSoldier->GetName(), ShortItemNames[ pTargetSoldier->inv[ubIndexRet].usItem ] );
 					if (pTargetSoldier->inv[ubIndexRet].MoveThisObjectTo(gTempObject, 1) == 0) {
 						// Stolen enemy equipment must remain usable even if it was marked undroppable.
 						gTempObject.fFlags &= ~OBJECT_UNDROPPABLE;
 
-						// Try to place the item in the merc inventory
-						if (!AutoPlaceObject( pSoldier, &gTempObject, TRUE ))
-						{
-							// Place the item on the ground
-							AddItemToPool( pSoldier->sGridNo, &gTempObject, 1, pSoldier->pathing.bLevel, 0, -1 );
-						}
+						// Inventory first; if it does not fit (including a partial stack),
+						// route the remainder to the world/sector inventory.
+						AutoPlaceObjectAnywhere( pSoldier, &gTempObject, TRUE );
 					}
 
 					// The item that the enemy holds in his hand before the stealing
@@ -3756,30 +3751,20 @@ BOOLEAN UseHandToHand( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo, BOOLEAN fStea
 				fFailure=TRUE;
 			}
 
-			// SANDRO - Enhanced Close Combat System 
-			// Deduct APs for stealing now (moved from Soldier Control.cpp) - SANDRO
-			// If stolen something or fail to steal, reduce APs by the full amount
+			// Vengeance: one stealing interaction, one AP charge.
+			// The full-inventory selection menu no longer charges pickup AP per item.
+			// A collapsed/dying target costs normal pickup AP; a conscious target costs
+			// roughly twice that amount.  This is deliberately much lighter than the
+			// legacy AP_STEAL_ITEM + menu pickup stacking.
 			if (gGameExternalOptions.fEnhancedCloseCombatSystem)
 			{
-				if (fSoldierCollapsed)
+				if ( fStealAttempt || fFailure )
 				{
-					// APs are reduced in Handle Items.cpp in "SoldierStealItemFromSoldier"
+					DeductPoints( pSoldier, GetBaseAPsToStealItem( pSoldier, pTargetSoldier ), 0, AFTERACTION_INTERRUPT );
 				}
-				else if ( fStealAttempt || (fFailure == TRUE))
-				{
-					if (HAS_SKILL_TRAIT( pSoldier, MARTIAL_ARTS_NT ) && ( gGameOptions.fNewTraitSystem ))
-					{
-						DeductPoints(pSoldier, max(1, (INT16)(((FLOAT)APBPConstants[AP_STEAL_ITEM] * (FLOAT)(100 - gSkillTraitValues.ubMAReducedAPsToSteal * NUM_SKILL_TRAITS(pSoldier, MARTIAL_ARTS_NT)) / 100.0f) + 0.5f)), 200, AFTERACTION_INTERRUPT);
-					}
-					else
-					{
-						DeductPoints( pSoldier, APBPConstants[AP_STEAL_ITEM], 200, AFTERACTION_INTERRUPT );
-					}
-				}
-				// Only 1/7 of original AP cost, if the enemy has nothing to steal
 				else if ((fNoMoreItems == TRUE) || (fNoMoreItemInHand == TRUE))
 				{
-					DeductPoints( pSoldier, (APBPConstants[AP_STEAL_ITEM] / 7), 0, AFTERACTION_INTERRUPT );
+					DeductPoints( pSoldier, max( 1, (INT16)(GetBaseAPsToStealItem( pSoldier, pTargetSoldier ) / 2) ), 0, AFTERACTION_INTERRUPT );
 				}
 			}
 			else
