@@ -15,8 +15,283 @@
 	#include "Random.h"
 #endif
 
+#include "Campaign Types.h"
+#include "strategicmap.h"
+
 AMBIENTDATA_STRUCT		gAmbData[ MAX_AMBIENT_SOUNDS ];
 INT16									gsNumAmbData = 0;
+
+/*
+ * Vengeance sector ambience
+ * --------------------------
+ * The original JA2 ambience system is preserved: tileset .bad files still
+ * provide the baseline insects/wind/water/etc.  Vengeance adds a thin layer
+ * of low-volume, infrequent map-specific one-shots and short beds here.
+ *
+ * Classification is deliberately sector-ID based instead of sector-name
+ * based so translated/renamed SectorNames.xml text cannot alter sound design.
+ */
+enum VENGEANCE_AMBIENCE_FLAGS
+{
+	VR_AMBIENCE_NONE       = 0x00,
+	VR_AMBIENCE_NATURE     = 0x01,
+	VR_AMBIENCE_FARM       = 0x02,
+	VR_AMBIENCE_URBAN      = 0x04,
+	VR_AMBIENCE_NIGHTLIFE  = 0x08,
+	VR_AMBIENCE_INDUSTRIAL = 0x10,
+	VR_AMBIENCE_AVIATION   = 0x20,
+	VR_AMBIENCE_COAST      = 0x40
+};
+
+static BOOLEAN VRAmbienceFarmSector( UINT8 ubSector )
+{
+	switch( ubSector )
+	{
+		case SEC_A11:
+		case SEC_B5: case SEC_B6: case SEC_B8: case SEC_B12:
+		case SEC_D6:
+		case SEC_E7: case SEC_E8: case SEC_E9:
+		case SEC_G14:
+		case SEC_I7:
+			return TRUE;
+	}
+	return FALSE;
+}
+
+static BOOLEAN VRAmbienceNightlifeSector( UINT8 ubSector )
+{
+	switch( ubSector )
+	{
+		// San Mona, resort, race track, mall district
+		case SEC_C5: case SEC_C6: case SEC_D5:
+		case SEC_I9:
+		case SEC_M12:
+		case SEC_P12:
+			return TRUE;
+	}
+	return FALSE;
+}
+
+static BOOLEAN VRAmbienceUrbanSector( UINT8 ubSector )
+{
+	switch( ubSector )
+	{
+		// Oronegro / Omerta / Drassen
+		case SEC_A2: case SEC_A3: case SEC_A9: case SEC_A10:
+		case SEC_B2: case SEC_B10: case SEC_B14:
+		case SEC_C1: case SEC_C13:
+
+		// Salinas
+		case SEC_F7: case SEC_F8: case SEC_F9:
+		case SEC_G7: case SEC_G8: case SEC_G9:
+		case SEC_H8: case SEC_H9:
+
+		// Doran / Alma / Estoni
+		case SEC_G1: case SEC_G2: case SEC_G3:
+		case SEC_H1: case SEC_H2: case SEC_H3: case SEC_H4:
+		case SEC_H13: case SEC_H14:
+		case SEC_I6: case SEC_I13: case SEC_I15:
+		case SEC_J3:
+
+		// Malino / Burton / Palaccio / Kingpin
+		case SEC_K11: case SEC_K12:
+		case SEC_L10: case SEC_L11: case SEC_L12:
+		case SEC_M3: case SEC_M4: case SEC_M5: case SEC_M11:
+		case SEC_N5: case SEC_N6:
+		case SEC_O3: case SEC_O4: case SEC_O5: case SEC_O9: case SEC_O12:
+		case SEC_P3:
+			return TRUE;
+	}
+	return FALSE;
+}
+
+static BOOLEAN VRAmbienceIndustrialSector( UINT8 ubSector )
+{
+	switch( ubSector )
+	{
+		// Oil rigs, mines, utilities and industrial/logistics sites
+		case SEC_B1:
+		case SEC_D4: case SEC_D13: case SEC_D14:
+		case SEC_F10:
+		case SEC_G15:
+		case SEC_I3: case SEC_I14:
+		case SEC_J7:
+		case SEC_L2:
+		case SEC_M10:
+		case SEC_O14:
+
+		// Airports/heliport also get a restrained mechanical layer
+		case SEC_B13:
+		case SEC_N3: case SEC_N16:
+		case SEC_O2:
+			return TRUE;
+	}
+	return FALSE;
+}
+
+static BOOLEAN VRAmbienceAviationSector( UINT8 ubSector )
+{
+	switch( ubSector )
+	{
+		case SEC_A8:
+		case SEC_B13:
+		case SEC_D2: case SEC_D15:
+		case SEC_I8:
+		case SEC_K4:
+		case SEC_M13:
+		case SEC_N3: case SEC_N4: case SEC_N16:
+		case SEC_O2:
+			return TRUE;
+	}
+	return FALSE;
+}
+
+static BOOLEAN VRAmbienceCoastSector( UINT8 ubSector )
+{
+	switch( ubSector )
+	{
+		case SEC_F2:
+		case SEC_J2:
+		case SEC_L1: case SEC_L13:
+		case SEC_M2:
+		case SEC_N7: case SEC_N8:
+		case SEC_O11: case SEC_O14:
+			return TRUE;
+	}
+	return FALSE;
+}
+
+static BOOLEAN VRAmbienceNatureSector( UINT8 ubSector )
+{
+	switch( ubSector )
+	{
+		// Tropical
+		case SEC_A1:
+		case SEC_C2: case SEC_C3:
+		case SEC_E2:
+		case SEC_N9: case SEC_N10:
+		case SEC_O8: case SEC_O13:
+		case SEC_P11:
+
+		// Hills / plains / forests / woods / swamps / rural roads
+		case SEC_A6: case SEC_A7: case SEC_A12: case SEC_A13: case SEC_A14: case SEC_A15:
+		case SEC_B3: case SEC_B4: case SEC_B7: case SEC_B11: case SEC_B15: case SEC_B16:
+		case SEC_C4: case SEC_C7: case SEC_C8: case SEC_C9: case SEC_C10: case SEC_C12: case SEC_C15: case SEC_C16:
+		case SEC_D3: case SEC_D7: case SEC_D8: case SEC_D10: case SEC_D11: case SEC_D12: case SEC_D16:
+		case SEC_E3: case SEC_E4: case SEC_E5: case SEC_E6: case SEC_E10: case SEC_E11: case SEC_E12: case SEC_E14: case SEC_E15:
+		case SEC_F3: case SEC_F4: case SEC_F5: case SEC_F6: case SEC_F11: case SEC_F12: case SEC_F13: case SEC_F14:
+		case SEC_G4: case SEC_G5: case SEC_G6: case SEC_G12: case SEC_G13: case SEC_G16:
+		case SEC_H5: case SEC_H6: case SEC_H7: case SEC_H12: case SEC_H15: case SEC_H16:
+		case SEC_I4: case SEC_I5: case SEC_I11: case SEC_I12: case SEC_I16:
+		case SEC_J4: case SEC_J5: case SEC_J6: case SEC_J12: case SEC_J13: case SEC_J15:
+		case SEC_K3: case SEC_K5: case SEC_K6: case SEC_K13: case SEC_K14: case SEC_K15:
+		case SEC_L3: case SEC_L4: case SEC_L5: case SEC_L6: case SEC_L7: case SEC_L9: case SEC_L14: case SEC_L15:
+		case SEC_M6: case SEC_M7: case SEC_M8: case SEC_M9: case SEC_M14:
+		case SEC_N15:
+		case SEC_O15:
+			return TRUE;
+	}
+	return FALSE;
+}
+
+static void AddVengeanceAmbient( const CHAR8 *szFilename, UINT32 uiMinTime, UINT32 uiMaxTime, UINT8 ubTimeCategory, UINT32 uiVolume )
+{
+	if( gsNumAmbData >= MAX_AMBIENT_SOUNDS || !szFilename || !szFilename[0] )
+		return;
+
+	AMBIENTDATA_STRUCT *pData = &gAmbData[ gsNumAmbData++ ];
+	memset( pData, 0, sizeof( AMBIENTDATA_STRUCT ) );
+
+	pData->uiMinTime = uiMinTime;
+	pData->uiMaxTime = ( uiMaxTime > uiMinTime ) ? uiMaxTime : uiMinTime + 1;
+	pData->ubTimeCatagory = ubTimeCategory;
+	pData->uiVol = uiVolume;
+
+	strncpy( pData->zFilename, szFilename, sizeof( pData->zFilename ) - 1 );
+	pData->zFilename[ sizeof( pData->zFilename ) - 1 ] = 0;
+}
+
+static UINT32 GetVengeanceSectorAmbienceFlags( )
+{
+	if( gWorldSectorX < 1 || gWorldSectorX > 16 || gWorldSectorY < 1 || gWorldSectorY > 16 )
+		return VR_AMBIENCE_NONE;
+
+	const UINT8 ubSector = SECTOR( gWorldSectorX, gWorldSectorY );
+	UINT32 uiFlags = VR_AMBIENCE_NONE;
+
+	if( VRAmbienceFarmSector( ubSector ) )
+		uiFlags |= VR_AMBIENCE_FARM | VR_AMBIENCE_NATURE;
+
+	if( VRAmbienceNightlifeSector( ubSector ) )
+		uiFlags |= VR_AMBIENCE_URBAN | VR_AMBIENCE_NIGHTLIFE;
+	else if( VRAmbienceUrbanSector( ubSector ) )
+		uiFlags |= VR_AMBIENCE_URBAN;
+
+	if( VRAmbienceIndustrialSector( ubSector ) )
+		uiFlags |= VR_AMBIENCE_INDUSTRIAL;
+
+	if( VRAmbienceAviationSector( ubSector ) )
+		uiFlags |= VR_AMBIENCE_AVIATION;
+
+	if( VRAmbienceCoastSector( ubSector ) )
+		uiFlags |= VR_AMBIENCE_COAST;
+
+	if( uiFlags == VR_AMBIENCE_NONE && VRAmbienceNatureSector( ubSector ) )
+		uiFlags |= VR_AMBIENCE_NATURE;
+
+	return uiFlags;
+}
+
+static void AppendVengeanceSectorAmbience( )
+{
+	const UINT32 uiFlags = GetVengeanceSectorAmbienceFlags();
+
+	// Existing Vengeance wildlife.  Farms use a busier bird/cow pattern;
+	// wilderness stays much sparser so it does not become a soundboard.
+	if( uiFlags & VR_AMBIENCE_FARM )
+	{
+		AddVengeanceAmbient( "AMBIENT\\BIRD4.wav",             35000,  85000, AMB_TOD_DAY,  16 );
+		AddVengeanceAmbient( "SOUNDS\\COWMOO3.wav",           120000, 300000, AMB_TOD_DAY,  15 );
+		AddVengeanceAmbient( "AMBIENT\\VR_FARM_BELL.wav",     150000, 360000, AMB_TOD_DAY,  13 );
+	}
+	else if( uiFlags & VR_AMBIENCE_NATURE )
+	{
+		AddVengeanceAmbient( "AMBIENT\\BIRD6.wav",             55000, 140000, AMB_TOD_DAY,  15 );
+	}
+
+	if( uiFlags & VR_AMBIENCE_COAST )
+	{
+		AddVengeanceAmbient( "AMBIENT\\BIRD9.wav",             80000, 190000, AMB_TOD_DAY,  13 );
+	}
+
+	if( uiFlags & VR_AMBIENCE_URBAN )
+	{
+		AddVengeanceAmbient( "AMBIENT\\VR_CITY_DAY.wav",       45000, 105000, AMB_TOD_DAY,   11 );
+		AddVengeanceAmbient( "AMBIENT\\VR_CITY_HORN.wav",     120000, 330000, AMB_TOD_DAY,   10 );
+		AddVengeanceAmbient( "AMBIENT\\VR_CITY_NIGHT.wav",     90000, 210000, AMB_TOD_NIGHT,  8 );
+
+		if( !( uiFlags & VR_AMBIENCE_NIGHTLIFE ) )
+			AddVengeanceAmbient( "AMBIENT\\VR_CITY_JINGLE.wav", 210000, 480000, AMB_TOD_DAY, 9 );
+	}
+
+	if( uiFlags & VR_AMBIENCE_NIGHTLIFE )
+	{
+		// A little more identity around San Mona / resort / mall / race track,
+		// but still infrequent enough to leave dialogue and combat legible.
+		AddVengeanceAmbient( "AMBIENT\\VR_CITY_JINGLE.wav",    100000, 240000, AMB_TOD_DUSK, 10 );
+	}
+
+	if( uiFlags & VR_AMBIENCE_INDUSTRIAL )
+	{
+		AddVengeanceAmbient( "AMBIENT\\VR_INDUSTRIAL_CLANK.wav", 65000, 160000, AMB_TOD_DAY, 11 );
+	}
+
+	if( uiFlags & VR_AMBIENCE_AVIATION )
+	{
+		AddVengeanceAmbient( "SOUNDS\\HELI1.WAV",              300000, 720000, AMB_TOD_DAY,   8 );
+	}
+}
+
 
 
 UINT8					gubCurrentSteadyStateAmbience = SSA_NONE;
@@ -211,7 +486,8 @@ void HandleNewSectorAmbience( UINT8 ubAmbientID )
 	{
 		if(	LoadAmbientControlFile( ubAmbientID ) )
 		{
-			// OK, load them up!
+			// Preserve the tileset ambience, then add low-volume Vengeance sector identity.
+			AppendVengeanceSectorAmbience( );
 			BuildDayAmbientSounds( );
 		}
 		else
