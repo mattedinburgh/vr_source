@@ -3,6 +3,7 @@
 #include "Strategic Movement.h"
 #include "Campaign Types.h"
 #include "strategicmap.h"
+#include "strategic.h"
 #include "Strategic Mines.h"
 #include "VRAnalytics.h"
 
