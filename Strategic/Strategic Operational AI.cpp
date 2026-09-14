@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "Strategic Operational AI.h"
 #include "Strategic Movement.h"
@@ -441,6 +442,10 @@ void VR_HourlyOperationalUpdate()
 		{
 			VR_EnsureEnemyFormationState( pGroup );
 			ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+
+			// Keep persistent mission state aligned with legacy VR intentions while migration is incremental.
+			if( pEnemy->ubOperationalMission == VR_OPMISSION_NONE && pEnemy->ubIntention != NO_INTENTIONS )
+				pEnemy->ubOperationalMission = VR_MissionFromLegacyIntention( pEnemy->ubIntention );
 
 			if( pEnemy->ubOperationalIntelConfidence > 0 )
 			{
