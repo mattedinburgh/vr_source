@@ -5568,7 +5568,8 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 				pSoldier->aiData.bAttitude == CUNNINGAID;
 		if (fCunning && !pSoldier->aiData.bUnderFire &&
 			AIManeuverRoleScore(pSoldier, sTargetSpot) > AISupportRoleScore(pSoldier, sTargetSpot) + 5 &&
-			AIActiveManeuverCount(pSoldier, sTargetSpot) < 2)
+			AIActiveManeuverCount(pSoldier, sTargetSpot) < 2 &&
+			AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED, (UINT32)(sTargetSpot + 211)))
 		{
 			bIntent = AI_INTENT_FLANK;
 		}
@@ -5600,7 +5601,14 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		else if (bIntent != AI_INTENT_FALLBACK && bIntent != AI_INTENT_DISENGAGE &&
 			iRisk <= iTolerance + 5)
 		{
-			bIntent = bSharedIntent;
+			// Lower-quality troops do not automatically become a hive mind merely because
+			// nearby soldiers found a sophisticated plan. HOLD/PRESS remain simple; FLANK
+			// requires the competence layer to accept coordinated execution.
+			if (bSharedIntent != AI_INTENT_FLANK ||
+				AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED, (UINT32)(sTargetSpot + 307)))
+			{
+				bIntent = bSharedIntent;
+			}
 		}
 	}
 
@@ -5638,7 +5646,8 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	{
 		// Healthy long-range soldiers form the rear guard while more mobile soldiers
 		// displace. This creates alternating bounds instead of a simultaneous rout.
-		if (iSupport >= iManeuver + 5 && !pSoldier->aiData.bUnderFire && ubPlannedScreens < 2)
+		if (iSupport >= iManeuver + 5 && !pSoldier->aiData.bUnderFire && ubPlannedScreens < 2 &&
+			AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED, (UINT32)(sTargetSpot + 401)))
 			bRole = AI_ROLE_SCREEN;
 		else
 			bRole = AI_ROLE_MANEUVER;
@@ -5650,7 +5659,8 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	}
 	else if (bIntent == AI_INTENT_FLANK && iManeuver > iSupport &&
 		ubPlannedFlankers < 2 &&
-		AIActiveManeuverCount(pSoldier, sTargetSpot) + ubPlannedMovers < 3)
+		AIActiveManeuverCount(pSoldier, sTargetSpot) + ubPlannedMovers < 3 &&
+		AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED, (UINT32)(sTargetSpot + 503)))
 	{
 		bRole = AI_ROLE_FLANKER;
 	}
