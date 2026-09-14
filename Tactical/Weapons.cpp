@@ -54,6 +54,8 @@
 	#include "Game Clock.h"		// sevenfm
 #endif
 
+#include "Campaign Tactical Telemetry.h"
+
 //forward declarations of common classes to eliminate includes
 class OBJECTTYPE;
 class SOLDIERTYPE;
@@ -1519,6 +1521,7 @@ BOOLEAN FireWeapon( SOLDIERTYPE *pSoldier , INT32 sTargetGridNo )
 
 	// sevenfm: set flag indicating that soldier attacked this turn
 	pSoldier->usSoldierFlagMask2 |= SOLDIER_ATTACKED_THIS_TURN;
+	VR_TacticalTelemetryShot( pSoldier, sTargetGridNo );
 
 	switch( usItemClass )
 	{
@@ -4579,6 +4582,9 @@ void WeaponHit( UINT16 usSoldierID, UINT16 usWeaponIndex, INT16 sDamage, INT16 s
 
 	// Get Target
 	pTargetSoldier	= MercPtrs[ usSoldierID ];
+
+	VR_TacticalTelemetryProjectileHit( ubAttackerID, usSoldierID, usWeaponIndex,
+		sDamage, sBreathLoss, ubHitLocation, sRange, fHit );
 
 	MakeNoise( ubAttackerID, pTargetSoldier->sGridNo, pTargetSoldier->pathing.bLevel, gpWorldLevelData[pTargetSoldier->sGridNo].ubTerrainID, Weapon[ usWeaponIndex ].ubHitVolume, NOISE_BULLET_IMPACT );
 
@@ -9698,6 +9704,7 @@ void ShotMiss( UINT8 ubAttackerID, INT32 iBullet )
 		return;
 
 	pAttacker = MercPtrs[ ubAttackerID ];
+	VR_TacticalTelemetryShotMiss( ubAttackerID, iBullet );
 
 	if ( pAttacker->ubOppNum != NOBODY )
 	{
