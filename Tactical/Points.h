@@ -351,6 +351,7 @@ INT16 GetAPsToPlantMine( SOLDIERTYPE *pSoldier );
 UINT16 GetTotalAPsToDropBomb( SOLDIERTYPE *pSoldier, INT32 sGridNo );
 INT16 GetAPsToUseRemote( SOLDIERTYPE *pSoldier );
 
+INT16 GetBaseAPsToStealItem( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pTargetSoldier );
 INT16 GetAPsToStealItem( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pTargetSoldier, INT16 sMapPos ); // SANDRO - added target
 INT16 GetBPsToStealItem( SOLDIERTYPE *pSoldier );
 
