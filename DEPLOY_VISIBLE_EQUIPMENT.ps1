@@ -674,11 +674,37 @@ if ($missing.Count -gt 0) {
     throw "Visible-equipment deployment incomplete. Enable marker was NOT created."
 }
 
+
+# Final structural gate: do not create the READY marker unless every intended
+# overlay layer exists for every player body type.
+$expectedEquipmentLayers = @(
+    "vest","helmet","legarmor","facegear","gasmask","ears","backpack","legrig","legrig_left","knees"
+)
+$equipmentBodyFiles = @(
+    "LBT_RGM/LogicalBodyType_RGM_VR_equipment.xml",
+    "LBT_BGM/LogicalBodyType_BGM_VR_equipment.xml",
+    "LBT_RGF/LogicalBodyType_RGF_VR_equipment.xml"
+)
+foreach ($relative in $equipmentBodyFiles) {
+    $path = Join-Path $TableRoot $relative
+    [xml]$doc = [System.IO.File]::ReadAllText($path)
+    $present = New-Object "System.Collections.Generic.HashSet[string]" ([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($layer in @($doc.SelectNodes("/LogicalAnimationSurfaces/Layer"))) {
+        [void]$present.Add($layer.GetAttribute("name"))
+    }
+
+    $missingLayers = @($expectedEquipmentLayers | Where-Object { -not $present.Contains($_) })
+    if ($missingLayers.Count -gt 0) {
+        throw "Visible-equipment body catalog incomplete ($relative): missing $($missingLayers -join ', ')"
+    }
+}
+
 $markerText = @"
 Vengeance Reloaded visible tactical equipment
 Catalog: mattedinburgh/vr_gamedir $VrRef
 Source: 1dot13/gamedir $UpstreamRef Data/Anims/LOBOT art
 Mode: overlay-only (native Vengeance body/weapon + 1.13 equipment layers)
+Layers: vest, helmet, legarmor, facegear, gasmask, ears, backpack, legrig, legrig_left, knees
 Assets: $($assetPaths.Count)
 AssetBytes: $totalBytes
 Palettes: $($paletteFiles.Count)
