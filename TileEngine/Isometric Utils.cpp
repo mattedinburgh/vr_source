@@ -37,6 +37,8 @@ BOOLEAN SetVHDRenderScale( UINT8 ubScale )
 		return FALSE;
 
 	gubVHDRenderScale = ubScale;
+	SCROLL_X_STEP = (INT16)( WORLD_TILE_X * ubScale );
+	SCROLL_Y_STEP = (INT16)( WORLD_TILE_Y * 2 * ubScale );
 	guiForceRefreshMousePositionCalculation = 1;
 	return TRUE;
 }
