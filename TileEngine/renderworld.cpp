@@ -1015,16 +1015,16 @@ static BOOLEAN RenderHybridLogicalMercModel(
 // selected merc's normal viewing range. This never feeds LOS/CTH/AI.
 static UINT8 TrueColorViewSofteningForTile(INT32 sTileGridNo, INT32 sViewerGridNo, INT32 iViewRange)
 {
-	const UINT8 ubNearSoftening = 6;   // ~2% desaturation up close
-	const UINT8 ubFarSoftening = 52;   // ~20% at the far edge; never grey/foggy
+	const UINT8 ubNearSoftening = 10;  // ~4% desaturation up close: calmer without washing detail out
+	const UINT8 ubFarSoftening = 64;   // ~25% at the far edge; still colourful, not grey/foggy
 
 	if(TileIsOutOfBounds(sTileGridNo) || TileIsOutOfBounds(sViewerGridNo))
 		return ubNearSoftening;
 
 	iViewRange = __max(12, iViewRange);
 	const INT32 iDistance = GetRangeFromGridNoDiff(sViewerGridNo, sTileGridNo);
-	const INT32 iNearRange = __max(6, (iViewRange * 45) / 100);
-	const INT32 iFarRange = __max(iNearRange + 8, (iViewRange * 135) / 100);
+	const INT32 iNearRange = __max(6, (iViewRange * 35) / 100);
+	const INT32 iFarRange = __max(iNearRange + 10, (iViewRange * 150) / 100);
 
 	if(iDistance <= iNearRange)
 		return ubNearSoftening;
