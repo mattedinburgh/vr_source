@@ -30,7 +30,7 @@ jobs:
           ref: install/all-2026-09-12
           fetch-depth: 0
 
-      - name: Replay proven Map Factory commits on a disposable candidate branch
+      - name: Transplant proven Map Factory snapshot without regressing A3
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
@@ -42,42 +42,48 @@ jobs:
           git checkout -B map-factory-v2-candidate origin/install/all-2026-09-12
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          # Oldest -> newest. Trigger-only historical commits are deliberately excluded.
-          $commits = @(
-            'c7bd66dea44eeb3cb98554492d654112e57425bf',
-            'ce74df771d1f5bac9675edd40c11f8475c0b0ef4',
-            '5a2a520f8ac2ec37ef7a2624639d2546a7368eda',
-            'abb89f13ead25a3ed2fa0aed59ecca4b1b81ff9b',
-            '179c23dfb7c141a561e4fccc9753ae8f1ecfdb3a',
-            '6962bb0daa3b2c50a65602b8317ce74af3617cd2',
-            '2b5a88d3d04d8f9ce71d2949dc41f81b402b5a9e',
-            '2aac2a35cdae9e6588d96413b0fe583a4dfb99c9',
-            'b7e3b122147ef814e935e0dd048b2f457921a114',
-            '4b4655f37bbf37d34bdda90efd71d955d4f12589',
-            '12f12c9c898a685c543ac2b1c82c122db476b7f9',
-            'c96b9408a5fdedd832e72a6ccfd60dc1c65ef629',
-            'f208260e4ad2683951e29239afc0346b60d8a881',
-            'd4d7cf27b0be6753863dd3205cfad379c4d4707f',
-            '735e805760867807a914f54b15a464508788b502',
-            'f90eb98026d035c1bac32b7b0f6b86c44eda5a82',
-            '3845808e1259c717b2d261d27387b2ce942fcc31'
-          )
+          $factory = '3845808e1259c717b2d261d27387b2ce942fcc31'
+          $a3v2 = '6f687b77ce7545eed68ff680f3e33ec23a082148'
+          $a3v2Parent = '7e51dbf140fb207bbb6c7a5d290dd784aa85b6d7'
+          $a3v3 = '549e5f109f0edd6b0172cea9198af7b6a661e626'
+          $a3v3Parent = '308f91cd35aefb09b6b32cbed5a39d64f61eaa90'
 
-          foreach ($sha in $commits) {
-            Write-Host "Fetching historical Map Factory commit $sha"
+          foreach ($sha in @($factory,$a3v2,$a3v2Parent,$a3v3,$a3v3Parent)) {
             git fetch origin $sha
-            if ($LASTEXITCODE -ne 0) { throw "Could not fetch historical commit $sha" }
-
-            Write-Host "Cherry-picking $sha"
-            git cherry-pick $sha
-            if ($LASTEXITCODE -ne 0) {
-              Write-Host '--- MAP FACTORY PORT CONFLICT ---'
-              git status --short
-              git diff --name-only --diff-filter=U
-              git cherry-pick --abort
-              throw "Historical Map Factory port conflicted at $sha"
-            }
+            if ($LASTEXITCODE -ne 0) { throw "Could not fetch required historical commit $sha" }
           }
+
+          # Three files are strict supersets of the current canonical versions.
+          # worlddef.cpp is also transplanted, then the two missing authored-A3
+          # patches are replayed explicitly below.
+          git checkout $factory -- Utils/MapUtility.cpp TileEngine/worlddef.cpp TileEngine/worlddef.h TileEngine/lighting.cpp
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git commit -m 'Transplant proven Map Factory engine snapshot'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          # Preserve the canonical authored A3 V2/V3 work that lives on the
+          # opposite side of the historical branch divergence.
+          cmd /c "git diff $a3v2Parent $a3v2 -- TileEngine/worlddef.cpp > a3-v2.patch"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git apply --3way --index a3-v2.patch
+          if ($LASTEXITCODE -ne 0) {
+            git status --short
+            throw 'Could not replay authored A3 V2 over Map Factory snapshot.'
+          }
+          git commit -m 'Preserve authored A3 composition V2 in Map Factory'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          cmd /c "git diff $a3v3Parent $a3v3 -- TileEngine/worlddef.cpp > a3-v3.patch"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git apply --3way --index a3-v3.patch
+          if ($LASTEXITCODE -ne 0) {
+            git status --short
+            throw 'Could not replay authored A3 V3 over Map Factory snapshot.'
+          }
+          git commit -m 'Preserve authored A3 composition V3 in Map Factory'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          Remove-Item -Force a3-v2.patch,a3-v3.patch -ErrorAction SilentlyContinue
 
       - name: Apply v2 authored-layout and readability refinement
         shell: powershell
@@ -89,6 +95,23 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           git commit -m 'Map Factory v2: authored layouts and readability-first colour'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify candidate touches only intended engine files
+        shell: powershell
+        run: |
+          $files = @(git diff --name-only origin/install/all-2026-09-12...HEAD)
+          $allowed = @(
+            'Utils/MapUtility.cpp',
+            'TileEngine/worlddef.cpp',
+            'TileEngine/worlddef.h',
+            'TileEngine/lighting.cpp'
+          )
+          $unexpected = @($files | Where-Object { $allowed -notcontains $_ })
+          Write-Host 'Candidate files:'
+          $files | ForEach-Object { Write-Host "  $_" }
+          if ($unexpected.Count -gt 0) {
+            throw "Unexpected files in Map Factory candidate: $($unexpected -join ', ')"
+          }
 
       - name: Rebase candidate onto latest canonical head
         shell: powershell
@@ -186,9 +209,6 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $git = '${{ steps.git.outputs.path }}'
           $candidate = '${{ needs.prepare-candidate.outputs.candidate_sha }}'
-
-          # actions/checkout may be a REST archive on this PC. Use a tiny git-only
-          # promotion workspace so validation output itself remains untouched.
           $promote = Join-Path $env:RUNNER_TEMP 'map-factory-promote'
           if (Test-Path $promote) { Remove-Item -Recurse -Force $promote }
           New-Item -ItemType Directory -Force -Path $promote | Out-Null
@@ -211,7 +231,6 @@ jobs:
           & $git -C $promote push origin 'refs/remotes/origin/map-factory-v2-candidate:refs/heads/install/all-2026-09-12'
           if ($LASTEXITCODE -ne 0) { throw 'Validated candidate could not be promoted to canonical branch.' }
 
-          # Candidate branch is intentionally temporary; avoid long-term fragmentation.
           & $git -C $promote push origin --delete map-factory-v2-candidate
           if ($LASTEXITCODE -ne 0) {
             Write-Warning 'Validated candidate was promoted, but temporary candidate branch could not be deleted.'
