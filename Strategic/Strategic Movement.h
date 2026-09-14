@@ -93,6 +93,10 @@ typedef struct ENEMYGROUP
 	UINT8 ubOperationalLastKnownMilitiaStrength;
 }ENEMYGROUP;
 
+// ENEMYGROUP is serialized as raw bytes by legacy saves. Keep this hard guard
+// beside the structure so any future alignment/field change fails at compile time.
+typedef char VR_ENEMYGROUP_SAVE_LAYOUT_MUST_BE_29[(sizeof(ENEMYGROUP) == 29) ? 1 : -1];
+
 //NOTE:	ALL FLAGS ARE CLEARED WHENEVER A GROUP ARRIVES IN A SECTOR, OR ITS WAYPOINTS ARE
 //		DELETED!!!
 #define GROUPFLAG_SIMULTANEOUSARRIVAL_APPROVED	0x00000001
