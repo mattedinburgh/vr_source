@@ -6449,43 +6449,36 @@ static void VRTraceRetreatAssessment(
 		(100 - iHoldConfidence) + (INT32)ubCollapseStreak * 8 +
 		(INT32)ubRoutPressure / 5);
 
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "turn", (long)(guiTurnCnt + 1));
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "battle_situation", bSituation);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "perceived_friendly_strength", usFriends);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "perceived_enemy_strength", usEnemies);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "known_opponents", pSoldier->aiData.bOppCnt);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "friendly_casualty_pct", ubCasualties);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "local_casualty_pct", AILocalCasualtyPercent(pSoldier));
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "hold_confidence", iHoldConfidence);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "local_stress", iStress);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "personal_risk", iRisk);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "risk_tolerance", iTolerance);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "rout_pressure", ubRoutPressure);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "collapse_streak", ubCollapseStreak);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "last_survivor_pressure", fLastSurvivor ? 1 : 0);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "nearby_operational_friends",
-		AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4));
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "stable_leader_nearby",
-		AIHasNearbyStableLeader(pSoldier) ? 1 : 0);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "has_cover",
-		AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ? 1 : 0);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "has_sight_cover",
-		SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE) ? 1 : 0);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "under_fire",
-		pSoldier->aiData.bUnderFire ? 1 : 0);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "life_pct", iLifePercent);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "marksmanship", pSoldier->stats.bMarksmanship);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "experience_level", pSoldier->stats.bExpLevel);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "gun_deadliness",
-		AICheckHasGun(pSoldier) ? AIGunDeadliness(pSoldier) : 0);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "gun_ammo",
-		AICheckHasGun(pSoldier) ? AIGunAmmo(pSoldier) : 0);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "last_attack_hit",
-		pSoldier->LastAttackHit() ? 1 : 0);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "last_target_suppressed",
-		pSoldier->LastTargetSuppressed() ? 1 : 0);
-	VRAnalyticsTacticalStateInt(pSoldier->ubID, "escape_intent_active",
-		AIEscapeActive(pSoldier) ? 1 : 0);
+	VRAnalyticsTacticalRetreatAssessment(
+		pSoldier->ubID,
+		(unsigned long)(guiTurnCnt + 1),
+		bSituation,
+		usFriends,
+		usEnemies,
+		pSoldier->aiData.bOppCnt,
+		ubCasualties,
+		AILocalCasualtyPercent(pSoldier),
+		iHoldConfidence,
+		iStress,
+		iRisk,
+		iTolerance,
+		ubRoutPressure,
+		ubCollapseStreak,
+		fLastSurvivor ? true : false,
+		AICountNearbyOperationalFriends(
+			pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4),
+		AIHasNearbyStableLeader(pSoldier) ? true : false,
+		AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ? true : false,
+		SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE) ? true : false,
+		pSoldier->aiData.bUnderFire ? true : false,
+		iLifePercent,
+		pSoldier->stats.bMarksmanship,
+		pSoldier->stats.bExpLevel,
+		AICheckHasGun(pSoldier) ? AIGunDeadliness(pSoldier) : 0,
+		AICheckHasGun(pSoldier) ? AIGunAmmo(pSoldier) : 0,
+		pSoldier->LastAttackHit() ? true : false,
+		pSoldier->LastTargetSuppressed() ? true : false,
+		AIEscapeActive(pSoldier) ? true : false);
 
 	VRAnalyticsTacticalCandidate(
 		pSoldier->ubID,
