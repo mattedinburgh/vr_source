@@ -246,12 +246,12 @@ static void SaveA3TacticalPreviewSet( const STR8 pMapFilename )
 	// palette, roofs, vegetation, clutter and Z ordering the player will see.
 	const INT32 sCameraGrid[] =
 	{
-		7290,   // north-west work/barn group
-		10914,  // western farmhouse/yard
-		17194,  // central/southern farm group
-		18794,  // fields / buildings
-		19430,  // south-east farm group
-		20232   // southern edge / approach
+		3292,   // north-east young field
+		7290,   // cattle paddock / north-central farm
+		10914,  // large western barn / processing hall
+		11136,  // central farmhouse / workyard
+		17672,  // southern building group
+		19912   // main irrigated crop beds / farmhouse
 	};
 
 	for ( UINT8 i = 0; i < (UINT8)(sizeof(sCameraGrid)/sizeof(sCameraGrid[0])); ++i )
