@@ -2686,6 +2686,8 @@ INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction )
 	INT8 ubDesiredDir;
 	INT16 sTempDir;
 	INT32 sTempDist, sBestDist=0;
+	INT8 bPlannerIntent = (bAction == AI_ACTION_WITHDRAW) ? AI_INTENT_FALLBACK : AI_INTENT_FLANK;
+	INT8 bPlannerRole = (bAction == AI_ACTION_WITHDRAW) ? AITacticalRole(pSoldier, sPos) : AI_ROLE_FLANKER;
 
 	// Values that do not change while candidate tiles are scored. Hoisting them
 	// avoids repeating cover/support/range work for every reachable tile.
@@ -2894,6 +2896,16 @@ INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction )
 			if (bAction == AI_ACTION_FLANK_LEFT || bAction == AI_ACTION_FLANK_RIGHT)
 			{
 				sTempDist += AICrossfirePositionScore(pSoldier, sGridNo, sPos);
+			}
+
+			// Feed both flank and withdrawal candidates through the same utility model
+			// used by advances. This penalizes exposed arcs and rewards cover, spacing,
+			// weapon-appropriate range and mutual support instead of maximizing geometry alone.
+			if (bAction == AI_ACTION_FLANK_LEFT || bAction == AI_ACTION_FLANK_RIGHT ||
+				bAction == AI_ACTION_WITHDRAW)
+			{
+				sTempDist += 2 * AIUtilityPositionScore(pSoldier, sGridNo, sPos,
+					bPlannerIntent, bPlannerRole);
 			}
 			// if this is better than the best place found so far
 			if ( sTempDist > sBestDist )
