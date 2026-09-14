@@ -7105,9 +7105,19 @@ static BOOLEAN VHDIndexedMultiZPaletteBlit(
 				const UINT16 usPixelZ = VHDIndexedMultiZLevel(
 					pZInfo, usZValue, usSourceX, ubAssetScale );
 
-				BOOLEAN fDrawPixel = ( *pZ <= usPixelZ );
-				if ( !fDrawPixel && fObscured )
-				fDrawPixel = ( ( iDestX & 1 ) == ( iDestY & 1 ) );
+				BOOLEAN fDrawPixel;
+				if ( fObscured )
+				{
+					// Legacy obscure semantics: destination Z >= source Z is
+					// revealed only as a checkerboard hint (including equal Z).
+					fDrawPixel = ( *pZ < usPixelZ ) ||
+						( ( iDestX & 1 ) == ( iDestY & 1 ) );
+				}
+				else
+				{
+					// Normal multi-Z merc path draws through equal Z.
+					fDrawPixel = ( *pZ <= usPixelZ );
+				}
 
 				if ( !fDrawPixel )
 					continue;
