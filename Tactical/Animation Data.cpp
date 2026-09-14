@@ -8,6 +8,7 @@
 	#include "stdlib.h"
 	#include "debug.h"
 	#include "Animation Data.h"
+#include "Isometric Utils.h"
 	#include "Animation Control.h"
 
 	#include "jascreens.h"
@@ -947,6 +948,13 @@ BOOLEAN LoadAnimationSurface( UINT16 usSoldierID, UINT16 usSurfaceIndex, UINT16 
 	// Create video object
 		FilenameForBPP(gAnimSurfaceDatabase[ usSurfaceIndex ].Filename, sFilename);
 		hImage = CreateImage(/*gAnimSurfaceDatabase[ usSurfaceIndex ].Filename*/sFilename, IMAGE_ALLDATA );
+		UINT8 ubLoadedVHDScale = 1;
+		const UINT8 ubRequestedVHDScale = GetVHDRenderScale();
+		if ( hImage != NULL && ( ubRequestedVHDScale == 2 || ubRequestedVHDScale == 4 ) &&
+			 ScaleImageNearestForVHD( hImage, ubRequestedVHDScale ) )
+		{
+			ubLoadedVHDScale = ubRequestedVHDScale;
+		}
 
 	if (hImage == NULL)
 	{
@@ -957,6 +965,8 @@ BOOLEAN LoadAnimationSurface( UINT16 usSoldierID, UINT16 usSurfaceIndex, UINT16 
 		VObjectDesc.hImage = hImage;
 
 		hVObject = CreateVideoObject( &VObjectDesc );
+		if ( hVObject != NULL )
+			hVObject->ubVHDAssetScale = ubLoadedVHDScale;
 
 		if ( hVObject == NULL )
 		{
