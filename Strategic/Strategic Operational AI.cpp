@@ -315,7 +315,7 @@ GROUP *VR_FindReadyOperationalReserve()
 static UINT8 VR_EstimateStrengthWithConfidence( INT32 iObservedStrength, UINT8 ubConfidence )
 {
 	INT32 iEstimate = iObservedStrength;
-	INT32 iError = ( 100 - ubConfidence ) / 5;
+	INT32 iError = ( 100 - ubConfidence ) / 4;
 
 	if( iError > 0 )
 		iEstimate += (INT32)Random( iError * 2 + 1 ) - iError;
@@ -323,51 +323,210 @@ static UINT8 VR_EstimateStrengthWithConfidence( INT32 iObservedStrength, UINT8 u
 	return VR_ClampByte( iEstimate );
 }
 
-void VR_ReportOperationalIntel( UINT8 ubSectorID, UINT8 ubConfidence )
+#define VR_MAX_PENDING_INTEL_REPORTS 8
+
+typedef struct VR_PENDING_INTEL_REPORT
 {
-	UINT8 x = (UINT8)SECTORX( ubSectorID );
-	UINT8 y = (UINT8)SECTORY( ubSectorID );
-	SECTORINFO *pSector = &SectorInfo[ ubSectorID ];
+	BOOLEAN fActive;
+	UINT8 ubSectorID;
+	UINT8 ubConfidence;
+	UINT8 ubReportedPlayerStrength;
+	UINT8 ubReportedMilitiaStrength;
+	UINT32 uiCreatedMinute;
+	UINT32 uiDeliveredMask[ 8 ];
+} VR_PENDING_INTEL_REPORT;
 
-	INT32 iObservedPlayerStrength = (INT32)PlayerMercsInSector( x, y, 0 ) * 8;
-	INT32 iObservedMilitiaStrength =
-		(INT32)pSector->ubNumberOfCivsAtLevel[ GREEN_MILITIA ] +
-		(INT32)pSector->ubNumberOfCivsAtLevel[ REGULAR_MILITIA ] * 2 +
-		(INT32)pSector->ubNumberOfCivsAtLevel[ ELITE_MILITIA ] * 3;
+static VR_PENDING_INTEL_REPORT gVRPendingIntel[ VR_MAX_PENDING_INTEL_REPORTS ];
 
-	GROUP *pGroup = gpGroupList;
-	while( pGroup )
+static BOOLEAN VR_IntelDeliveredToGroup( const VR_PENDING_INTEL_REPORT *pReport, UINT8 ubGroupID )
+{
+	if( !pReport || !ubGroupID )
+		return FALSE;
+	UINT8 ubWord = ubGroupID / 32;
+	UINT8 ubBit = ubGroupID % 32;
+	return ( pReport->uiDeliveredMask[ ubWord ] & ( 1u << ubBit ) ) != 0;
+}
+
+static void VR_MarkIntelDelivered( VR_PENDING_INTEL_REPORT *pReport, UINT8 ubGroupID )
+{
+	if( !pReport || !ubGroupID )
+		return;
+	UINT8 ubWord = ubGroupID / 32;
+	UINT8 ubBit = ubGroupID % 32;
+	pReport->uiDeliveredMask[ ubWord ] |= ( 1u << ubBit );
+}
+
+static UINT8 VR_FormationCommandQuality( GROUP *pGroup )
+{
+	if( !pGroup || !pGroup->pEnemyGroup )
+		return 20;
+
+	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+	INT32 iTotal = (INT32)pEnemy->ubNumAdmins + pEnemy->ubNumTroops + pEnemy->ubNumElites;
+	if( iTotal <= 0 )
+		return 20;
+
+	INT32 iQuality =
+		(INT32)pEnemy->ubNumAdmins * 15 +
+		(INT32)pEnemy->ubNumTroops * 42 +
+		(INT32)pEnemy->ubNumElites * 82;
+	iQuality /= iTotal;
+
+	// Arulcan formations are intentionally capped below modern professional C2.
+	return (UINT8)__min( 85, __max( 15, iQuality ) );
+}
+
+static void VR_DeliverIntelToFormation( GROUP *pGroup,
+	VR_PENDING_INTEL_REPORT *pReport, UINT32 uiAgeMinutes )
+{
+	if( !pGroup || !pGroup->pEnemyGroup || !pReport || !pReport->fActive )
+		return;
+
+	VR_EnsureEnemyFormationState( pGroup );
+	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+
+	UINT8 x = (UINT8)SECTORX( pReport->ubSectorID );
+	UINT8 y = (UINT8)SECTORY( pReport->ubSectorID );
+	INT32 iDistance = VR_Abs( (INT32)pGroup->ubSectorX - x ) +
+		VR_Abs( (INT32)pGroup->ubSectorY - y );
+	INT32 iAgeHours = (INT32)( uiAgeMinutes / 60 );
+
+	INT32 iDeliveredConfidence = (INT32)pReport->ubConfidence -
+		iDistance * 3 - iAgeHours * 2;
+	iDeliveredConfidence = __max( 10, __min( 100, iDeliveredConfidence ) );
+
+	pEnemy->ubOperationalLastKnownPlayerSectorID = pReport->ubSectorID;
+	pEnemy->ubOperationalIntelConfidence = (UINT8)iDeliveredConfidence;
+	pEnemy->ubOperationalLastKnownPlayerStrength =
+		VR_EstimateStrengthWithConfidence(
+			pReport->ubReportedPlayerStrength, (UINT8)iDeliveredConfidence );
+	pEnemy->ubOperationalLastKnownMilitiaStrength =
+		VR_EstimateStrengthWithConfidence(
+			pReport->ubReportedMilitiaStrength, (UINT8)iDeliveredConfidence );
+	pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_CONTACT;
+
+	if( iDeliveredConfidence >= 60 )
+		pEnemy->usOperationalFlags |= VR_OPFLAG_RECENT_CONTACT;
+	else
+		pEnemy->usOperationalFlags &= ~VR_OPFLAG_RECENT_CONTACT;
+
+	VR_MarkIntelDelivered( pReport, pGroup->ubGroupID );
+	VR_LogOperationalDecision( pGroup, "INTEL_DELIVERED", NULL );
+}
+
+static void VR_ProcessOperationalIntelQueue()
+{
+	UINT32 uiNow = GetWorldTotalMin();
+
+	for( UINT8 r = 0; r < VR_MAX_PENDING_INTEL_REPORTS; ++r )
 	{
-		if( !pGroup->fPlayer && pGroup->pEnemyGroup )
+		VR_PENDING_INTEL_REPORT *pReport = &gVRPendingIntel[ r ];
+		if( !pReport->fActive )
+			continue;
+
+		UINT32 uiAge = uiNow >= pReport->uiCreatedMinute ?
+			uiNow - pReport->uiCreatedMinute : 0;
+
+		// Old reports stop propagating; formations that received them retain normal
+		// confidence decay in their own persistent state.
+		if( uiAge > 12 * 60 )
 		{
-			VR_EnsureEnemyFormationState( pGroup );
-			ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+			pReport->fActive = FALSE;
+			continue;
+		}
+
+		UINT8 x = (UINT8)SECTORX( pReport->ubSectorID );
+		UINT8 y = (UINT8)SECTORY( pReport->ubSectorID );
+
+		for( GROUP *pGroup = gpGroupList; pGroup; pGroup = pGroup->next )
+		{
+			if( pGroup->fPlayer || !pGroup->pEnemyGroup ||
+				VR_IntelDeliveredToGroup( pReport, pGroup->ubGroupID ) )
+			{
+				continue;
+			}
 
 			INT32 iDistance = VR_Abs( (INT32)pGroup->ubSectorX - x ) +
 				VR_Abs( (INT32)pGroup->ubSectorY - y );
-			INT32 iDeliveredConfidence = (INT32)ubConfidence - iDistance * 2;
-			if( iDeliveredConfidence < 10 )
-				iDeliveredConfidence = 10;
-			if( iDeliveredConfidence > 100 )
-				iDeliveredConfidence = 100;
+			UINT8 ubQuality = VR_FormationCommandQuality( pGroup );
 
-			pEnemy->ubOperationalLastKnownPlayerSectorID = ubSectorID;
-			pEnemy->ubOperationalIntelConfidence = (UINT8)iDeliveredConfidence;
-			pEnemy->ubOperationalLastKnownPlayerStrength =
-				VR_EstimateStrengthWithConfidence( iObservedPlayerStrength, (UINT8)iDeliveredConfidence );
-			pEnemy->ubOperationalLastKnownMilitiaStrength =
-				VR_EstimateStrengthWithConfidence( iObservedMilitiaStrength, (UINT8)iDeliveredConfidence );
-			pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_CONTACT;
+			// Nearby troops can receive local reports quickly. Distant formations
+			// wait for the report to climb through the command network.
+			INT32 iRequiredHours = 1 + iDistance / 4;
+			if( ubQuality >= 70 && iRequiredHours > 1 )
+				--iRequiredHours;
+			if( uiAge < (UINT32)iRequiredHours * 60 )
+				continue;
 
-			if( iDeliveredConfidence >= 60 )
-				pEnemy->usOperationalFlags |= VR_OPFLAG_RECENT_CONTACT;
-			else
-				pEnemy->usOperationalFlags &= ~VR_OPFLAG_RECENT_CONTACT;
+			INT32 iDeliveryChance = 45 + ubQuality / 2 - iDistance * 2;
+			iDeliveryChance = __max( 25, __min( 92, iDeliveryChance ) );
+			if( !Chance( iDeliveryChance ) )
+				continue;
 
-			VR_LogOperationalDecision( pGroup, "INTEL_REPORT", NULL );
+			VR_DeliverIntelToFormation( pGroup, pReport, uiAge );
 		}
+	}
+}
 
-		pGroup = pGroup->next;
+void VR_ReportOperationalIntel( UINT8 ubSectorID, UINT8 ubConfidence )
+{
+	if( ubSectorID > 255 )
+		return;
+
+	// A contact report deliberately contains only a rough opposition estimate.
+	// It does not read exact hidden merc count/equipment from the tactical layer.
+	INT32 iReportedPlayerStrength =
+		20 + (INT32)ubConfidence / 3 + (INT32)Random( 21 ) - 10;
+	INT32 iReportedMilitiaStrength =
+		10 + (INT32)ubConfidence / 5 + (INT32)Random( 17 ) - 8;
+
+	INT32 iSlot = -1;
+	UINT32 uiOldest = 0xffffffff;
+	for( UINT8 i = 0; i < VR_MAX_PENDING_INTEL_REPORTS; ++i )
+	{
+		if( gVRPendingIntel[i].fActive &&
+			gVRPendingIntel[i].ubSectorID == ubSectorID )
+		{
+			iSlot = i;
+			break;
+		}
+		if( !gVRPendingIntel[i].fActive )
+		{
+			iSlot = i;
+			break;
+		}
+		if( gVRPendingIntel[i].uiCreatedMinute < uiOldest )
+		{
+			uiOldest = gVRPendingIntel[i].uiCreatedMinute;
+			iSlot = i;
+		}
+	}
+
+	if( iSlot < 0 )
+		return;
+
+	VR_PENDING_INTEL_REPORT *pReport = &gVRPendingIntel[iSlot];
+	memset( pReport, 0, sizeof( *pReport ) );
+	pReport->fActive = TRUE;
+	pReport->ubSectorID = ubSectorID;
+	pReport->ubConfidence = ubConfidence;
+	pReport->ubReportedPlayerStrength = VR_ClampByte( iReportedPlayerStrength );
+	pReport->ubReportedMilitiaStrength = VR_ClampByte( iReportedMilitiaStrength );
+	pReport->uiCreatedMinute = GetWorldTotalMin();
+
+	UINT8 x = (UINT8)SECTORX( ubSectorID );
+	UINT8 y = (UINT8)SECTORY( ubSectorID );
+
+	// Only local formations receive the observation immediately.
+	for( GROUP *pGroup = gpGroupList; pGroup; pGroup = pGroup->next )
+	{
+		if( pGroup->fPlayer || !pGroup->pEnemyGroup )
+			continue;
+
+		INT32 iDistance = VR_Abs( (INT32)pGroup->ubSectorX - x ) +
+			VR_Abs( (INT32)pGroup->ubSectorY - y );
+		if( iDistance <= 2 )
+			VR_DeliverIntelToFormation( pGroup, pReport, 0 );
 	}
 }
 
@@ -576,6 +735,9 @@ void VR_OnEnemyGroupRetreated( GROUP *pGroup )
 
 void VR_HourlyOperationalUpdate()
 {
+	// First propagate queued reports through an imperfect, delayed command network.
+	VR_ProcessOperationalIntelQueue();
+
 	GROUP *pGroup = gpGroupList;
 
 	while( pGroup )
