@@ -6061,11 +6061,11 @@ static BOOLEAN HandleVRCinematicGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 u
 		30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
 		40, 41, 42, 43, 44, 45, 46, 47, 48, 49
 	};
-	static const UINT8 aubMediumPool[ 28 ] =
+	static const UINT8 aubMediumPool[ 30 ] =
 	{
 		8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
 		36, 37, 38, 39, 44, 45, 46, 47,
-		50, 51, 52, 53, 54, 55, 56, 57
+		50, 51, 52, 53, 54, 55, 56, 57, 58, 59
 	};
 	static const UINT8 aubCriticalPool[ 15 ] =
 	{
@@ -6090,13 +6090,14 @@ static BOOLEAN HandleVRCinematicGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 u
 			ubReaction = (UINT8)( 60 + Random( 5 ) );
 		else
 		{
-			ubReaction = (UINT8)( 65 + Random( 5 ) );
+			// Keep both generations of momentum-fall reactions active.
+			ubReaction = ( Random( 100 ) < 40 ) ? (UINT8)( 20 + Random( 5 ) ) : (UINT8)( 65 + Random( 5 ) );
 			fStrongReaction = TRUE;
 		}
 	}
 	else if ( Random( 100 ) < (UINT16)sStrongChance )
 	{
-		ubReaction = aubMediumPool[ Random( 28 ) ];
+		ubReaction = aubMediumPool[ Random( 30 ) ];
 		fStrongReaction = ( ubReaction >= 12 && ubReaction <= 19 ) || ubReaction >= 50;
 	}
 	else
@@ -6504,8 +6505,8 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 
 	// Physical body motion is the default spectacle. Variants 25-29 are deliberately
 	// additional fall/crumple/spin packages, not "maximum gore" packages.
-	static const UINT8 aubMotionVariants[ 9 ] = { 0, 1, 3, 4, 25, 26, 27, 28, 29 };
-	UINT8 ubVariant = aubMotionVariants[ Random( 9 ) ];
+	static const UINT8 aubMotionVariants[ 10 ] = { 0, 1, 2, 3, 4, 25, 26, 27, 28, 29 };
+	UINT8 ubVariant = aubMotionVariants[ Random( 10 ) ];
 
 	// Dismemberment is rare enough to remain memorable, but slightly more common than
 	// strict realism for cinematic feedback. It scales strongly with fatal hit energy.
