@@ -523,6 +523,7 @@ HVOBJECT CreateVideoObject( VOBJECT_DESC *VObjectDesc )
 	hVObject = (HVOBJECT) MemAlloc( sizeof( SGPVObject ) );
 	CHECKF( hVObject != NULL );
 	memset( hVObject, 0, sizeof( SGPVObject ) );
+	hVObject->ubVHDAssetScale = 1;
 
 	// default of all members of the vobject is 0
 
