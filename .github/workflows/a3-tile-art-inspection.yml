@@ -8,6 +8,10 @@ on:
       - '.github/workflows/a3-tile-art-inspection.yml'
   workflow_dispatch:
 
+concurrency:
+  group: ja2-render-shared
+  cancel-in-progress: false
+
 jobs:
   inspect-a3-art:
     runs-on: [self-hosted, Windows, X64, ja2-render]
@@ -56,15 +60,13 @@ jobs:
           Add-Type -AssemblyName System.Drawing
 
           function Read-U16([byte[]]$b, [int]$o) {
-            return [int]($b[$o] -bor ($b[$o+1] -shl 8))
+            return [System.BitConverter]::ToUInt16($b, $o)
           }
           function Read-I16([byte[]]$b, [int]$o) {
-            $u = Read-U16 $b $o
-            if ($u -ge 32768) { return $u - 65536 }
-            return $u
+            return [System.BitConverter]::ToInt16($b, $o)
           }
           function Read-U32([byte[]]$b, [int]$o) {
-            return [uint32]($b[$o] -bor ($b[$o+1] -shl 8) -bor ($b[$o+2] -shl 16) -bor ($b[$o+3] -shl 24))
+            return [System.BitConverter]::ToUInt32($b, $o)
           }
 
           function Decode-B1TC([string]$Path, [string]$OutPng, [string]$OutJson) {
