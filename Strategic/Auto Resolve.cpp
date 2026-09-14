@@ -1448,7 +1448,7 @@ UINT32 VirtualSoldierDressWound( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pVictim, OB
 
 	bInitialBleeding = pVictim->bBleeding;
 	// Vengeance: keep crude rag bandaging consistent with tactical combat.
-	fImprovisedRag = (pKit && pKit->exists() && pKit->usItem == 1022);
+	fImprovisedRag = (pKit && pKit->exists() && ItemIsImprovisedBandage( pKit->usItem ));
 
 	if ( !gGameOptions.fNewTraitSystem && fOnSurgery) // cannot make surgery if not new traits
 		fOnSurgery = FALSE;
