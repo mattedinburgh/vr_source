@@ -49,6 +49,13 @@ jobs:
           & $git -C $gamedir checkout install/all-2026-09-12
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Compose A3 crop master from FarmKit
+        shell: powershell
+        run: |
+          $dataRoot = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir\Data-Maps-Tiles'
+          & '.\Tools\ComposeA3CropMaster.ps1' -DataMapsTilesRoot $dataRoot
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Decode A3 B1TC families to contact sheets
         shell: powershell
         run: |
