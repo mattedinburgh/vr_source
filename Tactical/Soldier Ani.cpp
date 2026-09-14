@@ -61,6 +61,7 @@
 #include "interface dialogue.h"
 #include "Strategic Status.h"
 #include "Food.h"
+#include "SkillCheck.h"
 #include "CampaignStats.h"				// added by Flugente
 #endif
 
