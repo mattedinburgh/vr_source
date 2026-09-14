@@ -40,6 +40,8 @@
 #include "Meanwhile.h"
 #include "strategicmap.h"
 
+#include "../VRAnalytics.h"
+
 #include "connect.h"
 
 //forward declarations of common classes to eliminate includes
@@ -794,6 +796,59 @@ void PhysicsDeleteObject( REAL_OBJECT *pObject )
 {
 	if ( pObject->fAllocated )
 	{
+		// Black Box grenade fairness audit: close the projectile flight at the
+		// final physical grid. Pair with grenade_throw_launch by session +
+		// projectile_id. Test trajectories and launcher rounds are excluded.
+		if ( pObject->fTestObject == NO_TEST_OBJECT &&
+			 pObject->ubActionCode == THROW_ARM_ITEM &&
+			 pObject->ubOwner != NOBODY &&
+			 ( Item[pObject->Obj.usItem].usItemClass & IC_GRENADE ) &&
+			 Item[pObject->Obj.usItem].ubCursor == TOSSCURS )
+		{
+			SOLDIERTYPE* pOwner = MercPtrs[ pObject->ubOwner ];
+			if ( pOwner && pOwner->bTeam != gbPlayerNum )
+			{
+				int iNearestPlayerId = -1;
+				int iLandingOffsetToNearestPlayer = -1;
+				for ( INT32 iPlayer = gTacticalStatus.Team[ gbPlayerNum ].bFirstID;
+					  iPlayer <= gTacticalStatus.Team[ gbPlayerNum ].bLastID;
+					  ++iPlayer )
+				{
+					SOLDIERTYPE* pPlayer = MercPtrs[ iPlayer ];
+					if ( pPlayer && pPlayer->bActive && pPlayer->bInSector &&
+						 pPlayer->stats.bLife > 0 &&
+						 !TileIsOutOfBounds( pPlayer->sGridNo ) &&
+						 !TileIsOutOfBounds( pObject->sGridNo ) )
+					{
+						const int iOffset = PythSpacesAway( pObject->sGridNo, pPlayer->sGridNo );
+						if ( iNearestPlayerId < 0 || iOffset < iLandingOffsetToNearestPlayer )
+						{
+							iNearestPlayerId = iPlayer;
+							iLandingOffsetToNearestPlayer = iOffset;
+						}
+					}
+				}
+
+				const int iActualDistance =
+					( !TileIsOutOfBounds( pObject->sFirstGridNo ) &&
+					  !TileIsOutOfBounds( pObject->sGridNo ) )
+					? PythSpacesAway( pObject->sFirstGridNo, pObject->sGridNo )
+					: -1;
+
+				VRAnalyticsTacticalGrenadeThrowLanded(
+					pObject->ubOwner,
+					pOwner->bTeam,
+					pObject->iID,
+					pObject->Obj.usItem,
+					pObject->sFirstGridNo,
+					pObject->sGridNo,
+					iActualDistance,
+					(int)pObject->uiNumTilesMoved,
+					iNearestPlayerId,
+					iLandingOffsetToNearestPlayer,
+					pObject->fInWater ? true : false );
+			}
+		}
 		if ( pObject->pNode != NULL )
 		{
 			RemoveStructFromLevelNode( pObject->sLevelNodeGridNo, pObject->pNode );
