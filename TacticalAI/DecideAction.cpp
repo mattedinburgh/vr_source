@@ -10999,6 +10999,11 @@ INT8 DecideCombatDispersion(SOLDIERTYPE *pSoldier)
 	if (ubAdjacent < 2)
 		return AI_ACTION_NONE;
 
+	INT32 sDispersionThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	INT8 bDispersionRole = AITacticalRole(pSoldier, sDispersionThreat);
+	UINT32 uiDispersionDecision = AITraceBeginDecision(pSoldier, "combat_dispersion",
+		sDispersionThreat, AI_INTENT_HOLD, bDispersionRole);
+
 	BOOLEAN fLocalPressure = pSoldier->aiData.bUnderFire;
 	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID && !fLocalPressure; iCounter++)
@@ -11018,25 +11023,53 @@ INT8 DecideCombatDispersion(SOLDIERTYPE *pSoldier)
 	}
 
 	if (!fLocalPressure)
+	{
+		AITraceReject(pSoldier, uiDispersionDecision, "combat_dispersion",
+			AI_ACTION_TAKE_COVER, pSoldier->sGridNo,
+			"cluster exists but no local fire/suppression pressure");
 		return AI_ACTION_NONE;
+	}
 
 	INT32 iCoverPercentBetter = 0;
 	INT32 sDisperseSpot = FindBestNearbyCover(pSoldier, pSoldier->aiData.bAIMorale, &iCoverPercentBetter);
 	if (TileIsOutOfBounds(sDisperseSpot))
+	{
+		AITraceReject(pSoldier, uiDispersionDecision, "combat_dispersion",
+			AI_ACTION_TAKE_COVER, NOWHERE, "no legal dispersion cover spot");
 		return AI_ACTION_NONE;
+	}
 
 	UINT8 ubNewAdjacent = NumberOfTeamMatesAdjacent(pSoldier, sDisperseSpot);
 	if (ubNewAdjacent >= ubAdjacent)
+	{
+		AITraceReject(pSoldier, uiDispersionDecision, "combat_dispersion",
+			AI_ACTION_TAKE_COVER, sDisperseSpot, "candidate does not reduce dangerous clustering");
 		return AI_ACTION_NONE;
+	}
 
 	// Do not break a cluster by moving from a protected tile into a position the
 	// known enemy can attack. Dispersion is useful only if it is not tactically worse.
 	if (AIKnownThreatExposure(pSoldier, sDisperseSpot, pSoldier->pathing.bLevel) >
 		AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel))
 	{
+		AITraceReject(pSoldier, uiDispersionDecision, "combat_dispersion",
+			AI_ACTION_TAKE_COVER, sDisperseSpot,
+			"dispersion would increase known-threat exposure");
 		return AI_ACTION_NONE;
 	}
 
+	INT32 iDispersionScore = AIUtilityPositionScore(pSoldier, sDisperseSpot,
+		sDispersionThreat, AI_INTENT_HOLD, bDispersionRole);
+	AITraceCandidate(pSoldier, uiDispersionDecision, "combat_dispersion",
+		AI_ACTION_TAKE_COVER, sDisperseSpot, iDispersionScore,
+		AIPathExposureCost(pSoldier, sDisperseSpot, RUNNING),
+		CountNearbyFriends(pSoldier, sDisperseSpot, DAY_VISION_RANGE / 3),
+		TileIsOutOfBounds(sDispersionThreat) ? 0 :
+			AICrossfirePositionScore(pSoldier, sDisperseSpot, sDispersionThreat),
+		"safer spacing under local pressure");
+	AITraceSelect(pSoldier, uiDispersionDecision, "combat_dispersion",
+		AI_ACTION_TAKE_COVER, sDisperseSpot, iDispersionScore, 0, FALSE,
+		"selected lower-clustering cover without increased exposure");
 	pSoldier->aiData.usActionData = sDisperseSpot;
 	return AI_ACTION_TAKE_COVER;
 }
