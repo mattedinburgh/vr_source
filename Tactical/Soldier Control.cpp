@@ -6170,6 +6170,71 @@ static BOOLEAN HandleVRCinematicGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 u
 		ubReaction, pSoldier->ubID, sDamage, sStaminaLost, sStaminaNow, sSeverity, sKnockdownChance,
 		fRunning ? 1 : 0, ubHitLocation, ubIncomingDirection, ubMomentumDirection ) );
 
+	// Modern-game-inspired soft reaction layer. Agents of Mayhem-style additive
+	// reactions and Naughty Dog's location-aware hits both keep ordinary impacts
+	// compact: snap to the impact pose, absorb it, recover. JA2 cannot layer bones,
+	// so we approximate that language with dedicated upright sprite scripts. The
+	// hard death/flyback surfaces below are now reachable only after the explicit
+	// knockdown gate succeeds.
+	if ( !fKnockdownReaction )
+	{
+		UINT8 ubReactionDirection = ubOriginalDirection;
+		UINT8 ubOriginalLeft = (UINT8)( ( ubOriginalDirection + 7 ) % NUM_WORLD_DIRECTIONS );
+		UINT8 ubOriginalRight = (UINT8)( ( ubOriginalDirection + 1 ) % NUM_WORLD_DIRECTIONS );
+		UINT8 ubRelativeImpact = (UINT8)( ( ubIncomingDirection + NUM_WORLD_DIRECTIONS - ubOriginalDirection ) % NUM_WORLD_DIRECTIONS );
+
+		// Because JA2 sprites cannot twist only the shoulders/head, use whole-body
+		// facing changes sparingly. Most hits retain facing; a minority get a single
+		// 45-degree check away from the incoming side.
+		UINT8 ubTurnChance = ( ubHitLocation == AIM_SHOT_HEAD ) ? 45 :
+			( ubHitLocation == AIM_SHOT_LEGS ) ? 12 : 28;
+		if ( fRunning )
+			ubTurnChance = (UINT8)__min( 50, ubTurnChance + 8 );
+
+		if ( Random( 100 ) < ubTurnChance )
+		{
+			if ( ubRelativeImpact >= 1 && ubRelativeImpact <= 3 )
+				ubReactionDirection = ubOriginalLeft;
+			else if ( ubRelativeImpact >= 5 && ubRelativeImpact <= 7 )
+				ubReactionDirection = ubOriginalRight;
+			else
+				ubReactionDirection = Random( 2 ) ? ubOriginalLeft : ubOriginalRight;
+		}
+
+		INT16 sMotionScore = (INT16)( sDamage + sStaminaLost + sStaminaDeficit / 6 );
+		if ( fRunning )
+			sMotionScore += 5;
+		if ( ubHitLocation == AIM_SHOT_LEGS )
+			sMotionScore += 4;
+		else if ( ubHitLocation == AIM_SHOT_HEAD )
+			sMotionScore += 2;
+
+		UINT16 usSoftReaction = VR_HIT_MICRO_STAND;
+		if ( sMotionScore >= 40 )
+		{
+			// Still upright: a longer balance check, never a hidden fall/flyback.
+			usSoftReaction = ( Random( 100 ) < 65 ) ? VR_HIT_STUMBLE_STAND : VR_HIT_BODYCHECK_STAND;
+		}
+		else if ( sMotionScore >= 20 )
+		{
+			usSoftReaction = ( Random( 100 ) < 70 ) ? VR_HIT_BODYCHECK_STAND : VR_HIT_MICRO_STAND;
+		}
+		else if ( sMotionScore >= 12 && Random( 100 ) < 20 )
+		{
+			usSoftReaction = VR_HIT_BODYCHECK_STAND;
+		}
+
+		pSoldier->EVENT_SetSoldierDirection( ubReactionDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( ubOriginalDirection );
+		pSoldier->EVENT_InitNewSoldierAnim( usSoftReaction, 0, FALSE );
+
+		DebugMsg( TOPIC_JA2, DBG_LEVEL_3, String(
+			"VR_HIT_SOFT variant=%u soldier=%u damage=%d staminaLoss=%d stamina=%d severity=%d motion=%d state=%u turn=%u",
+			ubReaction, pSoldier->ubID, sDamage, sStaminaLost, sStaminaNow, sSeverity, sMotionScore,
+			usSoftReaction, ubReactionDirection ) );
+		return TRUE;
+	}
+
 	switch ( ubReaction )
 	{
 	// 0-11: original light/upright family
