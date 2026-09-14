@@ -6220,6 +6220,16 @@ void ReassignAIGroup( GROUP **pGroup )
 	//strategic pathing can break if the group is between sectors upon reassignment.
 	SetEnemyGroupSector( *pGroup, ubSectorID );
 
+	VR_EnsureEnemyFormationState( *pGroup );
+	if( (*pGroup)->pEnemyGroup->ubOperationalSupply < 20 || (*pGroup)->pEnemyGroup->ubOperationalMorale < 30 )
+	{
+		VR_SetFormationMission( *pGroup, VR_OPMISSION_REGROUP,
+			(*pGroup)->pEnemyGroup->ubOperationalSupply < 20 ? VR_OPREASON_LOW_SUPPLY : VR_OPREASON_REGROUP );
+		VR_LogOperationalDecision( *pGroup, "NOT_COMBAT_READY", NULL );
+		SendGroupToPool( pGroup );
+		return;
+	}
+
 	if( giRequestPoints <= 0	)
 	{ //we have no request for reinforcements, so send the group to Meduna for reassignment in the pool.
 		SendGroupToPool( pGroup );
