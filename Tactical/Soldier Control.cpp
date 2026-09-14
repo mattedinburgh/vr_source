@@ -1043,6 +1043,8 @@ SOLDIERTYPE& SOLDIERTYPE::operator=(const OLDSOLDIERTYPE_101& src)
 
 		this->ubBleedoutTurns = 0;
 		this->ubBleedoutState = BLEEDOUT_NONE;
+		this->ubBleedoutTraumaThisRound = 0;
+		this->ubBleedoutGraceRound = 0;
 		this->ubDraggedCasualtyID = NOBODY;
 		this->ubDraggedByID = NOBODY;
 
@@ -1141,6 +1143,8 @@ void SOLDIERTYPE::initialize()
 
 	this->ubBleedoutTurns = 0;
 	this->ubBleedoutState = BLEEDOUT_NONE;
+	this->ubBleedoutTraumaThisRound = 0;
+	this->ubBleedoutGraceRound = 0;
 	this->ubDraggedCasualtyID = NOBODY;
 	this->ubDraggedByID = NOBODY;
 }
@@ -11036,6 +11040,45 @@ void SOLDIERTYPE::BeginSoldierGetup( void )
 // adding a second health pool, a survivable lethal wound is clamped to 1 life and
 // given a short tactical bleed-out window.  Existing first aid stabilizes the
 // casualty by stopping bleeding.
+static const UINT8 BLEEDOUT_CATASTROPHIC_TRAUMA = 70;
+static const UINT8 BLEEDOUT_MAX_RESCUE_TURNS = 10;
+static const UINT8 BLEEDOUT_MIN_RESCUE_TURNS = 6;
+
+static BOOLEAN DamageCountsTowardBleedoutTrauma( UINT8 ubReason )
+{
+	switch ( ubReason )
+	{
+	case TAKE_DAMAGE_GUNFIRE:
+	case TAKE_DAMAGE_BLADE:
+	case TAKE_DAMAGE_HANDTOHAND:
+	case TAKE_DAMAGE_FALLROOF:
+	case TAKE_DAMAGE_EXPLOSION:
+	case TAKE_DAMAGE_STRUCTURE_EXPLOSION:
+	case TAKE_DAMAGE_OBJECT:
+		return TRUE;
+
+	default:
+		return FALSE;
+	}
+}
+
+static void RecordBleedoutTrauma( SOLDIERTYPE *pSoldier, UINT8 ubReason, INT16 sLifeDeduct )
+{
+	if ( !pSoldier || !(gTacticalStatus.uiFlags & INCOMBAT) || sLifeDeduct <= 0 ||
+		!DamageCountsTowardBleedoutTrauma( ubReason ) ||
+		!IS_MERC_BODY_TYPE( pSoldier ) ||
+		(pSoldier->flags.uiStatusFlags & ( SOLDIER_VEHICLE | SOLDIER_ROBOT )) ||
+		pSoldier->IsZombie() )
+	{
+		return;
+	}
+
+	// Saturate instead of wrapping. The only gameplay threshold is 70, but retaining
+	// the actual round total up to 255 makes diagnostics and future tuning easier.
+	INT32 iTrauma = (INT32)pSoldier->ubBleedoutTraumaThisRound + (INT32)sLifeDeduct;
+	pSoldier->ubBleedoutTraumaThisRound = (UINT8)__min( 255, iTrauma );
+}
+
 static BOOLEAN CanEnterBleedoutState( SOLDIERTYPE *pSoldier, UINT8 ubReason, INT16 sLifeDeduct, INT8 bOldLife )
 {
 	if ( !pSoldier || bOldLife <= 0 || pSoldier->ubBleedoutState != BLEEDOUT_NONE )
@@ -11066,25 +11109,13 @@ static BOOLEAN CanEnterBleedoutState( SOLDIERTYPE *pSoldier, UINT8 ubReason, INT
 		}
 	}
 
-	switch ( ubReason )
-	{
-	case TAKE_DAMAGE_GUNFIRE:
-	case TAKE_DAMAGE_BLADE:
-	case TAKE_DAMAGE_HANDTOHAND:
-	case TAKE_DAMAGE_FALLROOF:
-	case TAKE_DAMAGE_EXPLOSION:
-	case TAKE_DAMAGE_STRUCTURE_EXPLOSION:
-	case TAKE_DAMAGE_OBJECT:
-		break;
-
-	default:
+	if ( !DamageCountsTowardBleedoutTrauma( ubReason ) )
 		return FALSE;
-	}
 
-	// Massive overkill remains immediately lethal. This preserves the danger of
-	// catastrophic hits while ordinary lethal wounds become rescue situations.
-	INT16 sOverkill = __max( 0, sLifeDeduct - (INT16)bOldLife );
-	return ( sOverkill <= 30 );
+	// The important rule is cumulative trauma across the whole tactical round,
+	// not just overkill on the final bullet. A burst can therefore down a soldier
+	// after 50-60 total damage, while a lethal sequence reaching 70+ is catastrophic.
+	return ( pSoldier->ubBleedoutTraumaThisRound < BLEEDOUT_CATASTROPHIC_TRAUMA );
 }
 
 
@@ -11094,7 +11125,7 @@ BOOLEAN IsBleedoutCasualty( SOLDIERTYPE *pSoldier )
 		return FALSE;
 
 	if ( pSoldier->ubBleedoutState == BLEEDOUT_ACTIVE )
-		return ( pSoldier->ubBleedoutTurns >= 1 && pSoldier->ubBleedoutTurns <= 7 );
+		return ( pSoldier->ubBleedoutTurns >= 1 && pSoldier->ubBleedoutTurns <= BLEEDOUT_MAX_RESCUE_TURNS );
 
 	if ( pSoldier->ubBleedoutState == BLEEDOUT_STABILIZED )
 		return ( pSoldier->ubBleedoutTurns == 0 );
@@ -11295,6 +11326,7 @@ BOOLEAN SOLDIERTYPE::StartDraggingBleedoutCasualty( SOLDIERTYPE *pCasualty, BOOL
 	{
 		pCasualty->ubBleedoutState = BLEEDOUT_STABILIZED;
 		pCasualty->ubBleedoutTurns = 0;
+		pCasualty->ubBleedoutGraceRound = 0;
 		pCasualty->bBleeding = 0;
 		pCasualty->bCollapsed = TRUE;
 	}
@@ -11380,16 +11412,20 @@ void SOLDIERTYPE::UpdateDraggedBleedoutCasualty( INT32 sOldGridNo )
 	pCasualty->sAbsoluteFinalDestination = sOldGridNo;
 }
 
-static UINT8 BleedoutRescueTurns( INT16 sLifeDeduct, INT8 bOldLife )
+static UINT8 BleedoutRescueTurns( UINT8 ubRoundTrauma )
 {
-	INT16 sOverkill = __max( 0, sLifeDeduct - (INT16)bOldLife );
+	// Less severe incapacitating wounds give the squad time to win local fire
+	// superiority, deploy smoke, drag the casualty and then stabilize them.
+	if ( ubRoundTrauma <= 30 )
+		return 10;
+	if ( ubRoundTrauma <= 45 )
+		return 9;
+	if ( ubRoundTrauma <= 55 )
+		return 8;
+	if ( ubRoundTrauma <= 64 )
+		return 7;
 
-	if ( sOverkill <= 5 )
-		return 6;
-	if ( sOverkill <= 10 )
-		return 5;
-
-	return 4;
+	return BLEEDOUT_MIN_RESCUE_TURNS; // 65-69: critical but still potentially survivable
 }
 
 
@@ -11398,6 +11434,12 @@ void ProcessBleedoutCasualties( )
 	for ( INT32 cnt = 0; cnt < TOTAL_SOLDIERS; ++cnt )
 	{
 		SOLDIERTYPE *pSoldier = Menptr + cnt;
+
+		// Trauma is a full-round concept. Preserve whether a casualty was created in
+		// this just-finished round, then start everybody with a clean trauma total.
+		const BOOLEAN fBleedoutGraceRound = ( pSoldier->ubBleedoutGraceRound != 0 );
+		pSoldier->ubBleedoutGraceRound = 0;
+		pSoldier->ubBleedoutTraumaThisRound = 0;
 
 		// Clean interrupted/stale rescue links before evaluating the casualty state.
 		if ( pSoldier->ubDraggedCasualtyID != NOBODY && !pSoldier->IsDraggingBleedoutCasualty() )
@@ -11479,7 +11521,7 @@ void ProcessBleedoutCasualties( )
 			pSoldier->DoMercBattleSound( BATTLE_SOUND_AGONY );
 		}
 
-		if ( pSoldier->ubBleedoutTurns == 0 || pSoldier->ubBleedoutTurns > 7 )
+		if ( pSoldier->ubBleedoutTurns == 0 || pSoldier->ubBleedoutTurns > BLEEDOUT_MAX_RESCUE_TURNS )
 		{
 			pSoldier->ClearBleedoutDragLinks();
 			pSoldier->ubBleedoutState = BLEEDOUT_NONE;
@@ -11495,6 +11537,11 @@ void ProcessBleedoutCasualties( )
 			pSoldier->ubBleedoutTurns = 0;
 			continue;
 		}
+
+		// A casualty created during the round keeps the full number shown to the
+		// player; the partial round in which they fell does not consume one.
+		if ( fBleedoutGraceRound )
+			continue;
 
 		if ( pSoldier->ubBleedoutTurns > 0 )
 			--pSoldier->ubBleedoutTurns;
@@ -11958,6 +12005,11 @@ UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPo
 		}
 	}
 
+	// Track the entire damaging sequence across the tactical round. This is
+	// intentionally done after damage scaling so the 70-point catastrophe rule
+	// reflects the health damage the soldier actually suffers.
+	RecordBleedoutTrauma( this, ubReason, sLifeDeduct );
+
 	if (sLifeDeduct > this->stats.bLife)
 	{
 		this->stats.bLife = 0;
@@ -12004,16 +12056,28 @@ UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPo
 	{
 		this->stats.bLife = 1;
 	}
-	// Convert an otherwise-lethal survivable combat wound into the downed state.
+	// A casualty already on the ground can survive incidental additional damage while
+	// the same round's cumulative trauma remains below the catastrophic threshold.
+	// This prevents a trivial stray 1-HP impact from automatically executing them.
+	else if ( this->stats.bLife <= 0 &&
+		this->ubBleedoutState == BLEEDOUT_ACTIVE &&
+		DamageCountsTowardBleedoutTrauma( ubReason ) &&
+		this->ubBleedoutTraumaThisRound < BLEEDOUT_CATASTROPHIC_TRAUMA )
+	{
+		this->stats.bLife = 1;
+		UINT8 ubRevisedWindow = BleedoutRescueTurns( this->ubBleedoutTraumaThisRound );
+		if ( this->ubBleedoutTurns == 0 || this->ubBleedoutTurns > ubRevisedWindow )
+			this->ubBleedoutTurns = ubRevisedWindow;
+	}
+	// Convert an otherwise-lethal but sub-catastrophic combat wound into the downed state.
 	else if ( this->stats.bLife <= 0 && CanEnterBleedoutState( this, ubReason, sLifeDeduct, bOldLife ) )
 	{
 		// A newly downed rescuer cannot keep towing somebody else.
 		this->ClearBleedoutDragLinks();
 		this->stats.bLife = 1;
 		this->ubBleedoutState = BLEEDOUT_ACTIVE;
-		// One hidden buffer tick prevents a casualty created late in the round from
-		// losing one of the promised 4-6 rescue turns immediately at round end.
-		this->ubBleedoutTurns = BleedoutRescueTurns( sLifeDeduct, bOldLife ) + 1;
+		this->ubBleedoutTurns = BleedoutRescueTurns( this->ubBleedoutTraumaThisRound );
+		this->ubBleedoutGraceRound = 1;
 	}
 
 	/////////////////////////////////////////////////////////////////////////////////////////////////
