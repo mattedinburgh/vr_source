@@ -104,12 +104,19 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 	}
 
 	// If no native VHD package exists, enlarge the loaded legacy imagery once.
-	// Existing blitters can then keep drawing at native sprite size while the
-	// logical map/JSD data remains untouched.
+	// Indexed tactical map tiles are promoted to RGBA as they are scaled. That keeps
+	// 2x/4x structures on the scale-aware C++ Z-strip path instead of the legacy
+	// assembly multi-Z blitters, whose strip stepping is tied to raw source pixels.
 	if ( hImage != NULL && ubLoadedVHDScale == 1 &&
 		 ( ubRequestedVHDScale == 2 || ubRequestedVHDScale == 4 ) )
 	{
-		if ( ScaleImageNearestForVHD( hImage, ubRequestedVHDScale ) )
+		BOOLEAN fScaledForVHD = FALSE;
+		if ( hImage->ubBitDepth == 8 && ( hImage->fFlags & IMAGE_TRLECOMPRESSED ) )
+			fScaledForVHD = ScaleIndexedImageToTrueColorForVHD( hImage, ubRequestedVHDScale );
+		else
+			fScaledForVHD = ScaleImageNearestForVHD( hImage, ubRequestedVHDScale );
+
+		if ( fScaledForVHD )
 		{
 			ubLoadedVHDScale = ubRequestedVHDScale;
 		}
