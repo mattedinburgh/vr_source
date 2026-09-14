@@ -1,0 +1,27 @@
+name: AI fragmentation audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - install/all-2026-09-12
+      - 'ai/**'
+      - 'integration/**'
+      - final-human-ai-modern-113
+
+jobs:
+  audit:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout full repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch all remote branches
+        shell: pwsh
+        run: git fetch origin '+refs/heads/*:refs/remotes/origin/*' --prune
+
+      - name: Verify single AI integration line
+        shell: pwsh
+        run: ./Tools/AI/VERIFY_AI_BRANCH_CONSOLIDATION.ps1
