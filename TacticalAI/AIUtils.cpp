@@ -5180,6 +5180,7 @@ static INT8 gbAITacticalIntentPlan[MAX_NUM_SOLDIERS] = { 0 };
 static INT8 gbAITacticalRolePlan[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAITacticalPlanUntil[MAX_NUM_SOLDIERS] = { 0 };
 static INT32 gsAITacticalPlanTarget[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAITacticalRoleUntil[MAX_NUM_SOLDIERS] = { 0 };
 
 static BOOLEAN AITacticalTargetChanged(UINT8 ubID, INT32 sTargetSpot)
 {
@@ -5222,6 +5223,79 @@ static UINT8 AIActiveManeuverCount(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		}
 
 		++ubCount;
+	}
+
+	return ubCount;
+}
+
+static INT8 AISharedIntentVote(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, UINT32 uiNow)
+{
+	if (!pSoldier || TileIsOutOfBounds(sTargetSpot))
+		return -1;
+
+	UINT8 ubVotes[AI_INTENT_RESCUE + 1] = { 0 };
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE || guiAITacticalPlanUntil[pFriend->ubID] < uiNow ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE)
+		{
+			continue;
+		}
+
+		INT32 sFriendTarget = gsAITacticalPlanTarget[pFriend->ubID];
+		if (TileIsOutOfBounds(sFriendTarget) || PythSpacesAway(sFriendTarget, sTargetSpot) > 5)
+			continue;
+
+		INT8 bFriendIntent = gbAITacticalIntentPlan[pFriend->ubID];
+		if (bFriendIntent >= AI_INTENT_HOLD && bFriendIntent <= AI_INTENT_RESCUE)
+			++ubVotes[bFriendIntent];
+	}
+
+	INT8 bBestIntent = -1;
+	UINT8 ubBestVotes = 0;
+	for (INT8 bIntent = AI_INTENT_HOLD; bIntent <= AI_INTENT_RESCUE; ++bIntent)
+	{
+		if (ubVotes[bIntent] > ubBestVotes)
+		{
+			ubBestVotes = ubVotes[bIntent];
+			bBestIntent = bIntent;
+		}
+	}
+
+	// One nearby leader/partner can seed a plan; two votes make it a strong squad
+	// preference. Safety checks in AITacticalIntent can still override it.
+	return ubBestVotes > 0 ? bBestIntent : -1;
+}
+
+static UINT8 AIPlannedRoleCount(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bRole, UINT32 uiNow)
+{
+	if (!pSoldier)
+		return 0;
+
+	UINT8 ubCount = 0;
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE || guiAITacticalRoleUntil[pFriend->ubID] < uiNow ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE)
+		{
+			continue;
+		}
+
+		if (!TileIsOutOfBounds(sTargetSpot))
+		{
+			INT32 sFriendTarget = gsAITacticalPlanTarget[pFriend->ubID];
+			if (TileIsOutOfBounds(sFriendTarget) || PythSpacesAway(sFriendTarget, sTargetSpot) > 5)
+				continue;
+		}
+
+		if (gbAITacticalRolePlan[pFriend->ubID] == bRole)
+			++ubCount;
 	}
 
 	return ubCount;
@@ -5307,6 +5381,23 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		}
 	}
 
+	// Distributed squad blackboard: soldiers fighting the same contact bias toward
+	// a common plan, while personal danger can still veto an aggressive consensus.
+	INT8 bSharedIntent = AISharedIntentVote(pSoldier, sTargetSpot, uiNow);
+	if (bEmergencyIntent < 0 && bSharedIntent >= AI_INTENT_HOLD)
+	{
+		if (bSharedIntent == AI_INTENT_FALLBACK || bSharedIntent == AI_INTENT_DISENGAGE)
+		{
+			if (bIntent != AI_INTENT_RESCUE && bSituation != AI_BATTLE_WINNING)
+				bIntent = bSharedIntent;
+		}
+		else if (bIntent != AI_INTENT_FALLBACK && bIntent != AI_INTENT_DISENGAGE &&
+			iRisk <= iTolerance + 5)
+		{
+			bIntent = bSharedIntent;
+		}
+	}
+
 	gbAITacticalIntentPlan[ubID] = bIntent;
 	gsAITacticalPlanTarget[ubID] = sTargetSpot;
 	// One extra turn of persistence prevents oscillation between equally plausible
@@ -5328,6 +5419,10 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	INT32 iSupport = AISupportRoleScore(pSoldier, sTargetSpot);
 	INT32 iManeuver = AIManeuverRoleScore(pSoldier, sTargetSpot);
 	INT8 bRole = AI_ROLE_RESERVE;
+	UINT32 uiNow = guiTurnCnt + 1;
+	UINT8 ubPlannedFlankers = AIPlannedRoleCount(pSoldier, sTargetSpot, AI_ROLE_FLANKER, uiNow);
+	UINT8 ubPlannedMovers = ubPlannedFlankers + AIPlannedRoleCount(pSoldier, sTargetSpot, AI_ROLE_MANEUVER, uiNow);
+	UINT8 ubPlannedScreens = AIPlannedRoleCount(pSoldier, sTargetSpot, AI_ROLE_SCREEN, uiNow);
 
 	if (bIntent == AI_INTENT_RESCUE)
 	{
@@ -5337,8 +5432,10 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	{
 		// Healthy long-range soldiers form the rear guard while more mobile soldiers
 		// displace. This creates alternating bounds instead of a simultaneous rout.
-		bRole = (iSupport >= iManeuver + 5 && !pSoldier->aiData.bUnderFire) ?
-			AI_ROLE_SCREEN : AI_ROLE_MANEUVER;
+		if (iSupport >= iManeuver + 5 && !pSoldier->aiData.bUnderFire && ubPlannedScreens < 2)
+			bRole = AI_ROLE_SCREEN;
+		else
+			bRole = AI_ROLE_MANEUVER;
 	}
 	else if (AICheckIsMachinegunner(pSoldier) || AICheckIsSniper(pSoldier) ||
 		AICheckIsMortarOperator(pSoldier) || iSupport >= iManeuver + 18)
@@ -5346,11 +5443,13 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		bRole = AI_ROLE_SUPPORT;
 	}
 	else if (bIntent == AI_INTENT_FLANK && iManeuver > iSupport &&
-		AIActiveManeuverCount(pSoldier, sTargetSpot) < 2)
+		ubPlannedFlankers < 2 &&
+		AIActiveManeuverCount(pSoldier, sTargetSpot) + ubPlannedMovers < 3)
 	{
 		bRole = AI_ROLE_FLANKER;
 	}
 	else if (bIntent == AI_INTENT_PRESS && iManeuver >= iSupport - 5 &&
+		ubPlannedMovers < 2 &&
 		AIActiveManeuverCount(pSoldier, sTargetSpot) < 2)
 	{
 		bRole = AI_ROLE_MANEUVER;
@@ -5361,6 +5460,7 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	}
 
 	gbAITacticalRolePlan[ubID] = bRole;
+	guiAITacticalRoleUntil[ubID] = uiNow + 1;
 	return bRole;
 }
 
