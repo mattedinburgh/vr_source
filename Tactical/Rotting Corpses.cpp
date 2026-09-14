@@ -986,6 +986,44 @@ BOOLEAN TurnSoldierIntoCorpse( SOLDIERTYPE *pSoldier, BOOLEAN fRemoveMerc, BOOLE
 	{
 		// OK, Place what objects this guy was carrying on the ground!
 		UINT32 invsize = pSoldier->inv.size();
+
+		// Vengeance: minimum enemy loot safeguard.
+		// Normal drop rules remain untouched. Only if an enemy would otherwise
+		// leave no inventory item at all, promote one random legitimate carried
+		// item by clearing OBJECT_UNDROPPABLE. Items marked default-undroppable
+		// remain protected (quest/special items are never forced into the loot pool).
+		if ( pSoldier->bTeam == ENEMY_TEAM )
+		{
+			BOOLEAN fHasNormalDrop = FALSE;
+			INT32 iFallbackSlot = -1;
+			UINT32 uiFallbackCandidates = 0;
+
+			for ( UINT32 uiLootSlot = 0; uiLootSlot < invsize; ++uiLootSlot )
+			{
+				OBJECTTYPE *pLootObj = &( pSoldier->inv[ uiLootSlot ] );
+
+				if ( pLootObj->exists() == false || Item[ pLootObj->usItem ].defaultundroppable )
+					continue;
+
+				if ( !( pLootObj->fFlags & OBJECT_UNDROPPABLE ) )
+				{
+					fHasNormalDrop = TRUE;
+					break;
+				}
+
+				// Reservoir sampling keeps every eligible carried item equally likely
+				// without allocating a temporary container.
+				++uiFallbackCandidates;
+				if ( Random( uiFallbackCandidates ) == 0 )
+					iFallbackSlot = (INT32)uiLootSlot;
+			}
+
+			if ( !fHasNormalDrop && iFallbackSlot >= 0 )
+			{
+				pSoldier->inv[ iFallbackSlot ].fFlags &= ~OBJECT_UNDROPPABLE;
+			}
+		}
+
 		for ( cnt = 0; cnt < invsize; ++cnt )
 		{
 			pObj = &( pSoldier->inv[ cnt ] );
