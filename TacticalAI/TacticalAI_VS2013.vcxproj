@@ -27,6 +27,7 @@
     <ClInclude Include="ai.h" />
     <ClInclude Include="AIInternals.h" />
     <ClInclude Include="AIList.h" />
+    <ClInclude Include="CQBBuildingDoctrine.h" />
     <ClInclude Include="NPC.h" />
     <ClInclude Include="QuestDebug.h" />
   </ItemGroup>
@@ -36,6 +37,7 @@
     <ClCompile Include="AIUtils.cpp" />
     <ClCompile Include="Attacks.cpp" />
     <ClCompile Include="CreatureDecideAction.cpp" />
+    <ClCompile Include="CQBBuildingDoctrine.cpp" />
     <ClCompile Include="DecideAction.cpp" />
     <ClCompile Include="FindLocations.cpp" />
     <ClCompile Include="Knowledge.cpp" />
