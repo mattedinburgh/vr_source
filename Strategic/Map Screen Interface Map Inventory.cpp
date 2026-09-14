@@ -557,7 +557,24 @@ static void PoolSquadSpareAmmo()
 	}
 }
 
-static void PoolSquadHandSmoke()
+static UINT32 CountMercHandSmoke( SOLDIERTYPE *pSoldier )
+{
+	if ( pSoldier == NULL )
+		return 0;
+
+	UINT32 uiCount = 0;
+	for ( INT32 bSlot = 0; bSlot < NUM_INV_SLOTS; ++bSlot )
+	{
+		OBJECTTYPE *pObj = &( pSoldier->inv[bSlot] );
+		if ( !pObj->exists() || !IsHandThrownSmokeGrenade( pObj->usItem ) )
+			continue;
+
+		uiCount += pObj->ubNumberOfObjects;
+	}
+	return uiCount;
+}
+
+static void PoolSquadSurplusHandSmoke()
 {
 	for ( SoldierID id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
 		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
@@ -566,13 +583,33 @@ static void PoolSquadHandSmoke()
 		if ( !IsSectorLoadoutMercEligible( pSoldier ) )
 			continue;
 
+		BOOLEAN fKeptOne = FALSE;
+
 		for ( INT32 bSlot = 0; bSlot < NUM_INV_SLOTS; ++bSlot )
 		{
 			OBJECTTYPE *pObj = &( pSoldier->inv[bSlot] );
-			if ( pObj->exists() && IsHandThrownSmokeGrenade( pObj->usItem ) )
+			if ( !pObj->exists() || !IsHandThrownSmokeGrenade( pObj->usItem ) )
+				continue;
+
+			while ( pObj->exists() && pObj->ubNumberOfObjects > 0 )
 			{
-				PoolObjectForSectorLoadout( pObj );
+				if ( !fKeptOne )
+				{
+					fKeptOne = TRUE;
+
+					// If this stack contains extras, peel them off one at a time.
+					if ( pObj->ubNumberOfObjects == 1 )
+						break;
+				}
+
+				OBJECTTYPE extra;
+				pObj->RemoveObjectAtIndex( pObj->ubNumberOfObjects - 1, &extra );
+				if ( extra.exists() )
+					PoolObjectForSectorLoadout( &extra );
 			}
+
+			if ( pObj->ubNumberOfObjects < 1 )
+				DeleteObj( pObj );
 		}
 	}
 }
@@ -684,18 +721,36 @@ static void GetCompatibleSectorAmmoTypes( UINT8 ubCalibre, UINT16 usMagSize, std
 	std::sort( types.begin(), types.end(), SectorLoadoutAmmoTypeLess );
 }
 
-static INT16 FindBestSectorAmmoType( UINT8 ubCalibre, UINT16 usMagSize, UINT32 uiMinimumRounds )
+static INT16 FindSectorAmmoTypeForFill( UINT8 ubCalibre, UINT16 usMagSize, UINT32 uiWantedRounds )
 {
 	std::vector<UINT8> types;
 	GetCompatibleSectorAmmoTypes( ubCalibre, usMagSize, types );
 
+	// First preserve the user's ammo preference when a type can fill the desired
+	// magazine amount completely.
 	for ( UINT32 i = 0; i < types.size(); ++i )
 	{
-		if ( CountSectorAmmoRounds( ubCalibre, types[i] ) >= uiMinimumRounds )
+		if ( CountSectorAmmoRounds( ubCalibre, types[i] ) >= uiWantedRounds )
 			return (INT16)types[i];
 	}
 
-	return -1;
+	// If no type can fill it, maximize the rounds carried in this magazine.
+	// Preference is only the tiebreaker, so a tiny AP remainder cannot waste most
+	// of a magazine while a larger standard/other remainder is available.
+	INT16 sBestType = -1;
+	UINT32 uiBestRounds = 0;
+
+	for ( UINT32 i = 0; i < types.size(); ++i )
+	{
+		UINT32 uiAvailable = CountSectorAmmoRounds( ubCalibre, types[i] );
+		if ( uiAvailable > uiBestRounds )
+		{
+			uiBestRounds = uiAvailable;
+			sBestType = (INT16)types[i];
+		}
+	}
+
+	return sBestType;
 }
 
 static UINT32 CountAllCompatibleSectorAmmoRounds( UINT8 ubCalibre, UINT16 usMagSize )
@@ -843,107 +898,52 @@ static void RedistributeSectorAmmo3x()
 		if ( group.empty() )
 			continue;
 
-		UINT32 start = 0;
+		SECTOR_LOADOUT_AMMO_DEMAND &sample = demands[group[0]];
+		UINT32 uiAvailable = CountAllCompatibleSectorAmmoRounds( sample.ubCalibre, sample.usMagSize );
+		UINT32 uiPerWeaponCap = (UINT32)sample.usMagSize * 3;
+		UINT32 uiGroupCapacity = uiPerWeaponCap * group.size();
+		UINT32 uiToDistribute = __min( uiAvailable, uiGroupCapacity );
 
-		// First distribute full magazines in three round-robin waves. Rotating the
-		// starting weapon each wave also spreads scarce high-priority AP ammo.
-		for ( UINT8 wave = 0; wave < 3; ++wave )
+		// Equal shortage rule: divide total compatible rounds evenly between all
+		// weapons in the group before creating any magazines. Remainder rounds are
+		// spread one-by-one in rotating order.
+		UINT32 uiBaseTarget = uiToDistribute / group.size();
+		UINT32 uiRemainder = uiToDistribute % group.size();
+
+		for ( UINT32 n = 0; n < group.size(); ++n )
 		{
-			for ( UINT32 n = 0; n < group.size(); ++n )
+			SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[group[n]];
+			UINT32 uiTarget = uiBaseTarget + ( n < uiRemainder ? 1 : 0 );
+			uiTarget = __min( uiTarget, uiPerWeaponCap );
+			UINT32 uiRemainingTarget = uiTarget;
+
+			while ( uiRemainingTarget > 0 && demand.ubMagsGiven < 3 && !demand.fBlocked )
 			{
-				UINT32 demandIndex = group[( start + n ) % group.size()];
-				SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[demandIndex];
+				UINT32 uiWantedThisMag = __min( (UINT32)demand.usMagSize, uiRemainingTarget );
+				INT16 sAmmoType = FindSectorAmmoTypeForFill( demand.ubCalibre, demand.usMagSize, uiWantedThisMag );
 
-				if ( demand.fBlocked || demand.ubMagsGiven >= 3 )
-					continue;
-
-				INT16 sAmmoType = FindBestSectorAmmoType( demand.ubCalibre, demand.usMagSize, demand.usMagSize );
 				if ( sAmmoType < 0 )
-					continue;
+					break;
 
-				UINT16 usMade = BuildAndPlaceSectorMagazine( demand.pSoldier, demand.ubCalibre,
-					demand.usMagSize, (UINT8)sAmmoType, demand.usMagSize );
-
-				if ( usMade > 0 )
-				{
-					++demand.ubMagsGiven;
-					++uiMagazinesGiven;
-					uiRoundsGiven += usMade;
-				}
-				else
-				{
-					demand.fBlocked = TRUE;
-				}
-			}
-
-			start = ( start + 1 ) % group.size();
-		}
-
-		// Any sub-magazine remainders are shared as evenly as practical. Partial
-		// magazines are preferable to leaving one merc with all remaining rounds.
-		while ( TRUE )
-		{
-			UINT32 uiActive = 0;
-			for ( UINT32 n = 0; n < group.size(); ++n )
-			{
-				SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[group[n]];
-				if ( !demand.fBlocked && demand.ubMagsGiven < 3 )
-					++uiActive;
-			}
-
-			if ( uiActive == 0 )
-				break;
-
-			SECTOR_LOADOUT_AMMO_DEMAND &sample = demands[group[0]];
-			UINT32 uiRemaining = CountAllCompatibleSectorAmmoRounds( sample.ubCalibre, sample.usMagSize );
-			if ( uiRemaining == 0 )
-				break;
-
-			UINT32 uiShare = uiRemaining / uiActive;
-			if ( uiShare == 0 )
-				uiShare = 1;
-			if ( uiShare > sample.usMagSize )
-				uiShare = sample.usMagSize;
-
-			BOOLEAN fMovedAnything = FALSE;
-
-			for ( UINT32 n = 0; n < group.size(); ++n )
-			{
-				UINT32 demandIndex = group[( start + n ) % group.size()];
-				SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[demandIndex];
-
-				if ( demand.fBlocked || demand.ubMagsGiven >= 3 )
-					continue;
-
-				INT16 sAmmoType = FindBestSectorAmmoType( demand.ubCalibre, demand.usMagSize, 1 );
-				if ( sAmmoType < 0 )
-					continue;
-
-				UINT32 uiAvailable = CountSectorAmmoRounds( demand.ubCalibre, (UINT8)sAmmoType );
-				UINT16 usWanted = (UINT16)__min( (UINT32)demand.usMagSize, __min( uiShare, uiAvailable ) );
+				UINT32 uiTypeAvailable = CountSectorAmmoRounds( demand.ubCalibre, (UINT8)sAmmoType );
+				UINT16 usWanted = (UINT16)__min( uiWantedThisMag, uiTypeAvailable );
 				if ( usWanted == 0 )
-					continue;
+					break;
 
 				UINT16 usMade = BuildAndPlaceSectorMagazine( demand.pSoldier, demand.ubCalibre,
 					demand.usMagSize, (UINT8)sAmmoType, usWanted );
 
-				if ( usMade > 0 )
-				{
-					++demand.ubMagsGiven;
-					++uiMagazinesGiven;
-					uiRoundsGiven += usMade;
-					fMovedAnything = TRUE;
-				}
-				else
+				if ( usMade == 0 )
 				{
 					demand.fBlocked = TRUE;
+					break;
 				}
+
+				++demand.ubMagsGiven;
+				++uiMagazinesGiven;
+				uiRoundsGiven += usMade;
+				uiRemainingTarget -= __min( uiRemainingTarget, (UINT32)usMade );
 			}
-
-			start = ( start + 1 ) % group.size();
-
-			if ( !fMovedAnything )
-				break;
 		}
 	}
 
@@ -958,7 +958,7 @@ static void RedistributeSectorAmmo3x()
 
 	ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
 		L"3x: %d cargadores (%d balas) repartidos para %d armas de %d mercenarios.",
-		uiMagazinesGiven, uiRoundsGiven, demands.size(), uiMercCount );
+		uiMagazinesGiven, uiRoundsGiven, (UINT32)demands.size(), uiMercCount );
 }
 
 static BOOLEAN TakeOneHandSmokeFromSector( OBJECTTYPE *pOut )
@@ -991,7 +991,7 @@ static void RedistributeSectorSmoke()
 	if ( uiOldFilter != IC_MAPFILTER_ALL )
 		MapInventoryFilterSet( IC_MAPFILTER_ALL );
 
-	PoolSquadHandSmoke();
+	PoolSquadSurplusHandSmoke();
 
 	std::vector<SOLDIERTYPE*> mercs;
 	for ( SoldierID id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
@@ -1031,7 +1031,7 @@ static void RedistributeSectorSmoke()
 	fCharacterInfoPanelDirty = TRUE;
 
 	ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
-		L"SMK: granada de humo entregada a %d de %d mercenarios.", uiGiven, mercs.size() );
+		L"SMK: un humo por mercenario: %d de %d equipados.", uiGiven, (UINT32)mercs.size() );
 }
 
 // load the background panel graphics for inventory
