@@ -233,6 +233,114 @@ def battle_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def interaction_summary(
+    events: List[Dict[str, Any]], lookback_minutes: int = 48 * 60
+) -> Dict[str, Any]:
+    starts = {
+        (event.get("session"), event.get("battle_id")): event
+        for event in events
+        if event.get("kind") == "battle_start"
+        and isinstance(event.get("battle_id"), int)
+    }
+    ends = {
+        (event.get("session"), event.get("battle_id")): event
+        for event in events
+        if event.get("kind") == "battle_end"
+        and isinstance(event.get("battle_id"), int)
+    }
+    arrivals = [
+        event for event in events if event.get("kind") == "strategic_group_arrived"
+    ]
+
+    reinforced_results = Counter()
+    unreinforced_results = Counter()
+    reinforced_battles = 0
+    unreinforced_battles = 0
+    reinforcement_sizes: List[float] = []
+    records: List[Dict[str, Any]] = []
+
+    for key, start in starts.items():
+        end = ends.get(key)
+        world_minutes = start.get("world_minutes")
+        x = start.get("sector_x")
+        y = start.get("sector_y")
+        if not isinstance(world_minutes, (int, float)):
+            continue
+        if not isinstance(x, int) or not isinstance(y, int):
+            continue
+
+        # Strategic AI sector IDs are 0-based over the 16x16 playable grid.
+        sector_id = (y - 1) * 16 + (x - 1)
+        recent = [
+            event
+            for event in arrivals
+            if event.get("session") == start.get("session")
+            and event.get("sector") == sector_id
+            and isinstance(event.get("world_minutes"), (int, float))
+            and 0
+            <= float(world_minutes) - float(event.get("world_minutes"))
+            <= lookback_minutes
+        ]
+        reinforced = bool(recent)
+        arrived_troops = sum(
+            float(event.get("group_size", 0))
+            for event in recent
+            if isinstance(event.get("group_size"), (int, float))
+        )
+
+        if reinforced:
+            reinforced_battles += 1
+            reinforcement_sizes.append(arrived_troops)
+        else:
+            unreinforced_battles += 1
+
+        result = end.get("result") if end else None
+        if result:
+            if reinforced:
+                reinforced_results[result] += 1
+            else:
+                unreinforced_results[result] += 1
+
+        records.append(
+            {
+                "session": start.get("session"),
+                "battle_id": start.get("battle_id"),
+                "sector_id": sector_id,
+                "world_minutes": world_minutes,
+                "recent_reinforcement_groups": len(recent),
+                "recent_reinforcement_troops": arrived_troops,
+                "result": result,
+            }
+        )
+
+    reinforced_resolved = sum(reinforced_results.values())
+    unreinforced_resolved = sum(unreinforced_results.values())
+    reinforced_player_success = (
+        reinforced_results.get("victory", 0)
+        + reinforced_results.get("enemy_retreat", 0)
+    )
+    unreinforced_player_success = (
+        unreinforced_results.get("victory", 0)
+        + unreinforced_results.get("enemy_retreat", 0)
+    )
+
+    return {
+        "lookback_minutes": lookback_minutes,
+        "reinforced_battles": reinforced_battles,
+        "unreinforced_battles": unreinforced_battles,
+        "avg_recent_reinforcement_troops": safe_mean(reinforcement_sizes),
+        "reinforced_player_success_rate": pct(
+            reinforced_player_success, reinforced_resolved
+        ),
+        "unreinforced_player_success_rate": pct(
+            unreinforced_player_success, unreinforced_resolved
+        ),
+        "reinforced_resolved": reinforced_resolved,
+        "unreinforced_resolved": unreinforced_resolved,
+        "battle_records": records,
+    }
+
+
 def strategic_mobility_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     orders = [
         event for event in events if event.get("kind") == "strategic_move_order"
@@ -366,6 +474,7 @@ def summarize(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         "session": session_summary(events),
         "battle": battle_summary(events),
         "tactical": tactical_summary(events, decisions),
+        "interaction": interaction_summary(events),
         "strategic_mobility": strategic_mobility_summary(events),
         "strategic": strategic_summary(events, decisions),
     }
@@ -391,6 +500,8 @@ def comparison_rows(current: Dict[str, Any], baseline: Dict[str, Any]) -> List[T
         ("Battle player success rate %", "battle", "player_success_rate"),
         ("Battle average player-count delta", "battle", "avg_player_count_delta"),
         ("Battle average enemy-count delta", "battle", "avg_enemy_count_delta"),
+        ("Player success after recent enemy reinforcement %", "interaction", "reinforced_player_success_rate"),
+        ("Player success without recent enemy reinforcement %", "interaction", "unreinforced_player_success_rate"),
         ("Cover - attack adjusted score", "tactical", "avg_cover_minus_attack_score"),
         ("Strategic move arrival match rate %", "strategic_mobility", "arrival_match_rate"),
         ("Strategic average travel minutes", "strategic_mobility", "avg_travel_minutes"),
@@ -411,10 +522,21 @@ def comparison_rows(current: Dict[str, Any], baseline: Dict[str, Any]) -> List[T
 def recommendations(summary: Dict[str, Any], baseline: Optional[Dict[str, Any]]) -> List[str]:
     findings: List[str] = []
     battle = summary["battle"]
+    interaction = summary["interaction"]
     tac = summary["tactical"]
     mobility = summary["strategic_mobility"]
     strat = summary["strategic"]
 
+    if (
+        interaction["reinforced_resolved"] >= 3
+        and interaction["unreinforced_resolved"] >= 3
+        and interaction["reinforced_player_success_rate"]
+        > interaction["unreinforced_player_success_rate"] + 20.0
+    ):
+        findings.append(
+            "Cross-layer anomaly: player success is materially higher in battles that followed recent enemy reinforcement arrivals. "
+            "Inspect reinforcement composition, arrival timing, and whether fresh groups are entering disadvantageous tactical states."
+        )
     if battle["unresolved"]:
         findings.append(
             f"Battle lifecycle telemetry has {battle['unresolved']} unresolved battle(s). "
@@ -508,6 +630,7 @@ def render_markdown(
     baseline: Optional[Dict[str, Any]],
 ) -> str:
     battle = summary["battle"]
+    interaction = summary["interaction"]
     tac = summary["tactical"]
     mobility = summary["strategic_mobility"]
     strat = summary["strategic"]
@@ -569,6 +692,20 @@ def render_markdown(
         lines.append("No tactical action commits recorded.")
 
     lines += [
+        "",
+        "## Cross-layer interaction analysis",
+        "",
+        f"Window: {interaction['lookback_minutes']} campaign minutes before battle start.",
+        "",
+        "| Metric | Result |",
+        "|---|---:|",
+        f"| Battles after recent enemy reinforcement | {interaction['reinforced_battles']} |",
+        f"| Battles without recent enemy reinforcement | {interaction['unreinforced_battles']} |",
+        f"| Mean recently arrived enemy troops | {fmt(interaction['avg_recent_reinforcement_troops'])} |",
+        f"| Player success after recent reinforcement | {interaction['reinforced_player_success_rate']:.1f}% ({interaction['reinforced_resolved']} resolved) |",
+        f"| Player success without recent reinforcement | {interaction['unreinforced_player_success_rate']:.1f}% ({interaction['unreinforced_resolved']} resolved) |",
+        "",
+        "This comparison is a causal lead, not proof: use the Black Box group IDs, timestamps and battle records to inspect the actual chain.",
         "",
         "## Strategic refinement subsystem",
         "",
