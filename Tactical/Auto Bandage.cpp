@@ -124,7 +124,7 @@ void BeginAutoBandage( )
 				break;
 			}
 		}
-		if ( FindObjClass( pSoldier, IC_MEDKIT ) != NO_SLOT )
+		if ( FindBestFirstAidItem( pSoldier ) != NO_SLOT )
 		{
 			fFoundAMedKit = TRUE;
 			if ( fFoundAGuy && fFoundAMedKit )
@@ -327,7 +327,7 @@ BOOLEAN CreateAutoBandageString( void )
 	cnt = gTacticalStatus.Team[ OUR_TEAM ].bFirstID;
 	for ( pSoldier = MercPtrs[ cnt ]; cnt <= gTacticalStatus.Team[ OUR_TEAM ].bLastID; cnt++,pSoldier++)
 	{
-		if ( pSoldier->bActive && pSoldier->bInSector && pSoldier->stats.bLife >= OKLIFE && !(pSoldier->bCollapsed) && pSoldier->stats.bMedical > 0 && FindObjClass( pSoldier, IC_MEDKIT ) != NO_SLOT)
+		if ( pSoldier->bActive && pSoldier->bInSector && pSoldier->stats.bLife >= OKLIFE && !(pSoldier->bCollapsed) && pSoldier->stats.bMedical > 0 && FindBestFirstAidItem( pSoldier ) != NO_SLOT)
 		{
 			ubDoctor[ubDoctors] = pSoldier->ubID;
 			ubDoctors++;
