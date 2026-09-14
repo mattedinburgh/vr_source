@@ -51,6 +51,7 @@
 #endif
 
 #include "MilitiaSquads.h"
+#include "Strategic Operational AI.h"
 #include "Vehicles.h"
 
 #ifdef JA2UB
@@ -878,6 +879,10 @@ UINT8 AddGroupToList( GROUP *pGroup )
 			else //new list
 				gpGroupList = pGroup;
 			pGroup->next = NULL;
+
+			// Formation identity is assigned only after the strategic group has its
+			// final unique group ID and is visible in gpGroupList.
+			VR_EnsureEnemyFormationState( pGroup );
 			return ID;
 		}
 	}
@@ -4100,6 +4105,10 @@ BOOLEAN LoadStrategicMovementGroupsFromSavedGameFile( HWFILE hFile )
 	{
 		return( FALSE );
 	}
+
+	// Old saves carried unused ENEMYGROUP padding here. OPS magic distinguishes
+	// initialized formations; missing state is created without changing size.
+	VR_EnsureAllEnemyFormationStates();
 
 	return( TRUE );
 }
