@@ -301,6 +301,16 @@ enum
 	AI_BATTLE_CATASTROPHIC
 };
 
+// Enemy doctrine describes training/initiative rather than granting hidden combat bonuses.
+enum
+{
+	AI_DOCTRINE_SECURITY = 0,
+	AI_DOCTRINE_LINE,
+	AI_DOCTRINE_VETERAN,
+	AI_DOCTRINE_ELITE_MOBILE,
+	AI_DOCTRINE_ELITE_GUARD
+};
+
 // Layered tactical planner: squad intent is selected first, then each soldier
 // receives a dynamic role. These are preferences, not hidden stat bonuses.
 enum
@@ -339,6 +349,28 @@ enum
 };
 
 BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier);
+BOOLEAN FindNearbyExplosiveStructure(INT32 sSpot, INT8 bLevel);
+UINT8 SpotDangerLevel(SOLDIERTYPE *pSoldier, INT32 sGridNo);
+BOOLEAN CheckNPCDestination(SOLDIERTYPE *pSoldier, INT32 sGridNo);
+UINT8 AICorpseWarningKnown(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel);
+BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridNo);
+
+// Deidranna force-quality doctrine. These functions limit reasoning/initiative only.
+UINT8 AIGetDoctrineProfile(SOLDIERTYPE *pSoldier);
+BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier);
+BOOLEAN AIAllowsComplexManeuver(SOLDIERTYPE *pSoldier);
+BOOLEAN AIAllowsIndependentFlank(SOLDIERTYPE *pSoldier);
+BOOLEAN AIAllowsProactiveSupport(SOLDIERTYPE *pSoldier);
+UINT8 AIDoctrineResponseLimit(SOLDIERTYPE *pSoldier);
+INT8 AIDoctrineAnchorModifier(SOLDIERTYPE *pSoldier);
+
+// Persistent sector-local enemy fireteams; no savegame-structure changes.
+UINT8 AIFireteamId(SOLDIERTYPE *pSoldier);
+UINT8 AIFireteamAliveCount(SOLDIERTYPE *pSoldier);
+BOOLEAN AISameFireteam(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend);
+BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, UINT8 ubResponseLimit);
+INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
+
 UINT8 AIObservedRecentCasualties(SOLDIERTYPE *pSoldier);
 UINT8 AILocalCasualtyPercent(SOLDIERTYPE *pSoldier);
 UINT8 AIFriendlyCasualtyPercent(SOLDIERTYPE *pSoldier);
@@ -523,6 +555,7 @@ BOOLEAN AllowDeepWaterFlanking(SOLDIERTYPE *pSoldier);
 INT32	RandomizeLocation(INT32 sSpot, INT8 bLevel, UINT8 ubTimes, SOLDIERTYPE *pSightSoldier);
 INT32	RandomizeOpponentLocation(INT32 sSpot, SOLDIERTYPE *pOpponent, INT16 sMaxDistance);
 BOOLEAN InSmoke(INT32 sGridNo, INT8 bLevel);
+BOOLEAN InSmokeNearby(INT32 sGridNo, INT8 bLevel);
 BOOLEAN SafeSpot(SOLDIERTYPE *pSoldier, INT32 sSpot = NOWHERE);
 BOOLEAN AbortFinalSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bAction, INT32 sClosestDisturbance, INT8 bDisturbanceLevel, INT32 &sDangerousSpot);
 // needs prepared path before calling this function

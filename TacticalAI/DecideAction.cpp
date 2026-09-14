@@ -61,6 +61,15 @@ static STR8 gStr8TacticalRole[] = { "SUPPORT", "MANEUVER", "FLANKER", "SCREEN", 
 STR8 gStr8Class[] = { "SOLDIER_CLASS_NONE", "SOLDIER_CLASS_ADMINISTRATOR", "SOLDIER_CLASS_ELITE", "SOLDIER_CLASS_ARMY", "SOLDIER_CLASS_GREEN_MILITIA", "SOLDIER_CLASS_REG_MILITIA", "SOLDIER_CLASS_ELITE_MILITIA", "SOLDIER_CLASS_CREATURE", "SOLDIER_CLASS_MINER", "SOLDIER_CLASS_ZOMBIE" };
 STR8 gStr8Knowledge[] = { "HEARD_3_TURNS_AGO", "HEARD_2_TURNS_AGO", "HEARD_LAST_TURN", "HEARD_THIS_TURN", "NOT_HEARD_OR_SEEN", "SEEN_CURRENTLY", "SEEN_THIS_TURN", "SEEN_LAST_TURN", "SEEN_2_TURNS_AGO", "SEEN_3_TURNS_AGO" };
 
+extern UINT32 guiTurnCnt;
+
+// Sector-local reinforcement pacing. Kept outside SOLDIERTYPE/savegames.
+static UINT32 guiAIEnemyResponseStartTurn = 0;
+static INT32 gsAIEnemyResponseSpot = NOWHERE;
+static INT16 gsAIEnemyResponseSectorX = -1;
+static INT16 gsAIEnemyResponseSectorY = -1;
+static INT8 gbAIEnemyResponseSectorZ = -1;
+
 // global status time counters to determine what takes the most time
 
 #define CENTER_OF_RING 11237//dnl!!!
@@ -1922,7 +1931,9 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 
 				if (iResponseDistance > iImmediateResponseRange)
 				{
-					UINT8 ubResponseLimit = 4;
+					// Doctrine defines the initial contact element: security reacts locally,
+					// while ONCALL/mobile elite troops form larger QRFs.
+					UINT8 ubResponseLimit = AIDoctrineResponseLimit(pSoldier);
 
 					// Reinforce in waves. The nearest actually engaged friendly element
 					// determines both perceived enemy strength and whether more troops
@@ -2032,29 +2043,39 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 						ubResponseLimit = 6;
 					}
 
-					UINT8 ubCloserResponders = 0;
-					for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
-						iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+					// Enemy reinforcements are released as coherent fireteams. Once the nearer
+					// element fills the current response budget, the next element remains reserve.
+					if (pSoldier->bTeam == ENEMY_TEAM)
 					{
-						SOLDIERTYPE *pFriend = MercPtrs[iCounter];
-						if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
-							pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
-							pFriend->aiData.bOrders == STATIONARY || pFriend->aiData.bOrders == SNIPER)
+						fHoldRemoteReserve = AIFireteamShouldHoldReserve(pSoldier, sNoiseGridNo, ubResponseLimit);
+					}
+					else
+					{
+						UINT8 ubCloserResponders = 0;
+						for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+							iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
 						{
-							continue;
-						}
-
-						INT32 iFriendDistance = PythSpacesAway(pFriend->sGridNo, sNoiseGridNo);
-						if (iFriendDistance < iResponseDistance ||
-							(iFriendDistance == iResponseDistance && pFriend->ubID < pSoldier->ubID))
-						{
-							++ubCloserResponders;
-							if (ubCloserResponders >= ubResponseLimit)
+							SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+							if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+								pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+								pFriend->aiData.bOrders == STATIONARY || pFriend->aiData.bOrders == SNIPER)
 							{
-								fHoldRemoteReserve = TRUE;
-								break;
+								continue;
+							}
+	
+							INT32 iFriendDistance = PythSpacesAway(pFriend->sGridNo, sNoiseGridNo);
+							if (iFriendDistance < iResponseDistance ||
+								(iFriendDistance == iResponseDistance && pFriend->ubID < pSoldier->ubID))
+							{
+								++ubCloserResponders;
+								if (ubCloserResponders >= ubResponseLimit)
+								{
+									fHoldRemoteReserve = TRUE;
+									break;
+								}
 							}
 						}
+	
 					}
 
 					// Distance matters even before a radio call: hearing a shot is evidence,
@@ -2832,6 +2853,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			(bFireteamRole == AI_ROLE_SUPPORT || bFireteamRole == AI_ROLE_SCREEN ||
 			 AICheckIsMachinegunner(pSoldier) ||
 			 AISupportRoleScore(pSoldier, BestShot.sTarget) >= AIManeuverRoleScore(pSoldier, BestShot.sTarget));
+		BOOLEAN fDoctrineProactiveSupport = AIAllowsProactiveSupport(pSoldier);
 
 		// WarmSteel - Because of suppression fire, we need enough ammo to even consider suppressing
 		// This means we need to reload. Also reload if we're just plainly low on bullets.
@@ -2839,7 +2861,10 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		if( BestShot.bWeaponIn != NO_SLOT &&
 			!TANK(pSoldier) &&
 			pSoldier->bActionPoints > APBPConstants[AP_MINIMUM] &&
-			(fCoveringFireSupport || !pSoldier->aiData.bUnderFire && !GuySawEnemy(pSoldier, SEEN_LAST_TURN) && (TileIsOutOfBounds(sClosestOpponent) || PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 2) || AICheckIsMachinegunner(pSoldier) && Chance(25) || Chance(10)) &&
+			(fCoveringFireSupport || fDoctrineProactiveSupport &&
+			 (!pSoldier->aiData.bUnderFire && !GuySawEnemy(pSoldier, SEEN_LAST_TURN) &&
+			  (TileIsOutOfBounds(sClosestOpponent) || PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 2) ||
+			  AICheckIsMachinegunner(pSoldier) && Chance(25) || Chance(10))) &&
 			IsGunAutofireCapable(&pSoldier->inv[BestShot.bWeaponIn]) &&
 			Weapon[pSoldier->inv[BestShot.bWeaponIn].usItem].swapClips &&
 			pSoldier->inv[BestShot.bWeaponIn][0]->data.gun.ubGunShotsLeft < gGameExternalOptions.ubAISuppressionMinimumAmmo &&
@@ -3176,6 +3201,14 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		INT8 bDisperseAction = DecideCombatDispersion(pSoldier);
 		if (bDisperseAction != AI_ACTION_NONE)
 			return bDisperseAction;
+	}
+	// Keep a dispersed but unpressured soldier with its own local element. One/two-man
+	// remnants are absorbed into the nearest viable fireteam before ordinary movement.
+	if (AICombatTeam(pSoldier))
+	{
+		INT8 bCohesionAction = DecideFireteamCohesionAction(pSoldier, ubCanMove);
+		if (bCohesionAction != AI_ACTION_NONE)
+			return bCohesionAction;
 	}
 	// Persistent break-contact intent outranks ordinary fallback.
 	if (AICombatTeam(pSoldier))
@@ -4919,6 +4952,13 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				if (bDisperseAction != AI_ACTION_NONE)
 					return bDisperseAction;
 			}
+			// Maintain local element cohesion before ordinary offensive movement.
+			if (AICombatTeam(pSoldier))
+			{
+				INT8 bCohesionAction = DecideFireteamCohesionAction(pSoldier, ubCanMove);
+				if (bCohesionAction != AI_ACTION_NONE)
+					return bCohesionAction;
+			}
 			// Persistent break-contact intent outranks ordinary fallback/attack setup.
 			if (AICombatTeam(pSoldier))
 			{
@@ -5295,11 +5335,18 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 					return(AI_ACTION_USE_SKILL);
 				}
 			}
-			// frequencies are clear, order a strike
-			else if ( GetBestAoEGridNo(pSoldier, &skilltargetgridno, max(1, gSkillTraitValues.usVOMortarRadius - 2), 1, 2, SoldierCondTrue, SoldierCondFalse) )
+			// Frequencies are clear: use only legally known/reported contacts for artillery.
+			// Require a credible cluster and keep friendlies outside the strike safety radius.
+			else if ( AISelectKnownArtilleryTarget(pSoldier, &skilltargetgridno) )
 			{
 				pSoldier->usAISkillUse = SKILLS_RADIO_ARTILLERY;
 				pSoldier->aiData.usActionData = skilltargetgridno;
+				UINT32 uiArtilleryDecision = AITraceBeginDecision(pSoldier, "radio_artillery",
+					skilltargetgridno, AITacticalIntent(pSoldier, skilltargetgridno),
+					AITacticalRole(pSoldier, skilltargetgridno));
+				AITraceSelect(pSoldier, uiArtilleryDecision, "radio_artillery",
+					AI_ACTION_USE_SKILL, skilltargetgridno, 0, 0, FALSE,
+					"credible known contact cluster; friendly safety clear");
 				return(AI_ACTION_USE_SKILL);
 			}
 		}
@@ -8517,6 +8564,7 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		(pSoldier->aiData.bAttitude == BRAVESOLO || pSoldier->aiData.bAttitude == BRAVEAID) && CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) > 2) &&
 		AICombatTeam(pSoldier) &&
 		!AIShouldAvoidAdvance(pSoldier) &&
+		AIAllowsIndependentFlank(pSoldier) &&
 		pSoldier->ubSoldierClass != SOLDIER_CLASS_ADMINISTRATOR &&
 		!AICheckSpecialRole(pSoldier) &&		
 		gAnimControl[pSoldier->usAnimState].ubHeight != ANIM_PRONE &&
@@ -8655,17 +8703,6 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 
 	return -1;
 }
-
-extern UINT32 guiTurnCnt;
-
-// Transient sector-local reinforcement pacing. Kept outside SOLDIERTYPE so this
-// does not affect savegame layout. On load/new sector it simply restarts at the
-// first reinforcement wave.
-static UINT32 guiAIEnemyResponseStartTurn = 0;
-static INT32 gsAIEnemyResponseSpot = NOWHERE;
-static INT16 gsAIEnemyResponseSectorX = -1;
-static INT16 gsAIEnemyResponseSectorY = -1;
-static INT8 gbAIEnemyResponseSectorZ = -1;
 
 static UINT32 guiAITacticalVariationTurn[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAITacticalVariationIdentity[MAX_NUM_SOLDIERS] = { 0 };
@@ -8915,6 +8952,18 @@ void PrepareMainRedAIWeights(SOLDIERTYPE *pSoldier, INT8 &bSeekPts, INT8 &bHelpP
 		}
 	}
 
+	// Formation doctrine reinforces existing map orders. Security and elite guards
+	// are mission-anchored; mobile elites retain operational freedom.
+	INT8 bDoctrineAnchor = AIDoctrineAnchorModifier(pSoldier);
+	if (bDoctrineAnchor < 0 && bSeekPts > -90)
+	{
+		bSeekPts += bDoctrineAnchor;
+		if (bWatchPts > -90)
+			bWatchPts += __min((INT8)3, (INT8)((-bDoctrineAnchor + 1) / 2));
+		if (bHidePts > -90 && bDoctrineAnchor <= -3)
+			bHidePts += 1;
+	}
+
 	// Break ties and near-ties between otherwise sensible RED choices. This is
 	// deliberately applied after deterministic tactical modifiers so randomness
 	// cannot resurrect actions that safety/morale/order logic disabled.
@@ -8923,6 +8972,14 @@ void PrepareMainRedAIWeights(SOLDIERTYPE *pSoldier, INT8 &bSeekPts, INT8 &bHelpP
 
 INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 {
+	// Loss of local command ends an uncommanded regular's complex flank; elites and
+	// veterans can continue independently.
+	if (pSoldier->bTeam == ENEMY_TEAM && !AIAllowsIndependentFlank(pSoldier))
+	{
+		pSoldier->numFlanks = MAX_FLANKS_RED;
+		return -1;
+	}
+
 	if (AIShouldAvoidAdvance(pSoldier))
 	{
 		// End the manoeuvre cleanly; ordinary RED logic can now hold/fallback instead.
@@ -9586,6 +9643,11 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 {
 	DebugAI(AI_MSG_TOPIC, pSoldier, String("[Smoke to cover movement]"));
 
+	// Emergency smoke is handled elsewhere; deliberate movement smoke is a coordinated
+	// support task and therefore respects formation doctrine.
+	if (pSoldier && pSoldier->bTeam == ENEMY_TEAM && !AIAllowsProactiveSupport(pSoldier))
+		return -1;
+
 	if (!gfTurnBasedAI || !pSoldier || !SoldierAI(pSoldier) ||
 		FindThrowableGrenade(pSoldier, EXPLOSV_SMOKE) == NO_SLOT ||
 		pSoldier->bActionPoints < APBPConstants[AP_MINIMUM] ||
@@ -9644,7 +9706,7 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, sCheckGridNo);
 		if (iDistance < 3 || iDistance > TACTICAL_RANGE / 2 ||
 			Water(sCheckGridNo, pSoldier->pathing.bLevel) ||
-			InSmoke(sCheckGridNo, pSoldier->pathing.bLevel))
+			InSmokeNearby(sCheckGridNo, pSoldier->pathing.bLevel))
 		{
 			continue;
 		}

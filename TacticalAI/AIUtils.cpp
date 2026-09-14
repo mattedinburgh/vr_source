@@ -96,6 +96,9 @@ UINT16 MovementMode[LAST_MOVEMENT_ACTION + 1][NUM_URGENCY_STATES] =
 	{RUNNING,	 RUNNING,  RUNNING},	// AI_ACTION_MOVE_TO_CLIMB
 };
 
+static BOOLEAN AIKnownThreatHasSightToSpot(SOLDIERTYPE *pSoldier, INT32 sSpot,
+	BOOLEAN fUnlimited, UINT8 ubTargetStance, UINT8 ubTargetLOSPos);
+
 INT8 OKToAttack(SOLDIERTYPE * pSoldier, int target)
 {
 	// can't shoot yourself
@@ -1310,6 +1313,9 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 		{
 			sGridNo = AIStaleContactSearchSpot(pSoldier, pOpponent, sGridNo, bLevel, bKnowledge);
 		}
+
+
+
 
 		// sevenfm: if soldier is zombie and he cannot climb, skip location
 		if (pSoldier->IsZombie() && pSoldier->pathing.bLevel != bLevel && !gGameExternalOptions.fZombieCanClimb)
@@ -3961,6 +3967,633 @@ BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier)
 	return pSoldier && (pSoldier->bTeam == ENEMY_TEAM || pSoldier->bTeam == MILITIA_TEAM);
 }
 
+// Fair artillery targeting: use only the operator's legal seen/heard knowledge.
+BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridNo)
+{
+	if (!pSoldier || !psTargetGridNo || !AICombatTeam(pSoldier) || gbWorldSectorZ > 0)
+		return FALSE;
+
+	*psTargetGridNo = NOWHERE;
+
+	INT32 iStrikeRadius = __max(2, (INT32)gSkillTraitValues.usVOMortarRadius - 2);
+	iStrikeRadius = __min(iStrikeRadius, TACTICAL_RANGE / 2);
+	INT32 iFriendlySafetyRadius = __max(4, (INT32)gSkillTraitValues.usVOMortarRadius);
+	iFriendlySafetyRadius = __min(iFriendlySafetyRadius, TACTICAL_RANGE / 2);
+
+	INT32 iBestScore = 0;
+
+	for (UINT16 uiCandidate = 0; uiCandidate < MAX_NUM_SOLDIERS; ++uiCandidate)
+	{
+		SOLDIERTYPE *pCandidate = MercPtrs[uiCandidate];
+		if (!pCandidate || pCandidate == pSoldier)
+			continue;
+
+		INT8 bCandidateKnowledge = Knowledge(pSoldier, pCandidate->ubID);
+		if (bCandidateKnowledge != SEEN_CURRENTLY &&
+			bCandidateKnowledge != SEEN_THIS_TURN &&
+			bCandidateKnowledge != SEEN_LAST_TURN &&
+			bCandidateKnowledge != SEEN_2_TURNS_AGO &&
+			bCandidateKnowledge != HEARD_THIS_TURN &&
+			bCandidateKnowledge != HEARD_LAST_TURN &&
+			bCandidateKnowledge != HEARD_2_TURNS_AGO)
+		{
+			continue;
+		}
+
+		if (CONSIDERED_NEUTRAL(pSoldier, pCandidate) ||
+			pSoldier->bSide == pCandidate->bSide ||
+			pCandidate->ubBodyType == CROW)
+		{
+			continue;
+		}
+
+		INT32 sCandidateSpot = KnownLocation(pSoldier, pCandidate->ubID);
+		if (TileIsOutOfBounds(sCandidateSpot))
+			continue;
+
+		BOOLEAN fFriendlyDanger = FALSE;
+		for (UINT16 uiFriend = 0; uiFriend < MAX_NUM_SOLDIERS; ++uiFriend)
+		{
+			SOLDIERTYPE *pFriend = MercPtrs[uiFriend];
+			if (!pFriend || !pFriend->bActive || !pFriend->bInSector ||
+				pFriend->stats.bLife <= 0 ||
+				pFriend->aiData.bNeutral ||
+				pFriend->bSide != pSoldier->bSide)
+			{
+				continue;
+			}
+
+			if (PythSpacesAway(pFriend->sGridNo, sCandidateSpot) <= iFriendlySafetyRadius)
+			{
+				fFriendlyDanger = TRUE;
+				break;
+			}
+		}
+
+		if (fFriendlyDanger)
+			continue;
+
+		INT32 iScore = 0;
+		UINT8 ubCredibleContacts = 0;
+
+		for (UINT16 uiOpponent = 0; uiOpponent < MAX_NUM_SOLDIERS; ++uiOpponent)
+		{
+			SOLDIERTYPE *pOpponent = MercPtrs[uiOpponent];
+			if (!pOpponent || pOpponent == pSoldier)
+				continue;
+
+			INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+			if (bKnowledge != SEEN_CURRENTLY &&
+				bKnowledge != SEEN_THIS_TURN &&
+				bKnowledge != SEEN_LAST_TURN &&
+				bKnowledge != SEEN_2_TURNS_AGO &&
+				bKnowledge != HEARD_THIS_TURN &&
+				bKnowledge != HEARD_LAST_TURN &&
+				bKnowledge != HEARD_2_TURNS_AGO)
+			{
+				continue;
+			}
+
+			if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+				pSoldier->bSide == pOpponent->bSide ||
+				pOpponent->ubBodyType == CROW)
+			{
+				continue;
+			}
+
+			INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
+			if (TileIsOutOfBounds(sKnownSpot) ||
+				PythSpacesAway(sKnownSpot, sCandidateSpot) > iStrikeRadius)
+			{
+				continue;
+			}
+
+			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+			iScore += iCertainty;
+			if (iCertainty >= 50)
+				++ubCredibleContacts;
+		}
+
+		// Artillery is a scarce area weapon: require at least two credible reported
+		// contacts, not one speculative/stale enemy location.
+		if (ubCredibleContacts < 2)
+			continue;
+
+
+		if (iScore > iBestScore)
+		{
+			iBestScore = iScore;
+			*psTargetGridNo = sCandidateSpot;
+		}
+	}
+
+	return !TileIsOutOfBounds(*psTargetGridNo);
+}
+
+
+// Deidranna force-quality doctrine: training/initiative limits complex coordination without hidden stat bonuses.
+UINT8 AIGetDoctrineProfile(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return AI_DOCTRINE_LINE;
+
+	switch (pSoldier->ubSoldierClass)
+	{
+	case SOLDIER_CLASS_ADMINISTRATOR:
+		return AI_DOCTRINE_SECURITY;
+
+	case SOLDIER_CLASS_ELITE:
+		// Elite troops on static/guard orders behave like palace/base guards:
+		// tactically capable, but less willing to abandon the mission.
+		if (pSoldier->aiData.bOrders == STATIONARY ||
+			pSoldier->aiData.bOrders == ONGUARD ||
+			pSoldier->aiData.bOrders == SNIPER)
+		{
+			return AI_DOCTRINE_ELITE_GUARD;
+		}
+		return AI_DOCTRINE_ELITE_MOBILE;
+
+	case SOLDIER_CLASS_ARMY:
+		// Regular attitudes are often randomized at creation, so CUNNING alone must
+		// not magically create a veteran. Actual experience is the primary signal;
+		// a cunning level-5 regular is treated as an experienced NCO-like soldier,
+		// while level-6+ regulars have enough field competence to act independently.
+		if (AICheckIsCommander(pSoldier) || AICheckIsOfficer(pSoldier) ||
+			pSoldier->stats.bExpLevel >= 6 ||
+			(pSoldier->stats.bExpLevel >= 5 &&
+			 (pSoldier->aiData.bAttitude == CUNNINGAID ||
+			  pSoldier->aiData.bAttitude == CUNNINGSOLO)))
+		{
+			return AI_DOCTRINE_VETERAN;
+		}
+		return AI_DOCTRINE_LINE;
+
+	default:
+		return AI_DOCTRINE_LINE;
+	}
+}
+
+BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier)
+		return FALSE;
+
+	// Doctrine restrictions are for Deidranna's army only. Preserve militia behaviour.
+	if (pSoldier->bTeam != ENEMY_TEAM)
+		return TRUE;
+
+	if (AICheckIsCommander(pSoldier) || AICheckIsOfficer(pSoldier))
+		return TRUE;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pLeader = MercPtrs[iCounter];
+		if (!pLeader || pLeader == pSoldier || !pLeader->bActive || !pLeader->bInSector ||
+			pLeader->stats.bLife < OKLIFE || pLeader->bCollapsed ||
+			(pLeader->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			pLeader->pathing.bLevel != pSoldier->pathing.bLevel ||
+			PythSpacesAway(pSoldier->sGridNo, pLeader->sGridNo) > TACTICAL_RANGE / 2 ||
+			AIDisengagementActive(pLeader) || AIEscapeActive(pLeader))
+		{
+			continue;
+		}
+
+		if (AICheckIsCommander(pLeader) || AICheckIsOfficer(pLeader))
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
+BOOLEAN AIAllowsComplexManeuver(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return TRUE;
+
+	switch (AIGetDoctrineProfile(pSoldier))
+	{
+	case AI_DOCTRINE_SECURITY:
+		return FALSE;
+	case AI_DOCTRINE_LINE:
+		return AIHasLocalCommandSupport(pSoldier);
+	default:
+		return TRUE;
+	}
+}
+
+BOOLEAN AIAllowsIndependentFlank(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return TRUE;
+
+	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+	if (ubDoctrine == AI_DOCTRINE_SECURITY)
+		return FALSE;
+	if (ubDoctrine == AI_DOCTRINE_LINE)
+		return AIHasLocalCommandSupport(pSoldier);
+
+	return TRUE;
+}
+
+BOOLEAN AIAllowsProactiveSupport(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return TRUE;
+
+	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+	if (ubDoctrine == AI_DOCTRINE_SECURITY)
+		return FALSE;
+	if (ubDoctrine == AI_DOCTRINE_LINE)
+		return AIHasLocalCommandSupport(pSoldier);
+
+	return TRUE;
+}
+
+UINT8 AIDoctrineResponseLimit(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return 4;
+
+	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+	UINT8 ubLimit = 4;
+	switch (ubDoctrine)
+	{
+	case AI_DOCTRINE_SECURITY:     ubLimit = 2; break;
+	case AI_DOCTRINE_LINE:         ubLimit = 4; break;
+	case AI_DOCTRINE_VETERAN:      ubLimit = 5; break;
+	case AI_DOCTRINE_ELITE_MOBILE: ubLimit = 6; break;
+	case AI_DOCTRINE_ELITE_GUARD:  ubLimit = 4; break;
+	}
+
+	// ONCALL is the natural QRF order. SEEKENEMY has more freedom, but does not
+	// empty a garrison as aggressively as a designated response element.
+	if (pSoldier->aiData.bOrders == ONCALL)
+		ubLimit += 2;
+	else if (pSoldier->aiData.bOrders == SEEKENEMY)
+		ubLimit += 1;
+
+	if (ubDoctrine == AI_DOCTRINE_SECURITY && ubLimit > 3)
+		ubLimit = 3;
+
+	return __min((UINT8)8, ubLimit);
+}
+
+INT8 AIDoctrineAnchorModifier(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
+		return 0;
+
+	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+	switch (ubDoctrine)
+	{
+	case AI_DOCTRINE_SECURITY:
+		switch (pSoldier->aiData.bOrders)
+		{
+		case STATIONARY: return -6;
+		case ONGUARD: return -5;
+		case CLOSEPATROL:
+		case POINTPATROL:
+		case RNDPTPATROL: return -3;
+		default: return -1;
+		}
+
+	case AI_DOCTRINE_LINE:
+		if (pSoldier->aiData.bOrders == STATIONARY || pSoldier->aiData.bOrders == ONGUARD)
+			return -2;
+		if (pSoldier->aiData.bOrders == CLOSEPATROL)
+			return -1;
+		return 0;
+
+	case AI_DOCTRINE_VETERAN:
+		return (pSoldier->aiData.bOrders == STATIONARY) ? -1 : 0;
+
+	case AI_DOCTRINE_ELITE_GUARD:
+		return -3;
+
+	default:
+		return 0;
+	}
+}
+
+// Enemy fireteam coordination. This state is sector-local and intentionally lives
+// outside SOLDIERTYPE so it does not change the savegame structure.
+#define AI_FIRETEAM_NONE 0
+#define AI_FIRETEAM_TARGET 8
+#define AI_FIRETEAM_MAX_NORMAL 9
+#define AI_FIRETEAM_MAX_MERGED 11
+
+static UINT8 gubAIFireteam[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAIFireteamIdentity[MAX_NUM_SOLDIERS] = { 0 };
+static UINT8 gubAINextFireteam = 1;
+static INT16 gsAIFireteamSectorX = -1;
+static INT16 gsAIFireteamSectorY = -1;
+static INT8 gbAIFireteamSectorZ = -1;
+static BOOLEAN gfAIFireteamsSeeded = FALSE;
+
+static BOOLEAN AIEnemyFireteamEligible(SOLDIERTYPE *pSoldier)
+{
+	return pSoldier && pSoldier->bTeam == ENEMY_TEAM && pSoldier->bActive &&
+		pSoldier->bInSector && pSoldier->stats.bLife > 0 &&
+		!(pSoldier->usSoldierFlagMask & SOLDIER_POW);
+}
+
+static void AIResetFireteamsForSector(void)
+{
+	if (gsAIFireteamSectorX == gWorldSectorX && gsAIFireteamSectorY == gWorldSectorY &&
+		gbAIFireteamSectorZ == gbWorldSectorZ)
+		return;
+
+	gsAIFireteamSectorX = gWorldSectorX;
+	gsAIFireteamSectorY = gWorldSectorY;
+	gbAIFireteamSectorZ = gbWorldSectorZ;
+	gubAINextFireteam = 1;
+	gfAIFireteamsSeeded = FALSE;
+	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
+	{
+		gubAIFireteam[i] = AI_FIRETEAM_NONE;
+		guiAIFireteamIdentity[i] = 0;
+	}
+}
+
+static UINT8 AIFireteamCountById(UINT8 ubFireteam, BOOLEAN fReadyOnly)
+{
+	if (ubFireteam == AI_FIRETEAM_NONE)
+		return 0;
+
+	UINT8 ubCount = 0;
+	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!AIEnemyFireteamEligible(pFriend) || pFriend->ubID >= MAX_NUM_SOLDIERS ||
+			guiAIFireteamIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
+			gubAIFireteam[pFriend->ubID] != ubFireteam)
+			continue;
+		if (fReadyOnly && (pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed))
+			continue;
+		++ubCount;
+	}
+	return ubCount;
+}
+
+static INT32 AIFireteamDistanceToSpot(UINT8 ubFireteam, INT32 sSpot)
+{
+	INT32 iBest = 10000;
+	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!AIEnemyFireteamEligible(pFriend) || pFriend->ubID >= MAX_NUM_SOLDIERS ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+			guiAIFireteamIdentity[pFriend->ubID] != pFriend->uiUniqueSoldierIdValue ||
+			gubAIFireteam[pFriend->ubID] != ubFireteam)
+			continue;
+		iBest = __min(iBest, PythSpacesAway(pFriend->sGridNo, sSpot));
+	}
+	return iBest;
+}
+
+static void AISeedEnemyFireteams(void)
+{
+	AIResetFireteamsForSector();
+	if (gfAIFireteamsSeeded)
+		return;
+
+	UINT8 ubMembers[MAX_NUM_SOLDIERS];
+	BOOLEAN fAssigned[MAX_NUM_SOLDIERS] = { FALSE };
+	UINT16 usCount = 0;
+	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID && usCount < MAX_NUM_SOLDIERS; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (AIEnemyFireteamEligible(pFriend))
+			ubMembers[usCount++] = pFriend->ubID;
+	}
+
+	if (usCount == 0)
+	{
+		gfAIFireteamsSeeded = TRUE;
+		return;
+	}
+
+	UINT16 usGroups = (usCount <= 10) ? 1 : (usCount + AI_FIRETEAM_TARGET - 1) / AI_FIRETEAM_TARGET;
+	UINT16 usRemaining = usCount;
+	for (UINT16 usGroup = 0; usGroup < usGroups && usRemaining > 0; ++usGroup)
+	{
+		UINT16 usGroupsLeft = usGroups - usGroup;
+		UINT16 usTarget = (usRemaining + usGroupsLeft - 1) / usGroupsLeft;
+		// A small sector force of ten remains one coherent element; larger forces
+		// are balanced into normal 6-9 man elements.
+		if (usGroups == 1)
+			usTarget = usRemaining;
+		else
+			usTarget = __min((UINT16)AI_FIRETEAM_MAX_NORMAL, usTarget);
+
+		INT16 sSeedIndex = -1;
+		for (UINT16 i = 0; i < usCount; ++i)
+			if (!fAssigned[i]) { sSeedIndex = (INT16)i; break; }
+		if (sSeedIndex < 0)
+			break;
+
+		UINT8 ubFireteam = gubAINextFireteam++;
+		UINT8 ubSeedId = ubMembers[sSeedIndex];
+		SOLDIERTYPE *pSeed = MercPtrs[ubSeedId];
+		fAssigned[sSeedIndex] = TRUE;
+		gubAIFireteam[ubSeedId] = ubFireteam;
+		guiAIFireteamIdentity[ubSeedId] = pSeed->uiUniqueSoldierIdValue;
+		--usRemaining;
+
+		for (UINT16 usAdded = 1; usAdded < usTarget && usRemaining > 0; ++usAdded)
+		{
+			INT16 sBestIndex = -1;
+			INT32 iBestDistance = 10000;
+			for (UINT16 i = 0; i < usCount; ++i)
+			{
+				if (fAssigned[i])
+					continue;
+				SOLDIERTYPE *pCandidate = MercPtrs[ubMembers[i]];
+				INT32 iDistance = PythSpacesAway(pSeed->sGridNo, pCandidate->sGridNo);
+				if (iDistance < iBestDistance)
+				{
+					iBestDistance = iDistance;
+					sBestIndex = (INT16)i;
+				}
+			}
+			if (sBestIndex < 0)
+				break;
+			UINT8 ubId = ubMembers[sBestIndex];
+			fAssigned[sBestIndex] = TRUE;
+			gubAIFireteam[ubId] = ubFireteam;
+			guiAIFireteamIdentity[ubId] = MercPtrs[ubId]->uiUniqueSoldierIdValue;
+			--usRemaining;
+		}
+	}
+	gfAIFireteamsSeeded = TRUE;
+}
+
+static void AIEnsureEnemyFireteams(void)
+{
+	AISeedEnemyFireteams();
+	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pSoldier = MercPtrs[iCounter];
+		if (!AIEnemyFireteamEligible(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+			continue;
+		if (guiAIFireteamIdentity[pSoldier->ubID] == pSoldier->uiUniqueSoldierIdValue &&
+			gubAIFireteam[pSoldier->ubID] != AI_FIRETEAM_NONE)
+			continue;
+
+		UINT8 ubBest = AI_FIRETEAM_NONE;
+		INT32 iBest = 10000;
+		for (UINT8 ubTeam = 1; ubTeam < gubAINextFireteam; ++ubTeam)
+		{
+			if (AIFireteamCountById(ubTeam, FALSE) >= AI_FIRETEAM_MAX_NORMAL)
+				continue;
+			INT32 iDistance = AIFireteamDistanceToSpot(ubTeam, pSoldier->sGridNo);
+			if (iDistance < iBest) { iBest = iDistance; ubBest = ubTeam; }
+		}
+		if (ubBest == AI_FIRETEAM_NONE)
+			ubBest = gubAINextFireteam++;
+		gubAIFireteam[pSoldier->ubID] = ubBest;
+		guiAIFireteamIdentity[pSoldier->ubID] = pSoldier->uiUniqueSoldierIdValue;
+	}
+}
+
+static BOOLEAN AIAbsorbFireteamRemnant(SOLDIERTYPE *pSoldier)
+{
+	if (!AIEnemyFireteamEligible(pSoldier))
+		return FALSE;
+	AIEnsureEnemyFireteams();
+	UINT8 ubOld = gubAIFireteam[pSoldier->ubID];
+	UINT8 ubReady = AIFireteamCountById(ubOld, TRUE);
+	if (ubReady == 0 || ubReady > 2)
+		return FALSE;
+
+	UINT8 ubOldTotal = AIFireteamCountById(ubOld, FALSE);
+	UINT8 ubBest = AI_FIRETEAM_NONE;
+	INT32 iBest = 10000;
+	for (UINT8 ubTeam = 1; ubTeam < gubAINextFireteam; ++ubTeam)
+	{
+		if (ubTeam == ubOld || AIFireteamCountById(ubTeam, TRUE) < 3)
+			continue;
+		if (AIFireteamCountById(ubTeam, FALSE) + ubOldTotal > AI_FIRETEAM_MAX_MERGED)
+			continue;
+		INT32 iDistance = AIFireteamDistanceToSpot(ubTeam, pSoldier->sGridNo);
+		if (iDistance < iBest) { iBest = iDistance; ubBest = ubTeam; }
+	}
+	if (ubBest == AI_FIRETEAM_NONE)
+		return FALSE;
+
+	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (AIEnemyFireteamEligible(pFriend) && pFriend->ubID < MAX_NUM_SOLDIERS &&
+			guiAIFireteamIdentity[pFriend->ubID] == pFriend->uiUniqueSoldierIdValue &&
+			gubAIFireteam[pFriend->ubID] == ubOld)
+			gubAIFireteam[pFriend->ubID] = ubBest;
+	}
+	return TRUE;
+}
+
+UINT8 AIFireteamId(SOLDIERTYPE *pSoldier)
+{
+	if (!AIEnemyFireteamEligible(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return AI_FIRETEAM_NONE;
+	AIEnsureEnemyFireteams();
+	return gubAIFireteam[pSoldier->ubID];
+}
+
+UINT8 AIFireteamAliveCount(SOLDIERTYPE *pSoldier)
+{
+	return AIFireteamCountById(AIFireteamId(pSoldier), TRUE);
+}
+
+BOOLEAN AISameFireteam(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend)
+{
+	if (!pSoldier || !pFriend || pSoldier->bTeam != pFriend->bTeam)
+		return FALSE;
+	if (pSoldier->bTeam != ENEMY_TEAM)
+		return TRUE;
+	UINT8 ubMine = AIFireteamId(pSoldier);
+	return ubMine != AI_FIRETEAM_NONE && ubMine == AIFireteamId(pFriend);
+}
+
+BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, UINT8 ubResponseLimit)
+{
+	if (!AIEnemyFireteamEligible(pSoldier) || TileIsOutOfBounds(sContactSpot))
+		return FALSE;
+	AIAbsorbFireteamRemnant(pSoldier);
+	UINT8 ubMine = AIFireteamId(pSoldier);
+	INT32 iMine = AIFireteamDistanceToSpot(ubMine, sContactSpot);
+	UINT16 usCloserReady = 0;
+	for (UINT8 ubTeam = 1; ubTeam < gubAINextFireteam; ++ubTeam)
+	{
+		if (ubTeam == ubMine)
+			continue;
+		UINT8 ubReady = AIFireteamCountById(ubTeam, TRUE);
+		if (ubReady == 0)
+			continue;
+		INT32 iDistance = AIFireteamDistanceToSpot(ubTeam, sContactSpot);
+		if (iDistance < iMine || (iDistance == iMine && ubTeam < ubMine))
+			usCloserReady += ubReady;
+	}
+	return usCloserReady >= ubResponseLimit;
+}
+
+INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
+{
+	if (!fCanMove || !gfTurnBasedAI || !AIEnemyFireteamEligible(pSoldier) ||
+		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		pSoldier->aiData.bUnderFire || pSoldier->aiData.bOppCnt > 0 ||
+		GuySawEnemy(pSoldier, SEEN_LAST_TURN) || pSoldier->aiData.bOrders == STATIONARY ||
+		pSoldier->aiData.bOrders == SNIPER)
+		return AI_ACTION_NONE;
+
+	UINT8 ubBefore = AIFireteamAliveCount(pSoldier);
+	BOOLEAN fWasRemnant = (ubBefore > 0 && ubBefore <= 2);
+	AIAbsorbFireteamRemnant(pSoldier);
+
+	SOLDIERTYPE *pAnchor = NULL;
+	INT32 iBest = 10000;
+	BOOLEAN fEngagedAnchor = FALSE;
+	for (UINT16 iCounter = gTacticalStatus.Team[ENEMY_TEAM].bFirstID;
+		iCounter <= gTacticalStatus.Team[ENEMY_TEAM].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier || !AIEnemyFireteamEligible(pFriend) ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || !AISameFireteam(pSoldier, pFriend))
+			continue;
+		BOOLEAN fEngaged = pFriend->aiData.bUnderFire || pFriend->aiData.bOppCnt > 0 || GuySawEnemy(pFriend, SEEN_LAST_TURN);
+		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
+		if (fEngaged && (!fEngagedAnchor || iDistance < iBest))
+		{
+			fEngagedAnchor = TRUE; pAnchor = pFriend; iBest = iDistance;
+		}
+		else if (!fEngagedAnchor && iDistance < iBest)
+		{
+			pAnchor = pFriend; iBest = iDistance;
+		}
+	}
+
+	if (!pAnchor || (!fWasRemnant && !fEngagedAnchor))
+		return AI_ACTION_NONE;
+	if (iBest <= __max(8, DAY_VISION_RANGE / 2))
+		return AI_ACTION_NONE;
+
+	pSoldier->aiData.usActionData = GoAsFarAsPossibleTowards(pSoldier, pAnchor->sGridNo, AI_ACTION_SEEK_FRIEND);
+	if (TileIsOutOfBounds(pSoldier->aiData.usActionData) ||
+		!CheckNPCDestination(pSoldier, pSoldier->aiData.usActionData))
+	{
+		return AI_ACTION_NONE;
+	}
+	return AI_ACTION_SEEK_FRIEND;
+}
+
+
+
 // Chunk 1: battlefield-situation awareness. These helpers expose information to
 // later AI decisions but deliberately do not change actions on their own.
 // Local calculations use TACTICAL_RANGE so they scale with JA2's existing AI
@@ -5855,6 +6488,11 @@ INT32 AICrossfirePositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT3
 	if (!AICombatTeam(pSoldier) || TileIsOutOfBounds(sCandidateSpot) || TileIsOutOfBounds(sTargetSpot))
 		return 0;
 
+	// Crossfire geometry is an advanced coordination task. Ordinary line troops only
+	// receive it while local command is intact; security troops do not improvise it.
+	if (pSoldier->bTeam == ENEMY_TEAM && !AIAllowsComplexManeuver(pSoldier))
+		return 0;
+
 	UINT8 ubCandidateDir = AIDirection(sTargetSpot, sCandidateSpot);
 	if (ubCandidateDir == DIRECTION_IRRELEVANT)
 		return 0;
@@ -5964,6 +6602,26 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 	BOOLEAN fAdvanceCover = AnyCoverAtSpot(pSoldier, sAdvanceSpot);
 	INT32 iCurrentDist = PythSpacesAway(pSoldier->sGridNo, sTargetSpot);
 	INT32 iAdvanceDist = PythSpacesAway(sAdvanceSpot, sTargetSpot);
+	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
+	BOOLEAN fComplexDoctrine = AIAllowsComplexManeuver(pSoldier);
+
+	// Lower-quality formations can still make sensible covered advances, but do not
+	// independently solve exposed manoeuvre problems like a professional fireteam.
+	if (pSoldier->bTeam == ENEMY_TEAM && !fComplexDoctrine && iAdvanceDist + 2 < iCurrentDist)
+	{
+		if (ubDoctrine == AI_DOCTRINE_SECURITY &&
+			(!fAdvanceCover || usAdvanceExposure > usCurrentExposure + 25))
+		{
+			return FALSE;
+		}
+
+		if (ubDoctrine == AI_DOCTRINE_LINE &&
+			((!fAdvanceCover && usAdvanceExposure >= usCurrentExposure) ||
+			 usAdvanceExposure > usCurrentExposure + 80))
+		{
+			return FALSE;
+		}
+	}
 
 	// Fire-and-manoeuvre role separation. Two nearby soldiers may actively bound
 	// toward essentially the same known contact. A third healthy soldier normally
@@ -5974,15 +6632,15 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 		AIPersonalRisk(pSoldier) <= AIPersonalRiskTolerance(pSoldier))
 	{
 		UINT8 ubActiveMovers = 0;
-		UINT8 ubMoverLimit = 2;
-		INT32 iMoverJitter = AIBoundedDecisionJitter(pSoldier,
-			(UINT32)(sTargetSpot + 101), 6);
+		UINT8 ubMoverLimit = fComplexDoctrine ? 2 : 1;
+		INT32 iMoverJitter = fComplexDoctrine ? AIBoundedDecisionJitter(pSoldier,
+			(UINT32)(sTargetSpot + 101), 6) : 0;
 
-		// Most fireteams use two movers. Sometimes a cautious element sends one;
-		// occasionally a locally superior, low-stress element pushes three.
-		if (iMoverJitter <= -4)
+		// Professional/veteran fireteams vary their bound size. Uncommanded line and
+		// security elements use a simple one-mover-at-a-time rule instead.
+		if (fComplexDoctrine && iMoverJitter <= -4)
 			ubMoverLimit = 1;
-		else if (iMoverJitter >= 5 &&
+		else if (fComplexDoctrine && iMoverJitter >= 5 &&
 			AILocalStress(pSoldier) < 20 &&
 			AICheckWeOutnumberLocal(pSoldier, sTargetSpot))
 			ubMoverLimit = 3;
@@ -6993,357 +7651,192 @@ INT32 ClosestSeenLastTurnOpponent(SOLDIERTYPE *pSoldier, INT32 * psGridNo, INT8 
 // check if we have a prone sight cover from known enemies at spot
 BOOLEAN ProneSightCoverAtSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, BOOLEAN fUnlimited)
 {
-	CHECKF(pSoldier);
-
-	UINT32		uiLoop;
-	SOLDIERTYPE *pOpponent;
-	INT32		sThreatLoc;
-	INT8		iThreatLevel;
-	UINT16		usSightLimit;
-	UINT16		usAdjustedSight;
-	INT8		bKnowledge;
-	INT16		sSightAdjustment;
-
-	// for adjacent tiles check
-	UINT8	ubMovementCost;
-	INT32	sTempGridNo;
-	UINT8	ubDirection;
-
-	// look through all opponents for those we know of
-	for (uiLoop = 0; uiLoop < guiNumMercSlots; uiLoop++)
-	{
-		pOpponent = MercSlots[ uiLoop ];
-
-		// if this merc is inactive, at base, on assignment, dead, unconscious
-		if (!pOpponent || pOpponent->stats.bLife < OKLIFE)
-		{
-			continue;			// next merc
-		}
-
-		if(!ValidOpponent(pSoldier, pOpponent))
-		{
-			continue;
-		}
-
-		bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-
-		// if this opponent is unknown personally and publicly
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-		{
-			continue;
-		}
-
-		// obtain opponent's location and level
-		sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		iThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
-
-		// check that our knowledge is correct
-		if (TileIsOutOfBounds(sThreatLoc))
-		{
-			continue;
-		}
-
-		sSightAdjustment = GetSightAdjustment(pOpponent, pSoldier, sSpot, pSoldier->pathing.bLevel, ANIM_PRONE);
-
-		gbForceWeaponReady = true;
-		usSightLimit = pOpponent->GetMaxDistanceVisible(sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
-		gbForceWeaponReady = false;
-
-		usAdjustedSight = max(min(1, usSightLimit), usSightLimit + usSightLimit * sSightAdjustment / 100);
-
-		if (fUnlimited && LocationToLocationLineOfSightTest(sThreatLoc, iThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, NO_DISTANCE_LIMIT, STANDING_LOS_POS, PRONE_LOS_POS) ||
-			!fUnlimited && PythSpacesAway(sSpot, sThreatLoc) <= usAdjustedSight && LocationToLocationLineOfSightTest(sThreatLoc, iThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, usAdjustedSight, STANDING_LOS_POS, PRONE_LOS_POS))
-		{
-			return FALSE;
-		}
-
-		// check adjacent spots
-		if(gfTurnBasedAI)
-		{
-			for (ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ubDirection++)
-			{
-				sTempGridNo = NewGridNo(sThreatLoc, DirectionInc(ubDirection));
-
-				if (sTempGridNo != sThreatLoc)
-				{
-					ubMovementCost = gubWorldMovementCosts[sTempGridNo][ubDirection][iThreatLevel];
-
-					if (ubMovementCost < TRAVELCOST_BLOCKED &&
-						NewOKDestination(pOpponent, sTempGridNo, FALSE, iThreatLevel))
-					{
-						if (fUnlimited && LocationToLocationLineOfSightTest(sTempGridNo, iThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, NO_DISTANCE_LIMIT, STANDING_LOS_POS, PRONE_LOS_POS) ||
-							!fUnlimited && PythSpacesAway(sSpot, sTempGridNo) <= usAdjustedSight && LocationToLocationLineOfSightTest(sTempGridNo, iThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, usAdjustedSight, STANDING_LOS_POS, PRONE_LOS_POS))
-						{
-							return FALSE;
-						}
-					}
-				}
-			}
-		}
-	}
-
-	return TRUE;
+	return !AIKnownThreatHasSightToSpot(pSoldier, sSpot, fUnlimited, ANIM_PRONE, PRONE_LOS_POS);
 }
 
 // check if we have a crouched sight cover from known enemies at spot
 BOOLEAN CrouchedSightCoverAtSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, BOOLEAN fUnlimited)
 {
-	CHECKF(pSoldier);
-
-	UINT32		uiLoop;
-	SOLDIERTYPE *pOpponent;
-	INT32		sThreatLoc;
-	INT8		iThreatLevel;
-	UINT16		usSightLimit;
-	UINT16		usAdjustedSight;
-	INT8		bKnowledge;
-	INT16		sSightAdjustment;
-
-	// for adjacent tiles check
-	UINT8	ubMovementCost;
-	INT32	sTempGridNo;
-	UINT8	ubDirection;
-
-	// look through all opponents for those we know of
-	for (uiLoop = 0; uiLoop < guiNumMercSlots; uiLoop++)
-	{
-		pOpponent = MercSlots[uiLoop];
-
-		// if this merc is inactive, at base, on assignment, dead, unconscious
-		if (!pOpponent || pOpponent->stats.bLife < OKLIFE)
-		{
-			continue;			// next merc
-		}
-
-		if (!ValidOpponent(pSoldier, pOpponent))
-		{
-			continue;
-		}
-
-		bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-
-		// if this opponent is unknown personally and publicly
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-		{
-			continue;
-		}
-
-		// obtain opponent's location and level
-		sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		iThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
-
-		// check that our knowledge is correct
-		if (TileIsOutOfBounds(sThreatLoc))
-		{
-			continue;
-		}
-
-		sSightAdjustment = GetSightAdjustment(pOpponent, pSoldier, sSpot, pSoldier->pathing.bLevel, ANIM_CROUCH);
-
-		gbForceWeaponReady = true;
-		usSightLimit = pOpponent->GetMaxDistanceVisible(sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
-		gbForceWeaponReady = false;
-
-		usAdjustedSight = max(min(1, usSightLimit), usSightLimit + usSightLimit * sSightAdjustment / 100);
-
-		if (fUnlimited && LocationToLocationLineOfSightTest(sThreatLoc, iThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, NO_DISTANCE_LIMIT, STANDING_LOS_POS, CROUCHED_LOS_POS) ||
-			!fUnlimited && PythSpacesAway(sSpot, sThreatLoc) <= usAdjustedSight && LocationToLocationLineOfSightTest(sThreatLoc, iThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, usAdjustedSight, STANDING_LOS_POS, CROUCHED_LOS_POS))
-		{
-			return FALSE;
-		}
-
-		// check adjacent spots
-		if (gfTurnBasedAI)
-		{
-			for (ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ubDirection++)
-			{
-				sTempGridNo = NewGridNo(sThreatLoc, DirectionInc(ubDirection));
-
-				if (sTempGridNo != sThreatLoc)
-				{
-					ubMovementCost = gubWorldMovementCosts[sTempGridNo][ubDirection][iThreatLevel];
-
-					if (ubMovementCost < TRAVELCOST_BLOCKED &&
-						NewOKDestination(pOpponent, sTempGridNo, FALSE, iThreatLevel))
-					{
-						if (fUnlimited && LocationToLocationLineOfSightTest(sTempGridNo, iThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, NO_DISTANCE_LIMIT, STANDING_LOS_POS, CROUCHED_LOS_POS) ||
-							!fUnlimited && PythSpacesAway(sSpot, sTempGridNo) <= usAdjustedSight && LocationToLocationLineOfSightTest(sTempGridNo, iThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, usAdjustedSight, STANDING_LOS_POS, CROUCHED_LOS_POS))
-						{
-							return FALSE;
-						}
-					}
-				}
-			}
-		}
-	}
-
-	return TRUE;
+	return !AIKnownThreatHasSightToSpot(pSoldier, sSpot, fUnlimited, ANIM_CROUCH, CROUCHED_LOS_POS);
 }
 
 // check if we have sight cover from known enemies at spot
-BOOLEAN SightCoverAtSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, BOOLEAN fUnlimited)
+// Cover evaluation must not inspect hidden current opponent state. Current personal sight
+// may use observed optics/stance; stale/heard contacts use remembered location + confidence.
+static BOOLEAN AIKnownThreatHasSightToSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, BOOLEAN fUnlimited, UINT8 ubTargetStance, UINT8 ubTargetLOSPos)
 {
 	CHECKF(pSoldier);
 
-	UINT32		uiLoop;
-	SOLDIERTYPE *pOpponent;
-	INT32		sThreatLoc;
-	INT8		bThreatLevel;
-	UINT16		usSightLimit;
-	UINT16		usAdjustedSight;
-	INT8		bKnowledge;
-	INT16		sSightAdjustment;
-
-	// for adjacent tiles check
-	UINT8	ubMovementCost;
-	INT32	sTempGridNo;
-	UINT8	ubDirection;
-
-	// look through all opponents for those we know of
-	for (uiLoop = 0; uiLoop < guiNumMercSlots; uiLoop++)
+	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
 	{
-		pOpponent = MercSlots[uiLoop];
-
-		// if this merc is inactive, at base, on assignment, dead, unconscious
-		if (!pOpponent || pOpponent->stats.bLife < OKLIFE)
-		{
-			continue;			// next merc
-		}
-
-		if (!ValidOpponent(pSoldier, pOpponent))
-		{
+		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
+		if (!pOpponent)
 			continue;
-		}
 
-		bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-
-		// if this opponent is unknown personally and publicly
+		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
 		if (bKnowledge == NOT_HEARD_OR_SEEN)
+			continue;
+
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pSoldier->bSide == pOpponent->bSide ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			pOpponent->ubBodyType == CROW)
 		{
 			continue;
 		}
 
-		// obtain opponent's location and level
-		sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
+		const BOOLEAN fThreatStateKnown =
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY);
 
-		// check that our knowledge is correct
+		if (fThreatStateKnown && !ValidOpponent(pSoldier, pOpponent))
+			continue;
+
+		INT32 sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
+		INT8 bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
 		if (TileIsOutOfBounds(sThreatLoc))
-		{
 			continue;
+
+		UINT16 usAdjustedSight;
+		if (fThreatStateKnown)
+		{
+			// Personal sight can legitimately use the observer's actual vision state.
+			INT16 sSightAdjustment =
+				GetSightAdjustment(pOpponent, pSoldier, sSpot, pSoldier->pathing.bLevel, ubTargetStance);
+
+			gbForceWeaponReady = true;
+			UINT16 usSightLimit =
+				pOpponent->GetMaxDistanceVisible(sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
+			gbForceWeaponReady = false;
+
+			usAdjustedSight = max((UINT16)1,
+				(UINT16)(usSightLimit + usSightLimit * sSightAdjustment / 100));
+		}
+		else
+		{
+			// Stale/heard contacts have a believed firing/observation sector, not access
+			// to hidden current optics, stance, breath, wounds or weapon-ready state.
+			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+			usAdjustedSight = (UINT16)max(1, (MAX_VISION_RANGE * iCertainty) / 100);
 		}
 
-		sSightAdjustment = GetSightAdjustment(pOpponent, pSoldier, sSpot, pSoldier->pathing.bLevel, ANIM_PRONE);
-
-		gbForceWeaponReady = true;
-		usSightLimit = pOpponent->GetMaxDistanceVisible(sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
-		gbForceWeaponReady = false;
-
-		usAdjustedSight = max(min(1, usSightLimit), usSightLimit + usSightLimit * sSightAdjustment / 100);
-
-		if (fUnlimited && LocationToLocationLineOfSightTest(sThreatLoc, bThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, usAdjustedSight, STANDING_LOS_POS, STANDING_LOS_POS) ||
-			!fUnlimited && PythSpacesAway(sSpot, sThreatLoc) <= usAdjustedSight && LocationToLocationLineOfSightTest(sThreatLoc, bThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, NO_DISTANCE_LIMIT, STANDING_LOS_POS, STANDING_LOS_POS))
+		if ((fUnlimited &&
+			 LocationToLocationLineOfSightTest(sThreatLoc, bThreatLevel, sSpot, pSoldier->pathing.bLevel,
+				 TRUE, NO_DISTANCE_LIMIT, STANDING_LOS_POS, ubTargetLOSPos)) ||
+			(!fUnlimited &&
+			 PythSpacesAway(sSpot, sThreatLoc) <= usAdjustedSight &&
+			 LocationToLocationLineOfSightTest(sThreatLoc, bThreatLevel, sSpot, pSoldier->pathing.bLevel,
+				 TRUE, usAdjustedSight, STANDING_LOS_POS, ubTargetLOSPos)))
 		{
-			return FALSE;
+			return TRUE;
 		}
 
-		// check adjacent spots
-		if (gfTurnBasedAI)
+		// Predict a one-tile reposition only for a currently observed opponent. Doing
+		// this for stale contacts lets hidden current movement/body state leak into cover.
+		if (fThreatStateKnown && gfTurnBasedAI)
 		{
-			for (ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ubDirection++)
+			for (UINT8 ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ++ubDirection)
 			{
-				sTempGridNo = NewGridNo(sThreatLoc, DirectionInc(ubDirection));
+				INT32 sTempGridNo = NewGridNo(sThreatLoc, DirectionInc(ubDirection));
+				if (sTempGridNo == sThreatLoc)
+					continue;
 
-				if (sTempGridNo != sThreatLoc)
+				UINT8 ubMovementCost = gubWorldMovementCosts[sTempGridNo][ubDirection][bThreatLevel];
+				if (ubMovementCost >= TRAVELCOST_BLOCKED ||
+					!NewOKDestination(pOpponent, sTempGridNo, FALSE, bThreatLevel))
 				{
-					ubMovementCost = gubWorldMovementCosts[sTempGridNo][ubDirection][bThreatLevel];
+					continue;
+				}
 
-					if (ubMovementCost < TRAVELCOST_BLOCKED &&
-						NewOKDestination(pOpponent, sTempGridNo, FALSE, bThreatLevel))
-					{
-						if (fUnlimited && LocationToLocationLineOfSightTest(sTempGridNo, bThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, usAdjustedSight, STANDING_LOS_POS, STANDING_LOS_POS) ||
-							!fUnlimited && PythSpacesAway(sSpot, sTempGridNo) <= usAdjustedSight && LocationToLocationLineOfSightTest(sTempGridNo, bThreatLevel, sSpot, pSoldier->pathing.bLevel, TRUE, NO_DISTANCE_LIMIT, STANDING_LOS_POS, STANDING_LOS_POS))
-						{
-							return FALSE;
-						}
-					}
+				if ((fUnlimited &&
+					 LocationToLocationLineOfSightTest(sTempGridNo, bThreatLevel, sSpot, pSoldier->pathing.bLevel,
+						 TRUE, NO_DISTANCE_LIMIT, STANDING_LOS_POS, ubTargetLOSPos)) ||
+					(!fUnlimited &&
+					 PythSpacesAway(sSpot, sTempGridNo) <= usAdjustedSight &&
+					 LocationToLocationLineOfSightTest(sTempGridNo, bThreatLevel, sSpot, pSoldier->pathing.bLevel,
+						 TRUE, usAdjustedSight, STANDING_LOS_POS, ubTargetLOSPos)))
+				{
+					return TRUE;
 				}
 			}
 		}
 	}
 
-	return TRUE;
+	return FALSE;
+}
+
+BOOLEAN SightCoverAtSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, BOOLEAN fUnlimited)
+{
+	return !AIKnownThreatHasSightToSpot(pSoldier, sSpot, fUnlimited, ANIM_STAND, STANDING_LOS_POS);
 }
 
 BOOLEAN CheckDangerousDirection(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 {
 	CHECKF(pSoldier);
 	CHECKF(!TileIsOutOfBounds(sSpot));
-	
-	UINT32		uiLoop;
-	SOLDIERTYPE *pOpponent;
-	INT32		sThreatLoc;
-	INT8		bThreatLevel;
-	UINT16		usSightLimit;
-	UINT16		usAdjustedSight;
-	INT8		bKnowledge;
-	INT16		sSightAdjustment;
-	UINT8		ubDirection;
 
-	// look through all opponents for those we know of
-	for (uiLoop = 0; uiLoop < guiNumMercSlots; uiLoop++)
+	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
 	{
-		pOpponent = MercSlots[uiLoop];
-
-		// if this merc is inactive, at base, on assignment, dead, unconscious
-		if (!pOpponent || pOpponent->stats.bLife < OKLIFE)
-		{
-			continue;			// next merc
-		}
-
-		if (!ValidOpponent(pSoldier, pOpponent))
-		{
+		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
+		if (!pOpponent)
 			continue;
-		}
 
-		if(pOpponent->IsUnconscious() || pOpponent->IsEmptyVehicle())
-		{
-			continue;
-		}
-
-		bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-
-		// if this opponent is unknown personally and publicly
+		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
 		if (bKnowledge == NOT_HEARD_OR_SEEN)
+			continue;
+
+		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pSoldier->bSide == pOpponent->bSide ||
+			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			pOpponent->ubBodyType == CROW)
 		{
 			continue;
 		}
 
-		// obtain opponent's location and level
-		sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
+		const BOOLEAN fThreatStateKnown =
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY);
 
-		// check that our knowledge is correct
+		if (fThreatStateKnown &&
+			(!ValidOpponent(pSoldier, pOpponent) || pOpponent->IsUnconscious() || pOpponent->IsEmptyVehicle()))
+		{
+			continue;
+		}
+
+		INT32 sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
+		INT8 bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
 		if (TileIsOutOfBounds(sThreatLoc))
-		{
 			continue;
+
+		UINT16 usAdjustedSight;
+		if (fThreatStateKnown)
+		{
+			INT16 sSightAdjustment =
+				GetSightAdjustment(pOpponent, pSoldier, sSpot, pSoldier->pathing.bLevel, ANIM_STAND);
+
+			gbForceWeaponNotReady = true;
+			UINT16 usSightLimit =
+				pOpponent->GetMaxDistanceVisible(sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
+			gbForceWeaponNotReady = false;
+
+			usAdjustedSight = max((UINT16)1,
+				(UINT16)(usSightLimit + usSightLimit * sSightAdjustment / 100));
+		}
+		else
+		{
+			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+			usAdjustedSight = (UINT16)max(1, (MAX_VISION_RANGE * iCertainty) / 100);
 		}
 
-		sSightAdjustment = GetSightAdjustment(pOpponent, pSoldier, sSpot, pSoldier->pathing.bLevel, ANIM_STAND);
-
-		gbForceWeaponNotReady = true;
-		usSightLimit = pOpponent->GetMaxDistanceVisible(sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
-		gbForceWeaponNotReady = false;
-
-		usAdjustedSight = max(min(1, usSightLimit), usSightLimit + usSightLimit * sSightAdjustment / 100);
-		ubDirection = AIDirection(sThreatLoc, sSpot);
-
+		UINT8 ubDirection = AIDirection(sThreatLoc, sSpot);
 		if (PythSpacesAway(sSpot, sThreatLoc) <= usAdjustedSight &&
-			(CountCorpsesInDirection(pSoldier, sThreatLoc, ubDirection, max(usAdjustedSight, DAY_VISION_RANGE), FALSE, TRUE) ||
-			CountCorpsesInDirection(pSoldier, sThreatLoc, gOneCDirection[ubDirection], max(usAdjustedSight, DAY_VISION_RANGE), FALSE, TRUE) ||
-			CountCorpsesInDirection(pSoldier, sThreatLoc, gOneCCDirection[ubDirection], max(usAdjustedSight, DAY_VISION_RANGE), FALSE, TRUE)) &&
+			(CountCorpsesInDirection(pSoldier, sThreatLoc, ubDirection,
+				max(usAdjustedSight, (UINT16)DAY_VISION_RANGE), FALSE, TRUE) ||
+			 CountCorpsesInDirection(pSoldier, sThreatLoc, gOneCDirection[ubDirection],
+				max(usAdjustedSight, (UINT16)DAY_VISION_RANGE), FALSE, TRUE) ||
+			 CountCorpsesInDirection(pSoldier, sThreatLoc, gOneCCDirection[ubDirection],
+				max(usAdjustedSight, (UINT16)DAY_VISION_RANGE), FALSE, TRUE)) &&
 			!AnyCoverFromSpot(sSpot, bLevel, sThreatLoc, bThreatLevel) &&
-			LocationToLocationLineOfSightTest(sThreatLoc, bThreatLevel, sSpot, bLevel, TRUE, usAdjustedSight, STANDING_LOS_POS, STANDING_LOS_POS))
+			LocationToLocationLineOfSightTest(sThreatLoc, bThreatLevel, sSpot, bLevel,
+				TRUE, usAdjustedSight, STANDING_LOS_POS, STANDING_LOS_POS))
 		{
 			return TRUE;
 		}
@@ -9786,6 +10279,31 @@ BOOLEAN InSmoke(INT32 sGridNo, INT8 bLevel)
 	return FALSE;
 }
 
+BOOLEAN InSmokeNearby(INT32 sGridNo, INT8 bLevel)
+{
+	if (TileIsOutOfBounds(sGridNo))
+		return FALSE;
+
+	if (gpWorldLevelData[sGridNo].ubExtFlags[bLevel] & MAPELEMENT_EXT_SMOKE)
+		return TRUE;
+
+	for (UINT8 ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ++ubDirection)
+	{
+		INT32 sTempGridNo = NewGridNo(sGridNo, DirectionInc(ubDirection));
+		if (sTempGridNo == sGridNo)
+			continue;
+
+		UINT8 ubMovementCost = gubWorldMovementCosts[sTempGridNo][ubDirection][bLevel];
+		if (ubMovementCost < TRAVELCOST_BLOCKED &&
+			(gpWorldLevelData[sTempGridNo].ubExtFlags[bLevel] & MAPELEMENT_EXT_SMOKE))
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
 BOOLEAN AICheckSpecialRole(SOLDIERTYPE *pSoldier)
 {
 	if (AICheckIsSniper(pSoldier) || AICheckIsMachinegunner(pSoldier) || AICheckIsMortarOperator(pSoldier) || AICheckIsRadioOperator(pSoldier) || AICheckIsCommander(pSoldier) || AICheckIsGLOperator(pSoldier))
@@ -9794,32 +10312,158 @@ BOOLEAN AICheckSpecialRole(SOLDIERTYPE *pSoldier)
 	return FALSE;
 }
 
+// Unified perceived hazard model. Environmental dangers use only visible/detected
+// information where appropriate; corpse warnings require actual LOS.
+BOOLEAN FindNearbyExplosiveStructure(INT32 sSpot, INT8 bLevel)
+{
+	if (TileIsOutOfBounds(sSpot))
+		return FALSE;
+
+	for (UINT8 ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ++ubDirection)
+	{
+		INT32 sTempGridNo = NewGridNo(sSpot, DirectionInc(ubDirection));
+		if (sTempGridNo != sSpot &&
+			FindStructFlag(sTempGridNo, bLevel, STRUCTURE_EXPLOSIVE))
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+UINT8 SpotDangerLevel(SOLDIERTYPE *pSoldier, INT32 sGridNo)
+{
+	if (!pSoldier || TileIsOutOfBounds(sGridNo))
+		return 0;
+
+	UINT8 ubLevel = 0;
+
+	// Mild hazards: tactically undesirable, but never worth trapping a soldier over.
+	if (Water(sGridNo, pSoldier->pathing.bLevel) && !pSoldier->IsFlanking())
+	{
+		ubLevel = 1;
+	}
+
+	// Once alerted, stepping into illumination at night is a meaningful exposure cost.
+	if ((pSoldier->aiData.bAlertStatus >= STATUS_RED ||
+		 pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE) &&
+		(InLightAtNight(sGridNo, pSoldier->pathing.bLevel) ||
+		 FindNearbyExplosiveStructure(sGridNo, pSoldier->pathing.bLevel)))
+	{
+		ubLevel = __max((UINT8)2, ubLevel);
+	}
+
+	// Severe terrain / area denial.
+	if ((DeepWater(sGridNo, pSoldier->pathing.bLevel) && !pSoldier->IsFlanking()) ||
+		RedSmokeDanger(sGridNo, pSoldier->pathing.bLevel))
+	{
+		ubLevel = __max((UINT8)3, ubLevel);
+	}
+
+	// Immediate hazards. FindBombNearby() only reacts to visible/detected armed bombs.
+	if (InGas(pSoldier, sGridNo) ||
+		FindBombNearby(pSoldier, sGridNo, BOMB_DETECTION_RANGE))
+	{
+		ubLevel = 4;
+	}
+
+	return ubLevel;
+}
+
+BOOLEAN CheckNPCDestination(SOLDIERTYPE *pSoldier, INT32 sGridNo)
+{
+	if (!pSoldier || TileIsOutOfBounds(sGridNo))
+		return FALSE;
+
+	const UINT8 ubCurrentDanger = SpotDangerLevel(pSoldier, pSoldier->sGridNo);
+	const UINT8 ubTargetDanger = SpotDangerLevel(pSoldier, sGridNo);
+
+	// Reject only a strictly worse destination.  Allow equal danger so a soldier
+	// already caught in smoke/water/light can still move laterally toward an exit
+	// instead of becoming artificially rooted in place.
+	return (ubTargetDanger <= ubCurrentDanger);
+}
+
+UINT8 AICorpseWarningKnown(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel)
+{
+	if (!pSoldier || TileIsOutOfBounds(sGridNo))
+		return 0;
+
+	UINT8 ubWarning = 0;
+	for (INT32 cnt = 0; cnt < giNumRottingCorpse; ++cnt)
+	{
+		ROTTING_CORPSE *pCorpse = &(gRottingCorpse[cnt]);
+		if (!pCorpse ||
+			!pCorpse->fActivated ||
+			pCorpse->def.ubType >= ROTTING_STAGE2 ||
+			pCorpse->def.ubBodyType > REGFEMALE ||
+			pCorpse->def.ubAIWarningValue <= ubWarning ||
+			pCorpse->def.bLevel != bLevel ||
+			TileIsOutOfBounds(pCorpse->def.sGridNo) ||
+			PythSpacesAway(sGridNo, pCorpse->def.sGridNo) > CORPSE_WARNING_DIST)
+		{
+			continue;
+		}
+
+		if (!(pSoldier->bTeam == ENEMY_TEAM && CorpseEnemyTeam(pCorpse) ||
+			  pSoldier->bTeam == MILITIA_TEAM && CorpseMilitiaTeam(pCorpse) ||
+			  pSoldier->bTeam != ENEMY_TEAM && pSoldier->bTeam != MILITIA_TEAM))
+		{
+			continue;
+		}
+
+		if (!SoldierToVirtualSoldierLineOfSightTest(
+			pSoldier, pCorpse->def.sGridNo, pCorpse->def.bLevel,
+			ANIM_PRONE, TRUE, CALC_FROM_ALL_DIRS))
+		{
+			continue;
+		}
+
+		ubWarning = pCorpse->def.ubAIWarningValue;
+	}
+
+	return ubWarning;
+}
+
 BOOLEAN SafeSpot(SOLDIERTYPE *pSoldier, INT32 sSpot)
 {
 	if (!pSoldier)
-	{
 		return FALSE;
-	}
 
 	if (sSpot == NOWHERE)
-	{
 		sSpot = pSoldier->sGridNo;
-	}
+
+	if (TileIsOutOfBounds(sSpot))
+		return FALSE;
 
 	INT8 bLevel = pSoldier->pathing.bLevel;
 	BOOLEAN fUnlimitedSightCover = SightCoverAtSpot(pSoldier, sSpot, TRUE);
 	BOOLEAN fProneSightCover = ProneSightCoverAtSpot(pSoldier, sSpot, FALSE);
 	BOOLEAN fAnyCover = AnyCoverAtSpot(pSoldier, sSpot);
 
-	if ((fUnlimitedSightCover || fProneSightCover && fAnyCover || InARoom(sSpot, NULL) && bLevel == 0 && (fAnyCover || fProneSightCover)) &&
-		!InLightAtNight(sSpot, pSoldier->pathing.bLevel) &&
-		!pSoldier->aiData.bUnderFire &&
-		GetNearestRottingCorpseAIWarning(sSpot) == 0)
-	{
-		return TRUE;
-	}
+	BOOLEAN fDefensible =
+		fUnlimitedSightCover ||
+		(fProneSightCover && fAnyCover) ||
+		(InARoom(sSpot, NULL) && bLevel == 0 && (fAnyCover || fProneSightCover));
 
-	return FALSE;
+	if (!fDefensible)
+		return FALSE;
+
+	if (pSoldier->aiData.bUnderFire)
+		return FALSE;
+
+	// Use the same environmental danger model as movement selection.  A position
+	// is not a true safe spot merely because it has cover if it is in gas, water,
+	// red smoke, dangerous light, beside explosive scenery, near a known bomb, or
+	// next to a fresh casualty the soldier can actually perceive.
+	if (Water(sSpot, bLevel) || SpotDangerLevel(pSoldier, sSpot) > 0)
+		return FALSE;
+
+	if (AICorpseWarningKnown(pSoldier, sSpot, bLevel) > 0)
+		return FALSE;
+
+	return TRUE;
 }
 
 BOOLEAN AbortFinalSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bAction, INT32 sClosestDisturbance, INT8 bDisturbanceLevel, INT32& sDangerousSpot)
@@ -9869,11 +10513,22 @@ BOOLEAN AbortFinalSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bAction, INT32 s
 		return TRUE;
 	}
 
+	// Do not choose a nominally useful destination that introduces a new
+	// environmental mobility hazard. Leaving an existing hazard is handled by
+	// the dedicated water/gas escape logic before ordinary RED movement.
+	if ((InGas(pSoldier, sSpot) && !InGas(pSoldier, pSoldier->sGridNo)) ||
+		(DeepWater(sSpot, pSoldier->pathing.bLevel) && !DeepWater(pSoldier->sGridNo, pSoldier->pathing.bLevel)))
+	{
+		DebugAI(AI_MSG_INFO, pSoldier, String("hazardous destination! abort!"));
+		sDangerousSpot = sSpot;
+		return TRUE;
+	}
+
 	// don't go into light at night (includes smoke check)
 	if (InLightAtNight(sSpot, bLevel) &&
 		!InLightAtNight(pSoldier->sGridNo, pSoldier->pathing.bLevel) &&
 		!InSmoke(sSpot, bLevel) &&
-		(pSoldier->aiData.bUnderFire || !fSeekEnemy || !fSightCover || GetNearestRottingCorpseAIWarning(pSoldier->sGridNo) > 0) &&
+		(pSoldier->aiData.bUnderFire || !fSeekEnemy || !fSightCover || AICorpseWarningKnown(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel) > 0) &&
 		(fFlankingFriends || !fSuccessfulAttack || !fSeekEnemy) &&
 		!fFriendsBlack)
 	{
@@ -9884,10 +10539,10 @@ BOOLEAN AbortFinalSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bAction, INT32 s
 
 	// abort seeking when soldier sees fresh corpse
 	if (fSafeSpot &&
-		CorpseWarning(pSoldier, sSpot, bLevel) &&
+		AICorpseWarningKnown(pSoldier, sSpot, bLevel) &&
 		!InSmoke(sSpot, bLevel) &&
 		!fFriendsBlack &&
-		(fFlankingFriends || !fSuccessfulAttack || !fSeekEnemy || EnemyCanAttackSpot(pSoldier, sSpot, bLevel) || InARoom(sSpot, NULL) && bLevel == 0 || CorpseWarning(pSoldier, sSpot, bLevel)))
+		(fFlankingFriends || !fSuccessfulAttack || !fSeekEnemy || EnemyCanAttackSpot(pSoldier, sSpot, bLevel) || InARoom(sSpot, NULL) && bLevel == 0 || AICorpseWarningKnown(pSoldier, sSpot, bLevel)))
 	{
 		DebugAI(AI_MSG_INFO, pSoldier, String("fresh corpse! abort!"));
 

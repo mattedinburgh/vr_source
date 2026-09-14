@@ -3,7 +3,7 @@
 
 #include "types.h"
 
-#define VR_AI_COMPANION_SCHEMA_VERSION 2
+#define VR_AI_COMPANION_SCHEMA_VERSION 3
 #define VR_AI_FRAMEWORK_VERSION "unified-ai-2026-09-14"
 
 class SOLDIERTYPE;
