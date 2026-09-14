@@ -3209,15 +3209,15 @@ void ScrollBackground(UINT32 uiDirection, INT16 sScrollXIncrement, INT16 sScroll
 #define OCCLUSION_BUBBLE_SCAN_RADIUS       4
 // Camera-space ellipse. JA2's isometric projection is much wider than it is
 // tall, so a true screen-space oval reads like Fallout's circular cutaway.
-#define OCCLUSION_BUBBLE_INNER_RADIUS_X    72
-#define OCCLUSION_BUBBLE_INNER_RADIUS_Y    46
-#define OCCLUSION_BUBBLE_OUTER_RADIUS_X    112
-#define OCCLUSION_BUBBLE_OUTER_RADIUS_Y    72
+#define OCCLUSION_BUBBLE_INNER_RADIUS_X    ( 72 * GetVHDRenderScale() )
+#define OCCLUSION_BUBBLE_INNER_RADIUS_Y    ( 46 * GetVHDRenderScale() )
+#define OCCLUSION_BUBBLE_OUTER_RADIUS_X    ( 112 * GetVHDRenderScale() )
+#define OCCLUSION_BUBBLE_OUTER_RADIUS_Y    ( 72 * GetVHDRenderScale() )
 // Classification is deliberately broader than the visible mask. A wall sprite
 // can overlap the bubble even when its tile anchor sits outside the ellipse.
-#define OCCLUSION_BUBBLE_CLASSIFY_RADIUS_X 168
-#define OCCLUSION_BUBBLE_CLASSIFY_RADIUS_Y 118
-#define OCCLUSION_BUBBLE_CLIP_BAND_HEIGHT  4
+#define OCCLUSION_BUBBLE_CLASSIFY_RADIUS_X ( 168 * GetVHDRenderScale() )
+#define OCCLUSION_BUBBLE_CLASSIFY_RADIUS_Y ( 118 * GetVHDRenderScale() )
+#define OCCLUSION_BUBBLE_CLIP_BAND_HEIGHT  ( 4 * GetVHDRenderScale() )
 #define OCCLUSION_BUBBLE_MAX_CLIP_RECTS    128
 #define OCCLUSION_BUBBLE_MAX_MARKED_GRIDS  ( ( OCCLUSION_BUBBLE_SCAN_RADIUS * 2 + 1 ) * ( OCCLUSION_BUBBLE_SCAN_RADIUS * 2 + 1 ) )
 
