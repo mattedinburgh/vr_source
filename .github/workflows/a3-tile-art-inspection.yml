@@ -11,6 +11,7 @@ on:
       - 'Tools/audit_rural_sti.py'
       - 'Tools/compose_a3_rural_props.py'
       - 'Tools/refine_a3_landmarks.py'
+      - 'Tools/compose_a3_wet_soil.py'
   workflow_dispatch:
 
 jobs:
@@ -84,6 +85,14 @@ jobs:
           $tilesets = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir\Data-Maps-Tiles\Tilesets'
           $target = Join-Path $tilesets '38'
           python '.\Tools\compose_a3_rural_props.py' --tilesets-root $tilesets --target-38 $target
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Compose A3 wet cultivated soil
+        shell: powershell
+        run: |
+          $tilesets = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir\Data-Maps-Tiles\Tilesets'
+          $target = Join-Path $tilesets '38'
+          python '.\Tools\compose_a3_wet_soil.py' --tilesets-root $tilesets --target-38 $target
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Preview refined A3 landmark family
@@ -180,6 +189,7 @@ jobs:
           $assets = @(
             'VR_CROP_MASTER',
             'A3_FIELD_BEDS',
+            'A3_WET_SOIL',
             'A3_CROP_ROWS',
             'A3_HAY_STRAW',
             'A3_DITCH_BANKS',
