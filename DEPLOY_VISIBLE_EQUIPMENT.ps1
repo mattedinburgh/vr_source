@@ -156,6 +156,17 @@ function Normalize-EquipmentItemName {
     return [regex]::Replace($s.Trim(), '\s+', ' ')
 }
 
+function Get-XmlChildText {
+    param(
+        [Parameter(Mandatory=$true)]$Node,
+        [Parameter(Mandatory=$true)][string]$Name
+    )
+
+    $child = $Node.SelectSingleNode("./$Name")
+    if ($null -eq $child) { return "" }
+    return [string]$child.InnerText
+}
+
 function Read-EquipmentItemCatalog {
     param([Parameter(Mandatory=$true)][string]$Path)
 
@@ -168,15 +179,19 @@ function Read-EquipmentItemCatalog {
     }
 
     foreach ($node in $doc.ITEMLIST.ITEM) {
+        $idText = Get-XmlChildText $node "uiIndex"
         $id = 0
-        if (-not [int]::TryParse([string]$node.uiIndex, [ref]$id)) { continue }
+        if (-not [int]::TryParse($idText, [ref]$id)) { continue }
 
+        # AIMNAS item XML is sparse: optional elements such as szBRName are
+        # legitimately omitted on some ITEM nodes. SelectSingleNode keeps the
+        # reader StrictMode-safe and treats missing optional fields as empty.
         $record = [pscustomobject]@{
             Id = $id
-            Name = [string]$node.szItemName
-            Long = [string]$node.szLongItemName
-            BR = [string]$node.szBRName
-            ItemClass = [string]$node.usItemClass
+            Name = Get-XmlChildText $node "szItemName"
+            Long = Get-XmlChildText $node "szLongItemName"
+            BR = Get-XmlChildText $node "szBRName"
+            ItemClass = Get-XmlChildText $node "usItemClass"
         }
         $byId[$id] = $record
 
