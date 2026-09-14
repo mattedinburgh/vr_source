@@ -238,6 +238,42 @@ void VRAnalyticsTacticalCombatHit(
 	int targetBreathBefore,
 	int targetBreathAfter );
 
+// Hand-thrown grenade flight telemetry. These events are intentionally
+// physical/outcome focused rather than planner focused: they allow Black Box
+// and Companion to verify that AI-controlled soldiers obey the same throw
+// range rules as player mercs, including stance, breath and Throwing traits.
+void VRAnalyticsTacticalGrenadeThrowLaunched(
+	unsigned int soldierId,
+	int team,
+	int projectileId,
+	int itemIndex,
+	long startGrid,
+	long targetGrid,
+	int targetDistance,
+	int nearestPlayerId,
+	int distanceToNearestPlayer,
+	int targetOffsetToNearestPlayer,
+	int maxRange,
+	int effectiveStrength,
+	int breath,
+	int breathMax,
+	int stance,
+	int throwingTraits,
+	int itemWeight );
+
+void VRAnalyticsTacticalGrenadeThrowLanded(
+	unsigned int soldierId,
+	int team,
+	int projectileId,
+	int itemIndex,
+	long startGrid,
+	long endGrid,
+	int actualDistance,
+	int tilesMoved,
+	int nearestPlayerId,
+	int landingOffsetToNearestPlayer,
+	bool inWater );
+
 // Canonical applied-damage event emitted by SoldierTakeDamage(). Unlike
 // combat_hit this includes non-bullet causes such as explosions, bleeding,
 // gas, falls and melee, and records bleedout/downed transitions.
