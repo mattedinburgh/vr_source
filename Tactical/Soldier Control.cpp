@@ -11413,10 +11413,19 @@ void SOLDIERTYPE::UpdateDraggedBleedoutCasualty( INT32 sOldGridNo )
 	pCasualty->sAbsoluteFinalDestination = sOldGridNo;
 }
 
-static UINT8 BleedoutRescueTurns( UINT8 ubRoundTrauma )
+static UINT8 BleedoutRescueTurns( SOLDIERTYPE *pSoldier, UINT8 ubRoundTrauma )
 {
-	// Less severe incapacitating wounds give the squad time to win local fire
-	// superiority, deploy smoke, drag the casualty and then stabilize them.
+	// Intentional campaign asymmetry: player-side troops get a generous rescue
+	// window, while enemy soldiers bleed out much faster. Life is not fair, and the
+	// player should have more opportunity to recover valued mercs than hostile grunts.
+	if ( pSoldier && pSoldier->bTeam == ENEMY_TEAM )
+	{
+		// Enemy casualties never get more than four full rescue rounds.
+		// More severe sub-catastrophic trauma shortens that to three.
+		return ( ubRoundTrauma <= 45 ) ? 4 : 3;
+	}
+
+	// Player mercs and allied militia keep the longer rescue window.
 	if ( ubRoundTrauma <= 30 )
 		return 10;
 	if ( ubRoundTrauma <= 45 )
@@ -12074,7 +12083,7 @@ UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPo
 		this->ubBleedoutTraumaThisRound < BLEEDOUT_CATASTROPHIC_TRAUMA )
 	{
 		this->stats.bLife = 1;
-		UINT8 ubRevisedWindow = BleedoutRescueTurns( this->ubBleedoutTraumaThisRound );
+		UINT8 ubRevisedWindow = BleedoutRescueTurns( this, this->ubBleedoutTraumaThisRound );
 		if ( this->ubBleedoutTurns == 0 || this->ubBleedoutTurns > ubRevisedWindow )
 			this->ubBleedoutTurns = ubRevisedWindow;
 	}
@@ -12085,7 +12094,7 @@ UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPo
 		this->ClearBleedoutDragLinks();
 		this->stats.bLife = 1;
 		this->ubBleedoutState = BLEEDOUT_ACTIVE;
-		this->ubBleedoutTurns = BleedoutRescueTurns( this->ubBleedoutTraumaThisRound );
+		this->ubBleedoutTurns = BleedoutRescueTurns( this, this->ubBleedoutTraumaThisRound );
 		this->ubBleedoutGraceRound = 1;
 	}
 
