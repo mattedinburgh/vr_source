@@ -5983,7 +5983,7 @@ static void DropVRDirectionalBloodTrail( SOLDIERTYPE *pSoldier, UINT8 ubSprayDir
 }
 
 
-// VR cinematic gunshot reactions: thirty additional non-fatal reaction sequences.
+// VR cinematic gunshot reactions: eighty non-fatal reaction sequences.
 // These deliberately reuse living-safe JA2 hit/fall states rather than death-only
 // animation states. Direction, momentum and damage class create readable variety
 // without adding new savegame fields or bypassing JA2's collision-checked fallbacks.
@@ -6577,7 +6577,7 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	SpawnVRSprinklerGoreBurst( pSoldier, ubExitDirection, ubIncomingDirection, sFatalGoreZ, TRUE );
 
 	// Prone and crouched mercs use stance-safe death states, while still receiving
-	// all thirty gore packages. This keeps the 30-way visual test active in every stance.
+	// all supported gore families while finishing through stance-safe death states.
 	if ( ubHeight == ANIM_PRONE || ubHeight == ANIM_CROUCH )
 	{
 		const CHAR8 *zEffect = "TILECACHE\\VR_FATAL_CRUMPLE.STI";
@@ -7816,7 +7816,7 @@ void SoldierGotHitGunFire( SOLDIERTYPE *pSoldier, UINT16 usWeaponIndex, INT16 sD
 
 	// Eligible fatal gunshots have exactly one visual owner. Run the VR fatal
 	// dispatcher before the legacy head-explode/flyback/falldown branches so those
-	// older special flags cannot pre-empt the 30-way cinematic system or stack a
+	// older special flags cannot pre-empt the cinematic fatal system or stack a
 	// second gore package on top of it. Nonfatal hits and unsupported cases (water,
 	// non-guns, non-merc body types) continue through the legacy path below.
 	if ( HandleVRFatalGunshotReaction( pSoldier, usWeaponIndex, sDamage, bDirection, ubHitLocation ) )
