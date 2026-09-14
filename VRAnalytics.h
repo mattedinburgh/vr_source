@@ -65,6 +65,26 @@ void VRAnalyticsDiagnostic(
 	const char* code,
 	const char* detail );
 
+// Battle lifecycle. A battle remains open across temporary exits/re-entries
+// into turn-based combat in the same sector.
+void VRAnalyticsBattleStarted(
+	int sectorX,
+	int sectorY,
+	int sectorZ,
+	int playerCount,
+	int enemyCount,
+	int militiaCount );
+
+void VRAnalyticsBattleEnded(
+	const char* result,
+	int sectorX,
+	int sectorY,
+	int sectorZ,
+	int playerCount,
+	int enemyCount,
+	int militiaCount,
+	bool enemyRetreated );
+
 // Tactical convenience wrappers. They maintain one active decision chain per
 // soldier and automatically correlate action completion with the selection.
 void VRAnalyticsTacticalCandidate(
