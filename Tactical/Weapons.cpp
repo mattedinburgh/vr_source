@@ -3550,7 +3550,7 @@ BOOLEAN UseHandToHand( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo, BOOLEAN fStea
 			// SANDRO - unable to steal from militia if they are not allowed to drop equipment
 			if (SOLDIER_CLASS_MILITIA(pTargetSoldier->ubSoldierClass) && (gGameExternalOptions.ubMilitiaDropEquipment != 2) )
 			{
-				DeductPoints( pSoldier, (APBPConstants[AP_STEAL_ITEM] / 5), 0, AFTERACTION_INTERRUPT );
+				DeductPoints( pSoldier, max( 1, (INT16)(GetBaseAPsToStealItem( pSoldier, pTargetSoldier ) / 2) ), 0, AFTERACTION_INTERRUPT );
 				pSoldier->DoMercBattleSound( BATTLE_SOUND_CURSE1 );
 				return ( TRUE );
 			}
@@ -3752,31 +3752,16 @@ BOOLEAN UseHandToHand( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo, BOOLEAN fStea
 			}
 
 			// Vengeance: one stealing interaction, one AP charge.
-			// The full-inventory selection menu no longer charges pickup AP per item.
-			// A collapsed/dying target costs normal pickup AP; a conscious target costs
-			// roughly twice that amount.  This is deliberately much lighter than the
-			// legacy AP_STEAL_ITEM + menu pickup stacking.
-			if (gGameExternalOptions.fEnhancedCloseCombatSystem)
+			// This deliberately does not depend on EnhancedCloseCombatSystem: the
+			// cursor preview (GetAPsToStealItem) and the actual deduction must use
+			// the same rule under every option set.
+			if ( fStealAttempt || fFailure )
 			{
-				if ( fStealAttempt || fFailure )
-				{
-					DeductPoints( pSoldier, GetBaseAPsToStealItem( pSoldier, pTargetSoldier ), 0, AFTERACTION_INTERRUPT );
-				}
-				else if ((fNoMoreItems == TRUE) || (fNoMoreItemInHand == TRUE))
-				{
-					DeductPoints( pSoldier, max( 1, (INT16)(GetBaseAPsToStealItem( pSoldier, pTargetSoldier ) / 2) ), 0, AFTERACTION_INTERRUPT );
-				}
+				DeductPoints( pSoldier, GetBaseAPsToStealItem( pSoldier, pTargetSoldier ), 0, AFTERACTION_INTERRUPT );
 			}
-			else
+			else if ((fNoMoreItems == TRUE) || (fNoMoreItemInHand == TRUE))
 			{
-				if (HAS_SKILL_TRAIT( pSoldier, MARTIAL_ARTS_NT ) && ( gGameOptions.fNewTraitSystem ))
-				{
-					DeductPoints(pSoldier, max(1, (INT16)(((FLOAT)APBPConstants[AP_STEAL_ITEM] * (FLOAT)(100 - gSkillTraitValues.ubMAReducedAPsToSteal * NUM_SKILL_TRAITS(pSoldier, MARTIAL_ARTS_NT)) / 100.0f) + 0.5f)), 0, AFTERACTION_INTERRUPT);
-				}
-				else
-				{
-					DeductPoints( pSoldier, APBPConstants[AP_STEAL_ITEM], 0, AFTERACTION_INTERRUPT );
-				}
+				DeductPoints( pSoldier, max( 1, (INT16)(GetBaseAPsToStealItem( pSoldier, pTargetSoldier ) / 2) ), 0, AFTERACTION_INTERRUPT );
 			}
 						
 			// We failed to steal something!
