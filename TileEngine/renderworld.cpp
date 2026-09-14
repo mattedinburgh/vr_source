@@ -992,6 +992,32 @@ static BOOLEAN RenderFullLogicalMercModel(
 	return TRUE;
 }
 
+// Cosmetic distance cue for true-colour map tiles. Close terrain keeps nearly
+// all of its colour; saturation eases down gradually toward and beyond the
+// selected merc's normal viewing range. This never feeds LOS/CTH/AI.
+static UINT8 TrueColorViewSofteningForTile(INT32 sTileGridNo, INT32 sViewerGridNo, INT32 iViewRange)
+{
+	const UINT8 ubNearSoftening = 6;   // ~2% desaturation up close
+	const UINT8 ubFarSoftening = 52;   // ~20% at the far edge; never grey/foggy
+
+	if(TileIsOutOfBounds(sTileGridNo) || TileIsOutOfBounds(sViewerGridNo))
+		return ubNearSoftening;
+
+	iViewRange = __max(12, iViewRange);
+	const INT32 iDistance = GetRangeFromGridNoDiff(sViewerGridNo, sTileGridNo);
+	const INT32 iNearRange = __max(6, (iViewRange * 45) / 100);
+	const INT32 iFarRange = __max(iNearRange + 8, (iViewRange * 135) / 100);
+
+	if(iDistance <= iNearRange)
+		return ubNearSoftening;
+	if(iDistance >= iFarRange)
+		return ubFarSoftening;
+
+	return (UINT8)(ubNearSoftening +
+		((iDistance - iNearRange) * (ubFarSoftening - ubNearSoftening)) /
+		(iFarRange - iNearRange));
+}
+
 void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT32 iStartPointX_S, INT32 iStartPointY_S, INT32 iEndXS, INT32 iEndYS, UINT8 ubNumLevels, UINT32 *puiLevels, UINT16 *psLevelIDs )
 {
 
@@ -1073,12 +1099,22 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 	BOOLEAN				fHiddenTile = FALSE;
   UINT32        uiAniTileFlags = 0;
 	INT16					sZStripIndex;
+	INT32					sTrueColorViewerGridNo = NOWHERE;
+	INT32					iTrueColorViewRange = __max(12, MaxNormalDistanceVisible());
+	UINT8					ubTrueColorViewSoftening = 0;
 
 	//Init some variables
 	usImageIndex = 0;
 	sZLevel = 0;
 	uiDirtyFlags = 0;
 	pShadeTable = NULL;
+
+	if(gusSelectedSoldier != NOBODY && MercPtrs[gusSelectedSoldier] != NULL)
+	{
+		SOLDIERTYPE *pViewSoldier = MercPtrs[gusSelectedSoldier];
+		if(pViewSoldier->bActive && pViewSoldier->bInSector && !TileIsOutOfBounds(pViewSoldier->sGridNo))
+			sTrueColorViewerGridNo = pViewSoldier->sGridNo;
+	}
 
 	// Begin Render Loop
 	iAnchorPosX_M = iStartPointX_M;
@@ -1178,6 +1214,9 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 					//if ( 0 )					
 					if (!TileIsOutOfBounds(uiTileIndex))
 					{
+						ubTrueColorViewSoftening = TrueColorViewSofteningForTile(
+							uiTileIndex, sTrueColorViewerGridNo, iTrueColorViewRange);
+
 						// OK, we're searching through this loop anyway, might as well check for mouse position
 						// over objects...
 						// Experimental!
@@ -2355,7 +2394,8 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 												Z_STRIP_DELTA_Y,
 												fTrueColorSameZBurnsThrough,
 												fObscuredBlitter,
-												TRUE);
+												TRUE,
+												ubTrueColorViewSoftening);
 										}
 										else if(fShadowBlitter || fIntensityBlitter)
 										{
@@ -2388,7 +2428,8 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 												pNode->ubShadeLevel,
 												fZBlitter,
 												fZWrite,
-												fObscuredBlitter);
+												fObscuredBlitter,
+												ubTrueColorViewSoftening);
 										}
 										if ( (uiLevelNodeFlags & LEVELNODE_UPDATESAVEBUFFERONCE ) )
 										{
@@ -2417,7 +2458,8 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 													usImageIndex,
 													&gClippingRect,
 													pNode->ubShadeLevel,
-													FALSE, FALSE, FALSE);
+													FALSE, FALSE, FALSE,
+													ubTrueColorViewSoftening);
 											}
 											UnLockVideoSurface(guiSAVEBUFFER);
 											pNode->uiFlags &= ( ~LEVELNODE_UPDATESAVEBUFFERONCE );
