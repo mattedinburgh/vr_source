@@ -6091,7 +6091,6 @@ static BOOLEAN HandleVRCinematicGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 u
 	};
 
 	UINT8 ubReaction = 0;
-	BOOLEAN fCriticalReaction = FALSE;
 	BOOLEAN fKnockdownReaction = ( Random( 100 ) < (UINT16)sKnockdownChance );
 
 	if ( fKnockdownReaction )
@@ -6104,7 +6103,6 @@ static BOOLEAN HandleVRCinematicGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 u
 		if ( sSeverity >= 45 && Random( 100 ) < (UINT16)sCriticalShare )
 		{
 			ubReaction = aubCriticalPool[ Random( 15 ) ];
-			fCriticalReaction = TRUE;
 		}
 		else
 		{
