@@ -708,7 +708,9 @@ void VR_TraceOperationalRecommendationsHourly()
 		INT32 iBestScore = 0;
 		const UINT8 ubBestSector =
 			VR_FindBestOperationalTarget( pGroup, &iBestScore );
-		if( ubBestSector == 0xff )
+		// Sector IDs span the full UINT8 range; 0xff is the real P16 sector.
+		// Use the score sentinel instead of sacrificing a valid map sector.
+		if( iBestScore <= -32767 )
 			continue;
 
 		VR_OPERATIONAL_SCORE Score;
