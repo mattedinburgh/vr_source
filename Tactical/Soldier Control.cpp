@@ -97,6 +97,7 @@
 #include "Queen Command.h" // sevenfm: for r8380
 #endif
 
+#include "Campaign Tactical Telemetry.h"
 #include "ub_config.h"
 #include "../ModularizedTacticalAI/include/Plan.h" // for plan destructor call
 
@@ -7147,6 +7148,7 @@ BOOLEAN SOLDIERTYPE::EVENT_InternalGetNewSoldierPath( INT32 sDestGridNo, UINT16 
 
 void SOLDIERTYPE::EVENT_GetNewSoldierPath( INT32 sDestGridNo, UINT16 usMovementAnim )
 {
+	VR_TacticalTelemetryMoveOrder( this, sDestGridNo, usMovementAnim );
 	// ATE: Default restart of animation to TRUE
 	this->EVENT_InternalGetNewSoldierPath( sDestGridNo, usMovementAnim, FALSE, TRUE );
 }
@@ -9998,6 +10000,7 @@ UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPo
 		}
 
 		VehicleTakeDamage( this->bVehicleID, ubReason, sLifeDeduct, this->sGridNo, ubAttacker );
+		VR_TacticalTelemetryDamage( this, ubAttacker, ubReason, bOldLife, sBreathLoss, sSourceGrid );
 		HandleTakeDamageDeath( this, bOldLife, ubReason );
 		return( 0 );
 	}
@@ -10517,6 +10520,7 @@ UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPo
 		}
 	}
 
+	VR_TacticalTelemetryDamage( this, ubAttacker, ubReason, bOldLife, sBreathLoss, sSourceGrid );
 	HandleTakeDamageDeath( this, bOldLife, ubReason );
 
 	// Check if we are < unconscious, and shutup if so! also wipe sight
