@@ -2395,14 +2395,28 @@ BOOLEAN AddTileSurface( STR8  cFilename, UINT32 ubType, UINT8 ubTilesetID, BOOLE
 		ubSectorReplacementTilesetID = 38;
 		switch ( ubType )
 		{
-			case SECONDDECORATIONS: pLoadFilename = "VR_CROP_MASTER.STI"; break;
-			case THIRDDECORATIONS:  pLoadFilename = "A3_MUD_RUTS.STI"; break;
-			case FOURTHDECORATIONS: pLoadFilename = "A3_LANDMARKS.STI"; break;
-			case DEBRISROCKS:       pLoadFilename = "A3_FIELD_STONES.STI"; break;
-			case DEBRISWOOD:        pLoadFilename = "A3_WOOD_YARD.STI"; break;
-			case DEBRISWEEDS:       pLoadFilename = "A3_EDGE_WEEDS.STI"; break;
-			case DEBRISGRASS:       pLoadFilename = "A3_IRRIGATION.STI"; break;
-			case DEBRISMISC:        pLoadFilename = "A3_FARM_JUNK.STI"; break;
+			// Full A3 pixel replacement: the map keeps the authored tile indices and
+			// gameplay geometry, but its ground/water pixels come from our own native
+			// B1TC pack.  Frame counts match TileDat.cpp so existing sub-indices remain
+			// valid.  JSD-bearing walls/trees/doors are intentionally not replaced yet.
+			case FIRSTTEXTURE:      pLoadFilename = "VR_A3_TEX1.STI"; break;
+			case SECONDTEXTURE:     pLoadFilename = "VR_A3_TEX2.STI"; break;
+			case THIRDTEXTURE:      pLoadFilename = "VR_A3_TEX3.STI"; break;
+			case FOURTHTEXTURE:     pLoadFilename = "VR_A3_TEX4.STI"; break;
+			case FIFTHTEXTURE:      pLoadFilename = "VR_A3_TEX5.STI"; break;
+			case SIXTHTEXTURE:      pLoadFilename = "VR_A3_TEX6.STI"; break;
+			case SEVENTHTEXTURE:    pLoadFilename = "VR_A3_TEX7.STI"; break;
+			case REGWATERTEXTURE:   pLoadFilename = "VR_A3_WATER.STI"; break;
+			case DEEPWATERTEXTURE:  pLoadFilename = "VR_A3_DEEPWATER.STI"; break;
+
+			case SECONDDECORATIONS: pLoadFilename = "VR_A3_CROPS.STI"; break;
+			case THIRDDECORATIONS:  pLoadFilename = "VR_A3_RUTS.STI"; break;
+			case FOURTHDECORATIONS: pLoadFilename = "VR_A3_PROPS.STI"; break;
+			case DEBRISROCKS:       pLoadFilename = "VR_A3_ROCKS.STI"; break;
+			case DEBRISWOOD:        pLoadFilename = "VR_A3_WOOD.STI"; break;
+			case DEBRISWEEDS:       pLoadFilename = "VR_A3_WEEDS.STI"; break;
+			case DEBRISGRASS:       pLoadFilename = "VR_A3_IRRIGATION.STI"; break;
+			case DEBRISMISC:        pLoadFilename = "VR_A3_JUNK.STI"; break;
 		}
 	}
 
