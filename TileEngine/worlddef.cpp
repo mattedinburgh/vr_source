@@ -1355,6 +1355,65 @@ static void A3WriteArchitectureSurvey( void )
 		fclose( pCsv );
 	}
 
+	// Export exact tile-type occupancy by render layer.  This is deliberately
+	// diagnostic-only: it lets the A3 art pass identify genuinely spare visual
+	// slots before remapping richer crop/yard families, instead of guessing and
+	// accidentally replacing authored map objects.
+	{
+		UINT32 uiLandCount[ NUMBEROFTILETYPES ];
+		UINT32 uiObjectCount[ NUMBEROFTILETYPES ];
+		UINT32 uiStructCount[ NUMBEROFTILETYPES ];
+		UINT32 uiShadowCount[ NUMBEROFTILETYPES ];
+		UINT32 uiRoofCount[ NUMBEROFTILETYPES ];
+		UINT32 uiOnRoofCount[ NUMBEROFTILETYPES ];
+		memset( uiLandCount, 0, sizeof(uiLandCount) );
+		memset( uiObjectCount, 0, sizeof(uiObjectCount) );
+		memset( uiStructCount, 0, sizeof(uiStructCount) );
+		memset( uiShadowCount, 0, sizeof(uiShadowCount) );
+		memset( uiRoofCount, 0, sizeof(uiRoofCount) );
+		memset( uiOnRoofCount, 0, sizeof(uiOnRoofCount) );
+
+		for ( INT32 sGridNo = 0; sGridNo < WORLD_MAX; ++sGridNo )
+		{
+			LEVELNODE *pNode = NULL;
+			UINT32 uiType = 0;
+
+			for ( pNode = gpWorldLevelData[sGridNo].pLandHead; pNode != NULL; pNode = pNode->pNext )
+				if ( pNode->usIndex != NO_TILE && GetTileType( pNode->usIndex, &uiType ) && uiType < NUMBEROFTILETYPES ) ++uiLandCount[uiType];
+			for ( pNode = gpWorldLevelData[sGridNo].pObjectHead; pNode != NULL; pNode = pNode->pNext )
+				if ( pNode->usIndex != NO_TILE && GetTileType( pNode->usIndex, &uiType ) && uiType < NUMBEROFTILETYPES ) ++uiObjectCount[uiType];
+			for ( pNode = gpWorldLevelData[sGridNo].pStructHead; pNode != NULL; pNode = pNode->pNext )
+				if ( pNode->usIndex != NO_TILE && GetTileType( pNode->usIndex, &uiType ) && uiType < NUMBEROFTILETYPES ) ++uiStructCount[uiType];
+			for ( pNode = gpWorldLevelData[sGridNo].pShadowHead; pNode != NULL; pNode = pNode->pNext )
+				if ( pNode->usIndex != NO_TILE && GetTileType( pNode->usIndex, &uiType ) && uiType < NUMBEROFTILETYPES ) ++uiShadowCount[uiType];
+			for ( pNode = gpWorldLevelData[sGridNo].pRoofHead; pNode != NULL; pNode = pNode->pNext )
+				if ( pNode->usIndex != NO_TILE && GetTileType( pNode->usIndex, &uiType ) && uiType < NUMBEROFTILETYPES ) ++uiRoofCount[uiType];
+			for ( pNode = gpWorldLevelData[sGridNo].pOnRoofHead; pNode != NULL; pNode = pNode->pNext )
+				if ( pNode->usIndex != NO_TILE && GetTileType( pNode->usIndex, &uiType ) && uiType < NUMBEROFTILETYPES ) ++uiOnRoofCount[uiType];
+		}
+
+		FILE *pUsage = fopen( "MAP_PREVIEWS\\A3_tile_usage.csv", "w" );
+		if ( pUsage != NULL )
+		{
+			fprintf( pUsage, "tile_type,land,object,struct,shadow,roof,onroof,total\n" );
+			for ( UINT16 usType = 0; usType < NUMBEROFTILETYPES; ++usType )
+			{
+				const UINT32 uiTotal = uiLandCount[usType] + uiObjectCount[usType] +
+					uiStructCount[usType] + uiShadowCount[usType] +
+					uiRoofCount[usType] + uiOnRoofCount[usType];
+				if ( uiTotal == 0 )
+					continue;
+				fprintf( pUsage, "%u,%lu,%lu,%lu,%lu,%lu,%lu,%lu\n",
+					usType, uiLandCount[usType], uiObjectCount[usType],
+					uiStructCount[usType], uiShadowCount[usType],
+					uiRoofCount[usType], uiOnRoofCount[usType], uiTotal );
+			}
+			fflush( pUsage );
+			fclose( pUsage );
+			TraceA3FarmLoad( "TILE USAGE SURVEY DONE", "A3_tile_usage.csv" );
+		}
+	}
+
 	CHAR8 zSummary[96];
 	sprintf( zSummary, "roofClusters=%u", usCluster );
 	TraceA3FarmLoad( "ARCHITECTURE SURVEY DONE", zSummary );
