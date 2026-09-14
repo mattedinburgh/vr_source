@@ -331,6 +331,28 @@ def patch_worlddef() -> None:
         if did:
             changed.append(label)
 
+    # A3 anchor-map restraint.  Run #99 improved separation but overshot into
+    # lime/emerald.  Keep the tropical identity while returning to sun-faded,
+    # dusty farm colours.
+    a3_pairs = [
+        ("saturationPercent = 111;\n\t\tcontrastPercent = 114;\n\t\tredBias = 3;\n\t\tgreenBias = 4;\n\t\tblueBias = -3;",
+         "saturationPercent = 106;\n\t\tcontrastPercent = 113;\n\t\tredBias = 3;\n\t\tgreenBias = 3;\n\t\tblueBias = -2;",
+         "A3 base restraint"),
+        ("saturationPercent = 120; contrastPercent = 116;\n\t\t\tredBias = -4; greenBias = 11; blueBias = -6;",
+         "saturationPercent = 112; contrastPercent = 115;\n\t\t\tredBias = -2; greenBias = 7; blueBias = -4;",
+         "A3 green terrain restraint"),
+        ("saturationPercent = 122; contrastPercent = 118;\n\t\t\tredBias = -4; greenBias = 12; blueBias = -6;",
+         "saturationPercent = 114; contrastPercent = 117;\n\t\t\tredBias = -2; greenBias = 8; blueBias = -4;",
+         "A3 vegetation restraint"),
+        ("outR -= 1; outG += 3; outB -= 1;",
+         "outR -= 1; outG += 1;",
+         "A3 per-pixel green restraint"),
+    ]
+    for old, new, label in a3_pairs:
+        text, did = replace_if_present(text, old, new, label)
+        if did:
+            changed.append(label)
+
     # 8-bit/palette surfaces.  These exact lines come from the proven colourful
     # pass; keep colour identity but stop globally flooding wilderness/military
     # sectors with green.
