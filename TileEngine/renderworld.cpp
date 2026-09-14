@@ -1329,9 +1329,13 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 							// The inner bubble removes ordinary wall art. The outer ring reuses
 							// JA2's established dynamic translucent reveal path. Door/window nodes
 							// are only ever assigned OCCLUSION_FADE by the updater above.
-							if ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_HIDE )
+							if ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_CUTOUT )
 							{
-								fRenderTile = FALSE;
+								// Keep the static structure pass alive so the special wall blitter
+								// can draw only the pixels outside the ellipse. Never redraw the
+								// cutout in dynamic/shadow passes.
+								if ( fDynamic || ( uiRowFlags & ( TILES_STATIC_SHADOWS | TILES_DYNAMIC_SHADOWS ) ) )
+									fRenderTile = FALSE;
 								fPixelate = FALSE;
 							}
 							else if ( uiLevelNodeFlags & ( LEVELNODE_REVEAL | LEVELNODE_OCCLUSION_FADE ) )
@@ -1477,9 +1481,10 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 									// paths. Re-apply the cutaway at the final gate so an inner wall can
 									// never leak back into the static buffer, while a fade node remains
 									// dynamic-only.
-									if ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_HIDE )
+									if ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_CUTOUT )
 									{
-										fRenderTile = FALSE;
+										if ( fDynamic || ( uiRowFlags & ( TILES_STATIC_SHADOWS | TILES_DYNAMIC_SHADOWS ) ) )
+											fRenderTile = FALSE;
 									}
 									else if ( ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_FADE ) && !fDynamic )
 									{
@@ -2422,6 +2427,18 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 												sTrueColorZStripIndex = (sZStripIndex == -1) ? usImageIndex : sZStripIndex;
 											}
 
+											if ( fWallTile &&
+												 ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_CUTOUT ) &&
+												 !fObscuredBlitter )
+											{
+												BlitOcclusionBubbleTrueColorWallZStrip(
+													(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
+													hVObject, sXPos, sYPos, usImageIndex, pNode->ubShadeLevel,
+													sTrueColorZStripIndex, fTrueColorSameZBurnsThrough,
+													ubTrueColorViewSoftening );
+											}
+											else
+											{
 											BltTrueColorDataTo16BPPBufferZStrip(
 												(UINT16*)pDestBuf,
 												uiDestPitchBYTES,
@@ -2438,6 +2455,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 												fObscuredBlitter,
 												TRUE,
 												ubTrueColorViewSoftening);
+											}
 										}
 										else if(fShadowBlitter || fIntensityBlitter)
 										{
@@ -2548,13 +2566,21 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 												{
 													if ( fWallTile )
 													{
-														if ( sZStripIndex == -1 )
+														const INT16 sWallZStripIndex =
+															( sZStripIndex == -1 ) ? (INT16)usImageIndex : sZStripIndex;
+
+														if ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_CUTOUT )
 														{
-															Blt8BPPDataTo16BPPBufferTransZIncClipZSameZBurnsThrough((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex, &gClippingRect, usImageIndex);
+															BlitOcclusionBubble8BitWallZStrip(
+																(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
+																hVObject, sXPos, sYPos, usImageIndex, sWallZStripIndex );
 														}
 														else
 														{
-															Blt8BPPDataTo16BPPBufferTransZIncClipZSameZBurnsThrough((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex, &gClippingRect, sZStripIndex );
+															Blt8BPPDataTo16BPPBufferTransZIncClipZSameZBurnsThrough(
+																(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
+																hVObject, sXPos, sYPos, usImageIndex, &gClippingRect,
+																sWallZStripIndex );
 														}
 													}
 													else
@@ -3129,8 +3155,8 @@ void ScrollBackground(UINT32 uiDirection, INT16 sScrollXIncrement, INT16 sScroll
 // without touching any tactical data: only LEVELNODE render state is changed.
 //
 // A wall's orientation tells us which neighbouring tile lies "behind" it from
-// the camera. The inner part of the bubble removes ordinary wall art; the outer
-// ring uses the engine's established translucent/pixelated reveal path. Doors
+// the camera. The inner bubble cuts a camera-space hole through ordinary walls;
+// the outer ring uses the engine's established translucent reveal path. Doors
 // and windows are deliberately never fully removed, leaving their frames and
 // openings readable as architectural cues.
 // -----------------------------------------------------------------------------
@@ -3142,6 +3168,8 @@ void ScrollBackground(UINT32 uiDirection, INT16 sScrollXIncrement, INT16 sScroll
 #define OCCLUSION_BUBBLE_INNER_RADIUS_Y    46
 #define OCCLUSION_BUBBLE_OUTER_RADIUS_X    112
 #define OCCLUSION_BUBBLE_OUTER_RADIUS_Y    72
+#define OCCLUSION_BUBBLE_CLIP_BAND_HEIGHT  4
+#define OCCLUSION_BUBBLE_MAX_CLIP_RECTS    64
 #define OCCLUSION_BUBBLE_MAX_MARKED_GRIDS  ( ( OCCLUSION_BUBBLE_SCAN_RADIUS * 2 + 1 ) * ( OCCLUSION_BUBBLE_SCAN_RADIUS * 2 + 1 ) )
 
 static INT32  gsOcclusionBubbleLastGridNo = NOWHERE;
@@ -3149,6 +3177,8 @@ static INT8   gbOcclusionBubbleLastLevel = -1;
 static UINT8  gubOcclusionBubbleLastStance = 0xFF;
 static UINT16 gusOcclusionBubbleLastSoldier = NOBODY;
 static BOOLEAN gfOcclusionBubbleActive = FALSE;
+static INT16  gsOcclusionBubbleScreenCenterX = 0;
+static INT16  gsOcclusionBubbleScreenCenterY = 0;
 static INT32  gsOcclusionBubbleMarkedGrids[ OCCLUSION_BUBBLE_MAX_MARKED_GRIDS ];
 static UINT16 gusOcclusionBubbleMarkedGridCount = 0;
 
@@ -3167,9 +3197,9 @@ static BOOLEAN ClearSelectedMercOcclusionBubble( )
 		LEVELNODE *pNode = gpWorldLevelData[ sGridNo ].pStructHead;
 		while ( pNode != NULL )
 		{
-			if ( pNode->uiFlags & ( LEVELNODE_OCCLUSION_FADE | LEVELNODE_OCCLUSION_HIDE ) )
+			if ( pNode->uiFlags & ( LEVELNODE_OCCLUSION_FADE | LEVELNODE_OCCLUSION_CUTOUT ) )
 			{
-				pNode->uiFlags &= ~( LEVELNODE_OCCLUSION_FADE | LEVELNODE_OCCLUSION_HIDE );
+				pNode->uiFlags &= ~( LEVELNODE_OCCLUSION_FADE | LEVELNODE_OCCLUSION_CUTOUT );
 				fChanged = TRUE;
 			}
 			pNode = pNode->pNext;
@@ -3178,9 +3208,9 @@ static BOOLEAN ClearSelectedMercOcclusionBubble( )
 		pNode = gpWorldLevelData[ sGridNo ].pShadowHead;
 		while ( pNode != NULL )
 		{
-			if ( pNode->uiFlags & ( LEVELNODE_OCCLUSION_FADE | LEVELNODE_OCCLUSION_HIDE ) )
+			if ( pNode->uiFlags & ( LEVELNODE_OCCLUSION_FADE | LEVELNODE_OCCLUSION_CUTOUT ) )
 			{
-				pNode->uiFlags &= ~( LEVELNODE_OCCLUSION_FADE | LEVELNODE_OCCLUSION_HIDE );
+				pNode->uiFlags &= ~( LEVELNODE_OCCLUSION_FADE | LEVELNODE_OCCLUSION_CUTOUT );
 				fChanged = TRUE;
 			}
 			pNode = pNode->pNext;
@@ -3281,12 +3311,12 @@ static void GetOcclusionBubbleWallAnchor(
 }
 
 static void SetOcclusionBubbleNodeState(
-	INT32 sGridNo, LEVELNODE *pStructNode, BOOLEAN fHide )
+	INT32 sGridNo, LEVELNODE *pStructNode, BOOLEAN fCutout )
 {
 	if ( pStructNode == NULL )
 		return;
 
-	const UINT32 uiState = fHide ? LEVELNODE_OCCLUSION_HIDE : LEVELNODE_OCCLUSION_FADE;
+	const UINT32 uiState = fCutout ? LEVELNODE_OCCLUSION_CUTOUT : LEVELNODE_OCCLUSION_FADE;
 	pStructNode->uiFlags |= uiState;
 
 	// A wall that disappears while its cast shadow remains looks broken. Keep
@@ -3295,6 +3325,172 @@ static void SetOcclusionBubbleNodeState(
 	if ( pShadow != NULL )
 	{
 		pShadow->uiFlags |= uiState;
+	}
+}
+
+static BOOLEAN AddOcclusionBubbleClipRect(
+	SGPRect *pRects, UINT8 *pubCount, UINT8 ubMaxRects,
+	INT32 iLeft, INT32 iTop, INT32 iRight, INT32 iBottom )
+{
+	if ( pRects == NULL || pubCount == NULL || *pubCount >= ubMaxRects )
+		return FALSE;
+
+	if ( iRight <= iLeft || iBottom <= iTop )
+		return TRUE;
+
+	pRects[ *pubCount ].iLeft = iLeft;
+	pRects[ *pubCount ].iTop = iTop;
+	pRects[ *pubCount ].iRight = iRight;
+	pRects[ *pubCount ].iBottom = iBottom;
+	( *pubCount )++;
+	return TRUE;
+}
+
+static UINT8 BuildOcclusionBubbleOutsideClipRects(
+	HVOBJECT hVObject, INT16 sXPos, INT16 sYPos, UINT16 usImageIndex,
+	SGPRect *pRects, UINT8 ubMaxRects )
+{
+	if ( hVObject == NULL || pRects == NULL || ubMaxRects == 0 )
+		return 0;
+
+	ETRLEObject *pTrav = &( hVObject->pETRLEObject[ usImageIndex ] );
+	const INT32 iSpriteLeft = __max(
+		(INT32)gClippingRect.iLeft, (INT32)sXPos + (INT32)pTrav->sOffsetX );
+	const INT32 iSpriteTop = __max(
+		(INT32)gClippingRect.iTop, (INT32)sYPos + (INT32)pTrav->sOffsetY );
+	const INT32 iSpriteRight = __min(
+		(INT32)gClippingRect.iRight,
+		(INT32)sXPos + (INT32)pTrav->sOffsetX + (INT32)pTrav->usWidth );
+	const INT32 iSpriteBottom = __min(
+		(INT32)gClippingRect.iBottom,
+		(INT32)sYPos + (INT32)pTrav->sOffsetY + (INT32)pTrav->usHeight );
+
+	if ( iSpriteRight <= iSpriteLeft || iSpriteBottom <= iSpriteTop )
+		return 0;
+
+	UINT8 ubCount = 0;
+
+	if ( !gfOcclusionBubbleActive )
+	{
+		AddOcclusionBubbleClipRect(
+			pRects, &ubCount, ubMaxRects,
+			iSpriteLeft, iSpriteTop, iSpriteRight, iSpriteBottom );
+		return ubCount;
+	}
+
+	const INT32 iHoleLeft =
+		(INT32)gsOcclusionBubbleScreenCenterX - OCCLUSION_BUBBLE_INNER_RADIUS_X;
+	const INT32 iHoleRight =
+		(INT32)gsOcclusionBubbleScreenCenterX + OCCLUSION_BUBBLE_INNER_RADIUS_X;
+	const INT32 iHoleTop =
+		(INT32)gsOcclusionBubbleScreenCenterY - OCCLUSION_BUBBLE_INNER_RADIUS_Y;
+	const INT32 iHoleBottom =
+		(INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_INNER_RADIUS_Y;
+
+	// Sprite does not touch the ellipse at all: one normal clip is cheaper.
+	if ( iSpriteRight <= iHoleLeft || iSpriteLeft >= iHoleRight ||
+		 iSpriteBottom <= iHoleTop || iSpriteTop >= iHoleBottom )
+	{
+		AddOcclusionBubbleClipRect(
+			pRects, &ubCount, ubMaxRects,
+			iSpriteLeft, iSpriteTop, iSpriteRight, iSpriteBottom );
+		return ubCount;
+	}
+
+	// Full-width area above the ellipse.
+	AddOcclusionBubbleClipRect(
+		pRects, &ubCount, ubMaxRects,
+		iSpriteLeft, iSpriteTop, iSpriteRight, __min( iSpriteBottom, iHoleTop ) );
+
+	const INT32 iMiddleTop = __max( iSpriteTop, iHoleTop );
+	const INT32 iMiddleBottom = __min( iSpriteBottom, iHoleBottom );
+
+	for ( INT32 iBandTop = iMiddleTop;
+		  iBandTop < iMiddleBottom && ubCount + 2 <= ubMaxRects;
+		  iBandTop += OCCLUSION_BUBBLE_CLIP_BAND_HEIGHT )
+	{
+		const INT32 iBandBottom = __min(
+			iBandTop + OCCLUSION_BUBBLE_CLIP_BAND_HEIGHT, iMiddleBottom );
+
+		// Sample at the point in this band closest to the ellipse centre. This
+		// slightly over-cuts instead of letting wall pixels leak through the hole.
+		INT32 iSampleY = iBandTop;
+		if ( iBandBottom <= gsOcclusionBubbleScreenCenterY )
+			iSampleY = iBandBottom;
+		else if ( iBandTop <= gsOcclusionBubbleScreenCenterY &&
+				  iBandBottom >= gsOcclusionBubbleScreenCenterY )
+			iSampleY = gsOcclusionBubbleScreenCenterY;
+
+		const double dNormalizedY =
+			( (double)iSampleY - (double)gsOcclusionBubbleScreenCenterY ) /
+			(double)OCCLUSION_BUBBLE_INNER_RADIUS_Y;
+		const double dInside = 1.0 - dNormalizedY * dNormalizedY;
+
+		if ( dInside <= 0.0 )
+		{
+			AddOcclusionBubbleClipRect(
+				pRects, &ubCount, ubMaxRects,
+				iSpriteLeft, iBandTop, iSpriteRight, iBandBottom );
+			continue;
+		}
+
+		const INT32 iHalfWidth = (INT32)(
+			(double)OCCLUSION_BUBBLE_INNER_RADIUS_X * sqrt( dInside ) + 0.5 );
+		const INT32 iCutLeft = (INT32)gsOcclusionBubbleScreenCenterX - iHalfWidth;
+		const INT32 iCutRight = (INT32)gsOcclusionBubbleScreenCenterX + iHalfWidth;
+
+		AddOcclusionBubbleClipRect(
+			pRects, &ubCount, ubMaxRects,
+			iSpriteLeft, iBandTop, __min( iSpriteRight, iCutLeft ), iBandBottom );
+		AddOcclusionBubbleClipRect(
+			pRects, &ubCount, ubMaxRects,
+			__max( iSpriteLeft, iCutRight ), iBandTop, iSpriteRight, iBandBottom );
+	}
+
+	// Full-width area below the ellipse.
+	AddOcclusionBubbleClipRect(
+		pRects, &ubCount, ubMaxRects,
+		iSpriteLeft, __max( iSpriteTop, iHoleBottom ), iSpriteRight, iSpriteBottom );
+
+	return ubCount;
+}
+
+static void BlitOcclusionBubble8BitWallZStrip(
+	UINT16 *pDestBuf, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer,
+	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
+	UINT16 usImageIndex, INT16 sZStripIndex )
+{
+	SGPRect ClipRects[ OCCLUSION_BUBBLE_MAX_CLIP_RECTS ];
+	const UINT8 ubCount = BuildOcclusionBubbleOutsideClipRects(
+		hVObject, sXPos, sYPos, usImageIndex,
+		ClipRects, OCCLUSION_BUBBLE_MAX_CLIP_RECTS );
+
+	for ( UINT8 ubRect = 0; ubRect < ubCount; ++ubRect )
+	{
+		Blt8BPPDataTo16BPPBufferTransZIncClipZSameZBurnsThrough(
+			pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
+			hVObject, sXPos, sYPos, usImageIndex, &ClipRects[ ubRect ], sZStripIndex );
+	}
+}
+
+static void BlitOcclusionBubbleTrueColorWallZStrip(
+	UINT16 *pDestBuf, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer,
+	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
+	UINT16 usImageIndex, UINT8 ubShadeLevel, INT16 sZStripIndex,
+	BOOLEAN fSameZBurnsThrough, UINT8 ubViewSoftening )
+{
+	SGPRect ClipRects[ OCCLUSION_BUBBLE_MAX_CLIP_RECTS ];
+	const UINT8 ubCount = BuildOcclusionBubbleOutsideClipRects(
+		hVObject, sXPos, sYPos, usImageIndex,
+		ClipRects, OCCLUSION_BUBBLE_MAX_CLIP_RECTS );
+
+	for ( UINT8 ubRect = 0; ubRect < ubCount; ++ubRect )
+	{
+		BltTrueColorDataTo16BPPBufferZStrip(
+			pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
+			hVObject, sXPos, sYPos, usImageIndex, &ClipRects[ ubRect ],
+			ubShadeLevel, sZStripIndex, Z_STRIP_DELTA_Y,
+			fSameZBurnsThrough, FALSE, TRUE, ubViewSoftening );
 	}
 }
 
@@ -3322,6 +3518,20 @@ static void UpdateSelectedMercOcclusionBubble( )
 	const UINT8 ubCurrentStance =
 		fShouldBeActive ? gAnimControl[ pViewSoldier->usAnimState ].ubHeight : 0xFF;
 
+	// The cutout itself is screen-space, so its absolute centre must follow the
+	// merc every frame while the camera pans, even if no wall classification
+	// needs to be recomputed.
+	if ( fShouldBeActive )
+	{
+		GetOcclusionBubbleMercCenter(
+			pViewSoldier, &gsOcclusionBubbleScreenCenterX, &gsOcclusionBubbleScreenCenterY );
+	}
+	else
+	{
+		gsOcclusionBubbleScreenCenterX = 0;
+		gsOcclusionBubbleScreenCenterY = 0;
+	}
+
 	if ( fShouldBeActive &&
 		 !fAlreadyFullRender &&
 		 gfOcclusionBubbleActive &&
@@ -3340,9 +3550,6 @@ static void UpdateSelectedMercOcclusionBubble( )
 		const INT32 sMercGridNo = pViewSoldier->sGridNo;
 		const INT32 iMercRow = sMercGridNo / WORLD_COLS;
 		const INT32 iMercCol = sMercGridNo % WORLD_COLS;
-		INT16 sMercCenterX = 0;
-		INT16 sMercCenterY = 0;
-		GetOcclusionBubbleMercCenter( pViewSoldier, &sMercCenterX, &sMercCenterY );
 
 		for ( INT32 iRowOffset = -OCCLUSION_BUBBLE_SCAN_RADIUS;
 			  iRowOffset <= OCCLUSION_BUBBLE_SCAN_RADIUS; ++iRowOffset )
@@ -3377,8 +3584,8 @@ static void UpdateSelectedMercOcclusionBubble( )
 							GetOcclusionBubbleWallAnchor(
 								sHiddenSideGridNo, &sWallAnchorX, &sWallAnchorY );
 
-							const INT32 iDeltaX = (INT32)sWallAnchorX - (INT32)sMercCenterX;
-							const INT32 iDeltaY = (INT32)sWallAnchorY - (INT32)sMercCenterY;
+							const INT32 iDeltaX = (INT32)sWallAnchorX - (INT32)gsOcclusionBubbleScreenCenterX;
+							const INT32 iDeltaY = (INT32)sWallAnchorY - (INT32)gsOcclusionBubbleScreenCenterY;
 							const BOOLEAN fInsideOuter = OcclusionBubblePointInsideEllipse(
 								iDeltaX, iDeltaY,
 								OCCLUSION_BUBBLE_OUTER_RADIUS_X,
@@ -3394,7 +3601,7 @@ static void UpdateSelectedMercOcclusionBubble( )
 									( pStructure->fFlags & ( STRUCTURE_ANYDOOR | STRUCTURE_WALLNWINDOW ) ) != 0;
 								const BOOLEAN fPreserveCorner = OcclusionBubbleGridHasCorner( sGridNo );
 
-								// Plain wall faces disappear in the inner bubble. Openings and
+								// Plain wall faces receive a true screen-space cutout in the inner bubble. Openings and
 								// corners stay as faded architectural cues, so the player keeps
 								// understanding where the room boundary actually is.
 								if ( fInsideInner && !fPreserveOpening && !fPreserveCorner )
@@ -3435,6 +3642,8 @@ static void UpdateSelectedMercOcclusionBubble( )
 		gsOcclusionBubbleLastGridNo = NOWHERE;
 		gbOcclusionBubbleLastLevel = -1;
 		gubOcclusionBubbleLastStance = 0xFF;
+		gsOcclusionBubbleScreenCenterX = 0;
+		gsOcclusionBubbleScreenCenterY = 0;
 	}
 
 	// The static save buffer contains normal wall art. Rebuild it only when the
