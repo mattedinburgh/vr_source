@@ -125,11 +125,12 @@ static BOOLEAN IsVRAmbienceCombat( )
 
 static void StopVRSectorAmbienceLoop( )
 {
-	if ( gVRAmbience.uiLoopHandle != NO_SAMPLE )
-	{
+	// Static storage starts zeroed, while NO_SAMPLE is 0xffffffff.  Do not let
+	// the first sector load accidentally interpret handle 0 as ours.
+	if ( gVRAmbience.fActive && gVRAmbience.uiLoopHandle != NO_SAMPLE )
 		SoundStop( gVRAmbience.uiLoopHandle );
-		gVRAmbience.uiLoopHandle = NO_SAMPLE;
-	}
+
+	gVRAmbience.uiLoopHandle = NO_SAMPLE;
 	gVRAmbience.szCurrentLoop[ 0 ] = 0;
 }
 
@@ -279,7 +280,9 @@ static BOOLEAN StartVRSectorAmbienceLoopForPhase( UINT8 ubPhase )
 
 	// If dawn/day or dusk/night share the same bed, keep it running and only
 	// alter the target volume.  This avoids an audible restart at phase edges.
-	if ( gVRAmbience.uiLoopHandle != NO_SAMPLE && strcmp( gVRAmbience.szCurrentLoop, szLoop ) == 0 )
+	if ( gVRAmbience.uiLoopHandle != NO_SAMPLE &&
+		 SoundIsPlaying( gVRAmbience.uiLoopHandle ) &&
+		 strcmp( gVRAmbience.szCurrentLoop, szLoop ) == 0 )
 	{
 		gVRAmbience.uiTargetLoopVolume = GetVRAmbienceTargetLoopVolume( ubPhase );
 		return TRUE;
