@@ -104,8 +104,9 @@ typedef struct TAG_HVOBJECT
 	UINT16								usNumberOfObjects;	// Total number of objects
 	UINT8									ubBitDepth;						// BPP 
 
-	// Reserved for added room and 32-byte boundaries
-	BYTE													bReserved[ 1 ];
+	// Vengeance HD: scale at which this asset was authored (1 legacy, 2/4 HD).
+	// This is visual metadata only; map/JSD/gameplay geometry remains legacy-scale.
+	UINT8												ubVHDAssetScale;
 
 
 } SGPVObject, *HVOBJECT;
