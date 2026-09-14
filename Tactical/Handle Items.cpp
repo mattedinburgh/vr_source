@@ -6707,70 +6707,11 @@ UINT8 StealItems(SOLDIERTYPE* pSoldier,SOLDIERTYPE* pOpponent, UINT8* ubIndexRet
 				}
 				else
 				{
-					// Check, if we can steal the item
-					// CHRISL: Added new case definitions for new inventory pockets
-					switch (i)
-					{
-						case HANDPOS:
-						case GUNSLINGPOCKPOS:
-						{
-							// Flugente: if item has a weapon sling attached, it can't be stolen
-							if ( HasAttachmentOfClass(pObject, AC_SLING) )
-								fStealItem = FALSE;
-							else
-								fStealItem = TRUE;
-
-							break;
-						}
-						case SECONDHANDPOS:					
-						case KNIFEPOCKPOS:
-						case BIGPOCK1POS:
-						case BIGPOCK2POS:
-						case BIGPOCK3POS:
-						case BIGPOCK4POS:
-						case BIGPOCK5POS:
-						case BIGPOCK6POS:
-						case BIGPOCK7POS:
-						case MEDPOCK1POS:
-						case MEDPOCK2POS:
-						case MEDPOCK3POS:
-						case MEDPOCK4POS:
-						case SMALLPOCK1POS:
-						case SMALLPOCK2POS:
-						case SMALLPOCK3POS:
-						case SMALLPOCK4POS:
-						case SMALLPOCK5POS:
-						case SMALLPOCK6POS:
-						case SMALLPOCK7POS:
-						case SMALLPOCK8POS:
-						case SMALLPOCK9POS:
-						case SMALLPOCK10POS:
-						case SMALLPOCK11POS:
-						case SMALLPOCK12POS:
-						case SMALLPOCK13POS:
-						case SMALLPOCK14POS:
-						case SMALLPOCK15POS:
-						case SMALLPOCK16POS:
-						case SMALLPOCK17POS:
-						case SMALLPOCK18POS:
-						case SMALLPOCK19POS:
-						case SMALLPOCK20POS:
-						case SMALLPOCK21POS:
-						case SMALLPOCK22POS:
-						case SMALLPOCK23POS:
-						case SMALLPOCK24POS:
-						case SMALLPOCK25POS:
-						case SMALLPOCK26POS:
-						case SMALLPOCK27POS:
-						case SMALLPOCK28POS:
-						case SMALLPOCK29POS:
-						case SMALLPOCK30POS:
-						fStealItem = TRUE;
-						break;
-					default:
-						fStealItem = FALSE;
-						break;
-					}
+					// Vengeance: a successful steal can target the enemy's entire physical inventory.
+					// Do not whitelist only hand/pocket slots: worn armour, helmets, face gear,
+					// LBE, backpacks, slung weapons and every other populated inventory slot
+					// are valid steal targets as well.
+					fStealItem = TRUE;
 				}
 			}
 
