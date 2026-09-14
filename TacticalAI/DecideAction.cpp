@@ -8495,6 +8495,15 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 	if (!fAbortSeek && bPlanIntent != AI_INTENT_FLANK && bPlanRole != AI_ROLE_FLANKER)
 		return -1;
 
+	// Flanking is a coordinated behaviour. Basic troops may occasionally manage it,
+	// regulars are inconsistent, and elites execute it reliably. Failed complexity
+	// checks fall back to ordinary legal RED-state behaviour rather than suicidal motion.
+	if (!AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED,
+		(UINT32)(sClosestDisturbance + 701)))
+	{
+		return -1;
+	}
+
 	if (pSoldier->numFlanks == 0 &&
 		pSoldier->bActionPoints >= APBPConstants[AP_MINIMUM] &&
 		pSoldier->CheckInitialAP() &&
@@ -9574,6 +9583,17 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 	INT8 bRole = AITacticalRole(pSoldier, sClosestDisturbance);
 	BOOLEAN fMovementPlan = bIntent == AI_INTENT_PRESS || bIntent == AI_INTENT_FLANK;
 
+	// Planned movement smoke is a coordinated resource decision. Low-quality troops
+	// can still use emergency protection smoke elsewhere, but do not reliably create
+	// deliberate smoke corridors for manoeuvre.
+	if (!AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED,
+		(UINT32)(sClosestDisturbance + 809)))
+	{
+		return -1;
+	}
+
+	UINT8 ubLocalSmokeReserve = AILocalSmokeReserve(pSoldier);
+
 	// Fire-base soldiers normally preserve smoke for the movers. If they are under
 	// direct pressure they may still screen their own displacement.
 	if (!fMovementPlan ||
@@ -9626,7 +9646,11 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 		if (bRole == AI_ROLE_MANEUVER || bRole == AI_ROLE_FLANKER) iSmokeScore += 10;
 		iSmokeScore -= iDistance / 2;
 
-		if (iSmokeScore < 35)
+		// Preserve the final local smoke unless the crossing is genuinely dangerous.
+		// This is deliberately a local approximation: the AI knows what nearby teammates
+		// can carry, not a magical sector-wide inventory.
+		INT32 iRequiredSmokeScore = (ubLocalSmokeReserve <= 1) ? 65 : 35;
+		if (iSmokeScore < iRequiredSmokeScore)
 			continue;
 
 		ATTACKTYPE TestThrow;
@@ -9742,6 +9766,16 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 
 	if (!pBestProtected || iBestValue < 45)
 		return AI_ACTION_NONE;
+
+	// The last local smoke grenade is strategic within a firefight. Spend it freely for
+	// a critical casualty, but demand a much stronger case for ordinary pinned/wounded
+	// protection so the squad retains an emergency disengagement option.
+	if (AILocalSmokeReserve(pSoldier) <= 1 &&
+		pBestProtected->stats.bLife >= OKLIFE &&
+		iBestValue < 80)
+	{
+		return AI_ACTION_NONE;
+	}
 
 	ATTACKTYPE BestThrow;
 	BestThrow.ubPossible = FALSE;
