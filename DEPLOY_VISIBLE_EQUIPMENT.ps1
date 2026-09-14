@@ -1164,7 +1164,7 @@ $markerText = @"
 Vengeance Reloaded visible tactical equipment
 Catalog: mattedinburgh/vr_gamedir $VrRef
 Source: 1dot13/gamedir $UpstreamRef Data/Anims/LOBOT art
-Mode: hybrid (matched full 1.13 logical merc model; native Vengeance fallback when frame/weapon coverage is incomplete)
+Mode: hybrid-underlay (native Vengeance safety underlay + coherent 1.13 logical body/equipment layers; native-only fallback on unsupported core frames)
 Layers: blood, shadow, legs, legarmor, body, head, hands, arms, vest, legrig, legrig_left, knees, backpack, gun, gunleft, facegear, gasmask, ears, helmet
 Assets: $($assetPaths.Count)
 AssetBytes: $totalBytes
