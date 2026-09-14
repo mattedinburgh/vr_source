@@ -70,7 +70,25 @@ typedef struct ENEMYGROUP
 	UINT8 ubElitesInBattle;				//number of elite soldiers currently in battle.
 	// WDS - New AI
 	UINT8 numTanks;
-	INT8	bPadding[19];
+	// Persistent operational identity/state. These fields exactly consume the
+	// former 19 padding bytes, preserving sizeof(ENEMYGROUP) and save layout.
+	UINT16 usFormationID;
+	UINT8 ubOperationalMagic0;
+	UINT8 ubOperationalMagic1;
+	UINT8 ubOperationalMagic2;
+	UINT8 ubOperationalMission;
+	UINT8 ubOperationalReserveRole;
+	UINT8 ubOperationalSupply;
+	UINT8 ubOperationalMorale;
+	UINT8 ubOperationalIntelConfidence;
+	UINT8 ubOperationalTargetSectorID;
+	UINT8 ubOperationalHomeSectorID;
+	UINT8 ubOperationalLastKnownPlayerSectorID;
+	UINT8 ubOperationalLastDecisionReason;
+	UINT8 ubOperationalRetreatCount;
+	UINT16 usOperationalFlags;
+	UINT8 ubOperationalLastKnownPlayerStrength;
+	UINT8 ubOperationalLastKnownMilitiaStrength;
 }ENEMYGROUP;
 
 //NOTE:	ALL FLAGS ARE CLEARED WHENEVER A GROUP ARRIVES IN A SECTOR, OR ITS WAYPOINTS ARE
