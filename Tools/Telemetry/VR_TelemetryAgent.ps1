@@ -61,7 +61,6 @@ function Load-Config {
     $config = [pscustomobject]@{
         version = 1
         telemetry_repository = ""
-        telemetry_repository = (Load-Config).telemetry_repository
         telemetry_branch = $TelemetryBranch
     }
     Save-Config $config
@@ -97,6 +96,9 @@ function Ensure-PrivateTelemetryDestination {
         if ($view.ExitCode -eq 0) {
             $visibility = (($view.Output | Select-Object -First 1) -as [string]).Trim().ToUpperInvariant()
             if ($visibility -eq "PRIVATE") {
+                if (-not [string]::IsNullOrWhiteSpace([string]$config.telemetry_branch)) {
+                    $script:TelemetryBranch = [string]$config.telemetry_branch
+                }
                 return $config
             }
             throw "Configured telemetry repository is not private: $($config.telemetry_repository)"
@@ -134,8 +136,18 @@ function Ensure-PrivateTelemetryDestination {
         }
     }
 
+    $branchResult = Invoke-Gh -Arguments @("repo", "view", $repoName, "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name") -AllowFailure
+    $branchName = "main"
+    if ($branchResult.ExitCode -eq 0) {
+        $candidateBranch = (($branchResult.Output | Select-Object -First 1) -as [string]).Trim()
+        if (-not [string]::IsNullOrWhiteSpace($candidateBranch)) {
+            $branchName = $candidateBranch
+        }
+    }
+
+    $script:TelemetryBranch = $branchName
     $config.telemetry_repository = $repoName
-    $config.telemetry_branch = $TelemetryBranch
+    $config.telemetry_branch = $branchName
     Save-Config $config
     return $config
 }
@@ -376,6 +388,7 @@ function New-SessionPackage {
         process_name = $Session.name
         executable = $Session.executable
         game_root = $GameRoot
+        telemetry_repository = (Load-Config).telemetry_repository
         telemetry_branch = $TelemetryBranch
         source_branch = $repo.source_branch
         source_commit = $repo.source_commit
@@ -498,6 +511,13 @@ function Install-Agent {
 
     if (-not (Test-Path -LiteralPath $StateFile)) {
         [void](Load-State)
+    }
+
+    try {
+        $privateConfig = Ensure-PrivateTelemetryDestination
+        Write-AgentLog "Private telemetry destination ready: $($privateConfig.telemetry_repository) branch=$($privateConfig.telemetry_branch)"
+    } catch {
+        Write-AgentLog "Private telemetry destination not ready; sessions will remain local until resolved: $($_.Exception.Message)"
     }
 
     Write-AgentLog "Installed auto-start telemetry agent. Game root: $GameRoot"
