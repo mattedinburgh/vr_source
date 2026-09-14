@@ -1329,16 +1329,17 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 							// The inner bubble clips ordinary wall pixels around the merc. The outer
 							// ring reuses JA2's established dynamic translucent reveal path. Door/window nodes
 							// are only ever assigned OCCLUSION_FADE by the updater above.
-							if ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_CUTOUT )
+							if ( uiLevelNodeFlags & ( LEVELNODE_OCCLUSION_CUTOUT | LEVELNODE_OCCLUSION_FADE ) )
 							{
-								// Keep the static structure pass alive so the special wall blitter
-								// can draw only the pixels outside the ellipse. Never redraw the
-								// cutout in dynamic/shadow passes.
-								if ( fDynamic || ( uiRowFlags & ( TILES_STATIC_SHADOWS | TILES_DYNAMIC_SHADOWS ) ) )
+								// Affected walls are removed from the static save buffer and rebuilt
+								// in the dynamic structure pass every frame. This is what lets the
+								// camera-space bubble follow a walking merc smoothly.
+								if ( !fDynamic || ( uiRowFlags & ( TILES_STATIC_SHADOWS | TILES_DYNAMIC_SHADOWS ) ) )
 									fRenderTile = FALSE;
-								fPixelate = FALSE;
+								else
+									fPixelate = TRUE;
 							}
-							else if ( uiLevelNodeFlags & ( LEVELNODE_REVEAL | LEVELNODE_OCCLUSION_FADE ) )
+							else if ( uiLevelNodeFlags & LEVELNODE_REVEAL )
 							{
 								if ( !fDynamic )
 									fRenderTile = FALSE;
@@ -1481,14 +1482,10 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 									// paths. Re-apply the cutaway at the final gate so an inner wall can
 									// never leak back into the static buffer, while a fade node remains
 									// dynamic-only.
-									if ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_CUTOUT )
+									if ( uiLevelNodeFlags & ( LEVELNODE_OCCLUSION_CUTOUT | LEVELNODE_OCCLUSION_FADE ) )
 									{
-										if ( fDynamic || ( uiRowFlags & ( TILES_STATIC_SHADOWS | TILES_DYNAMIC_SHADOWS ) ) )
+										if ( !fDynamic || ( uiRowFlags & ( TILES_STATIC_SHADOWS | TILES_DYNAMIC_SHADOWS ) ) )
 											fRenderTile = FALSE;
-									}
-									else if ( ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_FADE ) && !fDynamic )
-									{
-										fRenderTile = FALSE;
 									}
 
 									// If we are on the struct layer, check for if it's hidden!
@@ -2217,6 +2214,8 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 								if ( ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_CUTOUT ) &&
 									 fWallTile && !fMultiZBlitter )
 								{
+									// Rare custom walls without Z-strip metadata cannot be clipped safely.
+									// Remove the obstructing sprite rather than allowing it to cover the merc.
 									fTileInvisible = TRUE;
 								}
 
@@ -3193,6 +3192,10 @@ void ScrollBackground(UINT32 uiDirection, INT16 sScrollXIncrement, INT16 sScroll
 #define OCCLUSION_BUBBLE_INNER_RADIUS_Y    46
 #define OCCLUSION_BUBBLE_OUTER_RADIUS_X    112
 #define OCCLUSION_BUBBLE_OUTER_RADIUS_Y    72
+// Classification is deliberately broader than the visible mask. A wall sprite
+// can overlap the bubble even when its tile anchor sits outside the ellipse.
+#define OCCLUSION_BUBBLE_CLASSIFY_RADIUS_X 168
+#define OCCLUSION_BUBBLE_CLASSIFY_RADIUS_Y 118
 #define OCCLUSION_BUBBLE_CLIP_BAND_HEIGHT  4
 #define OCCLUSION_BUBBLE_MAX_CLIP_RECTS    64
 #define OCCLUSION_BUBBLE_MAX_MARKED_GRIDS  ( ( OCCLUSION_BUBBLE_SCAN_RADIUS * 2 + 1 ) * ( OCCLUSION_BUBBLE_SCAN_RADIUS * 2 + 1 ) )
@@ -3349,7 +3352,10 @@ static void SetOcclusionBubbleNodeState(
 	LEVELNODE *pShadow = FindShadow( sGridNo, pStructNode->usIndex );
 	if ( pShadow != NULL )
 	{
-		pShadow->uiFlags |= uiState;
+		// Partial wall cutouts and half-tone wall faces do not have a matching
+		// partial shadow mask. Suppress the buddy shadow entirely while affected;
+		// a dark floating wall-shaped shadow is much more distracting.
+		pShadow->uiFlags |= LEVELNODE_OCCLUSION_CUTOUT;
 	}
 }
 
@@ -3371,8 +3377,9 @@ static BOOLEAN AddOcclusionBubbleClipRect(
 	return TRUE;
 }
 
-static UINT8 BuildOcclusionBubbleOutsideClipRects(
+static UINT8 BuildOcclusionBubbleOutsideEllipseClipRects(
 	HVOBJECT hVObject, INT16 sXPos, INT16 sYPos, UINT16 usImageIndex,
+	INT32 iRadiusX, INT32 iRadiusY,
 	SGPRect *pRects, UINT8 ubMaxRects )
 {
 	if ( hVObject == NULL || pRects == NULL || ubMaxRects == 0 )
@@ -3404,13 +3411,13 @@ static UINT8 BuildOcclusionBubbleOutsideClipRects(
 	}
 
 	const INT32 iHoleLeft =
-		(INT32)gsOcclusionBubbleScreenCenterX - OCCLUSION_BUBBLE_INNER_RADIUS_X;
+		(INT32)gsOcclusionBubbleScreenCenterX - iRadiusX;
 	const INT32 iHoleRight =
-		(INT32)gsOcclusionBubbleScreenCenterX + OCCLUSION_BUBBLE_INNER_RADIUS_X;
+		(INT32)gsOcclusionBubbleScreenCenterX + iRadiusX;
 	const INT32 iHoleTop =
-		(INT32)gsOcclusionBubbleScreenCenterY - OCCLUSION_BUBBLE_INNER_RADIUS_Y;
+		(INT32)gsOcclusionBubbleScreenCenterY - iRadiusY;
 	const INT32 iHoleBottom =
-		(INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_INNER_RADIUS_Y;
+		(INT32)gsOcclusionBubbleScreenCenterY + iRadiusY;
 
 	// Sprite does not touch the ellipse at all: one normal clip is cheaper.
 	if ( iSpriteRight <= iHoleLeft || iSpriteLeft >= iHoleRight ||
@@ -3448,7 +3455,7 @@ static UINT8 BuildOcclusionBubbleOutsideClipRects(
 
 		const double dNormalizedY =
 			( (double)iSampleY - (double)gsOcclusionBubbleScreenCenterY ) /
-			(double)OCCLUSION_BUBBLE_INNER_RADIUS_Y;
+			(double)iRadiusY;
 		const double dInside = 1.0 - dNormalizedY * dNormalizedY;
 
 		if ( dInside <= 0.0 )
@@ -3460,7 +3467,7 @@ static UINT8 BuildOcclusionBubbleOutsideClipRects(
 		}
 
 		const INT32 iHalfWidth = (INT32)(
-			(double)OCCLUSION_BUBBLE_INNER_RADIUS_X * sqrt( dInside ) + 0.5 );
+			(double)iRadiusX * sqrt( dInside ) + 0.5 );
 		const INT32 iCutLeft = (INT32)gsOcclusionBubbleScreenCenterX - iHalfWidth;
 		const INT32 iCutRight = (INT32)gsOcclusionBubbleScreenCenterX + iHalfWidth;
 
@@ -3486,8 +3493,9 @@ static void BlitOcclusionBubble8BitWallZStrip(
 	UINT16 usImageIndex, INT16 sZStripIndex )
 {
 	SGPRect ClipRects[ OCCLUSION_BUBBLE_MAX_CLIP_RECTS ];
-	const UINT8 ubCount = BuildOcclusionBubbleOutsideClipRects(
+	const UINT8 ubCount = BuildOcclusionBubbleOutsideEllipseClipRects(
 		hVObject, sXPos, sYPos, usImageIndex,
+		OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y,
 		ClipRects, OCCLUSION_BUBBLE_MAX_CLIP_RECTS );
 
 	for ( UINT8 ubRect = 0; ubRect < ubCount; ++ubRect )
@@ -3505,8 +3513,9 @@ static void BlitOcclusionBubbleTrueColorWallZStrip(
 	BOOLEAN fSameZBurnsThrough, UINT8 ubViewSoftening )
 {
 	SGPRect ClipRects[ OCCLUSION_BUBBLE_MAX_CLIP_RECTS ];
-	const UINT8 ubCount = BuildOcclusionBubbleOutsideClipRects(
+	const UINT8 ubCount = BuildOcclusionBubbleOutsideEllipseClipRects(
 		hVObject, sXPos, sYPos, usImageIndex,
+		OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y,
 		ClipRects, OCCLUSION_BUBBLE_MAX_CLIP_RECTS );
 
 	for ( UINT8 ubRect = 0; ubRect < ubCount; ++ubRect )
@@ -3695,30 +3704,20 @@ static void UpdateSelectedMercOcclusionBubble( )
 							const INT32 iDeltaY = (INT32)sWallAnchorY - (INT32)gsOcclusionBubbleScreenCenterY;
 							const BOOLEAN fInsideOuter = OcclusionBubblePointInsideEllipse(
 								iDeltaX, iDeltaY,
-								OCCLUSION_BUBBLE_OUTER_RADIUS_X,
-								OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+								OCCLUSION_BUBBLE_CLASSIFY_RADIUS_X,
+								OCCLUSION_BUBBLE_CLASSIFY_RADIUS_Y );
 
 							if ( fInsideOuter )
 							{
-								const BOOLEAN fInsideInner = OcclusionBubblePointInsideEllipse(
-									iDeltaX, iDeltaY,
-									OCCLUSION_BUBBLE_INNER_RADIUS_X,
-									OCCLUSION_BUBBLE_INNER_RADIUS_Y );
 								const BOOLEAN fPreserveOpening =
 									( pStructure->fFlags & ( STRUCTURE_ANYDOOR | STRUCTURE_WALLNWINDOW ) ) != 0;
 								const BOOLEAN fPreserveCorner = OcclusionBubbleGridHasCorner( sGridNo );
 
-								// Plain wall faces receive a true screen-space cutout in the inner bubble. Openings and
-								// corners stay as faded architectural cues, so the player keeps
-								// understanding where the room boundary actually is.
-								if ( fInsideInner && !fPreserveOpening && !fPreserveCorner )
-								{
-									SetOcclusionBubbleNodeState( sGridNo, pNode, TRUE );
-								}
-								else
-								{
-									SetOcclusionBubbleNodeState( sGridNo, pNode, FALSE );
-								}
+								// Mark every nearby plain wall for the dynamic three-zone mask.
+								// The blitter—not the tile anchor—decides which pixels are solid,
+								// feathered, or fully cut away. Openings/corners never get a hole.
+								SetOcclusionBubbleNodeState(
+									sGridNo, pNode, (BOOLEAN)( !fPreserveOpening && !fPreserveCorner ) );
 
 								fGridMarked = TRUE;
 								fChanged = TRUE;
