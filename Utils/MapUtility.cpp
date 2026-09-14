@@ -1054,9 +1054,9 @@ static BOOLEAN MapFactoryScorePilotSector( const STR8 pSourceMap, const STR8 pPr
 	for ( UINT8 i = 1; i <= 6; ++i )
 	{
 		CHAR8 zPristine[384], zDressed[384], zReloaded[384];
-		_snprintf( zPristine, sizeof(zPristine) - 1, "%s_tactical_%02u.bmp", pPristineMap, (UINT16)i );
-		_snprintf( zDressed, sizeof(zDressed) - 1, "%s_tactical_%02u.bmp", pSourceMap, (UINT16)i );
-		_snprintf( zReloaded, sizeof(zReloaded) - 1, "%s_tactical_%02u.bmp", pRemasteredMap, (UINT16)i );
+		_snprintf( zPristine, sizeof(zPristine) - 1, "%s_tactical_%02u_overview.bmp", pPristineMap, (UINT16)i );
+		_snprintf( zDressed, sizeof(zDressed) - 1, "%s_tactical_%02u_overview.bmp", pSourceMap, (UINT16)i );
+		_snprintf( zReloaded, sizeof(zReloaded) - 1, "%s_tactical_%02u_overview.bmp", pRemasteredMap, (UINT16)i );
 		zPristine[sizeof(zPristine) - 1] = zDressed[sizeof(zDressed) - 1] =
 			zReloaded[sizeof(zReloaded) - 1] = 0;
 
