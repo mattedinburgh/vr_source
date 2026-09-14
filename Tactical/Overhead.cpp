@@ -114,6 +114,7 @@
 #include "Creature Spreading.h"			// added by Flugente forResetCreatureAttackVariables()
 #endif
 #include "connect.h"
+#include "VRAnalytics.h"
 
 #include "Luaglobal.h"
 #include "LuaInitNPCs.h"
