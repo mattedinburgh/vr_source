@@ -214,6 +214,25 @@ static UINT8 TrueColorScaleChannel(UINT8 ubChannel, UINT16 usScale)
 	return (UINT8)((uiValue > 255) ? 255 : uiValue);
 }
 
+// Very gentle atmospheric colour compression for true-colour map art.
+// ubViewSoftening is a 0..255 blend amount toward perceptual luminance.
+// The renderer deliberately supplies only a small fraction of that range, so
+// this reads as air perspective rather than a fog or visibility overlay.
+// Luminance is preserved, leaving JA2's existing light/shade system in charge.
+static void TrueColorApplyViewRangeSoftening(UINT8 *pubRed, UINT8 *pubGreen, UINT8 *pubBlue, UINT8 ubViewSoftening)
+{
+	if(ubViewSoftening == 0)
+		return;
+
+	const UINT32 uiLuma =
+		((UINT32)*pubRed * 77 + (UINT32)*pubGreen * 150 + (UINT32)*pubBlue * 29 + 128) >> 8;
+	const UINT32 uiKeep = 255 - ubViewSoftening;
+
+	*pubRed = (UINT8)(((UINT32)*pubRed * uiKeep + uiLuma * ubViewSoftening + 127) / 255);
+	*pubGreen = (UINT8)(((UINT32)*pubGreen * uiKeep + uiLuma * ubViewSoftening + 127) / 255);
+	*pubBlue = (UINT8)(((UINT32)*pubBlue * uiKeep + uiLuma * ubViewSoftening + 127) / 255);
+}
+
 // 4x4 ordered RGB565 dithering for true-colour source art.
 //
 // The tactical framebuffer remains RGB565, so this cannot increase the number of
@@ -258,7 +277,7 @@ static void TrueColorApplyRGB565Dither(UINT8 *pubRed, UINT8 *pubGreen, UINT8 *pu
 
 BOOLEAN BltTrueColorDataTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue,
 	HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion,
-	UINT8 ubShadeLevel, BOOLEAN fZTest, BOOLEAN fZWrite, BOOLEAN fObscured)
+	UINT8 ubShadeLevel, BOOLEAN fZTest, BOOLEAN fZWrite, BOOLEAN fObscured, UINT8 ubViewSoftening)
 {
 	Assert(pBuffer != NULL);
 	Assert(hSrcVObject != NULL);
@@ -350,6 +369,7 @@ BOOLEAN BltTrueColorDataTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, 
 			ubRed = TrueColorScaleChannel(ubRed, usShadeScale);
 			ubGreen = TrueColorScaleChannel(ubGreen, usShadeScale);
 			ubBlue = TrueColorScaleChannel(ubBlue, usShadeScale);
+			TrueColorApplyViewRangeSoftening(&ubRed, &ubGreen, &ubBlue, ubViewSoftening);
 
 			// Dither the source colour before alpha compositing. This makes the
 			// dither contribution fade with transparency instead of adding
@@ -415,7 +435,7 @@ static UINT16 TrueColorGetZStripLevel(ZStripInfo *pZInfo, UINT16 usBaseZ, INT32 
 BOOLEAN BltTrueColorDataTo16BPPBufferZStrip(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue,
 	HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion,
 	UINT8 ubShadeLevel, INT16 sZStripIndex, UINT16 usZStripDelta,
-	BOOLEAN fSameZBurnsThrough, BOOLEAN fObscured, BOOLEAN fZWrite)
+	BOOLEAN fSameZBurnsThrough, BOOLEAN fObscured, BOOLEAN fZWrite, UINT8 ubViewSoftening)
 {
 	Assert(pBuffer != NULL);
 	Assert(pZBuffer != NULL);
@@ -515,6 +535,7 @@ BOOLEAN BltTrueColorDataTo16BPPBufferZStrip(UINT16 *pBuffer, UINT32 uiDestPitchB
 			ubRed = TrueColorScaleChannel(ubRed, usShadeScale);
 			ubGreen = TrueColorScaleChannel(ubGreen, usShadeScale);
 			ubBlue = TrueColorScaleChannel(ubBlue, usShadeScale);
+			TrueColorApplyViewRangeSoftening(&ubRed, &ubGreen, &ubBlue, ubViewSoftening);
 
 			if(hSrcVObject->ubBitDepth == 32 && usShadeScale != 0 &&
 				(ubRed != 0 || ubGreen != 0 || ubBlue != 0))
