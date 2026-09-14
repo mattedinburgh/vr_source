@@ -88,6 +88,42 @@ class CompanionAnalysisTests(unittest.TestCase):
         self.assertEqual(0, result["reinforced_battles"])
         self.assertEqual(1, result["unreinforced_battles"])
 
+    def test_blackbox_v2_retreat_forensics_are_aggregated(self):
+        events = [
+            {"schema": "vr-blackbox-1", "session": 10, "layer": "tactical",
+             "kind": "decision_begin", "decision_id": 1},
+            {"schema": "vr-blackbox-1", "session": 10, "layer": "tactical",
+             "kind": "state", "decision_id": 1,
+             "key": "hold_confidence", "value": 72},
+            {"schema": "vr-blackbox-1", "session": 10, "layer": "tactical",
+             "kind": "state", "decision_id": 1,
+             "key": "perceived_friendly_strength", "value": 600},
+            {"schema": "vr-blackbox-1", "session": 10, "layer": "tactical",
+             "kind": "state", "decision_id": 1,
+             "key": "perceived_enemy_strength", "value": 300},
+            {"schema": "vr-blackbox-1", "session": 10, "layer": "tactical",
+             "kind": "candidate", "decision_id": 1,
+             "candidate": "sector_escape", "eligible": False,
+             "adjusted_score": 20},
+            {"schema": "vr-blackbox-1", "session": 10, "layer": "tactical",
+             "kind": "candidate", "decision_id": 1,
+             "candidate": "organized_disengagement", "eligible": True,
+             "adjusted_score": 42},
+            {"schema": "vr-blackbox-1", "session": 10, "layer": "tactical",
+             "kind": "formation_snapshot", "turn": 4, "team": 1,
+             "living": 8, "combat_ready": 6, "escaping": 0,
+             "disengaging": 1, "cowering": 0, "average_stress": 22,
+             "casualty_percent": 35},
+        ]
+        decisions = companion.build_decisions(events)
+        result = companion.tactical_summary(events, decisions)
+        self.assertEqual(1, result["formation_snapshots"])
+        self.assertEqual(75.0, result["avg_formation_ready_rate"])
+        self.assertEqual(2.0, result["avg_perceived_force_ratio"])
+        self.assertEqual(72.0, result["v2_state_means"]["hold_confidence"])
+        self.assertEqual(1, result["retreat_eligible"]["organized_disengagement"])
+        self.assertEqual(0, result["retreat_eligible"].get("sector_escape", 0))
+
 
 if __name__ == "__main__":
     unittest.main()
