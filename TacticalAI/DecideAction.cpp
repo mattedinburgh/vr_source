@@ -2819,11 +2819,16 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 
 		// A nearby ally under pressure, withdrawing, or making an exposed bound
 		// toward this exact opponent can create a specific covering-fire task.
-		BOOLEAN fCoveringFireSupport = BestShot.ubPossible &&
+		INT8 bFireteamRole = AITacticalRole(pSoldier, BestShot.ubPossible ? BestShot.sTarget : sClosestOpponent);
+		BOOLEAN fCoveringFireTask = BestShot.ubPossible &&
 			BestShot.ubOpponent != NOBODY &&
 			(AIFriendNeedsCoveringFire(pSoldier, BestShot.ubOpponent) ||
 			 AIFriendWithdrawingNeedsCover(pSoldier, BestShot.ubOpponent) ||
 			 AIFriendAdvancingNeedsCover(pSoldier, BestShot.ubOpponent));
+		BOOLEAN fCoveringFireSupport = fCoveringFireTask &&
+			(bFireteamRole == AI_ROLE_SUPPORT || bFireteamRole == AI_ROLE_SCREEN ||
+			 AICheckIsMachinegunner(pSoldier) ||
+			 AISupportRoleScore(pSoldier, BestShot.sTarget) >= AIManeuverRoleScore(pSoldier, BestShot.sTarget));
 
 		// WarmSteel - Because of suppression fire, we need enough ammo to even consider suppressing
 		// This means we need to reload. Also reload if we're just plainly low on bullets.
@@ -9553,6 +9558,10 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 		UINT16 usExposure = AIKnownThreatExposure(pSoldier, sCheckGridNo, pSoldier->pathing.bLevel);
 		BOOLEAN fSightCover = SightCoverAtSpot(pSoldier, sCheckGridNo, FALSE);
 		BOOLEAN fAnyCover = AnyCoverAtSpot(pSoldier, sCheckGridNo);
+		BOOLEAN fKnownKillZone = usExposure >= 50;
+		BOOLEAN fEmergencyGap = pSoldier->aiData.bUnderFire && !fSightCover && !fAnyCover;
+		if (!fKnownKillZone && !fEmergencyGap)
+			continue;
 
 		// A dangerous crossing is a route segment that known opponents plausibly cover,
 		// or a clearly exposed gap in an otherwise tactical approach. No random smoke.
