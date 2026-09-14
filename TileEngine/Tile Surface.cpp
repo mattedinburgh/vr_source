@@ -23,11 +23,28 @@ TILE_IMAGERY				*gTileSurfaceArray[ NUMBEROFTILETYPES ];
 UINT8								gbDefaultSurfaceUsed[ NUMBEROFTILETYPES ];
 UINT8								gbSameAsDefaultSurfaceUsed[ NUMBEROFTILETYPES ];
 
+static BOOLEAN IsSanMonaC5TilePath( const STR8 pFilename )
+{
+	return pFilename != NULL &&
+		( strstr( pFilename, "TILESETS\\18\\" ) != NULL || strstr( pFilename, "tilesets\\18\\" ) != NULL );
+}
+
+static void TraceSanMonaC5VisualAsset( const STR8 pStage, const STR8 pFilename, UINT16 usObjects, UINT8 ubBitDepth, const STR8 pJsd, UINT16 usStructures )
+{
+	FILE *pTrace = fopen( "C5_visual_load.log", "a" );
+	if ( pTrace == NULL ) return;
+	fprintf( pTrace, "%s file=%s objects=%u bitDepth=%u jsd=%s structures=%u\n",
+		pStage != NULL ? pStage : "", pFilename != NULL ? pFilename : "", usObjects,
+		ubBitDepth, pJsd != NULL ? pJsd : "", usStructures );
+	fclose( pTrace );
+}
+
 TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 {
 	// Add tile surface
 	PTILE_IMAGERY	pTileSurf = NULL;
 	const BOOLEAN fTraceB1Asset = ( cFilename != NULL && strstr( cFilename, "B1_" ) != NULL );
+	const BOOLEAN fTraceC5Asset = IsSanMonaC5TilePath( cFilename );
 	if ( fTraceB1Asset )
 		TraceB1RemasterLoad( "TILE LOAD BEGIN", cFilename );
 	VOBJECT_DESC	VObjectDesc;
@@ -49,6 +66,8 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 		SET_ERROR( "Could not load tile file: %s", cFilename );
 		return( NULL );
 	}
+	if ( fTraceC5Asset )
+		TraceSanMonaC5VisualAsset( hImage->ubBitDepth == 32 ? "IMAGE_TRUECOLOR" : "IMAGE_LEGACY", hImage->ImageFile, hImage->usNumberOfObjects, hImage->ubBitDepth, "", 0 );
 	if ( fTraceB1Asset )
 	{
 		TraceB1RemasterLoad( "CREATE IMAGE OK", cFilename );
@@ -99,6 +118,8 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 	}
 	strcat( cStructureFilename, STRUCTURE_FILE_EXTENSION );
 	const BOOLEAN fStructureExists = FileExists( cStructureFilename );
+	if ( fTraceC5Asset )
+		TraceSanMonaC5VisualAsset( fStructureExists ? "JSD_FOUND" : "JSD_NOT_PRESENT", cFilename, hVObject->usNumberOfObjects, hVObject->ubBitDepth, cStructureFilename, 0 );
 	if ( fTraceB1Asset )
 		TraceB1RemasterLoad( fStructureExists ? "JSD FOUND" : "JSD NOT PRESENT", cStructureFilename );
 	if ( fStructureExists )
@@ -106,6 +127,8 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 		pStructureFileRef = LoadStructureFile( cStructureFilename );
 		if (pStructureFileRef == NULL || hVObject->usNumberOfObjects != pStructureFileRef->usNumberOfStructures)
 		{
+			if ( fTraceC5Asset )
+				TraceSanMonaC5VisualAsset( "JSD_COUNT_FAILED", cFilename, hVObject->usNumberOfObjects, hVObject->ubBitDepth, cStructureFilename, pStructureFileRef != NULL ? pStructureFileRef->usNumberOfStructures : 0 );
 			if ( fTraceB1Asset )
 			{
 				CHAR8 zB1StructError[224];
@@ -122,6 +145,8 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 			return( NULL );
 		}
 
+		if ( fTraceC5Asset )
+			TraceSanMonaC5VisualAsset( "JSD_OK", cFilename, hVObject->usNumberOfObjects, hVObject->ubBitDepth, cStructureFilename, pStructureFileRef->usNumberOfStructures );
 		if ( fTraceB1Asset )
 			TraceB1RemasterLoad( "JSD LOAD OK", cStructureFilename );
 		DebugMsg( TOPIC_JA2, DBG_LEVEL_3, cStructureFilename );
