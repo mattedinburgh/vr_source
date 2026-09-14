@@ -8704,17 +8704,6 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 	return -1;
 }
 
-extern UINT32 guiTurnCnt;
-
-// Transient sector-local reinforcement pacing. Kept outside SOLDIERTYPE so this
-// does not affect savegame layout. On load/new sector it simply restarts at the
-// first reinforcement wave.
-static UINT32 guiAIEnemyResponseStartTurn = 0;
-static INT32 gsAIEnemyResponseSpot = NOWHERE;
-static INT16 gsAIEnemyResponseSectorX = -1;
-static INT16 gsAIEnemyResponseSectorY = -1;
-static INT8 gbAIEnemyResponseSectorZ = -1;
-
 static UINT32 guiAITacticalVariationTurn[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAITacticalVariationIdentity[MAX_NUM_SOLDIERS] = { 0 };
 static INT8 gbAITacticalSeekBias[MAX_NUM_SOLDIERS] = { 0 };
