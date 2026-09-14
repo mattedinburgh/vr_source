@@ -70,7 +70,25 @@ typedef struct ENEMYGROUP
 	UINT8 ubElitesInBattle;				//number of elite soldiers currently in battle.
 	// WDS - New AI
 	UINT8 numTanks;
-	INT8	bPadding[19];
+	// VR operational AI state consumes the legacy 19-byte padding exactly,
+	// preserving ENEMYGROUP size and savegame compatibility.
+	UINT16 usFormationID;
+	UINT8 ubOperationalMagic0;
+	UINT8 ubOperationalMagic1;
+	UINT8 ubOperationalMagic2;
+	UINT8 ubOperationalMission;
+	UINT8 ubOperationalReserveRole;
+	UINT8 ubOperationalSupply;
+	UINT8 ubOperationalMorale;
+	UINT8 ubOperationalIntelConfidence;
+	UINT8 ubOperationalTargetSectorID;
+	UINT8 ubOperationalHomeSectorID;
+	UINT8 ubOperationalLastKnownPlayerSectorID;
+	UINT8 ubOperationalLastDecisionReason;
+	UINT8 ubOperationalRetreatCount;
+	UINT16 usOperationalFlags;
+	UINT8 ubOperationalLastKnownPlayerStrength;
+	UINT8 ubOperationalLastKnownMilitiaStrength;
 }ENEMYGROUP;
 
 //NOTE:	ALL FLAGS ARE CLEARED WHENEVER A GROUP ARRIVES IN A SECTOR, OR ITS WAYPOINTS ARE
@@ -116,8 +134,13 @@ typedef struct GROUP
 	UINT8 ubTransportationMask;		//the mask combining all of the groups transportation methods.
 	UINT32 uiFlags;								//various conditions that apply to the group
 	UINT8 ubCreatedSectorID;			//used for debugging strategic AI for keeping track of the sector ID a group was created in.
-	UINT8 ubSectorIDOfLastReassignment;	//used for debuggin strategic AI.	Records location of any reassignments.
-	INT8 bPadding[29];						//***********************************************//
+	UINT8 ubSectorIDOfLastReassignment;	//used for debuggin strategic AI. Records location of any reassignments.
+	// Strategic team bridge consumes four legacy padding bytes; GROUP size is unchanged.
+	UINT8 usGroupTeam;
+	UINT8 ubStrategicTeamMagic0;
+	UINT8 ubStrategicTeamMagic1;
+	UINT8 ubStrategicTeamMagic2;
+	INT8 bPadding[25];						//***********************************************//
 
 	union
 	{
@@ -128,6 +151,15 @@ typedef struct GROUP
 }GROUP;
 
 extern GROUP *gpGroupList;
+
+// Compatibility bridge: legacy fPlayer remains authoritative for old saves until
+// these magic bytes are initialized. New strategic code should use these helpers.
+BOOLEAN VR_StrategicGroupTeamIsInitialized( const GROUP *pGroup );
+void VR_SetStrategicGroupTeam( GROUP *pGroup, UINT8 ubTeam );
+void VR_NormalizeStrategicGroupTeam( GROUP *pGroup );
+UINT8 VR_GetStrategicGroupTeam( const GROUP *pGroup );
+BOOLEAN VR_IsPlayerStrategicGroup( const GROUP *pGroup );
+BOOLEAN VR_IsEnemyStrategicGroup( const GROUP *pGroup );
 
 
 //General utility functions
