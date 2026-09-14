@@ -33,7 +33,15 @@ namespace
 	FILE* gFile = NULL;
 	unsigned long gSequence = 0;
 	unsigned long gDecisionSequence = 0;
+	unsigned long gBattleSequence = 0;
 	unsigned long gSessionId = 0;
+	unsigned long gActiveBattleId = 0;
+	int gBattleSectorX = 0;
+	int gBattleSectorY = 0;
+	int gBattleSectorZ = 0;
+	int gBattleStartPlayers = 0;
+	int gBattleStartEnemies = 0;
+	int gBattleStartMilitia = 0;
 	TacticalDecisionTrace gTacticalTrace[256];
 
 	struct DecisionMeta
@@ -321,6 +329,112 @@ void VRAnalyticsDiagnostic(
 	fputs( ",\"detail\":", file );
 	JsonString( file, detail );
 	EndEvent( file );
+}
+
+void VRAnalyticsBattleStarted(
+	int sectorX,
+	int sectorY,
+	int sectorZ,
+	int playerCount,
+	int enemyCount,
+	int militiaCount )
+{
+	FILE* file;
+
+	Initialize();
+	if( !gEnabled )
+		return;
+
+	if( gActiveBattleId )
+	{
+		if( gBattleSectorX == sectorX &&
+			gBattleSectorY == sectorY &&
+			gBattleSectorZ == sectorZ )
+		{
+			// Combat mode may temporarily end and resume while the same tactical
+			// battle is still unresolved. Keep the existing causal battle ID.
+			return;
+		}
+
+		VRAnalyticsDiagnostic(
+			VR_ANALYTICS_TACTICAL, "battle", (unsigned int)gActiveBattleId,
+			"battle_replaced_without_end",
+			"new sector entered while previous battle telemetry remained open" );
+	}
+
+	gActiveBattleId = ++gBattleSequence;
+	gBattleSectorX = sectorX;
+	gBattleSectorY = sectorY;
+	gBattleSectorZ = sectorZ;
+	gBattleStartPlayers = playerCount;
+	gBattleStartEnemies = enemyCount;
+	gBattleStartMilitia = militiaCount;
+
+	file = BeginEvent( VR_ANALYTICS_TACTICAL, "battle_start", 0 );
+	if( !file )
+		return;
+
+	fprintf( file,
+		",\"battle_id\":%lu,\"sector_x\":%d,\"sector_y\":%d,\"sector_z\":%d,"
+		"\"player_count\":%d,\"enemy_count\":%d,\"militia_count\":%d",
+		gActiveBattleId, sectorX, sectorY, sectorZ,
+		playerCount, enemyCount, militiaCount );
+	EndEvent( file );
+}
+
+void VRAnalyticsBattleEnded(
+	const char* result,
+	int sectorX,
+	int sectorY,
+	int sectorZ,
+	int playerCount,
+	int enemyCount,
+	int militiaCount,
+	bool enemyRetreated )
+{
+	FILE* file;
+
+	Initialize();
+	if( !gEnabled )
+		return;
+
+	if( !gActiveBattleId )
+	{
+		VRAnalyticsDiagnostic(
+			VR_ANALYTICS_TACTICAL, "battle", 0,
+			"battle_end_without_start",
+			"battle ended without a matching telemetry start event" );
+		return;
+	}
+
+	file = BeginEvent( VR_ANALYTICS_TACTICAL, "battle_end", 0 );
+	if( file )
+	{
+		fprintf( file,
+			",\"battle_id\":%lu,\"result\":",
+			gActiveBattleId );
+		JsonString( file, result );
+		fprintf( file,
+			",\"sector_x\":%d,\"sector_y\":%d,\"sector_z\":%d,"
+			"\"start_player_count\":%d,\"end_player_count\":%d,"
+			"\"start_enemy_count\":%d,\"end_enemy_count\":%d,"
+			"\"start_militia_count\":%d,\"end_militia_count\":%d,"
+			"\"player_count_delta\":%d,\"enemy_count_delta\":%d,"
+			"\"militia_count_delta\":%d,\"enemy_retreated\":%s",
+			sectorX, sectorY, sectorZ,
+			gBattleStartPlayers, playerCount,
+			gBattleStartEnemies, enemyCount,
+			gBattleStartMilitia, militiaCount,
+			playerCount - gBattleStartPlayers,
+			enemyCount - gBattleStartEnemies,
+			militiaCount - gBattleStartMilitia,
+			enemyRetreated ? "true" : "false" );
+		EndEvent( file );
+	}
+
+	gActiveBattleId = 0;
+	gBattleSectorX = gBattleSectorY = gBattleSectorZ = 0;
+	gBattleStartPlayers = gBattleStartEnemies = gBattleStartMilitia = 0;
 }
 
 void VRAnalyticsTacticalCandidate(
