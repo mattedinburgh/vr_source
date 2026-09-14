@@ -1212,7 +1212,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 		{
 				iTileMapPos[ uiMapPosIndex ] = FASTMAPROWCOLTOPOS( iTempPosY_M, iTempPosX_M );
 
-				iTempPosX_S += 40;
+				iTempPosX_S += VHDScaleScreenValue( 40 );
 				iTempPosX_M ++;
 				iTempPosY_M --;
 
@@ -1245,7 +1245,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 
 
 				if(bXOddFlag > 0)
-					iTempPosX_S += 20;
+					iTempPosX_S += VHDScaleScreenValue( 20 );
 
 				do
 				{
@@ -3081,7 +3081,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 						}
 					}
 
-					iTempPosX_S += 40;
+					iTempPosX_S += VHDScaleScreenValue( 40 );
 					iTempPosX_M ++;
 					iTempPosY_M --;
 
@@ -3107,7 +3107,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 		}
 
 		bXOddFlag = !bXOddFlag;
-		iAnchorPosY_S += 10;
+		iAnchorPosY_S += VHDScaleScreenValue( 10 );
 
 		if ( iAnchorPosY_S >= iEndYS )
 		{
@@ -8078,7 +8078,7 @@ void RenderRoomInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sStartPoi
 		sTempPosY_S = sAnchorPosY_S;
 
 		if(bXOddFlag > 0)
-			sTempPosX_S += 20;
+			sTempPosX_S += VHDScaleScreenValue( 20 );
 
 
 		do
@@ -8113,7 +8113,7 @@ void RenderRoomInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sStartPoi
 				}
 			}
 
-			sTempPosX_S += 40;
+			sTempPosX_S += VHDScaleScreenValue( 40 );
 			sTempPosX_M ++;
 			sTempPosY_M --;
 
@@ -8135,7 +8135,7 @@ void RenderRoomInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sStartPoi
 
 
 		bXOddFlag = !bXOddFlag;
-		sAnchorPosY_S += 10;
+		sAnchorPosY_S += VHDScaleScreenValue( 10 );
 
 		if ( sAnchorPosY_S >= sEndYS )
 		{
@@ -8184,7 +8184,7 @@ void RenderFOVDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sStar
 		sTempPosY_S = sAnchorPosY_S;
 
 		if(bXOddFlag > 0)
-			sTempPosX_S += 20;
+			sTempPosX_S += VHDScaleScreenValue( 20 );
 
 
 		do
@@ -8225,7 +8225,7 @@ void RenderFOVDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sStar
 
 			}
 
-			sTempPosX_S += 40;
+			sTempPosX_S += VHDScaleScreenValue( 40 );
 			sTempPosX_M ++;
 			sTempPosY_M --;
 
@@ -8247,7 +8247,7 @@ void RenderFOVDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sStar
 
 
 		bXOddFlag = !bXOddFlag;
-		sAnchorPosY_S += 10;
+		sAnchorPosY_S += VHDScaleScreenValue( 10 );
 
 		if ( sAnchorPosY_S >= sEndYS )
 		{
@@ -8293,7 +8293,7 @@ void RenderCoverDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sSt
 		sTempPosY_S = sAnchorPosY_S;
 
 		if(bXOddFlag > 0)
-			sTempPosX_S += 20;
+			sTempPosX_S += VHDScaleScreenValue( 20 );
 
 
 		do
@@ -8332,7 +8332,7 @@ void RenderCoverDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sSt
 
 			}
 
-			sTempPosX_S += 40;
+			sTempPosX_S += VHDScaleScreenValue( 40 );
 			sTempPosX_M ++;
 			sTempPosY_M --;
 
@@ -8354,7 +8354,7 @@ void RenderCoverDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sSt
 
 
 		bXOddFlag = !bXOddFlag;
-		sAnchorPosY_S += 10;
+		sAnchorPosY_S += VHDScaleScreenValue( 10 );
 
 		if ( sAnchorPosY_S >= sEndYS )
 		{
@@ -8401,7 +8401,7 @@ void RenderGridNoVisibleDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, I
 		sTempPosY_S = sAnchorPosY_S;
 
 		if(bXOddFlag > 0)
-			sTempPosX_S += 20;
+			sTempPosX_S += VHDScaleScreenValue( 20 );
 
 
 		do
@@ -8434,7 +8434,7 @@ void RenderGridNoVisibleDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, I
 
 			}
 
-			sTempPosX_S += 40;
+			sTempPosX_S += VHDScaleScreenValue( 40 );
 			sTempPosX_M ++;
 			sTempPosY_M --;
 
@@ -8456,7 +8456,7 @@ void RenderGridNoVisibleDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, I
 
 
 		bXOddFlag = !bXOddFlag;
-		sAnchorPosY_S += 10;
+		sAnchorPosY_S += VHDScaleScreenValue( 10 );
 
 		if ( sAnchorPosY_S >= sEndYS )
 		{
@@ -8522,7 +8522,7 @@ void ExamineZBufferForHiddenTiles( INT16 sStartPointX_M, INT16 sStartPointY_M, I
 		sTempPosY_S = sAnchorPosY_S;
 
 		if(bXOddFlag > 0)
-			sTempPosX_S += 20;
+			sTempPosX_S += VHDScaleScreenValue( 20 );
 
 
 		do
@@ -8583,7 +8583,7 @@ void ExamineZBufferForHiddenTiles( INT16 sStartPointX_M, INT16 sStartPointY_M, I
 
 ENDOFLOOP:
 
-			sTempPosX_S += 40;
+			sTempPosX_S += VHDScaleScreenValue( 40 );
 			sTempPosX_M ++;
 			sTempPosY_M --;
 
@@ -8605,7 +8605,7 @@ ENDOFLOOP:
 
 
 		bXOddFlag = !bXOddFlag;
-		sAnchorPosY_S += 10;
+		sAnchorPosY_S += VHDScaleScreenValue( 10 );
 
 		if ( sAnchorPosY_S >= sEndYS )
 		{
@@ -8733,7 +8733,7 @@ void CalcRenderParameters(INT16 sLeft, INT16 sTop, INT16 sRight, INT16 sBottom )
 	if ( gsLStartPointY_W < 0 )
 	{
 		gsLStartPointY_S	+= 0;
-		gsLStartPointX_S	-= 20;
+		gsLStartPointX_S	-= VHDScaleScreenValue( 20 );
 	}
 	else
 	{
