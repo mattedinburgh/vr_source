@@ -308,66 +308,15 @@ static void ApplyEnemyInventoryLogisticsVariability( SOLDIERCREATE_STRUCT *pp, I
 	}
 }
 
-static INT8 LimitGeneratedGrenadeLoad( INT8 bGrenades, INT8 bSoldierClass,
-	BOOLEAN fGrenadeLauncher, BOOLEAN fMortar, BOOLEAN fRPG )
+static BOOLEAN IsNormalHEHandGrenade( UINT16 usItem )
 {
-	// Vengeance doctrine: grenades are useful but scarce. The same bGrenades
-	// counter is also reused for GL rounds, RPG rockets and mortar shells.
-	if ( bGrenades < 0 )
-		bGrenades = 0;
-	if ( bGrenades > 2 )
-		bGrenades = 2;
-
-	// Dedicated launcher crews need ammunition for their specialist weapon,
-	// but two rounds is enough for one generated soldier.
-	if ( fGrenadeLauncher || fMortar || fRPG )
-		return bGrenades;
-
-	// Hand grenades should be unevenly issued. Regular troops usually carry
-	// zero or one; elites are more likely to carry two, but never exceed two.
-	switch ( bSoldierClass )
-	{
-		case SOLDIER_CLASS_ADMINISTRATOR:
-			if ( bGrenades > 1 )
-				bGrenades = 1;
-			else if ( bGrenades == 1 && Chance( 35 ) )
-				bGrenades = 0;
-			break;
-
-		case SOLDIER_CLASS_ARMY:
-			if ( bGrenades == 2 && Chance( 60 ) )
-				bGrenades = 1;
-			else if ( bGrenades == 1 && Chance( 20 ) )
-				bGrenades = 0;
-			break;
-
-		case SOLDIER_CLASS_ELITE:
-			if ( bGrenades == 2 && Chance( 35 ) )
-				bGrenades = 1;
-			else if ( bGrenades == 1 && Chance( 10 ) )
-				bGrenades = 0;
-			break;
-
-		case SOLDIER_CLASS_GREEN_MILITIA:
-		case SOLDIER_CLASS_REG_MILITIA:
-			if ( bGrenades == 2 && Chance( 70 ) )
-				bGrenades = 1;
-			else if ( bGrenades == 1 && Chance( 30 ) )
-				bGrenades = 0;
-			break;
-
-		case SOLDIER_CLASS_ELITE_MILITIA:
-			if ( bGrenades == 2 && Chance( 50 ) )
-				bGrenades = 1;
-			else if ( bGrenades == 1 && Chance( 15 ) )
-				bGrenades = 0;
-			break;
-	}
-
-	return bGrenades;
+	return usItem > 0 &&
+		ItemIsHandGrenade( usItem ) &&
+		GetLauncherFromLaunchable( usItem ) == NOTHING &&
+		Explosive[Item[usItem].ubClassIndex].ubType == EXPLOSV_NORMAL;
 }
 
-static UINT8 CountGrenadeObjectsInSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp )
+static UINT8 CountNormalHEHandGrenadesInSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp )
 {
 	if ( !pp )
 		return 0;
@@ -376,7 +325,7 @@ static UINT8 CountGrenadeObjectsInSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp 
 	const UINT32 uiInvSize = pp->Inv.size();
 	for ( UINT32 i = 0; i < uiInvSize; ++i )
 	{
-		if ( pp->Inv[i].exists() && Item[pp->Inv[i].usItem].usItemClass == IC_GRENADE )
+		if ( pp->Inv[i].exists() && IsNormalHEHandGrenade( pp->Inv[i].usItem ) )
 		{
 			usCount += pp->Inv[i].ubNumberOfObjects;
 			if ( usCount >= 255 )
@@ -387,17 +336,47 @@ static UINT8 CountGrenadeObjectsInSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp 
 	return (UINT8)usCount;
 }
 
-static BOOLEAN AddExtraGrenadeWithinCap( SOLDIERCREATE_STRUCT *pp, UINT16 usItem, INT8 bStatus )
+static BOOLEAN AddExtraThrowableRespectingHECap( SOLDIERCREATE_STRUCT *pp, UINT16 usItem, INT8 bStatus )
 {
-	const UINT8 ubGrenadeCap = 2;
+	const UINT8 ubHEHandGrenadeCap = 2;
 
-	if ( !pp || usItem == NOTHING || CountGrenadeObjectsInSoldierCreateStruct( pp ) >= ubGrenadeCap )
+	if ( !pp || usItem == NOTHING )
 		return FALSE;
+
+	// Smoke, tear gas, flares, flashbangs and other utility throwables do not
+	// consume the HE allowance. Only normal explosive hand grenades are capped.
+	if ( IsNormalHEHandGrenade( usItem ) &&
+		CountNormalHEHandGrenadesInSoldierCreateStruct( pp ) >= ubHEHandGrenadeCap )
+	{
+		return FALSE;
+	}
 
 	CreateItems( usItem, bStatus, 1, &gTempObject );
 	gTempObject.fFlags |= OBJECT_UNDROPPABLE;
 	PlaceObjectInSoldierCreateStruct( pp, &gTempObject );
 	return TRUE;
+}
+
+static UINT16 PickGeneratedHandGrenadeRespectingHECap( SOLDIERCREATE_STRUCT *pp, INT8 bGrenadeClass )
+{
+	const UINT8 ubHEHandGrenadeCap = 2;
+	const BOOLEAN fHEAtCap =
+		CountNormalHEHandGrenadesInSoldierCreateStruct( pp ) >= ubHEHandGrenadeCap;
+
+	// If HE is already capped, make several attempts to find a utility throwable
+	// of the requested class rather than simply deleting the soldier's remaining
+	// grenade allocation. This preserves smoke/flash/gas variety.
+	for ( UINT8 ubAttempt = 0; ubAttempt < 8; ++ubAttempt )
+	{
+		const UINT16 usItem = PickARandomItem( GRENADE, pp->ubSoldierClass, bGrenadeClass, FALSE );
+		if ( usItem == 0 )
+			return 0;
+
+		if ( !fHEAtCap || !IsNormalHEHandGrenade( usItem ) )
+			return usItem;
+	}
+
+	return 0;
 }
 
 static void MaybeAddEnemyFirstAid( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass )
@@ -1091,12 +1070,6 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 		bMiscClass, bBombClass, bLBEClass,
 		bAmmoClips, bGrenades, fGrenadeLauncher, fMortar, fRPG );
 
-	// Final scarcity pass after all class/difficulty/logistics modifiers.
-	// Generated hand grenades top out at two and usually land at zero or one;
-	// dedicated launcher users can carry at most two rounds.
-	bGrenades = LimitGeneratedGrenadeLoad( bGrenades, bSoldierClass,
-		fGrenadeLauncher, fMortar, fRPG );
-
 	UINT32 invsize = pp->Inv.size();
 	for( i = 0; i < invsize; ++i )
 	{
@@ -1291,14 +1264,14 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 		usItem = GetHandGrenadeOfType(MINI_GRENADE, EXPLOSV_NORMAL);
 		if (fMini && usItem > 0)
 		{
-			AddExtraGrenadeWithinCap(pp, usItem, (INT8)(80 + Random(20)));
+			AddExtraThrowableRespectingHECap(pp, usItem, (INT8)(80 + Random(20)));
 		}
 
 		// mk2 grenade
 		usItem = GetHandGrenadeOfType(HAND_GRENADE, EXPLOSV_NORMAL);
 		if (fGrenade && usItem > 0)
 		{
-			AddExtraGrenadeWithinCap(pp, usItem, (INT8)(80 + Random(20)));
+			AddExtraThrowableRespectingHECap(pp, usItem, (INT8)(80 + Random(20)));
 		}
 
 		// wirecutters
@@ -1398,28 +1371,28 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 		usItem = GetHandGrenadeOfType(SMOKE_GRENADE, EXPLOSV_SMOKE);
 		if (fSmokeGrenade && usItem > 0)
 		{
-			AddExtraGrenadeWithinCap(pp, usItem, (INT8)(80 + Random(20)));
+			AddExtraThrowableRespectingHECap(pp, usItem, (INT8)(80 + Random(20)));
 		}
 
 		// tear gas
 		usItem = GetHandGrenadeOfType(TEARGAS_GRENADE, EXPLOSV_TEARGAS);
 		if (fTear && usItem > 0)
 		{
-			AddExtraGrenadeWithinCap(pp, usItem, (INT8)(80 + Random(20)));
+			AddExtraThrowableRespectingHECap(pp, usItem, (INT8)(80 + Random(20)));
 		}
 
 		// flare
 		usItem = GetHandGrenadeOfType(BREAK_LIGHT, EXPLOSV_FLARE);
 		if (fFlare && usItem > 0)
 		{
-			AddExtraGrenadeWithinCap(pp, usItem, (INT8)(80 + Random(20)));
+			AddExtraThrowableRespectingHECap(pp, usItem, (INT8)(80 + Random(20)));
 		}
 
 		// red smoke
 		usItem = GetHandGrenadeOfType(1701, EXPLOSV_SIGNAL_SMOKE);
 		if (fRedSmoke && usItem > 0)
 		{
-			AddExtraGrenadeWithinCap(pp, usItem, (INT8)(80 + Random(20)));
+			AddExtraThrowableRespectingHECap(pp, usItem, (INT8)(80 + Random(20)));
 		}
 
 		// LAW
@@ -1865,20 +1838,31 @@ void ChooseGrenadesForSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp, INT8 bGrena
 	}
 
 
-	//Madd: screw the original code; it's impossible to externalize and too complicated anyway
-	//do this for every 1-2 grenades so that we can get more variety
+	// Hand-grenade allocation may include several throwable types, but normal
+	// HE fragmentation grenades have a separate hard ceiling of two per soldier.
+	// Utility throwables remain available beyond that ceiling.
 	while (bGrenades > 0)
 	{
 		count = min(1 + Random(3), bGrenades);
 
-		usItem = PickARandomItem(GRENADE, pp->ubSoldierClass, bGrenadeClass, FALSE);
+		usItem = PickGeneratedHandGrenadeRespectingHECap( pp, bGrenadeClass );
 		if (usItem > 0 && count > 0)
 		{
-			CreateItems(usItem, (INT8)(ubBaseQuality + Random(ubQualityVariation)), count, &gTempObject);
-			gTempObject.fFlags |= OBJECT_UNDROPPABLE;
-			PlaceObjectInSoldierCreateStruct(pp, &gTempObject);
+			if ( IsNormalHEHandGrenade( usItem ) )
+			{
+				const UINT8 ubCurrentHE = CountNormalHEHandGrenadesInSoldierCreateStruct( pp );
+				const UINT8 ubHERemaining = (ubCurrentHE < 2) ? (UINT8)(2 - ubCurrentHE) : 0;
+				count = (UINT8)min( count, ubHERemaining );
+			}
+
+			if ( count > 0 )
+			{
+				CreateItems(usItem, (INT8)(ubBaseQuality + Random(ubQualityVariation)), count, &gTempObject);
+				gTempObject.fFlags |= OBJECT_UNDROPPABLE;
+				PlaceObjectInSoldierCreateStruct(pp, &gTempObject);
+			}
 		}
-		bGrenades -= count;
+		bGrenades -= max( 1, count );
 	}
 
 	return;
