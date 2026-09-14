@@ -658,6 +658,17 @@ def session_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "build_date": e.get("build_date"),
                 "build_time": e.get("build_time"),
                 "experiment_tag": e.get("experiment_tag", "unlabeled"),
+                "build_branch": e.get("build_branch"),
+                "build_commit": e.get("build_commit"),
+                "build_commit_short": e.get("build_commit_short"),
+                "build_dirty": e.get("build_dirty"),
+                "build_source_fingerprint": e.get("build_source_fingerprint"),
+                "build_generated_at": e.get("build_generated_at"),
+                "build_configuration": e.get("build_configuration"),
+                "build_platform": e.get("build_platform"),
+                "build_target": e.get("build_target"),
+                "build_provenance_version": e.get("build_provenance_version"),
+                "recent_changes": e.get("recent_changes", []),
             }
             for e in starts
         ],
@@ -866,6 +877,33 @@ def render_markdown(
             )
         ),
         "",
+        "## Build provenance",
+        "",
+        "| Session | Branch | Commit | Dirty | Configuration | Target |",
+        "|---|---|---|---:|---|---|",
+    ]
+
+    for build in summary["session"]["builds"]:
+        dirty = build.get("build_dirty")
+        dirty_text = "yes" if dirty else "no" if dirty is not None else "n/a"
+        lines.append(
+            f"| {build.get('session', 'n/a')} | "
+            f"{build.get('build_branch') or 'legacy/unknown'} | "
+            f"{build.get('build_commit_short') or build.get('build_commit') or 'legacy/unknown'} | "
+            f"{dirty_text} | "
+            f"{build.get('build_configuration') or 'n/a'} / {build.get('build_platform') or 'n/a'} | "
+            f"{build.get('build_target') or 'n/a'} |"
+        )
+        recent = build.get("recent_changes") or []
+        if recent:
+            lines.append("")
+            lines.append(
+                f"Recent changes for session {build.get('session', 'n/a')}: "
+                + "; ".join(str(item) for item in recent)
+            )
+
+    lines += [
+        "",
         "## Tactical refinement subsystem",
         "",
         "| Metric | Result |",
@@ -874,8 +912,14 @@ def render_markdown(
         f"| Completed outcomes | {tac['completed']} ({tac['completed_rate']:.1f}%) |",
         f"| Rejected outcomes | {tac['rejected']} ({tac['rejected_rate']:.1f}%) |",
         f"| Superseded outcomes | {tac['superseded']} ({tac['superseded_rate']:.1f}%) |",
-        f"| Average AP spent | {fmt(tac['avg_ap_spent'])} |",
+        f"| Average AP spent | {fmt(tac['avg_ap_spent'])} ({tac['valid_ap_samples']} valid samples) |",
         f"| Average absolute movement | {fmt(tac['avg_abs_grid_delta'])} grids |",
+        f"| Direct combat hits logged | {tac['combat_hits']} |",
+        f"| Applied-damage events | {tac['damage_events']} |",
+        f"| Total life loss recorded | {fmt(tac['total_life_loss'])} |",
+        f"| Total breath loss recorded | {fmt(tac['total_breath_loss'])} |",
+        f"| Entered downed state | {tac['entered_downed']} |",
+        f"| Lethal damage events | {tac['lethal_damage_events']} |",
         f"| Completed actions with last-attack-hit flag | {tac['last_attack_hit_flag_rate']:.1f}% ({tac['completed_action_samples']} completed-action samples) |",
         f"| Attack-vs-cover comparisons | {tac['attack_cover_pairs']} |",
         f"| Cover wins / attack wins / ties | {tac['defense_wins']} / {tac['offense_wins']} / {tac['ties']} |",
