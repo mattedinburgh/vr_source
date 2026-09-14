@@ -56,15 +56,13 @@ jobs:
           Add-Type -AssemblyName System.Drawing
 
           function Read-U16([byte[]]$b, [int]$o) {
-            return [int]($b[$o] -bor ($b[$o+1] -shl 8))
+            return [int][System.BitConverter]::ToUInt16($b,$o)
           }
           function Read-I16([byte[]]$b, [int]$o) {
-            $u = Read-U16 $b $o
-            if ($u -ge 32768) { return $u - 65536 }
-            return $u
+            return [int][System.BitConverter]::ToInt16($b,$o)
           }
           function Read-U32([byte[]]$b, [int]$o) {
-            return [uint32]($b[$o] -bor ($b[$o+1] -shl 8) -bor ($b[$o+2] -shl 16) -bor ($b[$o+3] -shl 24))
+            return [uint32][System.BitConverter]::ToUInt32($b,$o)
           }
 
           function Decode-B1TC([string]$Path, [string]$OutPng, [string]$OutJson) {
@@ -95,7 +93,10 @@ jobs:
                 $h = Read-U16 $b ($d + 6)
                 $src = Read-U32 $b ($d + 8)
                 $len = Read-U32 $b ($d + 12)
-                if ($len -ne $w*$h*4) { throw "Frame $i length mismatch in $Path" }
+                $expected = [uint32]$w * [uint32]$h * 4
+                if ($len -ne $expected) {
+                  throw ("Frame {0} length mismatch in {1}: width={2} height={3} len={4} expected={5} src={6}" -f $i,$Path,$w,$h,$len,$expected,$src)
+                }
 
                 $bmp = New-Object System.Drawing.Bitmap $w,$h,([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
                 for ($y=0; $y -lt $h; $y++) {
