@@ -392,28 +392,39 @@ function New-SessionPackage {
     return $sessionDir
 }
 
-function Ensure-UploadWorktree {
+function Ensure-UploadRepository {
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
         throw "git.exe is not available."
     }
 
-    $fetch = Invoke-Git -Arguments @("-C", $SourceRepo, "fetch", "origin", $TelemetryBranch) -AllowFailure
-    if ($fetch.ExitCode -ne 0) {
-        throw "Could not fetch $TelemetryBranch from origin."
+    $config = Ensure-PrivateTelemetryDestination
+    $repoName = [string]$config.telemetry_repository
+    if ([string]::IsNullOrWhiteSpace($repoName)) {
+        throw "No private telemetry repository configured."
     }
 
-    if (-not (Test-Path -LiteralPath $UploadWorktree)) {
-        Ensure-Directory $StateRoot
-        [void](Invoke-Git -Arguments @("-C", $SourceRepo, "worktree", "prune") -AllowFailure)
-        $add = Invoke-Git -Arguments @("-C", $SourceRepo, "worktree", "add", "--detach", $UploadWorktree, "origin/$TelemetryBranch") -AllowFailure
-        if ($add.ExitCode -ne 0) {
-            throw "Could not create telemetry worktree: $($add.Output -join ' ')"
+    $remoteUrl = "https://github.com/$repoName.git"
+
+    if (-not (Test-Path -LiteralPath (Join-Path $UploadRepo ".git"))) {
+        if (Test-Path -LiteralPath $UploadRepo) {
+            Remove-Item -LiteralPath $UploadRepo -Recurse -Force
+        }
+
+        $clone = Invoke-Git -Arguments @("clone", $remoteUrl, $UploadRepo) -AllowFailure
+        if ($clone.ExitCode -ne 0) {
+            throw "Could not clone private telemetry repository $repoName."
         }
     }
 
-    [void](Invoke-Git -Arguments @("-C", $UploadWorktree, "fetch", "origin", $TelemetryBranch))
-    [void](Invoke-Git -Arguments @("-C", $UploadWorktree, "reset", "--hard", "origin/$TelemetryBranch"))
-    [void](Invoke-Git -Arguments @("-C", $UploadWorktree, "clean", "-fd"))
+    $fetch = Invoke-Git -Arguments @("-C", $UploadRepo, "fetch", "origin", $TelemetryBranch) -AllowFailure
+    if ($fetch.ExitCode -eq 0) {
+        $reset = Invoke-Git -Arguments @("-C", $UploadRepo, "reset", "--hard", "origin/$TelemetryBranch") -AllowFailure
+        if ($reset.ExitCode -ne 0) {
+            throw "Could not reset private telemetry repository to origin/$TelemetryBranch."
+        }
+    }
+
+    [void](Invoke-Git -Arguments @("-C", $UploadRepo, "clean", "-fd"))
 }
 
 function Try-UploadPending {
@@ -423,7 +434,7 @@ function Try-UploadPending {
     if ($pending.Count -eq 0) { return }
 
     try {
-        Ensure-UploadWorktree
+        Ensure-UploadRepository
     } catch {
         Write-AgentLog "Upload deferred: $($_.Exception.Message)"
         return
@@ -431,24 +442,24 @@ function Try-UploadPending {
 
     foreach ($dir in $pending | Sort-Object FullName) {
         try {
-            [void](Invoke-Git -Arguments @("-C", $UploadWorktree, "fetch", "origin", $TelemetryBranch))
-            [void](Invoke-Git -Arguments @("-C", $UploadWorktree, "reset", "--hard", "origin/$TelemetryBranch"))
-            [void](Invoke-Git -Arguments @("-C", $UploadWorktree, "clean", "-fd"))
+            [void](Invoke-Git -Arguments @("-C", $UploadRepo, "fetch", "origin", $TelemetryBranch))
+            [void](Invoke-Git -Arguments @("-C", $UploadRepo, "reset", "--hard", "origin/$TelemetryBranch"))
+            [void](Invoke-Git -Arguments @("-C", $UploadRepo, "clean", "-fd"))
 
             $day = Split-Path -Leaf (Split-Path -Parent $dir.FullName)
             $sessionId = $dir.Name
             $relativeDest = Join-Path (Join-Path "sessions" $day) $sessionId
-            $dest = Join-Path $UploadWorktree $relativeDest
+            $dest = Join-Path $UploadRepo $relativeDest
             Ensure-Directory (Split-Path -Parent $dest)
             Copy-Item -LiteralPath $dir.FullName -Destination $dest -Recurse -Force
             Remove-Item -LiteralPath (Join-Path $dest ".pending") -Force -ErrorAction SilentlyContinue
 
             # Stable discovery pointers for the daily analyst.
-            $latestPath = Join-Path $UploadWorktree "sessions\LATEST.txt"
+            $latestPath = Join-Path $UploadRepo "sessions\LATEST.txt"
             Ensure-Directory (Split-Path -Parent $latestPath)
             Set-Content -LiteralPath $latestPath -Value ($relativeDest -replace "\\","/") -Encoding ASCII
 
-            $indexPath = Join-Path $UploadWorktree "sessions\index.tsv"
+            $indexPath = Join-Path $UploadRepo "sessions\index.tsv"
             if (-not (Test-Path -LiteralPath $indexPath)) {
                 Set-Content -LiteralPath $indexPath -Value "session_id\tday\tpath\tuploaded_at" -Encoding UTF8
             }
@@ -457,15 +468,15 @@ function Try-UploadPending {
                 Add-Content -LiteralPath $indexPath -Value ($sessionId + [char]9 + $day + [char]9 + ($relativeDest -replace "\\","/") + [char]9 + (Get-Date).ToString("o")) -Encoding UTF8
             }
 
-            [void](Invoke-Git -Arguments @("-C", $UploadWorktree, "add", "--", $relativeDest, "sessions/LATEST.txt", "sessions/index.tsv"))
-            $status = Invoke-Git -Arguments @("-C", $UploadWorktree, "status", "--porcelain", "--", $relativeDest) -AllowFailure
+            [void](Invoke-Git -Arguments @("-C", $UploadRepo, "add", "--", $relativeDest, "sessions/LATEST.txt", "sessions/index.tsv"))
+            $status = Invoke-Git -Arguments @("-C", $UploadRepo, "status", "--porcelain", "--", $relativeDest) -AllowFailure
             if (@($status.Output).Count -eq 0) {
                 Remove-Item -LiteralPath (Join-Path $dir.FullName ".pending") -Force -ErrorAction SilentlyContinue
                 continue
             }
 
-            [void](Invoke-Git -Arguments @("-C", $UploadWorktree, "commit", "-m", "telemetry: session $sessionId"))
-            $push = Invoke-Git -Arguments @("-C", $UploadWorktree, "push", "origin", "HEAD:refs/heads/$TelemetryBranch") -AllowFailure
+            [void](Invoke-Git -Arguments @("-C", $UploadRepo, "commit", "-m", "telemetry: session $sessionId"))
+            $push = Invoke-Git -Arguments @("-C", $UploadRepo, "push", "origin", "HEAD:refs/heads/$TelemetryBranch") -AllowFailure
             if ($push.ExitCode -ne 0) {
                 throw "git push failed: $($push.Output -join ' ')"
             }
