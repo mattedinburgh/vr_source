@@ -8074,23 +8074,18 @@ BOOLEAN CheckForLosingEndOfBattle( )
         {
             // If we get captured...
             // Your unconscious mercs are captured!
-
             // Check if we should get captured....
-            if ( bNumNotOKRealMercs < 4 && bNumNotOKRealMercs > 1 )
+            // Any living real merc who is incapacitated and left behind when a
+            // human enemy force controls the battlefield is captured. The old
+            // JA2 rule only allowed capture when exactly 2-3 mercs were down,
+            // which meant a lone casualty (or 4+) was killed by battle cleanup.
+            // Requiring ENEMY_TEAM here keeps creatures/non-human threats out of
+            // the POW path.
+            if ( bNumNotOKRealMercs > 0 && gTacticalStatus.Team[ ENEMY_TEAM ].bMenInSector > 0 )
             {
-                // Check if any enemies exist....
-                if ( gTacticalStatus.Team[ ENEMY_TEAM ].bMenInSector > 0 )
-                {
-                    //if( GetWorldDay() > STARTDAY_ALLOW_PLAYER_CAPTURE_FOR_RESCUE && !( gStrategicStatus.uiFlags & STRATEGIC_PLAYER_CAPTURED_FOR_RESCUE ))
-                    {
-                        if ( gubQuest[ QUEST_HELD_IN_ALMA ] == QUESTNOTSTARTED || ( gubQuest[ QUEST_HELD_IN_ALMA ] == QUESTDONE && gubQuest[ QUEST_INTERROGATION ] == QUESTNOTSTARTED ) )
-                        {
-                            fDoCapture = TRUE;
-                            // CJC Dec 1 2002: fix capture sequences
-                            BeginCaptureSquence();
-                        }
-                    }
-                }
+                fDoCapture = TRUE;
+                BeginCaptureSquence();
+            }
             }
 
             gfKillingGuysForLosingBattle = TRUE;
