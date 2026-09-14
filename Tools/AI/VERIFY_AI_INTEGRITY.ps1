@@ -12,6 +12,11 @@ $frameworkDoc = Join-Path $root "UNIFIED_AI_FRAMEWORK.md"
 $cqbSource = Join-Path $tacticalAI "CQBBuildingDoctrine.cpp"
 $cqbHeader = Join-Path $tacticalAI "CQBBuildingDoctrine.h"
 $cqbProject = Join-Path $tacticalAI "TacticalAI_VS2013.vcxproj"
+$strategicDir = Join-Path $root "Strategic"
+$movementHeader = Join-Path $strategicDir "Strategic Movement.h"
+$operationalHeader = Join-Path $strategicDir "Strategic Operational AI.h"
+$operationalSource = Join-Path $strategicDir "Strategic Operational AI.cpp"
+$aiMain = Join-Path $tacticalAI "AIMain.cpp"
 
 function Fail([string]$Message) {
     Write-Error $Message
@@ -61,6 +66,10 @@ $frameworkText = Read-Text $frameworkDoc
 $cqbText = Read-Text $cqbSource
 $cqbHeaderText = Read-Text $cqbHeader
 $cqbProjectText = Read-Text $cqbProject
+$movementHeaderText = Read-Text $movementHeader
+$operationalHeaderText = Read-Text $operationalHeader
+$operationalSourceText = Read-Text $operationalSource
+$aiMainText = Read-Text $aiMain
 
 Write-Host "Unified AI integrity audit"
 Write-Host "Repository: $root"
@@ -244,7 +253,68 @@ else {
     }
 }
 
-# 7. No tracked duplicate canonical architecture document in TacticalAI under an old name.
+# 7. Strategic operational AI must preserve raw-save layout and knowledge fairness.
+if (-not $movementHeaderText.Contains("VR_ENEMYGROUP_SAVE_LAYOUT_MUST_BE_29")) {
+    Fail "Strategic Movement.h is missing the 29-byte ENEMYGROUP save-layout compile guard."
+}
+foreach ($field in @(
+    "ubFormationIDLo",
+    "ubFormationIDHi",
+    "ubOperationalFlagsLo",
+    "ubOperationalFlagsHi"
+)) {
+    if (-not $movementHeaderText.Contains($field)) {
+        Fail "Strategic Movement.h is missing save-compatible byte field '$field'."
+    }
+}
+if ($movementHeaderText.Contains("UINT16 usFormationID") -or
+    $movementHeaderText.Contains("UINT16 usOperationalFlags")) {
+    Fail "ENEMYGROUP reintroduced aligned UINT16 fields into legacy raw-save bytes."
+}
+if (-not $operationalSourceText.Contains("VR_ReadFormationID") -or
+    -not $operationalSourceText.Contains("VR_WriteFormationID") -or
+    -not $operationalSourceText.Contains("VR_ReadOperationalFlags") -or
+    -not $operationalSourceText.Contains("VR_WriteOperationalFlags")) {
+    Fail "Strategic operational state no longer uses byte-pair accessors."
+}
+if ($operationalSourceText.Contains("->usFormationID") -or
+    $operationalSourceText.Contains("->usOperationalFlags")) {
+    Fail "Strategic operational source bypasses save-compatible byte-pair accessors."
+}
+if ($operationalHeaderText -notmatch "VR_OPERATIONAL_DECISION_LOOP_ENABLEDs+0") {
+    Fail "Operational strategic movement gate was enabled without explicit integration approval."
+}
+if ($operationalSourceText.Contains("Strategic Operational BlackBox.txt")) {
+    Fail "Strategic AI reintroduced a parallel black-box file instead of shared VRAnalytics."
+}
+if (-not $operationalSourceText.Contains("VRAnalyticsBeginDecision") -or
+    -not $operationalSourceText.Contains("VRAnalyticsCommitDecision")) {
+    Fail "Strategic operational AI is not connected to shared VRAnalytics."
+}
+
+$scoreStart = $operationalSourceText.IndexOf("INT32 VR_ScoreOperationalTarget")
+$scoreEnd = $operationalSourceText.IndexOf("UINT8 VR_FindBestOperationalTarget", $scoreStart + 1)
+if ($scoreStart -lt 0 -or $scoreEnd -le $scoreStart) {
+    Fail "Could not isolate operational target scorer for knowledge-fairness audit."
+}
+else {
+    $scoreText = $operationalSourceText.Substring($scoreStart, $scoreEnd - $scoreStart)
+    if ($scoreText.Contains("PlayerMercsInSector") -or
+        $scoreText.Contains("CountAllMilitiaInSector")) {
+        Fail "Operational target scorer reads live player/militia presence instead of formation knowledge."
+    }
+}
+
+if (-not $aiMainText.Contains("VR_RegisterTacticalRetreatSoldier") -or
+    -not $aiMainText.Contains("fPersistentEnemyRetreat")) {
+    Fail "Tactical map-edge escape is no longer wired to persistent strategic retreat formations."
+}
+if (-not $aiMainText.Contains("if( !fPersistentEnemyRetreat )") -or
+    -not $aiMainText.Contains("QueueEnemyRetreatConflict")) {
+    Fail "Persistent tactical-retreat handoff lost its legacy fail-safe/pursuit path."
+}
+
+# 8. No tracked duplicate canonical architecture document in TacticalAI under an old name.
 $obsoleteDocs = @(
     (Join-Path $tacticalAI "Human_Tactical_Planner.md"),
     (Join-Path $tacticalAI "Deidranna_Doctrine.md")
