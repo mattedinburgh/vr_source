@@ -362,6 +362,7 @@ void TraceB1RemasterLoad( const STR8 pStage, const STR8 pDetail );
 UINT8 GetMapFactoryCurrentVisualProfile( void );
 UINT32 GetMapFactorySurfaceSeenCount( void );
 UINT32 GetMapFactoryPaletteGradedCount( void );
+UINT32 GetMapFactoryTrueColorGradedCount( void );
 UINT32 GetMapFactoryNonPaletteSkippedCount( void );
 
 void CompileWorldMovementCosts(void);//dnl ch56 151009
