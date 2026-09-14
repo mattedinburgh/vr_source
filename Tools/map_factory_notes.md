@@ -1,0 +1,1 @@
+# Map Factory controller notes
