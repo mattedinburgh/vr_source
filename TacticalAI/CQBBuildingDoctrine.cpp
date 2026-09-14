@@ -1,5 +1,6 @@
 #include "AI All.h"
 #include "CQBBuildingDoctrine.h"
+#include "VRAnalytics.h"
 
 #include <string.h>
 
@@ -192,10 +193,12 @@ static void VRCQBRememberAssessment(SOLDIERTYPE *pSoldier, const VRCQB_CONTEXT *
 	pSlot->sTargetGridNo = pAssessment->sTargetGridNo;
 }
 
-// Deliberate hard gate for the inactive branch.
+// CQB/building doctrine is live on the canonical integration branch. Runtime
+// callers still sit behind normal survival, disengagement, casualty, suppression
+// and attack-priority gates in DecideAction.
 BOOLEAN VRCQB_IsRuntimeEnabled(void)
 {
-	return FALSE;
+	return TRUE;
 }
 
 VRCQB_TRAINING_PROFILE VRCQB_GetTrainingProfile(SOLDIERTYPE *pSoldier)
@@ -1076,6 +1079,324 @@ BOOLEAN VRCQB_Assess(SOLDIERTYPE *pSoldier, const VRCQB_CONTEXT *pContext,
 
 	VRCQBRememberAssessment(pSoldier, pContext, pAssessment);
 	return pAssessment->eState != VRCQB_STATE_NONE;
+}
+
+
+static UINT8 VRCQBCountCommittedMovers(SOLDIERTYPE *pSoldier,
+	const VRCQB_ASSESSMENT *pAssessment)
+{
+	if (!pSoldier || !pAssessment)
+		return 0;
+
+	VRCQBMantainPlanState();
+
+	UINT8 ubCount = 0;
+	for (UINT8 ubID = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		ubID <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++ubID)
+	{
+		if (ubID == pSoldier->ubID || ubID >= TOTAL_SOLDIERS)
+			continue;
+
+		SOLDIERTYPE *pFriend = MercPtrs[ubID];
+		if (!pFriend || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE || !AISameFireteam(pSoldier, pFriend))
+		{
+			continue;
+		}
+
+		VRCQB_PLAN_SLOT *pSlot = &gVRCQBPlan[ubID];
+		if (!pSlot->fValid ||
+			pSlot->uiUniqueSoldierId != pFriend->uiUniqueSoldierIdValue ||
+			pSlot->uiTurnStamp != VRCQBCurrentTurnStamp())
+		{
+			continue;
+		}
+
+		if (pSlot->eState != VRCQB_STATE_ASSAULT &&
+			pSlot->eState != VRCQB_STATE_COUNTERATTACK)
+		{
+			continue;
+		}
+
+		if (!TileIsOutOfBounds(pAssessment->sEntryGridNo) &&
+			!TileIsOutOfBounds(pSlot->sEntryGridNo) &&
+			pAssessment->sEntryGridNo != pSlot->sEntryGridNo)
+		{
+			continue;
+		}
+
+		++ubCount;
+	}
+
+	return ubCount;
+}
+
+static UINT32 VRCQBTraceBegin(SOLDIERTYPE *pSoldier,
+	const VRCQB_CONTEXT *pContext, const VRCQB_ASSESSMENT *pAssessment)
+{
+	UINT32 uiDecision = (UINT32)VRAnalyticsBeginDecision(
+		VR_ANALYTICS_TACTICAL, "soldier", pSoldier ? pSoldier->ubID : 0, "cqb_building");
+
+	if (!uiDecision || !pSoldier || !pContext || !pAssessment)
+		return uiDecision;
+
+	VRAnalyticsStateInt(uiDecision, "cqb_state", (INT32)pAssessment->eState);
+	VRAnalyticsStateInt(uiDecision, "cqb_role", (INT32)pAssessment->eRole);
+	VRAnalyticsStateInt(uiDecision, "cqb_reason", (INT32)pAssessment->eReason);
+	VRAnalyticsStateInt(uiDecision, "cqb_profile", (INT32)pAssessment->eTrainingProfile);
+	VRAnalyticsStateInt(uiDecision, "cqb_confidence", pAssessment->ubConfidence);
+	VRAnalyticsStateInt(uiDecision, "cqb_effective_skill", pAssessment->ubEffectiveSkill);
+	VRAnalyticsStateInt(uiDecision, "cqb_planner_reliability", pAssessment->ubPlannerReliability);
+	VRAnalyticsStateInt(uiDecision, "cqb_room", pContext->usRoomNo);
+	VRAnalyticsStateInt(uiDecision, "cqb_threat_room", pContext->usThreatRoomNo);
+	VRAnalyticsStateInt(uiDecision, "cqb_building", pContext->ubBuildingID);
+	VRAnalyticsStateInt(uiDecision, "cqb_threat_building", pContext->ubThreatBuildingID);
+	VRAnalyticsStateInt(uiDecision, "cqb_known_threats", pContext->ubKnownThreats);
+	VRAnalyticsStateInt(uiDecision, "cqb_local_friends", pContext->ubLocalFriends);
+	VRAnalyticsStateInt(uiDecision, "cqb_entry", pAssessment->sEntryGridNo);
+	VRAnalyticsStateInt(uiDecision, "cqb_target", pAssessment->sTargetGridNo);
+	VRAnalyticsStateInt(uiDecision, "cqb_fallback", pAssessment->sFallbackGridNo);
+	VRAnalyticsStateInt(uiDecision, "cqb_risk", pAssessment->iRiskScore);
+	VRAnalyticsStateInt(uiDecision, "cqb_target_exposure", pAssessment->usKnownThreatExposure);
+
+	return uiDecision;
+}
+
+static INT8 VRCQBTraceNoAction(SOLDIERTYPE *pSoldier, UINT32 uiDecision,
+	const VRCQB_ASSESSMENT *pAssessment, INT32 sGridNo, INT32 iScore,
+	const CHAR8 *pReason)
+{
+	if (uiDecision)
+	{
+		VRAnalyticsStateInt(uiDecision, "selected_action", AI_ACTION_NONE);
+		VRAnalyticsCandidate(uiDecision, "cqb_building", sGridNo,
+			iScore, iScore, false, pReason);
+		VRAnalyticsCommitDecision(uiDecision, "cqb_building",
+			sGridNo, iScore, pReason);
+	}
+
+	(void)pSoldier;
+	(void)pAssessment;
+	return AI_ACTION_NONE;
+}
+
+INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowAssault)
+{
+	if (!VRCQB_IsRuntimeEnabled() || !pSoldier ||
+		!gGameExternalOptions.bNewTacticalAIBehavior ||
+		!gfTurnBasedAI ||
+		pSoldier->bTeam != ENEMY_TEAM ||
+		!SoldierAI(pSoldier) ||
+		pSoldier->aiData.bNeutral ||
+		pSoldier->stats.bLife < OKLIFE ||
+		pSoldier->bCollapsed || pSoldier->bBreathCollapsed ||
+		(pSoldier->usSoldierFlagMask & SOLDIER_POW) ||
+		(pSoldier->flags.uiStatusFlags & SOLDIER_BOXER) ||
+		(pSoldier->flags.uiStatusFlags & SOLDIER_VEHICLE) ||
+		TANK(pSoldier) || AM_A_ROBOT(pSoldier) || pSoldier->IsZombie() ||
+		!fCanMove ||
+		pSoldier->bActionPoints != pSoldier->bInitialActionPoints)
+	{
+		return AI_ACTION_NONE;
+	}
+
+	VRCQB_CONTEXT Context;
+	if (!VRCQB_BuildContext(pSoldier, &Context))
+		return AI_ACTION_NONE;
+
+	VRCQB_ASSESSMENT Assessment;
+	if (!VRCQB_Assess(pSoldier, &Context, &Assessment))
+		return AI_ACTION_NONE;
+
+	UINT32 uiDecision = VRCQBTraceBegin(pSoldier, &Context, &Assessment);
+
+	VRCQB_TRAINING_MODEL Model;
+	if (!VRCQB_GetTrainingModel(pSoldier, &Model))
+	{
+		VRCQB_InvalidateSoldierPlan(pSoldier);
+		return VRCQBTraceNoAction(pSoldier, uiDecision, &Assessment,
+			pSoldier->sGridNo, 0, "training model unavailable");
+	}
+
+	const BOOLEAN fAggressiveCQB =
+		Assessment.eState == VRCQB_STATE_ASSAULT ||
+		Assessment.eState == VRCQB_STATE_COUNTERATTACK;
+
+	if (fAggressiveCQB && !fAllowAssault)
+	{
+		VRCQB_InvalidateSoldierPlan(pSoldier);
+		return VRCQBTraceNoAction(pSoldier, uiDecision, &Assessment,
+			pSoldier->sGridNo, Assessment.iPositionScore,
+			"immediate combat action retained priority");
+	}
+
+	if (fAggressiveCQB && !AICheckHasGun(pSoldier))
+	{
+		VRCQB_InvalidateSoldierPlan(pSoldier);
+		return VRCQBTraceNoAction(pSoldier, uiDecision, &Assessment,
+			pSoldier->sGridNo, Assessment.iPositionScore,
+			"no firearm for deliberate CQB assault");
+	}
+
+	UINT8 ubRequiredConfidence = 35;
+	switch (Assessment.eState)
+	{
+	case VRCQB_STATE_ASSAULT:        ubRequiredConfidence = 48; break;
+	case VRCQB_STATE_COUNTERATTACK:  ubRequiredConfidence = 60; break;
+	case VRCQB_STATE_SECURE:         ubRequiredConfidence = 38; break;
+	case VRCQB_STATE_DELAY_FALLBACK: ubRequiredConfidence = 30; break;
+	case VRCQB_STATE_HOLD:           ubRequiredConfidence = 30; break;
+	default: break;
+	}
+
+	if (Assessment.ubConfidence < ubRequiredConfidence)
+	{
+		VRCQB_InvalidateSoldierPlan(pSoldier);
+		return VRCQBTraceNoAction(pSoldier, uiDecision, &Assessment,
+			pSoldier->sGridNo, Assessment.iPositionScore,
+			"CQB confidence below action threshold");
+	}
+
+	VRCQB_STATE eMovementState = Assessment.eState;
+	VRCQB_ROLE eMovementRole = Assessment.eRole;
+	INT32 sDesiredSpot = Assessment.sTargetGridNo;
+	INT8 bAction = AI_ACTION_NONE;
+	const CHAR8 *pActionReason = VRCQB_ReasonName(Assessment.eReason);
+
+	if (fAggressiveCQB)
+	{
+		UINT8 ubCommittedMovers =
+			VRCQBCountCommittedMovers(pSoldier, &Assessment);
+
+		if (ubCommittedMovers >= Assessment.ubMaxCoordinatedMovers)
+		{
+			// Do not join a doorway queue. Convert excess movers into local
+			// support/hold positions instead of allowing legacy seek logic to
+			// send the whole fireteam through the same entry.
+			eMovementState = VRCQB_STATE_HOLD;
+			eMovementRole = VRCQB_ROLE_SUPPORT;
+			sDesiredSpot = VRCQBFindBestLocalPosition(
+				pSoldier, &Context, &Model, eMovementState, eMovementRole);
+			bAction = AI_ACTION_TAKE_COVER;
+			pActionReason = "CQB mover budget: establish support";
+		}
+		else
+		{
+			bAction = AI_ACTION_SEEK_OPPONENT;
+		}
+	}
+	else if (Assessment.eState == VRCQB_STATE_DELAY_FALLBACK)
+	{
+		bAction = AI_ACTION_WITHDRAW;
+	}
+	else if (Assessment.eState == VRCQB_STATE_HOLD ||
+		Assessment.eState == VRCQB_STATE_SECURE)
+	{
+		bAction = AI_ACTION_TAKE_COVER;
+	}
+
+	if (bAction == AI_ACTION_NONE ||
+		TileIsOutOfBounds(sDesiredSpot) ||
+		sDesiredSpot == pSoldier->sGridNo)
+	{
+		return VRCQBTraceNoAction(pSoldier, uiDecision, &Assessment,
+			pSoldier->sGridNo, Assessment.iPositionScore,
+			"CQB position already satisfactory");
+	}
+
+	INT32 iCurrentScore = VRCQB_ScorePosition(
+		pSoldier, &Context, &Model, eMovementState, eMovementRole,
+		pSoldier->sGridNo);
+	INT32 iDesiredScore = VRCQB_ScorePosition(
+		pSoldier, &Context, &Model, eMovementState, eMovementRole,
+		sDesiredSpot);
+
+	if (eMovementState == VRCQB_STATE_HOLD ||
+		eMovementState == VRCQB_STATE_SECURE)
+	{
+		INT32 iRequiredGain = 10 - (INT32)Assessment.ubEffectiveSkill / 20;
+		iRequiredGain = __max((INT32)4, iRequiredGain);
+
+		if (iDesiredScore < iCurrentScore + iRequiredGain)
+		{
+			return VRCQBTraceNoAction(pSoldier, uiDecision, &Assessment,
+				pSoldier->sGridNo, iCurrentScore,
+				"CQB reposition gain too small");
+		}
+	}
+
+	INT16 sReserveAP = 0;
+	UINT8 ubMoveFlags = 0;
+	if (bAction == AI_ACTION_TAKE_COVER)
+	{
+		sReserveAP = (INT16)(GetAPsCrouch(pSoldier, TRUE) + GetAPsToLook(pSoldier));
+		ubMoveFlags = FLAG_CAUTIOUS;
+	}
+	else if (bAction == AI_ACTION_SEEK_OPPONENT)
+	{
+		sReserveAP = (INT16)GetAPsToLook(pSoldier);
+	}
+
+	INT32 sMoveSpot = InternalGoAsFarAsPossibleTowards(
+		pSoldier, sDesiredSpot, sReserveAP, bAction, ubMoveFlags);
+
+	if (TileIsOutOfBounds(sMoveSpot) || sMoveSpot == pSoldier->sGridNo)
+	{
+		VRCQB_InvalidateSoldierPlan(pSoldier);
+		return VRCQBTraceNoAction(pSoldier, uiDecision, &Assessment,
+			pSoldier->sGridNo, iCurrentScore,
+			"CQB route unavailable");
+	}
+
+	UINT16 usPeakIncrease = 145;
+	UINT16 usUncoveredIncrease = 70;
+	UINT16 usAverageIncrease = 90;
+
+	if (eMovementState == VRCQB_STATE_ASSAULT ||
+		eMovementState == VRCQB_STATE_COUNTERATTACK)
+	{
+		usPeakIncrease = (UINT16)__min((INT32)220,
+			120 + (INT32)Assessment.ubEffectiveSkill);
+		usUncoveredIncrease = (UINT16)__min((INT32)115,
+			60 + (INT32)Assessment.ubEffectiveSkill / 2);
+		usAverageIncrease = (UINT16)__min((INT32)130,
+			75 + (INT32)Assessment.ubEffectiveSkill / 2);
+	}
+	else if (eMovementState == VRCQB_STATE_DELAY_FALLBACK)
+	{
+		usPeakIncrease = 200;
+		usUncoveredIncrease = 110;
+		usAverageIncrease = 130;
+	}
+
+	if (!AIKnownRouteExposureAcceptable(
+		pSoldier, sMoveSpot, bAction,
+		usPeakIncrease, usUncoveredIncrease, usAverageIncrease))
+	{
+		VRCQB_InvalidateSoldierPlan(pSoldier);
+		return VRCQBTraceNoAction(pSoldier, uiDecision, &Assessment,
+			pSoldier->sGridNo, iCurrentScore,
+			"CQB route exposure rejected");
+	}
+
+	pSoldier->aiData.usActionData = sMoveSpot;
+	if (bAction == AI_ACTION_SEEK_OPPONENT)
+		pSoldier->sAbsoluteFinalDestination = sDesiredSpot;
+
+	if (uiDecision)
+	{
+		VRAnalyticsStateInt(uiDecision, "selected_action", bAction);
+		VRAnalyticsStateInt(uiDecision, "cqb_actual_move", sMoveSpot);
+		VRAnalyticsStateInt(uiDecision, "cqb_desired_move", sDesiredSpot);
+		VRAnalyticsStateInt(uiDecision, "cqb_current_score", iCurrentScore);
+		VRAnalyticsStateInt(uiDecision, "cqb_desired_score", iDesiredScore);
+		VRAnalyticsCandidate(uiDecision, "cqb_building", sMoveSpot,
+			iDesiredScore, iDesiredScore, true, pActionReason);
+		VRAnalyticsCommitDecision(uiDecision, "cqb_building",
+			sMoveSpot, iDesiredScore, pActionReason);
+	}
+
+	return bAction;
 }
 
 const CHAR8 *VRCQB_StateName(VRCQB_STATE eState)
