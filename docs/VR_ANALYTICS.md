@@ -38,6 +38,11 @@ Black Box v2 remains schema-compatible: the session-start record carries
 `blackbox_version: 2` and newer event kinds/fields are additive, so older
 Companion tooling can still read the stream.
 
+High-frequency retreat/courage inputs are emitted as one compact `assessment`
+record per evaluation rather than dozens of separate `state` records. This keeps
+the forensic detail correlated to the same `decision_id` while avoiding excessive
+disk flushes during large battles.
+
 ## Current causal chains
 
 ### Tactical
