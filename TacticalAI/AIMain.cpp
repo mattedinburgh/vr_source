@@ -1977,6 +1977,10 @@ INT8 ExecuteAction(SOLDIERTYPE *pSoldier)
         case AI_ACTION_FLANK_RIGHT:
         case AI_ACTION_RUN:
         case AI_ACTION_MOVE_TO_CLIMB:
+            // VR: expose real movement decisions as concise battlefield commands.
+            // Unsupported actions are ignored by ShowAIActionPopup().
+            ShowAIActionPopup( pSoldier, pSoldier->aiData.bAction );
+
             if ( pSoldier->aiData.bAction == AI_ACTION_MOVE_TO_CLIMB )
             {
                 DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Executing: AI_ACTION_MOVE_TO_CLIMB");
