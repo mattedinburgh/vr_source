@@ -3163,6 +3163,70 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		}
 	}
 
+	// If the local fight has collapsed, stop initiating attacks into superior known
+	// opposition. This uses only Chunk 1 perceived knowledge and existing withdrawal/cover.
+	if (AICombatTeam(pSoldier) && !AIDisengagementActive(pSoldier) && AIShouldAvoidAdvance(pSoldier))
+	{
+		INT8 bSurvivorAction = DecideHopelessSurvivorAction(pSoldier, ubCanMove);
+		if (bSurvivorAction != AI_ACTION_NONE)
+			return bSurvivorAction;
+	}
+	// Giving ground is a normal tactical option, not only a panic response.
+	if (AICombatTeam(pSoldier) && !AIDisengagementActive(pSoldier))
+	{
+		INT8 bFallbackAction = DecideTacticalFallback(pSoldier, ubCanMove);
+		if (bFallbackAction != AI_ACTION_NONE)
+			return bFallbackAction;
+	}
+
+	// Tactical self-preservation: withdraw when this soldier's personal danger
+	// exceeds what his personality and morale are willing to tolerate.
+	if (gfTurnBasedAI &&
+		AICombatTeam(pSoldier) &&
+		!AIDisengagementActive(pSoldier) &&
+		!AIHasUsedTacticalFallback(pSoldier) &&
+		ubCanMove &&
+		pSoldier->aiData.bOrders != STATIONARY &&
+		pSoldier->stats.bLife >= OKLIFE &&
+		AIPersonalRisk(pSoldier) >= AIPersonalRiskTolerance(pSoldier) + 10 &&
+		(pSoldier->aiData.bUnderFire || AILocalStress(pSoldier) >= 45) &&
+		(!AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
+		 AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0))
+	{
+		INT32 sWithdrawalThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		if (!TileIsOutOfBounds(sWithdrawalThreat))
+		{
+			pSoldier->aiData.usActionData = FindRetreatSpot(pSoldier);
+			if (TileIsOutOfBounds(pSoldier->aiData.usActionData))
+				pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, sWithdrawalThreat, AI_ACTION_WITHDRAW);
+			if (!TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
+	AIKnownRouteExposureAcceptable(
+		pSoldier, pSoldier->aiData.usActionData,
+		AI_ACTION_WITHDRAW, 200, 110, 130))
+{
+				AIRegisterTacticalFallback(pSoldier);
+				return(AI_ACTION_WITHDRAW);
+			}
+		}
+	}
+
+
+	// Building-aware CQB is deliberately below *all* RED survival/fallback layers.
+	// At this point emergency protection, cohesion, disengagement, casualty response,
+	// hopeless-survivor logic, tactical fallback and personal-risk withdrawal have all
+	// had first refusal. CQB may now shape the remaining building fight before the
+	// generic RED radio/seek/help/hide movement tree.
+	if (!fCivilian &&
+		!gfHiddenInterrupt &&
+		!gTacticalStatus.fInterruptOccurred &&
+		pSoldier->bTeam == ENEMY_TEAM &&
+		AICombatTeam(pSoldier))
+	{
+		INT8 bCQBAction = VRCQB_DecideAction(pSoldier, ubCanMove, TRUE);
+		if (bCQBAction != AI_ACTION_NONE)
+			return bCQBAction;
+	}
+
 	// In RED state there is no direct close contact. A viable casualty response should
 	// therefore outrank opportunistic sniper/mortar/support actions.
 	if (AICombatTeam(pSoldier) && AICheckIsMedic(pSoldier))
@@ -3782,71 +3846,6 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 		return(AI_ACTION_NONE);
 	}
 
-
-
-	// If the local fight has collapsed, stop initiating attacks into superior known
-	// opposition. This uses only Chunk 1 perceived knowledge and existing withdrawal/cover.
-	if (AICombatTeam(pSoldier) && !AIDisengagementActive(pSoldier) && AIShouldAvoidAdvance(pSoldier))
-	{
-		INT8 bSurvivorAction = DecideHopelessSurvivorAction(pSoldier, ubCanMove);
-		if (bSurvivorAction != AI_ACTION_NONE)
-			return bSurvivorAction;
-	}
-	// Giving ground is a normal tactical option, not only a panic response.
-	if (AICombatTeam(pSoldier) && !AIDisengagementActive(pSoldier))
-	{
-		INT8 bFallbackAction = DecideTacticalFallback(pSoldier, ubCanMove);
-		if (bFallbackAction != AI_ACTION_NONE)
-			return bFallbackAction;
-	}
-
-	// Tactical self-preservation: withdraw when this soldier's personal danger
-	// exceeds what his personality and morale are willing to tolerate.
-	if (gfTurnBasedAI &&
-		AICombatTeam(pSoldier) &&
-		!AIDisengagementActive(pSoldier) &&
-		!AIHasUsedTacticalFallback(pSoldier) &&
-		ubCanMove &&
-		pSoldier->aiData.bOrders != STATIONARY &&
-		pSoldier->stats.bLife >= OKLIFE &&
-		AIPersonalRisk(pSoldier) >= AIPersonalRiskTolerance(pSoldier) + 10 &&
-		(pSoldier->aiData.bUnderFire || AILocalStress(pSoldier) >= 45) &&
-		(!AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
-		 AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0))
-	{
-		INT32 sWithdrawalThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
-		if (!TileIsOutOfBounds(sWithdrawalThreat))
-		{
-			pSoldier->aiData.usActionData = FindRetreatSpot(pSoldier);
-			if (TileIsOutOfBounds(pSoldier->aiData.usActionData))
-				pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, sWithdrawalThreat, AI_ACTION_WITHDRAW);
-			if (!TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
-	AIKnownRouteExposureAcceptable(
-		pSoldier, pSoldier->aiData.usActionData,
-		AI_ACTION_WITHDRAW, 200, 110, 130))
-{
-				AIRegisterTacticalFallback(pSoldier);
-				return(AI_ACTION_WITHDRAW);
-			}
-		}
-	}
-
-
-	// Building-aware CQB is deliberately below *all* RED survival/fallback layers.
-	// At this point emergency protection, cohesion, disengagement, casualty response,
-	// hopeless-survivor logic, tactical fallback and personal-risk withdrawal have all
-	// had first refusal. CQB may now shape the remaining building fight before the
-	// generic RED radio/seek/help/hide movement tree.
-	if (!fCivilian &&
-		!gfHiddenInterrupt &&
-		!gTacticalStatus.fInterruptOccurred &&
-		pSoldier->bTeam == ENEMY_TEAM &&
-		AICombatTeam(pSoldier))
-	{
-		INT8 bCQBAction = VRCQB_DecideAction(pSoldier, ubCanMove, TRUE);
-		if (bCQBAction != AI_ACTION_NONE)
-			return bCQBAction;
-	}
 
 
 // WDS DEBUG - this will make all enemies run away (to test retreating into occupied sector bugs)
