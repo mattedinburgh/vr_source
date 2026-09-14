@@ -1217,7 +1217,7 @@ static void A3WriteArchitectureSurvey( void )
 
 	FILE *pCsv = fopen( "MAP_PREVIEWS\\A3_architecture.csv", "w" );
 	if ( pCsv != NULL )
-		fprintf( pCsv, "cluster,roof_tiles,min_row,max_row,min_col,max_col,width,height,struct_grids,floor_grids,center_grid\n" );
+		fprintf( pCsv, "cluster,roof_tiles,min_row,max_row,min_col,max_col,width,height,struct_grids,floor_grids,center_grid,dominant_roof_type,dominant_struct_type,dominant_floor_type\n" );
 
 	UINT16 usCluster = 0;
 	for ( INT32 sStart = 0; sStart < WORLD_MAX; ++sStart )
@@ -1230,6 +1230,12 @@ static void A3WriteArchitectureSurvey( void )
 		pVisited[sStart] = 1;
 
 		UINT32 uiRoofTiles = 0, uiStructGrids = 0, uiFloorGrids = 0;
+		UINT16 usRoofTypeCount[ NUMBEROFTILETYPES ];
+		UINT16 usStructTypeCount[ NUMBEROFTILETYPES ];
+		UINT16 usFloorTypeCount[ NUMBEROFTILETYPES ];
+		memset( usRoofTypeCount, 0, sizeof(usRoofTypeCount) );
+		memset( usStructTypeCount, 0, sizeof(usStructTypeCount) );
+		memset( usFloorTypeCount, 0, sizeof(usFloorTypeCount) );
 		INT32 sMinRow = 32767, sMaxRow = -1, sMinCol = 32767, sMaxCol = -1;
 		INT64 iRowSum = 0, iColSum = 0;
 
@@ -1246,8 +1252,36 @@ static void A3WriteArchitectureSurvey( void )
 			if ( sRow > sMaxRow ) sMaxRow = sRow;
 			if ( sCol < sMinCol ) sMinCol = sCol;
 			if ( sCol > sMaxCol ) sMaxCol = sCol;
-			if ( gpWorldLevelData[sGridNo].pStructHead != NULL ) ++uiStructGrids;
-			if ( FloorAtGridNo( sGridNo ) ) ++uiFloorGrids;
+			if ( gpWorldLevelData[sGridNo].pRoofHead != NULL )
+			{
+				for ( LEVELNODE *pNode = gpWorldLevelData[sGridNo].pRoofHead; pNode != NULL; pNode = pNode->pNext )
+				{
+					UINT32 uiType = 0;
+					if ( pNode->usIndex != NO_TILE && GetTileType( pNode->usIndex, &uiType ) && uiType < NUMBEROFTILETYPES )
+						++usRoofTypeCount[uiType];
+				}
+			}
+			if ( gpWorldLevelData[sGridNo].pStructHead != NULL )
+			{
+				++uiStructGrids;
+				for ( LEVELNODE *pNode = gpWorldLevelData[sGridNo].pStructHead; pNode != NULL; pNode = pNode->pNext )
+				{
+					UINT32 uiType = 0;
+					if ( pNode->usIndex != NO_TILE && GetTileType( pNode->usIndex, &uiType ) && uiType < NUMBEROFTILETYPES )
+						++usStructTypeCount[uiType];
+				}
+			}
+			if ( FloorAtGridNo( sGridNo ) )
+			{
+				++uiFloorGrids;
+				for ( LEVELNODE *pNode = gpWorldLevelData[sGridNo].pLandHead; pNode != NULL; pNode = pNode->pNext )
+				{
+					UINT32 uiType = 0;
+					if ( pNode->usIndex != NO_TILE && GetTileType( pNode->usIndex, &uiType ) &&
+						 uiType >= FIRSTFLOOR && uiType <= LASTFLOOR && uiType < NUMBEROFTILETYPES )
+						++usFloorTypeCount[uiType];
+				}
+			}
 
 			const INT32 sNeighbours[4] =
 			{
@@ -1275,20 +1309,43 @@ static void A3WriteArchitectureSurvey( void )
 		const INT32 sCenterCol = (INT32)( iColSum / (INT64)uiRoofTiles );
 		const INT32 sCenterGrid = sCenterRow * WORLD_COLS + sCenterCol;
 
+		UINT16 usDominantRoofType = 0, usDominantStructType = 0, usDominantFloorType = 0;
+		UINT16 usDominantRoofCount = 0, usDominantStructCount = 0, usDominantFloorCount = 0;
+		for ( UINT16 usType = 0; usType < NUMBEROFTILETYPES; ++usType )
+		{
+			if ( usRoofTypeCount[usType] > usDominantRoofCount )
+			{
+				usDominantRoofCount = usRoofTypeCount[usType];
+				usDominantRoofType = usType;
+			}
+			if ( usStructTypeCount[usType] > usDominantStructCount )
+			{
+				usDominantStructCount = usStructTypeCount[usType];
+				usDominantStructType = usType;
+			}
+			if ( usFloorTypeCount[usType] > usDominantFloorCount )
+			{
+				usDominantFloorCount = usFloorTypeCount[usType];
+				usDominantFloorType = usType;
+			}
+		}
+
 		if ( pCsv != NULL )
 		{
-			fprintf( pCsv, "%u,%lu,%d,%d,%d,%d,%d,%d,%lu,%lu,%d\n",
+			fprintf( pCsv, "%u,%lu,%d,%d,%d,%d,%d,%d,%lu,%lu,%d,%u,%u,%u\n",
 				usCluster, uiRoofTiles, sMinRow, sMaxRow, sMinCol, sMaxCol,
 				sMaxCol - sMinCol + 1, sMaxRow - sMinRow + 1,
-				uiStructGrids, uiFloorGrids, sCenterGrid );
+				uiStructGrids, uiFloorGrids, sCenterGrid,
+				usDominantRoofType, usDominantStructType, usDominantFloorType );
 		}
 
 		CHAR8 zCluster[256];
 		sprintf( zCluster,
-			"cluster=%u roof=%lu bbox=r%d-%d c%d-%d size=%dx%d structs=%lu floors=%lu center=%d",
+			"cluster=%u roof=%lu bbox=r%d-%d c%d-%d size=%dx%d structs=%lu floors=%lu center=%d roofType=%u structType=%u floorType=%u",
 			usCluster, uiRoofTiles, sMinRow, sMaxRow, sMinCol, sMaxCol,
 			sMaxCol - sMinCol + 1, sMaxRow - sMinRow + 1,
-			uiStructGrids, uiFloorGrids, sCenterGrid );
+			uiStructGrids, uiFloorGrids, sCenterGrid,
+			usDominantRoofType, usDominantStructType, usDominantFloorType );
 		TraceA3FarmLoad( "ARCHITECTURE", zCluster );
 	}
 
