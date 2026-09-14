@@ -1,0 +1,339 @@
+name: Five-map Vengeance remaster pilot
+
+on:
+  push:
+    branches:
+      - install/all-2026-09-12
+    paths:
+      - 'MapPreviewTrigger/FIVE_MAP_PILOT.txt'
+      - '.github/workflows/five-map-pilot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ja2-render-shared
+  cancel-in-progress: false
+
+jobs:
+  render-pilot:
+    runs-on: [self-hosted, Windows, X64, ja2-render]
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out vr_source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Locate Git on render PC
+        id: git
+        shell: powershell
+        run: |
+          $git = $null
+          $cmd = Get-Command git.exe -ErrorAction SilentlyContinue
+          if ($cmd) { $git = $cmd.Source }
+          if (-not $git) {
+            $git = Get-ChildItem "$env:LOCALAPPDATA\GitHubDesktop" -Recurse -Filter git.exe -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\resources\\app\\git\\cmd\\git\.exe$' } |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $git -or -not (Test-Path $git)) { throw 'Git could not be found on the render PC.' }
+          "path=$git" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          & $git --version
+
+      - name: Fetch fresh Vengeance map assets
+        id: gamedir
+        shell: powershell
+        run: |
+          $git = '${{ steps.git.outputs.path }}'
+          $gamedir = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
+          if (Test-Path $gamedir) { Remove-Item -Recurse -Force $gamedir }
+          & $git -c core.longpaths=true clone --depth 1 --single-branch --branch install/all-2026-09-12 --filter=blob:none --no-checkout https://github.com/mattedinburgh/vr_gamedir.git $gamedir
+          if ($LASTEXITCODE -ne 0) { throw "Partial clone failed with exit code $LASTEXITCODE" }
+          & $git -C $gamedir sparse-checkout init --cone
+          & $git -C $gamedir sparse-checkout set Data-Maps-Tiles
+          & $git -C $gamedir checkout install/all-2026-09-12
+          if ($LASTEXITCODE -ne 0) { throw "gamedir checkout failed with exit code $LASTEXITCODE" }
+          $sha = (& $git -C $gamedir rev-parse HEAD).Trim()
+          "sha=$sha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          $maps = @('A3.dat','B1.dat','B13.DAT','C5.DAT','D2.DAT')
+          foreach ($map in $maps) {
+            $path = Join-Path $gamedir ('Data-Maps-Tiles\maps\' + $map)
+            if (-not (Test-Path $path)) { throw "Pilot map missing: $path" }
+          }
+
+      - name: Retarget VS2013 projects to v120
+        shell: powershell
+        run: |
+          Get-ChildItem $env:GITHUB_WORKSPACE -Recurse -Filter '*.vcxproj' -File | ForEach-Object {
+            $path = $_.FullName
+            $text = [System.IO.File]::ReadAllText($path)
+            $newText = $text.Replace('<PlatformToolset>v120_xp</PlatformToolset>', '<PlatformToolset>v120</PlatformToolset>')
+            if ($newText -ne $text) {
+              [System.IO.File]::WriteAllText($path, $newText, (New-Object System.Text.UTF8Encoding($false)))
+            }
+          }
+
+      - name: Find MSBuild
+        id: msbuild
+        shell: powershell
+        run: |
+          $candidates = @(
+            'C:\Program Files (x86)\MSBuild\12.0\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe'
+          )
+          $msbuild = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $msbuild) {
+            $cmd = Get-Command msbuild.exe -ErrorAction SilentlyContinue
+            if ($cmd) { $msbuild = $cmd.Source }
+          }
+          if (-not $msbuild) { throw 'MSBuild could not be found on the render PC.' }
+          "path=$msbuild" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Build Vengeance MapEditor once
+        shell: powershell
+        run: |
+          & '${{ steps.msbuild.outputs.path }}' '.\ja2_VS2013.sln' /m /t:ja2 /p:Configuration=MapEditor /p:Platform=Win32
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $editor = Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\MapEditor_EN_Release.exe'
+          if (-not (Test-Path $editor)) { throw "Expected MapEditor was not built: $editor" }
+
+      - name: Prepare isolated Vengeance render sandbox
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $gameRoot = 'C:\VENGENCE\Jagged Alliance 2'
+          $sandbox = "C:\VENGENCE\JA2_RENDER_SANDBOX_$env:GITHUB_RUN_ID"
+          $gamedir = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
+          if (-not (Test-Path (Join-Path $gameRoot 'JA2_EN_Release.exe'))) { throw "Live JA2 game root not found: $gameRoot" }
+
+          function Remove-SandboxSafely([string]$Path) {
+            if (-not (Test-Path $Path)) { return }
+            Get-ChildItem -LiteralPath $Path -Force -Directory -ErrorAction SilentlyContinue |
+              Where-Object { ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 } |
+              ForEach-Object { cmd /c rmdir "$($_.FullName)" | Out-Null }
+            Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+          Get-ChildItem -LiteralPath 'C:\VENGENCE' -Force -Directory -Filter 'JA2_RENDER_SANDBOX_*' -ErrorAction SilentlyContinue |
+            ForEach-Object { Remove-SandboxSafely $_.FullName }
+
+          New-Item -ItemType Directory -Force -Path $sandbox | Out-Null
+          $privateRootFiles = @('Ja2.ini','ddraw.ini')
+          $skipRootFiles = @('JA2_EN_Release.exe','MapEditor_Vengeance.exe')
+
+          Get-ChildItem -LiteralPath $gameRoot -Force -File | ForEach-Object {
+            if ($_.Name -like '*.log' -or $_.Name -like '*.pdb' -or $skipRootFiles -contains $_.Name) { return }
+            $destination = Join-Path $sandbox $_.Name
+            if ($privateRootFiles -contains $_.Name) {
+              Copy-Item -LiteralPath $_.FullName -Destination $destination -Force
+            } else {
+              try {
+                New-Item -ItemType HardLink -Path $destination -Target $_.FullName -ErrorAction Stop | Out-Null
+              } catch {
+                if ($_.Length -le 16MB) { Copy-Item -LiteralPath $_.FullName -Destination $destination -Force }
+                else { throw }
+              }
+            }
+          }
+
+          $excludedDirs = @('00000','Profiles','MAP_PREVIEWS','.git','FORK','build','lib','.vs','Data-Maps-Tiles')
+          Get-ChildItem -LiteralPath $gameRoot -Force -Directory | ForEach-Object {
+            if ($excludedDirs -contains $_.Name) { return }
+            New-Item -ItemType Junction -Path (Join-Path $sandbox $_.Name) -Target $_.FullName | Out-Null
+          }
+
+          $mapLayer = Join-Path $gamedir 'Data-Maps-Tiles'
+          New-Item -ItemType Junction -Path (Join-Path $sandbox 'Data-Maps-Tiles') -Target $mapLayer | Out-Null
+
+          Copy-Item -Force (Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\MapEditor_EN_Release.exe') (Join-Path $sandbox 'MapEditor_Vengeance.exe')
+
+          $ja2Ini = Join-Path $sandbox 'Ja2.ini'
+          $ja2Text = [System.IO.File]::ReadAllText($ja2Ini)
+          if ($ja2Text -notmatch '(?im)^\s*VFS_CONFIG_INI\s*=\s*vfs_config\.Vengeance\.ini\s*$') {
+            throw 'Ja2.ini is not configured for vfs_config.Vengeance.ini.'
+          }
+          $ja2Text = [regex]::Replace($ja2Text, '(?im)^\s*SCREEN_MODE_WINDOWED\s*=\s*\d+\s*$', 'SCREEN_MODE_WINDOWED = 1')
+          [System.IO.File]::WriteAllText($ja2Ini, $ja2Text, (New-Object System.Text.UTF8Encoding($false)))
+
+          New-Item -ItemType Directory -Force -Path (Join-Path $sandbox 'Profiles\UserProfile_Vengeance') | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $sandbox 'MAP_PREVIEWS') | Out-Null
+
+          $ddrawIni = Join-Path $sandbox 'ddraw.ini'
+          if (Test-Path $ddrawIni) {
+            $ddraw = [System.IO.File]::ReadAllText($ddrawIni)
+            $ddraw = [regex]::Replace($ddraw, '(?ims)^\[MapEditor_Vengeance\]\s*.*?(?=^\[|\z)', '')
+            $profile = @(
+              '',
+              '[MapEditor_Vengeance]',
+              'windowed=true',
+              'renderer=gdi',
+              'singlecpu=false',
+              'fixmousehook=true',
+              'noactivateapp=true',
+              'releasealt=true',
+              'novidmem=true'
+            ) -join [Environment]::NewLine
+            [System.IO.File]::WriteAllText($ddrawIni, ($ddraw.TrimEnd() + [Environment]::NewLine + $profile + [Environment]::NewLine), (New-Object System.Text.UTF8Encoding($false)))
+          }
+
+      - name: Bake A3 and render five pilot sectors
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.Drawing
+
+          $sandbox = "C:\VENGENCE\JA2_RENDER_SANDBOX_$env:GITHUB_RUN_ID"
+          $editor = Join-Path $sandbox 'MapEditor_Vengeance.exe'
+          $previewDir = Join-Path $sandbox 'MAP_PREVIEWS'
+          $statusFile = Join-Path $previewDir 'mapshot_status.txt'
+          $outDir = Join-Path $env:GITHUB_WORKSPACE 'MapPreviews\Pilot5'
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+          function Invoke-Mapshot([string]$MapName, [string]$ExpectedBmp) {
+            Remove-Item -Force -ErrorAction SilentlyContinue $statusFile
+            Remove-Item -Force -ErrorAction SilentlyContinue $ExpectedBmp
+            Write-Host "MAPSHOT -> $MapName"
+            $p = Start-Process -FilePath $editor -ArgumentList "-MAPSHOT=$MapName" -WorkingDirectory $sandbox -PassThru
+            $deadline = (Get-Date).AddSeconds(180)
+            $startupDeadline = (Get-Date).AddSeconds(60)
+            while ((Get-Date) -lt $deadline) {
+              $p.Refresh()
+              if ($p.HasExited) { break }
+              if (Test-Path $statusFile) {
+                $status = (Get-Content $statusFile -Raw -ErrorAction SilentlyContinue).Trim()
+                if ($status -match 'DONE success' -and (Test-Path $ExpectedBmp)) {
+                  Start-Sleep -Seconds 1
+                  $p.Refresh()
+                  if (-not $p.HasExited) {
+                    try { $p.Kill() } catch {}
+                    try { $p.WaitForExit(10000) | Out-Null } catch {}
+                  }
+                  break
+                }
+              } elseif ((Get-Date) -gt $startupDeadline) {
+                break
+              }
+              Start-Sleep -Seconds 2
+            }
+            $p.Refresh()
+            if (-not $p.HasExited) {
+              try { $p.Kill() } catch {}
+              try { $p.WaitForExit(10000) | Out-Null } catch {}
+            }
+            $finalStatus = if (Test-Path $statusFile) { (Get-Content $statusFile -Raw).Trim() } else { '' }
+            if (-not (Test-Path $ExpectedBmp)) { throw "No engine preview for $MapName" }
+            if ($finalStatus -notmatch 'DONE success') { throw "MAPSHOT did not report DONE success for $MapName. Status: $finalStatus" }
+          }
+
+          function Export-Views([string]$Sector, [string]$BmpPath) {
+            $img = [System.Drawing.Bitmap]::FromFile($BmpPath)
+            try {
+              $overview = Join-Path $outDir ($Sector + '_overview.png')
+              $img.Save($overview, [System.Drawing.Imaging.ImageFormat]::Png)
+
+              $halfW = [Math]::Floor($img.Width / 2)
+              $halfH = [Math]::Floor($img.Height / 2)
+              $views = @(
+                @{Name='NW'; X=0; Y=0; W=$halfW; H=$halfH},
+                @{Name='NE'; X=$halfW; Y=0; W=$img.Width-$halfW; H=$halfH},
+                @{Name='SW'; X=0; Y=$halfH; W=$halfW; H=$img.Height-$halfH},
+                @{Name='SE'; X=$halfW; Y=$halfH; W=$img.Width-$halfW; H=$img.Height-$halfH}
+              )
+              foreach ($v in $views) {
+                $rect = New-Object System.Drawing.Rectangle($v.X,$v.Y,$v.W,$v.H)
+                $crop = $img.Clone($rect, $img.PixelFormat)
+                try { $crop.Save((Join-Path $outDir ($Sector + '_' + $v.Name + '.png')), [System.Drawing.Imaging.ImageFormat]::Png) }
+                finally { $crop.Dispose() }
+              }
+            } finally { $img.Dispose() }
+          }
+
+          # A3: force a fresh two-pass remaster bake, never trust the older repository bake.
+          $a3SourceBmp = Join-Path $previewDir 'A3_overview.bmp'
+          Invoke-Mapshot 'A3.dat' $a3SourceBmp
+          $freshA3 = Join-Path $sandbox 'Profiles\UserProfile_Vengeance\MAPS\A3_REMASTERED.dat'
+          if (-not (Test-Path $freshA3)) { throw "Fresh A3 remaster bake not found: $freshA3" }
+          $validationA3 = Join-Path $sandbox 'Data-Maps-Tiles\maps\A3_REMASTERED.dat'
+          Copy-Item -Force $freshA3 $validationA3
+          $a3FinalBmp = Join-Path $previewDir 'A3_REMASTERED_overview.bmp'
+          Invoke-Mapshot 'A3_REMASTERED.dat' $a3FinalBmp
+          Export-Views 'A3_REMASTERED' $a3FinalBmp
+          Copy-Item -Force $freshA3 (Join-Path $outDir 'A3_REMASTERED.dat')
+
+          # Four deliberately different upper-map archetypes.
+          $pilot = @(
+            @{Sector='B1';  Map='B1.dat';  Role='industrial-oil-rig'},
+            @{Sector='B13'; Map='B13.DAT'; Role='airport-built-environment'},
+            @{Sector='C5';  Map='C5.DAT';  Role='san-mona-dense-urban'},
+            @{Sector='D2';  Map='D2.DAT';  Role='forest-sam-military'}
+          )
+
+          $manifest = @()
+          $manifest += [pscustomobject]@{sector='A3_REMASTERED'; role='tropical-farm-remaster'; map='A3_REMASTERED.dat'; remastered=$true}
+
+          foreach ($entry in $pilot) {
+            $bmp = Join-Path $previewDir ($entry.Sector + '_overview.bmp')
+            Invoke-Mapshot $entry.Map $bmp
+            Export-Views $entry.Sector $bmp
+            $manifest += [pscustomobject]@{sector=$entry.Sector; role=$entry.Role; map=$entry.Map; remastered=$false}
+          }
+
+          [pscustomobject]@{
+            source_sha = '${{ github.sha }}'
+            gamedir_sha = '${{ steps.gamedir.outputs.sha }}'
+            generated_utc = (Get-Date).ToUniversalTime().ToString('o')
+            methodology = 'one editor build; isolated Vengeance sandbox; engine MAPSHOT; A3 fresh two-pass remaster; four baseline archetype renders'
+            sectors = $manifest
+          } | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $outDir 'pilot_manifest.json')
+
+      - name: Upload five-map pilot bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: vengeance-five-map-pilot
+          path: MapPreviews/Pilot5/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish pilot previews to canonical branch
+        shell: powershell
+        run: |
+          $git = '${{ steps.git.outputs.path }}'
+          & $git -C $env:GITHUB_WORKSPACE add MapPreviews/Pilot5/*.png MapPreviews/Pilot5/pilot_manifest.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $git -C $env:GITHUB_WORKSPACE diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) { Write-Host 'Pilot previews unchanged.'; exit 0 }
+          & $git -C $env:GITHUB_WORKSPACE config user.name 'github-actions[bot]'
+          & $git -C $env:GITHUB_WORKSPACE config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          & $git -C $env:GITHUB_WORKSPACE commit -m 'Publish five-map remaster pilot previews'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          for ($attempt = 1; $attempt -le 5; $attempt++) {
+            & $git -C $env:GITHUB_WORKSPACE pull --rebase origin install/all-2026-09-12
+            if ($LASTEXITCODE -eq 0) {
+              & $git -C $env:GITHUB_WORKSPACE push origin HEAD:install/all-2026-09-12
+              if ($LASTEXITCODE -eq 0) { exit 0 }
+            }
+            Start-Sleep -Seconds ($attempt * 2)
+          }
+          throw 'Could not publish pilot previews after 5 attempts.'
+
+      - name: Remove render sandbox
+        if: always()
+        shell: powershell
+        run: |
+          $sandbox = "C:\VENGENCE\JA2_RENDER_SANDBOX_$env:GITHUB_RUN_ID"
+          if (-not (Test-Path $sandbox)) { exit 0 }
+          Get-ChildItem -LiteralPath $sandbox -Force -Directory -ErrorAction SilentlyContinue |
+            Where-Object { ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 } |
+            ForEach-Object {
+              cmd /c rmdir "$($_.FullName)"
+              $global:LASTEXITCODE = 0
+            }
+          Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue
