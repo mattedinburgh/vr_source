@@ -103,3 +103,25 @@ The operational layer is now being built around these campaign rules:
 - ASD asset purchasing/runtime.
 
 Those systems stay compile-staged behind default-OFF gates until the operational core is validated.
+
+
+## Army quality doctrine — lore constraint
+
+Deidranna's army must **not** behave like a modern professional Western military.
+
+Design assumptions:
+- the force is heterogeneous: administrators/security personnel, ordinary redshirt soldiers, conscripts, remnants of the old Arulcan military, foreign/hired personnel, and a smaller elite/Blackshirt component;
+- ordinary formations should be brave enough to fight but frequently imperfect in reconnaissance, interpretation, coordination, timing and objective selection;
+- sophisticated operational behaviour is concentrated in elite-heavy formations and important commands rather than being universal;
+- challenge should come from manpower, local presence, defensive depth, reinforcement opportunities, persistence, terrain familiarity and occasional elite response forces — not omniscience, perfect combined-arms doctrine or flawless global coordination;
+- low-quality formations should retain greater randomness, higher legacy-decision fallback, faster intelligence degradation and less reliable execution;
+- elite formations may coordinate substantially better, but still retain friction and uncertainty.
+
+Current command-quality model:
+- administrators/security: nominal quality 15;
+- regular troops: nominal quality 42;
+- elites: nominal quality 82;
+- formation command quality is composition-weighted and capped below perfect competence;
+- operational fallback / decision noise scales with that quality.
+
+This doctrine is a gameplay and lore constraint, not merely difficulty tuning.
