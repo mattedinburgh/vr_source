@@ -3813,12 +3813,32 @@ UINT16 PickARandomItem(UINT8 typeIndex, INT8 bSoldierClass, UINT8 maxCoolness, B
 	UINT32 uiChoice;
 	UINT16 defaultItem = 0;
 	BOOLEAN pickItem = FALSE;
+	INT8 bOriginalSoldierClass = bSoldierClass;
 
 	// Flugente: if accessing with wrong soldier class, or not using different selection choices, take default one
 	if ( bSoldierClass >= SOLDIER_GUN_CHOICE_SELECTIONS || bSoldierClass < SOLDIER_CLASS_NONE || !gGameExternalOptions.fSoldierClassSpecificItemTables )
 		bSoldierClass = SOLDIER_CLASS_NONE;
 
-	if ( gArmyItemChoices[bSoldierClass][ typeIndex ].ubChoices <= 0 )
+	ARMY_GUN_CHOICE_TYPE *pItemChoice = &(gArmyItemChoices[bSoldierClass][ typeIndex ]);
+
+	// VR: preserve class-specific doctrine while letting a controlled share of enemies
+	// draw from the larger generic AIMNAS/Vengeance pool.  The category itself,
+	// coolness, legality and day/night suitability remain hard filters.
+	if ( SOLDIER_CLASS_ENEMY( bOriginalSoldierClass ) &&
+		 bSoldierClass != SOLDIER_CLASS_NONE &&
+		 gArmyItemChoices[SOLDIER_CLASS_NONE][ typeIndex ].ubChoices > 0 &&
+		 EnemyShouldUseBroadEquipmentPool( bOriginalSoldierClass ) )
+	{
+		pItemChoice = &(gArmyItemChoices[SOLDIER_CLASS_NONE][ typeIndex ]);
+	}
+
+	if ( pItemChoice->ubChoices <= 0 &&
+		 gArmyItemChoices[SOLDIER_CLASS_NONE][ typeIndex ].ubChoices > 0 )
+	{
+		pItemChoice = &(gArmyItemChoices[SOLDIER_CLASS_NONE][ typeIndex ]);
+	}
+
+	if ( pItemChoice->ubChoices <= 0 )
 		return 0;
 
 	BOOLEAN isnight = NightTime();
@@ -3827,20 +3847,20 @@ UINT16 PickARandomItem(UINT8 typeIndex, INT8 bSoldierClass, UINT8 maxCoolness, B
 	for (int i=0; i < 10; ++i)
 	{
 		//if we've already tried more times then there are items + 1, limit the looping to speed up the game, and just plain give up
-		if ( i > gArmyItemChoices[bSoldierClass][ typeIndex ].ubChoices )
+		if ( i > pItemChoice->ubChoices )
 			break;
 
 		// a chance for nothing!
-		uiChoice = Random(gArmyItemChoices[bSoldierClass][ typeIndex ].ubChoices + (int) ( gArmyItemChoices[bSoldierClass][ typeIndex ].ubChoices / 3 ));
+		uiChoice = Random(pItemChoice->ubChoices + (int) ( pItemChoice->ubChoices / 3 ));
 
-		if ( uiChoice >= gArmyItemChoices[bSoldierClass][ typeIndex ].ubChoices )
+		if ( uiChoice >= pItemChoice->ubChoices )
 		{
 			if ( !getMatchingCoolness )
 				return 0;
 			else
-				uiChoice = Random(gArmyItemChoices[bSoldierClass][ typeIndex ].ubChoices);
+				uiChoice = Random(pItemChoice->ubChoices);
 		}
-		usItem = gArmyItemChoices[bSoldierClass][ typeIndex ].bItemNo[ uiChoice ];
+		usItem = pItemChoice->bItemNo[ uiChoice ];
 
 		// Flugente: ignore this item if we aren't allowed to pick it at this time of day
 		if ( ( isnight && Item[usItem].usItemChoiceTimeSetting == 1 ) || ( !isnight && Item[usItem].usItemChoiceTimeSetting == 2 ) )
