@@ -468,7 +468,7 @@ static BOOLEAN IsSectorLoadoutMercEligible( SOLDIERTYPE *pSoldier )
 		 pSoldier->bSectorZ == iCurrentMapSectorZ );
 }
 
-static BOOLEAN IsReachableSectorLoadoutItem( const WORLDITEM &worldItem )
+static BOOLEAN IsReachableSectorLoadoutItem( WORLDITEM &worldItem )
 {
 	return ( worldItem.fExists &&
 		 worldItem.bVisible == TRUE &&
@@ -526,7 +526,7 @@ static BOOLEAN IsHandThrownSmokeGrenade( UINT16 usItem )
 	if ( usItem >= MAXITEMS )
 		return FALSE;
 
-	if ( !( Item[usItem].usItemClass & IC_GRENADE ) )
+	if ( Item[usItem].usItemClass != IC_GRENADE )
 		return FALSE;
 
 	// Exclude launcher ammunition/cylinders. We only want a grenade the merc can
