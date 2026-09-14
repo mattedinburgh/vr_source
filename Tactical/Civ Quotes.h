@@ -169,8 +169,42 @@ void PossiblyStartEnemyTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, UINT32 ui
 void StartEnemyTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTarget = NULL ); //enemy taunts - SANDRO // anv: added pTarget argument
 void ShowTauntPopupBox( SOLDIERTYPE *pCiv, STR16 gzTauntQuote );
 
-// VR: visible battlefield command/reaction popups tied to actual AI actions.
+// VR battlefield communication layer. These are semantic events, separate
+// from audio taunt filenames and from the AI action enum.
+enum AI_BATTLE_CALLOUT
+{
+	AI_BATTLE_CALL_NONE = 0,
+	AI_BATTLE_CALL_CONTACT,
+	AI_BATTLE_CALL_ADVANCE,
+	AI_BATTLE_CALL_TAKE_COVER,
+	AI_BATTLE_CALL_FLANK_LEFT,
+	AI_BATTLE_CALL_FLANK_RIGHT,
+	AI_BATTLE_CALL_WITHDRAW,
+	AI_BATTLE_CALL_REGROUP,
+	AI_BATTLE_CALL_RALLY,
+	AI_BATTLE_CALL_SUPPRESS,
+	AI_BATTLE_CALL_GRENADE,
+	AI_BATTLE_CALL_SMOKE,
+	AI_BATTLE_CALL_HEAVY_WEAPON,
+	AI_BATTLE_CALL_MEDIC,
+	AI_BATTLE_CALL_RELOAD,
+	AI_BATTLE_CALL_OUT_OF_AMMO,
+	AI_BATTLE_CALL_CASUALTY,
+	AI_BATTLE_CALL_INCOMING,
+	AI_BATTLE_CALL_SEARCH,
+	AI_BATTLE_CALL_REINFORCE,
+	AI_BATTLE_CALL_VEHICLE,
+	AI_BATTLE_CALL_HOLD,
+	AI_BATTLE_CALL_TARGET_DOWN,
+	AI_BATTLE_CALL_MAX
+};
+
+// Called when the AI actually commits to an executable action.
 void ShowAIActionPopup( SOLDIERTYPE *pCiv, INT8 bAction );
+
+// Public semantic hook for systems whose intent cannot be inferred from bAction
+// alone (medic rescue, cohesion, rally, special contacts, etc.).
+void QueueAICombatCallout( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout );
 
 // sevenfm: voice taunts
 BOOLEAN PlayVoiceTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTarget );
