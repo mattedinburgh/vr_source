@@ -310,7 +310,7 @@ static BOOLEAN StartVRSectorAmbienceLoopForPhase( UINT8 ubPhase )
 
 static void ScheduleNextVRAmbienceOneShot( )
 {
-	const VR_AMBIENCE_PHASE_DATA *pPhase;
+	VR_AMBIENCE_PHASE_DATA *pPhase;
 	UINT32 uiMinTime;
 	UINT32 uiMaxTime;
 	UINT32 uiRange;
