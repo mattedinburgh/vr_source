@@ -5355,6 +5355,11 @@ void InvestigateSector( UINT8 ubSectorID )
 			return;
 		}
 
+		// Scouts have confirmed activity, but not exact hidden composition.
+		VR_ReportOperationalIntel( ubSectorID, 85 );
+		VR_StrategicDiagnosticsIntel( ubSectorID, 85,
+			"adjacent investigation confirmed hostile activity; report remains approximate" );
+
 		//Now we have decided who to send, so send them.
 		for( i = 0; i < 4; i++ )
 		{
@@ -5405,6 +5410,11 @@ void StrategicHandleQueenLosingControlOfSector( INT16 sSectorX, INT16 sSectorY, 
 
 	ubSectorID = SECTOR( sSectorX, sSectorY );
 	pSector = &SectorInfo[ ubSectorID ];
+
+	// Loss of surface control reaches command, but exact hostile strength remains uncertain.
+	VR_ReportOperationalIntel( ubSectorID, 65 );
+	VR_StrategicDiagnosticsIntel( ubSectorID, 65,
+		"surface sector lost; command receives a delayed-quality strategic observation, not exact tactical knowledge" );
 
 	//Keep track of victories and wake up the queen after x number of battles.
 	gusPlayerBattleVictories++;
