@@ -474,7 +474,7 @@ function Expand-VengeanceEquipmentLayers {
         }
 
         if ($missingDefinitions.Count -gt 0) {
-            Write-Host "Missing upstream animation-surface definitions for $Key:" -ForegroundColor Red
+            Write-Host "Missing upstream animation-surface definitions for ${Key}:" -ForegroundColor Red
             $missingDefinitions | Select-Object -First 30 | ForEach-Object { Write-Host "  $_" }
             throw "$Key equipment expansion is incomplete."
         }
