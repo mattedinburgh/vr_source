@@ -99,3 +99,19 @@ Do not apply until the cold asset pilot is visually reviewed:
 3. Keep semantic colours (health red, warning orange/yellow, positive green) distinct.
 4. Avoid changing gameplay feedback colours merely for aesthetics.
 5. Keep all source changes isolated on `art/cold-ui-pilot` until explicitly approved.
+
+
+## Current 1.13 cross-check — concrete matches
+
+A second pass against the current public 1.13 source confirms the key Vengeance constants and asset-loading model are not Vengeance-specific accidents:
+
+- `Tactical/Interface Items.cpp` in current 1.13 still uses the same warm status-bar pair:
+  - `STATUS_BAR_SHADOW FROMRGB(140, 136, 119)`
+  - `STATUS_BAR FROMRGB(201, 172, 133)`
+- `Laptop/BobbyRGuns.cpp` still uses `BOBBYR_ORDER_TEXT_COLOR 75` and `BOBBYR_STATIC_TEXT_COLOR 75`, and loads `gunbackground.sti` plus `gunsgrid.sti`.
+- `Tactical/Interface Panels.cpp` still loads `inventory_bottom_panel_1024x768.STI`, `inventory_gold_front.sti`, `inv_frn.sti`, `Bars.sti`, `bottom_bar_1024x768.sti` and `gold_front.sti`.
+- `Strategic/Map Screen Interface Bottom.cpp` still loads `map_screen_bottom_1024x768.sti` and retains the legacy map-bottom font colour logic.
+
+The useful difference is that current 1.13 has additional widescreen-specific UI handling (for example a 1280x720 map-bottom asset). Vengeance does not currently mirror all of that handling, so this cold pilot deliberately themes the assets Vengeance actually requests rather than importing the newer 1.13 layout wholesale.
+
+This reinforces the chosen approach: preserve JA2/1.13 layout semantics and modernise the Vengeance presentation layer rather than redesigning the UI architecture.
