@@ -61,6 +61,23 @@ this framework, never merged wholesale.
   3. it is visible in Black Box / Companion telemetry;
   4. its interactions with morale, smoke, suppression, movement and retreat are tested.
 
+
+## Consolidation status — 2026-09-14
+
+Integrated onto the unified line:
+
+- persistent sector-local enemy fireteams with coherent reserve release and remnant absorption;
+- Deidranna doctrine profiles that limit initiative/complexity without granting combat-stat bonuses;
+- doctrine-aware crossfire, bounding, independent flanking, proactive support/smoke and mission anchoring;
+- doctrine/fireteam fields in the tactical decision stream for Companion analysis.
+
+Divergent branches are not merged wholesale:
+
+- `ai/team-coordination` is superseded by the newer utility planner and is reference-only;
+- `ai/shared-enemy-militia-brain` has no unique planner interface worth restoring independently;
+- `ai/legacy-core-modernization` remains archaeology until each unique helper is proven to add behaviour not already represented by the unified planner;
+- strategic Companion/Black Box work remains a separate port because it touches a wider strategic/tactical surface.
+
 ## Legacy + modern coexistence
 
 The old Vengeance / 1.13 AI is retained as an execution library, not discarded.
