@@ -1,9 +1,6 @@
 name: strategic-modernization-compile
 
 on:
-  push:
-    branches:
-      - inactive/strategic-modernization
   workflow_dispatch:
 
 jobs:
