@@ -5956,13 +5956,13 @@ UINT8 AILocalRoutPressure(SOLDIERTYPE *pSoldier)
 		// Breaking friends exert social pressure only at local tactical scale.
 		// Escape is the strongest signal; deliberate disengagement is weaker.
 		if (fEscaping)
-			iPressure += 35;
+			iPressure += 30;
 		else if (fDisengaging)
-			iPressure += 20;
+			iPressure += 12; // organized withdrawal is not panic
 		else if (fRunningAway)
-			iPressure += 15;
+			iPressure += 10;
 		else if (fCowering)
-			iPressure += 12;
+			iPressure += 8;
 
 		if (fEstablishedBreak)
 			++ubEstablishedBreakers;
@@ -6047,6 +6047,11 @@ extern UINT32 guiTurnCnt;
 static UINT8 gubAIEscapeIntent[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIEscapeIdentity[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIEscapeStartTurn[MAX_NUM_SOLDIERS] = { 0 };
+// Full-sector rout requires sustained evidence of collapse. These transient arrays
+// deliberately live outside SOLDIERTYPE so savegame layout remains untouched.
+static UINT8 gubAIEscapeCollapseStreak[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAIEscapeCollapseTurnStamp[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAIEscapeCollapseIdentity[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIEscapeLastTurnStamp = 0;
 static UINT8 gubAICompletedEnemyEscapes = 0;
 static INT16 gsAIEscapeSectorX = -1;
@@ -6132,6 +6137,9 @@ static void AIMaintainEscapeTimeline(void)
 			gubAIEscapeIntent[i] = 0;
 			guiAIEscapeIdentity[i] = 0;
 			guiAIEscapeStartTurn[i] = 0;
+			gubAIEscapeCollapseStreak[i] = 0;
+			guiAIEscapeCollapseTurnStamp[i] = 0;
+			guiAIEscapeCollapseIdentity[i] = 0;
 		}
 		gubAICompletedEnemyEscapes = 0;
 	}
@@ -6150,6 +6158,9 @@ static void AIClearEscapeState(SOLDIERTYPE *pSoldier)
 	gubAIEscapeIntent[pSoldier->ubID] = 0;
 	guiAIEscapeIdentity[pSoldier->ubID] = pSoldier->uiUniqueSoldierIdValue;
 	guiAIEscapeStartTurn[pSoldier->ubID] = 0;
+	gubAIEscapeCollapseStreak[pSoldier->ubID] = 0;
+	guiAIEscapeCollapseTurnStamp[pSoldier->ubID] = 0;
+	guiAIEscapeCollapseIdentity[pSoldier->ubID] = pSoldier->uiUniqueSoldierIdValue;
 
 	// Regrouping or recovery can cancel escape after a soldier has already reached
 	// a strategic map edge. Disarm a stale traversal quote as part of clearing the
@@ -6208,59 +6219,202 @@ static void AIResetRecoveryStreak(SOLDIERTYPE *pSoldier);
 static INT32 AIBoundedDecisionJitter(SOLDIERTYPE *pSoldier, UINT32 uiSalt, INT32 iAmplitude);
 static INT32 AIBoundedElementJitter(SOLDIERTYPE *pSoldier, UINT32 uiSalt, INT32 iAmplitude);
 
-static BOOLEAN AIShouldStartEscapeFromState(SOLDIERTYPE *pSoldier, INT8 bSituation, UINT8 ubCasualties, BOOLEAN fLastSurvivor, UINT8 ubRoutPressure)
+// "Hold confidence" is the bridge between raw force ratio and human-like courage.
+// It deliberately rewards a viable fighting position: nearby allies, leadership,
+// cover, good troops, useful weapons and recent success. Stress, personal danger
+// and an established local rout pull the other way. Historical casualties matter,
+// but they are only one input; they never override current combat power by themselves.
+static INT32 AIHoldGroundConfidence(SOLDIERTYPE *pSoldier, INT8 bSituation,
+	UINT8 ubCasualties, BOOLEAN fLastSurvivor, UINT8 ubRoutPressure)
 {
-	// Escape is intentionally much rarer than disengagement. A bad local position is
-	// not enough: the soldier needs evidence that the fight itself is collapsing.
+	if (!pSoldier)
+		return 0;
+
+	INT32 iConfidence = 50;
+
+	switch (bSituation)
+	{
+	case AI_BATTLE_WINNING:      iConfidence += 28; break;
+	case AI_BATTLE_EVEN:         iConfidence += 12; break;
+	case AI_BATTLE_LOSING:       iConfidence -= 10; break;
+	case AI_BATTLE_CATASTROPHIC: iConfidence -= 28; break;
+	default:                      iConfidence -= 5; break;
+	}
+
+	// Training/experience and current weapon quality make troops more willing to
+	// exploit an advantage without granting any hidden CTH/AP bonus.
+	iConfidence += AIProfessionalismModifier(pSoldier);
+	iConfidence += __max(-4, __min(10, ((INT32)pSoldier->stats.bMarksmanship - 60) / 4));
+	iConfidence += __max(-3, __min(8, ((INT32)pSoldier->stats.bExpLevel - 4) * 2));
+	if (AICheckHasGun(pSoldier))
+	{
+		iConfidence += __min(8, (INT32)AIGunDeadliness(pSoldier) / 7);
+		if (AIGunAmmo(pSoldier) == 0)
+			iConfidence -= 12;
+	}
+
+	if (AnyCoverAtSpot(pSoldier, pSoldier->sGridNo))
+		iConfidence += 10;
+	if (SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE))
+		iConfidence += 5;
+
+	UINT8 ubNearbyFriends = AICountNearbyOperationalFriends(
+		pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4);
+	iConfidence += __min(15, (INT32)ubNearbyFriends * 4);
+	if (AIHasNearbyStableLeader(pSoldier))
+		iConfidence += 10;
+
+	switch (pSoldier->aiData.bAIMorale)
+	{
+	case MORALE_HOPELESS:  iConfidence -= 18; break;
+	case MORALE_WORRIED:   iConfidence -= 8; break;
+	case MORALE_CONFIDENT: iConfidence += 8; break;
+	case MORALE_FEARLESS:  iConfidence += 14; break;
+	}
+
+	if (pSoldier->aiData.bOrders == STATIONARY || pSoldier->aiData.bOrders == ONGUARD)
+		iConfidence += 6;
+	else if (pSoldier->aiData.bOrders == SEEKENEMY)
+		iConfidence += 4;
+
+	if (pSoldier->LastAttackHit() ||
+		(pSoldier->usSoldierFlagMask2 & SOLDIER_SUCCESSFUL_ATTACK) ||
+		pSoldier->LastTargetSuppressed())
+	{
+		iConfidence += 8;
+	}
+
+	iConfidence -= AILocalStress(pSoldier) / 4;
+	INT32 iRiskExcess = AIPersonalRisk(pSoldier) - AIPersonalRiskTolerance(pSoldier);
+	if (iRiskExcess > 0)
+		iConfidence -= iRiskExcess / 2;
+
+	iConfidence -= ubRoutPressure / 4;
+
+	// Casualties erode confidence progressively, not as an on/off switch.
+	if (ubCasualties > 40)
+		iConfidence -= (ubCasualties - 40) / 4;
+
 	if (fLastSurvivor)
-		return TRUE;
+		iConfidence -= 18;
 
-	// Near-annihilation can still cause a general flight, but ordinary heavy losses
-	// no longer override a viable or superior surviving force.
+	return __max(0, __min(100, iConfidence));
+}
+
+static UINT8 AIUpdateEscapeCollapseStreak(SOLDIERTYPE *pSoldier, INT8 bSituation,
+	UINT8 ubCasualties, BOOLEAN fLastSurvivor, UINT8 ubRoutPressure,
+	INT32 iHoldConfidence)
+{
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return 0;
+
+	UINT8 ubID = pSoldier->ubID;
+	if (guiAIEscapeCollapseIdentity[ubID] != pSoldier->uiUniqueSoldierIdValue)
+	{
+		gubAIEscapeCollapseStreak[ubID] = 0;
+		guiAIEscapeCollapseTurnStamp[ubID] = 0;
+		guiAIEscapeCollapseIdentity[ubID] = pSoldier->uiUniqueSoldierIdValue;
+	}
+
+	UINT32 uiTurnStamp = guiTurnCnt + 1;
+	if (guiAIEscapeCollapseTurnStamp[ubID] == uiTurnStamp)
+		return gubAIEscapeCollapseStreak[ubID];
+
+	guiAIEscapeCollapseTurnStamp[ubID] = uiTurnStamp;
+
+	INT32 iStress = AILocalStress(pSoldier);
+	BOOLEAN fCollapseSnapshot = FALSE;
+
+	if (fLastSurvivor && iHoldConfidence < 30)
+		fCollapseSnapshot = TRUE;
+	else if (ubCasualties >= 90 && bSituation != AI_BATTLE_WINNING && iHoldConfidence < 35)
+		fCollapseSnapshot = TRUE;
+	else if (bSituation == AI_BATTLE_CATASTROPHIC &&
+		iHoldConfidence < 35 &&
+		(ubCasualties >= 40 || ubRoutPressure >= 55 || iStress >= 60))
+	{
+		fCollapseSnapshot = TRUE;
+	}
+	else if (bSituation == AI_BATTLE_LOSING &&
+		iHoldConfidence < 25 &&
+		ubCasualties >= 55 &&
+		(ubRoutPressure >= 60 || iStress >= 55))
+	{
+		fCollapseSnapshot = TRUE;
+	}
+
+	if (fCollapseSnapshot)
+		gubAIEscapeCollapseStreak[ubID] = __min((UINT8)4,
+			(UINT8)(gubAIEscapeCollapseStreak[ubID] + 1));
+	else if (bSituation == AI_BATTLE_WINNING || bSituation == AI_BATTLE_EVEN ||
+		iHoldConfidence >= 45)
+		gubAIEscapeCollapseStreak[ubID] = 0;
+	else if (gubAIEscapeCollapseStreak[ubID] > 0)
+		--gubAIEscapeCollapseStreak[ubID];
+
+	return gubAIEscapeCollapseStreak[ubID];
+}
+
+static BOOLEAN AIShouldStartEscapeFromState(SOLDIERTYPE *pSoldier,
+	INT8 bSituation, UINT8 ubCasualties, BOOLEAN fLastSurvivor,
+	UINT8 ubRoutPressure, INT32 iHoldConfidence, UINT8 ubCollapseStreak)
+{
+	// A formation that still believes it can hold does not abandon the sector.
+	// It may still take cover, fall back locally or enter organized disengagement.
+	if (bSituation == AI_BATTLE_WINNING || iHoldConfidence >= 55)
+		return FALSE;
+
+	// Even fights should be fought out. Only near-annihilation can override this.
+	if (bSituation == AI_BATTLE_EVEN && ubCasualties < 90)
+		return FALSE;
+
+	if (fLastSurvivor)
+		return (iHoldConfidence < 25 && ubCollapseStreak >= 1);
+
 	if (ubCasualties >= 90 && bSituation != AI_BATTLE_WINNING)
-		return TRUE;
+		return (iHoldConfidence < 30 && ubCollapseStreak >= 1);
 
-	INT32 iRoutThreshold = 70 +
+	INT32 iRoutThreshold = 75 +
 		(AIPersonalRiskTolerance(pSoldier) - 50) / 2 +
 		AIBoundedDecisionJitter(pSoldier, 211u, 4);
-	iRoutThreshold = __max(60, __min(85, iRoutThreshold));
+	iRoutThreshold = __max(65, __min(90, iRoutThreshold));
 
 	if (bSituation == AI_BATTLE_CATASTROPHIC)
 	{
-		INT32 iCasualtyThreshold = 45 + AIProfessionalismModifier(pSoldier) / 2 +
+		INT32 iCasualtyThreshold = 55 + AIProfessionalismModifier(pSoldier) / 2 +
 			AIBoundedDecisionJitter(pSoldier, 223u, 4);
-		iCasualtyThreshold = __max(40, __min(58, iCasualtyThreshold));
+		iCasualtyThreshold = __max(48, __min(68, iCasualtyThreshold));
 
-		if (ubCasualties >= iCasualtyThreshold)
-			return TRUE;
-
-		if (AISeverelyIsolated(pSoldier) &&
-			AILocalStress(pSoldier) >= 65 &&
-			AIPersonalRisk(pSoldier) >= AIPersonalRiskTolerance(pSoldier) + 10)
+		// Truly awful local danger can force a faster break, but otherwise a
+		// catastrophic snapshot must persist into a second tactical turn.
+		if (iHoldConfidence < 15 &&
+			ubCasualties >= iCasualtyThreshold &&
+			AIPersonalRisk(pSoldier) >= AIPersonalRiskTolerance(pSoldier) + 20)
 		{
 			return TRUE;
 		}
 
-		// Social collapse can accelerate a genuinely catastrophic battle, but a couple
-		// of nervous men are not enough to turn a functioning platoon into a rout.
-		if (ubRoutPressure >= __max(55, iRoutThreshold - 5) &&
-			AILocalStress(pSoldier) >= 40)
+		if (ubCollapseStreak >= 2 &&
+			iHoldConfidence < 30 &&
+			(ubCasualties >= iCasualtyThreshold ||
+			 (ubRoutPressure >= iRoutThreshold && AILocalStress(pSoldier) >= 55)))
 		{
 			return TRUE;
 		}
 	}
 
-	// A merely losing fight requires both major losses and a strong local rout
-	// cascade before soldiers abandon the entire sector. Tactical withdrawal and
-	// regrouping remain available well before this threshold.
-	INT32 iLosingEscapeThreshold = 60 + AIProfessionalismModifier(pSoldier) / 2 +
+	// Merely losing is not enough. Full escape requires a sustained multi-turn
+	// collapse with heavy losses and strong social/stress evidence.
+	INT32 iLosingEscapeThreshold = 68 + AIProfessionalismModifier(pSoldier) / 2 +
 		AIBoundedDecisionJitter(pSoldier, 227u, 4);
-	iLosingEscapeThreshold = __max(55, __min(72, iLosingEscapeThreshold));
+	iLosingEscapeThreshold = __max(62, __min(80, iLosingEscapeThreshold));
 
 	if (bSituation == AI_BATTLE_LOSING &&
+		ubCollapseStreak >= 3 &&
+		iHoldConfidence < 22 &&
 		ubCasualties >= iLosingEscapeThreshold &&
 		ubRoutPressure >= iRoutThreshold &&
-		AILocalStress(pSoldier) >= 45)
+		AILocalStress(pSoldier) >= 50)
 	{
 		return TRUE;
 	}
@@ -6300,9 +6454,16 @@ BOOLEAN AIShouldStartEscape(SOLDIERTYPE *pSoldier)
 	if (bSituation == AI_BATTLE_UNKNOWN)
 		return FALSE;
 
-	return AIShouldStartEscapeFromState(pSoldier, bSituation,
-		AIFriendlyCasualtyPercent(pSoldier), AILastSurvivorPressure(pSoldier),
-		AILocalRoutPressure(pSoldier));
+	UINT8 ubCasualties = AIFriendlyCasualtyPercent(pSoldier);
+	BOOLEAN fLastSurvivor = AILastSurvivorPressure(pSoldier);
+	UINT8 ubRoutPressure = AILocalRoutPressure(pSoldier);
+	INT32 iHoldConfidence = AIHoldGroundConfidence(pSoldier, bSituation,
+		ubCasualties, fLastSurvivor, ubRoutPressure);
+	UINT8 ubCollapseStreak = AIUpdateEscapeCollapseStreak(pSoldier, bSituation,
+		ubCasualties, fLastSurvivor, ubRoutPressure, iHoldConfidence);
+
+	return AIShouldStartEscapeFromState(pSoldier, bSituation, ubCasualties,
+		fLastSurvivor, ubRoutPressure, iHoldConfidence, ubCollapseStreak);
 }
 
 static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituation, UINT8 ubCasualties, BOOLEAN fLastSurvivor, UINT8 ubRoutPressure)
@@ -6352,9 +6513,15 @@ static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituati
 		}
 	}
 
+	INT32 iHoldConfidence = AIHoldGroundConfidence(pSoldier, bSituation,
+		ubCasualties, fLastSurvivor, ubRoutPressure);
+	UINT8 ubCollapseStreak = AIUpdateEscapeCollapseStreak(pSoldier, bSituation,
+		ubCasualties, fLastSurvivor, ubRoutPressure, iHoldConfidence);
+
 	if (gubAIEscapeIntent[ubID] == 0 &&
 		bSituation != AI_BATTLE_UNKNOWN &&
-		AIShouldStartEscapeFromState(pSoldier, bSituation, ubCasualties, fLastSurvivor, ubRoutPressure))
+		AIShouldStartEscapeFromState(pSoldier, bSituation, ubCasualties,
+			fLastSurvivor, ubRoutPressure, iHoldConfidence, ubCollapseStreak))
 	{
 		// Fireteam survival beats individual flight. Cohesion owns the actual
 		// reassignment because it can validate a real movement route first; escape
@@ -6430,6 +6597,9 @@ void AIResetRetreatCoordinationStateForLoad(void)
 		gubAIEscapeIntent[i] = 0;
 		guiAIEscapeIdentity[i] = 0;
 		guiAIEscapeStartTurn[i] = 0;
+		gubAIEscapeCollapseStreak[i] = 0;
+		guiAIEscapeCollapseTurnStamp[i] = 0;
+		guiAIEscapeCollapseIdentity[i] = 0;
 
 		gubAIDisengageTurns[i] = 0;
 		gubAIForcedDisengageTurns[i] = 0;
@@ -6680,53 +6850,79 @@ static BOOLEAN AIDisengagementEstablishedForRout(SOLDIERTYPE *pSoldier)
 
 static BOOLEAN AIShouldStartDisengagementFromState(SOLDIERTYPE *pSoldier, INT8 bSituation, UINT8 ubCasualties, BOOLEAN fLastSurvivor, UINT8 ubRoutPressure)
 {
-	if (bSituation == AI_BATTLE_CATASTROPHIC || fLastSurvivor)
-		return TRUE;
+	INT32 iHoldConfidence = AIHoldGroundConfidence(pSoldier, bSituation,
+		ubCasualties, fLastSurvivor, ubRoutPressure);
+	INT32 iStress = AILocalStress(pSoldier);
+	INT32 iRisk = AIPersonalRisk(pSoldier);
+	INT32 iTolerance = AIPersonalRiskTolerance(pSoldier);
 
-	INT32 iRoutThreshold = 40 +
+	// Winning troops hold unless the individual is in genuinely acute danger.
+	if (bSituation == AI_BATTLE_WINNING)
+		return (iHoldConfidence < 30 && iRisk >= iTolerance + 25 && iStress >= 65);
+
+	// Even fights are normally fought out. Tactical fallback remains available
+	// independently, so disengagement is reserved for a local collapse.
+	if (bSituation == AI_BATTLE_EVEN)
+	{
+		return (iHoldConfidence < 25 &&
+			ubCasualties >= 55 &&
+			ubRoutPressure >= 70 &&
+			iStress >= 50 &&
+			iRisk >= iTolerance + 10);
+	}
+
+	if (fLastSurvivor)
+		return (iHoldConfidence < 35 && (iRisk >= iTolerance || iStress >= 55));
+
+	if (bSituation == AI_BATTLE_CATASTROPHIC)
+	{
+		// A strong covered element may keep fighting even when the wider ratio is bad.
+		// Otherwise organized disengagement is appropriate before full rout.
+		if (iHoldConfidence >= 50 && iRisk < iTolerance + 15)
+			return FALSE;
+
+		return (iHoldConfidence < 45 &&
+			(iRisk >= iTolerance ||
+			 iStress >= 50 ||
+			 ubRoutPressure >= 60 ||
+			 ubCasualties >= 50));
+	}
+
+	INT32 iRoutThreshold = 55 +
 		(AIPersonalRiskTolerance(pSoldier) - 50) / 2 +
 		AIBoundedDecisionJitter(pSoldier, 239u, 4);
-	iRoutThreshold = __max(25, __min(60, iRoutThreshold));
+	iRoutThreshold = __max(45, __min(75, iRoutThreshold));
 
 	if (bSituation == AI_BATTLE_LOSING)
 	{
-		INT32 iDisengageThreshold = 30 + AIProfessionalismModifier(pSoldier) / 2 +
-			AIBoundedDecisionJitter(pSoldier, 241u, 3);
-		iDisengageThreshold = __max(25, __min(38, iDisengageThreshold));
+		if (iHoldConfidence >= 60)
+			return FALSE;
 
-		if (ubCasualties >= iDisengageThreshold)
-			return TRUE;
+		INT32 iDisengageThreshold = 48 + AIProfessionalismModifier(pSoldier) / 2 +
+			AIBoundedDecisionJitter(pSoldier, 241u, 4);
+		iDisengageThreshold = __max(42, __min(60, iDisengageThreshold));
 
-		if (AILocalStress(pSoldier) >= 35 &&
-			AIPersonalRisk(pSoldier) >= AIPersonalRiskTolerance(pSoldier))
+		if (iHoldConfidence < 35 &&
+			ubCasualties >= iDisengageThreshold &&
+			(iStress >= 45 || iRisk >= iTolerance + 10))
 		{
 			return TRUE;
 		}
 
-		if (ubRoutPressure >= iRoutThreshold &&
-			(ubCasualties >= 20 || AILocalStress(pSoldier) >= 25))
+		if (iHoldConfidence < 30 &&
+			ubRoutPressure >= iRoutThreshold &&
+			iStress >= 40 &&
+			iRisk >= iTolerance)
 		{
 			return TRUE;
 		}
 	}
 
-	// Even a nominally even fight can locally unravel when casualties are already
-	// meaningful and multiple nearby comrades are visibly breaking contact.
-	INT32 iEvenBreakThreshold = 30 + AIProfessionalismModifier(pSoldier) / 2 +
-		AIBoundedDecisionJitter(pSoldier, 251u, 3);
-	iEvenBreakThreshold = __max(25, __min(38, iEvenBreakThreshold));
-
-	if (bSituation == AI_BATTLE_EVEN &&
-		ubCasualties >= iEvenBreakThreshold &&
-		ubRoutPressure >= __min(70, iRoutThreshold + 15) &&
-		AILocalStress(pSoldier) >= 25)
-	{
-		return TRUE;
-	}
-
-	if (ubCasualties >= 50 &&
+	if (ubCasualties >= 65 &&
 		bSituation != AI_BATTLE_WINNING &&
-		AISeverelyIsolated(pSoldier))
+		AISeverelyIsolated(pSoldier) &&
+		iHoldConfidence < 30 &&
+		iRisk >= iTolerance)
 	{
 		return TRUE;
 	}
