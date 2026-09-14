@@ -330,6 +330,7 @@ extern INT32		giCurrentTilesetID;
 
 extern HVOBJECT		hRenderVObject;
 extern UINT32		gSurfaceMemUsage;
+extern CHAR8		TileSurfaceFilenames[NUMBEROFTILETYPES][32];
 
 extern CHAR8		gzLastLoadedFile[ 260 ];
 
@@ -361,6 +362,7 @@ void TraceB1RemasterLoad( const STR8 pStage, const STR8 pDetail );
 UINT8 GetMapFactoryCurrentVisualProfile( void );
 UINT32 GetMapFactorySurfaceSeenCount( void );
 UINT32 GetMapFactoryPaletteGradedCount( void );
+UINT32 GetMapFactoryTrueColorGradedCount( void );
 UINT32 GetMapFactoryNonPaletteSkippedCount( void );
 
 void CompileWorldMovementCosts(void);//dnl ch56 151009
