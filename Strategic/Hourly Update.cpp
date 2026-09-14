@@ -144,6 +144,8 @@ CHAR16	zString[128];
 	// Operational reports are local formation knowledge and grow stale even while
 	// the legacy Queen AI remains the strategic decision authority.
 	VR_DecayOperationalIntelHourly();
+	VR_UpdateOperationalReadinessHourly();
+	VR_TraceOperationalRecommendationsHourly();
 
 #ifdef JA2UB
 // no UB
