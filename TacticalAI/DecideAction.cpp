@@ -3211,22 +3211,6 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 	}
 
 
-	// Building-aware CQB is deliberately below *all* RED survival/fallback layers.
-	// At this point emergency protection, cohesion, disengagement, casualty response,
-	// hopeless-survivor logic, tactical fallback and personal-risk withdrawal have all
-	// had first refusal. CQB may now shape the remaining building fight before the
-	// generic RED radio/seek/help/hide movement tree.
-	if (!fCivilian &&
-		!gfHiddenInterrupt &&
-		!gTacticalStatus.fInterruptOccurred &&
-		pSoldier->bTeam == ENEMY_TEAM &&
-		AICombatTeam(pSoldier))
-	{
-		INT8 bCQBAction = VRCQB_DecideAction(pSoldier, ubCanMove, TRUE);
-		if (bCQBAction != AI_ACTION_NONE)
-			return bCQBAction;
-	}
-
 	// In RED state there is no direct close contact. A viable casualty response should
 	// therefore outrank opportunistic sniper/mortar/support actions.
 	if (AICombatTeam(pSoldier) && AICheckIsMedic(pSoldier))
@@ -3246,6 +3230,22 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		INT8 bCasualtyAction = DecideCombatCasualtyResponse(pSoldier, ubCanMove);
 		if (bCasualtyAction != AI_ACTION_NONE)
 			return bCasualtyAction;
+	}
+
+	// Building-aware CQB is deliberately below *all* RED survival/fallback layers.
+	// At this point emergency protection, cohesion, disengagement, casualty response,
+	// hopeless-survivor logic, tactical fallback and personal-risk withdrawal have all
+	// had first refusal. CQB may now shape the remaining building fight before the
+	// generic RED radio/seek/help/hide movement tree.
+	if (!fCivilian &&
+		!gfHiddenInterrupt &&
+		!gTacticalStatus.fInterruptOccurred &&
+		pSoldier->bTeam == ENEMY_TEAM &&
+		AICombatTeam(pSoldier))
+	{
+		INT8 bCQBAction = VRCQB_DecideAction(pSoldier, ubCanMove, TRUE);
+		if (bCQBAction != AI_ACTION_NONE)
+			return bCQBAction;
 	}
 
 	// If we don't have a gun, enemy combatants may scavenge one when the local
