@@ -94,6 +94,35 @@ Canonical interfaces include:
 - `AIAllowsIndependentFlank`
 - `AIAllowsProactiveSupport`
 
+#### Deidranna doctrine profiles
+
+Deidranna's army is intentionally heterogeneous. Doctrine changes initiative, anchoring and planning complexity,
+not CTH, AP, sight, health, weapon performance or hidden information.
+
+| Profile | Main mapping | Initiative | Anchoring | Complex manoeuvre |
+| --- | --- | --- | --- | --- |
+| SECURITY | administrators/security troops | very low | very high | no independent complex manoeuvre |
+| LINE | ordinary army | low/moderate | moderate | only with nearby command |
+| VETERAN | leaders and level 6+ regulars | moderate/high | lower | yes |
+| ELITE_MOBILE | mobile elites | high | low | yes |
+| ELITE_GUARD | stationary/guard/sniper elites | high tactical skill | high | yes, objective-focused |
+
+A nearby active commander can raise LINE troops from simple covered movement into coordinated local
+fire-and-manoeuvre, proactive suppression/smoke and fuller casualty-response behaviour. The effect is local:
+incapacitated, cowering, disengaging or distant leaders do not provide magical sector-wide command.
+
+Contact/QRF doctrine retains local garrisons instead of emptying a facility into every firefight. Typical response
+baselines are SECURITY 2 (hard cap 3), LINE 4, VETERAN 5, ELITE_MOBILE 6 and ELITE_GUARD 4 (hard cap 5).
+`ONCALL` and `SEEKENEMY` can increase mobile response within those final caps. Mapper orders remain authoritative.
+
+Lower-quality formations remain visibly imperfect: SECURITY does not independently solve exposed advance/CQB
+geometry; uncommanded LINE uses simpler support and one-mover-style coordination; advanced crossfire, alternate
+entry, proactive movement smoke and unsupported improvisational manoeuvre require command, veteran or elite quality.
+Emergency survival smoke and ordinary self-preservation remain available regardless of doctrine.
+
+Militia shares the human-like tactical core but does not inherit Deidranna-specific command, anchoring or QRF
+restrictions.
+
 ### 3. Persistent local organization
 
 Enemy/militia combatants are organized into transient sector-local fireteams.
