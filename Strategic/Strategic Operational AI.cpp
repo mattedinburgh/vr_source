@@ -312,6 +312,35 @@ GROUP *VR_FindReadyOperationalReserve()
 	return pBest;
 }
 
+UINT8 VR_GetFormationCommandQuality( GROUP *pGroup )
+{
+	if( !VR_IsEnemyFormation( pGroup ) || pGroup->ubGroupSize == 0 )
+		return 25;
+
+	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+	INT32 iWeighted =
+		(INT32)pEnemy->ubNumAdmins * 15 +
+		(INT32)pEnemy->ubNumTroops * 42 +
+		(INT32)pEnemy->ubNumElites * 82;
+	INT32 iCount =
+		(INT32)pEnemy->ubNumAdmins +
+		(INT32)pEnemy->ubNumTroops +
+		(INT32)pEnemy->ubNumElites;
+
+	if( iCount <= 0 )
+		return 25;
+
+	// Deidranna's force is intentionally not modelled as a uniformly professional army.
+	// Even elite-heavy groups retain some friction and command mistakes.
+	INT32 iQuality = iWeighted / iCount;
+	if( iQuality < 15 )
+		iQuality = 15;
+	if( iQuality > 82 )
+		iQuality = 82;
+
+	return (UINT8)iQuality;
+}
+
 static UINT8 VR_EstimateStrengthWithConfidence( INT32 iObservedStrength, UINT8 ubConfidence )
 {
 	INT32 iEstimate = iObservedStrength;
@@ -591,7 +620,12 @@ void VR_HourlyOperationalUpdate()
 
 			if( pEnemy->ubOperationalIntelConfidence > 0 )
 			{
+				UINT8 ubCommandQuality = VR_GetFormationCommandQuality( pGroup );
 				UINT8 decay = ( pEnemy->usOperationalFlags & VR_OPFLAG_RECENT_CONTACT ) ? 1 : 3;
+				if( ubCommandQuality < 35 )
+					decay += 2;
+				else if( ubCommandQuality < 55 )
+					decay += 1;
 				pEnemy->ubOperationalIntelConfidence =
 					( pEnemy->ubOperationalIntelConfidence > decay ) ?
 					pEnemy->ubOperationalIntelConfidence - decay : 0;
