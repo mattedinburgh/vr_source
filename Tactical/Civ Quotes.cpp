@@ -2083,6 +2083,11 @@ static void FlushPendingAICombatCallout()
 	ShowAICombatCalloutNow( pCiv, ubCallout );
 }
 
+static BOOLEAN AICombatSoldierIsTank( SOLDIERTYPE *pSoldier )
+{
+	return pSoldier && (pSoldier->ubBodyType == TANK_NE || pSoldier->ubBodyType == TANK_NW);
+}
+
 static AI_BATTLE_CALLOUT AICombatCalloutFromTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTarget )
 {
 	switch ( iTauntType )
@@ -2111,7 +2116,7 @@ static AI_BATTLE_CALLOUT AICombatCalloutFromTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE 
 		case TAUNT_NOTICED_UNSEEN:
 			return AI_BATTLE_CALL_INCOMING;
 		case TAUNT_INFORM_ABOUT:
-			return (pTarget && TANK(pTarget)) ? AI_BATTLE_CALL_VEHICLE : AI_BATTLE_CALL_CONTACT;
+			return AICombatSoldierIsTank( pTarget ) ? AI_BATTLE_CALL_VEHICLE : AI_BATTLE_CALL_CONTACT;
 		case TAUNT_GOT_HIT_BLOODLOSS:
 			return AI_BATTLE_CALL_MEDIC;
 		case TAUNT_GOT_HIT:
@@ -2150,7 +2155,7 @@ static SOLDIERTYPE * AICombatActionTarget( SOLDIERTYPE *pCiv )
 static BOOLEAN AICombatTargetIsVehicle( SOLDIERTYPE *pCiv )
 {
 	SOLDIERTYPE *pTarget = AICombatActionTarget( pCiv );
-	return pTarget && pTarget->bActive && pTarget->bInSector && TANK( pTarget );
+	return pTarget && pTarget->bActive && pTarget->bInSector && AICombatSoldierIsTank( pTarget );
 }
 
 static BOOLEAN AICivilianNearActionTarget( SOLDIERTYPE *pCiv )
