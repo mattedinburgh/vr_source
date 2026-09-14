@@ -14,6 +14,15 @@ RULES=[
  (("road",),"roadside"),
  (("hills","plains"),"open_country"),
 ]
+SURFACE_MAPS={
+    "a1.dat":"Tropical","A2.dat":"Oronegro","A3.dat":"Oronegro","A6.DAT":"Hills","A7.DAT":"Hills","A8.dat":"Army Outpost","A9.dat":"Omerta","A10.dat":"Omerta","A11.dat":"Farmland","A12.DAT":"Forest","A13.DAT":"Woods","A14.DAT":"Plains","A15.DAT":"Forest",
+    "B1.dat":"Oronegro Oil Rig","b2.dat":"Oronegro","B3.DAT":"Woods","B4.DAT":"Woods","B5.DAT":"Farmland","B6.DAT":"Farmland","B7.DAT":"Plains","B8.DAT":"Farmland","b9.dat":"Training Camp","b10.dat":"Omerta","b11.dat":"Woods","b12.dat":"Farm, road","b13.dat":"Drassen Airport","B14.DAT":"Drassen","B15.DAT":"Swamp","B16.DAT":"Forest",
+    "c1.dat":"Oronegro","c2.dat":"Tropical, road","C3.DAT":"Tropical, road","C4.DAT":"Woods","c5.dat":"San Mona","C6.DAT":"San Mona","c7.dat":"Plains, road","c8.dat":"Woods","c9.dat":"Plains, road","c10.dat":"Woods","c11.dat":"Rebel Outpost","c12.dat":"Woods","c13.dat":"Drassen","c14.dat":"Water","C15.DAT":"Swamp","c16.dat":"Swamp",
+    "d2.dat":"SAM Site","D3.DAT":"Plains, road","D4.DAT":"San Mona Mine","D5.DAT":"San Mona","D6.DAT":"Farmland","D7.DAT":"Forest, road","D8.DAT":"Forest","d9.dat":"Field Hospital","d10.dat":"Plains","D11.DAT":"Woods","d12.dat":"Swamp","d13.dat":"Drassen Mine","d14.dat":"Arulco Dam","d15.dat":"SAM Site","d16.dat":"Forest",
+    "E2.DAT":"Tropical","E3.DAT":"Plains, road","E4.DAT":"Hills","E5.DAT":"Hills","E6.DAT":"Plains","E7.DAT":"Farm, road","e8.dat":"Farmland","e9.dat":"Farm, road","E10.DAT":"Swamp","E11.DAT":"Woods","E12.DAT":"Woods","e13.dat":"Water","E14.DAT":"Swamp","e15.dat":"Forest, road",
+    "f2.dat":"Coastline","f3.dat":"Plains, road","F4.DAT":"Hills","f5.dat":"Hills","F6.DAT":"Hills","f7.dat":"Salinas","f8.dat":"Salinas, Hospital","f9.dat":"Salinas","f10.dat":"Distribution Centre","f11.dat":"Plains","f12.dat":"Woods","f13.dat":"Woods","f14.dat":"Plains, road","f15.dat":"Checkpoint"
+}
+
 MODULES={
  "farmland":[("SECONDDECORATIONS",1),("SECONDDECORATIONS",2),("DEBRISWEEDS",9),("DEBRISGRASS",2)],
  "wilderness":[("DEBRISWEEDS",1),("DEBRISROCKS",2),("DEBRISWOOD",3),("DEBRISGRASS",1)],
@@ -35,11 +44,14 @@ def archetype(name):
         if any(n in t for n in needles): return a
     return "open_country"
 
-def manifest(path):
-    with Path(path).open(newline="",encoding="utf-8-sig") as f: rows=list(csv.DictReader(f))
-    for r in rows:
-        r["key"]=key(r["map_file"]); r["archetype"]=archetype(r.get("campaign_name",""))
-    return rows
+def manifest(path=None):
+    if path and Path(path).exists():
+        with Path(path).open(newline="",encoding="utf-8-sig") as f:
+            rows=list(csv.DictReader(f))
+        for r in rows:
+            r["key"]=key(r["map_file"]); r["archetype"]=archetype(r.get("campaign_name",""))
+        return rows
+    return [{"map_file":m,"campaign_name":n,"priority":"surface","key":key(m),"archetype":archetype(n)} for m,n in SURFACE_MAPS.items()]
 
 def profile(path):
     out=[]
@@ -123,7 +135,7 @@ def cmd_next(a):
 
 def main():
     p=argparse.ArgumentParser(); s=p.add_subparsers(dest="cmd",required=True)
-    q=s.add_parser("plan"); q.add_argument("--manifest",default="MapFactory/top_rows_A-F.csv"); q.add_argument("--pilot",action="store_true"); q.set_defaults(fn=cmd_plan)
+    q=s.add_parser("plan"); q.add_argument("--manifest",default=""); q.add_argument("--pilot",action="store_true"); q.set_defaults(fn=cmd_plan)
     q=s.add_parser("recipe"); q.add_argument("--manifest",default="MapFactory/top_rows_A-F.csv"); q.add_argument("--sector",required=True); q.add_argument("--profile",required=True); q.add_argument("--output",required=True); q.add_argument("--meta"); q.add_argument("--strategy",choices=STRATEGIES,default=STRATEGIES[0]); q.set_defaults(fn=cmd_recipe)
     q=s.add_parser("next"); q.add_argument("--strategy",choices=STRATEGIES,required=True); q.add_argument("--bake-ok",action="store_true"); q.add_argument("--visual-changed",action="store_true"); q.add_argument("--reason",default=""); q.set_defaults(fn=cmd_next)
     a=p.parse_args(); return a.fn(a)
