@@ -1450,34 +1450,20 @@ static void DressA3FarmEnvironment( void )
 		UINT32 uiFieldEdges = 0;
 		UINT32 uiPieces = 0;
 
-		// FIELD A: north/east cultivated plot. Long repeated planting rows with
-		// deliberate access breaks.  Every row is authored from the same visual
-		// vocabulary so it reads as one field rather than scattered foliage.
-		for ( INT32 sRow = 38; sRow <= 58; sRow += 5 )
+		// FIELD A: the existing south-central authored crop field.  Grid placement
+		// was back-projected from the real A3 engine overview, so this pass reinforces
+		// the field that is visibly there instead of inventing rows across roads/buildings.
+		for ( INT32 sRow = 112; sRow <= 142; sRow += 5 )
 		{
-			for ( INT32 sCol = 82; sCol <= 110; sCol += 6 )
+			for ( INT32 sCol = 92; sCol <= 122; sCol += 6 )
 			{
-				if ( sCol == 94 || sCol == 100 )
-					continue; // tractor/service lane
-				const INT32 sAnchor = sRow * WORLD_COLS + sCol;
-				const UINT16 usPlaced = ((sRow / 5 + sCol / 6) & 1)
-					? A3PlaceFarmVisualBlock( sAnchor, gA3CropStripA, 4, FALSE )
-					: A3PlaceFarmVisualBlock( sAnchor, gA3CropStripB, 4, FALSE );
-				if ( usPlaced ) { ++uiCropBlocks; uiPieces += usPlaced; }
-			}
-		}
-
-		// FIELD B: main south/central field. Mature crop alternates with visible
-		// harvested breaks, making a deliberately worked agricultural pattern.
-		for ( INT32 sRow = 84; sRow <= 103; sRow += 5 )
-		{
-			for ( INT32 sCol = 50; sCol <= 86; sCol += 7 )
-			{
-				if ( sRow == 94 || sRow == 99 )
-					continue; // broad cross-field working lane
+				// Two short gaps form a central service/tractor break instead of a
+				// continuous crop wall.
+				if ( (sCol == 104 || sCol == 110) && sRow >= 122 && sRow <= 132 )
+					continue;
 				const INT32 sAnchor = sRow * WORLD_COLS + sCol;
 				UINT16 usPlaced = 0;
-				if ( sCol == 64 || sCol == 78 )
+				if ( (sRow == 117 || sRow == 137) && (sCol == 98 || sCol == 116) )
 				{
 					usPlaced = A3PlaceFarmVisualBlock( sAnchor, gA3HarvestBreak, 6, FALSE );
 					if ( usPlaced ) ++uiHarvestBlocks;
@@ -1488,28 +1474,45 @@ static void DressA3FarmEnvironment( void )
 			}
 		}
 
-		// FIELD C: smaller western plot, intentionally lower-density so the sector
-		// has different crop ages instead of one repeated texture everywhere.
-		for ( INT32 sRow = 43; sRow <= 63; sRow += 6 )
+		// FIELD B: north-east clearing.  This is deliberately a younger/lower field
+		// so A3 has a second crop age and silhouette. Existing palms/objects naturally
+		// punch irregular holes because the block placer refuses occupied grids.
+		for ( INT32 sRow = 10; sRow <= 32; sRow += 5 )
 		{
-			for ( INT32 sCol = 22; sCol <= 48; sCol += 7 )
+			for ( INT32 sCol = 74; sCol <= 109; sCol += 7 )
 			{
-				if ( sCol == 36 ) continue;
+				if ( sCol == 95 )
+					continue; // narrow access strip through the plot
 				const INT32 sAnchor = sRow * WORLD_COLS + sCol;
 				const UINT16 usPlaced = A3PlaceFarmVisualBlock(
-					sAnchor, ((sRow + sCol) & 1) ? gA3CropStripA : gA3CropPatch,
+					sAnchor, ((sRow / 5) & 1) ? gA3CropStripB : gA3CropPatch,
 					4, FALSE );
 				if ( usPlaced ) { ++uiCropBlocks; uiPieces += usPlaced; }
 			}
 		}
 
-		// Irrigation follows the main field margins and the working lane; it is not
-		// sprayed through the whole map.
+		// FIELD C: small western edge plot.  Keep this intentionally sparse/young:
+		// the overview shows heavy tropical growth here, so the authored vegetation
+		// remains dominant and only safe clear cells become cultivated pockets.
+		for ( INT32 sRow = 100; sRow <= 126; sRow += 6 )
+		{
+			for ( INT32 sCol = 4; sCol <= 32; sCol += 7 )
+			{
+				const INT32 sAnchor = sRow * WORLD_COLS + sCol;
+				const UINT16 usPlaced = A3PlaceFarmVisualBlock(
+					sAnchor, gA3CropStripB, 4, FALSE );
+				if ( usPlaced ) { ++uiCropBlocks; uiPieces += usPlaced; }
+			}
+		}
+
+		// Irrigation follows the two real field margins rather than arbitrary sector
+		// rectangles.  The western pocket stays dry/low-tech.
 		const INT32 sIrrigationAnchors[] =
 		{
-			40 * WORLD_COLS + 78, 46 * WORLD_COLS + 78, 52 * WORLD_COLS + 78,
-			58 * WORLD_COLS + 78, 82 * WORLD_COLS + 46, 90 * WORLD_COLS + 46,
-			98 * WORLD_COLS + 46, 106 * WORLD_COLS + 46
+			112 * WORLD_COLS + 88, 120 * WORLD_COLS + 88,
+			128 * WORLD_COLS + 88, 136 * WORLD_COLS + 88,
+			35 * WORLD_COLS + 76, 35 * WORLD_COLS + 90,
+			35 * WORLD_COLS + 104, 18 * WORLD_COLS + 70
 		};
 		for ( UINT8 i = 0; i < (UINT8)(sizeof(sIrrigationAnchors)/sizeof(sIrrigationAnchors[0])); ++i )
 		{
@@ -1518,11 +1521,14 @@ static void DressA3FarmEnvironment( void )
 			if ( usPlaced ) { ++uiIrrigationBlocks; uiPieces += usPlaced; }
 		}
 
-		// Working-yard compositions around the authored farm buildings. These
-		// anchors were already audited against the real A3 map in the earlier pass.
+		// Working-yard compositions now use a small set of visually audited anchors:
+		// three around the central/right farm buildings, two beside the large north-west
+		// barn, one by the south-west building group and one at the main field headland.
 		const INT32 sYardAnchors[] =
 		{
-			10914, 11111, 10498, 17194, 17671, 18794, 19430, 18152, 18956, 20232
+			10914, 11111, 10498,
+			11220, 13148,
+			22460, 18968
 		};
 		for ( UINT8 i = 0; i < (UINT8)(sizeof(sYardAnchors)/sizeof(sYardAnchors[0])); ++i )
 		{
