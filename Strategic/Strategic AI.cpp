@@ -3441,8 +3441,8 @@ void EvaluateQueenSituation()
 		if( iRandom < iWeight )
 		{
 			CHAR8 zReason[192];
-			sprintf( zReason, "selected by weighted roll; candidate defence=%u, legacy defence argument=%u",
-				usApplicableGarrisonDefencePoints[i], usDefencePoints );
+			sprintf( zReason, "selected by weighted roll; selected candidate defence estimate=%u",
+				usApplicableGarrisonDefencePoints[i] );
 			VR_CampaignRecord( "CHOICE", "garrison", iApplicableGarrisonIds[i],
 				gGarrisonGroup[ iApplicableGarrisonIds[i] ].ubPendingGroupID,
 				-1, gGarrisonGroup[ iApplicableGarrisonIds[i] ].ubSectorID, iWeight, iRandom, zReason );
