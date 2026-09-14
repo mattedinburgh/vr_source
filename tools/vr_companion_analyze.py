@@ -233,6 +233,70 @@ def battle_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def strategic_mobility_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    orders = [
+        event for event in events if event.get("kind") == "strategic_move_order"
+    ]
+    arrivals = [
+        event for event in events if event.get("kind") == "strategic_group_arrived"
+    ]
+
+    # Pair an arrival with the latest preceding order for the same group and
+    # session whose target matches the arrival sector. This handles redirects.
+    orders_by_group: Dict[Tuple[Any, Any], List[Dict[str, Any]]] = defaultdict(list)
+    for order in orders:
+        orders_by_group[(order.get("session"), order.get("group_id"))].append(order)
+    for seq in orders_by_group.values():
+        seq.sort(key=lambda event: int(event.get("seq", 0)))
+
+    matched = 0
+    travel_minutes: List[float] = []
+    unmatched_arrivals = 0
+    assignments = Counter()
+
+    for arrival in arrivals:
+        assignments[arrival.get("assignment", "unknown")] += 1
+        candidates = orders_by_group.get(
+            (arrival.get("session"), arrival.get("group_id")), []
+        )
+        prior = [
+            order
+            for order in candidates
+            if int(order.get("seq", 0)) < int(arrival.get("seq", 0))
+            and order.get("target_sector") == arrival.get("sector")
+        ]
+        if not prior:
+            unmatched_arrivals += 1
+            continue
+        order = prior[-1]
+        matched += 1
+        start = order.get("world_minutes")
+        end = arrival.get("world_minutes")
+        if isinstance(start, (int, float)) and isinstance(end, (int, float)):
+            travel_minutes.append(max(0.0, float(end) - float(start)))
+
+    ordered_groups = {
+        (event.get("session"), event.get("group_id"), event.get("target_sector"))
+        for event in orders
+    }
+    arrived_groups = {
+        (event.get("session"), event.get("group_id"), event.get("sector"))
+        for event in arrivals
+    }
+    outstanding = len(ordered_groups - arrived_groups)
+
+    return {
+        "orders": len(orders),
+        "arrivals": len(arrivals),
+        "matched_arrivals": matched,
+        "unmatched_arrivals": unmatched_arrivals,
+        "outstanding_order_keys": outstanding,
+        "arrival_match_rate": pct(matched, len(arrivals)),
+        "avg_travel_minutes": safe_mean(travel_minutes),
+        "assignments": dict(assignments.most_common()),
+    }
+
+
 def strategic_summary(
     events: List[Dict[str, Any]], decisions: Dict[Tuple[Any, int], Dict[str, Any]]
 ) -> Dict[str, Any]:
@@ -302,6 +366,7 @@ def summarize(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         "session": session_summary(events),
         "battle": battle_summary(events),
         "tactical": tactical_summary(events, decisions),
+        "strategic_mobility": strategic_mobility_summary(events),
         "strategic": strategic_summary(events, decisions),
     }
 
@@ -327,6 +392,8 @@ def comparison_rows(current: Dict[str, Any], baseline: Dict[str, Any]) -> List[T
         ("Battle average player-count delta", "battle", "avg_player_count_delta"),
         ("Battle average enemy-count delta", "battle", "avg_enemy_count_delta"),
         ("Cover - attack adjusted score", "tactical", "avg_cover_minus_attack_score"),
+        ("Strategic move arrival match rate %", "strategic_mobility", "arrival_match_rate"),
+        ("Strategic average travel minutes", "strategic_mobility", "avg_travel_minutes"),
         ("Strategic no-action rate %", "strategic", "no_action_rate"),
         ("Strategic candidates / decision", "strategic", "avg_candidates_per_decision"),
         ("Strategic average candidate score", "strategic", "avg_candidate_score"),
@@ -345,6 +412,7 @@ def recommendations(summary: Dict[str, Any], baseline: Optional[Dict[str, Any]])
     findings: List[str] = []
     battle = summary["battle"]
     tac = summary["tactical"]
+    mobility = summary["strategic_mobility"]
     strat = summary["strategic"]
 
     if battle["unresolved"]:
@@ -385,6 +453,16 @@ def recommendations(summary: Dict[str, Any], baseline: Optional[Dict[str, Any]])
                 f"(average adjusted attack advantage {-gap:.1f}). Check exposure and casualty outcomes."
             )
 
+    if mobility["unmatched_arrivals"]:
+        findings.append(
+            f"Strategic execution trace has {mobility['unmatched_arrivals']} arrival(s) without a matching move order. "
+            "Treat this as a Black Box coverage or group-redirection issue before drawing balance conclusions."
+        )
+    if mobility["outstanding_order_keys"] >= 3:
+        findings.append(
+            f"There are {mobility['outstanding_order_keys']} strategic move target(s) without a recorded arrival. "
+            "Some may still be in transit; use world_minutes and group IDs to separate delay from pathing/reassignment failures."
+        )
     if strat["no_action_rate"] > 50.0 and strat["commits"] >= 5:
         findings.append(
             f"Strategic AI selected no action in {strat['no_action_rate']:.1f}% of recorded decisions. "
@@ -431,6 +509,7 @@ def render_markdown(
 ) -> str:
     battle = summary["battle"]
     tac = summary["tactical"]
+    mobility = summary["strategic_mobility"]
     strat = summary["strategic"]
 
     lines: List[str] = [
@@ -500,6 +579,17 @@ def render_markdown(
         f"| No-action selections | {strat['no_action']} ({strat['no_action_rate']:.1f}%) |",
         f"| Candidates / decision | {strat['avg_candidates_per_decision']:.2f} |",
         f"| Mean eligible candidate score | {fmt(strat['avg_candidate_score'])} |",
+        "",
+        "### Strategic movement execution",
+        "",
+        "| Metric | Result |",
+        "|---|---:|",
+        f"| Move orders | {mobility['orders']} |",
+        f"| Arrivals | {mobility['arrivals']} |",
+        f"| Matched arrivals | {mobility['matched_arrivals']} ({mobility['arrival_match_rate']:.1f}%) |",
+        f"| Unmatched arrivals | {mobility['unmatched_arrivals']} |",
+        f"| Outstanding move targets | {mobility['outstanding_order_keys']} |",
+        f"| Mean matched travel time | {fmt(mobility['avg_travel_minutes'])} campaign minutes |",
         "",
         "### Strategic selections",
         "",
