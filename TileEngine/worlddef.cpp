@@ -154,6 +154,7 @@ static UINT8 gubSectorVisualProfile = SECTOR_VISUAL_DEFAULT;
 static UINT8 gubLoadedSectorVisualProfile = 0xFF;
 static UINT32 guiMapFactorySurfaceSeen = 0;
 static UINT32 guiMapFactoryPaletteSurfaceGraded = 0;
+static UINT32 guiMapFactoryTrueColorSurfaceGraded = 0;
 static UINT32 guiMapFactoryNonPaletteSurfaceSkipped = 0;
 
 static BOOLEAN IsMapFactoryVisualProfileValue( UINT8 ubProfile )
@@ -2409,6 +2410,115 @@ static UINT8 GradeSectorVisualComponent( INT32 component, INT32 luma, INT32 satu
 	return ClampSectorVisualComponent( value );
 }
 
+static void MapFactoryGradeTrueColorSurface( HVOBJECT pObject, UINT32 ubType )
+{
+	if ( pObject == NULL || pObject->ubBitDepth != 32 || pObject->p16BPPObject == NULL )
+		return;
+
+	const BOOLEAN fTerrain = ( ubType >= FIRSTTEXTURE && ubType <= SEVENTHTEXTURE );
+	const BOOLEAN fGreen = ( (ubType >= THIRDTEXTURE && ubType <= SIXTHTEXTURE) ||
+		(ubType >= FIRSTOSTRUCT && ubType <= SEVENTHOSTRUCT) ||
+		ubType == FIRSTFULLSTRUCT || ubType == SECONDFULLSTRUCT );
+	const BOOLEAN fWall = ( ubType >= FIRSTWALL && ubType <= LASTDOOR );
+	const BOOLEAN fRoof = ( ubType >= FIRSTROOF && ubType <= LASTSLANTROOF );
+	const BOOLEAN fRoad = ( (ubType >= FIRSTROAD && ubType <= LASTROAD) || ubType == ROADPIECES );
+	const BOOLEAN fFloor = ( ubType >= FIRSTFLOOR && ubType <= LASTFLOOR );
+	const BOOLEAN fMachinery =
+		ubType == EIGHTOSTRUCT || ubType == THRIDISTRUCT ||
+		ubType == FIRSTVEHICLE || ubType == SECONDVEHICLE ||
+		ubType == TENTHOSTRUCT || ubType == FENCESTRUCT;
+	const BOOLEAN fDebris =
+		ubType == DEBRISROCKS || ubType == DEBRISWOOD || ubType == DEBRISSAND ||
+		ubType == DEBRISWEEDS || ubType == DEBRISGRASS || ubType == DEBRISMISC ||
+		ubType == DEBRIS2MISC;
+
+	INT32 sat = 118, contrast = 116, rBias = 7, gBias = 5, bBias = -6;
+	INT32 targetR = 176, targetG = 132, targetB = 82, mix = 18;
+
+	switch ( gubSectorVisualProfile )
+	{
+		case SECTOR_VISUAL_MAPFACTORY_WILDERNESS:
+			sat = 132; contrast = 115; rBias = -4; gBias = 12; bBias = -5;
+			targetR = fGreen ? 54 : 151; targetG = fGreen ? 137 : 111; targetB = fGreen ? 58 : 62;
+			mix = fGreen ? 28 : 20;
+			break;
+		case SECTOR_VISUAL_MAPFACTORY_FARMLAND:
+			sat = 132; contrast = 116; rBias = 8; gBias = 9; bBias = -8;
+			targetR = fGreen ? 64 : 165; targetG = fGreen ? 148 : 102; targetB = fGreen ? 55 : 55;
+			mix = fGreen ? 28 : 23;
+			break;
+		case SECTOR_VISUAL_MAPFACTORY_INDUSTRIAL:
+			sat = 116; contrast = 122; rBias = 8; gBias = 3; bBias = -5;
+			if ( fRoad || fFloor ) { targetR = 74; targetG = 82; targetB = 86; mix = 18; }
+			else if ( fRoof || fMachinery || fDebris ) { targetR = 173; targetG = 76; targetB = 38; mix = 30; }
+			else if ( fGreen ) { targetR = 52; targetG = 127; targetB = 59; mix = 24; }
+			else { targetR = 157; targetG = 122; targetB = 78; mix = 20; }
+			break;
+		case SECTOR_VISUAL_MAPFACTORY_MILITARY:
+			sat = 116; contrast = 120; rBias = 4; gBias = 5; bBias = -4;
+			if ( fGreen ) { targetR = 57; targetG = 126; targetB = 58; mix = 24; }
+			else if ( fRoof || fMachinery ) { targetR = 141; targetG = 112; targetB = 63; mix = 22; }
+			else if ( fWall ) { targetR = 151; targetG = 149; targetB = 105; mix = 20; }
+			else { targetR = 157; targetG = 117; targetB = 69; mix = 18; }
+			break;
+		case SECTOR_VISUAL_MAPFACTORY_SETTLEMENT:
+			sat = 126; contrast = 117; rBias = 8; gBias = 5; bBias = -6;
+			if ( fGreen ) { targetR = 56; targetG = 137; targetB = 61; mix = 25; }
+			else if ( fWall ) { targetR = 177; targetG = 129; targetB = 103; mix = 24; }
+			else if ( fRoof ) { targetR = 169; targetG = 81; targetB = 49; mix = 27; }
+			else { targetR = 176; targetG = 137; targetB = 86; mix = 20; }
+			break;
+		case SECTOR_VISUAL_MAPFACTORY_ROADSIDE:
+			sat = 122; contrast = 118; rBias = 8; gBias = 6; bBias = -7;
+			if ( fRoad ) { targetR = 113; targetG = 92; targetB = 68; mix = 18; }
+			else if ( fGreen ) { targetR = 55; targetG = 134; targetB = 60; mix = 25; }
+			else { targetR = 165; targetG = 109; targetB = 61; mix = 22; }
+			break;
+		default:
+			if ( fGreen ) { targetR = 58; targetG = 133; targetB = 61; mix = 24; }
+			break;
+	}
+
+	for ( UINT16 i = 0; i < pObject->usNumberOf16BPPObjects; ++i )
+	{
+		SixteenBPPObjectInfo *pFrame = &pObject->p16BPPObject[i];
+		if ( pFrame->p16BPPData == NULL || pFrame->usWidth == 0 || pFrame->usHeight == 0 )
+			continue;
+
+		UINT8 *pPixels = (UINT8*)pFrame->p16BPPData;
+		const UINT32 uiPixels = (UINT32)pFrame->usWidth * (UINT32)pFrame->usHeight;
+		for ( UINT32 p = 0; p < uiPixels; ++p )
+		{
+			UINT8 *px = pPixels + p * 4u;
+			if ( px[3] == 0 )
+				continue;
+
+			const INT32 r = px[0], g = px[1], b = px[2];
+			const INT32 luma = (r * 30 + g * 59 + b * 11) / 100;
+			INT32 outR = GradeSectorVisualComponent( r, luma, sat, contrast, rBias );
+			INT32 outG = GradeSectorVisualComponent( g, luma, sat, contrast, gBias );
+			INT32 outB = GradeSectorVisualComponent( b, luma, sat, contrast, bBias );
+
+			outR = (outR * (100 - mix) + targetR * mix) / 100;
+			outG = (outG * (100 - mix) + targetG * mix) / 100;
+			outB = (outB * (100 - mix) + targetB * mix) / 100;
+
+			if ( luma < 72 )
+			{
+				outR -= 3; outB += 5;
+			}
+			else if ( luma > 178 )
+			{
+				outR += 5; outG += 3;
+			}
+
+			px[0] = ClampSectorVisualComponent( outR );
+			px[1] = ClampSectorVisualComponent( outG );
+			px[2] = ClampSectorVisualComponent( outB );
+		}
+	}
+}
+
 static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT32 ubType, BOOLEAN fSectorReplacementLoaded )
 {
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_DEFAULT || pTileSurf == NULL || pTileSurf->vo == NULL )
@@ -2423,6 +2533,12 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 		return;
 
 	HVOBJECT pObject = pTileSurf->vo;
+	if ( fMapFactoryTelemetry && pObject->ubBitDepth == 32 && pObject->p16BPPObject != NULL )
+	{
+		MapFactoryGradeTrueColorSurface( pObject, ubType );
+		++guiMapFactoryTrueColorSurfaceGraded;
+		return;
+	}
 	if ( pObject->pPaletteEntry == NULL || pObject->ubBitDepth != 8 )
 	{
 		if ( fMapFactoryTelemetry )
@@ -2859,6 +2975,63 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 		// Oronegro town remains conservative. The dramatic treatment is B1-only.
 		contrastPercent += 2;
 		saturationPercent -= 2;
+	}
+
+	if ( fMapFactoryProfile && fMFWall )
+	{
+		const UINT8 ubVariant = (UINT8)((ubType - FIRSTWALL) % 5);
+		if ( gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_SETTLEMENT )
+		{
+			// Cheap painted plaster varies building-to-building.  Weathering/contrast
+			// keeps these colours grounded in a poor, sun-beaten Latin-American town.
+			switch ( ubVariant )
+			{
+				case 0: saturationPercent = 128; redBias += 13; greenBias += 7; blueBias -= 11; break; // ochre
+				case 1: saturationPercent = 126; redBias -= 9; greenBias += 10; blueBias += 8; break; // turquoise
+				case 2: saturationPercent = 130; redBias += 15; greenBias -= 2; blueBias -= 4; break; // salmon
+				case 3: saturationPercent = 122; redBias -= 7; greenBias += 12; blueBias -= 5; break; // faded green
+				default:saturationPercent = 92;  redBias += 9;  greenBias += 8; blueBias += 4; break; // dirty ivory
+			}
+		}
+		else if ( gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_MILITARY )
+		{
+			switch ( ubVariant % 3 )
+			{
+				case 0: saturationPercent = 104; redBias -= 4; greenBias += 8; blueBias -= 5; break; // olive
+				case 1: saturationPercent = 100; redBias += 8; greenBias += 7; blueBias -= 6; break; // khaki
+				default:saturationPercent = 84;  redBias += 7; greenBias += 7; blueBias += 4; break; // dirty white
+			}
+		}
+		else if ( gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_INDUSTRIAL )
+		{
+			switch ( ubVariant % 3 )
+			{
+				case 0: saturationPercent = 124; redBias += 14; greenBias += 2; blueBias -= 12; break; // oxidised/rust
+				case 1: saturationPercent = 118; redBias -= 8; greenBias += 9; blueBias += 8; break; // faded teal
+				default:saturationPercent = 120; redBias += 12; greenBias += 9; blueBias -= 10; break; // hazard ochre
+			}
+		}
+	}
+
+	if ( fMapFactoryProfile && fMFRoof )
+	{
+		const UINT8 ubVariant = (UINT8)((ubType - FIRSTROOF) % 4);
+		if ( ubVariant == 0 )
+		{
+			saturationPercent += 8; redBias += 11; greenBias += 1; blueBias -= 10; // terracotta/rust
+		}
+		else if ( ubVariant == 1 )
+		{
+			saturationPercent += 5; redBias -= 6; greenBias += 5; blueBias += 7; // faded blue/galvanised repair
+		}
+		else if ( ubVariant == 2 )
+		{
+			saturationPercent -= 8; redBias += 4; greenBias += 4; blueBias += 2; // bleached zinc
+		}
+		else
+		{
+			saturationPercent += 4; redBias += 8; greenBias += 3; blueBias -= 7; // warm weathered metal
+		}
 	}
 
 	// Palette index 0 is commonly used as transparency; preserve it exactly.
@@ -3426,7 +3599,7 @@ void BuildTileShadeTables(  )
 				if( gbNewTileSurfaceLoaded[ uiLoop ]  )
 			#endif
 				{
-					fForceRebuildForSlot = FALSE;
+					fForceRebuildForSlot = IsMapFactoryVisualProfileValue( gubSectorVisualProfile );
 
 					GetRootName( cRootFile, TileSurfaceFilenames[ uiLoop ] );
 
@@ -6549,6 +6722,7 @@ giOldTilesetUsed = giCurrentTilesetID;
 	{
 		guiMapFactorySurfaceSeen = 0;
 		guiMapFactoryPaletteSurfaceGraded = 0;
+		guiMapFactoryTrueColorSurfaceGraded = 0;
 		guiMapFactoryNonPaletteSurfaceSkipped = 0;
 	}
 
@@ -6602,6 +6776,11 @@ UINT32 GetMapFactorySurfaceSeenCount( void )
 UINT32 GetMapFactoryPaletteGradedCount( void )
 {
 	return guiMapFactoryPaletteSurfaceGraded;
+}
+
+UINT32 GetMapFactoryTrueColorGradedCount( void )
+{
+	return guiMapFactoryTrueColorSurfaceGraded;
 }
 
 UINT32 GetMapFactoryNonPaletteSkippedCount( void )
