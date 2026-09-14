@@ -5,6 +5,7 @@
 
 // Experimental branch-only decision gate. Master is unaffected because this file does not exist there.
 #define VR_OPERATIONAL_GARRISON_REASSIGNMENT_ENABLED 1
+#define VR_OPERATIONAL_PERSISTENT_RESERVES_ENABLED     1
 
 struct GROUP;
 
@@ -87,6 +88,9 @@ UINT8 VR_FindBestOperationalTarget( GROUP *pGroup, INT32 *piBestScore );
 
 void VR_SetFormationMission( GROUP *pGroup, UINT8 ubMission, UINT8 ubReason );
 void VR_SetFormationReserveRole( GROUP *pGroup, UINT8 ubReserveRole, UINT8 ubReason );
+BOOLEAN VR_HoldFormationAsReserve( GROUP *pGroup, UINT8 ubReserveRole );
+GROUP *VR_FindReadyOperationalReserve();
+BOOLEAN VR_IsReadyOperationalReserve( GROUP *pGroup );
 
 const CHAR8 *VR_OperationalMissionName( UINT8 ubMission );
 const CHAR8 *VR_OperationalReserveRoleName( UINT8 ubRole );
