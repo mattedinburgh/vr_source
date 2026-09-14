@@ -332,6 +332,7 @@ void VRAnalyticsDiagnostic(
 }
 
 void VRAnalyticsBattleStarted(
+	unsigned long worldMinutes,
 	int sectorX,
 	int sectorY,
 	int sectorZ,
@@ -375,15 +376,16 @@ void VRAnalyticsBattleStarted(
 		return;
 
 	fprintf( file,
-		",\"battle_id\":%lu,\"sector_x\":%d,\"sector_y\":%d,\"sector_z\":%d,"
+		",\"battle_id\":%lu,\"world_minutes\":%lu,\"sector_x\":%d,\"sector_y\":%d,\"sector_z\":%d,"
 		"\"player_count\":%d,\"enemy_count\":%d,\"militia_count\":%d",
-		gActiveBattleId, sectorX, sectorY, sectorZ,
+		gActiveBattleId, worldMinutes, sectorX, sectorY, sectorZ,
 		playerCount, enemyCount, militiaCount );
 	EndEvent( file );
 }
 
 void VRAnalyticsBattleEnded(
 	const char* result,
+	unsigned long worldMinutes,
 	int sectorX,
 	int sectorY,
 	int sectorZ,
@@ -415,13 +417,13 @@ void VRAnalyticsBattleEnded(
 			gActiveBattleId );
 		JsonString( file, result );
 		fprintf( file,
-			",\"sector_x\":%d,\"sector_y\":%d,\"sector_z\":%d,"
+			",\"world_minutes\":%lu,\"sector_x\":%d,\"sector_y\":%d,\"sector_z\":%d,"
 			"\"start_player_count\":%d,\"end_player_count\":%d,"
 			"\"start_enemy_count\":%d,\"end_enemy_count\":%d,"
 			"\"start_militia_count\":%d,\"end_militia_count\":%d,"
 			"\"player_count_delta\":%d,\"enemy_count_delta\":%d,"
 			"\"militia_count_delta\":%d,\"enemy_retreated\":%s",
-			sectorX, sectorY, sectorZ,
+			worldMinutes, sectorX, sectorY, sectorZ,
 			gBattleStartPlayers, playerCount,
 			gBattleStartEnemies, enemyCount,
 			gBattleStartMilitia, militiaCount,
