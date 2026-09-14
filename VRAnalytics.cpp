@@ -439,6 +439,44 @@ void VRAnalyticsBattleEnded(
 	gBattleStartPlayers = gBattleStartEnemies = gBattleStartMilitia = 0;
 }
 
+void VRAnalyticsStrategicMoveOrdered(
+	unsigned long worldMinutes,
+	unsigned int groupId,
+	int sourceSector,
+	int targetSector,
+	int groupSize,
+	int moveCode,
+	int intention )
+{
+	FILE* file = BeginEvent( VR_ANALYTICS_STRATEGIC, "strategic_move_order", 0 );
+	if( !file )
+		return;
+
+	fprintf( file,
+		",\"world_minutes\":%lu,\"group_id\":%u,\"source_sector\":%d,"
+		"\"target_sector\":%d,\"group_size\":%d,\"move_code\":%d,\"intention\":%d",
+		worldMinutes, groupId, sourceSector, targetSector, groupSize, moveCode, intention );
+	EndEvent( file );
+}
+
+void VRAnalyticsStrategicGroupArrived(
+	unsigned long worldMinutes,
+	unsigned int groupId,
+	int sector,
+	int groupSize,
+	const char* assignment )
+{
+	FILE* file = BeginEvent( VR_ANALYTICS_STRATEGIC, "strategic_group_arrived", 0 );
+	if( !file )
+		return;
+
+	fprintf( file,
+		",\"world_minutes\":%lu,\"group_id\":%u,\"sector\":%d,\"group_size\":%d,\"assignment\":",
+		worldMinutes, groupId, sector, groupSize );
+	JsonString( file, assignment );
+	EndEvent( file );
+}
+
 void VRAnalyticsTacticalCandidate(
 	unsigned int soldierId,
 	const char* candidate,
