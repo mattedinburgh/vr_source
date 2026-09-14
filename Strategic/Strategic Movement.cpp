@@ -61,6 +61,7 @@
 //extern JA25_SECTOR_AI	*gJa25AiSectorStruct;
 #endif
 
+#include "Strategic Operational AI.h"
 #include "connect.h"
 //forward declarations of common classes to eliminate includes
 class OBJECTTYPE;
@@ -827,7 +828,10 @@ GROUP* CreateNewEnemyGroupDepartingFromSector( UINT32 uiSector, UINT8 ubNumAdmin
 #endif
 
 	if( AddGroupToList( pNew ) )
+	{
+		VR_EnsureEnemyFormationState( pNew );
 		return pNew;
+	}
 	return NULL;
 }
 
@@ -1844,6 +1848,11 @@ void GroupArrivedAtSector( UINT8 ubGroupID, BOOLEAN fCheckForBattle, BOOLEAN fNe
 		fMapPanelDirty = TRUE;
 		fMapScreenBottomDirty = TRUE;
 		return;
+	}
+
+	if( !pGroup->fPlayer )
+	{
+		VR_OnEnemyGroupArrived( pGroup );
 	}
 
 	if( pGroup->fPlayer )
@@ -4015,6 +4024,7 @@ BOOLEAN LoadStrategicMovementGroupsFromSavedGameFile( HWFILE hFile )
 		else //else its an enemy group
 		{
 			LoadEnemyGroupStructFromSavedGame( hFile, pTemp );
+			VR_EnsureEnemyFormationState( pTemp );
 		}
 
 
@@ -4517,6 +4527,11 @@ void RetreatGroupToPreviousSector( GROUP *pGroup )
 	SetGroupArrivalTime( pGroup, GetWorldTotalMin() + pGroup->uiTraverseTime );
 	pGroup->fBetweenSectors = TRUE;
 	pGroup->uiFlags |= GROUPFLAG_JUST_RETREATED_FROM_BATTLE;
+
+	if( !pGroup->fPlayer )
+	{
+		VR_OnEnemyGroupRetreated( pGroup );
+	}
 
 	if( pGroup->fVehicle == TRUE )
 	{
