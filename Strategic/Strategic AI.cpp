@@ -3267,6 +3267,7 @@ void EvaluateQueenSituation()
 
 	unsigned long uiAnalyticsDecision = VRAnalyticsBeginDecision(
 		VR_ANALYTICS_STRATEGIC, "queen", 0, "evaluate_reinforcements" );
+	VRAnalyticsStateInt( uiAnalyticsDecision, "world_minutes", GetWorldTotalMin() );
 	VRAnalyticsStateInt( uiAnalyticsDecision, "request_points", giRequestPoints );
 	VRAnalyticsStateInt( uiAnalyticsDecision, "reinforcement_points", giReinforcementPoints );
 	VRAnalyticsStateInt( uiAnalyticsDecision, "reinforcement_pool", giReinforcementPool );
