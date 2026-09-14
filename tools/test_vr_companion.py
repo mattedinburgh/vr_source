@@ -142,5 +142,45 @@ class CompanionAnalysisTests(unittest.TestCase):
         self.assertEqual(1.5, result["avg_perceived_force_ratio"])
 
 
+    def test_grenade_throw_fairness_pairs_launch_and_landing(self):
+        events = [
+            {"schema": "vr-blackbox-1", "session": 10, "seq": 1,
+             "layer": "tactical", "kind": "grenade_throw_launch",
+             "actor_id": 40, "projectile_id": 3, "item": 150,
+             "target_distance": 18, "max_range": 20,
+             "effective_strength": 78, "breath": 92, "breath_max": 100,
+             "stance": 2, "throwing_traits": 0,
+             "target_offset_to_nearest_player": 1},
+            {"schema": "vr-blackbox-1", "session": 10, "seq": 2,
+             "layer": "tactical", "kind": "grenade_throw_landing",
+             "actor_id": 40, "projectile_id": 3, "item": 150,
+             "actual_distance": 18, "landing_offset_to_nearest_player": 2},
+        ]
+        result = companion.grenade_throw_summary(events)
+        self.assertEqual(1, result["paired_flights"])
+        self.assertEqual(0, result["targeted_beyond_range"])
+        self.assertEqual(0, result["actual_overrange"])
+        self.assertEqual(20.0, result["avg_max_range"])
+        self.assertEqual(18.0, result["avg_actual_distance"])
+
+    def test_grenade_throw_fairness_flags_real_overrange(self):
+        events = [
+            {"schema": "vr-blackbox-1", "session": 10, "seq": 1,
+             "layer": "tactical", "kind": "grenade_throw_launch",
+             "actor_id": 41, "projectile_id": 4, "item": 150,
+             "target_distance": 23, "max_range": 20,
+             "effective_strength": 80, "breath": 100, "breath_max": 100,
+             "stance": 2, "throwing_traits": 0},
+            {"schema": "vr-blackbox-1", "session": 10, "seq": 2,
+             "layer": "tactical", "kind": "grenade_throw_landing",
+             "actor_id": 41, "projectile_id": 4, "item": 150,
+             "actual_distance": 22, "landing_offset_to_nearest_player": 1},
+        ]
+        result = companion.grenade_throw_summary(events)
+        self.assertEqual(1, result["targeted_beyond_range"])
+        self.assertEqual(1, result["actual_overrange"])
+        self.assertEqual(1, len(result["overrange_records"]))
+
+
 if __name__ == "__main__":
     unittest.main()
