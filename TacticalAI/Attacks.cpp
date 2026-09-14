@@ -207,17 +207,17 @@ static UINT8 AIKnownShotChanceToGetThrough(SOLDIERTYPE *pSoldier, SOLDIERTYPE *p
 	return ubChance;
 }
 
-// Human tactical AI does not deliberately execute a visibly incapacitated
-// human opponent. Stale contacts are never tested here: callers pass TRUE only
-// when current contact makes current life/collapse state legitimate knowledge.
+// Human tactical AI does not deliberately execute a currently known incapacitated
+// human opponent. A current teammate sighting is enough to communicate "man down";
+// stale contacts never inspect hidden live casualty state.
 static BOOLEAN AIShouldAvoidFinishingDownedTarget(
-	SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent, BOOLEAN fDirectVisualContact)
+	SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent, BOOLEAN fCurrentContact)
 {
-	if (!pSoldier || !pOpponent || !fDirectVisualContact || !AICombatTeam(pSoldier))
+	if (!pSoldier || !pOpponent || !fCurrentContact || !AICombatTeam(pSoldier))
 		return FALSE;
 
-	// Caller already verified personal current knowledge with a fresh LOS test.
-	// Never re-authorize hidden casualty state from cached opponent-list data.
+	// Current contact can come from personal sight or a current team report.
+	// Never re-authorize casualty state from stale cached opponent-list data.
 
 	// Preserve explicitly scripted killer behaviour and non-human threats.
 	if (pSoldier->aiData.bAttitude == ATTACKSLAYONLY ||
@@ -402,16 +402,8 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		if (fDirectVisualContact && !ValidOpponent(pSoldier, pOpponent))
 			continue;
 
-		if (AIShouldAvoidFinishingDownedTarget(pSoldier, pOpponent, fDirectVisualContact))
+		if (AIShouldAvoidFinishingDownedTarget(pSoldier, pOpponent, fCurrentContact))
 			continue;
-
-		// A downed casualty is no longer an intentional target. Stale-area fire can
-		// still hit them incidentally, but a soldier who can currently see that the
-		// opponent is down will switch to an active threat instead of finishing them.
-		if (fDirectVisualContact && IsBleedoutCasualty( pOpponent ))
-		{
-			continue;
-		}
 
 		// check knowledge
 		if (bKnowledge != SEEN_CURRENTLY &&
@@ -1334,7 +1326,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 	BOOLEAN fSkipLocation;
 	INT8	bPayloadPocket;
 	INT8	bMaxLeft,bMaxRight,bMaxUp,bMaxDown,bXOffset,bYOffset;
-	INT8	bPersOL, bKnowledge;
+	INT8	bPersOL, bKnowledge, bPublicKnowledge;
 	SOLDIERTYPE *pOpponent, *pFriend;
 	static INT16	sExcludeTile[100]; // This array is for storing tiles that we have
 	UINT8	ubNumExcludedTiles = 0;		// already considered, to prevent duplication of effort
@@ -1550,6 +1542,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 
 		bPersOL = pSoldier->aiData.bOppList[pOpponent->ubID];
 		bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+		bPublicKnowledge = PublicKnowledge(pSoldier->bTeam, pOpponent->ubID);
 
 		// We know nothing about this opponent.
 		if (bKnowledge == NOT_HEARD_OR_SEEN)
@@ -1560,6 +1553,8 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 		const BOOLEAN fDirectVisualContact =
 			(bPersOL == SEEN_CURRENTLY) &&
 			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
+		const BOOLEAN fCurrentTeamReport = (bPublicKnowledge == SEEN_CURRENTLY);
+		const BOOLEAN fCurrentContact = fDirectVisualContact || fCurrentTeamReport;
 		const BOOLEAN fPersonalStateKnown = fDirectVisualContact;
 
 		// Relation/identity filters are safe for remembered contacts. Mutable hidden
@@ -1632,7 +1627,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 		// Do not infer hidden health changes from stale contacts. When the target
 		// is currently visible, human AI also avoids deliberately finishing a downed
 		// opponent with explosives.
-		if (AIShouldAvoidFinishingDownedTarget(pSoldier, pOpponent, fDirectVisualContact))
+		if (AIShouldAvoidFinishingDownedTarget(pSoldier, pOpponent, fCurrentContact))
 		{
 			continue;
 		}
