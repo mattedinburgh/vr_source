@@ -52,7 +52,9 @@ enum VR_OPERATIONAL_DECISION_REASON
 	VR_OPREASON_LOW_SUPPLY,
 	VR_OPREASON_RESUPPLIED,
 	VR_OPREASON_CONTACT,
-	VR_OPREASON_INTEL_DECAY
+	VR_OPREASON_INTEL_DECAY,
+	VR_OPREASON_RESERVE_POSTURE,
+	VR_OPREASON_TARGET_RECOMMENDATION
 };
 
 enum VR_OPERATIONAL_FLAGS
@@ -86,6 +88,10 @@ void VR_RecordLegacyAssignment( GROUP *pGroup, UINT8 ubTargetSectorID, UINT8 ubL
 void VR_RecordOperationalContact( GROUP *pObserver, UINT8 ubSectorID,
 	UINT8 ubObservedPlayerStrength, UINT8 ubObservedMilitiaStrength, UINT8 ubConfidence );
 void VR_DecayOperationalIntelHourly();
+void VR_UpdateOperationalReadinessHourly();
+void VR_TraceOperationalRecommendationsHourly();
+void VR_RecordFormationRetreat( GROUP *pGroup, UINT8 ubDestinationSectorID );
+void VR_RecordFormationArrival( GROUP *pGroup );
 INT32 VR_ScoreOperationalTarget( GROUP *pGroup, UINT8 ubSectorID, VR_OPERATIONAL_SCORE *pBreakdown );
 UINT8 VR_FindBestOperationalTarget( GROUP *pGroup, INT32 *piBestScore );
 
