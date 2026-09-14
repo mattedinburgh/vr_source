@@ -267,6 +267,10 @@ void SurrenderMessageBoxCallBack( UINT8 ubExitValue )
 
 void ShutDownQuoteBox( BOOLEAN fForce )
 {
+	// Combat callouts reuse the legacy quote overlay for rendering only; they must
+	// not inherit narrative side effects such as the surrender confirmation path.
+	BOOLEAN fClosingAICombatCallout = (gubActiveAICombatCalloutPriority > 0);
+
 	if ( !gCivQuoteData.bActive )
 	{
 		return;
@@ -289,7 +293,8 @@ void ShutDownQuoteBox( BOOLEAN fForce )
 // no UB
 #else
 		// do we need to do anything at the end of the civ quote?
-		if ( gCivQuoteData.pCiv && gCivQuoteData.pCiv->aiData.bAction == AI_ACTION_OFFER_SURRENDER )
+		if ( !fClosingAICombatCallout && gCivQuoteData.pCiv &&
+			gCivQuoteData.pCiv->aiData.bAction == AI_ACTION_OFFER_SURRENDER )
 		{
 // Haydent
 			if(!is_networked)
