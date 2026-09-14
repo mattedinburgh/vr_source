@@ -330,6 +330,7 @@ extern INT32		giCurrentTilesetID;
 
 extern HVOBJECT		hRenderVObject;
 extern UINT32		gSurfaceMemUsage;
+extern CHAR8		TileSurfaceFilenames[NUMBEROFTILETYPES][32];
 
 extern CHAR8		gzLastLoadedFile[ 260 ];
 
