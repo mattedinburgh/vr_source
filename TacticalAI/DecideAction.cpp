@@ -4220,6 +4220,7 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 				GuySawEnemy(pSoldier) &&
 				!TileIsOutOfBounds(sClosestDisturbance) &&
 				AIGunRange(pSoldier) >= PythSpacesAway(pSoldier->sGridNo, sClosestDisturbance) &&
+				AIEngagementRangeModifier(pSoldier, sClosestDisturbance) <= 0 &&
 				CountFriendsBlack(pSoldier, sClosestDisturbance) == 0)
 			{
 				bSeekPts = -99;
