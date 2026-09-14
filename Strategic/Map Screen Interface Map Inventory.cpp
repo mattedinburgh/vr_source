@@ -427,10 +427,11 @@ void ToggleShowMoveItem()
 //   * leaves ammunition already loaded in weapons untouched;
 //   * pools all spare ammo carried by mercs in the selected sector together with
 //     reachable sector ammo;
-//   * gives each carried gun up to three spare magazines;
+//   * normally gives up to three spare magazines for a weapon;
+//   * if one merc carries 2+ weapons using the same calibre, those weapons share
+//     a hard cap of four spare magazines total;
 //   * ammo preference: AP -> standard -> other -> HP/blue -> Glaser;
-//   * shortages are handled in round-robin waves so one weapon cannot take its
-//     second/third magazine before the others have had a chance;
+//   * shortages are distributed fairly between merc/calibre demands;
 //   * magazines are placed in LBE-backed inventory pockets first.
 //
 // SMK:
@@ -445,6 +446,8 @@ typedef struct
 	SOLDIERTYPE *pSoldier;
 	UINT8 ubCalibre;
 	UINT16 usMagSize;
+	UINT8 ubWeaponCount;
+	UINT8 ubMaxMags;
 	UINT8 ubMagsGiven;
 	BOOLEAN fBlocked;
 } SECTOR_LOADOUT_AMMO_DEMAND;
@@ -833,10 +836,11 @@ static UINT16 BuildAndPlaceSectorMagazine( SOLDIERTYPE *pSoldier, UINT8 ubCalibr
 	return usBuiltRounds;
 }
 
-static void CollectSectorAmmoDemands( std::vector<SECTOR_LOADOUT_AMMO_DEMAND> &demands, UINT32 &uiMercCount )
+static void CollectSectorAmmoDemands( std::vector<SECTOR_LOADOUT_AMMO_DEMAND> &demands, UINT32 &uiMercCount, UINT32 &uiWeaponCount )
 {
 	demands.clear();
 	uiMercCount = 0;
+	uiWeaponCount = 0;
 
 	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
 		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
@@ -859,18 +863,86 @@ static void CollectSectorAmmoDemands( std::vector<SECTOR_LOADOUT_AMMO_DEMAND> &d
 				if ( usMagSize == 0 )
 					continue;
 
-				SECTOR_LOADOUT_AMMO_DEMAND demand;
-				demand.pSoldier = pSoldier;
-				demand.ubCalibre = Weapon[pGun->usItem].ubCalibre;
-				demand.usMagSize = usMagSize;
-				demand.ubMagsGiven = 0;
-				demand.fBlocked = FALSE;
-				demands.push_back( demand );
+				++uiWeaponCount;
+				UINT8 ubCalibre = Weapon[pGun->usItem].ubCalibre;
+				BOOLEAN fFound = FALSE;
+
+				// Identical magazine needs on the same merc are one shared demand.
+				// This is important when primary and secondary use the same ammo.
+				for ( UINT32 d = 0; d < demands.size(); ++d )
+				{
+					if ( demands[d].pSoldier == pSoldier &&
+						 demands[d].ubCalibre == ubCalibre &&
+						 demands[d].usMagSize == usMagSize )
+					{
+						++demands[d].ubWeaponCount;
+						fFound = TRUE;
+						break;
+					}
+				}
+
+				if ( !fFound )
+				{
+					SECTOR_LOADOUT_AMMO_DEMAND demand;
+					demand.pSoldier = pSoldier;
+					demand.ubCalibre = ubCalibre;
+					demand.usMagSize = usMagSize;
+					demand.ubWeaponCount = 1;
+					demand.ubMaxMags = 0;
+					demand.ubMagsGiven = 0;
+					demand.fBlocked = FALSE;
+					demands.push_back( demand );
+				}
 			}
 		}
 	}
-}
 
+	// Per merc + calibre cap:
+	//   one weapon  -> 3 spare mags;
+	//   two or more -> 4 spare mags total shared by all weapons in that calibre.
+	// Different magazine sizes still share the four-mag ceiling because the
+	// underlying ammunition/calibre is the same.
+	for ( UINT32 i = 0; i < demands.size(); ++i )
+	{
+		if ( demands[i].ubMaxMags != 0 )
+			continue;
+
+		std::vector<UINT32> sameCalibre;
+		UINT32 uiSameCalibreWeapons = 0;
+
+		for ( UINT32 j = i; j < demands.size(); ++j )
+		{
+			if ( demands[j].pSoldier == demands[i].pSoldier &&
+				 demands[j].ubCalibre == demands[i].ubCalibre )
+			{
+				sameCalibre.push_back( j );
+				uiSameCalibreWeapons += demands[j].ubWeaponCount;
+			}
+		}
+
+		if ( uiSameCalibreWeapons <= 1 )
+		{
+			demands[i].ubMaxMags = 3;
+			continue;
+		}
+
+		UINT32 uiAssigned = 0;
+		for ( UINT32 n = 0; n < sameCalibre.size(); ++n )
+		{
+			SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[sameCalibre[n]];
+			demand.ubMaxMags = (UINT8)( ( 4 * demand.ubWeaponCount ) / uiSameCalibreWeapons );
+			uiAssigned += demand.ubMaxMags;
+		}
+
+		// Hand out any rounding remainder deterministically. For the common
+		// two-weapon case this yields 2+2, or 4 if both guns use the same mag.
+		for ( UINT32 n = 0; uiAssigned < 4 && n < sameCalibre.size(); ++n )
+		{
+			++demands[sameCalibre[n]].ubMaxMags;
+			++uiAssigned;
+		}
+	}
+}
 static void RedistributeSectorAmmo3x()
 {
 	UINT32 uiOldFilter = guiMapInventoryFilter;
@@ -879,7 +951,8 @@ static void RedistributeSectorAmmo3x()
 
 	std::vector<SECTOR_LOADOUT_AMMO_DEMAND> demands;
 	UINT32 uiMercCount = 0;
-	CollectSectorAmmoDemands( demands, uiMercCount );
+	UINT32 uiWeaponCount = 0;
+	CollectSectorAmmoDemands( demands, uiMercCount, uiWeaponCount );
 
 	// All spare squad ammo joins reachable sector ammo in one common pool.
 	PoolSquadSpareAmmo();
@@ -910,24 +983,42 @@ static void RedistributeSectorAmmo3x()
 
 		SECTOR_LOADOUT_AMMO_DEMAND &sample = demands[group[0]];
 		UINT32 uiAvailable = CountAllCompatibleSectorAmmoRounds( sample.ubCalibre, sample.usMagSize );
-		UINT32 uiPerWeaponCap = (UINT32)sample.usMagSize * 3;
-		UINT32 uiGroupCapacity = uiPerWeaponCap * group.size();
+		UINT32 uiGroupCapacity = 0;
+		for ( UINT32 n = 0; n < group.size(); ++n )
+		{
+			SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[group[n]];
+			uiGroupCapacity += (UINT32)demand.usMagSize * demand.ubMaxMags;
+		}
 		UINT32 uiToDistribute = __min( uiAvailable, uiGroupCapacity );
 
-		// Equal shortage rule: divide total compatible rounds evenly between all
-		// weapons in the group before creating any magazines. Remainder rounds are
-		// spread one-by-one in rotating order.
-		UINT32 uiBaseTarget = uiToDistribute / group.size();
-		UINT32 uiRemainder = uiToDistribute % group.size();
+		// Fair shortage rule with variable per-merc caps. Add one round at a time
+		// in waves until ammo is exhausted or every demand reaches its own cap.
+		std::vector<UINT32> targets( group.size(), 0 );
+		UINT32 uiAssignedRounds = 0;
+		while ( uiAssignedRounds < uiToDistribute )
+		{
+			BOOLEAN fProgress = FALSE;
+			for ( UINT32 n = 0; n < group.size() && uiAssignedRounds < uiToDistribute; ++n )
+			{
+				SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[group[n]];
+				UINT32 uiCap = (UINT32)demand.usMagSize * demand.ubMaxMags;
+				if ( targets[n] < uiCap )
+				{
+					++targets[n];
+					++uiAssignedRounds;
+					fProgress = TRUE;
+				}
+			}
+			if ( !fProgress )
+				break;
+		}
 
 		for ( UINT32 n = 0; n < group.size(); ++n )
 		{
 			SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[group[n]];
-			UINT32 uiTarget = uiBaseTarget + ( n < uiRemainder ? 1 : 0 );
-			uiTarget = __min( uiTarget, uiPerWeaponCap );
-			UINT32 uiRemainingTarget = uiTarget;
+			UINT32 uiRemainingTarget = targets[n];
 
-			while ( uiRemainingTarget > 0 && demand.ubMagsGiven < 3 && !demand.fBlocked )
+			while ( uiRemainingTarget > 0 && demand.ubMagsGiven < demand.ubMaxMags && !demand.fBlocked )
 			{
 				UINT32 uiWantedThisMag = __min( (UINT32)demand.usMagSize, uiRemainingTarget );
 				INT16 sAmmoType = FindSectorAmmoTypeForFill( demand.ubCalibre, demand.usMagSize, uiWantedThisMag );
@@ -968,7 +1059,7 @@ static void RedistributeSectorAmmo3x()
 
 	ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
 		L"3x: %d cargadores (%d balas) repartidos para %d armas de %d mercenarios.",
-		uiMagazinesGiven, uiRoundsGiven, (UINT32)demands.size(), uiMercCount );
+		uiMagazinesGiven, uiRoundsGiven, uiWeaponCount, uiMercCount );
 }
 
 static BOOLEAN TakeOneHandSmokeFromSector( OBJECTTYPE *pOut )
@@ -2550,7 +2641,7 @@ void CreateMapInventoryButtons( void )
 		BUTTON_USE_DEFAULT, INVEN_POOL_X+50 + xResOffset, INVEN_POOL_Y + 24 + yResOffset, 28, 13,
 		BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST, NULL, (GUI_CALLBACK)MapInventoryPoolAmmo3xBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[0],
-		L"3x: redistribuir municion. Hasta 3 cargadores por arma; AP > estandar > otras > HP > Glaser." );
+		L"3x: municion. 3 cargadores; con 2+ armas del mismo calibre, max. 4 compartidos. AP > estandar > otras > HP > Glaser." );
 
 	guiMapInvenLoadoutButton[1] = CreateTextButton( L"SMK", SMALLCOMPFONT, FONT_WHITE, DEFAULT_SHADOW,
 		BUTTON_USE_DEFAULT, INVEN_POOL_X+80 + xResOffset, INVEN_POOL_Y + 24 + yResOffset, 28, 13,
