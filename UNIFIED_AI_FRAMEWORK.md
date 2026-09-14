@@ -211,7 +211,21 @@ Canonical entry point:
 Older branch-specific routines such as a separate `DecideCombatMedicRescue` path are superseded by the
 canonical casualty-response path.
 
-### 8. Legacy Vengeance / 1.13 behaviour
+### 8. Building-aware CQB
+
+CQB/building reasoning is an active subordinate planner, not a parallel AI.
+
+- `DecideAction.cpp` owns its placement in the RED/BLACK priority hierarchy.
+- `CQBBuildingDoctrine.cpp` owns building context, state/role assessment, bounded position utility and the
+  `VRCQB_DecideAction` adapter.
+- RED considers CQB only after senior survival/cohesion/disengagement/suppression/casualty logic.
+- BLACK preserves viable immediate attacks before considering CQB movement.
+- CQB uses canonical doctrine, fireteams, knowledge, route exposure and `VRAnalytics`.
+- The historical CQB branch is frozen archaeology; active code lives only on the canonical branch.
+
+See `TacticalAI/CQB_BUILDING_AI.md`.
+
+### 9. Legacy Vengeance / 1.13 behaviour
 
 Legacy AI is retained as the execution library.
 
@@ -235,6 +249,8 @@ Important ordering relationships:
 - persistent disengagement outranks attack setup;
 - suppression response is blocked while active disengagement is in control;
 - casualty response outranks opportunistic sniper/mortar/support actions when viable;
+- BLACK immediate executable attacks outrank CQB repositioning;
+- CQB movement outranks generic building-unaware cover/approach movement only when its context is valid;
 - combat-team panic movement does not fall through to the old generic civilian RUN_AWAY path.
 
 When adding a new behaviour, it must be inserted into this priority model instead of being called independently
