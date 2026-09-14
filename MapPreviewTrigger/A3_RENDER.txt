@@ -1,2 +1,2 @@
-A3 hand-authored V2 clean baseline
-Purpose: disable legacy procedural dressing and render authored-map baseline before deliberate composition work.
+A3 hand-authored V2 architecture survey
+Purpose: render clean authored A3 baseline and export exact connected building footprints plus dominant wall/roof/floor tile families.
