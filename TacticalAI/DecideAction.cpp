@@ -8634,6 +8634,21 @@ void ZombieDecideAlertStatus( SOLDIERTYPE *pSoldier )
 
 INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLEAN fAbortSeek)
 {
+	INT8 bPlanIntent = AITacticalIntent(pSoldier, sClosestDisturbance);
+	INT8 bPlanRole = AITacticalRole(pSoldier, sClosestDisturbance);
+	if (!fAbortSeek && bPlanIntent != AI_INTENT_FLANK && bPlanRole != AI_ROLE_FLANKER)
+		return -1;
+
+	UINT32 uiTraceDecision = AITraceBeginDecision(pSoldier, "flank",
+		sClosestDisturbance, bPlanIntent, bPlanRole);
+	if (!AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED,
+		(UINT32)(sClosestDisturbance + 701)))
+	{
+		AITraceReject(pSoldier, uiTraceDecision, "flank", AI_ACTION_NONE,
+			pSoldier->sGridNo, "competence/doctrine friction rejected coordinated flank");
+		return -1;
+	}
+
 	UINT8 ubNearbyFireteamClose = 0;
 	UINT8 ubNearbyFireteamSupport = 0;
 
@@ -8799,6 +8814,17 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 					pSoldier->aiData.bOrders = FARPATROL;
 				}
 
+				INT32 iFlankScore = AIUtilityPositionScore(pSoldier, pSoldier->aiData.usActionData,
+					sClosestDisturbance, AI_INTENT_FLANK, AI_ROLE_FLANKER);
+				AITraceCandidate(pSoldier, uiTraceDecision, "flank", bAction,
+					pSoldier->aiData.usActionData, iFlankScore,
+					AIPathExposureCost(pSoldier, pSoldier->aiData.usActionData, RUNNING),
+					CountNearbyFriends(pSoldier, pSoldier->aiData.usActionData, DAY_VISION_RANGE / 3),
+					AICrossfirePositionScore(pSoldier, pSoldier->aiData.usActionData, sClosestDisturbance),
+					"viable fireteam-deconflicted flank");
+				AITraceSelect(pSoldier, uiTraceDecision, "flank", bAction,
+					pSoldier->aiData.usActionData, iFlankScore, 0, FALSE,
+					"selected flank side and destination");
 				return(bAction);
 			}
 		}
