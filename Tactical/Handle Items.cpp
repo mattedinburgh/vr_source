@@ -6774,11 +6774,10 @@ void SoldierStealItemFromSoldier( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
 	BOOLEAN			fPickup;
 	BOOLEAN			fShouldSayCoolQuote = FALSE;
 	BOOLEAN			fDidSayCoolQuote = FALSE;
-	BOOLEAN			fNotEnoughAPs = FALSE; // added by SANDRO
-	UINT8			ubItemsTaken = 0;
-	BOOLEAN			fCollapsedTarget = ( pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed );
 
-	// OK. CHECK IF WE ARE DOING ALL IN THIS POOL....
+	// The steal action itself is charged once in Weapons.cpp.  Selecting several
+	// items from the steal menu must not silently add another pickup AP charge per
+	// item; this was the source of the remaining excessive AP drain.
 	if ( iItemIndex == ITEM_PICKUP_ACTION_ALL || iItemIndex == ITEM_PICKUP_SELECTION )
 	{
 		pTempItemPool = pItemPool;
@@ -6789,53 +6788,38 @@ void SoldierStealItemFromSoldier( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
 			if ( iItemIndex == ITEM_PICKUP_SELECTION )
 			{
 				if ( !pfSelectionList[ cnt ] )
-				{
 					fPickup = FALSE;
-				}
 			}
-			// Increment counter...
-			cnt++;
+
+			++cnt;
+
 			if ( fPickup )
 			{
-				INT16 sPickupAPCost = 0;
+				// Work on a copy first.  AutoPlaceObjectAnywhere consumes what fits
+				// into inventory and routes any remainder to the sector/world inventory.
+				// This also handles partial stacks correctly when the merc has almost
+				// no free capacity.
+				gTempObject = pOpponent->inv[pTempItemPool->iItemIndex];
+				gTempObject.fFlags &= ~OBJECT_UNDROPPABLE;
 
-				// Vengeance: the base steal action covers the first item from a conscious enemy.
-				// Extra items cost normal pickup AP. Collapsed/dying targets have no base
-				// steal surcharge, so each item costs normal pickup AP.
-				if ( gGameExternalOptions.fEnhancedCloseCombatSystem && ( fCollapsedTarget || ubItemsTaken > 0 ) )
-					sPickupAPCost = GetBasicAPsToPickupItem( pSoldier );
+				if ( ItemIsCool( &gTempObject ) )
+					fShouldSayCoolQuote = TRUE;
 
-				if ( !gGameExternalOptions.fEnhancedCloseCombatSystem || pSoldier->bActionPoints >= sPickupAPCost )
+				if ( AutoPlaceObjectAnywhere( pSoldier, &gTempObject, TRUE ) )
 				{
-					gTempObject = pOpponent->inv[pTempItemPool->iItemIndex];
-					gTempObject.fFlags &= ~OBJECT_UNDROPPABLE;
-
-					if ( ItemIsCool( &gTempObject ) )
-						fShouldSayCoolQuote = TRUE;
-
-					// If inventory placement fails (including partial stack placement),
-					// leave the remaining stolen object on the thief's ground tile.
-					if ( !AutoPlaceObject( pSoldier, &gTempObject, TRUE ) )
-						AddItemToPool( pSoldier->sGridNo, &gTempObject, 1, pSoldier->pathing.bLevel, 0, -1 );
-
-					DeleteObj(&pOpponent->inv[pTempItemPool->iItemIndex]);
+					DeleteObj( &pOpponent->inv[pTempItemPool->iItemIndex] );
 
 					if ( pSoldier->ubProfile != NO_PROFILE )
 						gMercProfiles[ pSoldier->ubProfile ].records.usItemsStolen++;
-
-					if ( sPickupAPCost > 0 )
-						DeductPoints( pSoldier, sPickupAPCost, 0, AFTERACTION_INTERRUPT );
-
-					++ubItemsTaken;
 				}
-				else
-				{
-					fNotEnoughAPs = TRUE;
-				}
+				// If even world placement failed, leave the opponent's original item
+				// untouched instead of deleting or losing it.
 			}
+
 			pTempItemPool = pTempItemPool->pNext;
 		}
 	}
+
 	// OK, check if potentially a good candidate for cool quote
 	if ( fShouldSayCoolQuote && pSoldier->bTeam == gbPlayerNum )
 	{
@@ -6847,23 +6831,17 @@ void SoldierStealItemFromSoldier( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
 			{
 				// set flag
 				pSoldier->usQuoteSaidFlags |= SOLDIER_QUOTE_SAID_FOUND_SOMETHING_NICE;
-				// Say it....
-				// We've found something!
+				// Say it.... We've found something!
 				TacticalCharacterDialogue( pSoldier, QUOTE_FOUND_SOMETHING_SPECIAL );
 				fDidSayCoolQuote = TRUE;
 			}
 		}
 	}
-	// Aknowledge....
+
+	// Acknowledge....
 	if( pSoldier->bTeam == OUR_TEAM && !fDidSayCoolQuote )
 	{
 		pSoldier->DoMercBattleSound( BATTLE_SOUND_GOTIT );
-	}
-
-	// SANDRO - show a message, that we had insufficient APs to take all items
-	if ( fNotEnoughAPs && pSoldier->bTeam == gbPlayerNum && gGameExternalOptions.fEnhancedCloseCombatSystem)
-	{
-		ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, New113Message[MSG113_NOT_ENOUGH_APS_TO_STEAL_ALL], pSoldier->GetName() );
 	}
 
 	gpTempSoldier = pSoldier;
