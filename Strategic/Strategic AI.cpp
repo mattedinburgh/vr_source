@@ -6246,14 +6246,52 @@ void TransferGroupToPool( GROUP **pGroup )
 //NOTE:	Make sure you call SetEnemyGroupSector() first if the group is between sectors!!	See example in ReassignAIGroup()...
 void SendGroupToPool( GROUP **pGroup )
 {
+	if( !pGroup || !*pGroup )
+		return;
+
+	VR_CampaignRecord( "REASSIGNMENT", "mobile_group",
+		(*pGroup)->pEnemyGroup ? (*pGroup)->pEnemyGroup->ubOperationalMission : 0,
+		(*pGroup)->ubGroupID,
+		SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY ),
+		SECTOR( gModSettings.ubSAISpawnSectorX, gModSettings.ubSAISpawnSectorY ),
+		(*pGroup)->ubGroupSize,
+		(*pGroup)->pEnemyGroup ? (*pGroup)->pEnemyGroup->ubOperationalSupply : 0,
+		"field assignment ended or no suitable target exists; return/regroup toward central reserve" );
+
 	if( (*pGroup)->ubSectorX == gModSettings.ubSAISpawnSectorX && (*pGroup)->ubSectorY == gModSettings.ubSAISpawnSectorY )
 	{
+		if( VR_HoldFormationAsReserve( *pGroup, VR_RESERVE_CENTRAL ) )
+		{
+			VR_CampaignRecord( "RESERVE_HOLD", "mobile_group", VR_RESERVE_CENTRAL,
+				(*pGroup)->ubGroupID,
+				SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY ),
+				SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY ),
+				(*pGroup)->ubGroupSize, (*pGroup)->pEnemyGroup->ubOperationalSupply,
+				"formation retained as a persistent central reserve instead of being dissolved into the abstract pool" );
+			VR_CampaignClosePlan( *pGroup, "field mission ended; formation is now holding as persistent central reserve" );
+			return;
+		}
+
 		TransferGroupToPool( pGroup );
 	}
 	else
 	{
 		(*pGroup)->ubSectorIDOfLastReassignment = (UINT8)SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY );
 		MoveSAIGroupToSector( pGroup, SECTOR( gModSettings.ubSAISpawnSectorX, gModSettings.ubSAISpawnSectorY ), EVASIVE, REINFORCEMENTS );
+		if( pGroup && *pGroup )
+		{
+			VR_SetFormationMission( *pGroup, VR_OPMISSION_REGROUP, VR_OPREASON_REGROUP );
+			VR_SetFormationReserveRole( *pGroup, VR_RESERVE_CENTRAL, VR_OPREASON_REGROUP );
+			(*pGroup)->pEnemyGroup->usOperationalFlags |= VR_OPFLAG_REGROUPING;
+			VR_LogOperationalDecision( *pGroup, "RETURN_TO_RESERVE", NULL );
+			VR_CampaignRecord( "OPERATIONAL_OVERRIDE", "regroup", VR_OPMISSION_REGROUP,
+				(*pGroup)->ubGroupID,
+				SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY ),
+				SECTOR( gModSettings.ubSAISpawnSectorX, gModSettings.ubSAISpawnSectorY ),
+				(*pGroup)->pEnemyGroup->ubOperationalSupply,
+				(*pGroup)->pEnemyGroup->ubOperationalMorale,
+				"operational layer marked the returning formation as regrouping and assigned it a central-reserve role" );
+		}
 	}
 }
 
