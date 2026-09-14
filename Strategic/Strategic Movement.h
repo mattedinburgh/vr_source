@@ -87,7 +87,8 @@ typedef struct ENEMYGROUP
 	UINT8 ubOperationalLastDecisionReason;
 	UINT8 ubOperationalRetreatCount;
 	UINT16 usOperationalFlags;
-	UINT16 usOperationalDecisionStamp;
+	UINT8 ubOperationalLastKnownPlayerStrength;	// snapshot, 0..100
+	UINT8 ubOperationalLastKnownMilitiaStrength;	// snapshot, 0..100
 }ENEMYGROUP;
 
 //NOTE:	ALL FLAGS ARE CLEARED WHENEVER A GROUP ARRIVES IN A SECTOR, OR ITS WAYPOINTS ARE
