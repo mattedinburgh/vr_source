@@ -136,7 +136,7 @@
     {
       "name": "inactive/cqb-building-doctrine-2026-09-14",
       "pinned_sha": "ee0f85d4d1a0295f69878ee10b69717f1852ac0a",
-      "classification": "forward-ported-dormant"
+      "classification": "forward-ported-active"
     },
     {
       "name": "inactive/strategic-modernization",
