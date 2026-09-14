@@ -812,7 +812,10 @@ GROUP* CreateNewEnemyGroupDepartingFromSector( UINT32 uiSector, UINT8 ubNumAdmin
 #endif
 
 	if( AddGroupToList( pNew ) )
+	{
+		VR_EnsureEnemyFormationState( pNew );
 		return pNew;
+	}
 	return NULL;
 }
 
