@@ -382,19 +382,65 @@ try {
 
     [System.IO.File]::WriteAllText($filtersPath, $filtersText, (New-Object System.Text.UTF8Encoding($false)))
 
-    # AIMNAS-only equipment has no upstream 1.13 ID to translate.  Map those
-    # items explicitly to the nearest stock LOBOT silhouette.
+    # AIMNAS-only equipment has no upstream 1.13 ID to translate. Resolve it
+    # by item name from the *actual target table*, then map it to the nearest
+    # stock 1.13 LOBOT silhouette. This avoids hard-coding AIMNAS uiIndex values.
     [xml]$filtersDoc = [System.IO.File]::ReadAllText($filtersPath)
-    Add-IdsToNamedFilter $filtersDoc "ZylonVest" "VESTPOS" @(2539,2540)
-    Add-IdsToNamedFilter $filtersDoc "KevlarVest" "VESTPOS" @(2527,2528,2529)
-    Add-IdsToNamedFilter $filtersDoc "SpectraVest" "VESTPOS" @(2523)
-    Add-IdsToNamedFilter $filtersDoc "SWATHelmet" "HELMETPOS" @(2531)
-    Add-IdsToNamedFilter $filtersDoc "Kneepads" "LEGPOS" @(2520,2521)
-    Add-IdsToNamedFilter $filtersDoc "Gasmask" "HEAD1POS" @(2701,2702)
-    Add-IdsToNamedFilter $filtersDoc "Gasmask" "HEAD2POS" @(2701,2702)
-    $extraHolsters = @(1200,1641,1642,1643,1644,1648,1649,1653,1660,1665,1677,1690,2603,2607,2616,2617,2618,2625,2626,2631,2644,2679,2686,2687)
-    Add-IdsToNamedFilter $filtersDoc "Holster" "RTHIGHPOCKPOS" $extraHolsters
-    Add-IdsToNamedFilter $filtersDoc "LeftHolster" "LTHIGHPOCKPOS" $extraHolsters
+
+    $zylonIds = Find-TargetEquipmentIdsByName $targetCatalog @(
+        "Treated Zylon Combat Vest",
+        "Coated Zylon Combat Vest"
+    )
+    $polyIds = Find-TargetEquipmentIdsByName $targetCatalog @(
+        "Spec-18 MilEx Polyurethane Vest",
+        "MilEx Polyurethane Vest",
+        "Coated MilEx Polyurethane Vest"
+    )
+    $frackTacIds = Find-TargetEquipmentIdsByName $targetCatalog @("FrackTac Body Armor")
+    $ballisticMaskIds = Find-TargetEquipmentIdsByName $targetCatalog @("Ballistic Face Mask Level IIIA")
+    $kneePadIds = Find-TargetEquipmentIdsByName $targetCatalog @(
+        "Knee Pads Urban Camo",
+        "Knee Pads Desert Camo"
+    )
+    $gasMaskIds = Find-TargetEquipmentIdsByName $targetCatalog @(
+        "Gas Mask Avon S10",
+        "Gas Mask XM50"
+    )
+    $holsterIds = Find-TargetEquipmentIdsByName $targetCatalog @(
+        "Revolver Holster",
+        "Large Holster",
+        "Shotgun holster",
+        "SMG Leg Rig",
+        "Throwing Knives Leg Rig",
+        "12g Shotgun Rig",
+        "3.11 Thigh Rig",
+        "ETAC Large Holster",
+        "ETAC Nylon Knife Sheath",
+        "Drop Leg Holster",
+        "Russian Pistol holster",
+        "Large Modular Thigh Rig",
+        "12g Shotgun Shells Leg Rig",
+        "BP Black Kit Leg Rig",
+        "SVD Leg Rig",
+        "Sniper Magazines Leg Rig",
+        "Arulcan Rocket Rifle Leg Rig",
+        "60mm Shells Leg Rig",
+        "Small BP Black Kit Leg Rig",
+        "Grenade Launcher Holster",
+        "Dual Holster Belt",
+        "ETAC Revolver Holster",
+        "ETAC Pistol Holster"
+    )
+
+    Add-IdsToNamedFilter $filtersDoc "ZylonVest" "VESTPOS" $zylonIds
+    Add-IdsToNamedFilter $filtersDoc "KevlarVest" "VESTPOS" $polyIds
+    Add-IdsToNamedFilter $filtersDoc "SpectraVest" "VESTPOS" $frackTacIds
+    Add-IdsToNamedFilter $filtersDoc "SWATHelmet" "HELMETPOS" $ballisticMaskIds
+    Add-IdsToNamedFilter $filtersDoc "Kneepads" "LEGPOS" $kneePadIds
+    Add-IdsToNamedFilter $filtersDoc "Gasmask" "HEAD1POS" $gasMaskIds
+    Add-IdsToNamedFilter $filtersDoc "Gasmask" "HEAD2POS" $gasMaskIds
+    Add-IdsToNamedFilter $filtersDoc "Holster" "RTHIGHPOCKPOS" $holsterIds
+    Add-IdsToNamedFilter $filtersDoc "LeftHolster" "LTHIGHPOCKPOS" $holsterIds
     $filtersDoc.Save($filtersPath)
 
     Write-Host ("Cross-reference ID rewrites   : {0}" -f $changedIds)
@@ -584,13 +630,13 @@ if ($pending.Count -gt 0) {
             }
 
             $done = [Math]::Min($pending.Count, $lastIndex + 1)
-            Write-Progress -Activity "Downloading visible armour animation layers" -Status "$done / $($pending.Count)" -PercentComplete (($done * 100.0) / $pending.Count)
+            Write-Progress -Activity "Downloading visible equipment animation layers" -Status "$done / $($pending.Count)" -PercentComplete (($done * 100.0) / $pending.Count)
         }
     }
     finally {
         if ($client) { $client.Dispose() }
         if ($handler) { $handler.Dispose() }
-        Write-Progress -Activity "Downloading visible armour animation layers" -Completed
+        Write-Progress -Activity "Downloading visible equipment animation layers" -Completed
     }
 }
 
@@ -632,7 +678,7 @@ $markerText = @"
 Vengeance Reloaded visible tactical equipment
 Catalog: mattedinburgh/vr_gamedir $VrRef
 Source: 1dot13/gamedir $UpstreamRef Data/Anims/LOBOT art
-Mode: overlay-only (native Vengeance body + 1.13 helmet/vest armour layers)
+Mode: overlay-only (native Vengeance body/weapon + 1.13 equipment layers)
 Assets: $($assetPaths.Count)
 AssetBytes: $totalBytes
 Palettes: $($paletteFiles.Count)
@@ -649,7 +695,7 @@ Write-Host ("Palettes : {0}" -f $paletteFiles.Count)
 Write-Host ("Size     : {0:N1} MiB" -f (($totalBytes + $paletteBytes) / 1MB))
 Write-Host "Marker: $Marker"
 Write-Host ""
-Write-Host "Rebuild/run the current install/all-2026-09-12 source. Helmets and torso armour are now eligible for tactical rendering."
+Write-Host "Visible equipment enabled: helmet, vest, leg armour, face gear, gas mask, headset/ears, backpack, left/right leg rigs and knee pads."
 , '')
     $set = New-Object "System.Collections.Generic.HashSet[string]" ([System.StringComparer]::Ordinal)
     foreach ($token in [regex]::Matches($block, '\b[A-Z][A-Z0-9_]+\b')) {
@@ -824,6 +870,35 @@ foreach ($spec in $bodySpecs) {
     Expand-VengeanceEquipmentLayers -Key $spec.Key -GearRelative $spec.Gear -CatalogRelatives $spec.Catalogs -TargetBodyRelative $spec.TargetBody -TargetCatalogRelative $spec.TargetCatalog -ValidAnimSurfaces $validAnimSurfaces -ValidAnimStates $validAnimStates
 }
 
+
+
+function Find-TargetEquipmentIdsByName {
+    param(
+        [Parameter(Mandatory=$true)]$TargetCatalog,
+        [Parameter(Mandatory=$true)][string[]]$Names
+    )
+
+    $ids = New-Object "System.Collections.Generic.HashSet[int]"
+    $missingNames = New-Object System.Collections.ArrayList
+    foreach ($name in $Names) {
+        $key = Normalize-EquipmentItemName $name
+        $found = $false
+        foreach ($field in @("Long","BR","Name")) {
+            $table = $TargetCatalog.Lookups[$field]
+            if (-not $table.ContainsKey($key)) { continue }
+            foreach ($id in $table[$key]) {
+                [void]$ids.Add([int]$id)
+                $found = $true
+            }
+        }
+        if (-not $found) { [void]$missingNames.Add($name) }
+    }
+
+    if ($missingNames.Count -gt 0) {
+        throw "AIMv53 equipment names not found: $($missingNames -join ', ')"
+    }
+    return @($ids | Sort-Object)
+}
 
 Write-Host "Cross-referencing 1.13 equipment IDs against AIMv53..."
 
@@ -1085,13 +1160,13 @@ if ($pending.Count -gt 0) {
             }
 
             $done = [Math]::Min($pending.Count, $lastIndex + 1)
-            Write-Progress -Activity "Downloading visible armour animation layers" -Status "$done / $($pending.Count)" -PercentComplete (($done * 100.0) / $pending.Count)
+            Write-Progress -Activity "Downloading visible equipment animation layers" -Status "$done / $($pending.Count)" -PercentComplete (($done * 100.0) / $pending.Count)
         }
     }
     finally {
         if ($client) { $client.Dispose() }
         if ($handler) { $handler.Dispose() }
-        Write-Progress -Activity "Downloading visible armour animation layers" -Completed
+        Write-Progress -Activity "Downloading visible equipment animation layers" -Completed
     }
 }
 
