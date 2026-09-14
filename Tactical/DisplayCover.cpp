@@ -259,15 +259,16 @@ void AddCoverObjectToWorld( const INT32& sGridNo, const UINT16& usGraphic, const
 
 	pNode->uiFlags |= LEVELNODE_REVEAL;
 
-	// Keep the visibility / cover overlay readable without the very bright,
-	// saturated look of the stock SPECIAL tiles. This is display-only:
-	// cover/LOS calculations are unchanged. Mine and trait-range overlays
-	// still use their original rendering because they run with cover draw off.
+	// Deliberately ultra-gentle visibility / cover overlay. The stock SPECIAL
+	// tiles are highly saturated; push them deep into the shade table so the
+	// colours become a barely-there tactical hint rather than a painted map.
+	// Display only: cover/LOS calculations are unchanged. Mine and trait-range
+	// overlays keep their original rendering because they run with cover draw off.
 	if( gubDrawMode != COVER_DRAW_OFF )
 	{
-		const UINT8 ubSoftOverlayShade = DEFAULT_SHADE_LEVEL + 2;
-		pNode->ubShadeLevel = ubSoftOverlayShade;
-		pNode->ubNaturalShadeLevel = ubSoftOverlayShade;
+		const UINT8 ubUltraGentleOverlayShade = DEFAULT_SHADE_LEVEL + 8;
+		pNode->ubShadeLevel = ubUltraGentleOverlayShade;
+		pNode->ubNaturalShadeLevel = ubUltraGentleOverlayShade;
 	}
 	else if( NightTime() )
 	{
