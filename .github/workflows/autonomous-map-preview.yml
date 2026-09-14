@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: ja2-autonomous-map-preview
+  group: ja2-render-shared
   cancel-in-progress: true
 
 jobs:
