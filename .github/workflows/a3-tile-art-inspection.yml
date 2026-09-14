@@ -10,6 +10,7 @@ on:
       - 'Tools/compose_a3_field_beds.py'
       - 'Tools/audit_rural_sti.py'
       - 'Tools/compose_a3_rural_props.py'
+      - 'Tools/refine_a3_landmarks.py'
   workflow_dispatch:
 
 jobs:
@@ -83,6 +84,14 @@ jobs:
           $tilesets = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir\Data-Maps-Tiles\Tilesets'
           $target = Join-Path $tilesets '38'
           python '.\Tools\compose_a3_rural_props.py' --tilesets-root $tilesets --target-38 $target
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Preview refined A3 landmark family
+        shell: powershell
+        run: |
+          $tilesets = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir\Data-Maps-Tiles\Tilesets'
+          $target = Join-Path $tilesets '38'
+          python '.\Tools\refine_a3_landmarks.py' --tilesets-root $tilesets --target-38 $target
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Decode A3 B1TC families to contact sheets
