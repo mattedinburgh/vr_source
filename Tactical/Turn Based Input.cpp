@@ -8617,7 +8617,7 @@ void HandleTacticalTakeItem( void )
 	if( gpItemPointer->exists() )
 	{
 		guiExternVo = GetInterfaceGraphicForItem( &(Item[ gpItemPointer->usItem ]) );
-		gusExternVoSubIndex = g_bUsePngItemImages ? 0 : Item[ gpItemPointer->usItem ].ubGraphicNum;
+		gusExternVoSubIndex = GetInterfaceGraphicSubIndex(Item[ gpItemPointer->usItem ].ubGraphicType, Item[ gpItemPointer->usItem ].ubGraphicNum);
 
 		MSYS_ChangeRegionCursor( &gMPanelRegion , EXTERN_CURSOR );
 		MSYS_SetCurrentCursor( EXTERN_CURSOR );
