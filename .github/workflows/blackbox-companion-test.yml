@@ -7,6 +7,8 @@ on:
     paths:
       - 'VRAnalytics.cpp'
       - 'VRAnalytics.h'
+      - 'TacticalAI/AIUtils.cpp'
+      - 'Strategic/Strategic AI.cpp'
       - 'tools/vr_companion_analyze.py'
       - 'tools/test_vr_companion.py'
       - '.github/workflows/blackbox-companion-test.yml'
@@ -41,6 +43,12 @@ jobs:
           int main()
           {
               VRAnalyticsBattleStarted(100, 1, 1, 0, 6, 10, 0);
+              VRAnalyticsTacticalStateInt(1, "hold_confidence", 72);
+              VRAnalyticsTacticalStateInt(1, "perceived_friendly_strength", 600);
+              VRAnalyticsTacticalStateInt(1, "perceived_enemy_strength", 300);
+              VRAnalyticsTacticalFormationSnapshot(1, 1, 1, 1, 0, 10, 8, 0, 1, 0, 1, 20, 3, 18);
+              VRAnalyticsTacticalCandidate(1, "hold_ground", 1200, 72, 72, true, "smoke_test");
+              VRAnalyticsTacticalCandidate(1, "sector_escape", 1200, 28, 35, false, "hold_confidence_high");
               VRAnalyticsTacticalCandidate(1, "attack_option", 1234, 55, 70, true, "smoke_test");
               VRAnalyticsTacticalDecisionSelected(1, 1, 4, 1234, 1200, 25, 90, 80, 3, 2, 5, 1);
               VRAnalyticsTacticalActionDone(1, 4, 1201, 17, 90, 77, true);
@@ -64,7 +72,11 @@ jobs:
           p = Path("VR_BlackBox.jsonl")
           assert p.exists() and p.stat().st_size > 0
           events = [json.loads(line) for line in p.read_text(encoding="utf-8").splitlines() if line.strip()]
+          assert any(e.get("kind") == "session_start" and e.get("blackbox_version") == 2 for e in events)
           assert any(e.get("kind") == "battle_start" for e in events)
+          assert any(e.get("kind") == "formation_snapshot" for e in events)
+          assert any(e.get("kind") == "state" and e.get("key") == "hold_confidence" for e in events)
+          assert any(e.get("kind") == "candidate" and e.get("candidate") == "sector_escape" for e in events)
           assert any(e.get("kind") == "decision_commit" for e in events)
           assert any(e.get("kind") == "strategic_move_order" for e in events)
           assert any(e.get("kind") == "strategic_group_arrived" for e in events)
