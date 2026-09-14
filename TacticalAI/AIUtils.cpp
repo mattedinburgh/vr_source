@@ -2877,6 +2877,7 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 		AICheckHasGun(pSoldier) &&
 		!AICheckShortWeaponRange(pSoldier) &&
 		PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) <= AIGunRange(pSoldier) &&
+		AIEngagementRangeModifier(pSoldier, sClosestOpponent) <= 0 &&
 		GuySawEnemy(pSoldier) &&
 			(InARoom(pSoldier->sGridNo, NULL) && pSoldier->pathing.bLevel == 0 || 
 			CountFriendsInDirection(pSoldier, AIDirection(pSoldier->sGridNo, sClosestOpponent), PythSpacesAway(sClosestOpponent, pSoldier->sGridNo), FALSE) ||
