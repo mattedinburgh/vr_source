@@ -426,6 +426,10 @@ jobs:
           if (Test-Path $survey) {
             Copy-Item -Force $survey (Join-Path $outDir 'A3_architecture.csv')
           }
+          $usage = Join-Path $previewDir 'A3_tile_usage.csv'
+          if (Test-Path $usage) {
+            Copy-Item -Force $usage (Join-Path $outDir 'A3_tile_usage.csv')
+          }
 
           if (Test-Path $statusFile) {
             Copy-Item -Force $statusFile (Join-Path $outDir 'A3_mapshot_status.txt')
@@ -458,6 +462,7 @@ jobs:
             MapPreviews/Auto/A3_mapshot_status.txt
             MapPreviews/Auto/A3_REMASTERED.dat
             MapPreviews/Auto/A3_architecture.csv
+            MapPreviews/Auto/A3_tile_usage.csv
             MapPreviews/Auto/*_tactical_*.png
           if-no-files-found: error
           retention-days: 14
