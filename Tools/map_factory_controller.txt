@@ -133,10 +133,22 @@ def cmd_next(a):
     print(json.dumps({"current":cur,"next":nxt,"status":status,"reason":a.reason}))
     return 0
 
+def cmd_gate(a):
+    attempted=a.attempted; accepted=a.accepted
+    if attempted < 5:
+        action="continue_pilot"
+    elif accepted >= 3:
+        action="continue_map_factory"
+    else:
+        action="switch_to_composition_kits"
+    print(json.dumps({"attempted":attempted,"accepted":accepted,"action":action}))
+    return 0
+
 def main():
     p=argparse.ArgumentParser(); s=p.add_subparsers(dest="cmd",required=True)
     q=s.add_parser("plan"); q.add_argument("--manifest",default=""); q.add_argument("--pilot",action="store_true"); q.set_defaults(fn=cmd_plan)
     q=s.add_parser("recipe"); q.add_argument("--manifest",default="MapFactory/top_rows_A-F.csv"); q.add_argument("--sector",required=True); q.add_argument("--profile",required=True); q.add_argument("--output",required=True); q.add_argument("--meta"); q.add_argument("--strategy",choices=STRATEGIES,default=STRATEGIES[0]); q.set_defaults(fn=cmd_recipe)
     q=s.add_parser("next"); q.add_argument("--strategy",choices=STRATEGIES,required=True); q.add_argument("--bake-ok",action="store_true"); q.add_argument("--visual-changed",action="store_true"); q.add_argument("--reason",default=""); q.set_defaults(fn=cmd_next)
+    q=s.add_parser("gate"); q.add_argument("--attempted",type=int,required=True); q.add_argument("--accepted",type=int,required=True); q.set_defaults(fn=cmd_gate)
     a=p.parse_args(); return a.fn(a)
 if __name__=="__main__": raise SystemExit(main())
