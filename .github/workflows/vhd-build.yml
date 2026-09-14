@@ -54,8 +54,16 @@ jobs:
       - name: Build Vengeance HD Release Win32
         shell: powershell
         run: |
-          & '${{ steps.msbuild.outputs.path }}' '.\ja2_VS2013.sln' /m /t:ja2 /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v120
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $log = Join-Path $env:GITHUB_WORKSPACE 'vhd-msbuild.log'
+          & '${{ steps.msbuild.outputs.path }}' '.\ja2_VS2013.sln' /m /t:ja2 /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v120 /fl "/flp:logfile=$log;verbosity=diagnostic"
+          $buildExit = $LASTEXITCODE
+
+          if (Test-Path $log) {
+            Write-Host '----- MSBuild tail -----'
+            Get-Content $log -Tail 250
+          }
+
+          if ($buildExit -ne 0) { exit $buildExit }
 
           $exe = Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\JA2_EN_Release.exe'
           if (-not (Test-Path $exe)) {
@@ -65,3 +73,11 @@ jobs:
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash
           Write-Host "VHD build OK: $exe"
           Write-Host "SHA256: $hash"
+
+      - name: Upload VHD build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vhd-msbuild-log-${{ github.run_number }}
+          path: vhd-msbuild.log
+          if-no-files-found: warn
