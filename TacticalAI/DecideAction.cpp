@@ -10769,17 +10769,26 @@ INT8 DecideSuppressionResponse(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
 	BOOLEAN fCurrentCover = AnyCoverAtSpot(pSoldier, pSoldier->sGridNo);
 	UINT8 ubFriends = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 3);
+	UINT32 uiSuppressionDecision = AITraceBeginDecision(pSoldier, "suppression_response",
+		sThreat, AI_INTENT_FALLBACK, bRole);
 
 	// A supported screen/fire-base that is still protected should keep shooting
 	// rather than joining the mover's retreat merely because bullets are incoming.
 	if ((bRole == AI_ROLE_SUPPORT || bRole == AI_ROLE_SCREEN) && fCurrentCover &&
 		usCurrentExposure <= 120 && iShock < 50 && ubFriends > 0)
 	{
+		AITraceSelect(pSoldier, uiSuppressionDecision, "suppression_response",
+			AI_ACTION_NONE, pSoldier->sGridNo, 0, 0, FALSE,
+			"supported fire-base remains in cover despite incoming fire");
 		return AI_ACTION_NONE;
 	}
 
 	INT32 iCurrentScore = AIUtilityPositionScore(pSoldier, pSoldier->sGridNo, sThreat,
 		AI_INTENT_FALLBACK, bRole);
+	AITraceCandidate(pSoldier, uiSuppressionDecision, "suppression_response",
+		AI_ACTION_NONE, pSoldier->sGridNo, iCurrentScore, 0, ubFriends,
+		AICrossfirePositionScore(pSoldier, pSoldier->sGridNo, sThreat),
+		"hold current position");
 	INT32 iBestScore = iCurrentScore;
 	INT32 sBestSpot = NOWHERE;
 	INT8 bBestAction = AI_ACTION_NONE;
@@ -10791,6 +10800,12 @@ INT8 DecideSuppressionResponse(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		UINT16 usCoverExposure = AIKnownThreatExposure(pSoldier, sCover, pSoldier->pathing.bLevel);
 		INT32 iCoverScore = AIUtilityPositionScore(pSoldier, sCover, sThreat,
 			AI_INTENT_HOLD, bRole) - PythSpacesAway(pSoldier->sGridNo, sCover);
+		AITraceCandidate(pSoldier, uiSuppressionDecision, "suppression_response",
+			AI_ACTION_TAKE_COVER, sCover, iCoverScore,
+			AIPathExposureCost(pSoldier, sCover, RUNNING),
+			CountNearbyFriends(pSoldier, sCover, DAY_VISION_RANGE / 3),
+			AICrossfirePositionScore(pSoldier, sCover, sThreat),
+			"nearby cover response");
 		if (usCoverExposure <= usCurrentExposure + 25 && iCoverScore > iBestScore)
 		{
 			iBestScore = iCoverScore;
@@ -10807,6 +10822,12 @@ INT8 DecideSuppressionResponse(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 			UINT16 usFallbackExposure = AIKnownThreatExposure(pSoldier, sFallback, pSoldier->pathing.bLevel);
 			INT32 iFallbackScore = AIUtilityPositionScore(pSoldier, sFallback, sThreat,
 				AI_INTENT_FALLBACK, bRole) - PythSpacesAway(pSoldier->sGridNo, sFallback);
+			AITraceCandidate(pSoldier, uiSuppressionDecision, "suppression_response",
+				AI_ACTION_WITHDRAW, sFallback, iFallbackScore,
+				AIPathExposureCost(pSoldier, sFallback, RUNNING),
+				CountNearbyFriends(pSoldier, sFallback, DAY_VISION_RANGE / 3),
+				AICrossfirePositionScore(pSoldier, sFallback, sThreat),
+				"bounded fallback response");
 			if (usFallbackExposure <= usCurrentExposure + 10 && iFallbackScore > iBestScore)
 			{
 				iBestScore = iFallbackScore;
@@ -10820,10 +10841,16 @@ INT8 DecideSuppressionResponse(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (bBestAction != AI_ACTION_NONE && !TileIsOutOfBounds(sBestSpot) &&
 		iBestScore >= iCurrentScore + iRequiredGain)
 	{
+		AITraceSelect(pSoldier, uiSuppressionDecision, "suppression_response",
+			bBestAction, sBestSpot, iBestScore, iCurrentScore, FALSE,
+			"safer response exceeded required utility gain");
 		pSoldier->aiData.usActionData = sBestSpot;
 		return bBestAction;
 	}
 
+	AITraceSelect(pSoldier, uiSuppressionDecision, "suppression_response",
+		AI_ACTION_NONE, pSoldier->sGridNo, iCurrentScore, iBestScore, FALSE,
+		"no movement response exceeded required utility gain");
 	return AI_ACTION_NONE;
 }
 
@@ -10840,9 +10867,17 @@ INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (TileIsOutOfBounds(sThreat))
 		return AI_ACTION_NONE;
 
+	INT8 bFallbackRole = AITacticalRole(pSoldier, sThreat);
+	UINT32 uiFallbackDecision = AITraceBeginDecision(pSoldier, "tactical_fallback",
+		sThreat, AI_INTENT_FALLBACK, bFallbackRole);
+
 	INT32 sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
 	if (TileIsOutOfBounds(sFallback))
+	{
+		AITraceReject(pSoldier, uiFallbackDecision, "tactical_fallback",
+			AI_ACTION_WITHDRAW, NOWHERE, "no legal fallback destination");
 		return AI_ACTION_NONE;
+	}
 
 	BOOLEAN fCurrentCover = AnyCoverAtSpot(pSoldier, pSoldier->sGridNo);
 	BOOLEAN fFallbackCover = AnyCoverAtSpot(pSoldier, sFallback);
@@ -10878,9 +10913,25 @@ INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	INT32 iRequiredGain = (pSoldier->aiData.bUnderFire || !fCurrentCover ||
 		AILocalStress(pSoldier) >= 35) ? 8 : 18;
 
-	if (iGain < iRequiredGain)
-		return AI_ACTION_NONE;
+	INT32 iFallbackUtility = AIUtilityPositionScore(pSoldier, sFallback, sThreat,
+		AI_INTENT_FALLBACK, bFallbackRole);
+	AITraceCandidate(pSoldier, uiFallbackDecision, "tactical_fallback",
+		AI_ACTION_WITHDRAW, sFallback, iFallbackUtility,
+		AIPathExposureCost(pSoldier, sFallback, RUNNING),
+		CountNearbyFriends(pSoldier, sFallback, DAY_VISION_RANGE / 3),
+		AICrossfirePositionScore(pSoldier, sFallback, sThreat),
+		"bounded withdrawal candidate");
 
+	if (iGain < iRequiredGain)
+	{
+		AITraceReject(pSoldier, uiFallbackDecision, "tactical_fallback",
+			AI_ACTION_WITHDRAW, sFallback, "fallback improvement below required gain");
+		return AI_ACTION_NONE;
+	}
+
+	AITraceSelect(pSoldier, uiFallbackDecision, "tactical_fallback",
+		AI_ACTION_WITHDRAW, sFallback, iFallbackUtility, 0, FALSE,
+		"fallback materially improves cover/exposure/support");
 	pSoldier->aiData.usActionData = sFallback;
 	return AI_ACTION_WITHDRAW;
 }
