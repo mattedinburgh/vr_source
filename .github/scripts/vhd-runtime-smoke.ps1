@@ -14,11 +14,12 @@ if (-not (Test-Path $GameRoot)) {
     throw "Installed Vengeance root not found: $GameRoot"
 }
 
-$smokeRoot = Join-Path $env:RUNNER_TEMP ("VHD_SMOKE_" + $env:GITHUB_RUN_ID)
+$runAttempt = if ($env:GITHUB_RUN_ATTEMPT) { $env:GITHUB_RUN_ATTEMPT } else { '1' }
+$smokeRoot = Join-Path $env:RUNNER_TEMP ("VHD_SMOKE_" + $env:GITHUB_RUN_ID + "_" + $runAttempt)
 $logOut = Join-Path $env:GITHUB_WORKSPACE 'vhd-runtime-smoke-logs'
 
 if (Test-Path $smokeRoot) {
-    Remove-Item $smokeRoot -Recurse -Force
+    throw "Refusing to reuse an existing VHD smoke directory: $smokeRoot"
 }
 New-Item -ItemType Directory -Path $smokeRoot | Out-Null
 
@@ -122,6 +123,21 @@ finally {
         Where-Object { $_.Extension -in @('.log','.dmp') -or $_.Name -match 'BlackBox|Crash|error' } |
         ForEach-Object {
             Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $logOut $_.Name) -Force
+        }
+
+    if (Test-Path $smokeProfile) {
+        Get-ChildItem -LiteralPath $smokeProfile -File -Recurse |
+            Where-Object { $_.Extension -in @('.log','.dmp') -or $_.Name -match 'BlackBox|Crash|error' } |
+            ForEach-Object {
+                Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $logOut ("profile_" + $_.Name)) -Force
+            }
+    }
+
+    # Remove junctions explicitly with rmdir; never recurse through them.
+    Get-ChildItem -LiteralPath $smokeRoot -Directory |
+        Where-Object { $_.LinkType -eq 'Junction' } |
+        ForEach-Object {
+            & cmd.exe /c rmdir "$($_.FullName)"
         }
 
     @(
