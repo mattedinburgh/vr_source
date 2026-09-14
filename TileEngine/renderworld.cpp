@@ -47,6 +47,7 @@
 	#include "GameSettings.h"
 	#include "interface control.h"
 	#include "Sound Control.h"
+	#include "Soldier Find.h"
 #endif
 
 #include "LogicalBodyTypes/BodyTypeDB.h"
@@ -3135,8 +3136,12 @@ void ScrollBackground(UINT32 uiDirection, INT16 sScrollXIncrement, INT16 sScroll
 // -----------------------------------------------------------------------------
 
 #define OCCLUSION_BUBBLE_SCAN_RADIUS       4
-#define OCCLUSION_BUBBLE_INNER_RADIUS_SQ   1
-#define OCCLUSION_BUBBLE_OUTER_RADIUS_SQ   5
+// Camera-space ellipse. JA2's isometric projection is much wider than it is
+// tall, so a true screen-space oval reads like Fallout's circular cutaway.
+#define OCCLUSION_BUBBLE_INNER_RADIUS_X    72
+#define OCCLUSION_BUBBLE_INNER_RADIUS_Y    46
+#define OCCLUSION_BUBBLE_OUTER_RADIUS_X    112
+#define OCCLUSION_BUBBLE_OUTER_RADIUS_Y    72
 #define OCCLUSION_BUBBLE_MAX_MARKED_GRIDS  ( ( OCCLUSION_BUBBLE_SCAN_RADIUS * 2 + 1 ) * ( OCCLUSION_BUBBLE_SCAN_RADIUS * 2 + 1 ) )
 
 static INT32  gsOcclusionBubbleLastGridNo = NOWHERE;
@@ -3198,16 +3203,69 @@ static BOOLEAN GetOcclusionBubbleHiddenSide( STRUCTURE *pStructure, INT32 *psHid
 	return !TileIsOutOfBounds( *psHiddenSideGridNo );
 }
 
-static INT32 OcclusionBubbleGridDistanceSquared( INT32 sGridNoA, INT32 sGridNoB )
+static BOOLEAN OcclusionBubblePointInsideEllipse(
+	INT32 iDeltaX, INT32 iDeltaY, INT32 iRadiusX, INT32 iRadiusY )
 {
-	const INT32 iRowA = sGridNoA / WORLD_COLS;
-	const INT32 iColA = sGridNoA % WORLD_COLS;
-	const INT32 iRowB = sGridNoB / WORLD_COLS;
-	const INT32 iColB = sGridNoB % WORLD_COLS;
-	const INT32 iDeltaRow = iRowA - iRowB;
-	const INT32 iDeltaCol = iColA - iColB;
+	if ( iRadiusX <= 0 || iRadiusY <= 0 )
+		return FALSE;
 
-	return iDeltaRow * iDeltaRow + iDeltaCol * iDeltaCol;
+	// Use doubles here deliberately: values are tiny, this runs only on a small
+	// local structure set when the selected merc/grid changes, and it avoids
+	// overflow on high-resolution builds.
+	const double dX = (double)iDeltaX / (double)iRadiusX;
+	const double dY = (double)iDeltaY / (double)iRadiusY;
+	return ( dX * dX + dY * dY ) <= 1.0;
+}
+
+static BOOLEAN OcclusionBubbleGridHasCorner( INT32 sGridNo )
+{
+	UINT8 ubOrientationMask = 0;
+	STRUCTURE *pStructure = gpWorldLevelData[ sGridNo ].pStructureHead;
+
+	while ( pStructure != NULL )
+	{
+		if ( pStructure->fFlags & STRUCTURE_WALLSTUFF )
+		{
+			switch ( pStructure->ubWallOrientation )
+			{
+				case OUTSIDE_TOP_LEFT:
+				case INSIDE_TOP_LEFT:
+					ubOrientationMask |= 0x01;
+					break;
+
+				case OUTSIDE_TOP_RIGHT:
+				case INSIDE_TOP_RIGHT:
+					ubOrientationMask |= 0x02;
+					break;
+			}
+		}
+
+		pStructure = pStructure->pNext;
+	}
+
+	return ubOrientationMask == 0x03;
+}
+
+static void GetOcclusionBubbleMercCenter(
+	SOLDIERTYPE *pSoldier, INT16 *psCenterX, INT16 *psCenterY )
+{
+	INT16 sScreenX = 0;
+	INT16 sScreenY = 0;
+	GetSoldierScreenPos( pSoldier, &sScreenX, &sScreenY );
+
+	// Bounding-box centre tracks stance/animation far better than grid centre.
+	*psCenterX = (INT16)( sScreenX + pSoldier->sBoundingBoxWidth / 2 );
+	*psCenterY = (INT16)( sScreenY + pSoldier->sBoundingBoxHeight / 2 );
+}
+
+static void GetOcclusionBubbleWallAnchor(
+	INT32 sHiddenSideGridNo, INT16 *psAnchorX, INT16 *psAnchorY )
+{
+	GetGridNoScreenPos( sHiddenSideGridNo, 0, psAnchorX, psAnchorY );
+
+	// Grid position is at floor level; move the test point into the wall face so
+	// distance is measured against what actually covers the merc on screen.
+	*psAnchorY = (INT16)( *psAnchorY - WALL_HEIGHT / 2 );
 }
 
 static void UpdateSelectedMercOcclusionBubble( )
@@ -3248,6 +3306,9 @@ static void UpdateSelectedMercOcclusionBubble( )
 		const INT32 sMercGridNo = pViewSoldier->sGridNo;
 		const INT32 iMercRow = sMercGridNo / WORLD_COLS;
 		const INT32 iMercCol = sMercGridNo % WORLD_COLS;
+		INT16 sMercCenterX = 0;
+		INT16 sMercCenterY = 0;
+		GetOcclusionBubbleMercCenter( pViewSoldier, &sMercCenterX, &sMercCenterY );
 
 		for ( INT32 iRowOffset = -OCCLUSION_BUBBLE_SCAN_RADIUS;
 			  iRowOffset <= OCCLUSION_BUBBLE_SCAN_RADIUS; ++iRowOffset )
@@ -3269,21 +3330,40 @@ static void UpdateSelectedMercOcclusionBubble( )
 				{
 					STRUCTURE *pStructure = pNode->pStructureData;
 
-					if ( pStructure != NULL && ( pStructure->fFlags & STRUCTURE_WALLSTUFF ) )
+					if ( pStructure != NULL &&
+						 ( pStructure->fFlags & STRUCTURE_WALLSTUFF ) &&
+						 pStructure->sCubeOffset == 0 )
 					{
 						INT32 sHiddenSideGridNo = NOWHERE;
 
 						if ( GetOcclusionBubbleHiddenSide( pStructure, &sHiddenSideGridNo ) )
 						{
-							const INT32 iDistanceSq =
-								OcclusionBubbleGridDistanceSquared( sHiddenSideGridNo, sMercGridNo );
+							INT16 sWallAnchorX = 0;
+							INT16 sWallAnchorY = 0;
+							GetOcclusionBubbleWallAnchor(
+								sHiddenSideGridNo, &sWallAnchorX, &sWallAnchorY );
 
-							if ( iDistanceSq <= OCCLUSION_BUBBLE_OUTER_RADIUS_SQ )
+							const INT32 iDeltaX = (INT32)sWallAnchorX - (INT32)sMercCenterX;
+							const INT32 iDeltaY = (INT32)sWallAnchorY - (INT32)sMercCenterY;
+							const BOOLEAN fInsideOuter = OcclusionBubblePointInsideEllipse(
+								iDeltaX, iDeltaY,
+								OCCLUSION_BUBBLE_OUTER_RADIUS_X,
+								OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+
+							if ( fInsideOuter )
 							{
+								const BOOLEAN fInsideInner = OcclusionBubblePointInsideEllipse(
+									iDeltaX, iDeltaY,
+									OCCLUSION_BUBBLE_INNER_RADIUS_X,
+									OCCLUSION_BUBBLE_INNER_RADIUS_Y );
 								const BOOLEAN fPreserveOpening =
 									( pStructure->fFlags & ( STRUCTURE_ANYDOOR | STRUCTURE_WALLNWINDOW ) ) != 0;
+								const BOOLEAN fPreserveCorner = OcclusionBubbleGridHasCorner( sGridNo );
 
-								if ( iDistanceSq <= OCCLUSION_BUBBLE_INNER_RADIUS_SQ && !fPreserveOpening )
+								// Plain wall faces disappear in the inner bubble. Openings and
+								// corners stay as faded architectural cues, so the player keeps
+								// understanding where the room boundary actually is.
+								if ( fInsideInner && !fPreserveOpening && !fPreserveCorner )
 								{
 									pNode->uiFlags |= LEVELNODE_OCCLUSION_HIDE;
 								}
