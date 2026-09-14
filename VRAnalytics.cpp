@@ -887,6 +887,73 @@ void VRAnalyticsTacticalCombatHit(
 	EndEvent( file );
 }
 
+void VRAnalyticsTacticalGrenadeThrowLaunched(
+	unsigned int soldierId,
+	int team,
+	int projectileId,
+	int itemIndex,
+	long startGrid,
+	long targetGrid,
+	int targetDistance,
+	int nearestPlayerId,
+	int distanceToNearestPlayer,
+	int targetOffsetToNearestPlayer,
+	int maxRange,
+	int effectiveStrength,
+	int breath,
+	int breathMax,
+	int stance,
+	int throwingTraits,
+	int itemWeight )
+{
+	FILE* file = BeginEvent( VR_ANALYTICS_TACTICAL, "grenade_throw_launch", 0 );
+	if( !file )
+		return;
+
+	fprintf( file,
+		",\"actor_id\":%u,\"team\":%d,\"projectile_id\":%d,\"item\":%d,"
+		"\"start_grid\":%ld,\"target_grid\":%ld,\"target_distance\":%d,"
+		"\"nearest_player_id\":%d,\"distance_to_nearest_player\":%d,"
+		"\"target_offset_to_nearest_player\":%d,\"max_range\":%d,"
+		"\"effective_strength\":%d,\"breath\":%d,\"breath_max\":%d,"
+		"\"stance\":%d,\"throwing_traits\":%d,\"item_weight\":%d",
+		soldierId, team, projectileId, itemIndex,
+		startGrid, targetGrid, targetDistance,
+		nearestPlayerId, distanceToNearestPlayer, targetOffsetToNearestPlayer,
+		maxRange, effectiveStrength, breath, breathMax, stance,
+		throwingTraits, itemWeight );
+	EndEvent( file );
+}
+
+void VRAnalyticsTacticalGrenadeThrowLanded(
+	unsigned int soldierId,
+	int team,
+	int projectileId,
+	int itemIndex,
+	long startGrid,
+	long endGrid,
+	int actualDistance,
+	int tilesMoved,
+	int nearestPlayerId,
+	int landingOffsetToNearestPlayer,
+	bool inWater )
+{
+	FILE* file = BeginEvent( VR_ANALYTICS_TACTICAL, "grenade_throw_landing", 0 );
+	if( !file )
+		return;
+
+	fprintf( file,
+		",\"actor_id\":%u,\"team\":%d,\"projectile_id\":%d,\"item\":%d,"
+		"\"start_grid\":%ld,\"end_grid\":%ld,\"actual_distance\":%d,"
+		"\"tiles_moved\":%d,\"nearest_player_id\":%d,"
+		"\"landing_offset_to_nearest_player\":%d,\"in_water\":%s",
+		soldierId, team, projectileId, itemIndex,
+		startGrid, endGrid, actualDistance, tilesMoved,
+		nearestPlayerId, landingOffsetToNearestPlayer,
+		inWater ? "true" : "false" );
+	EndEvent( file );
+}
+
 void VRAnalyticsTacticalDamageApplied(
 	unsigned int targetId,
 	int targetTeam,
