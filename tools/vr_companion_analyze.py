@@ -337,7 +337,6 @@ def comparison_rows(current: Dict[str, Any], baseline: Dict[str, Any]) -> List[T
 def recommendations(summary: Dict[str, Any], baseline: Optional[Dict[str, Any]]) -> List[str]:
     findings: List[str] = []
     battle = summary["battle"]
-    battle = summary["battle"]
     tac = summary["tactical"]
     strat = summary["strategic"]
 
@@ -423,6 +422,7 @@ def render_markdown(
     baseline_source: Optional[Path],
     baseline: Optional[Dict[str, Any]],
 ) -> str:
+    battle = summary["battle"]
     tac = summary["tactical"]
     strat = summary["strategic"]
 
@@ -441,7 +441,7 @@ def render_markdown(
         f"| Superseded outcomes | {tac['superseded']} ({tac['superseded_rate']:.1f}%) |",
         f"| Average AP spent | {fmt(tac['avg_ap_spent'])} |",
         f"| Average absolute movement | {fmt(tac['avg_abs_grid_delta'])} grids |",
-        f"| Recorded last-attack hit rate | {tac['attack_hit_rate']:.1f}% ({tac['attack_hit_samples']} samples) |",
+        f"| Completed actions with last-attack-hit flag | {tac['last_attack_hit_flag_rate']:.1f}% ({tac['completed_action_samples']} completed-action samples) |",
         f"| Attack-vs-cover comparisons | {tac['attack_cover_pairs']} |",
         f"| Cover wins / attack wins / ties | {tac['defense_wins']} / {tac['offense_wins']} / {tac['ties']} |",
         f"| Mean cover-minus-attack adjusted score | {fmt(tac['avg_cover_minus_attack_score'])} |",
