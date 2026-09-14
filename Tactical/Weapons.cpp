@@ -1106,7 +1106,7 @@ INT32 EffectiveArmourLBE( OBJECTTYPE * pObj )
 	iValue = 0;
 	
 	for (attachmentList::iterator iter = (*pObj)[0]->attachments.begin(); iter != (*pObj)[0]->attachments.end(); ++iter) {
-		if (Item[iter->usItem].usItemClass == IC_ARMOUR && (*iter)[0]->data.objectStatus > 0 )
+		if ( iter->exists() && Item[iter->usItem].usItemClass == IC_ARMOUR && (*iter)[0]->data.objectStatus > 0 )
 		{
 			INT32 iValue2;
 
