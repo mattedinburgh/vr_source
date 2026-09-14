@@ -800,11 +800,12 @@ static BOOLEAN MapFactoryLoadPilotMap( const STR8 pMapName )
 
 	CHAR8 zTelemetry[256];
 	_snprintf( zTelemetry, sizeof(zTelemetry) - 1,
-		"FACTORY_PROFILE map=%s profile=%u surfaces=%lu paletteGraded=%lu nonPaletteSkipped=%lu tileset=%ld",
+		"FACTORY_PROFILE map=%s profile=%u surfaces=%lu paletteGraded=%lu trueColorGraded=%lu nonPaletteSkipped=%lu tileset=%ld",
 		pMapName,
 		(UINT16)GetMapFactoryCurrentVisualProfile(),
 		GetMapFactorySurfaceSeenCount(),
 		GetMapFactoryPaletteGradedCount(),
+		GetMapFactoryTrueColorGradedCount(),
 		GetMapFactoryNonPaletteSkippedCount(),
 		giCurrentTilesetID );
 	zTelemetry[sizeof(zTelemetry) - 1] = 0;
