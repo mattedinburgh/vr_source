@@ -223,6 +223,90 @@ static BOOLEAN SaveEngineMapPreviewBMP( const STR8 pMapFilename, UINT32 uiSurfac
 	return fWriteOK;
 }
 
+
+static UINT8 BuildMapshotCameraSet( INT32 *pCamera, UINT8 ubMax )
+{
+	if ( pCamera == NULL || ubMax == 0 || gpWorldLevelData == NULL )
+		return 0;
+
+	UINT8 ubCount = 0;
+	const INT32 sRows = WORLD_MAX / WORLD_COLS;
+
+	// Prefer authored structures/roofs so visual QA samples the parts of a sector
+	// where new wall, roof, door and streetscape art is actually visible.
+	for ( INT32 sGridNo = 0; ubCount < ubMax && sGridNo < WORLD_MAX; ++sGridNo )
+	{
+		if ( gpWorldLevelData[sGridNo].pRoofHead == NULL &&
+			 gpWorldLevelData[sGridNo].pStructHead == NULL )
+			continue;
+
+		const INT32 sRow = sGridNo / WORLD_COLS;
+		const INT32 sCol = sGridNo % WORLD_COLS;
+		BOOLEAN fFarEnough = TRUE;
+		for ( UINT8 i = 0; i < ubCount; ++i )
+		{
+			const INT32 r = pCamera[i] / WORLD_COLS;
+			const INT32 c = pCamera[i] % WORLD_COLS;
+			if ( abs( r - sRow ) + abs( c - sCol ) < 28 )
+			{
+				fFarEnough = FALSE;
+				break;
+			}
+		}
+		if ( fFarEnough )
+			pCamera[ubCount++] = sGridNo;
+	}
+
+	// Stable fallbacks guarantee a useful sector-wide sample even on sparse maps.
+	const INT32 sFallback[][2] =
+	{
+		{ sRows / 4, WORLD_COLS / 4 },
+		{ sRows / 4, (WORLD_COLS * 3) / 4 },
+		{ sRows / 2, WORLD_COLS / 2 },
+		{ (sRows * 3) / 4, WORLD_COLS / 4 },
+		{ (sRows * 3) / 4, (WORLD_COLS * 3) / 4 },
+		{ sRows / 2, (WORLD_COLS * 3) / 4 }
+	};
+	for ( UINT8 i = 0; ubCount < ubMax && i < (UINT8)(sizeof(sFallback)/sizeof(sFallback[0])); ++i )
+	{
+		const INT32 sGridNo = sFallback[i][0] * WORLD_COLS + sFallback[i][1];
+		if ( sGridNo >= 0 && sGridNo < WORLD_MAX )
+			pCamera[ubCount++] = sGridNo;
+	}
+	return ubCount;
+}
+
+static void SaveMapshotTacticalPreviewSet( const STR8 pMapFilename )
+{
+	if ( !gfMapPreviewCaptureMode || pMapFilename == NULL || gpWorldLevelData == NULL )
+		return;
+
+	INT32 sCameraGrid[6];
+	const UINT8 ubCameraCount = BuildMapshotCameraSet( sCameraGrid, 6 );
+	for ( UINT8 i = 0; i < ubCameraCount; ++i )
+	{
+		INT16 sCellX = 0, sCellY = 0;
+		ConvertGridNoToCenterCellXY( sCameraGrid[i], &sCellX, &sCellY );
+		SetRenderCenter( sCellX, sCellY );
+		InvalidateWorldRedundency();
+		SetRenderFlags( RENDER_FLAG_FULL | RENDER_FLAG_SHADOWS );
+		RenderWorld();
+
+		CHAR8 zShotName[320];
+		_snprintf( zShotName, sizeof(zShotName) - 1, "%s_tactical_%02u.dat", pMapFilename, (UINT16)(i + 1) );
+		zShotName[sizeof(zShotName) - 1] = 0;
+
+		const UINT16 usCaptureHeight = ( gsVIEWPORT_END_Y > 0 && gsVIEWPORT_END_Y <= SCREEN_HEIGHT )
+			? (UINT16)gsVIEWPORT_END_Y : (UINT16)SCREEN_HEIGHT;
+		SaveEngineMapPreviewBMP( zShotName, FRAME_BUFFER, (UINT16)SCREEN_WIDTH, usCaptureHeight );
+	}
+
+	CHAR8 zStatus[96];
+	_snprintf( zStatus, sizeof(zStatus) - 1, "TACTICAL_OK captures=%u", ubCameraCount );
+	zStatus[sizeof(zStatus) - 1] = 0;
+	MapPreviewWriteStatus( zStatus );
+}
+
 void GenerateAllMapsInit(void)
 {
 	GETFILESTRUCT FileInfo;
@@ -403,6 +487,9 @@ UINT32 MapUtilScreenHandle(void)
 		LightReset();
 		LightSpriteRenderAll();
 	}
+	// Capture six full-colour gameplay-scale tactical views before overhead rendering.
+	SaveMapshotTacticalPreviewSet( zFilename );
+
 	// Render small map
 	//iOffsetHorizontal = (SCREEN_WIDTH / 2) - (640 / 2);// Horizontal start postion of the overview map
 	//iOffsetVertical = (SCREEN_HEIGHT - 160) / 2 - 160;// Vertical start position of the overview map
