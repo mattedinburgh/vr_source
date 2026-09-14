@@ -3888,8 +3888,9 @@ INT16 GetAPsToStealItem( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pTargetSoldier, INT
 		sAPCost = PlotPath( pSoldier, sMapPos, NO_COPYROUTE, NO_PLOT, TEMPORARY, (UINT16)pSoldier->usUIMovementMode, NOT_STEALTH, FORWARD, pSoldier->bActionPoints );
 	}
 
-	// One transparent interaction charge.  The inventory selection menu must not
-	// add another pickup charge for every selected item.
+	// Charge the close-contact steal interaction here.  Multi-item inventory
+	// stealing adds a normal pickup/handling cost for each item actually taken
+	// inside SoldierStealItemFromSoldier(), matching the 1.13 scaling model.
 	sAPCost += GetBaseAPsToStealItem( pSoldier, pTargetSoldier );
 
 	// CJC August 13 2002: added cost to stand into equation
