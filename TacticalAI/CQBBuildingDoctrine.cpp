@@ -195,7 +195,8 @@ static void VRCQBRememberAssessment(SOLDIERTYPE *pSoldier, const VRCQB_CONTEXT *
 
 // CQB/building doctrine is live on the canonical integration branch. Runtime
 // callers still sit behind normal survival, disengagement, casualty, suppression
-// and attack-priority gates in DecideAction.
+// and attack-priority gates in DecideAction. VERIFY_AI_INTEGRITY.ps1 enforces
+// those RED/BLACK ordering and telemetry contracts on the canonical branch.
 BOOLEAN VRCQB_IsRuntimeEnabled(void)
 {
 	return TRUE;
