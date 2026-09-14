@@ -87,6 +87,24 @@ void VRAnalyticsBattleEnded(
 	int militiaCount,
 	bool enemyRetreated );
 
+// Strategic execution telemetry. Group IDs and target sectors provide the
+// bridge from Queen-level intent to later tactical battles.
+void VRAnalyticsStrategicMoveOrdered(
+	unsigned long worldMinutes,
+	unsigned int groupId,
+	int sourceSector,
+	int targetSector,
+	int groupSize,
+	int moveCode,
+	int intention );
+
+void VRAnalyticsStrategicGroupArrived(
+	unsigned long worldMinutes,
+	unsigned int groupId,
+	int sector,
+	int groupSize,
+	const char* assignment );
+
 // Tactical convenience wrappers. They maintain one active decision chain per
 // soldier and automatically correlate action completion with the selection.
 void VRAnalyticsTacticalCandidate(
