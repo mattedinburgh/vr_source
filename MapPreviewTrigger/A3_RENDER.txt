@@ -1,2 +1,2 @@
-A3 hand-authored V2 architecture survey
-Purpose: render clean authored A3 baseline and export exact connected building footprints plus dominant wall/roof/floor tile families.
+A3 V2 first hand-authored in-game composition
+Purpose: render explicit crop fields, irrigation, working-yard and paddock compositions plus six tactical-view screenshots.
