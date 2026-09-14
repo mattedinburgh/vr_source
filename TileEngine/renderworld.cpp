@@ -814,6 +814,35 @@ static UINT16 *ResolveVisibleEquipmentShadeTable(
 	return pDefaultShadeTable;
 }
 
+static BOOLEAN IsVisibleEquipmentOverlayLayer( const char *pIdentifier )
+{
+	if ( pIdentifier == NULL )
+		return FALSE;
+
+	static const char *const equipmentLayers[] =
+	{
+		"legarmor",
+		"vest",
+		"legrig",
+		"legrig_left",
+		"knees",
+		"backpack",
+		"facegear",
+		"gasmask",
+		"ears",
+		"helmet"
+	};
+
+	UINT32 i;
+	for ( i = 0; i < sizeof( equipmentLayers ) / sizeof( equipmentLayers[ 0 ] ); ++i )
+	{
+		if ( strcmp( pIdentifier, equipmentLayers[ i ] ) == 0 )
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
 // Render only the 1.13 LOBOT equipment layers over Vengeance's native soldier sprite.
 // This deliberately does not replace the base body/weapon animation: it preserves VR animation
 // compatibility while making equipped armour visible.  Equipment uses the same animation frame
@@ -990,7 +1019,8 @@ static BOOLEAN RenderFullLogicalMercModel(
 	{
 		const Layers::LayerProperties *pLayerProperties =
 			pBodyType->GetLayerProperties( validateIter->index );
-		if ( pLayerProperties == NULL || !pLayerProperties->render )
+		if ( pLayerProperties == NULL || !pLayerProperties->render ||
+			!IsVisibleEquipmentOverlayLayer( pLayerProperties->identifier ) )
 			continue;
 
 		BodyType::LogicalSurfaceType *pLogicalSurface =
