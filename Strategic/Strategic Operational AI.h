@@ -64,6 +64,20 @@ enum VR_OPERATIONAL_FLAGS
 	VR_OPFLAG_REGROUPING      = 0x0010
 };
 
+typedef struct VR_OPERATIONAL_SCORE
+{
+	INT32 iTotal;
+	INT32 iBasePriority;
+	INT32 iOwnershipValue;
+	INT32 iTownValue;
+	INT32 iMineValue;
+	INT32 iSAMValue;
+	INT32 iPlayerForceRisk;
+	INT32 iMilitiaRisk;
+	INT32 iDistanceCost;
+	INT32 iSupplyRisk;
+} VR_OPERATIONAL_SCORE;
+
 BOOLEAN VR_FormationStateIsInitialized( const GROUP *pGroup );
 void VR_EnsureEnemyFormationState( GROUP *pGroup );
 void VR_EnsureAllEnemyFormationStates();
@@ -72,6 +86,8 @@ void VR_RecordLegacyAssignment( GROUP *pGroup, UINT8 ubTargetSectorID, UINT8 ubL
 void VR_RecordOperationalContact( GROUP *pObserver, UINT8 ubSectorID,
 	UINT8 ubObservedPlayerStrength, UINT8 ubObservedMilitiaStrength, UINT8 ubConfidence );
 void VR_DecayOperationalIntelHourly();
+INT32 VR_ScoreOperationalTarget( GROUP *pGroup, UINT8 ubSectorID, VR_OPERATIONAL_SCORE *pBreakdown );
+UINT8 VR_FindBestOperationalTarget( GROUP *pGroup, INT32 *piBestScore );
 
 UINT16 VR_GetFormationID( GROUP *pGroup );
 UINT8 VR_GetFormationMission( GROUP *pGroup );
