@@ -36,6 +36,7 @@
 #endif
 
 #include "Strategic Movement.h"
+#include "VRAnalytics.h"
 
 #include <map>
 
@@ -6301,6 +6302,212 @@ static INT32 AIHoldGroundConfidence(SOLDIERTYPE *pSoldier, INT8 bSituation,
 	return __max(0, __min(100, iConfidence));
 }
 
+// Black Box v2: one omniscient team snapshot per tactical turn. This record is
+// explicitly separate from the actor's perceived state below; it exists so the
+// Companion can diagnose perception errors without leaking hidden information
+// back into AI decisions.
+static UINT32 guiVRFormationSnapshotTurn[256] = { 0 };
+static INT16 gsVRFormationSnapshotSectorX = -1;
+static INT16 gsVRFormationSnapshotSectorY = -1;
+static INT8 gbVRFormationSnapshotSectorZ = -1;
+
+static void VRTraceFormationSnapshot(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || !AICombatTeam(pSoldier) || !VRAnalyticsIsEnabled())
+		return;
+
+	INT32 iTeam = (INT32)pSoldier->bTeam;
+	if (iTeam < 0 || iTeam >= 256)
+		return;
+
+	UINT32 uiTurnStamp = guiTurnCnt + 1;
+	BOOLEAN fSectorChanged =
+		gsVRFormationSnapshotSectorX != gWorldSectorX ||
+		gsVRFormationSnapshotSectorY != gWorldSectorY ||
+		gbVRFormationSnapshotSectorZ != gbWorldSectorZ;
+
+	if (fSectorChanged)
+	{
+		for (UINT16 i = 0; i < 256; ++i)
+			guiVRFormationSnapshotTurn[i] = 0;
+
+		gsVRFormationSnapshotSectorX = gWorldSectorX;
+		gsVRFormationSnapshotSectorY = gWorldSectorY;
+		gbVRFormationSnapshotSectorZ = gbWorldSectorZ;
+	}
+
+	if (guiVRFormationSnapshotTurn[(UINT8)iTeam] == uiTurnStamp)
+		return;
+	guiVRFormationSnapshotTurn[(UINT8)iTeam] = uiTurnStamp;
+
+	INT32 iLiving = 0;
+	INT32 iReady = 0;
+	INT32 iCowering = 0;
+	INT32 iDisengaging = 0;
+	INT32 iEscaping = 0;
+	INT32 iLeaders = 0;
+	INT32 iMoraleTotal = 0;
+	INT32 iStressTotal = 0;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife <= 0)
+		{
+			continue;
+		}
+
+		++iLiving;
+		if (pFriend->flags.uiStatusFlags & SOLDIER_COWERING)
+			++iCowering;
+		if (AIDisengagementActive(pFriend))
+			++iDisengaging;
+		if (AIEscapeActive(pFriend))
+			++iEscaping;
+		if (AICheckIsLeader(pFriend))
+			++iLeaders;
+
+		if (pFriend->stats.bLife >= OKLIFE &&
+			!pFriend->bCollapsed &&
+			!pFriend->bBreathCollapsed &&
+			!(pFriend->usSoldierFlagMask & SOLDIER_POW))
+		{
+			++iReady;
+			iMoraleTotal += pFriend->aiData.bAIMorale;
+			iStressTotal += AILocalStress(pFriend);
+		}
+	}
+
+	VRAnalyticsTacticalFormationSnapshot(
+		uiTurnStamp,
+		pSoldier->bTeam,
+		gWorldSectorX,
+		gWorldSectorY,
+		gbWorldSectorZ,
+		iLiving,
+		iReady,
+		iCowering,
+		iDisengaging,
+		iEscaping,
+		iLeaders,
+		TeamPercentKilled(pSoldier->bTeam),
+		iReady > 0 ? iMoraleTotal / iReady : 0,
+		iReady > 0 ? iStressTotal / iReady : 0);
+}
+
+static const char* VREscapeReason(INT8 bSituation, UINT8 ubCasualties,
+	BOOLEAN fLastSurvivor, INT32 iHoldConfidence, UINT8 ubCollapseStreak,
+	BOOLEAN fShouldEscape)
+{
+	if (fShouldEscape)
+	{
+		if (fLastSurvivor)
+			return "last_survivor_low_confidence";
+		if (ubCasualties >= 90)
+			return "near_annihilation_low_confidence";
+		if (bSituation == AI_BATTLE_CATASTROPHIC)
+			return "sustained_catastrophic_collapse";
+		return "sustained_losing_collapse";
+	}
+
+	if (bSituation == AI_BATTLE_WINNING)
+		return "battle_winning_hold";
+	if (bSituation == AI_BATTLE_EVEN && ubCasualties < 90)
+		return "even_battle_hold";
+	if (iHoldConfidence >= 55)
+		return "hold_confidence_high";
+	if (ubCollapseStreak < 2)
+		return "collapse_not_sustained";
+	return "escape_gates_not_met";
+}
+
+static void VRTraceRetreatAssessment(
+	SOLDIERTYPE *pSoldier,
+	INT8 bSituation,
+	UINT8 ubCasualties,
+	BOOLEAN fLastSurvivor,
+	UINT8 ubRoutPressure,
+	INT32 iHoldConfidence,
+	UINT8 ubCollapseStreak,
+	BOOLEAN fShouldEscape)
+{
+	if (!pSoldier || !VRAnalyticsIsEnabled())
+		return;
+
+	VRTraceFormationSnapshot(pSoldier);
+
+	UINT16 usFriends = AIPerceivedFriendlyStrength(pSoldier);
+	UINT16 usEnemies = AIPerceivedEnemyStrength(pSoldier);
+	INT32 iStress = AILocalStress(pSoldier);
+	INT32 iRisk = AIPersonalRisk(pSoldier);
+	INT32 iTolerance = AIPersonalRiskTolerance(pSoldier);
+	INT32 iLifePercent = pSoldier->stats.bLifeMax > 0 ?
+		(100 * pSoldier->stats.bLife) / pSoldier->stats.bLifeMax : 0;
+	INT32 iEscapePressure = __min(150,
+		(100 - iHoldConfidence) + (INT32)ubCollapseStreak * 8 +
+		(INT32)ubRoutPressure / 5);
+
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "turn", (long)(guiTurnCnt + 1));
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "battle_situation", bSituation);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "perceived_friendly_strength", usFriends);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "perceived_enemy_strength", usEnemies);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "known_opponents", pSoldier->aiData.bOppCnt);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "friendly_casualty_pct", ubCasualties);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "local_casualty_pct", AILocalCasualtyPercent(pSoldier));
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "hold_confidence", iHoldConfidence);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "local_stress", iStress);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "personal_risk", iRisk);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "risk_tolerance", iTolerance);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "rout_pressure", ubRoutPressure);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "collapse_streak", ubCollapseStreak);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "last_survivor_pressure", fLastSurvivor ? 1 : 0);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "nearby_operational_friends",
+		AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4));
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "stable_leader_nearby",
+		AIHasNearbyStableLeader(pSoldier) ? 1 : 0);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "has_cover",
+		AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ? 1 : 0);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "has_sight_cover",
+		SightCoverAtSpot(pSoldier, pSoldier->sGridNo, FALSE) ? 1 : 0);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "under_fire",
+		pSoldier->aiData.bUnderFire ? 1 : 0);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "life_pct", iLifePercent);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "marksmanship", pSoldier->stats.bMarksmanship);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "experience_level", pSoldier->stats.bExpLevel);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "gun_deadliness",
+		AICheckHasGun(pSoldier) ? AIGunDeadliness(pSoldier) : 0);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "gun_ammo",
+		AICheckHasGun(pSoldier) ? AIGunAmmo(pSoldier) : 0);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "last_attack_hit",
+		pSoldier->LastAttackHit() ? 1 : 0);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "last_target_suppressed",
+		pSoldier->LastTargetSuppressed() ? 1 : 0);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "escape_intent_active",
+		AIEscapeActive(pSoldier) ? 1 : 0);
+
+	VRAnalyticsTacticalCandidate(
+		pSoldier->ubID,
+		"hold_ground",
+		pSoldier->sGridNo,
+		iHoldConfidence,
+		iHoldConfidence,
+		(iHoldConfidence >= 25 || bSituation == AI_BATTLE_WINNING ||
+		 bSituation == AI_BATTLE_EVEN),
+		"current_combat_power_position_and_cohesion");
+
+	VRAnalyticsTacticalCandidate(
+		pSoldier->ubID,
+		"sector_escape",
+		pSoldier->sGridNo,
+		100 - iHoldConfidence,
+		iEscapePressure,
+		fShouldEscape,
+		VREscapeReason(bSituation, ubCasualties, fLastSurvivor,
+			iHoldConfidence, ubCollapseStreak, fShouldEscape));
+}
+
 static UINT8 AIUpdateEscapeCollapseStreak(SOLDIERTYPE *pSoldier, INT8 bSituation,
 	UINT8 ubCasualties, BOOLEAN fLastSurvivor, UINT8 ubRoutPressure,
 	INT32 iHoldConfidence)
@@ -6517,11 +6724,17 @@ static void AIUpdateEscapeStateFromSnapshot(SOLDIERTYPE *pSoldier, INT8 bSituati
 		ubCasualties, fLastSurvivor, ubRoutPressure);
 	UINT8 ubCollapseStreak = AIUpdateEscapeCollapseStreak(pSoldier, bSituation,
 		ubCasualties, fLastSurvivor, ubRoutPressure, iHoldConfidence);
+	BOOLEAN fShouldEscape = AIShouldStartEscapeFromState(
+		pSoldier, bSituation, ubCasualties, fLastSurvivor,
+		ubRoutPressure, iHoldConfidence, ubCollapseStreak);
+
+	VRTraceRetreatAssessment(
+		pSoldier, bSituation, ubCasualties, fLastSurvivor,
+		ubRoutPressure, iHoldConfidence, ubCollapseStreak, fShouldEscape);
 
 	if (gubAIEscapeIntent[ubID] == 0 &&
 		bSituation != AI_BATTLE_UNKNOWN &&
-		AIShouldStartEscapeFromState(pSoldier, bSituation, ubCasualties,
-			fLastSurvivor, ubRoutPressure, iHoldConfidence, ubCollapseStreak))
+		fShouldEscape)
 	{
 		// Fireteam survival beats individual flight. Cohesion owns the actual
 		// reassignment because it can validate a real movement route first; escape
@@ -7015,8 +7228,34 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 	AIUpdateEscapeStateFromSnapshot(pSoldier, bSituation, ubCasualties,
 		fLastSurvivor, ubRoutPressure);
 
-	if (pSoldier->aiData.bOrders == STATIONARY &&
-		bSituation != AI_BATTLE_CATASTROPHIC && !fLastSurvivor)
+	INT32 iHoldConfidence = AIHoldGroundConfidence(pSoldier, bSituation,
+		ubCasualties, fLastSurvivor, ubRoutPressure);
+	BOOLEAN fStationaryHold =
+		pSoldier->aiData.bOrders == STATIONARY &&
+		bSituation != AI_BATTLE_CATASTROPHIC && !fLastSurvivor;
+	BOOLEAN fShouldDisengage =
+		!fStationaryHold &&
+		bSituation != AI_BATTLE_UNKNOWN &&
+		AIShouldStartDisengagementFromState(
+			pSoldier, bSituation, ubCasualties, fLastSurvivor, ubRoutPressure);
+
+	INT32 iDisengagePressure = __min(150,
+		(100 - iHoldConfidence) +
+		AILocalStress(pSoldier) / 4 +
+		ubRoutPressure / 5);
+
+	VRAnalyticsTacticalCandidate(
+		pSoldier->ubID,
+		"organized_disengagement",
+		pSoldier->sGridNo,
+		100 - iHoldConfidence,
+		iDisengagePressure,
+		fShouldDisengage,
+		fStationaryHold ? "stationary_hold_order" :
+		(fShouldDisengage ? "low_hold_confidence_and_local_pressure" :
+		 "disengagement_gates_not_met"));
+
+	if (fStationaryHold)
 	{
 		gubAIDisengageTurns[ubID] = 0;
 		gubAIForcedDisengageTurns[ubID] = 0;
@@ -7055,9 +7294,7 @@ BOOLEAN AIUpdateDisengagementState(SOLDIERTYPE *pSoldier)
 		}
 	}
 
-	if (bSituation != AI_BATTLE_UNKNOWN &&
-		AIShouldStartDisengagementFromState(pSoldier, bSituation, ubCasualties,
-			fLastSurvivor, ubRoutPressure))
+	if (fShouldDisengage)
 	{
 		UINT8 ubDuration = (bSituation == AI_BATTLE_CATASTROPHIC || fLastSurvivor) ? 3 : 2;
 		if (gubAIDisengageTurns[ubID] == 0)
