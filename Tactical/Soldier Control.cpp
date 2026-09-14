@@ -11418,14 +11418,15 @@ static UINT8 BleedoutRescueTurns( SOLDIERTYPE *pSoldier, UINT8 ubRoundTrauma )
 	// Intentional campaign asymmetry: player-side troops get a generous rescue
 	// window, while enemy soldiers bleed out much faster. Life is not fair, and the
 	// player should have more opportunity to recover valued mercs than hostile grunts.
-	if ( pSoldier && pSoldier->bTeam == ENEMY_TEAM )
+	if ( pSoldier && pSoldier->bTeam != gbPlayerNum )
 	{
-		// Enemy casualties never get more than four full rescue rounds.
-		// More severe sub-catastrophic trauma shortens that to three.
+		// Non-player combatants (enemy soldiers and militia) never get more than
+		// four full rescue rounds. More severe sub-catastrophic trauma shortens that
+		// to three. The generous protection is reserved for the player's mercs.
 		return ( ubRoundTrauma <= 45 ) ? 4 : 3;
 	}
 
-	// Player mercs and allied militia keep the longer rescue window.
+	// Only player mercs keep the longer rescue window.
 	if ( ubRoundTrauma <= 30 )
 		return 10;
 	if ( ubRoundTrauma <= 45 )
