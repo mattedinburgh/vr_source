@@ -246,6 +246,72 @@ void VR_SetFormationReserveRole( GROUP *pGroup, UINT8 ubReserveRole, UINT8 ubRea
 	pGroup->pEnemyGroup->ubOperationalLastDecisionReason = ubReason;
 }
 
+BOOLEAN VR_HoldFormationAsReserve( GROUP *pGroup, UINT8 ubReserveRole )
+{
+	if( !VR_OPERATIONAL_PERSISTENT_RESERVES_ENABLED || !VR_IsEnemyFormation( pGroup ) )
+		return FALSE;
+
+	VR_EnsureEnemyFormationState( pGroup );
+	if( !VR_FormationStateIsInitialized( pGroup ) )
+		return FALSE;
+
+	RemovePGroupWaypoints( pGroup );
+	pGroup->ubMoveType = ONE_WAY;
+	pGroup->pEnemyGroup->ubIntention = NO_INTENTIONS;
+	pGroup->pEnemyGroup->ubOperationalMission = VR_OPMISSION_RESERVE;
+	pGroup->pEnemyGroup->ubOperationalReserveRole = ubReserveRole;
+	pGroup->pEnemyGroup->ubOperationalTargetSectorID = (UINT8)SECTOR( pGroup->ubSectorX, pGroup->ubSectorY );
+	pGroup->pEnemyGroup->ubOperationalLastDecisionReason = VR_OPREASON_REGROUP;
+	pGroup->pEnemyGroup->usOperationalFlags &= ~VR_OPFLAG_REGROUPING;
+
+	VR_LogOperationalDecision( pGroup, "RESERVE_HOLD", NULL );
+	return TRUE;
+}
+
+BOOLEAN VR_IsReadyOperationalReserve( GROUP *pGroup )
+{
+	if( !VR_OPERATIONAL_PERSISTENT_RESERVES_ENABLED || !VR_IsEnemyFormation( pGroup ) )
+		return FALSE;
+
+	VR_EnsureEnemyFormationState( pGroup );
+	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+
+	return pEnemy->ubOperationalMission == VR_OPMISSION_RESERVE &&
+		!pGroup->fBetweenSectors &&
+		pGroup->ubGroupSize > 0 &&
+		pEnemy->ubOperationalSupply >= 50 &&
+		pEnemy->ubOperationalMorale >= 50;
+}
+
+GROUP *VR_FindReadyOperationalReserve()
+{
+	GROUP *pBest = NULL;
+	INT32 iBestReadiness = -1;
+
+	GROUP *pGroup = gpGroupList;
+	while( pGroup )
+	{
+		if( VR_IsReadyOperationalReserve( pGroup ) )
+		{
+			ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+			INT32 iReadiness =
+				(INT32)pEnemy->ubOperationalSupply +
+				(INT32)pEnemy->ubOperationalMorale +
+				(INT32)pGroup->ubGroupSize * 3;
+
+			if( iReadiness > iBestReadiness )
+			{
+				iBestReadiness = iReadiness;
+				pBest = pGroup;
+			}
+		}
+
+		pGroup = pGroup->next;
+	}
+
+	return pBest;
+}
+
 static UINT8 VR_EstimateStrengthWithConfidence( INT32 iObservedStrength, UINT8 ubConfidence )
 {
 	INT32 iEstimate = iObservedStrength;
