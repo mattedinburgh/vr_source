@@ -5335,11 +5335,18 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 					return(AI_ACTION_USE_SKILL);
 				}
 			}
-			// frequencies are clear, order a strike
-			else if ( GetBestAoEGridNo(pSoldier, &skilltargetgridno, max(1, gSkillTraitValues.usVOMortarRadius - 2), 1, 2, SoldierCondTrue, SoldierCondFalse) )
+			// Frequencies are clear: use only legally known/reported contacts for artillery.
+			// Require a credible cluster and keep friendlies outside the strike safety radius.
+			else if ( AISelectKnownArtilleryTarget(pSoldier, &skilltargetgridno) )
 			{
 				pSoldier->usAISkillUse = SKILLS_RADIO_ARTILLERY;
 				pSoldier->aiData.usActionData = skilltargetgridno;
+				UINT32 uiArtilleryDecision = AITraceBeginDecision(pSoldier, "radio_artillery",
+					skilltargetgridno, AITacticalIntent(pSoldier, skilltargetgridno),
+					AITacticalRole(pSoldier, skilltargetgridno));
+				AITraceSelect(pSoldier, uiArtilleryDecision, "radio_artillery",
+					AI_ACTION_USE_SKILL, skilltargetgridno, 0, 0, FALSE,
+					"credible known contact cluster; friendly safety clear");
 				return(AI_ACTION_USE_SKILL);
 			}
 		}
