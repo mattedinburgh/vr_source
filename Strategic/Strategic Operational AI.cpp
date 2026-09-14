@@ -1,6 +1,9 @@
+#include <string.h>
 #include "Strategic Operational AI.h"
 #include "Strategic Movement.h"
 #include "Campaign Types.h"
+#include "strategicmap.h"
+#include "Strategic Mines.h"
 #include "VRAnalytics.h"
 
 #define VR_OPERATIONAL_MAGIC0 'O'
@@ -216,6 +219,118 @@ void VR_DecayOperationalIntelHourly()
 		if( pEnemy->ubOperationalIntelConfidence == 0 )
 			pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_INTEL_DECAY;
 	}
+}
+
+static INT32 VR_OperationalAbs( INT32 iValue )
+{
+	return iValue < 0 ? -iValue : iValue;
+}
+
+INT32 VR_ScoreOperationalTarget( GROUP *pGroup, UINT8 ubSectorID, VR_OPERATIONAL_SCORE *pBreakdown )
+{
+	VR_OPERATIONAL_SCORE Score;
+	memset( &Score, 0, sizeof( Score ) );
+
+	if( !pGroup || !VR_IsEnemyFormation( pGroup ) )
+	{
+		if( pBreakdown )
+			*pBreakdown = Score;
+		return Score.iTotal;
+	}
+
+	VR_EnsureEnemyFormationState( pGroup );
+	const UINT8 ubX = (UINT8)SECTORX( ubSectorID );
+	const UINT8 ubY = (UINT8)SECTORY( ubSectorID );
+	SECTORINFO *pSector = &SectorInfo[ ubSectorID ];
+	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+
+	// Static/administrative facts are legitimate Queen knowledge.
+	if( pSector->ubGarrisonID != NO_GARRISON )
+		Score.iBasePriority = 15;
+	if( StrategicMap[ CALCULATE_STRATEGIC_INDEX( ubX, ubY ) ].fEnemyControlled == FALSE )
+		Score.iOwnershipValue = 30;
+	if( pSector->ubTraversability[ 4 ] == TOWN )
+		Score.iTownValue = 15;
+	if( IsThereAMineInThisSector( ubX, ubY ) )
+		Score.iMineValue = 25;
+	if( IsThisSectorASAMSector( ubX, ubY, 0 ) )
+		Score.iSAMValue = 20;
+
+	// Dynamic force risk is knowledge-bound. Never query current player/militia
+	// presence here; only consume this formation's decaying operational report.
+	if( pEnemy->ubOperationalIntelConfidence > 0 &&
+		pEnemy->ubOperationalLastKnownPlayerSectorID == ubSectorID )
+	{
+		if( pEnemy->ubOperationalLastKnownPlayerStrength != VR_OPERATIONAL_STRENGTH_UNKNOWN )
+			Score.iPlayerForceRisk = -(
+				(INT32)pEnemy->ubOperationalLastKnownPlayerStrength *
+				(INT32)pEnemy->ubOperationalIntelConfidence / 100 );
+
+		if( pEnemy->ubOperationalLastKnownMilitiaStrength != VR_OPERATIONAL_STRENGTH_UNKNOWN )
+			Score.iMilitiaRisk = -(
+				(INT32)pEnemy->ubOperationalLastKnownMilitiaStrength *
+				(INT32)pEnemy->ubOperationalIntelConfidence / 100 );
+	}
+
+	const INT32 iDistance =
+		VR_OperationalAbs( (INT32)pGroup->ubSectorX - (INT32)ubX ) +
+		VR_OperationalAbs( (INT32)pGroup->ubSectorY - (INT32)ubY );
+	Score.iDistanceCost = -( iDistance * 3 );
+
+	if( pEnemy->ubOperationalSupply < 50 )
+		Score.iSupplyRisk = -( 50 - (INT32)pEnemy->ubOperationalSupply );
+
+	Score.iTotal =
+		Score.iBasePriority +
+		Score.iOwnershipValue +
+		Score.iTownValue +
+		Score.iMineValue +
+		Score.iSAMValue +
+		Score.iPlayerForceRisk +
+		Score.iMilitiaRisk +
+		Score.iDistanceCost +
+		Score.iSupplyRisk;
+
+	if( pBreakdown )
+		*pBreakdown = Score;
+	return Score.iTotal;
+}
+
+UINT8 VR_FindBestOperationalTarget( GROUP *pGroup, INT32 *piBestScore )
+{
+	if( !pGroup || !VR_IsEnemyFormation( pGroup ) )
+	{
+		if( piBestScore )
+			*piBestScore = 0;
+		return 0xff;
+	}
+
+	UINT8 ubBestSector = (UINT8)SECTOR( pGroup->ubSectorX, pGroup->ubSectorY );
+	INT32 iBestScore = -32767;
+
+	for( INT32 iSector = 0; iSector < 256; ++iSector )
+	{
+		VR_OPERATIONAL_SCORE Score;
+		const INT32 iScore =
+			VR_ScoreOperationalTarget( pGroup, (UINT8)iSector, &Score );
+
+		// Ignore empty wilderness merely because it is geographically close.
+		const INT32 iStrategicValue =
+			Score.iBasePriority + Score.iOwnershipValue + Score.iTownValue +
+			Score.iMineValue + Score.iSAMValue;
+		if( iStrategicValue <= 0 )
+			continue;
+
+		if( iScore > iBestScore )
+		{
+			iBestScore = iScore;
+			ubBestSector = (UINT8)iSector;
+		}
+	}
+
+	if( piBestScore )
+		*piBestScore = iBestScore;
+	return ubBestSector;
 }
 
 UINT16 VR_GetFormationID( GROUP *pGroup )
