@@ -27,6 +27,7 @@
 	#include "Tactical Save.h"
 #endif
 
+#include "Campaign Tactical Telemetry.h"
 #include "SaveLoadGame.h"
 #include "debug control.h"
 
@@ -181,6 +182,8 @@ UINT16 FromSmokeTypeToWorldFlags( INT8 bType )
 
 INT32 NewSmokeEffect( INT32 sGridNo, UINT16 usItem, INT8 bLevel, UINT8 ubOwner, BOOL fFromRemoteClient )
 {
+	VR_TacticalTelemetrySmoke( ubOwner, sGridNo, usItem, bLevel );
+
 	SMOKEEFFECT *pSmoke;
 	INT32				iSmokeIndex;
 	INT8				bSmokeEffectType=0;
