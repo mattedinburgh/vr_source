@@ -105,6 +105,27 @@ extern	BOOLEAN	gfTopMessageDirty;
 // file-wide scope: RenderTiles() now needs it before the legacy blitter section.
 #define	Z_STRIP_DELTA_Y					( Z_SUBLAYERS * 10 )
 
+// Forward declarations for Fallout-style multi-Z wall cutaway helpers.
+// Definitions live later in this translation unit; RenderTiles() calls them first.
+static void BlitOcclusionBubble8BitWallZStrip(
+	UINT16 *pDestBuf, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer,
+	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
+	UINT16 usImageIndex, INT16 sZStripIndex );
+static void BlitOcclusionBubble8BitWallFadeZStrip(
+	UINT16 *pDestBuf, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer,
+	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
+	UINT16 usImageIndex, INT16 sZStripIndex );
+static void BlitOcclusionBubbleTrueColorWallZStrip(
+	UINT16 *pDestBuf, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer,
+	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
+	UINT16 usImageIndex, UINT8 ubShadeLevel, INT16 sZStripIndex,
+	BOOLEAN fSameZBurnsThrough, UINT8 ubViewSoftening );
+static void BlitOcclusionBubbleTrueColorWallFadeZStrip(
+	UINT16 *pDestBuf, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer,
+	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
+	UINT16 usImageIndex, UINT8 ubShadeLevel, INT16 sZStripIndex,
+	BOOLEAN fSameZBurnsThrough, UINT8 ubViewSoftening );
+
 //#define TILES_MERC						0x00000400
 //#define TILES_Z_BLITTER					0x00000200
 //#define TILES_Z_WRITE						0x00000100
