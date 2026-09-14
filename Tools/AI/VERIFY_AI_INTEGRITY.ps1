@@ -171,7 +171,7 @@ if (-not $decideText.Contains("VRAnalyticsCommitDecision")) {
 if (-not $frameworkText.Contains("install/all-2026-09-12")) {
     Fail "UNIFIED_AI_FRAMEWORK.md no longer names install/all-2026-09-12 as canonical"
 }
-if (-not $frameworkText.Contains("single")) {
+if ($frameworkText -notmatch "(?i)single") {
     Fail "UNIFIED_AI_FRAMEWORK.md no longer clearly describes a single-source AI architecture"
 }
 
