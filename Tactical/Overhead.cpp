@@ -5922,6 +5922,10 @@ void CommonEnterCombatModeCode( )
     {
         if ( pSoldier->bActive )
         {
+            // Round trauma must never leak from a previous engagement.
+            pSoldier->ubBleedoutTraumaThisRound = 0;
+            pSoldier->ubBleedoutGraceRound = 0;
+
             if ( pSoldier->bInSector && pSoldier->ubBodyType != CROW )
             {
                 // Set some flags for quotes
@@ -6117,6 +6121,9 @@ void ExitCombatMode( )
     {
         if ( pSoldier->bActive )
         {
+            pSoldier->ubBleedoutTraumaThisRound = 0;
+            pSoldier->ubBleedoutGraceRound = 0;
+
             if ( pSoldier->bInSector )
             {
                 // Reset some flags
