@@ -1,0 +1,139 @@
+name: Extract C5 inherited visual references
+
+on:
+  push:
+    branches:
+      - install/all-2026-09-12
+    paths:
+      - 'MapPreviewTrigger/C5_EXTRACT.txt'
+      - '.github/workflows/extract-c5-inherited-visuals.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: san-mona-c5-inherited-extract
+  cancel-in-progress: true
+
+jobs:
+  extract:
+    runs-on: [self-hosted, Windows, X64, ja2-render]
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Retarget exporter to v120
+        shell: powershell
+        run: |
+          Get-ChildItem $env:GITHUB_WORKSPACE -Recurse -Filter '*.vcxproj' -File | ForEach-Object {
+            $p=$_.FullName
+            $t=[IO.File]::ReadAllText($p)
+            $n=$t.Replace('<PlatformToolset>v120_xp</PlatformToolset>','<PlatformToolset>v120</PlatformToolset>')
+            if($n-ne$t){[IO.File]::WriteAllText($p,$n,(New-Object Text.UTF8Encoding($false)))}
+          }
+
+      - name: Find MSBuild
+        id: msbuild
+        shell: powershell
+        run: |
+          $candidates=@(
+            'C:\Program Files (x86)\MSBuild\12.0\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe'
+          )
+          $m=$candidates|Where-Object{Test-Path $_}|Select-Object -First 1
+          if(-not $m){$cmd=Get-Command msbuild.exe -ErrorAction SilentlyContinue;if($cmd){$m=$cmd.Source}}
+          if(-not $m){throw 'MSBuild not found.'}
+          "path=$m"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Build ja2export only
+        shell: powershell
+        run: |
+          & '${{ steps.msbuild.outputs.path }}' '.\ext\export\ja2export_VS2013.vcxproj' /m /p:Configuration=Release /p:Platform=Win32
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $exe=Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\Release\ja2export.exe'
+          if(-not(Test-Path $exe)){throw "ja2export missing: $exe"}
+
+      - name: Extract exact inherited C5 source frames
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $game='C:\VENGENCE\Jagged Alliance 2'
+          $exporter=Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\Release\ja2export.exe'
+          $out=Join-Path $env:GITHUB_WORKSPACE 'C5Inherited'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          $targets=@(
+            'sgrass1.sti',
+            'build_01.sti',
+            'build_21.sti',
+            'build_06.sti',
+            'flat_r1.sti',
+            'flat_r2.sti'
+          )
+
+          $slfs=@(Get-ChildItem -LiteralPath $game -Recurse -File -Filter '*.slf' -ErrorAction SilentlyContinue)
+          Write-Host "SLF archives found: $($slfs.Count)"
+          $manifest=@()
+
+          foreach($target in $targets){
+            $stem=[IO.Path]::GetFileNameWithoutExtension($target)
+            $targetOut=Join-Path $out $stem
+            New-Item -ItemType Directory -Force -Path $targetOut | Out-Null
+            $found=$false
+            $source=''
+
+            $loose=Get-ChildItem -LiteralPath $game -Recurse -File -Filter $target -ErrorAction SilentlyContinue | Select-Object -First 1
+            if($loose){
+              Write-Host "Loose source: $target <- $($loose.FullName)"
+              & $exporter sti -unpack -offsets -create_dst $loose.FullName $targetOut | Out-Host
+              $source=$loose.FullName
+              $found=@(Get-ChildItem -LiteralPath $targetOut -Recurse -File -Filter '*.png' -ErrorAction SilentlyContinue).Count -gt 0
+            }
+
+            if(-not $found){
+              foreach($slf in $slfs){
+                Remove-Item -LiteralPath $targetOut -Recurse -Force -ErrorAction SilentlyContinue
+                New-Item -ItemType Directory -Force -Path $targetOut | Out-Null
+                Write-Host "Trying $target in $($slf.FullName)"
+                & $exporter sti -unpack -offsets -create_dst -lib $slf.FullName $target $targetOut | Out-Host
+                $pngs=@(Get-ChildItem -LiteralPath $targetOut -Recurse -File -Filter '*.png' -ErrorAction SilentlyContinue)
+                if($pngs.Count -gt 0){
+                  $found=$true
+                  $source=$slf.FullName
+                  break
+                }
+              }
+            }
+
+            $frames=@(Get-ChildItem -LiteralPath $targetOut -Recurse -File -Filter '*.png' -ErrorAction SilentlyContinue | Sort-Object FullName)
+            $manifest += [pscustomobject]@{
+              target=$target
+              found=[bool]$found
+              source=$source
+              frame_count=$frames.Count
+              output=$targetOut
+            }
+            if(-not $found){Write-Warning "Could not resolve $target from live data stack."}
+            else{Write-Host "Resolved $target: $($frames.Count) frame PNG(s)"}
+          }
+
+          $manifest | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 (Join-Path $out 'manifest.json')
+          $missing=@($manifest|Where-Object{-not $_.found})
+          if($missing.Count -gt 0){
+            Write-Warning "Missing inherited assets: $($missing.target -join ', ')"
+          }
+
+      - name: Upload inherited visual references
+        uses: actions/upload-artifact@v4
+        with:
+          name: san-mona-c5-inherited-visual-references
+          path: C5Inherited/
+          if-no-files-found: error
+          retention-days: 7
