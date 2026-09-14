@@ -75,6 +75,59 @@ extern UINT32		guiLastTacticalRealTime;
 
 GROUP *gpGroupList;
 
+// Strategic team compatibility bridge. The marker/team bytes live in former
+// GROUP padding, so this does not enlarge the serialized structure.
+BOOLEAN VR_StrategicGroupTeamIsInitialized( const GROUP *pGroup )
+{
+	return pGroup &&
+		pGroup->ubStrategicTeamMagic0 == 'S' &&
+		pGroup->ubStrategicTeamMagic1 == 'T' &&
+		pGroup->ubStrategicTeamMagic2 == 'G' &&
+		pGroup->ubStrategicTeam < MAXTEAMS;
+}
+
+void VR_SetStrategicGroupTeam( GROUP *pGroup, UINT8 ubTeam )
+{
+	if( !pGroup || ubTeam >= MAXTEAMS )
+		return;
+
+	pGroup->ubStrategicTeam = ubTeam;
+	pGroup->ubStrategicTeamMagic0 = 'S';
+	pGroup->ubStrategicTeamMagic1 = 'T';
+	pGroup->ubStrategicTeamMagic2 = 'G';
+	pGroup->fPlayer = ( ubTeam == OUR_TEAM );
+}
+
+void VR_NormalizeStrategicGroupTeam( GROUP *pGroup )
+{
+	if( !pGroup )
+		return;
+
+	if( !VR_StrategicGroupTeamIsInitialized( pGroup ) )
+		VR_SetStrategicGroupTeam( pGroup, pGroup->fPlayer ? OUR_TEAM : ENEMY_TEAM );
+	else
+		pGroup->fPlayer = ( pGroup->ubStrategicTeam == OUR_TEAM );
+}
+
+UINT8 VR_GetStrategicGroupTeam( const GROUP *pGroup )
+{
+	if( !pGroup )
+		return ENEMY_TEAM;
+	if( VR_StrategicGroupTeamIsInitialized( pGroup ) )
+		return pGroup->ubStrategicTeam;
+	return pGroup->fPlayer ? OUR_TEAM : ENEMY_TEAM;
+}
+
+BOOLEAN VR_IsPlayerStrategicGroup( const GROUP *pGroup )
+{
+	return VR_GetStrategicGroupTeam( pGroup ) == OUR_TEAM;
+}
+
+BOOLEAN VR_IsEnemyStrategicGroup( const GROUP *pGroup )
+{
+	return VR_GetStrategicGroupTeam( pGroup ) == ENEMY_TEAM;
+}
+
 GROUP *gpPendingSimultaneousGroup = NULL;
 
 // is the bottom of the map panel dirty?
