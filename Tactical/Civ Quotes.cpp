@@ -152,6 +152,7 @@ UINT32	uiTauntFinishTimes[ TOTAL_SOLDIERS ];
 // high-priority semantic callout keeps large sectors readable without silently
 // losing important grenade/medic/withdrawal warnings.
 static UINT32 guiLastAIActionPopupTime = 0;
+static UINT8 gubActiveAICombatCalloutPriority = 0;
 static UINT8 gubLastAICombatCalloutEvent[ TOTAL_SOLDIERS ];
 static UINT32 guiLastAICombatCalloutEventTime[ TOTAL_SOLDIERS ];
 
@@ -283,6 +284,7 @@ void ShutDownQuoteBox( BOOLEAN fForce )
 	gCivQuoteData.iDialogueBox = -1;
 
 		gCivQuoteData.bActive = FALSE;
+		gubActiveAICombatCalloutPriority = 0;
 #ifdef JA2UB
 // no UB
 #else
@@ -1101,6 +1103,7 @@ void InitCivQuoteSystem( )
 	gCivQuoteData.iVideoOverlay	= -1;
 	gCivQuoteData.iDialogueBox	= -1;
 	guiLastAIActionPopupTime = 0;
+	gubActiveAICombatCalloutPriority = 0;
 	memset( &gubLastAICombatCalloutEvent, 0, sizeof(gubLastAICombatCalloutEvent) );
 	memset( &guiLastAICombatCalloutEventTime, 0, sizeof(guiLastAICombatCalloutEventTime) );
 	memset( &gPendingAICombatCallout, 0, sizeof(gPendingAICombatCallout) );
@@ -1130,6 +1133,7 @@ BOOLEAN LoadCivQuotesFromLoadGameFile( HWFILE hFile )
 	// anv: reset taunt timers after game is loaded (guiBaseJA2Clock can decrease)
 	memset( &uiTauntFinishTimes, 0, sizeof( uiTauntFinishTimes ) );
 	guiLastAIActionPopupTime = 0;
+	gubActiveAICombatCalloutPriority = 0;
 	memset( &gubLastAICombatCalloutEvent, 0, sizeof(gubLastAICombatCalloutEvent) );
 	memset( &guiLastAICombatCalloutEventTime, 0, sizeof(guiLastAICombatCalloutEventTime) );
 	memset( &gPendingAICombatCallout, 0, sizeof(gPendingAICombatCallout) );
@@ -1936,11 +1940,33 @@ static void ShowAICombatCalloutNow( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallo
 		return;
 
 	ShowTauntPopupBox( pCiv, zText );
+	gubActiveAICombatCalloutPriority = AICombatCalloutPriority( ubCallout );
 	VRAnalyticsDiagnostic( VR_ANALYTICS_TACTICAL, "soldier", pCiv->ubID,
 		"battle_callout", AICombatCalloutName( ubCallout ) );
 	guiLastAIActionPopupTime = GetJA2Clock();
 	gubLastAICombatCalloutEvent[pCiv->ubID] = (UINT8)ubCallout;
 	guiLastAICombatCalloutEventTime[pCiv->ubID] = guiLastAIActionPopupTime;
+}
+
+static BOOLEAN AICombatCalloutIsCommand( AI_BATTLE_CALLOUT ubCallout )
+{
+	switch ( ubCallout )
+	{
+		case AI_BATTLE_CALL_ADVANCE:
+		case AI_BATTLE_CALL_TAKE_COVER:
+		case AI_BATTLE_CALL_FLANK_LEFT:
+		case AI_BATTLE_CALL_FLANK_RIGHT:
+		case AI_BATTLE_CALL_WITHDRAW:
+		case AI_BATTLE_CALL_REGROUP:
+		case AI_BATTLE_CALL_RALLY:
+		case AI_BATTLE_CALL_SUPPRESS:
+		case AI_BATTLE_CALL_SMOKE:
+		case AI_BATTLE_CALL_REINFORCE:
+		case AI_BATTLE_CALL_HOLD:
+			return TRUE;
+		default:
+			return FALSE;
+	}
 }
 
 void QueueAICombatCallout( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout )
@@ -1956,7 +1982,26 @@ void QueueAICombatCallout( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout )
 		return;
 
 	UINT8 ubChance = AICombatCalloutChance( ubCallout );
-	if ( ubChance == 0 || Random(100) >= ubChance )
+	if ( ubChance == 0 )
+		return;
+
+	// Orders are more often voiced by soldiers with command presence, while
+	// inexperienced troops still call urgent hazards at the normal rate.
+	if ( AICombatCalloutIsCommand( ubCallout ) )
+	{
+		if ( pCiv->stats.bLeadership >= 75 ||
+			pCiv->ubSoldierClass == SOLDIER_CLASS_ELITE ||
+			pCiv->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA )
+		{
+			ubChance = (UINT8)__min( 100, (INT32)ubChance + 18 );
+		}
+		else if ( pCiv->stats.bLeadership < 40 && ubChance > 15 )
+		{
+			ubChance = (UINT8)__max( 10, (INT32)ubChance - 10 );
+		}
+	}
+
+	if ( Random(100) >= ubChance )
 		return;
 
 	UINT32 uiNow = GetJA2Clock();
@@ -1969,6 +2014,23 @@ void QueueAICombatCallout( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout )
 		return;
 	}
 
+	UINT8 ubPriority = AICombatCalloutPriority( ubCallout );
+
+	// Urgent battlefield hazards may interrupt a lower-value semantic bubble,
+	// but never a normal civilian/dialogue quote (active priority == 0).
+	if ( gCivQuoteData.bActive && gubActiveAICombatCalloutPriority > 0 &&
+		ubPriority >= 88 && ubPriority >= gubActiveAICombatCalloutPriority + 15 )
+	{
+		ShutDownQuoteBox( TRUE );
+		if ( gPendingAICombatCallout.fActive &&
+			gPendingAICombatCallout.ubPriority <= ubPriority )
+		{
+			gPendingAICombatCallout.fActive = FALSE;
+		}
+		ShowAICombatCalloutNow( pCiv, ubCallout );
+		return;
+	}
+
 	if ( gCivQuoteData.bActive == FALSE &&
 		(guiLastAIActionPopupTime == 0 || (uiNow - guiLastAIActionPopupTime) >= 900) )
 	{
@@ -1976,7 +2038,6 @@ void QueueAICombatCallout( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout )
 		return;
 	}
 
-	UINT8 ubPriority = AICombatCalloutPriority( ubCallout );
 	// Keep the most important waiting event. Equal-priority events keep the first
 	// call so rapid grenade/contact bursts do not churn the queue.
 	if ( !gPendingAICombatCallout.fActive || ubPriority > gPendingAICombatCallout.ubPriority )
