@@ -160,9 +160,6 @@ jobs:
           function Remove-SandboxSafely {
             param([Parameter(Mandatory=$true)][string]$Path)
             if (-not (Test-Path $Path)) { return }
-
-            # Never recurse into data-layer junctions. Remove the reparse points first,
-            # then delete only the genuinely local sandbox files/directories.
             Get-ChildItem -LiteralPath $Path -Force -Directory -ErrorAction SilentlyContinue |
               Where-Object { ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 } |
               ForEach-Object {
@@ -170,13 +167,9 @@ jobs:
                 cmd /c rmdir "$($_.FullName)"
                 if ($LASTEXITCODE -ne 0) { throw "Could not remove sandbox junction: $($_.FullName)" }
               }
-
             Remove-Item -LiteralPath $Path -Recurse -Force
           }
 
-          # Cancelled self-hosted runs can leave old render sandboxes behind. Since this
-          # workflow is serialized by ja2-render-shared, no other A3 render can be using
-          # one now. Reclaim those stale folders before allocating anything new.
           Get-ChildItem -LiteralPath 'C:\VENGENCE' -Force -Directory -Filter 'JA2_RENDER_SANDBOX_*' -ErrorAction SilentlyContinue |
             ForEach-Object {
               try {
@@ -189,35 +182,23 @@ jobs:
 
           Remove-SandboxSafely -Path $sandbox
           New-Item -ItemType Directory -Force -Path $sandbox | Out-Null
-
           $driveBefore = Get-PSDrive -Name C
           Write-Host ("C: free before sandbox root setup: {0:N2} GB" -f ($driveBefore.Free / 1GB))
 
-          # Do not duplicate the game-root payload. The sandbox and the live game are on
-          # the same NTFS volume, so immutable runtime files can be hard-linked at zero
-          # additional payload cost. Ja2.ini and ddraw.ini stay private copies because
-          # the render harness edits only those two files.
           $privateRootFiles = @('Ja2.ini', 'ddraw.ini')
           $skipRootFiles = @('JA2_EN_Release.exe', 'MapEditor_Vengeance.exe')
-
           Get-ChildItem -LiteralPath $gameRoot -Force -File | ForEach-Object {
-            if ($_.Name -like '*.log' -or $_.Name -like '*.pdb' -or $skipRootFiles -contains $_.Name) {
-              return
-            }
-
+            if ($_.Name -like '*.log' -or $_.Name -like '*.pdb' -or $skipRootFiles -contains $_.Name) { return }
             $destination = Join-Path $sandbox $_.Name
             if ($privateRootFiles -contains $_.Name) {
               Copy-Item -LiteralPath $_.FullName -Destination $destination -Force
               Write-Host "Private copy: $($_.Name)"
               return
             }
-
             try {
               New-Item -ItemType HardLink -Path $destination -Target $_.FullName -ErrorAction Stop | Out-Null
               Write-Host "Hard link: $($_.Name)"
             } catch {
-              # Small-file fallback only. A large fallback copy would recreate the exact
-              # disk-exhaustion failure this step is designed to eliminate.
               if ($_.Length -le 16MB) {
                 Copy-Item -LiteralPath $_.FullName -Destination $destination -Force
                 Write-Warning "Hard link failed for $($_.Name); copied small file instead."
@@ -229,12 +210,7 @@ jobs:
 
           $driveAfter = Get-PSDrive -Name C
           Write-Host ("C: free after sandbox root setup: {0:N2} GB" -f ($driveAfter.Free / 1GB))
-
-          $excludedDirs = @(
-            '00000', 'Profiles', 'MAP_PREVIEWS', '.git', 'FORK',
-            'build', 'lib', '.vs', 'Data-Maps-Tiles'
-          )
-
+          $excludedDirs = @('00000', 'Profiles', 'MAP_PREVIEWS', '.git', 'FORK', 'build', 'lib', '.vs', 'Data-Maps-Tiles')
           Get-ChildItem -LiteralPath $gameRoot -Force -Directory | ForEach-Object {
             if ($excludedDirs -contains $_.Name) { return }
             $link = Join-Path $sandbox $_.Name
@@ -242,66 +218,37 @@ jobs:
             New-Item -ItemType Junction -Path $link -Target $_.FullName | Out-Null
           }
 
-          # Use the freshly fetched vr_gamedir map/tile layer, not the possibly stale
-          # live Data-Maps-Tiles directory. It is disposable, so pass 2 may safely
-          # overlay A3_REMASTERED.dat there without touching the live installation.
           $mapLayer = Join-Path $gamedir 'Data-Maps-Tiles'
-          if (-not (Test-Path (Join-Path $mapLayer 'maps\A3.dat'))) {
-            throw "Fresh vr_gamedir map layer is incomplete: $mapLayer"
-          }
+          if (-not (Test-Path (Join-Path $mapLayer 'maps\A3.dat'))) { throw "Fresh vr_gamedir map layer is incomplete: $mapLayer" }
           New-Item -ItemType Junction -Path (Join-Path $sandbox 'Data-Maps-Tiles') -Target $mapLayer | Out-Null
 
-          # Use the Vengeance editor identity and the actual Vengeance data stack.
           $builtEditor = Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\MapEditor_EN_Release.exe'
           $editor = Join-Path $sandbox 'MapEditor_Vengeance.exe'
           Copy-Item -Force $builtEditor $editor
-
           $ja2Ini = Join-Path $sandbox 'Ja2.ini'
           $vfsIni = Join-Path $sandbox 'vfs_config.Vengeance.ini'
           if (-not (Test-Path $ja2Ini)) { throw "Missing Vengeance Ja2.ini: $ja2Ini" }
           if (-not (Test-Path $vfsIni)) { throw "Missing Vengeance VFS config: $vfsIni" }
-
           $ja2Text = [System.IO.File]::ReadAllText($ja2Ini)
-          if ($ja2Text -notmatch '(?im)^\s*VFS_CONFIG_INI\s*=\s*vfs_config\.Vengeance\.ini\s*$') {
-            throw 'Ja2.ini is not configured for vfs_config.Vengeance.ini.'
-          }
-          # Windowed sandbox only; the live installation is never modified.
+          if ($ja2Text -notmatch '(?im)^\s*VFS_CONFIG_INI\s*=\s*vfs_config\.Vengeance\.ini\s*$') { throw 'Ja2.ini is not configured for vfs_config.Vengeance.ini.' }
           $ja2Text = [regex]::Replace($ja2Text, '(?im)^\s*SCREEN_MODE_WINDOWED\s*=\s*\d+\s*$', 'SCREEN_MODE_WINDOWED = 1')
           [System.IO.File]::WriteAllText($ja2Ini, $ja2Text, (New-Object System.Text.UTF8Encoding($false)))
-
-          # The Vengeance VFS always mounts a writable UserProf. Keep the live
-          # profile isolated, but provide an empty writable profile in the sandbox.
           $profileRoot = Join-Path $sandbox 'Profiles\UserProfile_Vengeance'
           New-Item -ItemType Directory -Force -Path $profileRoot | Out-Null
-
           $required = @('Data','Data-1.13','Data-Vengeance','Data-AIMv53','Data-Maps-Tiles','Data-PCM','Data-UI','Data-Weapon-Sounds','Data-Voice-Taunts','Data-Music','Profiles\UserProfile_Vengeance')
           foreach ($dir in $required) {
             $requiredPath = Join-Path $sandbox $dir
             if (-not (Test-Path $requiredPath)) { throw "Vengeance data layer missing from sandbox: $requiredPath" }
           }
 
-          # cnc-ddraw defaults to OpenGL/fullscreen. For unattended editor capture,
-          # give this executable an explicit GDI/windowed profile to avoid GPU/window
-          # creation stalls while preserving the normal live-game renderer.
           $ddrawIni = Join-Path $sandbox 'ddraw.ini'
           if (Test-Path $ddrawIni) {
             $ddraw = [System.IO.File]::ReadAllText($ddrawIni)
             $ddraw = [regex]::Replace($ddraw, '(?ims)^\[MapEditor_Vengeance\]\s*.*?(?=^\[|\z)', '')
-            $profileLines = @(
-              '',
-              '[MapEditor_Vengeance]',
-              'windowed=true',
-              'renderer=gdi',
-              'singlecpu=false',
-              'fixmousehook=true',
-              'noactivateapp=true',
-              'releasealt=true',
-              'novidmem=true'
-            )
+            $profileLines = @('', '[MapEditor_Vengeance]', 'windowed=true', 'renderer=gdi', 'singlecpu=false', 'fixmousehook=true', 'noactivateapp=true', 'releasealt=true', 'novidmem=true')
             $profile = $profileLines -join [Environment]::NewLine
             [System.IO.File]::WriteAllText($ddrawIni, ($ddraw.TrimEnd() + [Environment]::NewLine + $profile + [Environment]::NewLine), (New-Object System.Text.UTF8Encoding($false)))
           }
-
           $previewDir = Join-Path $sandbox 'MAP_PREVIEWS'
           New-Item -ItemType Directory -Force -Path $previewDir | Out-Null
           Write-Host 'Vengeance render sandbox ready (junction-backed; live data remains read-only).'
@@ -317,40 +264,27 @@ jobs:
           $editor = Join-Path $sandbox 'MapEditor_Vengeance.exe'
           $previewDir = Join-Path $sandbox 'MAP_PREVIEWS'
           $statusFile = Join-Path $previewDir 'mapshot_status.txt'
+          $pristineBmp = Join-Path $previewDir 'A3_PRISTINE_overview.bmp'
           $sourceBmp = Join-Path $previewDir 'A3_overview.bmp'
           $finalBmp = Join-Path $previewDir 'A3_REMASTERED_overview.bmp'
 
           function Invoke-VengeanceMapshot {
-            param(
-              [Parameter(Mandatory=$true)][string]$MapName,
-              [Parameter(Mandatory=$true)][string]$ExpectedBmp
-            )
-
+            param([Parameter(Mandatory=$true)][string]$MapName, [Parameter(Mandatory=$true)][string]$ExpectedBmp)
             Remove-Item -Force -ErrorAction SilentlyContinue $statusFile
             Remove-Item -Force -ErrorAction SilentlyContinue $ExpectedBmp
-
             Write-Host "Launching Vengeance editor MAPSHOT: $editor -MAPSHOT=$MapName"
             $p = Start-Process -FilePath $editor -ArgumentList "-MAPSHOT=$MapName" -WorkingDirectory $sandbox -PassThru
             $deadline = (Get-Date).AddSeconds(180)
             $startupDeadline = (Get-Date).AddSeconds(60)
             $lastStatus = ''
-            $completed = $false
             $forcedExitAfterSuccess = $false
-
             while ((Get-Date) -lt $deadline) {
               $p.Refresh()
               if ($p.HasExited) { break }
-
               if (Test-Path $statusFile) {
                 $status = (Get-Content $statusFile -Raw -ErrorAction SilentlyContinue).Trim()
-                if ($status -and $status -ne $lastStatus) {
-                  Write-Host "--- MAPSHOT STATUS $MapName ---"
-                  Write-Host $status
-                  $lastStatus = $status
-                }
-
+                if ($status -and $status -ne $lastStatus) { Write-Host "--- MAPSHOT STATUS $MapName ---"; Write-Host $status; $lastStatus = $status }
                 if ($status -match 'DONE success' -and (Test-Path $ExpectedBmp)) {
-                  $completed = $true
                   Start-Sleep -Seconds 2
                   $p.Refresh()
                   if (-not $p.HasExited) {
@@ -361,89 +295,64 @@ jobs:
                   }
                   break
                 }
-              }
-              elseif ((Get-Date) -gt $startupDeadline) {
+              } elseif ((Get-Date) -gt $startupDeadline) {
                 Write-Warning "MAPSHOT $MapName did not reach its initializer within 60 seconds."
                 break
               }
-
               Start-Sleep -Seconds 2
             }
-
             $p.Refresh()
-            if (-not $p.HasExited) {
-              try { $p.Kill() } catch {}
-              try { $p.WaitForExit(10000) | Out-Null } catch {}
-            }
-
+            if (-not $p.HasExited) { try { $p.Kill() } catch {}; try { $p.WaitForExit(10000) | Out-Null } catch {} }
             $finalStatus = ''
-            if (Test-Path $statusFile) {
-              $finalStatus = (Get-Content $statusFile -Raw -ErrorAction SilentlyContinue).Trim()
-              Write-Host "--- FINAL MAPSHOT STATUS $MapName ---"
-              Write-Host $finalStatus
-            } else {
-              Write-Warning "No MAPSHOT status file for $MapName."
-            }
-
-            if (-not (Test-Path $ExpectedBmp)) {
-              throw "MAPSHOT $MapName did not produce expected engine preview: $ExpectedBmp"
-            }
-            if ($finalStatus -notmatch 'DONE success') {
-              throw "MAPSHOT $MapName produced a preview but did not report DONE success."
-            }
-
-            if ($p.HasExited -and $p.ExitCode -ne 0) {
-              Write-Warning "MapEditor_Vengeance exited with code $($p.ExitCode) after successful MAPSHOT $MapName; accepting engine result."
-            }
-
+            if (Test-Path $statusFile) { $finalStatus = (Get-Content $statusFile -Raw -ErrorAction SilentlyContinue).Trim(); Write-Host "--- FINAL MAPSHOT STATUS $MapName ---"; Write-Host $finalStatus }
+            else { Write-Warning "No MAPSHOT status file for $MapName." }
+            if (-not (Test-Path $ExpectedBmp)) { throw "MAPSHOT $MapName did not produce expected engine preview: $ExpectedBmp" }
+            if ($finalStatus -notmatch 'DONE success') { throw "MAPSHOT $MapName produced a preview but did not report DONE success." }
+            if ($p.HasExited -and $p.ExitCode -ne 0) { Write-Warning "MapEditor_Vengeance exited with code $($p.ExitCode) after successful MAPSHOT $MapName; accepting engine result." }
             return $forcedExitAfterSuccess
           }
 
-          # Pass 1: load the authoritative A3.dat through the Vengeance VFS.
-          # MapUtility applies the A3 dressing and SaveWorld() persists that exact
-          # in-memory sector as A3_REMASTERED.dat in the isolated writable profile.
-          $forcedBakeExit = Invoke-VengeanceMapshot -MapName 'A3.dat' -ExpectedBmp $sourceBmp
+          $sourceMap = Join-Path $sandbox 'Data-Maps-Tiles\maps\A3.dat'
+          $pristineMap = Join-Path $sandbox 'Data-Maps-Tiles\maps\A3_PRISTINE.dat'
+          Copy-Item -Force $sourceMap $pristineMap
+          $sourceHash = (Get-FileHash $sourceMap -Algorithm SHA256).Hash
+          $pristineMapHash = (Get-FileHash $pristineMap -Algorithm SHA256).Hash
+          if ($pristineMapHash -ne $sourceHash) { throw 'Pristine A3 alias does not match authoritative A3.dat.' }
 
-          # SaveWorld writes through the VFS writable UserProf. Require that
-          # exact output instead of accepting a pre-existing A3_REMASTERED.dat
-          # from Data-Maps-Tiles (the repository already contains an older bake).
+          # Pass 0: same Vengeance VFS/editor, but an alias that does not activate the A3 farm profile.
+          $forcedPristineExit = Invoke-VengeanceMapshot -MapName 'A3_PRISTINE.dat' -ExpectedBmp $pristineBmp
+
+          # Pass 1: authoritative A3.dat activates the dormant farm profile in MAPSHOT mode and persists it.
+          $forcedBakeExit = Invoke-VengeanceMapshot -MapName 'A3.dat' -ExpectedBmp $sourceBmp
           $bakedPath = Join-Path $sandbox 'Profiles\UserProfile_Vengeance\MAPS\A3_REMASTERED.dat'
-          if (-not (Test-Path $bakedPath)) {
-            throw "A3 source MAPSHOT succeeded but the fresh VFS bake was not found: $bakedPath"
-          }
+          if (-not (Test-Path $bakedPath)) { throw "A3 source MAPSHOT succeeded but the fresh VFS bake was not found: $bakedPath" }
           $baked = Get-Item $bakedPath
           $bakedHash = (Get-FileHash $baked.FullName -Algorithm SHA256).Hash
-          $sourceMap = Join-Path $sandbox 'Data-Maps-Tiles\maps\A3.dat'
-          $sourceHash = (Get-FileHash $sourceMap -Algorithm SHA256).Hash
-          if ($bakedHash -eq $sourceHash) {
-            throw 'Fresh A3_REMASTERED.dat is byte-identical to A3.dat; farm dressing was not persisted.'
-          }
+          if ($bakedHash -eq $sourceHash) { throw 'Fresh A3_REMASTERED.dat is byte-identical to A3.dat; farm dressing was not persisted.' }
           Write-Host "Fresh baked Vengeance A3 map: $($baked.FullName) ($($baked.Length) bytes)"
           Write-Host "A3 source SHA256: $sourceHash"
           Write-Host "A3 baked  SHA256: $bakedHash"
 
-          # Eliminate VFS precedence ambiguity for validation. The sandbox is a
-          # disposable copy, so overlay the fresh bake onto its Data-Maps-Tiles
-          # A3_REMASTERED.dat as well. Whichever VFS layer wins, pass 2 opens the
-          # exact map produced moments ago.
           $validationMap = Join-Path $sandbox 'Data-Maps-Tiles\maps\A3_REMASTERED.dat'
           Copy-Item -Force $baked.FullName $validationMap
           $validationHash = (Get-FileHash $validationMap -Algorithm SHA256).Hash
-          if ($validationHash -ne $bakedHash) {
-            throw 'Validation A3_REMASTERED.dat hash does not match fresh VFS bake.'
-          }
+          if ($validationHash -ne $bakedHash) { throw 'Validation A3_REMASTERED.dat hash does not match fresh VFS bake.' }
 
-          # Pass 2: reopen the persisted map through the same Vengeance VFS and
-          # render the actual baked result. This proves that the output is a valid
-          # loadable map, not merely a transient dressed in-memory world.
+          # Pass 2: reload the exact persisted bake through the same Vengeance VFS.
           $forcedFinalExit = Invoke-VengeanceMapshot -MapName 'A3_REMASTERED.dat' -ExpectedBmp $finalBmp
 
+          $pristineOverviewHash = (Get-FileHash $pristineBmp -Algorithm SHA256).Hash
           $sourceOverviewHash = (Get-FileHash $sourceBmp -Algorithm SHA256).Hash
           $finalOverviewHash = (Get-FileHash $finalBmp -Algorithm SHA256).Hash
-          $overviewChanged = ($sourceOverviewHash -ne $finalOverviewHash)
-          Write-Host ("A3 overview changed after bake: " + $overviewChanged)
-          Write-Host ("A3 source overview SHA256: " + $sourceOverviewHash)
-          Write-Host ("A3 final  overview SHA256: " + $finalOverviewHash)
+          $dressingChangedOverview = ($pristineOverviewHash -ne $sourceOverviewHash)
+          $reloadMatchesDressedOverview = ($sourceOverviewHash -eq $finalOverviewHash)
+          Write-Host ("A3 pristine -> dressed overview changed: " + $dressingChangedOverview)
+          Write-Host ("A3 dressed -> reloaded overview matches: " + $reloadMatchesDressedOverview)
+          Write-Host ("A3 pristine overview SHA256: " + $pristineOverviewHash)
+          Write-Host ("A3 dressed  overview SHA256: " + $sourceOverviewHash)
+          Write-Host ("A3 reloaded overview SHA256: " + $finalOverviewHash)
+          if (-not $dressingChangedOverview) { throw 'A3 farm profile produced no visual change from pristine A3.' }
+          if (-not $reloadMatchesDressedOverview) { throw 'Reloaded A3_REMASTERED overview does not match the transient dressed A3 render.' }
 
           Add-Type -AssemblyName System.Drawing
           $outDir = Join-Path $env:GITHUB_WORKSPACE 'MapPreviews\Auto'
@@ -451,65 +360,64 @@ jobs:
           $png = Join-Path $outDir 'A3_latest.png'
           $img = [System.Drawing.Image]::FromFile($finalBmp)
           try { $img.Save($png, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $img.Dispose() }
-
           $sourcePng = Join-Path $outDir 'A3_source.png'
           $sourceImg = [System.Drawing.Image]::FromFile($sourceBmp)
           try { $sourceImg.Save($sourcePng, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $sourceImg.Dispose() }
+          $pristinePng = Join-Path $outDir 'A3_pristine.png'
+          $pristineImg = [System.Drawing.Image]::FromFile($pristineBmp)
+          try { $pristineImg.Save($pristinePng, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $pristineImg.Dispose() }
 
-          # Tactical-view captures are the primary A3 art-QA images.
           $tacticalPngs = @()
           $tacticalBmps = Get-ChildItem -LiteralPath $previewDir -Filter '*_tactical_*_overview.bmp' -File -ErrorAction SilentlyContinue | Sort-Object Name
           foreach ($bmp in $tacticalBmps) {
-            $baseName = [System.IO.Path]::GetFileNameWithoutExtension($bmp.Name)
-            $baseName = $baseName.Replace('_overview','')
+            $baseName = [System.IO.Path]::GetFileNameWithoutExtension($bmp.Name).Replace('_overview','')
             $outPath = Join-Path $outDir ($baseName + '.png')
             $shot = [System.Drawing.Image]::FromFile($bmp.FullName)
             try { $shot.Save($outPath, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $shot.Dispose() }
             $tacticalPngs += $outPath
             Write-Host ('Tactical QA capture: ' + $outPath)
           }
-          if ($tacticalPngs.Count -lt 6) {
-            throw ('Expected at least 6 tactical A3 captures; found ' + $tacticalPngs.Count)
-          }
+          if ($tacticalPngs.Count -lt 12) { throw ('Expected at least 12 tactical A3 captures from pristine/dressed/reloaded passes; found ' + $tacticalPngs.Count) }
 
-          $tacticalChangedPairs = 0
+          $dressingChangedTacticalPairs = 0
+          $reloadMatchedTacticalPairs = 0
           $comparisonLines = @(
-            ('overview_changed=' + $overviewChanged),
-            ('source_overview_sha256=' + $sourceOverviewHash),
-            ('final_overview_sha256=' + $finalOverviewHash)
+            ('dressing_changed_overview=' + $dressingChangedOverview),
+            ('reload_matches_dressed_overview=' + $reloadMatchesDressedOverview),
+            ('pristine_overview_sha256=' + $pristineOverviewHash),
+            ('dressed_overview_sha256=' + $sourceOverviewHash),
+            ('reloaded_overview_sha256=' + $finalOverviewHash)
           )
           for ($i = 1; $i -le 6; $i++) {
             $slot = '{0:D2}' -f $i
+            $pristineTac = Join-Path $previewDir ('A3_PRISTINE.dat_tactical_' + $slot + '_overview.bmp')
             $sourceTac = Join-Path $previewDir ('A3.dat_tactical_' + $slot + '_overview.bmp')
             $finalTac = Join-Path $previewDir ('A3_REMASTERED.dat_tactical_' + $slot + '_overview.bmp')
-            if ((Test-Path $sourceTac) -and (Test-Path $finalTac)) {
+            if ((Test-Path $pristineTac) -and (Test-Path $sourceTac) -and (Test-Path $finalTac)) {
+              $pristineTacHash = (Get-FileHash $pristineTac -Algorithm SHA256).Hash
               $sourceTacHash = (Get-FileHash $sourceTac -Algorithm SHA256).Hash
               $finalTacHash = (Get-FileHash $finalTac -Algorithm SHA256).Hash
-              $changed = ($sourceTacHash -ne $finalTacHash)
-              if ($changed) { $tacticalChangedPairs++ }
-              $comparisonLines += ('tactical_' + $slot + '_changed=' + $changed + ' source=' + $sourceTacHash + ' final=' + $finalTacHash)
+              $dressingChanged = ($pristineTacHash -ne $sourceTacHash)
+              $reloadMatched = ($sourceTacHash -eq $finalTacHash)
+              if ($dressingChanged) { $dressingChangedTacticalPairs++ }
+              if ($reloadMatched) { $reloadMatchedTacticalPairs++ }
+              $comparisonLines += ('tactical_' + $slot + '_dressing_changed=' + $dressingChanged + ' reload_matched=' + $reloadMatched + ' pristine=' + $pristineTacHash + ' dressed=' + $sourceTacHash + ' reloaded=' + $finalTacHash)
             }
           }
-          $comparisonLines += ('tactical_changed_pairs=' + $tacticalChangedPairs)
+          $comparisonLines += ('dressing_changed_tactical_pairs=' + $dressingChangedTacticalPairs)
+          $comparisonLines += ('reload_matched_tactical_pairs=' + $reloadMatchedTacticalPairs)
           $comparisonPath = Join-Path $outDir 'A3_visual_diff.txt'
           $comparisonLines | Set-Content -Encoding ASCII $comparisonPath
-          Write-Host ('A3 tactical changed pairs: ' + $tacticalChangedPairs + '/6')
-          if ((-not $overviewChanged) -and $tacticalChangedPairs -eq 0) {
-            Write-Warning 'A3 bake changed map bytes but produced no visual difference in overview or tactical captures.'
-          }
+          Write-Host ('A3 tactical dressing changed pairs: ' + $dressingChangedTacticalPairs + '/6')
+          Write-Host ('A3 tactical reload matched pairs: ' + $reloadMatchedTacticalPairs + '/6')
+          if ($dressingChangedTacticalPairs -eq 0) { throw 'A3 farm profile produced no tactical-view visual change from pristine A3.' }
+          if ($reloadMatchedTacticalPairs -lt 6) { throw 'One or more reloaded tactical captures differ from the transient dressed A3 render.' }
 
           $survey = Join-Path $previewDir 'A3_architecture.csv'
-          if (Test-Path $survey) {
-            Copy-Item -Force $survey (Join-Path $outDir 'A3_architecture.csv')
-          }
+          if (Test-Path $survey) { Copy-Item -Force $survey (Join-Path $outDir 'A3_architecture.csv') }
           $usage = Join-Path $previewDir 'A3_tile_usage.csv'
-          if (Test-Path $usage) {
-            Copy-Item -Force $usage (Join-Path $outDir 'A3_tile_usage.csv')
-          }
-
-          if (Test-Path $statusFile) {
-            Copy-Item -Force $statusFile (Join-Path $outDir 'A3_mapshot_status.txt')
-          }
+          if (Test-Path $usage) { Copy-Item -Force $usage (Join-Path $outDir 'A3_tile_usage.csv') }
+          if (Test-Path $statusFile) { Copy-Item -Force $statusFile (Join-Path $outDir 'A3_mapshot_status.txt') }
           Copy-Item -Force $baked.FullName (Join-Path $outDir 'A3_REMASTERED.dat')
 
           @{
@@ -517,18 +425,20 @@ jobs:
             source_sha = '${{ github.sha }}'
             gamedir_sha = '${{ steps.gamedir.outputs.sha }}'
             generated_utc = (Get-Date).ToUniversalTime().ToString('o')
-            renderer = 'Vengeance MapEditor two-pass MAPSHOT'
+            renderer = 'Vengeance MapEditor three-pass pristine/dressed/reload MAPSHOT'
             editor = 'MapEditor_Vengeance.exe'
             vfs = 'vfs_config.Vengeance.ini'
             sandbox = $sandbox
             baked_map_bytes = $baked.Length
+            pristine_pass_forced_exit = $forcedPristineExit
             source_pass_forced_exit = $forcedBakeExit
             final_pass_forced_exit = $forcedFinalExit
-            overview_changed = $overviewChanged
-            tactical_changed_pairs = $tacticalChangedPairs
+            dressing_changed_overview = $dressingChangedOverview
+            reload_matches_dressed_overview = $reloadMatchesDressedOverview
+            dressing_changed_tactical_pairs = $dressingChangedTacticalPairs
+            reload_matched_tactical_pairs = $reloadMatchedTacticalPairs
           } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $outDir 'A3_latest.json')
-
-          Write-Host "A3 baked map validated by reload and rendered: $png"
+          Write-Host "A3 pristine baseline, persisted bake, reload and visual deltas validated: $png"
 
       - name: Upload render artifact
         uses: actions/upload-artifact@v4
@@ -537,6 +447,7 @@ jobs:
           path: |
             MapPreviews/Auto/A3_latest.png
             MapPreviews/Auto/A3_source.png
+            MapPreviews/Auto/A3_pristine.png
             MapPreviews/Auto/A3_visual_diff.txt
             MapPreviews/Auto/A3_latest.json
             MapPreviews/Auto/A3_mapshot_status.txt
@@ -569,23 +480,18 @@ jobs:
             Start-Sleep -Seconds ($attempt * 2)
           }
           throw 'Could not publish A3 preview after 5 attempts.'
+
       - name: Remove render sandbox
         if: always()
         shell: powershell
         run: |
           $sandbox = "C:\VENGENCE\JA2_RENDER_SANDBOX_$env:GITHUB_RUN_ID"
           if (-not (Test-Path $sandbox)) { exit 0 }
-
           Get-ChildItem -LiteralPath $sandbox -Force -Directory -ErrorAction SilentlyContinue |
             Where-Object { ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 } |
             ForEach-Object {
               cmd /c rmdir "$($_.FullName)"
-              if ($LASTEXITCODE -ne 0) {
-                Write-Warning "Could not remove junction: $($_.FullName)"
-                $global:LASTEXITCODE = 0
-              }
+              if ($LASTEXITCODE -ne 0) { Write-Warning "Could not remove junction: $($_.FullName)"; $global:LASTEXITCODE = 0 }
             }
-
           Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue
           Write-Host "Removed render sandbox: $sandbox"
-
