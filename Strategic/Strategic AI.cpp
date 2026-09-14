@@ -1050,6 +1050,7 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Strategic2");
 			}
 			#endif
 			ClearPreviousAIGroupAssignment( pGroup );
+			SAICampaignClosePlan( pGroup, "invalid strategic group removed during save-game validation" );
 			RemovePGroup( pGroup );
 			return;
 		}
@@ -2470,6 +2471,7 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Strategic5");
 					pGroup->ubGroupSize, gGarrisonGroup[ i ].bWeight,
 					"reinforcement order completed: mobile group absorbed into destination garrison" );
 				SetThisSectorAsEnemyControlled( pGroup->ubSectorX, pGroup->ubSectorY, 0, TRUE );
+				SAICampaignClosePlan( pGroup, "reinforcement group reached destination and was absorbed into garrison" );
 				RemovePGroup( pGroup );
 				RecalculateGarrisonWeight( i );
 
@@ -2532,6 +2534,11 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Strategic5");
 										pPatrolGroup->pEnemyGroup->ubNumTroops +
 										pPatrolGroup->pEnemyGroup->ubNumElites == iMaxEnemyGroupSize );
 					}
+					SAICampaignRecord( "GROUP_OUTCOME", "patrol", i, pGroup->ubGroupID,
+						pGroup->ubCreatedSectorID, gPatrolGroup[ i ].ubSectorID[1],
+						pGroup->ubGroupSize, pPatrolGroup->ubGroupSize,
+						"reinforcement group reached patrol area and merged into the existing patrol" );
+					SAICampaignClosePlan( pGroup, "reinforcement group merged into existing patrol" );
 					RemovePGroup( pGroup );
 					RecalculatePatrolWeight( i );
 					ValidateLargeGroup( pPatrolGroup );
@@ -2559,6 +2566,12 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Strategic5");
 							pGroup->pEnemyGroup->ubNumTroops + pGroup->pEnemyGroup->ubNumElites + pGroup->pEnemyGroup->ubNumAdmins,
 							pGroup->ubSectorY + 'A' - 1, pGroup->ubSectorX );
 					#endif
+					SAICampaignRecord( "GROUP_OUTCOME", "patrol", i, pGroup->ubGroupID,
+						pGroup->ubCreatedSectorID, gPatrolGroup[ i ].ubSectorID[1],
+						pGroup->ubGroupSize, gPatrolGroup[ i ].bWeight,
+						"reinforcement order completed; this group is now the active patrol" );
+					SAICampaignClosePlan( pGroup, "reinforcement mission completed; group converted into active patrol" );
+					SAICampaignStartOrRefreshPlan( pGroup, gPatrolGroup[ i ].ubSectorID[1], PATROL, 254 );
 					RecalculatePatrolWeight( i );
 				}
 				return TRUE;
@@ -4405,6 +4418,7 @@ BOOLEAN LoadStrategicAI( HWFILE hFile )
 					if( pGroup->ubSectorX == gModSettings.ubSAISpawnSectorX && pGroup->ubSectorY == gModSettings.ubSAISpawnSectorY && !pGroup->ubPrevX && !pGroup->ubPrevY )
 					{
 						ClearPreviousAIGroupAssignment( pGroup );
+						SAICampaignClosePlan( pGroup, "obsolete enemy group removed during strategic AI save migration" );
 						RemovePGroup( pGroup );
 					}
 				}
@@ -6865,6 +6879,16 @@ void RepollSAIGroup( GROUP *pGroup )
 void ClearPreviousAIGroupAssignment( GROUP *pGroup )
 {
 	INT32 i;
+
+	if( pGroup )
+	{
+		SAICampaignRecord( "ASSIGNMENT_CLEAR", "mobile_group",
+			pGroup->pEnemyGroup ? pGroup->pEnemyGroup->ubIntention : 0,
+			pGroup->ubGroupID,
+			SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ), -1,
+			pGroup->ubGroupSize, 0,
+			"remove stale garrison/patrol ownership before reassignment, destruction or save-game repair" );
+	}
 
  Ensure_RepairedGarrisonGroup( &gGarrisonGroup, &giGarrisonArraySize );	/* added NULL fix, 2007-03-03, Sgt. Kolja */
 	for( i = 0; i < giPatrolArraySize; i++ )
