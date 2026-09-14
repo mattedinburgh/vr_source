@@ -5780,6 +5780,13 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 							pSoldier->inv[BestAttack.bWeaponIn][0]->data.gun.ubGunShotsLeft >= gGameExternalOptions.ubAISuppressionMinimumAmmo )
 							iChance += 20;
 
+						// Team AI: teammates are manoeuvring, so favour fixing fire.
+						if (CountFriendsFlankSameSpot(pSoldier, BestAttack.sTarget) > 0)
+							iChance += AICheckIsMachinegunner(pSoldier) ? 30 : 15;
+						if (AICheckIsMachinegunner(pSoldier) &&
+							CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE / 2) > 0)
+							iChance += 15;
+
 						// increase chance based on proximity and difficulty of enemy
 						if ( PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) < 15 )
 						{
@@ -5895,6 +5902,13 @@ L_NEWAIM:
 							if ( GetMagSize(&pSoldier->inv[BestAttack.bWeaponIn], 0) >= gGameExternalOptions.ubAISuppressionMinimumMagSize &&
 								pSoldier->inv[BestAttack.bWeaponIn][0]->data.gun.ubGunShotsLeft >= gGameExternalOptions.ubAISuppressionMinimumAmmo )
 								iChance += 30;
+
+							// Team AI: sustain suppression while another element moves.
+							if (CountFriendsFlankSameSpot(pSoldier, BestAttack.sTarget) > 0)
+								iChance += AICheckIsMachinegunner(pSoldier) ? 30 : 15;
+							if (AICheckIsMachinegunner(pSoldier) &&
+								CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE / 2) > 0)
+								iChance += 15;
 
 							if ( bInGas )
 								iChance += 50; //Madd: extra chance of going nuts and autofiring if stuck in gas
@@ -8053,6 +8067,336 @@ void ZombieDecideAlertStatus( SOLDIERTYPE *pSoldier )
 	}
 }
 
+
+////////////////////////////////////////////////////////////////////////////
+//
+// Vengeance local team coordination
+//
+// Existing Vengeance AI already has strong individual behaviours (flanking,
+// suppression, smoke, helping friends).  This layer makes those behaviours
+// condition each other at fire-team range.  It is deliberately LOCAL so the
+// army cooperates without becoming a perfect hive mind.
+//
+////////////////////////////////////////////////////////////////////////////
+
+enum AILOCALTEAMPLAN
+{
+	AI_LOCAL_PLAN_INDEPENDENT = 0,
+	AI_LOCAL_PLAN_HOLD,
+	AI_LOCAL_PLAN_SUPPORT_CONTACT,
+	AI_LOCAL_PLAN_SUPPRESS_FLANK,
+	AI_LOCAL_PLAN_PRESS,
+	AI_LOCAL_PLAN_REGROUP,
+	AI_LOCAL_PLAN_BREAK_CONTACT
+};
+
+struct AILOCALTEAMPICTURE
+{
+	UINT8 ubNearbyFriends;
+	UINT8 ubInContact;
+	UINT8 ubUnderAttack;
+	UINT8 ubSupportWeapons;
+	UINT8 ubFlanking;
+	UINT8 ubFlankingLeft;
+	UINT8 ubFlankingRight;
+	UINT8 ubSuccessfulAttack;
+	UINT8 ubNearObjective;
+};
+
+void BuildLocalTeamPicture(SOLDIERTYPE *pSoldier, INT32 sObjective, AILOCALTEAMPICTURE *pPicture)
+{
+	memset(pPicture, 0, sizeof(AILOCALTEAMPICTURE));
+
+	if (!pSoldier || pSoldier->bTeam >= MAXTEAMS)
+		return;
+
+	const INT16 sLocalRadius = __max(8, DAY_VISION_RANGE / 2);
+
+	for (UINT16 uiLoop = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		uiLoop <= (UINT16)gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++uiLoop)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[uiLoop];
+
+		if (!pFriend ||
+			pFriend == pSoldier ||
+			!pFriend->bActive ||
+			pFriend->stats.bLife < OKLIFE ||
+			pFriend->aiData.bNeutral)
+		{
+			continue;
+		}
+
+		if (PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > sLocalRadius)
+			continue;
+
+		pPicture->ubNearbyFriends++;
+
+		if (pFriend->aiData.bAlertStatus >= STATUS_BLACK || GuySawEnemy(pFriend))
+			pPicture->ubInContact++;
+
+		if (pFriend->aiData.bUnderFire || pFriend->aiData.bShock > 0)
+			pPicture->ubUnderAttack++;
+
+		if (AICheckIsMachinegunner(pFriend) || AICheckIsSniper(pFriend))
+			pPicture->ubSupportWeapons++;
+
+		if (pFriend->IsFlanking())
+		{
+			pPicture->ubFlanking++;
+			if (pFriend->flags.lastFlankLeft)
+				pPicture->ubFlankingLeft++;
+			else
+				pPicture->ubFlankingRight++;
+		}
+
+		if (AICheckSuccessfulAttack(pFriend, FALSE))
+			pPicture->ubSuccessfulAttack++;
+
+		if (!TileIsOutOfBounds(sObjective) &&
+			PythSpacesAway(pFriend->sGridNo, sObjective) <= DAY_VISION_RANGE / 3)
+		{
+			pPicture->ubNearObjective++;
+		}
+	}
+}
+
+INT8 DetermineLocalTeamPlan(SOLDIERTYPE *pSoldier, INT32 sObjective, AILOCALTEAMPICTURE *pPicture)
+{
+	BuildLocalTeamPicture(pSoldier, sObjective, pPicture);
+
+	if (pSoldier->bTeam != ENEMY_TEAM || pSoldier->aiData.bNeutral)
+		return AI_LOCAL_PLAN_INDEPENDENT;
+
+	UINT8 ubLocalSize = pPicture->ubNearbyFriends + 1;
+	UINT8 ubUnderAttack = pPicture->ubUnderAttack + ((pSoldier->aiData.bUnderFire || pSoldier->aiData.bShock > 0) ? 1 : 0);
+	UINT8 ubInContact = pPicture->ubInContact + ((pSoldier->aiData.bAlertStatus >= STATUS_BLACK || GuySawEnemy(pSoldier)) ? 1 : 0);
+	UINT8 ubSupportWeapons = pPicture->ubSupportWeapons + ((AICheckIsMachinegunner(pSoldier) || AICheckIsSniper(pSoldier)) ? 1 : 0);
+	UINT8 ubSuccessfulAttack = pPicture->ubSuccessfulAttack + (AICheckSuccessfulAttack(pSoldier, FALSE) ? 1 : 0);
+
+	// Administrators are deliberately less capable.  They support/regroup,
+	// but trained army and elites execute the more complex fire-and-manoeuvre.
+	BOOLEAN fTrained = (pSoldier->ubSoldierClass == SOLDIER_CLASS_ARMY ||
+		pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE);
+
+	if (pSoldier->aiData.bAIMorale == MORALE_HOPELESS ||
+		(ubUnderAttack * 2 >= ubLocalSize && ubSuccessfulAttack == 0 &&
+		 pSoldier->aiData.bAIMorale <= MORALE_NORMAL))
+	{
+		return AI_LOCAL_PLAN_BREAK_CONTACT;
+	}
+
+	if (ubLocalSize <= 2 && ubInContact > 0 && pSoldier->aiData.bOrders != STATIONARY)
+		return AI_LOCAL_PLAN_REGROUP;
+
+	if (ubUnderAttack > 0 && ubInContact == 0)
+		return AI_LOCAL_PLAN_SUPPORT_CONTACT;
+
+	if (ubInContact > 0)
+	{
+		UINT8 ubAllowedFlankers = (ubLocalSize >= 7) ? 2 : 1;
+
+		if (fTrained &&
+			ubLocalSize >= 4 &&
+			pPicture->ubFlanking < ubAllowedFlankers &&
+			(ubSupportWeapons > 0 || ubInContact >= 2 || ubSuccessfulAttack > 0) &&
+			ubUnderAttack * 2 < ubLocalSize + 1)
+		{
+			return AI_LOCAL_PLAN_SUPPRESS_FLANK;
+		}
+
+		if (ubSuccessfulAttack > 0 &&
+			ubUnderAttack <= 1 &&
+			pSoldier->aiData.bAIMorale >= MORALE_CONFIDENT)
+		{
+			return AI_LOCAL_PLAN_PRESS;
+		}
+
+		if (ubUnderAttack > 0)
+			return AI_LOCAL_PLAN_SUPPORT_CONTACT;
+
+		return AI_LOCAL_PLAN_HOLD;
+	}
+
+	if (ubLocalSize <= 2 && !TileIsOutOfBounds(sObjective) && pSoldier->aiData.bOrders != STATIONARY)
+		return AI_LOCAL_PLAN_REGROUP;
+
+	return AI_LOCAL_PLAN_HOLD;
+}
+
+void ApplyLocalTeamPlanToRedWeights(SOLDIERTYPE *pSoldier, INT8 &bSeekPts, INT8 &bHelpPts, INT8 &bHidePts, INT8 &bWatchPts)
+{
+	if (pSoldier->bTeam != ENEMY_TEAM || pSoldier->aiData.bNeutral)
+		return;
+
+	INT32 sObjective = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	AILOCALTEAMPICTURE Picture;
+	INT8 bPlan = DetermineLocalTeamPlan(pSoldier, sObjective, &Picture);
+	BOOLEAN fSupport = AICheckIsMachinegunner(pSoldier) || AICheckIsSniper(pSoldier);
+
+	switch (bPlan)
+	{
+	case AI_LOCAL_PLAN_SUPPORT_CONTACT:
+		bSeekPts -= 1;
+		bHelpPts += 3;
+		bWatchPts += 2;
+		if (pSoldier->aiData.bUnderFire)
+			bHidePts += 2;
+		break;
+
+	case AI_LOCAL_PLAN_SUPPRESS_FLANK:
+		if (fSupport || Picture.ubFlanking > 0)
+		{
+			// Fix the enemy in place while the manoeuvre element moves.
+			bSeekPts -= 2;
+			bHelpPts += 1;
+			bWatchPts += 3;
+			bHidePts += 1;
+		}
+		else
+		{
+			// Manoeuvre candidates remain mobile; DecideStartFlanking chooses
+			// and limits the actual flanking element.
+			bSeekPts += 2;
+			bWatchPts -= 1;
+			bHidePts -= 1;
+		}
+		break;
+
+	case AI_LOCAL_PLAN_PRESS:
+		bSeekPts += 3;
+		bHelpPts += 1;
+		bHidePts -= 2;
+		bWatchPts -= 1;
+		break;
+
+	case AI_LOCAL_PLAN_REGROUP:
+		bSeekPts -= 2;
+		bHelpPts += 3;
+		bHidePts += 1;
+		bWatchPts += 1;
+		break;
+
+	case AI_LOCAL_PLAN_BREAK_CONTACT:
+		bSeekPts -= 4;
+		bHelpPts += 1;
+		bHidePts += 4;
+		bWatchPts += 2;
+		break;
+
+	case AI_LOCAL_PLAN_HOLD:
+		if (Picture.ubFlanking > 0)
+		{
+			// Do not let the whole group follow the flanker.
+			bSeekPts -= 1;
+			bWatchPts += 2;
+		}
+		break;
+	}
+
+	DebugAI(AI_MSG_INFO, pSoldier,
+		String("[TeamAI] plan=%d local=%d contact=%d under=%d support=%d flank=%d success=%d weights=%d/%d/%d/%d",
+		bPlan, Picture.ubNearbyFriends + 1, Picture.ubInContact, Picture.ubUnderAttack,
+		Picture.ubSupportWeapons, Picture.ubFlanking, Picture.ubSuccessfulAttack,
+		bSeekPts, bHelpPts, bHidePts, bWatchPts));
+}
+
+BOOLEAN CanStartCoordinatedFlank(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLEAN fAbortSeek)
+{
+	AILOCALTEAMPICTURE Picture;
+	INT8 bPlan = DetermineLocalTeamPlan(pSoldier, sClosestDisturbance, &Picture);
+	UINT8 ubLocalSize = Picture.ubNearbyFriends + 1;
+	UINT8 ubAllowedFlankers = (ubLocalSize >= 7) ? 2 : 1;
+
+	if (Picture.ubFlanking >= ubAllowedFlankers)
+		return FALSE;
+
+	if (bPlan == AI_LOCAL_PLAN_SUPPRESS_FLANK)
+		return TRUE;
+
+	// If the normal seek path failed, permit a coordinated flank only if
+	// nearby friends can plausibly cover the manoeuvre.
+	if (fAbortSeek && Picture.ubNearbyFriends >= 2 &&
+		(Picture.ubInContact > 0 || Picture.ubSupportWeapons > 0 || Picture.ubSuccessfulAttack > 0))
+	{
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+INT8 PreferredCoordinatedFlankDirection(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLEAN fLeftPossible, BOOLEAN fRightPossible)
+{
+	if (!fLeftPossible && !fRightPossible)
+		return AI_ACTION_NONE;
+	if (fLeftPossible && !fRightPossible)
+		return AI_ACTION_FLANK_LEFT;
+	if (fRightPossible && !fLeftPossible)
+		return AI_ACTION_FLANK_RIGHT;
+
+	AILOCALTEAMPICTURE Picture;
+	BuildLocalTeamPicture(pSoldier, sClosestDisturbance, &Picture);
+
+	// A second flanker prefers the opposite side instead of following the
+	// first one in a single-file conga line.
+	if (Picture.ubFlankingLeft > Picture.ubFlankingRight && fRightPossible)
+		return AI_ACTION_FLANK_RIGHT;
+	if (Picture.ubFlankingRight > Picture.ubFlankingLeft && fLeftPossible)
+		return AI_ACTION_FLANK_LEFT;
+
+	return AI_ACTION_NONE;
+}
+
+SOLDIERTYPE *FindLocalTeamMemberNeedingSmoke(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
+{
+	if (!pSoldier || pSoldier->bTeam >= MAXTEAMS)
+		return NULL;
+
+	SOLDIERTYPE *pBestFriend = NULL;
+	INT16 sBestScore = 0;
+
+	for (UINT16 uiLoop = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		uiLoop <= (UINT16)gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++uiLoop)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[uiLoop];
+
+		if (!pFriend ||
+			pFriend == pSoldier ||
+			!pFriend->bActive ||
+			pFriend->stats.bLife < OKLIFE ||
+			pFriend->aiData.bNeutral ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE / 2 ||
+			InSmoke(pFriend->sGridNo, pFriend->pathing.bLevel))
+		{
+			continue;
+		}
+
+		if (!pFriend->aiData.bUnderFire && pFriend->aiData.bShock == 0 && !pFriend->IsFlanking())
+			continue;
+
+		INT16 sScore = 0;
+		if (pFriend->aiData.bUnderFire)
+			sScore += 50;
+		sScore += __min(30, (INT16)pFriend->aiData.bShock * 5);
+		if (pFriend->IsFlanking())
+			sScore += 20;
+		if (pFriend->stats.bLife < (pFriend->stats.bLifeMax * 2) / 3)
+			sScore += 15;
+		if (!TileIsOutOfBounds(sClosestDisturbance) &&
+			PythSpacesAway(pFriend->sGridNo, sClosestDisturbance) < TACTICAL_RANGE / 2)
+		{
+			sScore += 10;
+		}
+
+		if (sScore > sBestScore)
+		{
+			sBestScore = sScore;
+			pBestFriend = pFriend;
+		}
+	}
+
+	return pBestFriend;
+}
+
 INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLEAN fAbortSeek)
 {
 	if (pSoldier->numFlanks == 0 &&
@@ -8061,6 +8405,7 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		(pSoldier->aiData.bAttitude == CUNNINGAID || pSoldier->aiData.bAttitude == CUNNINGSOLO ||
 		(pSoldier->aiData.bAttitude == BRAVESOLO || pSoldier->aiData.bAttitude == BRAVEAID) && CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) > 2) &&
 		pSoldier->bTeam == ENEMY_TEAM &&
+		CanStartCoordinatedFlank(pSoldier, sClosestDisturbance, fAbortSeek) &&
 		pSoldier->ubSoldierClass != SOLDIER_CLASS_ADMINISTRATOR &&
 		!AICheckSpecialRole(pSoldier) &&		
 		gAnimControl[pSoldier->usAnimState].ubHeight != ANIM_PRONE &&
@@ -8110,10 +8455,14 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		}
 		else if (fLeftFlankPossible && fRightFlankPossible)
 		{
-			if (Random(6) < 3)
-				bAction = AI_ACTION_FLANK_LEFT;
-			else
-				bAction = AI_ACTION_FLANK_RIGHT;
+			bAction = PreferredCoordinatedFlankDirection(pSoldier, sClosestDisturbance, fLeftFlankPossible, fRightFlankPossible);
+			if (bAction == AI_ACTION_NONE)
+			{
+				if (Random(6) < 3)
+					bAction = AI_ACTION_FLANK_LEFT;
+				else
+					bAction = AI_ACTION_FLANK_RIGHT;
+			}
 		}
 
 		// if left or right flanking is possible, search for flanking spot
@@ -8186,6 +8535,8 @@ void PrepareMainRedAIWeights(SOLDIERTYPE *pSoldier, INT8 &bSeekPts, INT8 &bHelpP
 	case AGGRESSIVE:    bSeekPts += +1; bHelpPts += 0; bHidePts += -1; bWatchPts += 0; break;
 	case ATTACKSLAYONLY:bSeekPts += +1; bHelpPts += 0; bHidePts += -1; bWatchPts += 0; break;
 	}
+
+	ApplyLocalTeamPlanToRedWeights(pSoldier, bSeekPts, bHelpPts, bHidePts, bWatchPts);
 }
 
 INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
@@ -8847,11 +9198,12 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 	DebugAI(AI_MSG_TOPIC, pSoldier, String("[Smoke to cover movement]"));
 
 	ATTACKTYPE BestThrow;
+	SOLDIERTYPE *pSmokeFriend = FindLocalTeamMemberNeedingSmoke(pSoldier, sClosestDisturbance);
 
 	// try to use smoke to cover movement
 	if (gfTurnBasedAI &&
 		SoldierAI(pSoldier) &&
-		FindThrowableGrenade(pSoldier, EXPLOSV_SMOKE) != EXPLOSV_SMOKE &&
+		FindThrowableGrenade(pSoldier, EXPLOSV_SMOKE) != NO_SLOT &&
 		pSoldier->bActionPoints >= APBPConstants[AP_MINIMUM] &&
 		pSoldier->bActionPoints == pSoldier->bInitialActionPoints &&
 		!TileIsOutOfBounds(sClosestDisturbance) &&
@@ -8861,10 +9213,12 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 		pSoldier->aiData.bOrders != STATIONARY &&
 		!AICheckSuccessfulAttack(pSoldier, TRUE) &&
 		(pSoldier->aiData.bUnderFire ||
+		pSmokeFriend != NULL ||
 		CountSeenEnemiesLastTurn(pSoldier) > CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2) ||
 		CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE) > CountFriendsLastAttackHit(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE) ||
 		CountCorpses(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE, TRUE, TRUE) > CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE)) &&
 		(InSmoke(pSoldier->sGridNo, pSoldier->pathing.bLevel) ||
+		(pSmokeFriend != NULL && Chance(20 + SoldierDifficultyLevel(pSoldier) * 10)) ||
 		Chance(SoldierDifficultyLevel(pSoldier) * 10) ||
 		Chance(TeamPercentKilled(pSoldier->bTeam)) ||
 		Chance(10 * CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE)) ||
@@ -8874,6 +9228,57 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 		gubNPCDistLimit = 0;
 
 		BestThrow.ubPossible = FALSE;
+
+		// First priority: protect a nearby teammate who is pinned, shocked, or
+		// exposed while flanking.  Place smoke on the friendly side of contact.
+		if (pSmokeFriend != NULL)
+		{
+			INT32 sTeamSmokeSpot = pSmokeFriend->sGridNo;
+
+			if (!TileIsOutOfBounds(sClosestDisturbance))
+			{
+				UINT8 ubThreatDir = AIDirection(pSmokeFriend->sGridNo, sClosestDisturbance);
+				INT32 sForwardSpot = NewGridNo(pSmokeFriend->sGridNo, DirectionInc(ubThreatDir));
+
+				if (sForwardSpot != pSmokeFriend->sGridNo &&
+					!TileIsOutOfBounds(sForwardSpot) &&
+					!Water(sForwardSpot, pSmokeFriend->pathing.bLevel) &&
+					!InSmoke(sForwardSpot, pSmokeFriend->pathing.bLevel))
+				{
+					sTeamSmokeSpot = sForwardSpot;
+				}
+			}
+
+			if (!Water(sTeamSmokeSpot, pSmokeFriend->pathing.bLevel) &&
+				!InSmoke(sTeamSmokeSpot, pSmokeFriend->pathing.bLevel))
+			{
+				CheckTossGrenadeAt(pSoldier, &BestThrow, sTeamSmokeSpot, pSmokeFriend->pathing.bLevel, EXPLOSV_SMOKE);
+			}
+
+			if (BestThrow.ubPossible)
+			{
+				DebugAI(AI_MSG_INFO, pSoldier, String("[TeamAI] smoke support for friend %d at %d", pSmokeFriend->ubID, BestThrow.sTarget));
+
+				if (BestThrow.bWeaponIn != HANDPOS)
+					RearrangePocket(pSoldier, HANDPOS, BestThrow.bWeaponIn, FOREVER);
+
+				if (gAnimControl[pSoldier->usAnimState].ubEndHeight < BestThrow.ubStance &&
+					pSoldier->InternalIsValidStance(AIDirection(pSoldier->sGridNo, BestThrow.sTarget), BestThrow.ubStance))
+				{
+					pSoldier->aiData.usActionData = BestThrow.ubStance;
+					pSoldier->aiData.bNextAction = AI_ACTION_TOSS_PROJECTILE;
+					pSoldier->aiData.usNextActionData = BestThrow.sTarget;
+					pSoldier->aiData.bNextTargetLevel = BestThrow.bTargetLevel;
+					pSoldier->aiData.bAimTime = BestThrow.ubAimTime;
+					return AI_ACTION_CHANGE_STANCE;
+				}
+
+				pSoldier->aiData.usActionData = BestThrow.sTarget;
+				pSoldier->bTargetLevel = BestThrow.bTargetLevel;
+				pSoldier->aiData.bAimTime = BestThrow.ubAimTime;
+				return AI_ACTION_TOSS_PROJECTILE;
+			}
+		}
 
 		// check path to closest disturbance
 		if (FindBestPath(pSoldier, sClosestDisturbance, pSoldier->pathing.bLevel, RUNNING, COPYROUTE, 0))
