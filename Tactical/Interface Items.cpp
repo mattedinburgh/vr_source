@@ -3785,7 +3785,7 @@ void INVRenderItem( UINT32 uiBuffer, SOLDIERTYPE * pSoldier, OBJECTTYPE  *pObjec
 	{
 		// TAKE A LOOK AT THE VIDEO OBJECT SIZE ( ONE OF TWO SIZES ) AND CENTER!
 		GetVideoObject( &hVObject, GetInterfaceGraphicForItem( pItem ) );
-		UINT16 usGraphicNum = g_bUsePngItemImages ? 0 : pItem->ubGraphicNum;
+		UINT16 usGraphicNum = GetInterfaceGraphicSubIndex(pItem->ubGraphicType, pItem->ubGraphicNum);
 		pTrav = &(hVObject->pETRLEObject[ usGraphicNum ] );
 		usHeight				= (UINT32)pTrav->usHeight;
 		usWidth					= (UINT32)pTrav->usWidth;
@@ -6098,7 +6098,7 @@ void ItemDescAmmoCallback(GUI_BUTTON *btn,INT32 reason)
 			if(gpItemPointer->exists() == true)
 			{
 				guiExternVo = GetInterfaceGraphicForItem( &(Item[ gpItemPointer->usItem ]) );
-				gusExternVoSubIndex = g_bUsePngItemImages ? 0 : Item[ gpItemPointer->usItem ].ubGraphicNum;
+				gusExternVoSubIndex = GetInterfaceGraphicSubIndex(Item[ gpItemPointer->usItem ].ubGraphicType, Item[ gpItemPointer->usItem ].ubGraphicNum);
 
 				MSYS_ChangeRegionCursor( &gMPanelRegion , EXTERN_CURSOR );
 				MSYS_SetCurrentCursor( EXTERN_CURSOR );
@@ -6430,7 +6430,7 @@ void ItemDescAttachmentsCallback( MOUSE_REGION * pRegion, INT32 iReason )
 						else {
 							// Set mouse
 							guiExternVo = GetInterfaceGraphicForItem(&(Item[gpItemPointer->usItem]));
-							gusExternVoSubIndex = g_bUsePngItemImages ? 0 : Item[gpItemPointer->usItem].ubGraphicNum;
+							gusExternVoSubIndex = GetInterfaceGraphicSubIndex(Item[gpItemPointer->usItem].ubGraphicType, Item[gpItemPointer->usItem].ubGraphicNum);
 
 							MSYS_ChangeRegionCursor(&gMPanelRegion, EXTERN_CURSOR);
 							MSYS_SetCurrentCursor(EXTERN_CURSOR);
@@ -8661,7 +8661,7 @@ void BeginKeyRingItemPointer( SOLDIERTYPE *pSoldier, UINT8 ubKeyRingPosition )
 		if ( (guiTacticalInterfaceFlags & INTERFACE_MAPSCREEN ) )
 		{
 			guiExternVo = GetInterfaceGraphicForItem( &(Item[ gpItemPointer->usItem ]) );
-			gusExternVoSubIndex = g_bUsePngItemImages ? 0 : Item[ gpItemPointer->usItem ].ubGraphicNum;
+			gusExternVoSubIndex = GetInterfaceGraphicSubIndex(Item[ gpItemPointer->usItem ].ubGraphicType, Item[ gpItemPointer->usItem ].ubGraphicNum);
 
 			fMapInventoryItem=TRUE;
 			MSYS_ChangeRegionCursor( &gMPanelRegion , EXTERN_CURSOR );
@@ -8711,7 +8711,7 @@ void DrawItemFreeCursor( )
 
 	// Get usIndex and then graphic for item
 	guiExternVo = GetInterfaceGraphicForItem( &(Item[ gpItemPointer->usItem ]) );
-	gusExternVoSubIndex = g_bUsePngItemImages ? 0 : Item[ gpItemPointer->usItem ].ubGraphicNum;
+	gusExternVoSubIndex = GetInterfaceGraphicSubIndex(Item[ gpItemPointer->usItem ].ubGraphicType, Item[ gpItemPointer->usItem ].ubGraphicNum);
 
 	MSYS_ChangeRegionCursor( &gSMPanelRegion , EXTERN_CURSOR );
 	MSYS_SetCurrentCursor( EXTERN_CURSOR );
@@ -10625,7 +10625,7 @@ void ItemPopupRegionCallback( MOUSE_REGION * pRegion, INT32 iReason )
 			else
 			{
 				guiExternVo = GetInterfaceGraphicForItem( &(Item[ gpItemPointer->usItem ]) );
-				gusExternVoSubIndex = g_bUsePngItemImages ? 0 : Item[ gpItemPointer->usItem ].ubGraphicNum;
+				gusExternVoSubIndex = GetInterfaceGraphicSubIndex(Item[ gpItemPointer->usItem ].ubGraphicType, Item[ gpItemPointer->usItem ].ubGraphicNum);
 
 				MSYS_ChangeRegionCursor( &gMPanelRegion , EXTERN_CURSOR );
 				MSYS_SetCurrentCursor( EXTERN_CURSOR );
@@ -12119,7 +12119,7 @@ void RemoveMoney()
 			{
 				// Set mouse
 				guiExternVo = GetInterfaceGraphicForItem( &(Item[ gpItemPointer->usItem ]) );
-				gusExternVoSubIndex = g_bUsePngItemImages ? 0 : Item[ gpItemPointer->usItem ].ubGraphicNum;
+				gusExternVoSubIndex = GetInterfaceGraphicSubIndex(Item[ gpItemPointer->usItem ].ubGraphicType, Item[ gpItemPointer->usItem ].ubGraphicNum);
 
 				MSYS_ChangeRegionCursor( &gMPanelRegion , EXTERN_CURSOR );
 				MSYS_SetCurrentCursor( EXTERN_CURSOR );
