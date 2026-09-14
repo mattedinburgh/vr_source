@@ -3177,6 +3177,14 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 			return bDisengageAction;
 	}
 
+	// Under suppression, compare holding, sprinting to cover and giving ground.
+	if (AICombatTeam(pSoldier) && !AIDisengagementActive(pSoldier))
+	{
+		INT8 bPressureAction = DecideSuppressionResponse(pSoldier, ubCanMove);
+		if (bPressureAction != AI_ACTION_NONE)
+			return bPressureAction;
+	}
+
 	// If the local fight has collapsed, stop initiating attacks into superior known
 	// opposition. This uses only Chunk 1 perceived knowledge and existing withdrawal/cover.
 	if (AICombatTeam(pSoldier) && !AIDisengagementActive(pSoldier) && AIShouldAvoidAdvance(pSoldier))
@@ -4909,6 +4917,14 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				INT8 bDisengageAction = DecideDisengagementAction(pSoldier, ubCanMove);
 				if (bDisengageAction != AI_ACTION_NONE)
 					return bDisengageAction;
+			}
+
+			// Under suppression, compare holding, sprinting to cover and giving ground.
+			if (AICombatTeam(pSoldier) && !AIDisengagementActive(pSoldier))
+			{
+				INT8 bPressureAction = DecideSuppressionResponse(pSoldier, ubCanMove);
+				if (bPressureAction != AI_ACTION_NONE)
+					return bPressureAction;
 			}
 
 			// Hopeless local odds make survival/defence outrank another advance.
@@ -8467,6 +8483,11 @@ void ZombieDecideAlertStatus( SOLDIERTYPE *pSoldier )
 
 INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLEAN fAbortSeek)
 {
+	INT8 bPlanIntent = AITacticalIntent(pSoldier, sClosestDisturbance);
+	INT8 bPlanRole = AITacticalRole(pSoldier, sClosestDisturbance);
+	if (!fAbortSeek && bPlanIntent != AI_INTENT_FLANK && bPlanRole != AI_ROLE_FLANKER)
+		return -1;
+
 	if (pSoldier->numFlanks == 0 &&
 		pSoldier->bActionPoints >= APBPConstants[AP_MINIMUM] &&
 		pSoldier->CheckInitialAP() &&
@@ -9479,108 +9500,109 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 {
 	DebugAI(AI_MSG_TOPIC, pSoldier, String("[Smoke to cover movement]"));
 
-	ATTACKTYPE BestThrow;
-
-	// try to use smoke to cover movement
-	if (gfTurnBasedAI &&
-		SoldierAI(pSoldier) &&
-		FindThrowableGrenade(pSoldier, EXPLOSV_SMOKE) != NO_SLOT &&
-		pSoldier->bActionPoints >= APBPConstants[AP_MINIMUM] &&
-		pSoldier->bActionPoints == pSoldier->bInitialActionPoints &&
-		!TileIsOutOfBounds(sClosestDisturbance) &&
-		pSoldier->aiData.bAIMorale >= MORALE_CONFIDENT &&
-		!AICheckIsSniper(pSoldier) &&
-		!AICheckIsMachinegunner(pSoldier) &&
-		pSoldier->aiData.bOrders != STATIONARY &&
-		!AICheckSuccessfulAttack(pSoldier, TRUE) &&
-		(pSoldier->aiData.bUnderFire ||
-		CountSeenEnemiesLastTurn(pSoldier) > CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2) ||
-		CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE) > CountFriendsLastAttackHit(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE) ||
-		CountCorpses(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE, TRUE, TRUE) > CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE)) &&
-		(InSmoke(pSoldier->sGridNo, pSoldier->pathing.bLevel) ||
-		Chance(SoldierDifficultyLevel(pSoldier) * 10) ||
-		Chance(TeamPercentKilled(pSoldier->bTeam)) ||
-		Chance(10 * CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE)) ||
-		Chance(10 * CountCorpses(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE, TRUE, TRUE))))
+	if (!gfTurnBasedAI || !pSoldier || !SoldierAI(pSoldier) ||
+		FindThrowableGrenade(pSoldier, EXPLOSV_SMOKE) == NO_SLOT ||
+		pSoldier->bActionPoints < APBPConstants[AP_MINIMUM] ||
+		pSoldier->bActionPoints != pSoldier->bInitialActionPoints ||
+		TileIsOutOfBounds(sClosestDisturbance) ||
+		pSoldier->aiData.bOrders == STATIONARY ||
+		AICheckSuccessfulAttack(pSoldier, TRUE))
 	{
-		gubNPCAPBudget = 0;
-		gubNPCDistLimit = 0;
-
-		BestThrow.ubPossible = FALSE;
-
-		// check path to closest disturbance
-		if (FindBestPath(pSoldier, sClosestDisturbance, pSoldier->pathing.bLevel, RUNNING, COPYROUTE, 0))
-		{
-			DebugAI(AI_MSG_INFO, pSoldier, String("found path to %d, path size %d ", sClosestDisturbance, pSoldier->pathing.usPathDataSize));
-
-			INT32 sCheckGridNo = pSoldier->sGridNo;
-			INT32 sSmokeSpot = NOWHERE;
-
-			for (INT16 sLoop = pSoldier->pathing.usPathIndex; sLoop < pSoldier->pathing.usPathDataSize; sLoop++)
-			{
-				sCheckGridNo = NewGridNo(sCheckGridNo, DirectionInc((UINT8)(pSoldier->pathing.usPathingData[sLoop])));
-
-				// find last dangerous spot or last spot seen by enemy if rushing
-				if (!TileIsOutOfBounds(sCheckGridNo) &&
-					PythSpacesAway(pSoldier->sGridNo, sCheckGridNo) < TACTICAL_RANGE / 2 &&
-					PythSpacesAway(pSoldier->sGridNo, sCheckGridNo) > TACTICAL_RANGE / 4 &&
-					!Water(sCheckGridNo, pSoldier->pathing.bLevel) &&
-					!InSmoke(sCheckGridNo, pSoldier->pathing.bLevel) &&
-					/*(pSoldier->RushAttackPrepare() ||
-					fSectorAttack ||
-					CorpseWarning(pSoldier, sCheckGridNo, pSoldier->pathing.bLevel) ||
-					InLightAtNight(sCheckGridNo, pSoldier->pathing.bLevel)) &&*/
-					!SightCoverAtSpot(pSoldier, sCheckGridNo, FALSE))
-				{
-					CheckTossGrenadeAt(pSoldier, &BestThrow, sCheckGridNo, pSoldier->pathing.bLevel, EXPLOSV_SMOKE);
-					if (BestThrow.ubPossible)
-					{
-						sSmokeSpot = sCheckGridNo;
-					}
-				}
-			}
-
-			if (!TileIsOutOfBounds(sSmokeSpot))
-			{
-				DebugAI(AI_MSG_INFO, pSoldier, String("found smoke spot %d ", sSmokeSpot));
-				CheckTossGrenadeAt(pSoldier, &BestThrow, sSmokeSpot, pSoldier->pathing.bLevel, EXPLOSV_SMOKE);
-			}
-
-			// found throw spot
-			if (BestThrow.ubPossible)
-			{
-				DebugAI(AI_MSG_INFO, pSoldier, String("prepare throw at spot %d level %d aimtime %d", BestThrow.sTarget, BestThrow.bTargetLevel, BestThrow.ubAimTime));
-
-				// if necessary, swap the usItem from holster into the hand position
-				if (BestThrow.bWeaponIn != HANDPOS)
-				{
-					DebugAI(AI_MSG_INFO, pSoldier, String("rearrange pocket"));
-					RearrangePocket(pSoldier, HANDPOS, BestThrow.bWeaponIn, FOREVER);
-				}
-
-				// stand up before throwing if needed
-				if (gAnimControl[pSoldier->usAnimState].ubEndHeight < BestThrow.ubStance &&
-					pSoldier->InternalIsValidStance(AIDirection(pSoldier->sGridNo, BestThrow.sTarget), BestThrow.ubStance))
-				{
-					pSoldier->aiData.usActionData = BestThrow.ubStance;
-					pSoldier->aiData.bNextAction = AI_ACTION_TOSS_PROJECTILE;
-					pSoldier->aiData.usNextActionData = BestThrow.sTarget;
-					pSoldier->aiData.bNextTargetLevel = BestThrow.bTargetLevel;
-					pSoldier->aiData.bAimTime = BestThrow.ubAimTime;
-					return AI_ACTION_CHANGE_STANCE;
-				}
-
-				pSoldier->aiData.usActionData = BestThrow.sTarget;
-				pSoldier->bTargetLevel = BestThrow.bTargetLevel;
-				pSoldier->aiData.bAimTime = BestThrow.ubAimTime;
-
-				return AI_ACTION_TOSS_PROJECTILE;
-			}
-		}
-		gubNPCAPBudget = 0;
+		return -1;
 	}
 
-	return -1;
+	INT8 bIntent = AITacticalIntent(pSoldier, sClosestDisturbance);
+	INT8 bRole = AITacticalRole(pSoldier, sClosestDisturbance);
+	BOOLEAN fMovementPlan = bIntent == AI_INTENT_PRESS || bIntent == AI_INTENT_FLANK;
+
+	// Fire-base soldiers normally preserve smoke for the movers. If they are under
+	// direct pressure they may still screen their own displacement.
+	if (!fMovementPlan ||
+		((bRole == AI_ROLE_SUPPORT || bRole == AI_ROLE_SCREEN) && !pSoldier->aiData.bUnderFire))
+	{
+		return -1;
+	}
+
+	gubNPCAPBudget = 0;
+	gubNPCDistLimit = 0;
+
+	if (!FindBestPath(pSoldier, sClosestDisturbance, pSoldier->pathing.bLevel, RUNNING, COPYROUTE, 0))
+	{
+		return -1;
+	}
+
+	ATTACKTYPE BestThrow;
+	BestThrow.ubPossible = FALSE;
+	INT32 iBestSmokeScore = -10000;
+	INT32 sCheckGridNo = pSoldier->sGridNo;
+
+	for (INT16 sLoop = pSoldier->pathing.usPathIndex; sLoop < pSoldier->pathing.usPathDataSize; ++sLoop)
+	{
+		sCheckGridNo = NewGridNo(sCheckGridNo, DirectionInc((UINT8)pSoldier->pathing.usPathingData[sLoop]));
+		if (TileIsOutOfBounds(sCheckGridNo))
+			break;
+
+		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, sCheckGridNo);
+		if (iDistance < 3 || iDistance > TACTICAL_RANGE / 2 ||
+			Water(sCheckGridNo, pSoldier->pathing.bLevel) ||
+			InSmoke(sCheckGridNo, pSoldier->pathing.bLevel))
+		{
+			continue;
+		}
+
+		UINT16 usExposure = AIKnownThreatExposure(pSoldier, sCheckGridNo, pSoldier->pathing.bLevel);
+		BOOLEAN fSightCover = SightCoverAtSpot(pSoldier, sCheckGridNo, FALSE);
+		BOOLEAN fAnyCover = AnyCoverAtSpot(pSoldier, sCheckGridNo);
+
+		// A dangerous crossing is a route segment that known opponents plausibly cover,
+		// or a clearly exposed gap in an otherwise tactical approach. No random smoke.
+		INT32 iSmokeScore = (INT32)usExposure / 2;
+		if (!fSightCover) iSmokeScore += 35;
+		if (!fAnyCover) iSmokeScore += 15;
+		if (InLightAtNight(sCheckGridNo, pSoldier->pathing.bLevel)) iSmokeScore += 10;
+		if (bRole == AI_ROLE_MANEUVER || bRole == AI_ROLE_FLANKER) iSmokeScore += 10;
+		iSmokeScore -= iDistance / 2;
+
+		if (iSmokeScore < 35)
+			continue;
+
+		ATTACKTYPE TestThrow;
+		TestThrow.ubPossible = FALSE;
+		CheckTossGrenadeAt(pSoldier, &TestThrow, sCheckGridNo,
+			pSoldier->pathing.bLevel, EXPLOSV_SMOKE);
+		if (TestThrow.ubPossible && iSmokeScore > iBestSmokeScore)
+		{
+			iBestSmokeScore = iSmokeScore;
+			BestThrow = TestThrow;
+		}
+	}
+
+	gubNPCAPBudget = 0;
+	gubNPCDistLimit = 0;
+
+	if (!BestThrow.ubPossible)
+		return -1;
+
+	DebugAI(AI_MSG_INFO, pSoldier, String("utility smoke at %d score %d", BestThrow.sTarget, iBestSmokeScore));
+
+	if (BestThrow.bWeaponIn != HANDPOS)
+		RearrangePocket(pSoldier, HANDPOS, BestThrow.bWeaponIn, FOREVER);
+
+	if (gAnimControl[pSoldier->usAnimState].ubEndHeight < BestThrow.ubStance &&
+		pSoldier->InternalIsValidStance(AIDirection(pSoldier->sGridNo, BestThrow.sTarget), BestThrow.ubStance))
+	{
+		pSoldier->aiData.usActionData = BestThrow.ubStance;
+		pSoldier->aiData.bNextAction = AI_ACTION_TOSS_PROJECTILE;
+		pSoldier->aiData.usNextActionData = BestThrow.sTarget;
+		pSoldier->aiData.bNextTargetLevel = BestThrow.bTargetLevel;
+		pSoldier->aiData.bAimTime = BestThrow.ubAimTime;
+		return AI_ACTION_CHANGE_STANCE;
+	}
+
+	pSoldier->aiData.usActionData = BestThrow.sTarget;
+	pSoldier->bTargetLevel = BestThrow.bTargetLevel;
+	pSoldier->aiData.bAimTime = BestThrow.ubAimTime;
+	return AI_ACTION_TOSS_PROJECTILE;
 }
 
 // Emergency smoke for casualty protection and emergency disengagement.  This is
@@ -9621,7 +9643,7 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 
 		BOOLEAN fCriticalCasualty = pFriend->stats.bLife < OKLIFE && pFriend->bBleeding > 0;
 		BOOLEAN fSevereCasualty = pFriend->stats.bLife < pFriend->stats.bLifeMax / 2 && pFriend->bBleeding > 0;
-		BOOLEAN fPinned = pFriend->aiData.bUnderFire && ShockLevelPercent(pFriend) >= 50;
+		BOOLEAN fPinned = pFriend->aiData.bUnderFire && ShockLevelPercent(pFriend) >= 30;
 		BOOLEAN fEmergencySelf = pFriend == pSoldier && pFriend->aiData.bUnderFire &&
 			AIPersonalRisk(pFriend) > AIPersonalRiskTolerance(pFriend);
 
@@ -9640,7 +9662,7 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 			iValue += 70;
 
 		if (fPinned)
-			iValue += 55;
+			iValue += 35 + ShockLevelPercent(pFriend) / 2;
 		if (fEmergencySelf)
 			iValue += 35;
 		if (!AnyCoverAtSpot(pFriend, pFriend->sGridNo))
@@ -10598,6 +10620,86 @@ INT8 DecideDisengagementAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 
 	return AI_ACTION_NONE;
 }
+INT8 DecideSuppressionResponse(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
+{
+	if (!gfTurnBasedAI || !AICombatTeam(pSoldier) || !fCanMove || pSoldier->IsZombie() ||
+		pSoldier->bActionPoints != pSoldier->bInitialActionPoints ||
+		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		AIEscapeActive(pSoldier) || AIDisengagementActive(pSoldier))
+	{
+		return AI_ACTION_NONE;
+	}
+
+	INT32 iShock = ShockLevelPercent(pSoldier);
+	if (!pSoldier->aiData.bUnderFire && iShock < 30)
+		return AI_ACTION_NONE;
+
+	INT32 sThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	if (TileIsOutOfBounds(sThreat))
+		return AI_ACTION_NONE;
+
+	INT8 bRole = AITacticalRole(pSoldier, sThreat);
+	UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+	BOOLEAN fCurrentCover = AnyCoverAtSpot(pSoldier, pSoldier->sGridNo);
+	UINT8 ubFriends = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 3);
+
+	// A supported screen/fire-base that is still protected should keep shooting
+	// rather than joining the mover's retreat merely because bullets are incoming.
+	if ((bRole == AI_ROLE_SUPPORT || bRole == AI_ROLE_SCREEN) && fCurrentCover &&
+		usCurrentExposure <= 120 && iShock < 50 && ubFriends > 0)
+	{
+		return AI_ACTION_NONE;
+	}
+
+	INT32 iCurrentScore = AIUtilityPositionScore(pSoldier, pSoldier->sGridNo, sThreat,
+		AI_INTENT_FALLBACK, bRole);
+	INT32 iBestScore = iCurrentScore;
+	INT32 sBestSpot = NOWHERE;
+	INT8 bBestAction = AI_ACTION_NONE;
+
+	INT32 iCoverPercentBetter = 0;
+	INT32 sCover = FindBestNearbyCover(pSoldier, pSoldier->aiData.bAIMorale, &iCoverPercentBetter);
+	if (!TileIsOutOfBounds(sCover) && sCover != pSoldier->sGridNo)
+	{
+		UINT16 usCoverExposure = AIKnownThreatExposure(pSoldier, sCover, pSoldier->pathing.bLevel);
+		INT32 iCoverScore = AIUtilityPositionScore(pSoldier, sCover, sThreat,
+			AI_INTENT_HOLD, bRole) - PythSpacesAway(pSoldier->sGridNo, sCover);
+		if (usCoverExposure <= usCurrentExposure + 25 && iCoverScore > iBestScore)
+		{
+			iBestScore = iCoverScore;
+			sBestSpot = sCover;
+			bBestAction = AI_ACTION_TAKE_COVER;
+		}
+	}
+
+	if (pSoldier->aiData.bOrders != STATIONARY)
+	{
+		INT32 sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
+		if (!TileIsOutOfBounds(sFallback) && sFallback != pSoldier->sGridNo)
+		{
+			UINT16 usFallbackExposure = AIKnownThreatExposure(pSoldier, sFallback, pSoldier->pathing.bLevel);
+			INT32 iFallbackScore = AIUtilityPositionScore(pSoldier, sFallback, sThreat,
+				AI_INTENT_FALLBACK, bRole) - PythSpacesAway(pSoldier->sGridNo, sFallback);
+			if (usFallbackExposure <= usCurrentExposure + 10 && iFallbackScore > iBestScore)
+			{
+				iBestScore = iFallbackScore;
+				sBestSpot = sFallback;
+				bBestAction = AI_ACTION_WITHDRAW;
+			}
+		}
+	}
+
+	INT32 iRequiredGain = (iShock >= 50 || usCurrentExposure >= 150 || !fCurrentCover) ? 6 : 14;
+	if (bBestAction != AI_ACTION_NONE && !TileIsOutOfBounds(sBestSpot) &&
+		iBestScore >= iCurrentScore + iRequiredGain)
+	{
+		pSoldier->aiData.usActionData = sBestSpot;
+		return bBestAction;
+	}
+
+	return AI_ACTION_NONE;
+}
+
 INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 {
 	if (!AICombatTeam(pSoldier) || !fCanMove || pSoldier->IsZombie() ||
