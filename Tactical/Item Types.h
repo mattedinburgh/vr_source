@@ -773,6 +773,7 @@ extern OBJECTTYPE gTempObject;
 
 // sevenfm: phosphorus grenade
 #define PHOSPHORUS_GRENADE		0x20000000	//536870912	// increased damage against soldiers, ignores armour
+#define IMPROVISED_BANDAGE		0x40000000	//1073741824	// crude first-aid material; normal wound mechanics at reduced efficiency
 
 /*#define PLAYER_NET_2_LVL_4	0x20000000	//536870912
 #define PLAYER_NET_3_LVL_4		0x40000000	//1073741824
