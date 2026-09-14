@@ -998,6 +998,32 @@ static BOOLEAN RenderHybridLogicalMercModel(
 	return TRUE;
 }
 
+// Cosmetic distance cue for true-colour map tiles. Close terrain keeps nearly
+// all of its colour; saturation eases down gradually toward and beyond the
+// selected merc's normal viewing range. This never feeds LOS/CTH/AI.
+static UINT8 TrueColorViewSofteningForTile(INT32 sTileGridNo, INT32 sViewerGridNo, INT32 iViewRange)
+{
+	const UINT8 ubNearSoftening = 6;   // ~2% desaturation up close
+	const UINT8 ubFarSoftening = 52;   // ~20% at the far edge; never grey/foggy
+
+	if(TileIsOutOfBounds(sTileGridNo) || TileIsOutOfBounds(sViewerGridNo))
+		return ubNearSoftening;
+
+	iViewRange = __max(12, iViewRange);
+	const INT32 iDistance = GetRangeFromGridNoDiff(sViewerGridNo, sTileGridNo);
+	const INT32 iNearRange = __max(6, (iViewRange * 45) / 100);
+	const INT32 iFarRange = __max(iNearRange + 8, (iViewRange * 135) / 100);
+
+	if(iDistance <= iNearRange)
+		return ubNearSoftening;
+	if(iDistance >= iFarRange)
+		return ubFarSoftening;
+
+	return (UINT8)(ubNearSoftening +
+		((iDistance - iNearRange) * (ubFarSoftening - ubNearSoftening)) /
+		(iFarRange - iNearRange));
+}
+
 void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT32 iStartPointX_S, INT32 iStartPointY_S, INT32 iEndXS, INT32 iEndYS, UINT8 ubNumLevels, UINT32 *puiLevels, UINT16 *psLevelIDs )
 {
 
