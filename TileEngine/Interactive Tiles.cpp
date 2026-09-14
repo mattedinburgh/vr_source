@@ -10,6 +10,7 @@
 	#include "vsurface.h"
 	#include "sysutil.h"
 	#include "renderworld.h"
+	#include "Isometric Utils.h"
 	#include "interface.h"
 	#include "Sound Control.h"
 	#include "worlddef.h"
@@ -471,12 +472,12 @@ void GetLevelNodeScreenRect( LEVELNODE *pNode, SGPRect *pRect, INT16 sXPos, INT1
 		// Adjust for offset position on screen
 		sScreenX = sScreenX - gsRenderWorldOffsetX;
 		sScreenY = sScreenY - gsRenderWorldOffsetY;
-		sScreenY = sScreenY - gpWorldLevelData[ sGridNo ].sHeight;
+		sScreenY = sScreenY - VHDScaleScreenValue( gpWorldLevelData[ sGridNo ].sHeight );
 
 		// Adjust based on interface level
 		if ( gsInterfaceLevel > 0 )
 		{
-			sScreenY += ROOF_LEVEL_HEIGHT;
+			sScreenY += VHDScaleScreenValue( ROOF_LEVEL_HEIGHT );
 		}
 
 		// Adjust for render height
@@ -488,11 +489,11 @@ void GetLevelNodeScreenRect( LEVELNODE *pNode, SGPRect *pRect, INT16 sXPos, INT1
 		usWidth					= (UINT32)pTrav->usWidth;
 
 		// Add to start position of dest buffer
-		sScreenX += ( pTrav->sOffsetX - ( WORLD_TILE_X/2 ) );
-		sScreenY += ( pTrav->sOffsetY - ( WORLD_TILE_Y/2 ) );
+		sScreenX += ( pTrav->sOffsetX - VHDScaleScreenValue( WORLD_TILE_X/2 ) );
+		sScreenY += ( pTrav->sOffsetY - VHDScaleScreenValue( WORLD_TILE_Y/2 ) );
 
 		// Adjust y offset!
-		sScreenY += ( WORLD_TILE_Y/2);
+		sScreenY += VHDScaleScreenValue( WORLD_TILE_Y/2 );
 
 		pRect->iLeft		= sScreenX;
 		pRect->iTop			= sScreenY;
