@@ -7,6 +7,7 @@ on:
     paths:
       - 'MapPreviewTrigger/PORT_MAP_FACTORY.txt'
       - '.github/workflows/port-map-factory.yml'
+      - 'Tools/map_factory_v2_patch.py'
   workflow_dispatch:
 
 permissions:
@@ -17,63 +18,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  port-and-build:
-    runs-on: [self-hosted, Windows, X64, ja2-render]
-    timeout-minutes: 90
+  prepare-candidate:
+    runs-on: windows-latest
+    outputs:
+      candidate_sha: ${{ steps.candidate.outputs.sha }}
 
     steps:
-      - name: Check out canonical integration branch
+      - name: Check out current canonical branch
         uses: actions/checkout@v4
         with:
           ref: install/all-2026-09-12
           fetch-depth: 0
 
-      - name: Locate Git
-        id: git
+      - name: Replay proven Map Factory commits on a disposable candidate branch
         shell: powershell
-        run: |
-          $git = $null
-          $cmd = Get-Command git.exe -ErrorAction SilentlyContinue
-          if ($cmd) { $git = $cmd.Source }
-          if (-not $git) {
-            $git = Get-ChildItem "$env:LOCALAPPDATA\GitHubDesktop" -Recurse -Filter git.exe -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match '\\resources\\app\\git\\cmd\\git\.exe$' } |
-              Sort-Object LastWriteTime -Descending |
-              Select-Object -First 1 -ExpandProperty FullName
-          }
-          if (-not $git -or -not (Test-Path $git)) { throw 'Git not found.' }
-          "path=$git" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-
-      - name: Replay only proven map-factory commits
-        shell: powershell
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $git = '${{ steps.git.outputs.path }}'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-          # actions/checkout can fall back to a REST archive when git.exe is not
-          # on PATH.  Rehydrate a real repository with the GitHub Desktop Git we
-          # located above instead of assuming .git exists.
-          if (-not (Test-Path (Join-Path $env:GITHUB_WORKSPACE '.git'))) {
-            Write-Host 'Checkout is an archive; initializing repository metadata.'
-            & $git -C $env:GITHUB_WORKSPACE init
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            & $git -C $env:GITHUB_WORKSPACE remote add origin "https://x-access-token:$env:GH_TOKEN@github.com/mattedinburgh/vr_source.git"
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-
-          & $git -C $env:GITHUB_WORKSPACE config user.name 'github-actions[bot]'
-          & $git -C $env:GITHUB_WORKSPACE config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-
-          & $git -C $env:GITHUB_WORKSPACE fetch origin install/all-2026-09-12
+          git fetch origin install/all-2026-09-12
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $git -C $env:GITHUB_WORKSPACE clean -fdx
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $git -C $env:GITHUB_WORKSPACE checkout -f -B map-factory-port FETCH_HEAD
+          git checkout -B map-factory-v2-candidate origin/install/all-2026-09-12
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          # Oldest -> newest. Trigger-only commits are intentionally excluded.
+          # Oldest -> newest. Trigger-only historical commits are deliberately excluded.
           $commits = @(
             'c7bd66dea44eeb3cb98554492d654112e57425bf',
             'ce74df771d1f5bac9675edd40c11f8475c0b0ef4',
@@ -95,43 +64,83 @@ jobs:
           )
 
           foreach ($sha in $commits) {
-            Write-Host "Fetching map commit $sha"
-            & $git -C $env:GITHUB_WORKSPACE fetch origin $sha
-            if ($LASTEXITCODE -ne 0) { throw "Could not fetch $sha" }
+            Write-Host "Fetching historical Map Factory commit $sha"
+            git fetch origin $sha
+            if ($LASTEXITCODE -ne 0) { throw "Could not fetch historical commit $sha" }
 
             Write-Host "Cherry-picking $sha"
-            & $git -C $env:GITHUB_WORKSPACE cherry-pick $sha
+            git cherry-pick $sha
             if ($LASTEXITCODE -ne 0) {
-              Write-Host '--- CHERRY-PICK CONFLICT ---'
-              & $git -C $env:GITHUB_WORKSPACE status --short
-              & $git -C $env:GITHUB_WORKSPACE diff --name-only --diff-filter=U
-              & $git -C $env:GITHUB_WORKSPACE cherry-pick --abort
-              throw "Map Factory port conflicted at $sha; canonical branch was not modified."
+              Write-Host '--- MAP FACTORY PORT CONFLICT ---'
+              git status --short
+              git diff --name-only --diff-filter=U
+              git cherry-pick --abort
+              throw "Historical Map Factory port conflicted at $sha"
             }
           }
 
-          & $git -C $env:GITHUB_WORKSPACE log --oneline -20
-
-      - name: Apply Map Factory v2 visual and composition refinement
+      - name: Apply v2 authored-layout and readability refinement
         shell: powershell
         run: |
-          $python = Get-Command python.exe -ErrorAction SilentlyContinue
-          if (-not $python) { $python = Get-Command py.exe -ErrorAction SilentlyContinue }
-          if (-not $python) { throw 'Python is required for the strict Map Factory v2 patch.' }
-          if ($python.Name -ieq 'py.exe') {
-            & $python.Source -3 '.\Tools\map_factory_v2_patch.py'
-          } else {
-            & $python.Source '.\Tools\map_factory_v2_patch.py'
-          }
-          if ($LASTEXITCODE -ne 0) { throw "Map Factory v2 refinement failed with exit code $LASTEXITCODE" }
-
-          $git = '${{ steps.git.outputs.path }}'
-          & $git -C $env:GITHUB_WORKSPACE add Utils/MapUtility.cpp TileEngine/worlddef.cpp
+          python '.\Tools\map_factory_v2_patch.py'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $git -C $env:GITHUB_WORKSPACE commit -m 'Map Factory v2: authored pilot layouts and restrained colour'
-          if ($LASTEXITCODE -ne 0) { throw 'Could not commit Map Factory v2 refinement.' }
 
-      - name: Retarget projects to v120 for render-PC build
+          git add Utils/MapUtility.cpp TileEngine/worlddef.cpp
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git commit -m 'Map Factory v2: authored layouts and readability-first colour'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Rebase candidate onto latest canonical head
+        shell: powershell
+        run: |
+          git fetch origin install/all-2026-09-12
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git rebase origin/install/all-2026-09-12
+          if ($LASTEXITCODE -ne 0) {
+            git rebase --abort
+            throw 'Canonical branch advanced incompatibly while preparing Map Factory candidate.'
+          }
+
+      - name: Publish disposable candidate for local compiler validation
+        id: candidate
+        shell: powershell
+        run: |
+          git push --force origin HEAD:map-factory-v2-candidate
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $sha = (git rev-parse HEAD).Trim()
+          "sha=$sha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Prepared candidate: $sha"
+
+  validate-and-promote:
+    needs: prepare-candidate
+    runs-on: [self-hosted, Windows, X64, ja2-render]
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out prepared candidate
+        uses: actions/checkout@v4
+        with:
+          ref: map-factory-v2-candidate
+          fetch-depth: 1
+
+      - name: Locate Git on validation PC
+        id: git
+        shell: powershell
+        run: |
+          $git = $null
+          $cmd = Get-Command git.exe -ErrorAction SilentlyContinue
+          if ($cmd) { $git = $cmd.Source }
+          if (-not $git) {
+            $git = Get-ChildItem "$env:LOCALAPPDATA\GitHubDesktop" -Recurse -Filter git.exe -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\resources\\app\\git\\cmd\\git\.exe$' } |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $git -or -not (Test-Path $git)) { throw 'Git not found on validation PC.' }
+          "path=$git" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          & $git --version
+
+      - name: Retarget projects to installed v120 toolset
         shell: powershell
         run: |
           Get-ChildItem $env:GITHUB_WORKSPACE -Recurse -Filter '*.vcxproj' -File | ForEach-Object {
@@ -158,29 +167,53 @@ jobs:
             $cmd = Get-Command msbuild.exe -ErrorAction SilentlyContinue
             if ($cmd) { $msbuild = $cmd.Source }
           }
-          if (-not $msbuild) { throw 'MSBuild not found.' }
+          if (-not $msbuild) { throw 'MSBuild not found on validation PC.' }
           "path=$msbuild" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-      - name: Compile MapEditor integration
+      - name: Build candidate MapEditor
         shell: powershell
         run: |
           & '${{ steps.msbuild.outputs.path }}' '.\ja2_VS2013.sln' /m /t:ja2 /p:Configuration=MapEditor /p:Platform=Win32
-          if ($LASTEXITCODE -ne 0) { throw "Map Factory port failed MapEditor build with exit code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $editor = Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\MapEditor_EN_Release.exe'
           if (-not (Test-Path $editor)) { throw "MapEditor binary not produced: $editor" }
 
-      - name: Rebase onto latest canonical head and push
+      - name: Promote only if canonical has not diverged
         shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          $ErrorActionPreference = 'Stop'
           $git = '${{ steps.git.outputs.path }}'
-          & $git -C $env:GITHUB_WORKSPACE fetch origin install/all-2026-09-12
+          $candidate = '${{ needs.prepare-candidate.outputs.candidate_sha }}'
+
+          # actions/checkout may be a REST archive on this PC. Use a tiny git-only
+          # promotion workspace so validation output itself remains untouched.
+          $promote = Join-Path $env:RUNNER_TEMP 'map-factory-promote'
+          if (Test-Path $promote) { Remove-Item -Recurse -Force $promote }
+          New-Item -ItemType Directory -Force -Path $promote | Out-Null
+
+          & $git -C $promote init
+          & $git -C $promote remote add origin "https://x-access-token:$env:GH_TOKEN@github.com/mattedinburgh/vr_source.git"
+          & $git -C $promote fetch origin install/all-2026-09-12 map-factory-v2-candidate
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          & $git -C $env:GITHUB_WORKSPACE rebase origin/install/all-2026-09-12
-          if ($LASTEXITCODE -ne 0) {
-            & $git -C $env:GITHUB_WORKSPACE rebase --abort
-            throw 'Canonical branch changed incompatibly during validation; no push performed.'
+          $remoteCandidate = (& $git -C $promote rev-parse 'origin/map-factory-v2-candidate').Trim()
+          if ($remoteCandidate -ne $candidate) {
+            throw "Candidate moved during validation: expected $candidate got $remoteCandidate"
           }
 
-          & $git -C $env:GITHUB_WORKSPACE push origin HEAD:install/all-2026-09-12
-          if ($LASTEXITCODE -ne 0) { throw 'Validated Map Factory port could not be pushed.' }
+          & $git -C $promote merge-base --is-ancestor 'origin/install/all-2026-09-12' 'origin/map-factory-v2-candidate'
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Canonical branch advanced after candidate preparation. Refusing stale promotion; rerun the port.'
+          }
+
+          & $git -C $promote push origin 'refs/remotes/origin/map-factory-v2-candidate:refs/heads/install/all-2026-09-12'
+          if ($LASTEXITCODE -ne 0) { throw 'Validated candidate could not be promoted to canonical branch.' }
+
+          # Candidate branch is intentionally temporary; avoid long-term fragmentation.
+          & $git -C $promote push origin --delete map-factory-v2-candidate
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning 'Validated candidate was promoted, but temporary candidate branch could not be deleted.'
+            $global:LASTEXITCODE = 0
+          }
