@@ -14,6 +14,7 @@ on:
       - '**/*.props'
       - '*.sln'
       - 'DEPLOY_*.ps1'
+      - 'GENERATE_VR_BUILD_INFO.ps1'
       - '.github/workflows/integration-build.yml'
   workflow_dispatch:
 
