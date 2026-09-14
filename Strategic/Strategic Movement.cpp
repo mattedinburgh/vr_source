@@ -2314,6 +2314,9 @@ void HandleNonCombatGroupArrival( GROUP *pGroup, BOOLEAN fMainGroup, BOOLEAN fNe
 	{
 		if( !pGroup->fDebugGroup )
 		{
+			// A non-combat arrival completes a persistent retreat leg. If this
+			// arrival had produced a battle, this function would not be reached.
+			VR_RecordFormationArrival( pGroup );
 			CalculateNextMoveIntention( pGroup );
 		}
 		else
