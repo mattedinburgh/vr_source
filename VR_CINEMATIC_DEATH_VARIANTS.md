@@ -1,8 +1,8 @@
-# VR 30-Way Cinematic Death Test Pack
+# VR Cinematic Death and Dismemberment Pack
 
 Active branch: `install/all-2026-09-12`
 
-The fatal gunshot selector in `Tactical/Soldier Control.cpp` now exposes 30 in-game variants, numbered 0-29. The current baseline is intentionally excessive for visual testing; balance/probability scaling comes later.
+The fatal gunshot selector in `Tactical/Soldier Control.cpp` now exposes 35 in-game variants, numbered 0-34. Motion remains the default; dismemberment is damage-gated and deliberately rare, with a modest cinematic bias.
 
 ## Variant map
 
@@ -94,3 +94,17 @@ Current extreme-test behaviour also includes:
 - gore animation tiles render two shade levels darker than default and ground blood decals three shade levels darker, producing a deeper/darker red without changing terrain or character palettes.
 
 This remains an intentionally exaggerated test configuration. Frequency, displacement, gore volume and damage/weapon scaling are deferred until the visual system is proven stable.
+
+## Added limb-loss variants
+
+| ID | Reaction |
+|---:|---|
+| 30 | Left forearm/hand-sized limb fragment thrown clear, left collapse |
+| 31 | Right forearm/hand-sized limb fragment thrown clear, right collapse |
+| 32 | Arm/forearm detaches forward while the body recoils backward |
+| 33 | Detached leg thrown laterally with immediate buckle |
+| 34 | Exceptionally rare mixed-limb catastrophic breakup |
+
+Dismemberment probability now scales strongly with fatal hit damage. Head and leg hits receive a small location bonus. A selected dismemberment event is no longer overwritten by the moving-victim momentum selector.
+
+The normal non-fatal hit system does not use these limb-loss variants.
