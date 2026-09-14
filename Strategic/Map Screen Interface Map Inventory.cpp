@@ -288,6 +288,8 @@ void MapInventoryPoolEjectAmmoBtn( GUI_BUTTON *btn, INT32 reason );
 // Vengeance: 3-mag ammo redistribution and one-smoke-per-merc shortcuts.
 void MapInventoryPoolAmmo3xBtn( GUI_BUTTON *btn, INT32 reason );
 void MapInventoryPoolSmokeBtn( GUI_BUTTON *btn, INT32 reason );
+static void RedistributeSectorAmmo3x();
+static void RedistributeSectorSmoke();
 // Vengeance: redistribute all spare squad/sector ammo into up to three mags per carried gun.
 void MapInventoryPoolAmmo3xBtn( GUI_BUTTON *btn, INT32 reason )
 {
@@ -539,7 +541,7 @@ static BOOLEAN IsHandThrownSmokeGrenade( UINT16 usItem )
 
 static void PoolSquadSpareAmmo()
 {
-	for ( SoldierID id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
+	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
 		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
 	{
 		SOLDIERTYPE *pSoldier = MercPtrs[id];
@@ -576,7 +578,7 @@ static UINT32 CountMercHandSmoke( SOLDIERTYPE *pSoldier )
 
 static void PoolSquadSurplusHandSmoke()
 {
-	for ( SoldierID id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
+	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
 		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
 	{
 		SOLDIERTYPE *pSoldier = MercPtrs[id];
@@ -808,17 +810,17 @@ static UINT16 BuildAndPlaceSectorMagazine( SOLDIERTYPE *pSoldier, UINT8 ubCalibr
 		if ( pSource->ubNumberOfObjects < 1 )
 			DeleteObj( pSource );
 
-		if ( newMag.exists() && (*newMag)[0]->data.objectStatus >= (INT16)usWantedRounds )
+		if ( newMag.exists() && newMag[0]->data.objectStatus >= (INT16)usWantedRounds )
 			break;
 	}
 
-	if ( !newMag.exists() || (*newMag)[0]->data.objectStatus <= 0 )
+	if ( !newMag.exists() || newMag[0]->data.objectStatus <= 0 )
 	{
 		DeleteObj( &newMag );
 		return 0;
 	}
 
-	UINT16 usBuiltRounds = (UINT16)(*newMag)[0]->data.objectStatus;
+	UINT16 usBuiltRounds = (UINT16)newMag[0]->data.objectStatus;
 
 	if ( !PlaceInAnyPocket( pSoldier, &newMag, FALSE ) || newMag.exists() )
 	{
@@ -836,7 +838,7 @@ static void CollectSectorAmmoDemands( std::vector<SECTOR_LOADOUT_AMMO_DEMAND> &d
 	demands.clear();
 	uiMercCount = 0;
 
-	for ( SoldierID id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
+	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
 		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
 	{
 		SOLDIERTYPE *pSoldier = MercPtrs[id];
@@ -1004,7 +1006,7 @@ static void RedistributeSectorSmoke()
 	PoolSquadSurplusHandSmoke();
 
 	std::vector<SOLDIERTYPE*> mercs;
-	for ( SoldierID id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
+	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
 		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
 	{
 		SOLDIERTYPE *pSoldier = MercPtrs[id];
