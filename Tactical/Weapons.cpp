@@ -3594,10 +3594,6 @@ BOOLEAN UseHandToHand( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo, BOOLEAN fStea
 			{
 				fStealAttempt = TRUE;
 
-				// first, charge extra Aps, because it's difficlut to pickup from other soldier
-				if (gGameExternalOptions.fEnhancedCloseCombatSystem)
-					DeductPoints( pSoldier, (GetBasicAPsToPickupItem( pSoldier ) * 2), 0, AFTERACTION_INTERRUPT );
-
 				// The item that the enemy holds in his hand before the stealing
 				usOldItem = pTargetSoldier->inv[HANDPOS].usItem;
 
@@ -3606,12 +3602,15 @@ BOOLEAN UseHandToHand( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo, BOOLEAN fStea
 				// We have only stolen 1 item, because the enemy has not more than one item.
 				if ( sNumStolenItems == 1)
 				{
-					// charge APs
-					if (gGameExternalOptions.fEnhancedCloseCombatSystem)
+					// For a conscious target the base steal AP cost covers the first item.
+					// Collapsed/dying targets have no steal-attack surcharge, so charge normal pickup AP.
+					if ( gGameExternalOptions.fEnhancedCloseCombatSystem && fSoldierCollapsed )
 						DeductPoints( pSoldier, GetBasicAPsToPickupItem( pSoldier ), 0, AFTERACTION_INTERRUPT );
 
 					ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, Message[ STR_STOLE_SOMETHING ], pSoldier->GetName(), ShortItemNames[ pTargetSoldier->inv[ubIndexRet].usItem ] );
 					if (pTargetSoldier->inv[ubIndexRet].MoveThisObjectTo(gTempObject, 1) == 0) {
+						// Stolen enemy equipment must remain usable even if it was marked undroppable.
+						gTempObject.fFlags &= ~OBJECT_UNDROPPABLE;
 
 						// Try to place the item in the merc inventory
 						if (!AutoPlaceObject( pSoldier, &gTempObject, TRUE ))
