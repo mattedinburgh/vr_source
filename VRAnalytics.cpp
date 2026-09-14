@@ -180,6 +180,7 @@ namespace
 		JsonString( gFile, __TIME__ );
 		fputs( ",\"experiment_tag\":", gFile );
 		JsonString( gFile, experimentTag );
+		fputs( ",\"blackbox_version\":2,\"decision_forensics\":true", gFile );
 		fputs( "}\n", gFile );
 		fflush( gFile );
 	}
@@ -542,6 +543,46 @@ void VRAnalyticsTacticalCandidate(
 		",\"subject_id\":%ld,\"raw_score\":%ld,\"adjusted_score\":%ld,\"eligible\":%s,\"reason\":",
 		target, rawScore, adjustedScore, eligible ? "true" : "false" );
 	JsonString( file, reason );
+	EndEvent( file );
+}
+
+void VRAnalyticsTacticalStateInt(
+	unsigned int soldierId,
+	const char* key,
+	long value )
+{
+	unsigned long decisionId = EnsureTacticalDecision( soldierId );
+	VRAnalyticsStateInt( decisionId, key, value );
+}
+
+void VRAnalyticsTacticalFormationSnapshot(
+	unsigned long turn,
+	int team,
+	int sectorX,
+	int sectorY,
+	int sectorZ,
+	int living,
+	int combatReady,
+	int cowering,
+	int disengaging,
+	int escaping,
+	int leaders,
+	int casualtyPercent,
+	int averageMorale,
+	int averageStress )
+{
+	FILE* file = BeginEvent( VR_ANALYTICS_TACTICAL, "formation_snapshot", 0 );
+	if( !file )
+		return;
+
+	fprintf( file,
+		",\"turn\":%lu,\"team\":%d,\"sector_x\":%d,\"sector_y\":%d,\"sector_z\":%d,"
+		"\"living\":%d,\"combat_ready\":%d,\"cowering\":%d,"
+		"\"disengaging\":%d,\"escaping\":%d,\"leaders\":%d,"
+		"\"casualty_percent\":%d,\"average_morale\":%d,\"average_stress\":%d",
+		turn, team, sectorX, sectorY, sectorZ,
+		living, combatReady, cowering, disengaging, escaping, leaders,
+		casualtyPercent, averageMorale, averageStress );
 	EndEvent( file );
 }
 
