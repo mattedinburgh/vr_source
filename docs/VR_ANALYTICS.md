@@ -117,9 +117,28 @@ Important identifiers:
 - `battle_id`: tactical battle lifecycle
 - `group_id`: strategic formation/movement identity
 - sector and `world_minutes`: cross-layer correlation
+- `experiment_tag`: tuning/code experiment attached to the executable session
 
 The logger flushes after each record so a crash should still leave the recent
 decision history available.
+
+### Experiment labels
+
+Before launching the game, put the current change label in:
+
+```text
+VR_Analytics_Experiment.txt
+```
+
+in the game working directory, for example:
+
+```text
+AI_SMOKE_COORDINATION_R3
+```
+
+Alternatively set the `VR_ANALYTICS_EXPERIMENT` environment variable. The
+environment variable takes precedence. If neither exists, the session is
+recorded as `unlabeled`.
 
 ## Campaign Companion
 
@@ -238,9 +257,8 @@ hooks are:
 5. strategic formation creation/split/merge/destruction
 6. strategic objectives beyond reinforcement
 7. battle reinforcement entry timing
-8. explicit experiment/configuration tags for each balance/code change
-9. save/load continuity markers
-10. parameter snapshots so a result can be reproduced against the exact AI,
+8. save/load continuity markers
+9. parameter snapshots so a result can be reproduced against the exact AI,
     NCTH, weapon, optics, morale and suppression configuration
 
 These should extend the same event schema rather than introduce separate log
