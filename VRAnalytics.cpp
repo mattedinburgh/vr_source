@@ -1,6 +1,7 @@
 #include "VRAnalytics.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -59,6 +60,43 @@ namespace
 		if( meta.id == decisionId )
 			return meta.layer;
 		return VR_ANALYTICS_TACTICAL;
+	}
+
+	void ReadExperimentTag( char* buffer, size_t bufferSize )
+	{
+		const char* env;
+		FILE* tagFile;
+		size_t len;
+
+		if( !buffer || bufferSize == 0 )
+			return;
+
+		buffer[0] = '\0';
+		env = getenv( "VR_ANALYTICS_EXPERIMENT" );
+		if( env && env[0] )
+		{
+			strncpy( buffer, env, bufferSize - 1 );
+			buffer[bufferSize - 1] = '\0';
+			return;
+		}
+
+		tagFile = fopen( "VR_Analytics_Experiment.txt", "rb" );
+		if( tagFile )
+		{
+			if( fgets( buffer, (int)bufferSize, tagFile ) )
+			{
+				len = strlen( buffer );
+				while( len && (buffer[len - 1] == '\r' || buffer[len - 1] == '\n') )
+					buffer[--len] = '\0';
+			}
+			fclose( tagFile );
+		}
+
+		if( !buffer[0] )
+		{
+			strncpy( buffer, "unlabeled", bufferSize - 1 );
+			buffer[bufferSize - 1] = '\0';
+		}
 	}
 
 	const char* LayerName( VRAnalyticsLayer layer )
@@ -128,6 +166,9 @@ namespace
 			return;
 		}
 
+		char experimentTag[128];
+		ReadExperimentTag( experimentTag, sizeof( experimentTag ) );
+
 		++gSequence;
 		fprintf( gFile,
 			"{\"schema\":\"vr-blackbox-1\",\"seq\":%lu,\"session\":%lu,"
@@ -137,6 +178,8 @@ namespace
 		JsonString( gFile, __DATE__ );
 		fputs( ",\"build_time\":", gFile );
 		JsonString( gFile, __TIME__ );
+		fputs( ",\"experiment_tag\":", gFile );
+		JsonString( gFile, experimentTag );
 		fputs( "}\n", gFile );
 		fflush( gFile );
 	}
