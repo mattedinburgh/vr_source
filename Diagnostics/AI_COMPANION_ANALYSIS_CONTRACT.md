@@ -1,6 +1,6 @@
 # AI Companion Daily Analysis Contract
 
-Schema version: **1**
+Schema version: **3**
 Framework: **Vengeance Unified AI Framework**
 
 ## Working relationship
@@ -36,6 +36,8 @@ Every material decision should be reconstructable by a stable `decision_id`.
 Record:
 - battle/session/time/sector/turn
 - actor id/team/class
+- enemy doctrine profile + whether local command support exists
+- persistent fireteam id + alive member count
 - competence tier + execution reliability
 - alert status / morale
 - life/AP/breath/shock
