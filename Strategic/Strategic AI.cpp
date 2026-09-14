@@ -6179,6 +6179,66 @@ void SendGroupToPool( GROUP **pGroup )
 	}
 }
 
+static BOOLEAN VR_TryOperationalGarrisonReassignment( GROUP **pGroup )
+{
+	if( !VR_OPERATIONAL_GARRISON_REASSIGNMENT_ENABLED ||
+		!pGroup || !(*pGroup) || !(*pGroup)->pEnemyGroup )
+		return FALSE;
+
+	// Keep command friction: some decisions deliberately fall back to legacy allocation.
+	if( Chance( 20 ) )
+		return FALSE;
+
+	INT32 iBestGarrison = -1;
+	INT32 iBestScore = -32767;
+
+	Ensure_RepairedGarrisonGroup( &gGarrisonGroup, &giGarrisonArraySize );
+
+	for( INT32 i = 0; i < giGarrisonArraySize; ++i )
+	{
+		RecalculateGarrisonWeight( i );
+		INT32 iWeight = gGarrisonGroup[ i ].bWeight;
+		if( iWeight <= 0 || gGarrisonGroup[ i ].ubPendingGroupID )
+			continue;
+
+		UINT8 ubTargetSector = gGarrisonGroup[ i ].ubSectorID;
+		if( !EnemyPermittedToAttackSector( NULL, ubTargetSector ) ||
+			!GarrisonRequestingMinimumReinforcements( i ) )
+			continue;
+
+		VR_OPERATIONAL_SCORE score;
+		INT32 iOperationalScore =
+			VR_ScoreOperationalTarget( *pGroup, ubTargetSector, &score );
+
+		iOperationalScore += iWeight * 3;
+		iOperationalScore += (INT32)Random( 31 ) - 15;
+
+		if( iOperationalScore > iBestScore )
+		{
+			iBestScore = iOperationalScore;
+			iBestGarrison = i;
+		}
+	}
+
+	if( iBestGarrison >= 0 )
+	{
+		UINT16 usDefencePoints = 0;
+		if( ReinforcementsApproved( iBestGarrison, &usDefencePoints ) )
+		{
+			VR_StrategicDiagnosticsRecord( "OPERATIONAL_REASSIGN", "garrison",
+				iBestGarrison, *pGroup,
+				SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY ),
+				gGarrisonGroup[ iBestGarrison ].ubSectorID,
+				iBestScore, usDefencePoints,
+				"operational score selected target; legacy need and command friction remain active" );
+			SendReinforcementsForGarrison( iBestGarrison, usDefencePoints, pGroup );
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
 void ReassignAIGroup( GROUP **pGroup )
 {
 	INT32 i, iRandom;
