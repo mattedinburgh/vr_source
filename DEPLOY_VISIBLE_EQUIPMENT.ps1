@@ -13,6 +13,7 @@ $TableRoot = Join-Path $DataRoot "TableData\LogicalBodyTypes"
 $PaletteRoot = Join-Path $DataRoot "Palettes"
 $AnimRoot = Join-Path $DataRoot "Anims\LOBOT"
 $Marker = Join-Path $AnimRoot "VR_EQUIPMENT.READY"
+$GraphicsManifest = Join-Path $AnimRoot "VR_EQUIPMENT_GRAPHICS.json"
 
 # Pin the matching Vengeance LOBOT catalog too. Source + catalog + upstream art
 # must form one reproducible deployment set.
@@ -38,6 +39,39 @@ if (-not (Test-Path $GameRoot -PathType Container)) {
 New-Item -ItemType Directory -Force -Path $TableRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $PaletteRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $AnimRoot | Out-Null
+
+# Incremental graphics state. The manifest records the exact upstream Git blob
+# SHA for every deployed LOBOT graphic. This lets a future pinned 1.13 revision
+# fetch only new/changed art rather than downloading the whole graphics set.
+$previousGraphicsShas = @{}
+if ((-not $Force) -and (Test-Path $GraphicsManifest)) {
+    try {
+        $manifestDoc = [System.IO.File]::ReadAllText($GraphicsManifest) | ConvertFrom-Json
+        if ($null -ne $manifestDoc.Assets) {
+            foreach ($property in $manifestDoc.Assets.PSObject.Properties) {
+                $previousGraphicsShas[$property.Name] = [string]$property.Value
+            }
+        }
+    }
+    catch {
+        Write-Host ("Graphics manifest ignored: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+        $previousGraphicsShas = @{}
+    }
+}
+
+# If this install predates the SHA manifest but its READY marker names the same
+# pinned art revision, trust the already-verified files once and seed the new
+# manifest without forcing a multi-gigabyte re-download.
+$trustExistingGraphics = $false
+if ((-not $Force) -and $previousGraphicsShas.Count -eq 0 -and (Test-Path $Marker)) {
+    try {
+        $oldMarkerText = [System.IO.File]::ReadAllText($Marker)
+        $trustExistingGraphics = $oldMarkerText.Contains("Source: 1dot13/gamedir $UpstreamRef Data/Anims/LOBOT art")
+    }
+    catch {
+        $trustExistingGraphics = $false
+    }
+}
 
 # Never leave a stale marker behind if deployment is interrupted.
 if (Test-Path $Marker) {
@@ -103,7 +137,7 @@ function Get-UpstreamLobotPathMap {
         }
     }
 
-    $map = New-Object "System.Collections.Generic.Dictionary[string,string]" ([System.StringComparer]::OrdinalIgnoreCase)
+    $map = New-Object "System.Collections.Generic.Dictionary[string,object]" ([System.StringComparer]::OrdinalIgnoreCase)
 
     foreach ($bodyDir in $BodyDirs) {
         $dirKey = $bodyDir.ToUpperInvariant()
@@ -121,7 +155,10 @@ function Get-UpstreamLobotPathMap {
             if ($node.type -ne "blob") { continue }
 
             $actualRelative = "Anims\LOBOT\$bodyDir\" + $node.path.Replace("/", "\")
-            $map[$actualRelative] = $actualRelative
+            $map[$actualRelative] = [pscustomobject]@{
+                Relative = $actualRelative
+                Sha = [string]$node.sha
+            }
         }
     }
 
@@ -991,8 +1028,238 @@ foreach ($relative in $assetPaths) {
         continue
     }
 
-    $xmlUrlCase = $relative -replace '(?i)\.STI$', '.sti'
-    if ($upstreamPathMap[$relative] -cne $xmlUrlCase) {
+    $xmlUrlCase = $relative -replace '(?i)\.STI        $caseCorrections++
+    }
+}
+
+if ($unresolved.Count -gt 0) {
+    Write-Host ""
+    Write-Host "References absent from upstream 1.13 LOBOT art:" -ForegroundColor Red
+    $unresolved | Select-Object -First 30 | ForEach-Object { Write-Host "  $_" }
+    if ($unresolved.Count -gt 30) {
+        Write-Host ("  ... and {0} more" -f ($unresolved.Count - 30))
+    }
+    throw "Visible-equipment catalog contains unresolved upstream assets."
+}
+
+Write-Host ("Upstream case corrections   : {0}" -f $caseCorrections)
+
+$pending = New-Object System.Collections.ArrayList
+$unchangedGraphics = 0
+foreach ($relative in $assetPaths) {
+    $destination = Join-Path $DataRoot $relative
+    $currentSha = [string]$upstreamPathMap[$relative].Sha
+    $needsFetch = $Force -or -not (Test-Path $destination) -or (Get-Item $destination).Length -eq 0
+
+    if (-not $needsFetch) {
+        if ($previousGraphicsShas.ContainsKey($relative)) {
+            $needsFetch = ($previousGraphicsShas[$relative] -ne $currentSha)
+        }
+        elseif ($trustExistingGraphics) {
+            $needsFetch = $false
+        }
+        else {
+            # Existing file came from an unknown graphics revision: refresh it
+            # once so the new SHA manifest starts from a known-good baseline.
+            $needsFetch = $true
+        }
+    }
+
+    if ($needsFetch) {
+        [void]$pending.Add($relative)
+    }
+    else {
+        $unchangedGraphics++
+    }
+}
+
+Write-Host ("Equipment surfaces referenced : {0}" -f $assetPaths.Count)
+Write-Host ("Graphics unchanged / reused   : {0}" -f $unchangedGraphics)
+Write-Host ("Graphics new/changed to fetch : {0}" -f $pending.Count)
+
+if ($pending.Count -gt 0) {
+    Add-Type -AssemblyName System.Net.Http
+    $handler = New-Object System.Net.Http.HttpClientHandler
+    $client = New-Object System.Net.Http.HttpClient($handler)
+    $client.Timeout = [TimeSpan]::FromMinutes(5)
+    $client.DefaultRequestHeaders.UserAgent.ParseAdd("VengeanceReloaded-LOBOT-Port/1.0")
+
+    try {
+        for ($offset = 0; $offset -lt $pending.Count; $offset += $Workers) {
+            $lastIndex = [Math]::Min($pending.Count - 1, $offset + $Workers - 1)
+            $batch = @($pending[$offset..$lastIndex])
+            $jobs = @()
+
+            foreach ($relative in $batch) {
+                if (-not $upstreamPathMap.ContainsKey($relative)) {
+                    throw "No upstream path resolved for $relative"
+                }
+                $urlRel = $upstreamPathMap[$relative].Relative.Replace("\", "/")
+                $url = "$UpstreamRaw/$urlRel"
+                $destination = Join-Path $DataRoot $relative
+                $parent = Split-Path -Parent $destination
+                New-Item -ItemType Directory -Force -Path $parent | Out-Null
+
+                $jobs += [pscustomobject]@{
+                    Relative = $relative
+                    Url = $url
+                    Destination = $destination
+                    Task = $client.GetByteArrayAsync($url)
+                }
+            }
+
+            foreach ($job in $jobs) {
+                $ok = $false
+                $last = $null
+
+                try {
+                    $bytes = $job.Task.GetAwaiter().GetResult()
+                    if ($bytes.Length -le 0) { throw "Empty response" }
+                    [System.IO.File]::WriteAllBytes($job.Destination, $bytes)
+                    $ok = $true
+                }
+                catch {
+                    $last = $_
+                }
+
+                if (-not $ok) {
+                    # Parallel request failed: retry this one conservatively.
+                    for ($attempt = 1; $attempt -le 3 -and -not $ok; $attempt++) {
+                        try {
+                            $bytes = $client.GetByteArrayAsync($job.Url).GetAwaiter().GetResult()
+                            if ($bytes.Length -le 0) { throw "Empty response" }
+                            [System.IO.File]::WriteAllBytes($job.Destination, $bytes)
+                            $ok = $true
+                        }
+                        catch {
+                            $last = $_
+                            if ($attempt -lt 3) { Start-Sleep -Seconds $attempt }
+                        }
+                    }
+                }
+
+                if (-not $ok) {
+                    throw "Failed to download $($job.Relative): $last"
+                }
+            }
+
+            $done = [Math]::Min($pending.Count, $lastIndex + 1)
+            Write-Progress -Activity "Downloading visible equipment animation layers" -Status "$done / $($pending.Count)" -PercentComplete (($done * 100.0) / $pending.Count)
+        }
+    }
+    finally {
+        if ($client) { $client.Dispose() }
+        if ($handler) { $handler.Dispose() }
+        Write-Progress -Activity "Downloading visible equipment animation layers" -Completed
+    }
+}
+
+Write-Host "Verifying deployed assets..."
+$missing = New-Object System.Collections.ArrayList
+$totalBytes = [int64]0
+$paletteBytes = [int64]0
+
+foreach ($palette in $paletteFiles) {
+    $palettePath = Join-Path $PaletteRoot $palette
+    if (-not (Test-Path $palettePath) -or (Get-Item $palettePath).Length -eq 0) {
+        [void]$missing.Add("Palettes\$palette")
+    }
+    else {
+        $paletteBytes += (Get-Item $palettePath).Length
+    }
+}
+foreach ($relative in $assetPaths) {
+    $destination = Join-Path $DataRoot $relative
+    if (-not (Test-Path $destination) -or (Get-Item $destination).Length -eq 0) {
+        [void]$missing.Add($relative)
+    }
+    else {
+        $totalBytes += (Get-Item $destination).Length
+    }
+}
+
+if ($missing.Count -gt 0) {
+    Write-Host ""
+    Write-Host "Missing files:" -ForegroundColor Red
+    $missing | Select-Object -First 30 | ForEach-Object { Write-Host "  $_" }
+    if ($missing.Count -gt 30) {
+        Write-Host ("  ... and {0} more" -f ($missing.Count - 30))
+    }
+    throw "Visible-equipment deployment incomplete. Enable marker was NOT created."
+}
+
+# Persist the exact graphics revision only after every referenced asset passes
+# verification. A normal deploy can then compare Git blob SHAs and transfer
+# only graphics that are genuinely new or changed.
+$assetManifest = [ordered]@{}
+foreach ($relative in @($assetPaths | Sort-Object)) {
+    $assetManifest[$relative] = [string]$upstreamPathMap[$relative].Sha
+}
+$graphicsManifestDoc = [ordered]@{
+    Schema = 1
+    UpstreamRef = $UpstreamRef
+    GeneratedUtc = [DateTime]::UtcNow.ToString("o")
+    Assets = $assetManifest
+}
+$graphicsManifestJson = $graphicsManifestDoc | ConvertTo-Json -Depth 4
+[System.IO.File]::WriteAllText($GraphicsManifest, $graphicsManifestJson, (New-Object System.Text.UTF8Encoding($false)))
+
+
+# Final structural gate: do not create the READY marker unless every intended
+# full-model and equipment layer exists for every player body type. The runtime
+# may still choose native Vengeance for a frame whose weapon/animation coverage
+# is incomplete, but the deployed logical catalog itself must be complete.
+$expectedEquipmentLayers = @(
+    "blood","shadow","legs","legarmor","body","head","hands","arms",
+    "vest","legrig","legrig_left","knees","backpack","gun","gunleft",
+    "facegear","gasmask","ears","helmet"
+)
+$equipmentBodyFiles = @(
+    "LBT_RGM/LogicalBodyType_RGM_VR_equipment.xml",
+    "LBT_BGM/LogicalBodyType_BGM_VR_equipment.xml",
+    "LBT_RGF/LogicalBodyType_RGF_VR_equipment.xml"
+)
+foreach ($relative in $equipmentBodyFiles) {
+    $path = Join-Path $TableRoot $relative
+    [xml]$doc = [System.IO.File]::ReadAllText($path)
+    $present = New-Object "System.Collections.Generic.HashSet[string]" ([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($layer in @($doc.SelectNodes("/LogicalAnimationSurfaces/Layer"))) {
+        [void]$present.Add($layer.GetAttribute("name"))
+    }
+
+    $missingLayers = @($expectedEquipmentLayers | Where-Object { -not $present.Contains($_) })
+    if ($missingLayers.Count -gt 0) {
+        throw "Visible-equipment body catalog incomplete ($relative): missing $($missingLayers -join ', ')"
+    }
+}
+
+$markerText = @"
+Vengeance Reloaded visible tactical equipment
+Catalog: mattedinburgh/vr_gamedir $VrRef
+Source: 1dot13/gamedir $UpstreamRef Data/Anims/LOBOT art
+Mode: hybrid-underlay (native Vengeance safety underlay + coherent 1.13 logical body/equipment layers; native-only fallback on unsupported core frames)
+Layers: blood, shadow, legs, legarmor, body, head, hands, arms, vest, legrig, legrig_left, knees, backpack, gun, gunleft, facegear, gasmask, ears, helmet
+Assets: $($assetPaths.Count)
+AssetBytes: $totalBytes
+Palettes: $($paletteFiles.Count)
+PaletteBytes: $paletteBytes
+"@
+[System.IO.File]::WriteAllText($Marker, $markerText, [System.Text.Encoding]::ASCII)
+
+Write-Host ""
+Write-Host ("Pinned Vengeance catalog      : {0}" -f $VrRef)
+Write-Host ("Pinned upstream revision      : {0}" -f $UpstreamRef)
+Write-Host "VISIBLE EQUIPMENT ASSETS VERIFIED"
+Write-Host ("Files    : {0}" -f $assetPaths.Count)
+Write-Host ("Fetched  : {0} new/changed graphics" -f $pending.Count)
+Write-Host ("Reused   : {0} unchanged graphics" -f $unchangedGraphics)
+Write-Host ("Palettes : {0}" -f $paletteFiles.Count)
+Write-Host ("Size     : {0:N1} MiB" -f (($totalBytes + $paletteBytes) / 1MB))
+Write-Host "Marker: $Marker"
+Write-Host ""
+Write-Host "Hybrid logical merc model enabled: matched 1.13 body/equipment/weapon layers with automatic native Vengeance fallback."
+, '.sti'
+    if ($upstreamPathMap[$relative].Relative -cne $xmlUrlCase) {
         $caseCorrections++
     }
 }
