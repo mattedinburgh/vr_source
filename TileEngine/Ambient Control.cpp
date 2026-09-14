@@ -84,6 +84,7 @@ typedef struct
 	INT8   bLastOneShot;
 	UINT32 uiNextOneShotTime;
 	UINT32 uiLoopHandle;
+	UINT32 uiOneShotHandle;
 	UINT32 uiCurrentLoopVolume;
 	UINT32 uiTargetLoopVolume;
 	UINT32 uiLastFadeTick;
@@ -134,11 +135,24 @@ static void StopVRSectorAmbienceLoop( )
 	gVRAmbience.szCurrentLoop[ 0 ] = 0;
 }
 
+static void StopVRSectorAmbienceOneShot( )
+{
+	if ( gVRAmbience.fActive &&
+		 gVRAmbience.uiOneShotHandle != NO_SAMPLE &&
+		 SoundIsPlaying( gVRAmbience.uiOneShotHandle ) )
+	{
+		SoundStop( gVRAmbience.uiOneShotHandle );
+	}
+	gVRAmbience.uiOneShotHandle = NO_SAMPLE;
+}
+
 static void ResetVRSectorAmbience( )
 {
+	StopVRSectorAmbienceOneShot( );
 	StopVRSectorAmbienceLoop( );
 	memset( &gVRAmbience, 0, sizeof( gVRAmbience ) );
 	gVRAmbience.uiLoopHandle = NO_SAMPLE;
+	gVRAmbience.uiOneShotHandle = NO_SAMPLE;
 	gVRAmbience.bLastOneShot = -1;
 }
 
@@ -411,8 +425,9 @@ static void PlayVRAmbienceOneShot( )
 	spParms.uiPriority = GROUP_AMBIENT;
 
 	// Legacy SoundPlay takes mutable STR even though it only reads the filename.
-	SoundPlay( (STR)pPhase->szSound[ ubIndex ], &spParms );
-	gVRAmbience.bLastOneShot = (INT8)ubIndex;
+	gVRAmbience.uiOneShotHandle = SoundPlay( (STR)pPhase->szSound[ ubIndex ], &spParms );
+	if ( gVRAmbience.uiOneShotHandle != NO_SAMPLE )
+		gVRAmbience.bLastOneShot = (INT8)ubIndex;
 }
 
 static BOOLEAN LoadVRSectorAmbienceProfile( )
@@ -522,6 +537,9 @@ void UpdateVRSectorAmbience( )
 		return;
 
 	uiNow = GetTickCount();
+	if ( gVRAmbience.uiOneShotHandle != NO_SAMPLE && !SoundIsPlaying( gVRAmbience.uiOneShotHandle ) )
+		gVRAmbience.uiOneShotHandle = NO_SAMPLE;
+
 	ubPhase = GetVRAmbiencePhase();
 	fCombat = IsVRAmbienceCombat();
 	fRain = IsVRAmbienceRaining();
@@ -538,6 +556,9 @@ void UpdateVRSectorAmbience( )
 	{
 		gVRAmbience.fLastCombat = fCombat;
 		gVRAmbience.uiTargetLoopVolume = GetVRAmbienceTargetLoopVolume( gVRAmbience.ubCurrentPhase );
+
+		if ( fCombat && !gVRAmbience.fOneShotsInCombat )
+			StopVRSectorAmbienceOneShot( );
 
 		// Do not let an overdue civilian/animal cue fire the instant combat ends.
 		if ( !fCombat )
