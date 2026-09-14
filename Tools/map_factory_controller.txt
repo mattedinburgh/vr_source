@@ -7,12 +7,12 @@ STRATEGIES=("authored_modules","strong_modules","composition_kits","manual_requi
 PILOT=("A3","A8","A12","B13","F15")
 WAVE1=("A11","A14","B1","B10","B12","C3","C11","D6","D9","E4","F7","F14")
 RULES=[
- (("farm","farmland"),"farmland"),
- (("forest","woods","tropical","swamp"),"wilderness"),
- (("checkpoint","outpost","training camp","army"),"military"),
- (("airport","distribution","oil rig"),"industrial"),
- (("omerta","oronegro","drassen","salinas"),"settlement"),
+ (("checkpoint","outpost","training camp","army","sam site"),"military"),
+ (("airport","distribution","oil rig","dam"),"industrial"),
+ (("omerta","oronegro","drassen","salinas","hospital"),"settlement"),
  (("road",),"roadside"),
+ (("farm","farmland"),"farmland"),
+ (("forest","woods","tropical","swamp","coastline","water"),"wilderness"),
  (("hills","plains"),"open_country"),
 ]
 SURFACE_MAPS={
