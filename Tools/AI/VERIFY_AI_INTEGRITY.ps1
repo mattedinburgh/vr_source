@@ -9,6 +9,8 @@ $tacticalAI = Join-Path $root "TacticalAI"
 $aiHeader = Join-Path $tacticalAI "ai.h"
 $decideAction = Join-Path $tacticalAI "DecideAction.cpp"
 $frameworkDoc = Join-Path $root "UNIFIED_AI_FRAMEWORK.md"
+$cqbSource = Join-Path $tacticalAI "CQBBuildingDoctrine.cpp"
+$cqbHeader = Join-Path $tacticalAI "CQBBuildingDoctrine.h"
 
 function Fail([string]$Message) {
     Write-Error $Message
@@ -55,6 +57,8 @@ $cppFiles = @(Get-ChildItem $tacticalAI -Filter "*.cpp" -File | Select-Object -E
 $headerText = Read-Text $aiHeader
 $decideText = Read-Text $decideAction
 $frameworkText = Read-Text $frameworkDoc
+$cqbText = Read-Text $cqbSource
+$cqbHeaderText = Read-Text $cqbHeader
 
 Write-Host "Unified AI integrity audit"
 Write-Host "Repository: $root"
@@ -171,7 +175,18 @@ if (-not $frameworkText.Contains("single")) {
     Fail "UNIFIED_AI_FRAMEWORK.md no longer clearly describes a single-source AI architecture"
 }
 
-# 6. No tracked duplicate canonical architecture document in TacticalAI under an old name.
+# 6. Dormant CQB module must remain compiled-but-disabled until explicit activation review.
+if (-not $cqbText.Contains("BOOLEAN VRCQB_IsRuntimeEnabled(void)")) {
+    Fail "Dormant CQB module is missing its runtime gate."
+}
+if ($cqbText -notmatch "BOOLEAN\s+VRCQB_IsRuntimeEnabled\s*\(void\)\s*\{\s*return\s+FALSE\s*;\s*\}") {
+    Fail "CQB runtime gate no longer hard-returns FALSE. Activation requires explicit integration review."
+}
+if ($decideText.Contains("VRCQB_")) {
+    Fail "DecideAction.cpp references VRCQB_* while CQB is classified as dormant staging."
+}
+
+# 7. No tracked duplicate canonical architecture document in TacticalAI under an old name.
 $obsoleteDocs = @(
     (Join-Path $tacticalAI "Human_Tactical_Planner.md"),
     (Join-Path $tacticalAI "Deidranna_Doctrine.md")
