@@ -579,11 +579,16 @@ void FromCellToScreenCoordinates( INT16 sCellX, INT16 sCellY, INT16 *psScreenX, 
 
 void FromScreenToCellCoordinates( INT16 sScreenX, INT16 sScreenY, INT16 *psCellX, INT16 *psCellY )
 {
-	const INT32 iScreenX = (INT32)sScreenX / (INT32)gubVHDRenderScale;
-	const INT32 iScreenY = (INT32)sScreenY / (INT32)gubVHDRenderScale;
+	// Keep the legacy +2 rounding bias, but apply it in scaled screen space.
+	// Dividing X/Y by the VHD scale first discards sub-legacy-pixel precision and
+	// can move mouse selection across an isometric diamond boundary at 2x/4x.
+	const INT32 iScale = (INT32)gubVHDRenderScale;
+	const INT32 iDenominator = 4 * iScale;
+	const INT32 iXNumerator = (INT32)sScreenX + ( 2 * (INT32)sScreenY ) + ( 2 * iScale );
+	const INT32 iYNumerator = ( 2 * (INT32)sScreenY ) - (INT32)sScreenX + ( 2 * iScale );
 
-	*psCellX = (INT16)( ( iScreenX + ( 2 * iScreenY ) + 2 ) / 4 );
-	*psCellY = (INT16)( ( ( 2 * iScreenY ) - iScreenX + 2 ) / 4 );
+	*psCellX = (INT16)( iXNumerator / iDenominator );
+	*psCellY = (INT16)( iYNumerator / iDenominator );
 }
 
 // These two functions take into account that our world is projected and attached
