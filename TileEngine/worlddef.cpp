@@ -659,6 +659,11 @@ static BOOLEAN IsSanMonaVisualProfile( void )
 		gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_UNDERGROUND;
 }
 
+BOOLEAN IsSanMonaC5GraphicsOnlyProfile( void )
+{
+	return gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C5_STRIP;
+}
+
 static void TraceSanMonaLoad( const STR8 pStage, const STR8 pDetail )
 {
 	const STR8 pSafeStage = ( pStage != NULL ) ? pStage : "";
