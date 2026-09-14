@@ -64,19 +64,30 @@ def main():
         ("10/CratewPallet.sti", 10),
     ]
 
-    # General farm-junk slot. Active A3 blocks primarily use frames 1,3,5,6,7;
-    # keep those as plausible small farmyard clutter rather than oversized machinery.
+    # Working-yard slot. Active A3 blocks use frames 1,3,5,6,7 most often.
+    # Use real Vengeance workshop art so yards read as workplaces, not crate dumps.
     junk = [
         ("10/CratewPallet.sti", 2),  # 1 small crate
         ("10/CratewPallet.sti", 5),  # 2 weathered crate
-        ("10/CratewPallet.sti", 8),  # 3 stacked sacks/supplies
-        ("35/DRUM_01.STI", 7),       # 4 small upright drum
-        ("35/DRUM_01.STI", 5),       # 5 horizontal drum
-        ("35/DRUM_01.STI", 6),       # 6 larger barrel/pipe cluster
-        ("50/I_CRATES.STI", 24),     # 7 small barrel
+        ("58/WORKSHOP.STI", 9),      # 3 tool/work bench
+        ("58/WORKSHOP.STI", 4),      # 4 long workshop table
+        ("58/WORKSHOP.STI", 3),      # 5 compact machine/tool unit
+        ("53/FURN_MIX.STI", 3),      # 6 farm utility drums
+        ("35/DRUM_01.STI", 7),       # 7 upright barrel
         ("10/CratewPallet.sti", 3),  # 8 crate
-        ("35/DRUM_01.STI", 1),       # 9 pipe/utility clutter
-        ("50/I_CRATES.STI", 20),     # 10 rusty utility tank
+        ("58/WORKSHOP.STI", 5),      # 9 supply box
+        ("58/WORKSHOP.STI", 7),      # 10 stacked cartons/supplies
+    ]
+
+    # Domestic vegetation for farmhouse edges. Avoid the urban circular planter;
+    # use only loose shrubs and flowering bushes.
+    domestic = [
+        ("50/W-GARDN.STI", 1),
+        ("50/W-GARDN.STI", 2),
+        ("50/W-GARDN.STI", 3),
+        ("50/W-GARDN.STI", 4),
+        ("50/W-GARDN.STI", 5),
+        ("50/W-GARDN.STI", 6),
     ]
 
     # Edge weeds: preserve the original professional JA2 silhouettes wholesale.
@@ -86,6 +97,7 @@ def main():
         "A3_WOOD_YARD.b1tc": wood,
         "A3_FARM_JUNK.b1tc": junk,
         "A3_EDGE_WEEDS.b1tc": weeds,
+        "A3_DOMESTIC.b1tc": domestic,
     }
 
     for name, specs in families.items():
