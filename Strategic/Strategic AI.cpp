@@ -5735,6 +5735,42 @@ void RequestHighPriorityGarrisonReinforcements( INT32 iGarrisonID, UINT8 ubSoldi
 	}
 	else
 	*/
+	// Operational reserve release is deliberately compiled but runtime-gated.
+	// When enabled after validation, prefer reusing a rested persistent formation
+	// before creating new palace manpower. The legacy palace path below remains
+	// the authoritative fallback if no suitable reserve exists.
+	if( VR_OPERATIONAL_DECISION_LOOP_ENABLED != 0 &&
+		!gGarrisonGroup[ iGarrisonID ].ubPendingGroupID )
+	{
+		GROUP *pReserve = VR_FindReadyOperationalReserveForSector(
+			gGarrisonGroup[ iGarrisonID ].ubSectorID );
+
+		if( pReserve &&
+			pReserve->ubGroupSize >= ubSoldiersRequested &&
+			!EnemyRetreatLockedInSector(
+				pReserve->ubSectorX, pReserve->ubSectorY ) )
+		{
+			ClearPreviousAIGroupAssignment( pReserve );
+			gGarrisonGroup[ iGarrisonID ].ubPendingGroupID =
+				pReserve->ubGroupID;
+
+			// Preserve operational home/identity; ubOriginalSector continues to
+			// serve the legacy Queen's assignment bookkeeping for this mission.
+			pReserve->ubOriginalSector =
+				gGarrisonGroup[ iGarrisonID ].ubSectorID;
+
+			MoveSAIGroupToSector(
+				&pReserve,
+				gGarrisonGroup[ iGarrisonID ].ubSectorID,
+				EVASIVE,
+				REINFORCEMENTS );
+
+			if( pReserve )
+				ValidateGroup( pReserve );
+			return;
+		}
+	}
+
 	{ //There are no groups that have enough troops. Send a new force from the palace instead.
 		if ( giReinforcementPool > 0 )
 		{
