@@ -1,0 +1,145 @@
+name: Deploy custom A3 art to live Vengeance
+
+on:
+  push:
+    branches:
+      - install/all-2026-09-12
+    paths:
+      - 'MapPreviewTrigger/DEPLOY_A3_CUSTOM.txt'
+      - '.github/workflows/deploy-a3-custom.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ja2-render-shared
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Windows, X64, ja2-render]
+    timeout-minutes: 60
+
+    steps:
+      - name: Put GitHub Desktop Git on PATH
+        id: bootstrap_git
+        shell: powershell
+        run: |
+          $git = $null
+          $cmd = Get-Command git.exe -ErrorAction SilentlyContinue
+          if ($cmd) { $git = $cmd.Source }
+          if (-not $git) {
+            $git = Get-ChildItem "$env:LOCALAPPDATA\GitHubDesktop" -Recurse -Filter git.exe -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\resources\\app\\git\\cmd\\git\.exe$' } |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $git -or -not (Test-Path $git)) { throw 'Git could not be found.' }
+          Split-Path $git -Parent | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "path=$git" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          & $git --version
+
+      - name: Check out canonical source
+        uses: actions/checkout@v4
+        with:
+          ref: install/all-2026-09-12
+          fetch-depth: 1
+
+      - name: Fetch generated A3 game assets
+        shell: powershell
+        run: |
+          $git = '${{ steps.bootstrap_git.outputs.path }}'
+          $gamedir = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
+          if (Test-Path $gamedir) { Remove-Item -Recurse -Force $gamedir }
+          & $git clone --depth 1 --single-branch --branch install/all-2026-09-12 --filter=blob:none --no-checkout https://github.com/mattedinburgh/vr_gamedir.git $gamedir
+          if ($LASTEXITCODE -ne 0) { throw "vr_gamedir clone failed: $LASTEXITCODE" }
+          & $git -C $gamedir sparse-checkout init --cone
+          & $git -C $gamedir sparse-checkout set Data-Maps-Tiles/Tilesets/38
+          & $git -C $gamedir checkout install/all-2026-09-12
+          if ($LASTEXITCODE -ne 0) { throw "vr_gamedir sparse checkout failed: $LASTEXITCODE" }
+
+          $assets = Get-ChildItem (Join-Path $gamedir 'Data-Maps-Tiles\Tilesets\38') -Filter 'VR_A3_*.b1tc'
+          if ($assets.Count -lt 17) { throw "Expected at least 17 generated A3 B1TC assets; found $($assets.Count)." }
+          Write-Host "Generated A3 assets found: $($assets.Count)"
+
+      - name: Retarget VS2013 projects to installed v120
+        shell: powershell
+        run: |
+          Get-ChildItem $env:GITHUB_WORKSPACE -Recurse -Filter '*.vcxproj' -File | ForEach-Object {
+            $path = $_.FullName
+            $text = [System.IO.File]::ReadAllText($path)
+            $newText = $text.Replace('<PlatformToolset>v120_xp</PlatformToolset>', '<PlatformToolset>v120</PlatformToolset>')
+            if ($newText -ne $text) {
+              [System.IO.File]::WriteAllText($path, $newText, (New-Object System.Text.UTF8Encoding($false)))
+            }
+          }
+
+      - name: Find MSBuild
+        id: msbuild
+        shell: powershell
+        run: |
+          $candidates = @(
+            'C:\Program Files (x86)\MSBuild\12.0\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe'
+          )
+          $msbuild = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $msbuild) {
+            $cmd = Get-Command msbuild.exe -ErrorAction SilentlyContinue
+            if ($cmd) { $msbuild = $cmd.Source }
+          }
+          if (-not $msbuild) { throw 'MSBuild could not be found.' }
+          "path=$msbuild" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Build current Vengeance executable
+        shell: powershell
+        run: |
+          & '${{ steps.msbuild.outputs.path }}' '.\ja2_VS2013.sln' /m /t:ja2 /p:Configuration=Release /p:Platform=Win32
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\JA2_EN_Release.exe'
+          if (-not (Test-Path $exe)) { throw "Expected executable not built: $exe" }
+          Write-Host "Built executable SHA256:" (Get-FileHash $exe -Algorithm SHA256).Hash
+
+      - name: Deploy executable and native A3 art
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $gameRoot='C:\VENGENCE\Jagged Alliance 2'
+          $liveExe=Join-Path $gameRoot 'JA2_EN_Release.exe'
+          $builtExe=Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\JA2_EN_Release.exe'
+          if (-not (Test-Path $gameRoot)) { throw "Live game root missing: $gameRoot" }
+
+          $backup=Join-Path $gameRoot 'JA2_EN_Release.pre_custom_a3.bak'
+          if ((Test-Path $liveExe) -and -not (Test-Path $backup)) {
+            Copy-Item -LiteralPath $liveExe -Destination $backup -Force
+            Write-Host "Backed up previous executable -> $backup"
+          }
+
+          # Fail rather than partially deploy while the game is running.
+          try {
+            Copy-Item -LiteralPath $builtExe -Destination $liveExe -Force
+          } catch {
+            throw "Could not replace live executable. Close Vengeance if it is running. $($_.Exception.Message)"
+          }
+
+          $src=Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir\Data-Maps-Tiles\Tilesets\38'
+          $dst=Join-Path $gameRoot 'Data-Maps-Tiles\Tilesets\38'
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          Get-ChildItem $src -Filter 'VR_A3_*.b1tc' | ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $dst $_.Name) -Force
+          }
+          if (Test-Path (Join-Path $src 'VR_A3_CUSTOM_PACK_README.txt')) {
+            Copy-Item (Join-Path $src 'VR_A3_CUSTOM_PACK_README.txt') (Join-Path $dst 'VR_A3_CUSTOM_PACK_README.txt') -Force
+          }
+
+          $manifest = @(
+            'Vengeance custom A3 art deployment',
+            ('UTC=' + (Get-Date).ToUniversalTime().ToString('o')),
+            ('source=' + '${{ github.sha }}'),
+            ('exe_sha256=' + (Get-FileHash $liveExe -Algorithm SHA256).Hash),
+            ('asset_count=' + (Get-ChildItem $dst -Filter 'VR_A3_*.b1tc').Count)
+          )
+          $manifest | Set-Content -Encoding UTF8 (Join-Path $gameRoot 'CUSTOM_A3_PACK_ACTIVE.txt')
+          Write-Host ($manifest -join [Environment]::NewLine)
