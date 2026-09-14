@@ -1,5 +1,5 @@
 San Mona C5 graphics-only engine validation
-requested_utc=2026-09-14T18:06:00Z
+requested_utc=2026-09-14T19:06:00Z
 rule=do not modify c5.dat or gameplay metadata
-gamedir_target=8d8a1a8956f913499ac2e7926ecd2ab0e9042a87
-qa=isolated queue; 6 full-colour tactical views plus contact sheet
+gamedir_target=2b5ec42858e2ffcae381ceb8c7121fed28b075ed
+qa=current canonical build-info fix; validate v2 material redraw in-engine
