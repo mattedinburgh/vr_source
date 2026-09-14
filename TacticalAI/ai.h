@@ -555,6 +555,7 @@ BOOLEAN AllowDeepWaterFlanking(SOLDIERTYPE *pSoldier);
 INT32	RandomizeLocation(INT32 sSpot, INT8 bLevel, UINT8 ubTimes, SOLDIERTYPE *pSightSoldier);
 INT32	RandomizeOpponentLocation(INT32 sSpot, SOLDIERTYPE *pOpponent, INT16 sMaxDistance);
 BOOLEAN InSmoke(INT32 sGridNo, INT8 bLevel);
+BOOLEAN InSmokeNearby(INT32 sGridNo, INT8 bLevel);
 BOOLEAN SafeSpot(SOLDIERTYPE *pSoldier, INT32 sSpot = NOWHERE);
 BOOLEAN AbortFinalSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bAction, INT32 sClosestDisturbance, INT8 bDisturbanceLevel, INT32 &sDangerousSpot);
 // needs prepared path before calling this function
