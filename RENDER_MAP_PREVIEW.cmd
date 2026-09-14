@@ -38,7 +38,7 @@ if not exist "%EDITOR%" (
 if not exist "%REPO_PREVIEW%" mkdir "%REPO_PREVIEW%"
 
 pushd "%GAME%"
-"%EDITOR%" -MAPSHOT=%MAP%
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%REPO%Tools\Invoke-OnSecondaryMonitor.ps1" -FilePath "%EDITOR%" -ArgumentList "-MAPSHOT=%MAP%" -WorkingDirectory "%GAME%"
 set "RC=%ERRORLEVEL%"
 popd
 
