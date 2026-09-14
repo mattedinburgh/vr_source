@@ -510,8 +510,6 @@ void VR_OnEnemyGroupAssigned( GROUP *pGroup, UINT8 ubTargetSectorID, UINT8 ubLeg
 		pEnemy->ubOperationalReserveRole = VR_RESERVE_NONE;
 	}
 
-	VR_CampaignStartOrRefreshPlan( pGroup, ubTargetSectorID, ubLegacyIntention, pGroup->ubMoveType );
-
 	VR_OPERATIONAL_SCORE score;
 	VR_ScoreOperationalTarget( pGroup, ubTargetSectorID, &score );
 	VR_LogOperationalDecision( pGroup, "ASSIGN", &score );
