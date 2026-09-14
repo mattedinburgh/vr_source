@@ -360,6 +360,109 @@ def patch_worlddef() -> None:
         if did:
             changed.append(label)
 
+
+    # The successful pilot still crushed readability in already-dark sectors.
+    # Replace the Map Factory shadow split with a neutral dark-mid lift.  We keep
+    # a small material tint, but no longer turn shadowed vegetation into a nearly
+    # black/emerald mass.
+    old_true_shadow = """\t\t\tif ( luma < 72 )
+\t\t\t{
+\t\t\t\toutR -= 3; outB += 5;
+\t\t\t}
+\t\t\telse if ( luma > 178 )
+\t\t\t{
+\t\t\t\toutR += 5; outG += 3;
+\t\t\t}"""
+    new_true_shadow = """\t\t\tif ( luma < 96 )
+\t\t\t{
+\t\t\t\tconst INT32 lift = 4 + (96 - luma) / 7;
+\t\t\t\toutR += lift;
+\t\t\t\toutG += lift;
+\t\t\t\toutB += lift + 1;
+\t\t\t}
+\t\t\telse if ( luma > 178 )
+\t\t\t{
+\t\t\t\toutR += 3; outG += 2;
+\t\t\t}"""
+    text = replace_once(text, old_true_shadow, new_true_shadow, "truecolor dark-mid lift")
+    changed.append("truecolor dark-mid lift")
+
+    old_palette_split = """\t\telse if ( fMapFactoryProfile )
+\t\t{
+\t\t\t// Give the palette a photographic warm-light / cool-shadow split.
+\t\t\tif ( luma < 78 )
+\t\t\t{
+\t\t\t\tconst INT32 depth = 78 - luma;
+\t\t\t\toutR -= 2 + depth / 28;
+\t\t\t\toutG += 1;
+\t\t\t\toutB += 4 + depth / 18;
+\t\t\t}
+\t\t\telse if ( luma > 170 )
+\t\t\t{
+\t\t\t\tconst INT32 light = luma - 170;
+\t\t\t\toutR += 4 + light / 18;
+\t\t\t\toutG += 3 + light / 24;
+\t\t\t\toutB -= 1;
+\t\t\t}
+
+\t\t\tif ( fMFGreen )
+\t\t\t{
+\t\t\t\toutR -= 3; outG += 6; outB -= 2;
+\t\t\t}
+\t\t\telse if ( fMFTerrain )
+\t\t\t{
+\t\t\t\toutR += 5; outG += 2; outB -= 5;
+\t\t\t}
+\t\t\telse if ( fMFRoof || fMFMachinery || fMFDebris )
+\t\t\t{
+\t\t\t\toutR += 5; outG += 1; outB -= 4;
+\t\t\t}
+\t\t\telse if ( fMFRoad || fMFFloor )
+\t\t\t{
+\t\t\t\toutB += 2;
+\t\t\t}
+\t\t}"""
+    new_palette_split = """\t\telse if ( fMapFactoryProfile )
+\t\t{
+\t\t\t// Readability-first remaster: lift dark midtones before adding a small
+\t\t\t// material split.  Several Vengeance tilesets are intrinsically dark;
+\t\t\t// pushing their shadows further down made the colourful pilot muddy.
+\t\t\tif ( luma < 104 )
+\t\t\t{
+\t\t\t\tconst INT32 lift = 4 + (104 - luma) / 6;
+\t\t\t\toutR += lift;
+\t\t\t\toutG += lift;
+\t\t\t\toutB += lift;
+\t\t\t\tif ( luma < 72 )
+\t\t\t\t\toutB += 2;
+\t\t\t}
+\t\t\telse if ( luma > 176 )
+\t\t\t{
+\t\t\t\tconst INT32 light = luma - 176;
+\t\t\t\toutR += 2 + light / 28;
+\t\t\t\toutG += 1 + light / 36;
+\t\t\t}
+
+\t\t\tif ( fMFGreen )
+\t\t\t{
+\t\t\t\toutR -= 1; outG += 2;
+\t\t\t}
+\t\t\telse if ( fMFTerrain )
+\t\t\t{
+\t\t\t\toutR += 2; outG += 1; outB -= 2;
+\t\t\t}
+\t\t\telse if ( fMFRoof || fMFMachinery || fMFDebris )
+\t\t\t{
+\t\t\t\toutR += 3; outB -= 2;
+\t\t\t}
+\t\t\telse if ( fMFRoad || fMFFloor )
+\t\t\t{
+\t\t\t\toutB += 1;
+\t\t\t}
+\t\t}"""
+    text = replace_once(text, old_palette_split, new_palette_split, "palette dark-mid lift")
+    changed.append("palette dark-mid lift")
+
     if len(changed) < 6:
         raise SystemExit(
             "worlddef colour restraint patch found too few expected patterns: "
