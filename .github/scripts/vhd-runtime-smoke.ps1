@@ -102,6 +102,11 @@ try {
         if ($proc.HasExited) {
             throw "VHD exited during startup smoke test. ExitCode=$($proc.ExitCode)"
         }
+
+        $title = $proc.MainWindowTitle
+        if ($title -match '(?i)fatal\s+error|\berror\b') {
+            throw "VHD displayed an error dialog during startup: $title"
+        }
     }
     $survived = $true
     $proc.Refresh()
