@@ -1,0 +1,142 @@
+name: Deploy San Mona C5 visual remaster
+
+on:
+  push:
+    branches:
+      - install/all-2026-09-12
+    paths:
+      - 'MapPreviewTrigger/C5_DEPLOY.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ja2-render-shared
+  cancel-in-progress: false
+
+jobs:
+  deploy-c5-graphics:
+    runs-on: [self-hosted, Windows, X64, ja2-render]
+    timeout-minutes: 45
+    steps:
+      - name: Check out canonical source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Locate Git
+        id: git
+        shell: powershell
+        run: |
+          $git = $null
+          $cmd = Get-Command git.exe -ErrorAction SilentlyContinue
+          if ($cmd) { $git = $cmd.Source }
+          if (-not $git) {
+            $git = Get-ChildItem "$env:LOCALAPPDATA\GitHubDesktop" -Recurse -Filter git.exe -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\resources\\app\\git\\cmd\\git\.exe$' } |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $git) { throw 'Git not found.' }
+          "path=$git" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Fetch latest C5 visual pack
+        id: gamedir
+        shell: powershell
+        run: |
+          $git = '${{ steps.git.outputs.path }}'
+          $gamedir = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
+          if (Test-Path $gamedir) { Remove-Item -Recurse -Force $gamedir }
+          & $git clone --depth 1 --single-branch --branch install/all-2026-09-12 --filter=blob:none --no-checkout https://github.com/mattedinburgh/vr_gamedir.git $gamedir
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $git -C $gamedir sparse-checkout init --cone
+          & $git -C $gamedir sparse-checkout set Data-Maps-Tiles/Tilesets/18 Data-Maps-Tiles/maps
+          & $git -C $gamedir checkout install/all-2026-09-12
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $sha = (& $git -C $gamedir rev-parse HEAD).Trim()
+          "sha=$sha" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          $pack = Join-Path $gamedir 'Data-Maps-Tiles\Tilesets\18'
+          $manifest = Join-Path $pack 'SAN_MONA_C5_VISUAL_REMASTER.json'
+          if (-not (Test-Path $manifest)) { throw 'C5 visual manifest missing.' }
+          $assets = @(Get-ChildItem $pack -Filter '*.b1tc' -File)
+          if ($assets.Count -lt 4) { throw "C5 visual pack incomplete: $($assets.Count) B1TC files." }
+          Write-Host "Visual pack: $($assets.Count) B1TC files from $sha"
+
+      - name: Retarget VS2013 projects to v120
+        shell: powershell
+        run: |
+          Get-ChildItem $env:GITHUB_WORKSPACE -Recurse -Filter '*.vcxproj' -File | ForEach-Object {
+            $p=$_.FullName; $t=[IO.File]::ReadAllText($p)
+            $n=$t.Replace('<PlatformToolset>v120_xp</PlatformToolset>','<PlatformToolset>v120</PlatformToolset>')
+            if($n-ne$t){[IO.File]::WriteAllText($p,$n,(New-Object Text.UTF8Encoding($false)))}
+          }
+
+      - name: Find MSBuild
+        id: msbuild
+        shell: powershell
+        run: |
+          $candidates=@(
+            'C:\Program Files (x86)\MSBuild\12.0\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe'
+          )
+          $m=$candidates|Where-Object{Test-Path $_}|Select-Object -First 1
+          if(-not $m){$cmd=Get-Command msbuild.exe -ErrorAction SilentlyContinue;if($cmd){$m=$cmd.Source}}
+          if(-not $m){throw 'MSBuild not found.'}
+          "path=$m"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Build current Release executable
+        shell: powershell
+        run: |
+          & '${{ steps.msbuild.outputs.path }}' '.\ja2_VS2013.sln' /m /t:ja2 /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v120
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $exe=Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\JA2_EN_Release.exe'
+          if(-not(Test-Path $exe)){throw "Release executable missing: $exe"}
+
+      - name: Deploy pixels only and preserve map hash
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $game='C:\VENGENCE\Jagged Alliance 2'
+          $gamedir=Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
+          $srcPack=Join-Path $gamedir 'Data-Maps-Tiles\Tilesets\18'
+          $dstPack=Join-Path $game 'Data-Maps-Tiles\Tilesets\18'
+          $map=Join-Path $game 'Data-Maps-Tiles\maps\c5.dat'
+          if(-not(Test-Path $map)){throw "Live C5 map missing: $map"}
+          $mapBefore=(Get-FileHash $map -Algorithm SHA256).Hash
+
+          $newExe=Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\JA2_EN_Release.exe'
+          $liveExe=Join-Path $game 'JA2_EN_Release.exe'
+          $backup=Join-Path $game 'JA2_EN_Release.pre_sanmona_c5.bak'
+          if(-not(Test-Path $backup)){Copy-Item -Force $liveExe $backup}
+          Copy-Item -Force $newExe $liveExe
+
+          New-Item -ItemType Directory -Force -Path $dstPack | Out-Null
+          $allowed=@()
+          Get-ChildItem $srcPack -Filter '*.b1tc' -File | ForEach-Object {
+            Copy-Item -Force $_.FullName (Join-Path $dstPack $_.Name)
+            $allowed += $_.Name
+          }
+          foreach($n in @('SAN_MONA_C5_VISUAL_REMASTER.json','SAN_MONA_C5_VISUAL_REMASTER_README.txt')){
+            $p=Join-Path $srcPack $n
+            if(Test-Path $p){Copy-Item -Force $p (Join-Path $dstPack $n)}
+          }
+
+          $mapAfter=(Get-FileHash $map -Algorithm SHA256).Hash
+          if($mapAfter-ne$mapBefore){throw 'GRAPHICS-ONLY INVARIANT VIOLATED: c5.dat hash changed.'}
+
+          $marker=Join-Path $game 'SAN_MONA_C5_VISUAL_REMASTER_ACTIVE.txt'
+          @(
+            'San Mona C5 graphics-only remaster active'
+            "source_sha=${{ github.sha }}"
+            "gamedir_sha=${{ steps.gamedir.outputs.sha }}"
+            "c5_dat_sha256=$mapAfter"
+            "b1tc_files=$($allowed.Count)"
+            "deployed_utc=$((Get-Date).ToUniversalTime().ToString('o'))"
+          ) | Set-Content -Encoding UTF8 $marker
+
+          Write-Host "C5 DAT unchanged: $mapAfter"
+          Write-Host "Deployed $($allowed.Count) B1TC visual files."
