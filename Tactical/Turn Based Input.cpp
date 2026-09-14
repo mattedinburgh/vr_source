@@ -5499,8 +5499,10 @@ void HandleHandCursorClick( INT32 usMapPos, UINT32 *puiNewEvent )
 		// Check if we are on a merc... if so.. steal!
 		if ( gfUIFullTargetFound )
 		{
-			// Flugente: allow stealing if the other guy is an enemy, OR if we are on the same team
-			if ( (( guiUIFullTargetFlags & ENEMY_MERC ) && !( guiUIFullTargetFlags & UNCONSCIOUS_MERC )) || (AllowedToStealFromTeamMate(pSoldier->ubID, (UINT8)gusUIFullTargetID) && guiUIFullTargetFlags & OWNED_MERC) )
+			// Allow stealing from living enemies, including dying/unconscious targets.
+			// The steal routine already grants full inventory access when bLife < OKLIFE or bCollapsed;
+			// only genuinely dead soldiers should fall through to corpse/ground-item handling.
+			if ( (( guiUIFullTargetFlags & ENEMY_MERC ) && !( guiUIFullTargetFlags & DEAD_MERC )) || (AllowedToStealFromTeamMate(pSoldier->ubID, (UINT8)gusUIFullTargetID) && guiUIFullTargetFlags & OWNED_MERC) )
 			{
 				sActionGridNo =	FindAdjacentGridEx( pSoldier, MercPtrs[ gusUIFullTargetID ]->sGridNo, &ubDirection, &sAdjustedGridNo, TRUE, FALSE );
 				if ( sActionGridNo == -1 )
