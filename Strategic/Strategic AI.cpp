@@ -6131,14 +6131,51 @@ void TransferGroupToPool( GROUP **pGroup )
 //NOTE:	Make sure you call SetEnemyGroupSector() first if the group is between sectors!!	See example in ReassignAIGroup()...
 void SendGroupToPool( GROUP **pGroup )
 {
-	if( (*pGroup)->ubSectorX == gModSettings.ubSAISpawnSectorX && (*pGroup)->ubSectorY == gModSettings.ubSAISpawnSectorY )
+	if( !pGroup || !*pGroup )
+		return;
+
+	VR_EnsureEnemyFormationState( *pGroup );
+	VR_StrategicDiagnosticsRecord( "REASSIGNMENT", "mobile_group",
+		(*pGroup)->pEnemyGroup ? (*pGroup)->pEnemyGroup->ubOperationalMission : 0,
+		*pGroup,
+		SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY ),
+		SECTOR( gModSettings.ubSAISpawnSectorX, gModSettings.ubSAISpawnSectorY ),
+		(*pGroup)->ubGroupSize,
+		(*pGroup)->pEnemyGroup ? (*pGroup)->pEnemyGroup->ubOperationalSupply : 0,
+		"field assignment ended; formation is returning toward the central reserve" );
+
+	if( (*pGroup)->ubSectorX == gModSettings.ubSAISpawnSectorX &&
+		(*pGroup)->ubSectorY == gModSettings.ubSAISpawnSectorY )
 	{
+		if( VR_HoldFormationAsReserve( *pGroup, VR_RESERVE_CENTRAL ) )
+		{
+			VR_StrategicDiagnosticsRecord( "RESERVE_HOLD", "mobile_group",
+				VR_RESERVE_CENTRAL, *pGroup,
+				SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY ),
+				SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY ),
+				(*pGroup)->ubGroupSize,
+				(*pGroup)->pEnemyGroup->ubOperationalSupply,
+				"formation retained as a persistent central reserve instead of dissolving into the abstract pool" );
+			return;
+		}
+
 		TransferGroupToPool( pGroup );
 	}
 	else
 	{
-		(*pGroup)->ubSectorIDOfLastReassignment = (UINT8)SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY );
-		MoveSAIGroupToSector( pGroup, SECTOR( gModSettings.ubSAISpawnSectorX, gModSettings.ubSAISpawnSectorY ), EVASIVE, REINFORCEMENTS );
+		(*pGroup)->ubSectorIDOfLastReassignment =
+			(UINT8)SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY );
+		MoveSAIGroupToSector( pGroup,
+			SECTOR( gModSettings.ubSAISpawnSectorX, gModSettings.ubSAISpawnSectorY ),
+			EVASIVE, REINFORCEMENTS );
+
+		if( pGroup && *pGroup && (*pGroup)->pEnemyGroup )
+		{
+			VR_SetFormationMission( *pGroup, VR_OPMISSION_REGROUP, VR_OPREASON_REGROUP );
+			VR_SetFormationReserveRole( *pGroup, VR_RESERVE_CENTRAL, VR_OPREASON_REGROUP );
+			(*pGroup)->pEnemyGroup->usOperationalFlags |= VR_OPFLAG_REGROUPING;
+			VR_LogOperationalDecision( *pGroup, "RETURN_TO_RESERVE", NULL );
+		}
 	}
 }
 
