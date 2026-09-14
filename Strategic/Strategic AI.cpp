@@ -40,6 +40,7 @@
 // Lion Paratroops
 #include "Strategic Town Loyalty.h"
 #include "VRAnalytics.h"
+#include "Strategic Operational AI.h"
 // End Lion
 
 #define SAI_VERSION		29
@@ -1789,6 +1790,19 @@ BOOLEAN HandlePlayerGroupNoticedByPatrolGroup( GROUP *pPlayerGroup, GROUP *pEnem
 	UINT8 ubSectorID;
 
 	ubSectorID = (BOOLEAN)SECTOR( pPlayerGroup->ubSectorX, pPlayerGroup->ubSectorY );
+
+	// This patrol has genuinely detected this strategic player group. Record a
+	// coarse local strength estimate only for the observing formation; no global
+	// Queen-wide broadcast occurs at this stage.
+	UINT16 usObservedStrength = (UINT16)pPlayerGroup->ubGroupSize * 10;
+	if( usObservedStrength > 100 )
+		usObservedStrength = 100;
+	VR_RecordOperationalContact(
+		pEnemyGroup,
+		ubSectorID,
+		(UINT8)usObservedStrength,
+		VR_OPERATIONAL_STRENGTH_UNKNOWN,
+		90 );
 	usOffensePoints = pEnemyGroup->pEnemyGroup->ubNumAdmins * 2 +
 										pEnemyGroup->pEnemyGroup->ubNumTroops * 4 +
 										pEnemyGroup->pEnemyGroup->ubNumElites * 6;
@@ -5721,6 +5735,42 @@ void RequestHighPriorityGarrisonReinforcements( INT32 iGarrisonID, UINT8 ubSoldi
 	}
 	else
 	*/
+	// Operational reserve release is deliberately compiled but runtime-gated.
+	// When enabled after validation, prefer reusing a rested persistent formation
+	// before creating new palace manpower. The legacy palace path below remains
+	// the authoritative fallback if no suitable reserve exists.
+	if( VR_OPERATIONAL_DECISION_LOOP_ENABLED != 0 &&
+		!gGarrisonGroup[ iGarrisonID ].ubPendingGroupID )
+	{
+		GROUP *pReserve = VR_FindReadyOperationalReserveForSector(
+			gGarrisonGroup[ iGarrisonID ].ubSectorID );
+
+		if( pReserve &&
+			pReserve->ubGroupSize >= ubSoldiersRequested &&
+			!EnemyRetreatLockedInSector(
+				pReserve->ubSectorX, pReserve->ubSectorY ) )
+		{
+			ClearPreviousAIGroupAssignment( pReserve );
+			gGarrisonGroup[ iGarrisonID ].ubPendingGroupID =
+				pReserve->ubGroupID;
+
+			// Preserve operational home/identity; ubOriginalSector continues to
+			// serve the legacy Queen's assignment bookkeeping for this mission.
+			pReserve->ubOriginalSector =
+				gGarrisonGroup[ iGarrisonID ].ubSectorID;
+
+			MoveSAIGroupToSector(
+				&pReserve,
+				gGarrisonGroup[ iGarrisonID ].ubSectorID,
+				EVASIVE,
+				REINFORCEMENTS );
+
+			if( pReserve )
+				ValidateGroup( pReserve );
+			return;
+		}
+	}
+
 	{ //There are no groups that have enough troops. Send a new force from the palace instead.
 		if ( giReinforcementPool > 0 )
 		{
@@ -6617,6 +6667,9 @@ void MoveSAIGroupToSector( GROUP **pGroup, UINT8 ubSectorID, UINT32 uiMoveCode, 
 	}
 
 	(*pGroup)->pEnemyGroup->ubIntention = ubIntention;
+	// Mirror legacy Queen orders into persistent formation metadata only. The
+	// legacy Queen AI remains the movement/assignment authority at this stage.
+	VR_RecordLegacyAssignment( *pGroup, ubSectorID, ubIntention );
 	(*pGroup)->ubMoveType = ONE_WAY;
 
 	if( (*pGroup)->ubSectorX == ubDstSectorX && (*pGroup)->ubSectorY == ubDstSectorY )

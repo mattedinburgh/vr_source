@@ -70,7 +70,25 @@ typedef struct ENEMYGROUP
 	UINT8 ubElitesInBattle;				//number of elite soldiers currently in battle.
 	// WDS - New AI
 	UINT8 numTanks;
-	INT8	bPadding[19];
+	// Persistent operational identity/state. These fields exactly consume the
+	// former 19 padding bytes, preserving sizeof(ENEMYGROUP) and save layout.
+	UINT16 usFormationID;
+	UINT8 ubOperationalMagic0;
+	UINT8 ubOperationalMagic1;
+	UINT8 ubOperationalMagic2;
+	UINT8 ubOperationalMission;
+	UINT8 ubOperationalReserveRole;
+	UINT8 ubOperationalSupply;
+	UINT8 ubOperationalMorale;
+	UINT8 ubOperationalIntelConfidence;
+	UINT8 ubOperationalTargetSectorID;
+	UINT8 ubOperationalHomeSectorID;
+	UINT8 ubOperationalLastKnownPlayerSectorID;
+	UINT8 ubOperationalLastDecisionReason;
+	UINT8 ubOperationalRetreatCount;
+	UINT16 usOperationalFlags;
+	UINT8 ubOperationalLastKnownPlayerStrength;
+	UINT8 ubOperationalLastKnownMilitiaStrength;
 }ENEMYGROUP;
 
 //NOTE:	ALL FLAGS ARE CLEARED WHENEVER A GROUP ARRIVES IN A SECTOR, OR ITS WAYPOINTS ARE
@@ -117,7 +135,13 @@ typedef struct GROUP
 	UINT32 uiFlags;								//various conditions that apply to the group
 	UINT8 ubCreatedSectorID;			//used for debugging strategic AI for keeping track of the sector ID a group was created in.
 	UINT8 ubSectorIDOfLastReassignment;	//used for debuggin strategic AI.	Records location of any reassignments.
-	INT8 bPadding[29];						//***********************************************//
+	// VR strategic team bridge. These four bytes consume former padding so the
+	// serialized GROUP size remains unchanged for old savegame compatibility.
+	UINT8 ubStrategicTeam;				// OUR_TEAM / ENEMY_TEAM / future strategic team owner
+	UINT8 ubStrategicTeamMagic0;		// 'S' when initialized
+	UINT8 ubStrategicTeamMagic1;		// 'T'
+	UINT8 ubStrategicTeamMagic2;		// 'G'
+	INT8 bPadding[25];						//***********************************************//
 
 	union
 	{
@@ -128,6 +152,15 @@ typedef struct GROUP
 }GROUP;
 
 extern GROUP *gpGroupList;
+
+// Compatibility bridge for team-owned strategic groups. Legacy fPlayer remains
+// authoritative to old code while new strategic systems use these helpers.
+BOOLEAN VR_StrategicGroupTeamIsInitialized( const GROUP *pGroup );
+void VR_SetStrategicGroupTeam( GROUP *pGroup, UINT8 ubTeam );
+void VR_NormalizeStrategicGroupTeam( GROUP *pGroup );
+UINT8 VR_GetStrategicGroupTeam( const GROUP *pGroup );
+BOOLEAN VR_IsPlayerStrategicGroup( const GROUP *pGroup );
+BOOLEAN VR_IsEnemyStrategicGroup( const GROUP *pGroup );
 
 
 //General utility functions

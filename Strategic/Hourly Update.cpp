@@ -40,6 +40,7 @@
 
 #include "email.h" 
 #include "Interface.h"
+#include "Strategic Operational AI.h"
 
 void HourlyQuestUpdate();
 void HourlyLarryUpdate();
@@ -139,6 +140,12 @@ CHAR16	zString[128];
 #endif
 	// WDS - New AI
 	HourlyCheckStrategicAI();
+
+	// Operational reports are local formation knowledge and grow stale even while
+	// the legacy Queen AI remains the strategic decision authority.
+	VR_DecayOperationalIntelHourly();
+	VR_UpdateOperationalReadinessHourly();
+	VR_TraceOperationalRecommendationsHourly();
 
 #ifdef JA2UB
 // no UB

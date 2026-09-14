@@ -174,6 +174,10 @@ void EnvironmentController( BOOLEAN fCheckForLights )
 	UINT32			uiOldWorldHour;
 	UINT8				ubLightAdjustFromWeather = 0;
 
+	// Vengeance ambience reacts continuously to time, rain and combat state.
+	// Run before the underground early-return because mines/sewers have profiles too.
+	UpdateVRSectorAmbience( );
+
 
 	// do none of this stuff in the basement or caves
 	if( gfBasement || gfCaves )

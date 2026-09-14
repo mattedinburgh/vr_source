@@ -121,10 +121,8 @@ class SOLDIERTYPE;
 //CHRISL: Moved to Interface Items.h for EDB
 //#define		ITEMDESC_FONTHIGHLIGHT		FONT_MCOLOR_WHITE
 
-// Vengeance cold-UI pilot: neutral item-condition chrome follows the steel/blue UI.
-// Semantic health/warning colours are intentionally unchanged.
-#define			STATUS_BAR_SHADOW				FROMRGB(  68,  86, 104 )
-#define			STATUS_BAR							FROMRGB( 128, 174, 205 )
+#define			STATUS_BAR_SHADOW				FROMRGB( 140, 136,  119 )
+#define			STATUS_BAR							FROMRGB( 201, 172,  133 )
 #define			DESC_STATUS_BAR_SHADOW	STATUS_BAR_SHADOW
 #define			DESC_STATUS_BAR					STATUS_BAR
 

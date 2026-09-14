@@ -104,7 +104,7 @@
   </ImportGroup>
   <ItemDefinitionGroup>
     <PreBuildEvent>
-      <Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)GENERATE_VR_BUILD_INFO.ps1&quot; -RepoRoot &quot;$(ProjectDir)&quot; -OutputPath &quot;$(ProjectDir).generated\VRBuildInfo.generated.h&quot; -Configuration &quot;$(Configuration)&quot; -Platform &quot;$(Platform)&quot; -TargetName &quot;$(TargetName)$(TargetExt)&quot;</Command>
+      <Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)GENERATE_VR_BUILD_INFO.ps1&quot; -RepoRoot &quot;$(ProjectDir).&quot; -OutputPath &quot;$(ProjectDir).generated\VRBuildInfo.generated.h&quot; -Configuration &quot;$(Configuration)&quot; -Platform &quot;$(Platform)&quot; -TargetName &quot;$(TargetName)$(TargetExt)&quot;</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <PropertyGroup Label="UserMacros" />

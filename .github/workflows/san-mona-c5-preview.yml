@@ -230,8 +230,8 @@ jobs:
           # live Data-Maps-Tiles directory. It is disposable, so pass 2 may safely
           # overlay A3_REMASTERED.dat there without touching the live installation.
           $mapLayer = Join-Path $gamedir 'Data-Maps-Tiles'
-          if (-not (Test-Path (Join-Path $mapLayer 'maps\A3.dat'))) {
-            throw "Fresh vr_gamedir map layer is incomplete: $mapLayer"
+          if (-not (Test-Path (Join-Path $mapLayer 'maps\c5.dat'))) {
+            throw "Fresh vr_gamedir C5 map layer is incomplete: $mapLayer"
           }
           New-Item -ItemType Junction -Path (Join-Path $sandbox 'Data-Maps-Tiles') -Target $mapLayer | Out-Null
 
@@ -385,6 +385,52 @@ jobs:
           try { $img.Save((Join-Path $outDir 'C5_overview.png'), [System.Drawing.Imaging.ImageFormat]::Png) }
           finally { $img.Dispose() }
 
+          # Full-colour gameplay-scale captures are the primary visual QA surface.
+          $tactical = @(Get-ChildItem -LiteralPath $previewDir -File -Filter 'c5.dat_tactical_*_overview.bmp' -ErrorAction SilentlyContinue |
+            Sort-Object Name)
+          if ($tactical.Count -lt 4) {
+            throw "Expected tactical C5 captures, found only $($tactical.Count)."
+          }
+
+          $pngPaths = @()
+          $viewIndex = 0
+          foreach ($shot in $tactical) {
+            $viewIndex++
+            $bmpOut = Join-Path $outDir ("C5_tactical_{0:D2}.bmp" -f $viewIndex)
+            $pngOut = Join-Path $outDir ("C5_tactical_{0:D2}.png" -f $viewIndex)
+            Copy-Item -Force $shot.FullName $bmpOut
+            $simg = [System.Drawing.Image]::FromFile($shot.FullName)
+            try { $simg.Save($pngOut, [System.Drawing.Imaging.ImageFormat]::Png) }
+            finally { $simg.Dispose() }
+            $pngPaths += $pngOut
+          }
+
+          # Compact 3x2 sheet for fast human review.
+          $cols = 3
+          $rows = [int][Math]::Ceiling($pngPaths.Count / [double]$cols)
+          $cellW = 640
+          $cellH = 400
+          $sheet = New-Object System.Drawing.Bitmap ($cols * $cellW), ($rows * $cellH)
+          $g = [System.Drawing.Graphics]::FromImage($sheet)
+          try {
+            $g.Clear([System.Drawing.Color]::Black)
+            for ($i=0; $i -lt $pngPaths.Count; $i++) {
+              $shotImg = [System.Drawing.Image]::FromFile($pngPaths[$i])
+              try {
+                $scale = [Math]::Min($cellW / [double]$shotImg.Width, $cellH / [double]$shotImg.Height)
+                $w = [int][Math]::Round($shotImg.Width * $scale)
+                $h = [int][Math]::Round($shotImg.Height * $scale)
+                $x = ($i % $cols) * $cellW + [int](($cellW - $w) / 2)
+                $y = [int]([Math]::Floor($i / $cols)) * $cellH + [int](($cellH - $h) / 2)
+                $g.DrawImage($shotImg, $x, $y, $w, $h)
+              } finally { $shotImg.Dispose() }
+            }
+            $sheet.Save((Join-Path $outDir 'C5_tactical_contact.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+          } finally {
+            $g.Dispose()
+            $sheet.Dispose()
+          }
+
           @{
             sector = 'C5'
             map = 'c5.dat'
@@ -393,6 +439,7 @@ jobs:
             gamedir_sha = '${{ steps.gamedir.outputs.sha }}'
             generated_utc = (Get-Date).ToUniversalTime().ToString('o')
             truecolor_surfaces = $trueColor.Count
+            tactical_views = $tactical.Count
             invariant = 'graphics-only'
           } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $outDir 'C5_validation.json')
 

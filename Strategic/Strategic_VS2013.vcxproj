@@ -63,6 +63,7 @@
     <ClInclude Include="Strategic Mines LUA.h" />
     <ClInclude Include="Strategic Mines.h" />
     <ClInclude Include="Strategic Movement.h" />
+    <ClInclude Include="Strategic Operational AI.h" />
     <ClInclude Include="Strategic Pathing.h" />
     <ClInclude Include="Strategic Status.h" />
     <ClInclude Include="Strategic Town Loyalty.h" />
@@ -115,6 +116,7 @@
     <ClCompile Include="Strategic Mines.cpp" />
     <ClCompile Include="Strategic Movement Costs.cpp" />
     <ClCompile Include="Strategic Movement.cpp" />
+    <ClCompile Include="Strategic Operational AI.cpp" />
     <ClCompile Include="Strategic Pathing.cpp" />
     <ClCompile Include="Strategic Status.cpp" />
     <ClCompile Include="Strategic Town Loyalty.cpp" />

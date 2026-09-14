@@ -51,6 +51,7 @@
 #endif
 
 #include "MilitiaSquads.h"
+#include "Strategic Operational AI.h"
 #include "Vehicles.h"
 
 #ifdef JA2UB
@@ -74,6 +75,59 @@ extern UINT32		guiLastTacticalRealTime;
 #define ABOUT_TO_ARRIVE_DELAY 30
 
 GROUP *gpGroupList;
+
+// Strategic team compatibility bridge. The marker/team bytes live in former
+// GROUP padding, so this does not enlarge the serialized structure.
+BOOLEAN VR_StrategicGroupTeamIsInitialized( const GROUP *pGroup )
+{
+	return pGroup &&
+		pGroup->ubStrategicTeamMagic0 == 'S' &&
+		pGroup->ubStrategicTeamMagic1 == 'T' &&
+		pGroup->ubStrategicTeamMagic2 == 'G' &&
+		pGroup->ubStrategicTeam < MAXTEAMS;
+}
+
+void VR_SetStrategicGroupTeam( GROUP *pGroup, UINT8 ubTeam )
+{
+	if( !pGroup || ubTeam >= MAXTEAMS )
+		return;
+
+	pGroup->ubStrategicTeam = ubTeam;
+	pGroup->ubStrategicTeamMagic0 = 'S';
+	pGroup->ubStrategicTeamMagic1 = 'T';
+	pGroup->ubStrategicTeamMagic2 = 'G';
+	pGroup->fPlayer = ( ubTeam == OUR_TEAM );
+}
+
+void VR_NormalizeStrategicGroupTeam( GROUP *pGroup )
+{
+	if( !pGroup )
+		return;
+
+	if( !VR_StrategicGroupTeamIsInitialized( pGroup ) )
+		VR_SetStrategicGroupTeam( pGroup, pGroup->fPlayer ? OUR_TEAM : ENEMY_TEAM );
+	else
+		pGroup->fPlayer = ( pGroup->ubStrategicTeam == OUR_TEAM );
+}
+
+UINT8 VR_GetStrategicGroupTeam( const GROUP *pGroup )
+{
+	if( !pGroup )
+		return ENEMY_TEAM;
+	if( VR_StrategicGroupTeamIsInitialized( pGroup ) )
+		return pGroup->ubStrategicTeam;
+	return pGroup->fPlayer ? OUR_TEAM : ENEMY_TEAM;
+}
+
+BOOLEAN VR_IsPlayerStrategicGroup( const GROUP *pGroup )
+{
+	return VR_GetStrategicGroupTeam( pGroup ) == OUR_TEAM;
+}
+
+BOOLEAN VR_IsEnemyStrategicGroup( const GROUP *pGroup )
+{
+	return VR_GetStrategicGroupTeam( pGroup ) == ENEMY_TEAM;
+}
 
 GROUP *gpPendingSimultaneousGroup = NULL;
 
@@ -792,6 +846,8 @@ UINT8 AddGroupToList( GROUP *pGroup )
 	unsigned ID = 0;
 
 	AssertNotNIL (pGroup);
+	// Central compatibility point: legacy callers still set fPlayer only.
+	VR_NormalizeStrategicGroupTeam( pGroup );
 	AssertGE (pGroup->ubSectorX, MINIMUM_VALID_X_COORDINATE);
 	AssertLE (pGroup->ubSectorX, MAXIMUM_VALID_X_COORDINATE);
 	AssertGE (pGroup->ubSectorY, MINIMUM_VALID_Y_COORDINATE);
@@ -823,6 +879,10 @@ UINT8 AddGroupToList( GROUP *pGroup )
 			else //new list
 				gpGroupList = pGroup;
 			pGroup->next = NULL;
+
+			// Formation identity is assigned only after the strategic group has its
+			// final unique group ID and is visible in gpGroupList.
+			VR_EnsureEnemyFormationState( pGroup );
 			return ID;
 		}
 	}
@@ -2254,6 +2314,9 @@ void HandleNonCombatGroupArrival( GROUP *pGroup, BOOLEAN fMainGroup, BOOLEAN fNe
 	{
 		if( !pGroup->fDebugGroup )
 		{
+			// A non-combat arrival completes a persistent retreat leg. If this
+			// arrival had produced a battle, this function would not be reached.
+			VR_RecordFormationArrival( pGroup );
 			CalculateNextMoveIntention( pGroup );
 		}
 		else
@@ -3957,6 +4020,9 @@ BOOLEAN LoadStrategicMovementGroupsFromSavedGameFile( HWFILE hFile )
 
 
 		//
+				// Normalize old saves from legacy fPlayer before interpreting the union.
+		VR_NormalizeStrategicGroupTeam( pTemp );
+
 		// Add either the pointer or the linked list.
 		//
 
@@ -4042,6 +4108,10 @@ BOOLEAN LoadStrategicMovementGroupsFromSavedGameFile( HWFILE hFile )
 	{
 		return( FALSE );
 	}
+
+	// Old saves carried unused ENEMYGROUP padding here. OPS magic distinguishes
+	// initialized formations; missing state is created without changing size.
+	VR_EnsureAllEnemyFormationStates();
 
 	return( TRUE );
 }
@@ -4615,7 +4685,12 @@ BOOLEAN ProcessNextEnemyRetreatConflict( void )
 			// or get silently pulled into autoresolve.
 			if( !fMercBattlePresent && !fMilitiaPresent )
 			{
+				// The escape reached an uncontested adjacent sector. Resolve both the
+				// transient queue and the save-persistent pursuit lock, then let any
+				// persistent retreat formation enter REGROUP state.
 				gfPendingEnemyRetreatConflict[ ubX ][ ubY ] = FALSE;
+				SectorInfo[ SECTOR( ubX, ubY ) ].uiFlags &= ~SF_ENEMY_RETREAT_LOCKED;
+				VR_CompleteRetreatInSector( ubX, ubY );
 				continue;
 			}
 

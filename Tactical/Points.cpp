@@ -3847,6 +3847,38 @@ INT16 GetAPsToUseRemote( SOLDIERTYPE *pSoldier )
 }
 
 
+INT16 GetBaseAPsToStealItem( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pTargetSoldier )
+{
+	// Vengeance: stealing should remain a meaningful close-contact action without
+	// charging the full legacy AP_STEAL_ITEM tax plus pickup costs.  Use the normal
+	// pickup cost as the physical handling baseline, doubled for an alert/conscious
+	// target.  Collapsed/dying targets are simply looted at normal pickup cost.
+	INT16 sAPCost = max( 1, GetBasicAPsToPickupItem( pSoldier ) );
+
+	BOOLEAN fEasyTarget = FALSE;
+	if ( pTargetSoldier != NULL )
+	{
+		fEasyTarget = ( pTargetSoldier->stats.bLife < OKLIFE || pTargetSoldier->bCollapsed );
+	}
+
+	if ( !fEasyTarget )
+	{
+		sAPCost = max( 1, (INT16)( sAPCost * 2 ) );
+
+		// Keep the existing martial-arts benefit, but apply it to the sane
+		// interaction cost instead of the much larger legacy steal constant.
+		if ( HAS_SKILL_TRAIT( pSoldier, MARTIAL_ARTS_NT ) && gGameOptions.fNewTraitSystem )
+		{
+			sAPCost = max( 1, (INT16)(((FLOAT)sAPCost *
+				(FLOAT)(100 - gSkillTraitValues.ubMAReducedAPsToSteal *
+				NUM_SKILL_TRAITS( pSoldier, MARTIAL_ARTS_NT )) / 100.0f) + 0.5f) );
+		}
+	}
+
+	return sAPCost;
+}
+
+
 INT16 GetAPsToStealItem( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pTargetSoldier, INT16 sMapPos ) // SANDRO - added target
 {
 	INT16	sAPCost = 0;
@@ -3856,22 +3888,9 @@ INT16 GetAPsToStealItem( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pTargetSoldier, INT
 		sAPCost = PlotPath( pSoldier, sMapPos, NO_COPYROUTE, NO_PLOT, TEMPORARY, (UINT16)pSoldier->usUIMovementMode, NOT_STEALTH, FORWARD, pSoldier->bActionPoints );
 	}
 
-	// ADD APS TO PICKUP
-	/////////////////////////////////////////////////////////////////////////////////////////
-	// CHANGED BY SANDRO - REDUCE AP COST TO STEAL FOR MARTIAL ARTS AND HAND TO HAND
-	if (pTargetSoldier != NULL && pTargetSoldier->bCollapsed && gGameExternalOptions.fEnhancedCloseCombatSystem)
-	{
-		sAPCost += (GetBasicAPsToPickupItem( pSoldier )); // stealing from collapsed soldiers is treated differently
-	}
-	else if (HAS_SKILL_TRAIT( pSoldier, MARTIAL_ARTS_NT ) && ( gGameOptions.fNewTraitSystem ))
-	{
-		sAPCost += max(1, (INT16)(((FLOAT)APBPConstants[AP_STEAL_ITEM] * (FLOAT)(100 - gSkillTraitValues.ubMAReducedAPsToSteal * NUM_SKILL_TRAITS(pSoldier, MARTIAL_ARTS_NT)) / 100.0f) + 0.5f));
-	}
-	else
-	{
-		sAPCost += APBPConstants[AP_STEAL_ITEM];
-	}
-	/////////////////////////////////////////////////////////////////////////////////////////
+	// One transparent interaction charge.  The inventory selection menu must not
+	// add another pickup charge for every selected item.
+	sAPCost += GetBaseAPsToStealItem( pSoldier, pTargetSoldier );
 
 	// CJC August 13 2002: added cost to stand into equation
 	if (!(PTR_STANDING))
@@ -3880,8 +3899,8 @@ INT16 GetAPsToStealItem( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pTargetSoldier, INT
 	}
 
 	return sAPCost;
-
 }
+
 
 INT16 GetBPsToStealItem( SOLDIERTYPE *pSoldier )
 {

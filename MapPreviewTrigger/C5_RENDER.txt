@@ -1,3 +1,4 @@
 San Mona C5 graphics-only engine validation
-requested_utc=2026-09-14T17:10:00Z
+requested_utc=2026-09-14T17:52:00Z
 rule=do not modify c5.dat or gameplay metadata
+reason=fresh baseline after build-info quoting fix
