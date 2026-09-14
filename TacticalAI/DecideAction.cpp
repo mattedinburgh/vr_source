@@ -9706,7 +9706,7 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, sCheckGridNo);
 		if (iDistance < 3 || iDistance > TACTICAL_RANGE / 2 ||
 			Water(sCheckGridNo, pSoldier->pathing.bLevel) ||
-			InSmoke(sCheckGridNo, pSoldier->pathing.bLevel))
+			InSmokeNearby(sCheckGridNo, pSoldier->pathing.bLevel))
 		{
 			continue;
 		}
