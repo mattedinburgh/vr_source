@@ -116,6 +116,33 @@ void VRAnalyticsTacticalCandidate(
 	bool eligible,
 	const char* reason );
 
+// Attach perception/assessment values to the currently open tactical decision.
+// This is the Black Box v2 decision-forensics layer: raw inputs remain linked
+// to the same decision ID as candidates, the final action and its outcome.
+void VRAnalyticsTacticalStateInt(
+	unsigned int soldierId,
+	const char* key,
+	long value );
+
+// Omniscient team snapshot for troubleshooting. This is intentionally separate
+// from soldier perception telemetry so analysis never confuses what really
+// existed in the sector with what an AI actor was allowed to know.
+void VRAnalyticsTacticalFormationSnapshot(
+	unsigned long turn,
+	int team,
+	int sectorX,
+	int sectorY,
+	int sectorZ,
+	int living,
+	int combatReady,
+	int cowering,
+	int disengaging,
+	int escaping,
+	int leaders,
+	int casualtyPercent,
+	int averageMorale,
+	int averageStress );
+
 void VRAnalyticsTacticalDecisionSelected(
 	unsigned int soldierId,
 	int team,
