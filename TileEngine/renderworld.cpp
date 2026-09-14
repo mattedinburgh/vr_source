@@ -2446,6 +2446,16 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 													sTrueColorZStripIndex, fTrueColorSameZBurnsThrough,
 													ubTrueColorViewSoftening );
 											}
+											else if ( fWallTile &&
+													  ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_FADE ) &&
+													  !fObscuredBlitter )
+											{
+												BlitOcclusionBubbleTrueColorWallFadeZStrip(
+													(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
+													hVObject, sXPos, sYPos, usImageIndex, pNode->ubShadeLevel,
+													sTrueColorZStripIndex, fTrueColorSameZBurnsThrough,
+													ubTrueColorViewSoftening );
+											}
 											else
 											{
 											BltTrueColorDataTo16BPPBufferZStrip(
@@ -2581,6 +2591,12 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 														if ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_CUTOUT )
 														{
 															BlitOcclusionBubble8BitWallZStrip(
+																(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
+																hVObject, sXPos, sYPos, usImageIndex, sWallZStripIndex );
+														}
+														else if ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_FADE )
+														{
+															BlitOcclusionBubble8BitWallFadeZStrip(
 																(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
 																hVObject, sXPos, sYPos, usImageIndex, sWallZStripIndex );
 														}
@@ -3498,6 +3514,88 @@ static void BlitOcclusionBubbleTrueColorWallZStrip(
 		BltTrueColorDataTo16BPPBufferZStrip(
 			pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
 			hVObject, sXPos, sYPos, usImageIndex, &ClipRects[ ubRect ],
+			ubShadeLevel, sZStripIndex, Z_STRIP_DELTA_Y,
+			fSameZBurnsThrough, FALSE, TRUE, ubViewSoftening );
+	}
+}
+
+static void BlitOcclusionBubble8BitWallFadeZStrip(
+	UINT16 *pDestBuf, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer,
+	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
+	UINT16 usImageIndex, INT16 sZStripIndex )
+{
+	ETRLEObject *pTrav = &( hVObject->pETRLEObject[ usImageIndex ] );
+	const INT32 iLeft = __max(
+		(INT32)gClippingRect.iLeft, (INT32)sXPos + (INT32)pTrav->sOffsetX );
+	const INT32 iTop = __max(
+		(INT32)gClippingRect.iTop, (INT32)sYPos + (INT32)pTrav->sOffsetY );
+	const INT32 iRight = __min(
+		(INT32)gClippingRect.iRight,
+		(INT32)sXPos + (INT32)pTrav->sOffsetX + (INT32)pTrav->usWidth );
+	const INT32 iBottom = __min(
+		(INT32)gClippingRect.iBottom,
+		(INT32)sYPos + (INT32)pTrav->sOffsetY + (INT32)pTrav->usHeight );
+
+	if ( iRight <= iLeft || iBottom <= iTop )
+		return;
+
+	// Multi-Z walls bypass JA2's generic translucent path. Render alternate
+	// one-pixel rows with the normal Z-strip blitter: the skipped rows expose
+	// the merc/background while the surviving rows preserve correct wall depth.
+	INT32 iY = iTop;
+	if ( ( iY ^ gsOcclusionBubbleScreenCenterY ) & 1 )
+		++iY;
+
+	for ( ; iY < iBottom; iY += 2 )
+	{
+		SGPRect ClipRect;
+		ClipRect.iLeft = iLeft;
+		ClipRect.iTop = iY;
+		ClipRect.iRight = iRight;
+		ClipRect.iBottom = __min( iY + 1, iBottom );
+
+		Blt8BPPDataTo16BPPBufferTransZIncClipZSameZBurnsThrough(
+			pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
+			hVObject, sXPos, sYPos, usImageIndex, &ClipRect, sZStripIndex );
+	}
+}
+
+static void BlitOcclusionBubbleTrueColorWallFadeZStrip(
+	UINT16 *pDestBuf, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer,
+	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
+	UINT16 usImageIndex, UINT8 ubShadeLevel, INT16 sZStripIndex,
+	BOOLEAN fSameZBurnsThrough, UINT8 ubViewSoftening )
+{
+	ETRLEObject *pTrav = &( hVObject->pETRLEObject[ usImageIndex ] );
+	const INT32 iLeft = __max(
+		(INT32)gClippingRect.iLeft, (INT32)sXPos + (INT32)pTrav->sOffsetX );
+	const INT32 iTop = __max(
+		(INT32)gClippingRect.iTop, (INT32)sYPos + (INT32)pTrav->sOffsetY );
+	const INT32 iRight = __min(
+		(INT32)gClippingRect.iRight,
+		(INT32)sXPos + (INT32)pTrav->sOffsetX + (INT32)pTrav->usWidth );
+	const INT32 iBottom = __min(
+		(INT32)gClippingRect.iBottom,
+		(INT32)sYPos + (INT32)pTrav->sOffsetY + (INT32)pTrav->usHeight );
+
+	if ( iRight <= iLeft || iBottom <= iTop )
+		return;
+
+	INT32 iY = iTop;
+	if ( ( iY ^ gsOcclusionBubbleScreenCenterY ) & 1 )
+		++iY;
+
+	for ( ; iY < iBottom; iY += 2 )
+	{
+		SGPRect ClipRect;
+		ClipRect.iLeft = iLeft;
+		ClipRect.iTop = iY;
+		ClipRect.iRight = iRight;
+		ClipRect.iBottom = __min( iY + 1, iBottom );
+
+		BltTrueColorDataTo16BPPBufferZStrip(
+			pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
+			hVObject, sXPos, sYPos, usImageIndex, &ClipRect,
 			ubShadeLevel, sZStripIndex, Z_STRIP_DELTA_Y,
 			fSameZBurnsThrough, FALSE, TRUE, ubViewSoftening );
 	}
