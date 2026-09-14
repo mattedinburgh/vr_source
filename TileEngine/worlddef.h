@@ -100,7 +100,7 @@ class SOLDIERTYPE;
 // Fallout-style selected-merc occlusion cutaway. These are transient render
 // state bits only; they never alter structure, LOS, cover, pathing or ballistics.
 #define LEVELNODE_OCCLUSION_FADE					0x00800000
-#define LEVELNODE_OCCLUSION_HIDE					0x01000000
+#define LEVELNODE_OCCLUSION_CUTOUT					0x01000000
 #define LEVELNODE_DYNAMIC										0x02000000
 #define LEVELNODE_LASTDYNAMIC								0x04000000
 #define LEVELNODE_PHYSICSOBJECT							0x08000000
