@@ -349,6 +349,10 @@ enum
 };
 
 BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier);
+BOOLEAN FindNearbyExplosiveStructure(INT32 sSpot, INT8 bLevel);
+UINT8 SpotDangerLevel(SOLDIERTYPE *pSoldier, INT32 sGridNo);
+BOOLEAN CheckNPCDestination(SOLDIERTYPE *pSoldier, INT32 sGridNo);
+UINT8 AICorpseWarningKnown(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel);
 BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridNo);
 
 // Deidranna force-quality doctrine. These functions limit reasoning/initiative only.
