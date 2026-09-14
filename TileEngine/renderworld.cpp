@@ -105,6 +105,27 @@ extern	BOOLEAN	gfTopMessageDirty;
 // file-wide scope: RenderTiles() now needs it before the legacy blitter section.
 #define	Z_STRIP_DELTA_Y					( Z_SUBLAYERS * 10 )
 
+// Forward declarations for Fallout-style multi-Z wall cutaway helpers.
+// Definitions live later in this translation unit; RenderTiles() calls them first.
+static void BlitOcclusionBubble8BitWallZStrip(
+	UINT16 *pDestBuf, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer,
+	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
+	UINT16 usImageIndex, INT16 sZStripIndex );
+static void BlitOcclusionBubble8BitWallFadeZStrip(
+	UINT16 *pDestBuf, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer,
+	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
+	UINT16 usImageIndex, INT16 sZStripIndex );
+static void BlitOcclusionBubbleTrueColorWallZStrip(
+	UINT16 *pDestBuf, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer,
+	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
+	UINT16 usImageIndex, UINT8 ubShadeLevel, INT16 sZStripIndex,
+	BOOLEAN fSameZBurnsThrough, UINT8 ubViewSoftening );
+static void BlitOcclusionBubbleTrueColorWallFadeZStrip(
+	UINT16 *pDestBuf, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer,
+	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
+	UINT16 usImageIndex, UINT8 ubShadeLevel, INT16 sZStripIndex,
+	BOOLEAN fSameZBurnsThrough, UINT8 ubViewSoftening );
+
 //#define TILES_MERC						0x00000400
 //#define TILES_Z_BLITTER					0x00000200
 //#define TILES_Z_WRITE						0x00000100
@@ -3545,7 +3566,7 @@ static void BlitOcclusionBubble8BitWallZStrip(
 	}
 
 	// Zone 2: half-tone feather between outer and inner ellipses.
-	// Zone 3 (inside inner ellipse) is deliberately not drawn.
+	// Zone 3 keeps a very faint ~25% wall ghost rather than becoming invisible.
 	INT32 iLeft = 0, iTop = 0, iRight = 0, iBottom = 0;
 	if ( !GetOcclusionBubbleSpriteBounds(
 			hVObject, sXPos, sYPos, usImageIndex,
@@ -3617,6 +3638,43 @@ static void BlitOcclusionBubble8BitWallZStrip(
 			}
 		}
 	}
+
+	// Inner core stays faintly visible rather than vanishing completely.
+	// One retained scanline in four is approximately a 25% structural ghost.
+	INT32 iInnerY = __max(
+		iTop, (INT32)gsOcclusionBubbleScreenCenterY - OCCLUSION_BUBBLE_INNER_RADIUS_Y );
+	const INT32 iInnerEndY = __min(
+		iBottom, (INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_INNER_RADIUS_Y );
+
+	while ( iInnerY < iInnerEndY &&
+			( ( iInnerY - gsOcclusionBubbleScreenCenterY ) % 4 + 4 ) % 4 != 0 )
+	{
+		++iInnerY;
+	}
+
+	for ( ; iInnerY < iInnerEndY; iInnerY += 4 )
+	{
+		const INT32 iInnerHalf = OcclusionBubbleEllipseHalfWidthAtY(
+			iInnerY, OCCLUSION_BUBBLE_INNER_RADIUS_X, OCCLUSION_BUBBLE_INNER_RADIUS_Y );
+		if ( iInnerHalf <= 0 )
+			continue;
+
+		SGPRect InnerClip;
+		InnerClip.iLeft = __max(
+			iLeft, (INT32)gsOcclusionBubbleScreenCenterX - iInnerHalf );
+		InnerClip.iRight = __min(
+			iRight, (INT32)gsOcclusionBubbleScreenCenterX + iInnerHalf );
+		InnerClip.iTop = iInnerY;
+		InnerClip.iBottom = __min( iInnerY + 1, iBottom );
+
+		if ( InnerClip.iRight > InnerClip.iLeft )
+		{
+			Blt8BPPDataTo16BPPBufferTransZIncClipZSameZBurnsThrough(
+				pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
+				hVObject, sXPos, sYPos, usImageIndex, &InnerClip, sZStripIndex );
+		}
+	}
+
 }
 
 static void BlitOcclusionBubbleTrueColorWallZStrip(
@@ -3717,6 +3775,45 @@ static void BlitOcclusionBubbleTrueColorWallZStrip(
 			}
 		}
 	}
+
+	// Inner core stays faintly visible rather than disappearing. Keeping one
+	// scanline in four gives a subtle ~25% wall ghost around the merc.
+	INT32 iInnerY = __max(
+		iTop, (INT32)gsOcclusionBubbleScreenCenterY - OCCLUSION_BUBBLE_INNER_RADIUS_Y );
+	const INT32 iInnerEndY = __min(
+		iBottom, (INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_INNER_RADIUS_Y );
+
+	while ( iInnerY < iInnerEndY &&
+			( ( iInnerY - gsOcclusionBubbleScreenCenterY ) % 4 + 4 ) % 4 != 0 )
+	{
+		++iInnerY;
+	}
+
+	for ( ; iInnerY < iInnerEndY; iInnerY += 4 )
+	{
+		const INT32 iInnerHalf = OcclusionBubbleEllipseHalfWidthAtY(
+			iInnerY, OCCLUSION_BUBBLE_INNER_RADIUS_X, OCCLUSION_BUBBLE_INNER_RADIUS_Y );
+		if ( iInnerHalf <= 0 )
+			continue;
+
+		SGPRect InnerClip;
+		InnerClip.iLeft = __max(
+			iLeft, (INT32)gsOcclusionBubbleScreenCenterX - iInnerHalf );
+		InnerClip.iRight = __min(
+			iRight, (INT32)gsOcclusionBubbleScreenCenterX + iInnerHalf );
+		InnerClip.iTop = iInnerY;
+		InnerClip.iBottom = __min( iInnerY + 1, iBottom );
+
+		if ( InnerClip.iRight > InnerClip.iLeft )
+		{
+			BltTrueColorDataTo16BPPBufferZStrip(
+				pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
+				hVObject, sXPos, sYPos, usImageIndex, &InnerClip,
+				ubShadeLevel, sZStripIndex, Z_STRIP_DELTA_Y,
+				fSameZBurnsThrough, FALSE, TRUE, ubViewSoftening );
+		}
+	}
+
 }
 
 static void BlitOcclusionBubble8BitWallFadeZStrip(
@@ -3753,10 +3850,15 @@ static void BlitOcclusionBubble8BitWallFadeZStrip(
 	const INT32 iEndY = __min(
 		iBottom, (INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
 
-	if ( ( iY ^ gsOcclusionBubbleScreenCenterY ) & 1 )
+	// Structural cues are intentionally gentler than the plain-wall feather:
+	// retain roughly one third of rows inside the bubble.
+	while ( iY < iEndY &&
+			 ( ( iY - gsOcclusionBubbleScreenCenterY ) % 3 + 3 ) % 3 != 0 )
+	{
 		++iY;
+	}
 
-	for ( ; iY < iEndY; iY += 2 )
+	for ( ; iY < iEndY; iY += 3 )
 	{
 		const INT32 iHalfWidth = OcclusionBubbleEllipseHalfWidthAtY(
 			iY, OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
@@ -3814,10 +3916,15 @@ static void BlitOcclusionBubbleTrueColorWallFadeZStrip(
 	const INT32 iEndY = __min(
 		iBottom, (INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
 
-	if ( ( iY ^ gsOcclusionBubbleScreenCenterY ) & 1 )
+	// Structural cues are intentionally gentler than the plain-wall feather:
+	// retain roughly one third of rows inside the bubble.
+	while ( iY < iEndY &&
+			 ( ( iY - gsOcclusionBubbleScreenCenterY ) % 3 + 3 ) % 3 != 0 )
+	{
 		++iY;
+	}
 
-	for ( ; iY < iEndY; iY += 2 )
+	for ( ; iY < iEndY; iY += 3 )
 	{
 		const INT32 iHalfWidth = OcclusionBubbleEllipseHalfWidthAtY(
 			iY, OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
