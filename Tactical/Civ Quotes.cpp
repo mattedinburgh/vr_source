@@ -42,6 +42,7 @@
 #include "opplist.h"
 #include "Items.h"
 #include "Weapons.h"
+#include "LOS.h"
 
 // sevenfm: for voice taunts
 #include "Sound Control.h"
@@ -2172,6 +2173,8 @@ static BOOLEAN AICivilianNearActionTarget( SOLDIERTYPE *pCiv )
 		if ( !pOther->aiData.bNeutral || !IS_MERC_BODY_TYPE( pOther ) )
 			continue;
 		if ( pOther->pathing.bLevel != pCiv->bTargetLevel )
+			continue;
+		if ( LOS_Raised( pCiv, pOther, CALC_FROM_ALL_DIRS ) <= 0 )
 			continue;
 		if ( PythSpacesAway( pCiv->aiData.usActionData, pOther->sGridNo ) <= 2 )
 			return TRUE;
