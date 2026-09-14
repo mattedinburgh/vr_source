@@ -1,2 +1,3 @@
 A3 two-pass remaster validation trigger
 Source hardening: VFS-safe A3 bake filename handling
+Const-correct A3 VFS leaf helper validation
