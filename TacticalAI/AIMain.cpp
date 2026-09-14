@@ -61,6 +61,7 @@
 #include "ExceptionHandling.h"
 #include "MilitiaSquads.h"	// routed militia strategic traversal
 #include "Strategic Movement.h"	// enemy retreat destination battles
+#include "Strategic Operational AI.h"	// persistent enemy retreat formations
 #include "VRAnalytics.h"
 // needed to use the modularized tactical AI:
 #include "ModularizedTacticalAI/include/Plan.h"
@@ -2962,34 +2963,68 @@ void HandleAITacticalTraversal( SOLDIERTYPE * pSoldier )
 		}
 		else
 		{
-			SECTORINFO *pSectorInfo = &( SectorInfo[ SECTOR( iMapX, iMapY ) ] );
+			BOOLEAN fPersistentEnemyRetreat = FALSE;
 
-			switch( pSoldier->ubSoldierClass )
+			if( pSoldier->bTeam == ENEMY_TEAM )
 			{
-			case SOLDIER_CLASS_ELITE:
-				++pSectorInfo->ubNumElites;
-				break;
+				UINT8 ubAdmins = 0;
+				UINT8 ubTroops = 0;
+				UINT8 ubElites = 0;
 
-			case SOLDIER_CLASS_ARMY:
-				++pSectorInfo->ubNumTroops;
-				break;
+				switch( pSoldier->ubSoldierClass )
+				{
+				case SOLDIER_CLASS_ELITE:
+					ubElites = 1;
+					break;
+				case SOLDIER_CLASS_ARMY:
+					ubTroops = 1;
+					break;
+				case SOLDIER_CLASS_ADMINISTRATOR:
+					ubAdmins = 1;
+					break;
+				}
 
-			case SOLDIER_CLASS_ADMINISTRATOR:
-				++pSectorInfo->ubNumAdmins;
-				break;
-
+				if( ubAdmins || ubTroops || ubElites )
+				{
+					fPersistentEnemyRetreat = VR_RegisterTacticalRetreatSoldier(
+						(UINT8)gWorldSectorX, (UINT8)gWorldSectorY,
+						(UINT8)iMapX, (UINT8)iMapY,
+						ubAdmins, ubTroops, ubElites );
+				}
 			}
 
+			// Robust compatibility fallback. If persistent formation transfer cannot
+			// represent this actor/class or allocation fails, preserve the old JA2
+			// static-sector transfer exactly so no escaped soldier can disappear.
+			if( !fPersistentEnemyRetreat )
+			{
+				SECTORINFO *pSectorInfo = &( SectorInfo[ SECTOR( iMapX, iMapY ) ] );
+
+				switch( pSoldier->ubSoldierClass )
+				{
+				case SOLDIER_CLASS_ELITE:
+					++pSectorInfo->ubNumElites;
+					break;
+				case SOLDIER_CLASS_ARMY:
+					++pSectorInfo->ubNumTroops;
+					break;
+				case SOLDIER_CLASS_ADMINISTRATOR:
+					++pSectorInfo->ubNumAdmins;
+					break;
+				}
+			}
 
 			if( pSoldier->bTeam == ENEMY_TEAM )
 			{
 				QueueEnemyRetreatConflict( (UINT8)iMapX, (UINT8)iMapY );
 			}
 
+			// Existing Queen bookkeeping removes this live tactical actor from its
+			// origin strategic source. Destination strength has already been created
+			// above, so this remains a transfer rather than a duplication.
 			ProcessQueenCmdImplicationsOfDeath( pSoldier );
 			TacticalRemoveSoldier( pSoldier->ubID );
-		}
-	}
+		}	}
 	CheckForEndOfBattle( fEnemyRetreated );
 }
 
