@@ -10,6 +10,10 @@
 #define VR_ENEMY_HELICOPTERS_ENABLED             0
 #define VR_ASD_ENABLED                           0
 
+#if ( VR_STRATEGIC_TRANSPORT_GROUPS_ENABLED || VR_ENEMY_HELICOPTERS_ENABLED || VR_ASD_ENABLED ) && !VR_STRATEGIC_TEAM_GROUP_FRAMEWORK_STAGED
+#error Strategic modernization consumers require the team-group framework bridge.
+#endif
+
 enum VR_STRATEGIC_MODERNIZATION_FEATURE
 {
 	VR_STRATEGIC_FEATURE_TEAM_GROUPS = 0,
