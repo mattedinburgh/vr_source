@@ -511,6 +511,12 @@ void CheckBombSpecifics( OBJECTTYPE * pObj, INT8* detonatortype, INT8* setting, 
 // Flugente: check for specific flags
 BOOLEAN HasItemFlag( UINT16 usItem, UINT32 aFlag );
 
+// Medical capability helpers. Keep treatment capability separate from broad item class.
+BOOLEAN ItemIsFirstAidKit( UINT16 usItem );
+BOOLEAN ItemIsMedicalKit( UINT16 usItem );
+BOOLEAN ItemIsImprovisedBandage( UINT16 usItem );
+BOOLEAN ItemCanGiveFirstAid( UINT16 usItem );
+
 // Flugente: get first item number that has this flag. Use with caution, as we search in all items
 BOOLEAN GetFirstItemWithFlag( UINT16* pusItem, UINT32 aFlag );
 
