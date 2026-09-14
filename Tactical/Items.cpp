@@ -1732,26 +1732,14 @@ INT8 FindObjInObjRange( SOLDIERTYPE * pSoldier, UINT16 usItem1, UINT16 usItem2 )
 INT8 FindObjClass( SOLDIERTYPE * pSoldier, 	UINT32 usItemClass )
 {
 	INT8 invsize = (INT8)pSoldier->inv.size();
-	INT8 bImprovisedRagSlot = NO_SLOT;
-
 	for (INT8 bLoop = 0; bLoop < invsize; ++bLoop)
 	{
-		if (pSoldier->inv[bLoop].exists() == true && (Item[pSoldier->inv[bLoop].usItem].usItemClass & usItemClass))
+		if (Item[pSoldier->inv[bLoop].usItem].usItemClass & usItemClass && pSoldier->inv[bLoop].exists() == true)
 		{
-			// Vengeance: improvised rag (item 1022) is emergency medical fallback.
-			// When searching for medical supplies, always prefer any proper kit first.
-			if (usItemClass == IC_MEDKIT && pSoldier->inv[bLoop].usItem == 1022)
-			{
-				if (bImprovisedRagSlot == NO_SLOT)
-					bImprovisedRagSlot = bLoop;
-				continue;
-			}
-
 			return( bLoop );
 		}
 	}
-
-	return( bImprovisedRagSlot );
+	return( NO_SLOT );
 }
 
 INT8 FindAIUsableObjClass(SOLDIERTYPE * pSoldier, UINT32 usItemClass, BOOLEAN fSidearm)
@@ -12951,16 +12939,23 @@ INT8 FindMedKit( SOLDIERTYPE * pSoldier )
 INT8 FindFirstAidKit( SOLDIERTYPE * pSoldier )
 {
 	INT8 invsize = (INT8)pSoldier->inv.size();
+	INT8 bImprovisedFallback = NO_SLOT;
 	for ( INT8 bLoop = 0; bLoop < invsize; ++bLoop)
 	{
-		if (pSoldier->inv[bLoop].exists() == true) {
-			if (Item[pSoldier->inv[bLoop].usItem].firstaidkit  )
+		if (pSoldier->inv[bLoop].exists() == true)
+		{
+			UINT16 usItem = pSoldier->inv[bLoop].usItem;
+			if ( ItemIsImprovisedBandage( usItem ) )
 			{
-				return( bLoop );
+				if ( bImprovisedFallback == NO_SLOT )
+					bImprovisedFallback = bLoop;
+				continue;
 			}
+			if ( ItemIsFirstAidKit( usItem ) )
+				return( bLoop );
 		}
 	}
-	return( NO_SLOT );
+	return( bImprovisedFallback );
 }
 
 INT8 FindCamoKit( SOLDIERTYPE * pSoldier )
@@ -16348,6 +16343,39 @@ BOOLEAN HasItemFlag( UINT16 usItem, UINT32 aFlag )
 {
 	return( (Item[usItem].usItemFlag & aFlag) != 0 );
 }
+
+BOOLEAN ItemIsFirstAidKit( UINT16 usItem )
+{
+	return ( usItem < MAXITEMS && Item[usItem].firstaidkit );
+}
+
+BOOLEAN ItemIsMedicalKit( UINT16 usItem )
+{
+	return ( usItem < MAXITEMS && Item[usItem].medicalkit );
+}
+
+BOOLEAN ItemIsImprovisedBandage( UINT16 usItem )
+{
+	if ( usItem >= MAXITEMS )
+		return FALSE;
+
+	// Vengeance currently uses CAMO_REMOVAL only for the cloth rag.  Keep this
+	// compatibility fallback so existing saves/data installs gain the ability
+	// even before their Items.xml is refreshed.
+	return ( Item[usItem].firstaidkit ||
+		(HasItemFlag( usItem, CAMO_REMOVAL ) && Item[usItem].usItemClass == IC_MISC) );
+}
+
+BOOLEAN ItemCanGiveFirstAid( UINT16 usItem )
+{
+	if ( usItem >= MAXITEMS )
+		return FALSE;
+
+	return ( Item[usItem].usItemClass == IC_MEDKIT ||
+		ItemIsFirstAidKit( usItem ) ||
+		ItemIsImprovisedBandage( usItem ) );
+}
+
 
 // Flugente: get first item number that has this flag. Use with caution, as we search in all items
 BOOLEAN GetFirstItemWithFlag( UINT16* pusItem, UINT32 aFlag )
