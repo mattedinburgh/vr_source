@@ -609,6 +609,12 @@ enum AnimationStates
 
 	LONG_JUMP,
 	
+	// VR reference-inspired non-fatal gunshot reactions. Appended to preserve all
+	// existing animation-state IDs used by saves, scripts and binary animation data.
+	VR_HIT_MICRO_STAND,
+	VR_HIT_BODYCHECK_STAND,
+	VR_HIT_STUMBLE_STAND,
+	
 	NUMANIMATIONSTATES
 
 };
