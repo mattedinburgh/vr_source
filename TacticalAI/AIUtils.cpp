@@ -4997,6 +4997,209 @@ static INT8 AIProfessionalismModifier(SOLDIERTYPE *pSoldier)
 	return (INT8)__max(-10, __min(15, iModifier));
 }
 
+// Unified competence/friction layer. Unit quality changes what plans a soldier can
+// understand and how consistently he executes them; it never grants CTH, AP or hidden
+// information. The stable hash keeps repeated evaluations deterministic within a turn.
+static UINT32 AIStableDecisionHash(SOLDIERTYPE *pSoldier, UINT32 uiSalt)
+{
+	if (!pSoldier)
+		return uiSalt * 2246822519u;
+
+	UINT32 uiValue = pSoldier->uiUniqueSoldierIdValue;
+	uiValue ^= (guiTurnCnt + 1) * 2654435761u;
+	uiValue ^= uiSalt * 2246822519u;
+	uiValue ^= uiValue >> 13;
+	uiValue *= 3266489917u;
+	uiValue ^= uiValue >> 16;
+	return uiValue;
+}
+
+INT8 AICompetenceTier(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier)
+		return AI_COMPETENCE_BASIC;
+
+	INT8 bTier = AI_COMPETENCE_REGULAR;
+	switch (pSoldier->ubSoldierClass)
+	{
+	case SOLDIER_CLASS_ADMINISTRATOR:
+	case SOLDIER_CLASS_GREEN_MILITIA:
+		bTier = AI_COMPETENCE_BASIC;
+		break;
+	case SOLDIER_CLASS_ELITE:
+	case SOLDIER_CLASS_ELITE_MILITIA:
+		bTier = AI_COMPETENCE_ELITE;
+		break;
+	default:
+		bTier = AI_COMPETENCE_REGULAR;
+		break;
+	}
+
+	// Leaders improve nearby execution elsewhere through the squad blackboard. A leader
+	// personally gets one competence step, but an administrator never becomes elite.
+	if ((AICheckIsCommander(pSoldier) || AICheckIsOfficer(pSoldier)) &&
+		bTier < AI_COMPETENCE_ELITE)
+	{
+		++bTier;
+	}
+
+	return bTier;
+}
+
+UINT8 AIPlannerReliability(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier)
+		return 50;
+
+	INT32 iReliability = 78;
+	switch (AICompetenceTier(pSoldier))
+	{
+	case AI_COMPETENCE_BASIC:   iReliability = 55; break;
+	case AI_COMPETENCE_REGULAR: iReliability = 78; break;
+	case AI_COMPETENCE_ELITE:   iReliability = 94; break;
+	}
+
+	if (pSoldier->aiData.bAIMorale == MORALE_HOPELESS)
+		iReliability -= 20;
+	else if (pSoldier->aiData.bAIMorale == MORALE_WORRIED)
+		iReliability -= 10;
+	else if (pSoldier->aiData.bAIMorale == MORALE_FEARLESS)
+		iReliability += 3;
+
+	iReliability -= __min((INT32)25, AILocalStress(pSoldier) / 4);
+	if (pSoldier->aiData.bUnderFire)
+		iReliability -= 5;
+
+	return (UINT8)__max(20, __min(98, iReliability));
+}
+
+BOOLEAN AIAllowsPlanComplexity(SOLDIERTYPE *pSoldier, INT8 bComplexity, UINT32 uiSalt)
+{
+	if (!pSoldier || bComplexity <= AI_PLAN_BASIC)
+		return TRUE;
+
+	INT8 bTier = AICompetenceTier(pSoldier);
+	INT32 iChance = AIPlannerReliability(pSoldier);
+
+	if (bComplexity == AI_PLAN_COORDINATED)
+	{
+		if (bTier == AI_COMPETENCE_BASIC)
+			iChance = __min(iChance, 40);
+		else if (bTier == AI_COMPETENCE_REGULAR)
+			iChance = __min(iChance, 82);
+	}
+	else // AI_PLAN_ADVANCED
+	{
+		if (bTier == AI_COMPETENCE_BASIC)
+			return FALSE;
+		if (bTier == AI_COMPETENCE_REGULAR)
+			iChance = __min(iChance, 48);
+		else
+			iChance = __min(iChance, 92);
+	}
+
+	return (INT32)(AIStableDecisionHash(pSoldier, uiSalt + 17u * (UINT32)bComplexity) % 100) < iChance;
+}
+
+INT32 AICompetenceUtilityNoise(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, UINT32 uiSalt)
+{
+	if (!pSoldier)
+		return 0;
+
+	INT32 iAmplitude = 5;
+	switch (AICompetenceTier(pSoldier))
+	{
+	case AI_COMPETENCE_BASIC:   iAmplitude = 24; break;
+	case AI_COMPETENCE_REGULAR: iAmplitude = 11; break;
+	case AI_COMPETENCE_ELITE:   iAmplitude = 4; break;
+	}
+
+	UINT32 uiValue = AIStableDecisionHash(pSoldier,
+		uiSalt ^ (UINT32)(sCandidateSpot + 32768));
+	return (INT32)(uiValue % (UINT32)(2 * iAmplitude + 1)) - iAmplitude;
+}
+
+UINT8 AILocalSmokeReserve(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier)
+		return 0;
+
+	UINT8 ubSmoke = 0;
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE / 2)
+		{
+			continue;
+		}
+
+		if (FindThrowableGrenade(pFriend, EXPLOSV_SMOKE) != NO_SLOT)
+			++ubSmoke;
+	}
+
+	return ubSmoke;
+}
+
+// Estimate reaction/interrupt danger only from legitimate known contacts. We deliberately
+// do not inspect exact opponent AP, hidden equipment or hidden attributes.
+INT32 AIInferredReactionRisk(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT8 bLevel)
+{
+	if (!AICombatTeam(pSoldier) || TileIsOutOfBounds(sCandidateSpot))
+		return 0;
+
+	INT32 iRisk = 0;
+	for (UINT16 uiLoop = 0; uiLoop < MAX_NUM_SOLDIERS; ++uiLoop)
+	{
+		SOLDIERTYPE *pOpponent = MercPtrs[uiLoop];
+		if (!pOpponent || pOpponent == pSoldier ||
+			CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pSoldier->bSide == pOpponent->bSide)
+		{
+			continue;
+		}
+
+		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+		if (bKnowledge == NOT_HEARD_OR_SEEN)
+			continue;
+
+		INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
+		INT8 bKnownLevel = KnownLevel(pSoldier, pOpponent->ubID);
+		if (TileIsOutOfBounds(sKnownSpot) || bKnownLevel != bLevel)
+			continue;
+
+		if (PythSpacesAway(sKnownSpot, sCandidateSpot) > MAX_VISION_RANGE ||
+			!LocationToLocationLineOfSightTest(sKnownSpot, bKnownLevel, sCandidateSpot, bLevel, TRUE, MAX_VISION_RANGE))
+		{
+			continue;
+		}
+
+		INT32 iContactRisk = 8 + ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE] / 5;
+		if (bKnowledge == SEEN_CURRENTLY || bKnowledge == SEEN_THIS_TURN)
+			iContactRisk += 12;
+		else if (bKnowledge == SEEN_LAST_TURN)
+			iContactRisk += 6;
+
+		// A recently observed shot suggests some action was already spent. This is only
+		// a rough behavioural inference, never an inspection of exact remaining AP.
+		if ((bKnowledge == SEEN_CURRENTLY || bKnowledge == SEEN_THIS_TURN) &&
+			(pOpponent->aiData.bAction == AI_ACTION_FIRE_GUN ||
+			 pOpponent->aiData.bLastAction == AI_ACTION_FIRE_GUN))
+		{
+			iContactRisk -= 8;
+		}
+
+		iRisk += __max(0, iContactRisk);
+	}
+
+	if (InSmoke(sCandidateSpot, bLevel))
+		iRisk /= 3;
+
+	return __min((INT32)120, iRisk);
+}
+
 // Individual willingness to accept danger. Personality and current morale change
 // the threshold, but no ordinary attitude makes a soldier completely suicidal.
 INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier)
@@ -5522,13 +5725,19 @@ INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 			break;
 		}
 
-		INT32 iCrossfire = AICrossfirePositionScore(pSoldier, sCandidateSpot, sTargetSpot);
-		if (bRole == AI_ROLE_FLANKER)
-			iScore += 2 * iCrossfire;
-		else if (bRole == AI_ROLE_MANEUVER)
-			iScore += iCrossfire;
-		else if (bRole == AI_ROLE_SUPPORT && iCrossfire < 0)
-			iScore += iCrossfire / 2;
+		// Basic troops understand cover and danger but do not reliably solve crossfire
+		// geometry. Regulars/elites use the richer planner when execution friction permits.
+		if (AICompetenceTier(pSoldier) >= AI_COMPETENCE_REGULAR &&
+			AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED, (UINT32)(sCandidateSpot + 31)))
+		{
+			INT32 iCrossfire = AICrossfirePositionScore(pSoldier, sCandidateSpot, sTargetSpot);
+			if (bRole == AI_ROLE_FLANKER)
+				iScore += 2 * iCrossfire;
+			else if (bRole == AI_ROLE_MANEUVER)
+				iScore += iCrossfire;
+			else if (bRole == AI_ROLE_SUPPORT && iCrossfire < 0)
+				iScore += iCrossfire / 2;
+		}
 
 		if (AICheckHasGun(pSoldier))
 		{
@@ -5555,11 +5764,13 @@ INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 	if (pSoldier->aiData.bUnderFire && usCandidateExposure < usCurrentExposure)
 		iScore += 12;
 
-	// Better-trained troops reason more consistently; lower-tier troops use the
-	// same legal choices but receive a smaller utility separation rather than AP/CTH cheats.
-	INT32 iProfessional = AIProfessionalismModifier(pSoldier);
-	if (iProfessional < 0)
-		iScore = (iScore * (100 + iProfessional)) / 100;
+	// Competence now changes actual decision quality instead of merely scaling every
+	// candidate by the same percentage (which preserved the same ranking). Low-quality
+	// troops make noisier choices; elites remain close to the utility optimum.
+	INT32 iReactionRisk = AIInferredReactionRisk(pSoldier, sCandidateSpot, pSoldier->pathing.bLevel);
+	iScore -= iReactionRisk / 3;
+	iScore += AICompetenceUtilityNoise(pSoldier, sCandidateSpot,
+		(UINT32)(sTargetSpot + 173));
 
 	return __max(-250, __min(250, iScore));
 }
@@ -5604,6 +5815,10 @@ INT32 AIPathExposureCost(SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMov
 		{
 			++iExposedStreak;
 			iCost += __min((INT32)45, (INT32)usExposure / 8);
+			// Sample inferred reaction-fire risk on alternate path steps. Exact enemy AP
+			// is intentionally never inspected.
+			if ((sLoop & 1) == 0)
+				iCost += AIInferredReactionRisk(pSoldier, sPathSpot, pSoldier->pathing.bLevel) / 6;
 			if (!SightCoverAtSpot(pSoldier, sPathSpot, FALSE))
 				iCost += 6;
 			if (!AnyCoverAtSpot(pSoldier, sPathSpot))
