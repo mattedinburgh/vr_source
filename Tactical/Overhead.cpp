@@ -7056,6 +7056,10 @@ BOOLEAN CheckForEndOfBattle( BOOLEAN fAnEnemyRetreated )
 			gGameExternalOptions.ubDefeatMode == 4 && !fFoundAliveMerc)
 			fDefeat = TRUE;
 
+		// Freeze the forensic battle state before defeat cleanup, sector transfer,
+		// strategic ownership updates or other post-battle normalization.
+		VR_TacticalTelemetryBattleEnd( fDefeat ? "DEFEAT" : "TACTICAL_LOSS_NO_DEFEAT", fAnEnemyRetreated );
+
         // CJC: End AI's turn here.... first... so that UnSetUIBusy will succeed if militia win
         // battle for us
         EndAllAITurns( );
@@ -7148,7 +7152,6 @@ BOOLEAN CheckForEndOfBattle( BOOLEAN fAnEnemyRetreated )
         if (is_networked && is_server)
             game_over();
 
-        VR_TacticalTelemetryBattleEnd( fDefeat ? "DEFEAT" : "TACTICAL_LOSS_NO_DEFEAT", fAnEnemyRetreated );
         return( TRUE );
     }
 
@@ -7167,6 +7170,10 @@ BOOLEAN CheckForEndOfBattle( BOOLEAN fAnEnemyRetreated )
                 return( FALSE );
             }
         }
+
+        // Freeze the forensic battle state after final incapacitated-enemy resolution,
+        // but before prisoner removal, militia restoration, autobandage and sector cleanup.
+        VR_TacticalTelemetryBattleEnd( "VICTORY", fAnEnemyRetreated );
 
         // Flugente: remove those enemies that are captured and add them to the prisoner pool
         RemoveCapturedEnemiesFromSectorInfo( gWorldSectorX, gWorldSectorY, gbWorldSectorZ );
@@ -7436,7 +7443,6 @@ BOOLEAN CheckForEndOfBattle( BOOLEAN fAnEnemyRetreated )
         if (is_networked && is_server)
             game_over();
 
-        VR_TacticalTelemetryBattleEnd( "VICTORY", fAnEnemyRetreated );
         return( TRUE );
     }
     // If we are the server, we escape this function at the top if we think the game should still be running
