@@ -14,7 +14,7 @@ $ManifestPath = Join-Path $SoundRoot "VR_AMBIENCE_DEPLOY.json"
 # Pin the exact Vengeance gamedir revision used by this source integration.
 # When this pin is advanced later, the per-file SHA manifest still ensures
 # only changed/new assets are transferred.
-$VrRef = "e5669d1bef1512917cc56a73703f53934ab467e1"
+$VrRef = "dc7ab68329701ba23077ffd6008fcb228e128bed"
 $Repo = "mattedinburgh/vr_gamedir"
 $ApiBase = "https://api.github.com/repos/$Repo"
 $RawBase = "https://raw.githubusercontent.com/$Repo/$VrRef"
@@ -177,5 +177,96 @@ $manifestJson = $manifest | ConvertTo-Json -Depth 5
 [System.IO.File]::WriteAllText($ManifestPath, $manifestJson, [System.Text.Encoding]::UTF8)
 
 Write-Host ""
+function Test-DeployedAmbience {
+    param(
+        [Parameter(Mandatory=$true)][string]$IniPath,
+        [Parameter(Mandatory=$true)][string]$Root
+    )
+
+    if (-not (Test-Path $IniPath)) {
+        throw "Ambience validation failed: missing $IniPath"
+    }
+
+    $lines = Get-Content -LiteralPath $IniPath
+    $sections = @{}
+    $current = ""
+
+    foreach ($line in $lines) {
+        if ($line -match '^\s*\[(.+?)\]\s*) {
+            $current = $Matches[1]
+            $sections[$current] = $true
+        }
+    }
+
+    $assetRefs = 0
+    $profileRefs = 0
+    $errors = New-Object System.Collections.Generic.List[string]
+    $current = ""
+
+    foreach ($line in $lines) {
+        if ($line -match '^\s*\[(.+?)\]\s*) {
+            $current = $Matches[1]
+            continue
+        }
+
+        if ($line -notmatch '^\s*([^;][^=]*?)\s*=\s*(.*?)\s*) { continue }
+
+        $key = $Matches[1].Trim()
+        $value = $Matches[2].Trim()
+        if (-not $value) { continue }
+
+        if ($key -match '_(LOOP|SOUND_\d+)) {
+            $assetRefs++
+            $relative = $value -replace '/', '\'
+            if ($relative -match '^(?i)(Sounds|AMBIENT)\\') {
+                $relative = "Data-Vengeance\$relative"
+            }
+
+            $path = Join-Path $Root $relative
+            if (-not (Test-Path -LiteralPath $path)) {
+                $errors.Add("Missing asset: [$current] $key = $value")
+                continue
+            }
+
+            if ([IO.Path]::GetExtension($path) -ieq ".wav") {
+                $stream = [IO.File]::OpenRead($path)
+                try {
+                    if ($stream.Length -lt 12) {
+                        $errors.Add("Invalid WAV (too short): $value")
+                    }
+                    else {
+                        $header = New-Object byte[] 12
+                        [void]$stream.Read($header, 0, 12)
+                        $riff = [Text.Encoding]::ASCII.GetString($header, 0, 4)
+                        $wave = [Text.Encoding]::ASCII.GetString($header, 8, 4)
+                        if ($riff -ne "RIFF" -or $wave -ne "WAVE") {
+                            $errors.Add("Invalid WAV header: $value")
+                        }
+                    }
+                }
+                finally {
+                    $stream.Dispose()
+                }
+            }
+        }
+
+        if ($current -eq "SECTOR_OVERRIDES" -or $current -eq "TILESET_PROFILES") {
+            $profileRefs++
+            if (-not $sections.ContainsKey("PROFILE_$value")) {
+                $errors.Add("Missing profile: [$current] $key = $value")
+            }
+        }
+    }
+
+    if ($errors.Count -gt 0) {
+        $errors | ForEach-Object { Write-Host ("  " + $_) -ForegroundColor Red }
+        throw "Ambience deployment validation failed with $($errors.Count) error(s)."
+    }
+
+    Write-Host ("Validated ambience deployment: {0} asset refs, {1} profile refs, 0 missing." -f $assetRefs, $profileRefs)
+}
+
+Test-DeployedAmbience -IniPath (Join-Path $DataRoot "SectorAmbience.ini") -Root $GameRoot
+
 Write-Host ("Ambience deployment complete: {0} deployed, {1} unchanged." -f $downloaded, $skipped)
 Write-Host ("Manifest: {0}" -f $ManifestPath)
