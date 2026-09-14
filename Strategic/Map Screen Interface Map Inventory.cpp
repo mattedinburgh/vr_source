@@ -591,28 +591,25 @@ static void PoolSquadSurplusHandSmoke()
 			if ( !pObj->exists() || !IsHandThrownSmokeGrenade( pObj->usItem ) )
 				continue;
 
-			while ( pObj->exists() && pObj->ubNumberOfObjects > 0 )
+			if ( !fKeptOne )
 			{
-				if ( !fKeptOne )
-				{
-					fKeptOne = TRUE;
-					if ( pObj->ubNumberOfObjects == 1 )
-						break;
-				}
-				else if ( pObj->ubNumberOfObjects == 1 )
-				{
-					// This is the one smoke this merc keeps.
-					break;
-				}
+				fKeptOne = TRUE;
 
-				OBJECTTYPE extra;
-				pObj->RemoveObjectAtIndex( pObj->ubNumberOfObjects - 1, &extra );
-				if ( extra.exists() )
-					PoolObjectForSectorLoadout( &extra );
+				// Keep exactly one from the first smoke stack; pool every extra.
+				while ( pObj->exists() && pObj->ubNumberOfObjects > 1 )
+				{
+					OBJECTTYPE extra;
+					pObj->RemoveObjectAtIndex( pObj->ubNumberOfObjects - 1, &extra );
+					if ( extra.exists() )
+						PoolObjectForSectorLoadout( &extra );
+				}
 			}
-
-			if ( pObj->ubNumberOfObjects < 1 )
-				DeleteObj( pObj );
+			else
+			{
+				// A smoke is already reserved for this merc, so this entire later
+				// stack is surplus.
+				PoolObjectForSectorLoadout( pObj );
+			}
 		}
 	}
 }
