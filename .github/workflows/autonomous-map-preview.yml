@@ -406,14 +406,13 @@ jobs:
           $img = [System.Drawing.Image]::FromFile($finalBmp)
           try { $img.Save($png, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $img.Dispose() }
 
-          # Tactical-view captures are the primary A3 art QA images. Convert every
-          # engine BMP emitted by the normal tactical renderer into PNG.
+          # Tactical-view captures are the primary A3 art-QA images.
           $tacticalPngs = @()
           Get-ChildItem -LiteralPath $previewDir -Filter '*_tactical_*_overview.bmp' -File -ErrorAction SilentlyContinue |
             Sort-Object Name |
             ForEach-Object {
-              $base = [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
-              $outName = ($base -replace '_overview
+              $baseName = [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
+              $outName = ($baseName -replace '_overview
           if (Test-Path $statusFile) {
             Copy-Item -Force $statusFile (Join-Path $outDir 'A3_mapshot_status.txt')
           }
