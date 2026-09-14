@@ -39,6 +39,7 @@
 #include "Rotting Corpses.h"	// sevenfm
 #include "Map Edgepoints.h"	// Chunk 5 escape route planning
 #include "MilitiaSquads.h"	// strategic militia retreat handoff
+#include "AI Diagnostics.h"
 
 //////////////////////////////////////////////////////////////////////////////
 // SANDRO - In this file, all APBPConstants[AP_CROUCH] and APBPConstants[AP_PRONE] were changed to GetAPsCrouch() and GetAPsProne()
@@ -8495,12 +8496,17 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 	if (!fAbortSeek && bPlanIntent != AI_INTENT_FLANK && bPlanRole != AI_ROLE_FLANKER)
 		return -1;
 
+	UINT32 uiTraceDecision = AITraceBeginDecision(pSoldier, "flank",
+		sClosestDisturbance, bPlanIntent, bPlanRole);
+
 	// Flanking is a coordinated behaviour. Basic troops may occasionally manage it,
 	// regulars are inconsistent, and elites execute it reliably. Failed complexity
 	// checks fall back to ordinary legal RED-state behaviour rather than suicidal motion.
 	if (!AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED,
 		(UINT32)(sClosestDisturbance + 701)))
 	{
+		AITraceReject(pSoldier, uiTraceDecision, "flank", AI_ACTION_NONE,
+			pSoldier->sGridNo, "competence friction rejected coordinated flank");
 		return -1;
 	}
 
@@ -8629,6 +8635,18 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 				{
 					pSoldier->aiData.bOrders = FARPATROL;
 				}
+
+				INT32 iFlankScore = AIUtilityPositionScore(pSoldier, pSoldier->aiData.usActionData,
+					sClosestDisturbance, AI_INTENT_FLANK, AI_ROLE_FLANKER);
+				INT32 iFlankRoute = AIPathExposureCost(pSoldier, pSoldier->aiData.usActionData, RUNNING);
+				AITraceCandidate(pSoldier, uiTraceDecision, "flank", bAction,
+					pSoldier->aiData.usActionData, iFlankScore, iFlankRoute,
+					CountNearbyFriends(pSoldier, pSoldier->aiData.usActionData, DAY_VISION_RANGE / 3),
+					AICrossfirePositionScore(pSoldier, pSoldier->aiData.usActionData, sClosestDisturbance),
+					"viable flank destination");
+				AITraceSelect(pSoldier, uiTraceDecision, "flank", bAction,
+					pSoldier->aiData.usActionData, iFlankScore, 0, FALSE,
+					"selected deconflicted flank side and destination");
 
 				return(bAction);
 			}
@@ -9593,6 +9611,8 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 	}
 
 	UINT8 ubLocalSmokeReserve = AILocalSmokeReserve(pSoldier);
+	UINT32 uiSmokeDecision = AITraceBeginDecision(pSoldier, "movement_smoke",
+		sClosestDisturbance, bIntent, bRole);
 
 	// Fire-base soldiers normally preserve smoke for the movers. If they are under
 	// direct pressure they may still screen their own displacement.
@@ -9668,8 +9688,18 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 	gubNPCDistLimit = 0;
 
 	if (!BestThrow.ubPossible)
+	{
+		AITraceReject(pSoldier, uiSmokeDecision, "movement_smoke", AI_ACTION_TOSS_PROJECTILE,
+			sClosestDisturbance, "no smoke placement exceeded utility/scarcity threshold");
 		return -1;
+	}
 
+	AITraceCandidate(pSoldier, uiSmokeDecision, "movement_smoke", AI_ACTION_TOSS_PROJECTILE,
+		BestThrow.sTarget, iBestSmokeScore, 0, 0, 0, "best dangerous-crossing smoke placement");
+	AITraceSelect(pSoldier, uiSmokeDecision, "movement_smoke", AI_ACTION_TOSS_PROJECTILE,
+		BestThrow.sTarget, iBestSmokeScore, 0, FALSE,
+		ubLocalSmokeReserve <= 1 ? "selected despite last-smoke conservation threshold" :
+		"selected movement smoke");
 	DebugAI(AI_MSG_INFO, pSoldier, String("utility smoke at %d score %d", BestThrow.sTarget, iBestSmokeScore));
 
 	if (BestThrow.bWeaponIn != HANDPOS)
