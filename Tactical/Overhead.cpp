@@ -7058,6 +7058,8 @@ BOOLEAN CheckForEndOfBattle( BOOLEAN fAnEnemyRetreated )
         // Freeze forensic state before defeat cleanup and strategic normalization.
         VR_TacticalTelemetryBattleEnd( fDefeat ? "DEFEAT" : "TACTICAL_LOSS_NO_DEFEAT", fAnEnemyRetreated );
 
+        VR_TacticalTelemetryBattleEnd( fDefeat ? "DEFEAT" : "TACTICAL_LOSS_NO_DEFEAT", fAnEnemyRetreated );
+
         // CJC: End AI's turn here.... first... so that UnSetUIBusy will succeed if militia win
         // battle for us
         EndAllAITurns( );
@@ -7170,6 +7172,8 @@ BOOLEAN CheckForEndOfBattle( BOOLEAN fAnEnemyRetreated )
         }
 
         // Freeze forensic state after final incapacitated-enemy resolution, before cleanup.
+        VR_TacticalTelemetryBattleEnd( "VICTORY", fAnEnemyRetreated );
+
         VR_TacticalTelemetryBattleEnd( "VICTORY", fAnEnemyRetreated );
 
         // Flugente: remove those enemies that are captured and add them to the prisoner pool
@@ -8827,6 +8831,8 @@ void HandleSuppressionFire( UINT8 ubTargetedMerc, UINT8 ubCausedAttacker )
             // Record resolved suppression before the temporary accumulator is cleared.
             VR_TacticalTelemetrySuppression( pSoldier, ubCausedAttacker,
                 pSoldier->ubSuppressionPoints, ubPointsLost, ubNewStance );
+
+            VR_TacticalTelemetrySuppression( pSoldier, ubCausedAttacker, pSoldier->ubSuppressionPoints, ubPointsLost, ubNewStance );
 
             // HEADROCK HAM 3.5: After sufficient testing, suppression clearing now works immediately at the end of
             // the attack. ubAPsLostToSuppression is only cleared at the end of the turn, but no longer plays a role
