@@ -280,6 +280,7 @@ void VR_UpdateOperationalReadinessHourly()
 		// may progress from REGROUP to RESERVE once basic readiness is restored.
 		if( pEnemy->ubOperationalMission == VR_OPMISSION_REGROUP &&
 			!pGroup->fBetweenSectors &&
+			!(pEnemy->usOperationalFlags & VR_OPFLAG_RECENT_CONTACT) &&
 			pEnemy->ubOperationalSupply >= 60 &&
 			pEnemy->ubOperationalMorale >= 55 )
 		{
@@ -303,7 +304,13 @@ void VR_RecordFormationRetreat( GROUP *pGroup, UINT8 ubDestinationSectorID )
 	pEnemy->ubOperationalTargetSectorID = ubDestinationSectorID;
 	pEnemy->ubOperationalReserveRole = VR_RESERVE_NONE;
 	pEnemy->usOperationalFlags |=
-		VR_OPFLAG_RETREATED_ONCE | VR_OPFLAG_REGROUPING;
+		VR_OPFLAG_RETREATED_ONCE | VR_OPFLAG_REGROUPING | VR_OPFLAG_RECENT_CONTACT;
+	// A formation that has just broken contact is not immediately reusable as a
+	// reserve even if its abstract supply/morale remain healthy. Preserve any
+	// stronger existing report; otherwise keep a short-lived generic contact
+	// confidence that decays through the normal hourly intel path.
+	if( pEnemy->ubOperationalIntelConfidence < 80 )
+		pEnemy->ubOperationalIntelConfidence = 80;
 	if( pEnemy->ubOperationalRetreatCount < 255 )
 		++pEnemy->ubOperationalRetreatCount;
 	pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_RETREAT;
