@@ -2759,66 +2759,76 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 	}
 	else if ( fMapFactoryProfile )
 	{
-		// Macro-remaster art direction: change the sector's material language at
-		// normal tactical zoom. Composition kits then add local authored detail.
+		// Colourful macro-remaster art direction.  The target is immediately richer
+		// at normal tactical zoom: stronger local colour, clearer material separation
+		// and warm/cool contrast without turning Arulco into neon.
 		if ( gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_MILITARY )
 		{
-			saturationPercent = 94; contrastPercent = 119;
-			redBias = 1; greenBias = 2; blueBias = -2;
-			if ( fMFGreen ) { saturationPercent = 103; greenBias = 7; redBias = -3; blueBias = -5; }
-			else if ( fMFTerrain ) { saturationPercent = 92; contrastPercent = 117; redBias = 5; greenBias = 4; blueBias = -7; }
-			else if ( fMFWall ) { saturationPercent = 82; contrastPercent = 121; redBias = 1; greenBias = 2; blueBias = -2; }
-			else if ( fMFRoof || fMFMachinery ) { saturationPercent = 80; contrastPercent = 126; redBias = -1; greenBias = 0; blueBias = 1; }
-			else if ( fMFRoad || fMFFloor ) { saturationPercent = 72; contrastPercent = 120; redBias = 0; greenBias = 1; blueBias = -1; }
-			else if ( fMFDebris ) { saturationPercent = 90; contrastPercent = 122; redBias = 5; greenBias = 2; blueBias = -5; }
+			saturationPercent = 112; contrastPercent = 120;
+			redBias = 4; greenBias = 4; blueBias = -3;
+			if ( fMFGreen ) { saturationPercent = 126; greenBias = 14; redBias = -5; blueBias = -7; }
+			else if ( fMFTerrain ) { saturationPercent = 114; contrastPercent = 118; redBias = 11; greenBias = 7; blueBias = -11; }
+			else if ( fMFWall ) { saturationPercent = 108; contrastPercent = 122; redBias = 4; greenBias = 6; blueBias = 2; }
+			else if ( fMFRoof || fMFMachinery ) { saturationPercent = 116; contrastPercent = 127; redBias = 9; greenBias = 3; blueBias = -8; }
+			else if ( fMFRoad || fMFFloor ) { saturationPercent = 88; contrastPercent = 121; redBias = 3; greenBias = 4; blueBias = 1; }
+			else if ( fMFDebris ) { saturationPercent = 116; contrastPercent = 123; redBias = 11; greenBias = 4; blueBias = -10; }
 		}
 		else if ( gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_WILDERNESS )
 		{
-			saturationPercent = 116; contrastPercent = 114;
-			redBias = -3; greenBias = 7; blueBias = -3;
-			if ( fMFGreen ) { saturationPercent = 126; contrastPercent = 116; redBias = -6; greenBias = 14; blueBias = -7; }
-			else if ( fMFTerrain ) { saturationPercent = 110; contrastPercent = 113; redBias = 2; greenBias = 7; blueBias = -5; }
-			else if ( fMFWall || fMFRoof ) { saturationPercent = 90; contrastPercent = 118; redBias = 4; greenBias = 2; blueBias = -4; }
-			else if ( fMFDebris ) { saturationPercent = 112; contrastPercent = 117; redBias = 1; greenBias = 7; blueBias = -5; }
+			saturationPercent = 126; contrastPercent = 115;
+			redBias = -4; greenBias = 11; blueBias = -4;
+			if ( fMFGreen ) { saturationPercent = 142; contrastPercent = 118; redBias = -8; greenBias = 20; blueBias = -9; }
+			else if ( fMFTerrain ) { saturationPercent = 122; contrastPercent = 115; redBias = 8; greenBias = 10; blueBias = -10; }
+			else if ( fMFWall || fMFRoof ) { saturationPercent = 112; contrastPercent = 119; redBias = 10; greenBias = 4; blueBias = -8; }
+			else if ( fMFDebris ) { saturationPercent = 126; contrastPercent = 118; redBias = 5; greenBias = 10; blueBias = -9; }
 		}
 		else if ( gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_INDUSTRIAL )
 		{
-			saturationPercent = 88; contrastPercent = 121;
-			redBias = 2; greenBias = 1; blueBias = -2;
-			if ( fMFGreen ) { saturationPercent = 104; contrastPercent = 116; redBias = -3; greenBias = 8; blueBias = -5; }
-			else if ( fMFTerrain ) { saturationPercent = 86; contrastPercent = 118; redBias = 4; greenBias = 3; blueBias = -5; }
-			else if ( fMFRoad || fMFFloor ) { saturationPercent = 62; contrastPercent = 125; redBias = -1; greenBias = 0; blueBias = 1; }
-			else if ( fMFWall ) { saturationPercent = 78; contrastPercent = 123; redBias = 4; greenBias = 2; blueBias = -3; }
-			else if ( fMFRoof || fMFMachinery ) { saturationPercent = 82; contrastPercent = 128; redBias = 6; greenBias = 0; blueBias = -6; }
-			else if ( fMFDebris ) { saturationPercent = 92; contrastPercent = 124; redBias = 7; greenBias = 1; blueBias = -7; }
+			// Industrial does not mean monochrome: rusty orange steel, hazard paint,
+			// faded teal machinery and humid green vegetation against graphite floors.
+			saturationPercent = 112; contrastPercent = 123;
+			redBias = 7; greenBias = 3; blueBias = -4;
+			if ( fMFGreen ) { saturationPercent = 128; contrastPercent = 118; redBias = -5; greenBias = 14; blueBias = -7; }
+			else if ( fMFTerrain ) { saturationPercent = 110; contrastPercent = 120; redBias = 11; greenBias = 7; blueBias = -10; }
+			else if ( fMFRoad || fMFFloor ) { saturationPercent = 82; contrastPercent = 126; redBias = 0; greenBias = 3; blueBias = 4; }
+			else if ( fMFWall ) { saturationPercent = 112; contrastPercent = 124; redBias = 11; greenBias = 5; blueBias = -7; }
+			else if ( fMFRoof || fMFMachinery ) { saturationPercent = 126; contrastPercent = 130; redBias = 16; greenBias = 4; blueBias = -13; }
+			else if ( fMFDebris ) { saturationPercent = 126; contrastPercent = 125; redBias = 15; greenBias = 3; blueBias = -13; }
 		}
 		else if ( gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_SETTLEMENT )
 		{
-			saturationPercent = 104; contrastPercent = 116; redBias = 5; greenBias = 2; blueBias = -4;
-			if ( fMFGreen ) { saturationPercent = 114; greenBias = 9; redBias = -3; blueBias = -5; }
-			else if ( fMFWall ) { saturationPercent = 92; contrastPercent = 120; redBias = 7; greenBias = 3; blueBias = -5; }
-			else if ( fMFRoof ) { saturationPercent = 96; contrastPercent = 123; redBias = 8; greenBias = 1; blueBias = -7; }
-			else if ( fMFRoad || fMFFloor ) { saturationPercent = 82; contrastPercent = 117; redBias = 4; greenBias = 3; blueBias = -4; }
+			// Sun-faded but colourful Latin/tropical settlement language: ochre,
+			// terracotta, painted plaster, warm roofs, lush plants and cool shadows.
+			saturationPercent = 122; contrastPercent = 117; redBias = 8; greenBias = 4; blueBias = -6;
+			if ( fMFGreen ) { saturationPercent = 132; greenBias = 15; redBias = -5; blueBias = -7; }
+			else if ( fMFWall ) { saturationPercent = 124; contrastPercent = 121; redBias = 12; greenBias = 6; blueBias = -8; }
+			else if ( fMFRoof ) { saturationPercent = 128; contrastPercent = 124; redBias = 16; greenBias = 3; blueBias = -13; }
+			else if ( fMFRoad || fMFFloor ) { saturationPercent = 98; contrastPercent = 118; redBias = 8; greenBias = 6; blueBias = -7; }
+			else if ( fMFDebris ) { saturationPercent = 120; contrastPercent = 121; redBias = 13; greenBias = 4; blueBias = -10; }
 		}
 		else if ( gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_FARMLAND )
 		{
-			saturationPercent = 112; contrastPercent = 114; redBias = 4; greenBias = 5; blueBias = -5;
-			if ( fMFGreen ) { saturationPercent = 122; greenBias = 12; redBias = -4; blueBias = -6; }
-			else if ( fMFTerrain ) { saturationPercent = 110; contrastPercent = 116; redBias = 9; greenBias = 5; blueBias = -9; }
-			else if ( fMFWall || fMFRoof ) { saturationPercent = 94; contrastPercent = 119; redBias = 6; greenBias = 3; blueBias = -5; }
+			saturationPercent = 128; contrastPercent = 115; redBias = 8; greenBias = 8; blueBias = -8;
+			if ( fMFGreen ) { saturationPercent = 144; greenBias = 20; redBias = -7; blueBias = -10; }
+			else if ( fMFTerrain ) { saturationPercent = 128; contrastPercent = 117; redBias = 17; greenBias = 8; blueBias = -15; }
+			else if ( fMFWall ) { saturationPercent = 116; contrastPercent = 120; redBias = 12; greenBias = 6; blueBias = -9; }
+			else if ( fMFRoof ) { saturationPercent = 122; contrastPercent = 123; redBias = 16; greenBias = 4; blueBias = -13; }
+			else if ( fMFDebris ) { saturationPercent = 126; contrastPercent = 121; redBias = 14; greenBias = 6; blueBias = -12; }
 		}
 		else if ( gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_ROADSIDE )
 		{
-			saturationPercent = 102; contrastPercent = 117; redBias = 4; greenBias = 3; blueBias = -4;
-			if ( fMFRoad ) { saturationPercent = 78; contrastPercent = 122; redBias = 2; greenBias = 1; blueBias = -3; }
-			else if ( fMFGreen ) { saturationPercent = 112; greenBias = 9; redBias = -3; blueBias = -5; }
-			else if ( fMFTerrain ) { saturationPercent = 102; redBias = 7; greenBias = 4; blueBias = -7; }
+			saturationPercent = 118; contrastPercent = 118; redBias = 8; greenBias = 6; blueBias = -7;
+			if ( fMFRoad ) { saturationPercent = 102; contrastPercent = 123; redBias = 8; greenBias = 5; blueBias = -7; }
+			else if ( fMFGreen ) { saturationPercent = 132; greenBias = 16; redBias = -6; blueBias = -8; }
+			else if ( fMFTerrain ) { saturationPercent = 124; redBias = 15; greenBias = 8; blueBias = -13; }
+			else if ( fMFWall || fMFRoof ) { saturationPercent = 120; contrastPercent = 121; redBias = 12; greenBias = 5; blueBias = -9; }
 		}
 		else
 		{
-			saturationPercent = 104; contrastPercent = 116; redBias = 4; greenBias = 3; blueBias = -4;
-			if ( fMFGreen ) { saturationPercent = 112; greenBias = 8; redBias = -2; blueBias = -5; }
-			else if ( fMFTerrain ) { redBias = 6; greenBias = 4; blueBias = -6; }
+			saturationPercent = 118; contrastPercent = 117; redBias = 8; greenBias = 6; blueBias = -7;
+			if ( fMFGreen ) { saturationPercent = 132; greenBias = 15; redBias = -5; blueBias = -8; }
+			else if ( fMFTerrain ) { saturationPercent = 120; redBias = 13; greenBias = 8; blueBias = -12; }
+			else if ( fMFWall || fMFRoof ) { saturationPercent = 116; contrastPercent = 121; redBias = 11; greenBias = 5; blueBias = -9; }
 		}
 	}
 	else if ( ubType >= FIRSTTEXTURE && ubType <= LASTTEXTURE )
@@ -2876,6 +2886,41 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 			else if ( fSMWall || fSMRoof || fSMDebris )
 			{
 				outR += 2; outB -= 2;
+			}
+		}
+		else if ( fMapFactoryProfile )
+		{
+			// Give the palette a photographic warm-light / cool-shadow split.
+			if ( luma < 78 )
+			{
+				const INT32 depth = 78 - luma;
+				outR -= 2 + depth / 28;
+				outG += 1;
+				outB += 4 + depth / 18;
+			}
+			else if ( luma > 170 )
+			{
+				const INT32 light = luma - 170;
+				outR += 4 + light / 18;
+				outG += 3 + light / 24;
+				outB -= 1;
+			}
+
+			if ( fMFGreen )
+			{
+				outR -= 3; outG += 6; outB -= 2;
+			}
+			else if ( fMFTerrain )
+			{
+				outR += 5; outG += 2; outB -= 5;
+			}
+			else if ( fMFRoof || fMFMachinery || fMFDebris )
+			{
+				outR += 5; outG += 1; outB -= 4;
+			}
+			else if ( fMFRoad || fMFFloor )
+			{
+				outB += 2;
 			}
 		}
 		else if ( fA3Profile )
