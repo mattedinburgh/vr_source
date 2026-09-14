@@ -145,6 +145,19 @@ Levels 5-15 = progressive darkening.
 
 Indexed shade level 0 is a special glow palette; true-colour map art treats level 0 as neutral to avoid injecting an unintended glow tint.
 
+## View-range colour softening
+
+True-colour map art now gets a deliberately gentle atmospheric colour treatment based on distance from the currently selected merc.
+
+- close terrain receives only a tiny baseline saturation reduction;
+- colour softens progressively through the middle distance;
+- the strongest treatment is reached beyond the normal viewing range and is capped at about 20% desaturation;
+- luminance is preserved, so the effect does not brighten darkness or replace JA2's existing day/night shade system;
+- the effect is visual only and does not change LOS, spotting, CTH, AI knowledge or weapon range;
+- legacy indexed sprites, mercs, UI and special transparency paths are untouched.
+
+The intent is depth and calmer colour separation rather than a visible fog ring.
+
 ## Colour-depth policy
 
 The source artwork may use full 24-bit RGB / 32-bit RGBA colour.
