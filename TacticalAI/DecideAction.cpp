@@ -10405,6 +10405,16 @@ INT8 DecideUseGrenadeSpecial(SOLDIERTYPE *pSoldier)
 
 		if (BestThrow.ubPossible  && Chance(BestThrow.iAttackValue))
 		{
+			// Final safety net for player-aligned AI: special obstacle-clearing throws
+			// must not bypass civilian protection. Enemy troops intentionally do not
+			// get this veto.
+			INT16 sCivilianSafetyDistance = DAY_VISION_RANGE / 4;
+			if (pSoldier->bTeam != ENEMY_TEAM &&
+				CountNearbyNeutrals(pSoldier, BestThrow.sTarget, sCivilianSafetyDistance) > 0)
+			{
+				return -1;
+			}
+
 			DebugAI(AI_MSG_INFO, pSoldier, String("prepare throw at spot %d level %d aimtime %d", BestThrow.sTarget, BestThrow.bTargetLevel, BestThrow.ubAimTime));
 
 			// if necessary, swap the usItem from holster into the hand position
@@ -10416,8 +10426,7 @@ INT8 DecideUseGrenadeSpecial(SOLDIERTYPE *pSoldier)
 
 			INT16 sTooCloseDistance = DAY_VISION_RANGE / 4;
 			if (PythSpacesAway(pSoldier->sGridNo, BestThrow.sTarget) < sTooCloseDistance ||
-				CountNearbyFriends(pSoldier, BestThrow.sTarget, sTooCloseDistance) > 0 ||
-				CountNearbyNeutrals(pSoldier, BestThrow.sTarget, sTooCloseDistance) > 0)
+				CountNearbyFriends(pSoldier, BestThrow.sTarget, sTooCloseDistance) > 0)
 			{
 				// too close to soldier or any friend, set grenade as delayed
 				if (Explosive[Item[pSoldier->inv[HANDPOS].usItem].ubClassIndex].ubType == EXPLOSV_NORMAL)
