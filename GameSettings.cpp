@@ -48,6 +48,8 @@
 #include "Map Information.h"
 #include "Isometric Utils.h"
 
+#include <stdlib.h>
+
 #include <vfs/Core/vfs.h>
 #include <vfs/Core/vfs_file_raii.h>
 #include <vfs/Core/File/vfs_file.h>
@@ -986,6 +988,17 @@ void LoadGameExternalOptions()
 	if ( gGameExternalOptions.ubVHDRenderScale != 1 && gGameExternalOptions.ubVHDRenderScale != 2 && gGameExternalOptions.ubVHDRenderScale != 4 )
 		gGameExternalOptions.ubVHDRenderScale = 1;
 	gGameExternalOptions.fVHDPreferNativeAssets = iniReader.ReadBoolean("Graphics Settings", "VHD_PREFER_NATIVE_ASSETS", TRUE);
+
+	// CI/test override. Normal gameplay continues to use the INI setting.
+	// Keeping this environment-only avoids modifying an installed gamedir during
+	// automated startup smoke tests on the self-hosted Windows runner.
+	const CHAR8 *pVHDScaleOverride = getenv( "VR_VHD_RENDER_SCALE" );
+	if ( pVHDScaleOverride != NULL && pVHDScaleOverride[0] != '\0' )
+	{
+		const INT32 iOverrideScale = atoi( pVHDScaleOverride );
+		if ( iOverrideScale == 1 || iOverrideScale == 2 || iOverrideScale == 4 )
+			gGameExternalOptions.ubVHDRenderScale = (UINT8)iOverrideScale;
+	}
 	SetVHDRenderScale( gGameExternalOptions.ubVHDRenderScale );
 
 	gGameExternalOptions.giPlayerTurnSpeedUpFactor		= iniReader.ReadFloat("Graphics Settings","PLAYER_TURN_SPEED_UP_FACTOR",1.0, 0, 1.0);
