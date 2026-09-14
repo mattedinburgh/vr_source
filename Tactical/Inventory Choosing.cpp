@@ -216,6 +216,131 @@ void MarkAllWeaponsOfSameGunClassAsDropped( UINT16 usWeapon )
 
 
 
+// VR inventory refinement: keep enemy logistics uneven and locally coherent rather than
+// turning higher difficulty into magically larger inventories. Difficulty still influences
+// equipment quality through CalcDifficultyModifier(); this layer models supply variation.
+static UINT32 EnemyInventorySupplyHash( UINT32 uiValue )
+{
+	uiValue ^= uiValue >> 16;
+	uiValue *= 0x7feb352dU;
+	uiValue ^= uiValue >> 15;
+	uiValue *= 0x846ca68bU;
+	uiValue ^= uiValue >> 16;
+	return uiValue;
+}
+
+static INT8 GetEnemySectorSupplyBias( INT8 bSoldierClass, UINT8 ubCategory )
+{
+	if ( !SOLDIER_CLASS_ENEMY( bSoldierClass ) )
+		return 0;
+
+	// Keep the same broad supply character within a sector and campaign phase.
+	// Different categories use different hashes so a sector can be rich in rifles
+	// but short on armour, grenades or support gear.
+	UINT32 uiSectorX = ( gWorldSectorX > 0 ) ? (UINT32)gWorldSectorX : 0;
+	UINT32 uiSectorY = ( gWorldSectorY > 0 ) ? (UINT32)gWorldSectorY : 0;
+	UINT32 uiProgressBand = (UINT32)( HighestPlayerProgressPercentage() / 20 );
+	UINT32 uiSeed = uiSectorX * 131U + uiSectorY * 977U + (UINT32)ubCategory * 3571U +
+		(UINT32)bSoldierClass * 101U + uiProgressBand * 8191U;
+	UINT8 ubRoll = (UINT8)( EnemyInventorySupplyHash( uiSeed ) % 100U );
+
+	if ( ubRoll < 5 )
+		return -2;	// acute local shortage
+	if ( ubRoll < 25 )
+		return -1;	// ordinary shortage / poor allocation
+	if ( ubRoll >= 94 )
+		return 1;	// locally well supplied
+
+	return 0;
+}
+
+static INT8 ApplyEnemySupplyBiasToClass( INT8 bClass, INT8 bSoldierClass, UINT8 ubCategory )
+{
+	if ( bClass <= 0 || !SOLDIER_CLASS_ENEMY( bSoldierClass ) )
+		return bClass;
+
+	bClass += GetEnemySectorSupplyBias( bSoldierClass, ubCategory );
+	return (INT8)max( MIN_EQUIPMENT_CLASS, min( MAX_EQUIPMENT_CLASS, bClass ) );
+}
+
+static void ApplyEnemyInventoryLogisticsVariability( INT8 bSoldierClass,
+	INT8 &bWeaponClass, INT8 &bHelmetClass, INT8 &bVestClass, INT8 &bLeggingClass,
+	INT8 &bAttachClass, INT8 &bGrenadeClass, INT8 &bKitClass, INT8 &bMiscClass,
+	INT8 &bAmmoClips, INT8 &bGrenades,
+	BOOLEAN fGrenadeLauncher, BOOLEAN fMortar, BOOLEAN fRPG )
+{
+	if ( !SOLDIER_CLASS_ENEMY( bSoldierClass ) )
+		return;
+
+	// Sector supply biases are category-specific. This creates believable local stock
+	// patterns without overriding class/progress/difficulty quality progression.
+	bWeaponClass  = ApplyEnemySupplyBiasToClass( bWeaponClass,  bSoldierClass, 0 );
+	bHelmetClass  = ApplyEnemySupplyBiasToClass( bHelmetClass,  bSoldierClass, 1 );
+	bVestClass    = ApplyEnemySupplyBiasToClass( bVestClass,    bSoldierClass, 1 );
+	bLeggingClass = ApplyEnemySupplyBiasToClass( bLeggingClass, bSoldierClass, 1 );
+	bAttachClass  = ApplyEnemySupplyBiasToClass( bAttachClass,  bSoldierClass, 2 );
+	bKitClass     = ApplyEnemySupplyBiasToClass( bKitClass,     bSoldierClass, 4 );
+	bMiscClass    = ApplyEnemySupplyBiasToClass( bMiscClass,    bSoldierClass, 5 );
+
+	// Do not reinterpret special-ammunition class constants as normal coolness classes.
+	if ( bGrenadeClass != RPG_GRENADE_CLASS && bGrenadeClass != MORTAR_GRENADE_CLASS )
+		bGrenadeClass = ApplyEnemySupplyBiasToClass( bGrenadeClass, bSoldierClass, 3 );
+
+	// Individual issue is imperfect even inside the same formation. Most soldiers stay
+	// near doctrine, but some are short a magazine or grenade and a few are over-issued.
+	if ( bAmmoClips > 2 && Chance( 18 ) )
+		bAmmoClips--;
+	else if ( bAmmoClips > 0 && Chance( 7 ) )
+		bAmmoClips++;
+
+	if ( !fGrenadeLauncher && !fMortar && !fRPG && bGrenades > 0 )
+	{
+		if ( Chance( 18 ) )
+			bGrenades--;
+		else if ( Chance( 5 ) )
+			bGrenades++;
+	}
+}
+
+static void MaybeAddEnemyFirstAid( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass )
+{
+	if ( !pp || !SOLDIER_CLASS_ENEMY( bSoldierClass ) )
+		return;
+
+	if ( Item[FIRSTAIDKIT].ubCoolness == 0 ||
+		!( Item[FIRSTAIDKIT].usItemClass & IC_MEDKIT ) || !Item[FIRSTAIDKIT].firstaidkit )
+		return;
+
+	// Do not hand out duplicate medical gear when XML kit choices already supplied it.
+	for ( UINT32 i = 0; i < pp->Inv.size(); ++i )
+	{
+		if ( pp->Inv[i].exists() && ( Item[pp->Inv[i].usItem].usItemClass & IC_MEDKIT ) )
+			return;
+	}
+
+	UINT8 ubChance = 0;
+	switch ( bSoldierClass )
+	{
+		case SOLDIER_CLASS_ADMINISTRATOR: ubChance = 7;  break;
+		case SOLDIER_CLASS_ARMY:          ubChance = 14; break;
+		case SOLDIER_CLASS_ELITE:         ubChance = 22; break;
+		default: return;
+	}
+
+	// Better-trained soldiers and later formations are somewhat more likely to have
+	// basic first aid, but this is deliberately modest: this is not a perfectly supplied army.
+	ubChance += (UINT8)( HighestPlayerProgressPercentage() / 25 );
+	if ( pp->bMedical > 0 )
+		ubChance += (UINT8)min( 6, pp->bMedical / 15 );
+
+	if ( Chance( ubChance ) )
+	{
+		CreateItems( FIRSTAIDKIT, (INT8)(25 + Random(31)), 1, &gTempObject );
+		gTempObject.fFlags |= OBJECT_UNDROPPABLE;
+		PlaceObjectInSoldierCreateStruct( pp, &gTempObject );
+	}
+}
+
 //Chooses equipment based on the relative equipment level (0-4) with best being 4.  It allocates a range
 //of equipment to choose from.
 //NOTE:  I'm just winging it for the decisions on which items that different groups can have.  Basically,
@@ -523,7 +648,7 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 						{
 							//grenade launcher
 							fGrenadeLauncher = TRUE;
-							bGrenades = 3 + (INT8)(Random(3 + gGameOptions.ubDifficultyLevel)); //3-5
+							bGrenades = 3 + (INT8)(Random(3)); //3-5; difficulty affects gear quality, not ammo quantity
 						}
 						break;
 
@@ -554,7 +679,7 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 							guiMortarsRolledByTeam++;
 
 							// the grenades will actually represent mortar shells in this case
-							bGrenades = 2 + (INT8)(Random(3 + gGameOptions.ubDifficultyLevel)); //2-4
+							bGrenades = 2 + (INT8)(Random(3)); //2-4; difficulty affects gear quality, not ammo quantity
 							bGrenadeClass = MORTAR_GRENADE_CLASS;
 						}
 						break;
@@ -722,7 +847,7 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 					case 2:
 						//grenade launcher
 						fGrenadeLauncher = TRUE;
-						bGrenades = 4 + (INT8)(Random(4 + gGameOptions.ubDifficultyLevel)); //4-7
+						bGrenades = 4 + (INT8)(Random(4)); //4-7; difficulty affects gear quality, not ammo quantity
 						break;
 					case 3:
 					case 4:
@@ -744,7 +869,7 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 							guiMortarsRolledByTeam++;
 
 							// the grenades will actually represent mortar shells in this case
-							bGrenades = 3 + (INT8)(Random(5 + gGameOptions.ubDifficultyLevel)); //3-7
+							bGrenades = 3 + (INT8)(Random(5)); //3-7; difficulty affects gear quality, not ammo quantity
 							bGrenadeClass = MORTAR_GRENADE_CLASS;
 						}
 						break;
@@ -855,6 +980,11 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 			break;
 	}
 
+	ApplyEnemyInventoryLogisticsVariability( bSoldierClass,
+		bWeaponClass, bHelmetClass, bVestClass, bLeggingClass,
+		bAttachClass, bGrenadeClass, bKitClass, bMiscClass,
+		bAmmoClips, bGrenades, fGrenadeLauncher, fMortar, fRPG );
+
 	UINT32 invsize = pp->Inv.size();
 	for( i = 0; i < invsize; ++i )
 	{
@@ -957,6 +1087,7 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 	ChooseMiscGearForSoldierCreateStruct( pp, bMiscClass );
 	ChooseBombsForSoldierCreateStruct( pp, bBombClass );
 	ChooseLocationSpecificGearForSoldierCreateStruct( pp );
+	MaybeAddEnemyFirstAid( pp, bSoldierClass );
 	RandomlyChooseWhichItemsAreDroppable( pp, bSoldierClass );
 
 	// sevenfm: extra items
@@ -968,7 +1099,6 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 		BOOLEAN fTear = FALSE;
 		BOOLEAN fMini = FALSE;
 		BOOLEAN fGrenade = FALSE;
-		BOOLEAN fFirstAid = FALSE;
 		BOOLEAN fCanteen = FALSE;
 		BOOLEAN fAlcohol = FALSE;
 		BOOLEAN fRegen = FALSE;
@@ -977,7 +1107,6 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 		BOOLEAN fShovel = FALSE;
 		UINT16 usItem = NOTHING;
 
-		UINT8 ubDiff = gGameOptions.ubDifficultyLevel;
 		UINT8 ubProgress = HighestPlayerProgressPercentage();
 
 		// mini grenade
@@ -988,21 +1117,19 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 		switch (bSoldierClass)
 		{
 		case SOLDIER_CLASS_ELITE:
-			if (Chance(ubDiff * 25) && Chance(50 + ubProgress / 2))
+			if (Chance(18 + ubProgress / 10))
 				fSmokeGrenade = TRUE;
-			if (NightTime() && Chance(ubDiff * 25) && Chance(50 + ubProgress / 2))
+			if (NightTime() && Chance(15 + ubProgress / 10))
 				fFlare = TRUE;
-			if (Chance(ubDiff * 20) && Chance(50 + ubProgress / 2))
+			if (Chance(12 + ubProgress / 15))
 				fMini = TRUE;
-			if (Chance(ubDiff * 10) && Chance(50 + ubProgress / 2))
+			if (Chance(6 + ubProgress / 25))
 				fGrenade = TRUE;
-			if (Chance(ubDiff * 20) && Chance(50 + ubProgress / 2))
-				fFirstAid = TRUE;
-			if (Chance(ubDiff * 15) && Chance(50 + ubProgress / 2))
+			if (Chance(12 + ubProgress / 20))
 				fWirecutter = TRUE;
 			if (Chance(10) && Chance(50 + ubProgress / 2))
 				fShovel = TRUE;
-			if (Chance(ubDiff * 20) && Chance(50 + ubProgress / 2))
+			if (Chance(18 + ubProgress / 12))
 				fCanteen = TRUE;
 			if (Chance(10) && Chance(50 + ubProgress / 2))
 				fRegen = TRUE;
@@ -1014,21 +1141,19 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 				fAlcohol = TRUE;
 			break;
 		case SOLDIER_CLASS_ARMY:
-			if (Chance(ubDiff * 15) && Chance(50 + ubProgress / 2))
+			if (Chance(8 + ubProgress / 20))
 				fSmokeGrenade = TRUE;
-			if (NightTime() && Chance(ubDiff * 15) && Chance(50 + ubProgress / 2))
+			if (NightTime() && Chance(8 + ubProgress / 20))
 				fFlare = TRUE;
-			if (Chance(ubDiff * 10) && Chance(50 + ubProgress / 2))
+			if (Chance(5 + ubProgress / 25))
 				fMini = TRUE;
-			if (Chance(ubDiff * 5) && Chance(50 + ubProgress / 2))
+			if (Chance(3 + ubProgress / 33))
 				fGrenade = TRUE;
-			if (Chance(ubDiff * 10) && Chance(50 + ubProgress / 2))
-				fFirstAid = TRUE;
-			if (Chance(ubDiff * 10) && Chance(50 + ubProgress / 2))
+			if (Chance(8 + ubProgress / 20))
 				fWirecutter = TRUE;
 			if (Chance(25) && Chance(50 + ubProgress / 2))
 				fShovel = TRUE;
-			if (Chance(ubDiff * 10) && Chance(50 + ubProgress / 2))
+			if (Chance(12 + ubProgress / 15))
 				fCanteen = TRUE;
 			if (Chance(5) && Chance(50 + ubProgress / 2))
 				fRegen = TRUE;
@@ -1040,11 +1165,9 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 				fAlcohol = TRUE;
 			break;
 		case SOLDIER_CLASS_ADMINISTRATOR:
-			if (Chance(ubDiff * 15) && Chance(50 + ubProgress / 2))
+			if (Chance(8 + ubProgress / 20))
 				fTear = TRUE;
-			if (Chance(ubDiff * 5) && Chance(50 + ubProgress / 2))
-				fFirstAid = TRUE;
-			if (Chance(ubDiff * 5) && Chance(50 + ubProgress / 2))
+			if (Chance(6 + ubProgress / 20))
 				fCanteen = TRUE;
 			if (Chance(20))
 				fAlcohol = TRUE;
@@ -1052,7 +1175,6 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 				fAdrenaline = TRUE;
 			break;
 		}
-
 		// mini grenade
 		usItem = GetHandGrenadeOfType(MINI_GRENADE, EXPLOSV_NORMAL);
 		if (fMini && usItem > 0)
@@ -1067,17 +1189,6 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 		if (fGrenade && usItem > 0)
 		{
 			CreateItems(usItem, (INT8)(80 + Random(20)), 1, &gTempObject);
-			gTempObject.fFlags |= OBJECT_UNDROPPABLE;
-			PlaceObjectInSoldierCreateStruct(pp, &gTempObject);
-		}
-
-		// first aid
-		if (fFirstAid &&
-			Item[FIRSTAIDKIT].ubCoolness > 0 &&
-			(Item[FIRSTAIDKIT].usItemClass & IC_MEDKIT) &&
-			Item[FIRSTAIDKIT].firstaidkit)
-		{
-			CreateItems(FIRSTAIDKIT, (INT8)(10 + Random(20)), 1, &gTempObject);
 			gTempObject.fFlags |= OBJECT_UNDROPPABLE;
 			PlaceObjectInSoldierCreateStruct(pp, &gTempObject);
 		}
@@ -3400,6 +3511,7 @@ UINT16 SelectStandardArmyGun( UINT8 uiGunLevel, INT8 bSoldierClass )
 	ARMY_GUN_CHOICE_TYPE *pGunChoiceTable;
 	int uiChoice;
 	int usGunIndex;
+	INT8 bOriginalSoldierClass = bSoldierClass;
 
 	// pick the standard army gun for this weapon class from table
 //	usGunIndex = gStrategicStatus.ubStandardArmyGunIndex[uiGunLevel];
@@ -3430,7 +3542,24 @@ UINT16 SelectStandardArmyGun( UINT8 uiGunLevel, INT8 bSoldierClass )
 
 	while (usGunIndex == -1)
 	{
-		uiChoice = Random(pGunChoiceTable[ uiGunLevel ].ubChoices);
+		UINT8 ubChoices = pGunChoiceTable[ uiGunLevel ].ubChoices;
+		if ( SOLDIER_CLASS_ENEMY( bOriginalSoldierClass ) && ubChoices > 2 && Chance( 72 ) )
+		{
+			// Local depots and procurement create recurring weapon families within a sector.
+			// A preferred 2-3 item window gets most rolls, while the rest remain possible.
+			UINT32 uiSectorX = ( gWorldSectorX > 0 ) ? (UINT32)gWorldSectorX : 0;
+			UINT32 uiSectorY = ( gWorldSectorY > 0 ) ? (UINT32)gWorldSectorY : 0;
+			UINT32 uiProgressBand = (UINT32)( HighestPlayerProgressPercentage() / 20 );
+			UINT32 uiSeed = uiSectorX * 313U + uiSectorY * 1597U + (UINT32)uiGunLevel * 7919U +
+				(UINT32)bOriginalSoldierClass * 101U + uiProgressBand * 65537U;
+			UINT8 ubWindow = ( ubChoices >= 6 ) ? 3 : 2;
+			UINT8 ubAnchor = (UINT8)( EnemyInventorySupplyHash( uiSeed ) % ubChoices );
+			uiChoice = ( ubAnchor + Random( ubWindow ) ) % ubChoices;
+		}
+		else
+		{
+			uiChoice = Random( ubChoices );
+		}
 		usGunIndex = pGunChoiceTable[ uiGunLevel ].bItemNo[ uiChoice ];
 
 		if (!ItemIsLegal(usGunIndex)) //Madd: check for tons of guns
