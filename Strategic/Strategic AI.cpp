@@ -3266,15 +3266,16 @@ void EvaluateQueenSituation()
 	INT32 iApplicableRequestPoints = 0;
 	INT32 iApplicableGarrisons = 0;
 	INT32 iApplicableGarrisonIds[ MAX_GARRISON_GROUPS ];
+	UINT16 usApplicableGarrisonDefencePoints[ MAX_GARRISON_GROUPS ];
 	INT32 iApplicablePatrols = 0;
 	INT32 iApplicablePatrolIds[ MAX_PATROL_GROUPS ];
 
+	VR_CampaignBeginDecision( "periodic queen strategic evaluation" );
+	VR_CampaignRecord( "STATE", "army", -1, -1, -1, -1, giReinforcementPool, giRequestPoints,
+		"starting strategic poll: snapshot of reserve pool, demand, supply, player progress and queen priority phase" );
+
 	ValidateWeights( 26 );
 
-	// figure out how long it shall be before we call this again
-
-	// The more work to do there is (request points the queen's army is asking for), the more often she will make decisions
-	// This can increase the decision intervals by up to 500 extra minutes (> 8 hrs)
 	uiOffset = max( 100 - giRequestPoints, 0);
 	uiOffset = uiOffset + Random( uiOffset * 4 );
 	switch( gGameOptions.ubDifficultyLevel )
@@ -3292,115 +3293,187 @@ void EvaluateQueenSituation()
 			uiOffset += gGameExternalOptions.ubInsaneTimeEvaluateInMinutes + Random( gGameExternalOptions.ubInsaneTimeEvaluateVariance );
 			break;
 	}
+	VR_CampaignRecord( "SCHEDULE", "queen", -1, -1, -1, -1, uiOffset, giRequestPoints,
+		"next strategic think interval chosen from difficulty plus unmet-request pressure and randomness" );
 
-	// sevenfm: allow recruiting when pool size drops below QUEEN_POOL_INCREMENT_PER_DIFFICULTY_LEVEL, this should result in more stable strategic AI behavior
 	if (giReinforcementPool <= 0 || !gfUnlimitedTroops && giReinforcementPool < gGameExternalOptions.guiBaseQueenPoolIncrement)
 	{
-		//Queen has run out of reinforcements. Simulate recruiting and training new troops.
+		INT32 iRecruitment = (gGameExternalOptions.guiBaseQueenPoolIncrement * gGameOptions.ubDifficultyLevel) *
+			(100 + CurrentPlayerProgressPercentage()) / 100;
 		uiOffset *= 10;
-		giReinforcementPool += (gGameExternalOptions.guiBaseQueenPoolIncrement * gGameOptions.ubDifficultyLevel) * (100 + CurrentPlayerProgressPercentage()) / 100;
+		giReinforcementPool += iRecruitment;
+		VR_CampaignRecord( "STRATEGY", "recruitment", -1, -1, -1, -1, iRecruitment, uiOffset,
+			"reserve pool is critically low; recruit/train replacements and delay the next strategic allocation cycle" );
 		AddStrategicEvent(EVENT_EVALUATE_QUEEN_SITUATION, GetWorldTotalMin() + uiOffset, 0);
+		VR_CampaignEndDecision( "recruitment/training consumed this strategic cycle" );
 		return;
 	}
 
-	//Re-post the event
 	AddStrategicEvent( EVENT_EVALUATE_QUEEN_SITUATION, GetWorldTotalMin() + uiOffset, 0 );
 
-	// if the queen hasn't been alerted to player's presence yet
 	if( !gfQueenAIAwake )
-	{ //no decisions can be made yet.
+	{
+		VR_CampaignRecord( "NO_ACTION", "queen", -1, -1, -1, -1, 0, 0,
+			"queen AI has not been alerted to the player yet" );
+		VR_CampaignEndDecision( "queen asleep" );
 		return;
 	}
 
-	// Adjust queen's disposition based on player's progress
 	EvolveQueenPriorityPhase( FALSE );
-
-	// Gradually promote any remaining admins into troops
 	UpgradeAdminsToTroops();
 
 	if( ( giRequestPoints <= 0 ) || ( ( giReinforcementPoints <= 0 ) && ( giReinforcementPool <= 0 ) ) )
-	{ //we either have no reinforcements or request for reinforcements.
+	{
+		VR_CampaignRecord( "NO_ACTION", "army", -1, -1, -1, -1, giRequestPoints, giReinforcementPoints,
+			"no strategic demand exists, or no reinforcement source exists to satisfy demand" );
+		VR_CampaignEndDecision( "nothing allocatable this cycle" );
 		return;
 	}
 
-	// anv: only consider garrisons and patrols that can be reinforced
-	// otherwise unreinforcable groups will stall the rest, effectively breaking entire system
-
-	Ensure_RepairedGarrisonGroup( &gGarrisonGroup, &giGarrisonArraySize );	/* added NULL fix, 2007-03-03, Sgt. Kolja */
+	Ensure_RepairedGarrisonGroup( &gGarrisonGroup, &giGarrisonArraySize );
 
 	for( i = 0; i < giGarrisonArraySize; i++ )
 	{
+		BOOLEAN fPermitted = FALSE;
+		BOOLEAN fMinimum = FALSE;
+		BOOLEAN fApproved = FALSE;
+		CHAR8 zReason[192];
+		UINT16 usThisDefencePoints = 0;
+
 		RecalculateGarrisonWeight( i );
 		iWeight = gGarrisonGroup[ i ].bWeight;
-		if( iWeight > 0 )
+
+		if( iWeight <= 0 )
+			sprintf( zReason, "rejected: weight %d means this garrison is not requesting troops", iWeight );
+		else if( gGarrisonGroup[ i ].ubPendingGroupID )
+			sprintf( zReason, "rejected: reinforcement group %d is already pending", gGarrisonGroup[ i ].ubPendingGroupID );
+		else
 		{
-			if( !gGarrisonGroup[ i ].ubPendingGroupID &&
-					EnemyPermittedToAttackSector( NULL, gGarrisonGroup[ i ].ubSectorID ) &&
-					GarrisonRequestingMinimumReinforcements( i ) )
+			fPermitted = EnemyPermittedToAttackSector( NULL, gGarrisonGroup[ i ].ubSectorID );
+			if( !fPermitted )
+				sprintf( zReason, "rejected: strategic rules do not permit movement into this sector" );
+			else
 			{
-				if( ReinforcementsApproved( i, &usDefencePoints ) )
+				fMinimum = GarrisonRequestingMinimumReinforcements( i );
+				if( !fMinimum )
+					sprintf( zReason, "rejected: request is below the minimum useful reinforcement size" );
+				else
 				{
-					iApplicableGarrisonIds[iApplicableGarrisons] = i;
-					iApplicableGarrisons++;
-					iApplicableRequestPoints += gGarrisonGroup[ i ].bWeight;
+					fApproved = ReinforcementsApproved( i, &usDefencePoints );
+					usThisDefencePoints = usDefencePoints;
+					if( fApproved )
+						sprintf( zReason, "eligible: positive need, movement permitted, useful size met, strength test approved" );
+					else
+						sprintf( zReason, "rejected: estimated player/militia defence is too strong" );
 				}
 			}
 		}
+
+		VR_CampaignRecord( fApproved ? "CANDIDATE" : "REJECTED", "garrison", i,
+			gGarrisonGroup[ i ].ubPendingGroupID, gGarrisonGroup[ i ].ubSectorID, gGarrisonGroup[ i ].ubSectorID,
+			iWeight, usThisDefencePoints, zReason );
+
+		if( fApproved )
+		{
+			iApplicableGarrisonIds[iApplicableGarrisons] = i;
+			usApplicableGarrisonDefencePoints[iApplicableGarrisons] = usThisDefencePoints;
+			iApplicableGarrisons++;
+			iApplicableRequestPoints += gGarrisonGroup[ i ].bWeight;
+		}
 	}
+
 	for( i = 0; i < giPatrolArraySize; i++ )
 	{
+		BOOLEAN fEligible = FALSE;
+		CHAR8 zReason[192];
+		GROUP *pExistingPatrol = NULL;
+		INT32 iCurrentSize = 0;
+
 		RecalculatePatrolWeight( i );
 		iWeight = gPatrolGroup[ i ].bWeight;
-		if( iWeight > 0 )
+		if( gPatrolGroup[ i ].ubGroupID )
+			pExistingPatrol = GetGroup( gPatrolGroup[ i ].ubGroupID );
+		if( pExistingPatrol )
+			iCurrentSize = pExistingPatrol->ubGroupSize;
+
+		if( iWeight <= 0 )
+			sprintf( zReason, "rejected: patrol weight %d means no positive reinforcement need", iWeight );
+		else if( gPatrolGroup[ i ].ubPendingGroupID )
+			sprintf( zReason, "rejected: reinforcement group %d is already pending", gPatrolGroup[ i ].ubPendingGroupID );
+		else if( !PatrolRequestingMinimumReinforcements( i ) )
+			sprintf( zReason, "rejected: patrol shortage is below the minimum useful reinforcement size" );
+		else
 		{
-			if( !gPatrolGroup[ i ].ubPendingGroupID && PatrolRequestingMinimumReinforcements( i ) )
-			{
-				iApplicablePatrolIds[iApplicablePatrols] = i;
-				iApplicablePatrols++;
-				iApplicableRequestPoints += gPatrolGroup[ i ].bWeight;
-			}
+			fEligible = TRUE;
+			sprintf( zReason, "eligible: positive shortage, no pending reinforcement, minimum useful size met" );
+		}
+
+		VR_CampaignRecord( fEligible ? "CANDIDATE" : "REJECTED", "patrol", i,
+			gPatrolGroup[ i ].ubGroupID, gPatrolGroup[ i ].ubSectorID[1], gPatrolGroup[ i ].ubSectorID[1],
+			iWeight, iCurrentSize, zReason );
+
+		if( fEligible )
+		{
+			iApplicablePatrolIds[iApplicablePatrols] = i;
+			iApplicablePatrols++;
+			iApplicableRequestPoints += gPatrolGroup[ i ].bWeight;
 		}
 	}
 
 	if( !iApplicableRequestPoints )
 	{
+		VR_CampaignRecord( "NO_ACTION", "allocation", -1, -1, -1, -1, 0, 0,
+			"requests exist globally, but every concrete garrison/patrol candidate was filtered out" );
+		VR_CampaignEndDecision( "no eligible reinforcement destination" );
 		return;
 	}
 
-	//now randomly choose who gets the reinforcements.
-	// giRequestPoints is the combined sum of all the individual weights of all garrisons and patrols requesting reinforcements
-	//iRandom = Random( giRequestPoints );
 	iRandom = Random( iApplicableRequestPoints );
+	VR_CampaignRecord( "WEIGHTED_ROLL", "allocation", -1, -1, -1, -1, iRandom, iApplicableRequestPoints,
+		"roulette-wheel selection across eligible garrison and patrol weights" );
 
-	iOrigRequestPoints = giRequestPoints;	// debug only!
+	iOrigRequestPoints = giRequestPoints;
 
-	//go through garrisons first
 	for( i = 0; i < iApplicableGarrisons; i++ )
 	{
-		iSumOfAllWeights += iWeight;	// debug only!
+		iSumOfAllWeights += iWeight;
 		iWeight = gGarrisonGroup[ iApplicableGarrisonIds[i] ].bWeight;
 		if( iRandom < iWeight )
-		{ //This is the group that gets the reinforcements!
-			SendReinforcementsForGarrison( iApplicableGarrisonIds[i] , usDefencePoints, NULL );
+		{
+			CHAR8 zReason[192];
+			sprintf( zReason, "selected by weighted roll; candidate defence=%u, legacy defence argument=%u",
+				usApplicableGarrisonDefencePoints[i], usDefencePoints );
+			VR_CampaignRecord( "CHOICE", "garrison", iApplicableGarrisonIds[i],
+				gGarrisonGroup[ iApplicableGarrisonIds[i] ].ubPendingGroupID,
+				-1, gGarrisonGroup[ iApplicableGarrisonIds[i] ].ubSectorID, iWeight, iRandom, zReason );
+			SendReinforcementsForGarrison( iApplicableGarrisonIds[i] , usApplicableGarrisonDefencePoints[i], NULL );
+			VR_CampaignEndDecision( "garrison reinforcement allocation selected" );
 			return;
 		}
 		iRandom -= iWeight;
 	}
 
-	//go through the patrol groups
 	for( i = 0; i < iApplicablePatrols; i++ )
 	{
-		iSumOfAllWeights += iWeight;	// debug only!
+		iSumOfAllWeights += iWeight;
 		iWeight = gPatrolGroup[ iApplicablePatrolIds[i] ].bWeight;
 		if( iRandom < iWeight )
-		{ //This is the group that gets the reinforcements!
+		{
+			VR_CampaignRecord( "CHOICE", "patrol", iApplicablePatrolIds[i],
+				gPatrolGroup[ iApplicablePatrolIds[i] ].ubGroupID,
+				-1, gPatrolGroup[ iApplicablePatrolIds[i] ].ubSectorID[1], iWeight, iRandom,
+				"selected by weighted roll for patrol reinforcement" );
 			SendReinforcementsForPatrol( iApplicablePatrolIds[i], NULL );
+			VR_CampaignEndDecision( "patrol reinforcement allocation selected" );
 			return;
 		}
 		iRandom -= iWeight;
 	}
 
 	ValidateWeights( 27 );
+	VR_CampaignRecord( "DIAGNOSTIC_ERROR", "allocation", -1, -1, -1, -1, iRandom, iApplicableRequestPoints,
+		"weighted selection exhausted all candidates without choosing one; investigate weight/accounting inconsistency" );
+	VR_CampaignEndDecision( "selection accounting failure" );
 }
 
 
