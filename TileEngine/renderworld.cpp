@@ -37,6 +37,7 @@
 	#include "vobject.h"
 	#include "render fun.h"
 	#include "los.h"
+	#include "opplist.h"
 	#include "interactive tiles.h"
 	#include "rotting corpses.h"
 	#include "tile cache.h"
