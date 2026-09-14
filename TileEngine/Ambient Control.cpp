@@ -17,33 +17,195 @@
 
 #include "Campaign Types.h"
 #include "strategicmap.h"
+#include "worlddef.h"
+#include "INIReader.h"
 
 AMBIENTDATA_STRUCT		gAmbData[ MAX_AMBIENT_SOUNDS ];
 INT16									gsNumAmbData = 0;
 
 /*
- * Vengeance sector ambience
- * --------------------------
- * The original JA2 ambience system is preserved: tileset .bad files still
- * provide the baseline insects/wind/water/etc.  Vengeance adds a thin layer
- * of low-volume, infrequent map-specific one-shots and short beds here.
+ * Vengeance sector-aware ambience
+ * --------------------------------
+ * Legacy JA2 attaches random ambience to a tileset AmbientID.  Vengeance
+ * currently uses the same AmbientID for its custom tilesets, so a tileset-only
+ * system cannot distinguish San Mona from a farm, airport, oil rig, mine, etc.
  *
- * Classification is deliberately sector-ID based instead of sector-name
- * based so translated/renamed SectorNames.xml text cannot alter sound design.
+ * SectorAmbience.ini supplies a data-driven profile selected by exact sector
+ * override first, then by tileset, with an underground default.  Each profile
+ * can provide a low continuous day/night bed plus sparse one-shots.  If the
+ * file is absent or disabled, the original .bad ambience path remains intact.
  */
-enum VENGEANCE_AMBIENCE_FLAGS
-{
-	VR_AMBIENCE_NONE       = 0x00,
-	VR_AMBIENCE_NATURE     = 0x01,
-	VR_AMBIENCE_FARM       = 0x02,
-	VR_AMBIENCE_URBAN      = 0x04,
-	VR_AMBIENCE_NIGHTLIFE  = 0x08,
-	VR_AMBIENCE_INDUSTRIAL = 0x10,
-	VR_AMBIENCE_AVIATION   = 0x20,
-	VR_AMBIENCE_COAST      = 0x40
-};
+static UINT32 guiVRSectorAmbienceLoopHandle = NO_SAMPLE;
+static BOOLEAN gfVRSectorAmbienceProfileActive = FALSE;
+static BOOLEAN gfVRSectorAmbienceLoopNight = FALSE;
+static CHAR8 gzVRSectorAmbienceProfile[ 64 ] = "";
 
-static BOOLEAN VRAmbienceFarmSector( UINT8 ubSector )
+static void StopVRSectorAmbienceLoop( )
+{
+	if ( guiVRSectorAmbienceLoopHandle != NO_SAMPLE )
+	{
+		SoundStop( guiVRSectorAmbienceLoopHandle );
+		guiVRSectorAmbienceLoopHandle = NO_SAMPLE;
+	}
+}
+
+static BOOLEAN StartVRSectorAmbienceLoop( CIniReader &ini, const CHAR8 *szSection, BOOLEAN fNight )
+{
+	CHAR8 szLoop[ 260 ];
+	const CHAR8 *szLoopKey = fNight ? "NIGHT_LOOP" : "DAY_LOOP";
+	SOUNDPARMS spParms;
+	UINT32 uiVolume;
+
+	ini.ReadString( szSection, szLoopKey, "", szLoop, sizeof( szLoop ) );
+	if ( szLoop[ 0 ] == 0 )
+		return FALSE;
+
+	uiVolume = (UINT32)ini.ReadInteger( szSection, "LOOP_VOLUME", 20, 0, 127 );
+
+	memset( &spParms, 0xff, sizeof( SOUNDPARMS ) );
+	spParms.uiVolume = CalculateSoundEffectsVolume( uiVolume );
+	spParms.uiLoop = 0;
+	spParms.uiPriority = GROUP_AMBIENT;
+
+	StopVRSectorAmbienceLoop( );
+	guiVRSectorAmbienceLoopHandle = SoundPlay( szLoop, &spParms );
+	gfVRSectorAmbienceLoopNight = fNight;
+
+	return ( guiVRSectorAmbienceLoopHandle != NO_SAMPLE );
+}
+
+static void RefreshVRSectorAmbienceLoopForTimeOfDay( )
+{
+	CIniReader ini( "SectorAmbience.ini" );
+	CHAR8 szSection[ 96 ];
+	BOOLEAN fNight;
+
+	if ( !gfVRSectorAmbienceProfileActive || !ini.Is_CIniReader_File_Found() || gzVRSectorAmbienceProfile[ 0 ] == 0 )
+		return;
+
+	fNight = ( gubEnvLightValue >= LIGHT_DUSK_CUTOFF );
+	if ( guiVRSectorAmbienceLoopHandle != NO_SAMPLE && fNight == gfVRSectorAmbienceLoopNight )
+		return;
+
+	sprintf( szSection, "PROFILE_%s", gzVRSectorAmbienceProfile );
+	StartVRSectorAmbienceLoop( ini, szSection, fNight );
+}
+
+static void AddVRSectorAmbientEntries( CIniReader &ini, const CHAR8 *szSection, const CHAR8 *szPrefix, UINT8 ubTimeCategory )
+{
+	CHAR8 szKey[ 32 ];
+	CHAR8 szSound[ 260 ];
+	CHAR8 szMinKey[ 32 ];
+	CHAR8 szMaxKey[ 32 ];
+	CHAR8 szVolumeKey[ 32 ];
+	UINT32 uiMinTime;
+	UINT32 uiMaxTime;
+	UINT32 uiVolume;
+	INT32 i;
+
+	sprintf( szMinKey, "%s_MIN_MS", szPrefix );
+	sprintf( szMaxKey, "%s_MAX_MS", szPrefix );
+	sprintf( szVolumeKey, "%s_VOLUME", szPrefix );
+
+	uiMinTime = (UINT32)ini.ReadInteger( szSection, szMinKey, 15000, 250, 600000 );
+	uiMaxTime = (UINT32)ini.ReadInteger( szSection, szMaxKey, 45000, 250, 600000 );
+	uiVolume = (UINT32)ini.ReadInteger( szSection, szVolumeKey, 25, 0, 127 );
+
+	if ( uiMaxTime < uiMinTime )
+	{
+		UINT32 uiSwap = uiMinTime;
+		uiMinTime = uiMaxTime;
+		uiMaxTime = uiSwap;
+	}
+
+	for ( i = 1; i <= 8 && gsNumAmbData < MAX_AMBIENT_SOUNDS; ++i )
+	{
+		sprintf( szKey, "%s_SOUND_%d", szPrefix, i );
+		ini.ReadString( szSection, szKey, "", szSound, sizeof( szSound ) );
+		if ( szSound[ 0 ] == 0 )
+			continue;
+
+		AMBIENTDATA_STRUCT *pData = &gAmbData[ gsNumAmbData++ ];
+		memset( pData, 0, sizeof( AMBIENTDATA_STRUCT ) );
+		pData->uiMinTime = uiMinTime;
+		pData->uiMaxTime = uiMaxTime;
+		pData->ubTimeCatagory = ubTimeCategory;
+		pData->uiVol = uiVolume;
+		strncpy( pData->zFilename, szSound, sizeof( pData->zFilename ) - 1 );
+		pData->zFilename[ sizeof( pData->zFilename ) - 1 ] = 0;
+	}
+}
+
+static BOOLEAN LoadVRSectorAmbienceProfile( )
+{
+	CIniReader ini( "SectorAmbience.ini" );
+	CHAR8 szSectorKey[ 32 ];
+	CHAR8 szTilesetKey[ 16 ];
+	CHAR8 szProfile[ 64 ];
+	CHAR8 szSection[ 96 ];
+	BOOLEAN fNight;
+	BOOLEAN fLoopStarted;
+
+	gfVRSectorAmbienceProfileActive = FALSE;
+	gzVRSectorAmbienceProfile[ 0 ] = 0;
+	gsNumAmbData = 0;
+
+	if ( !ini.Is_CIniReader_File_Found() )
+		return FALSE;
+
+	if ( !ini.ReadBoolean( "SETTINGS", "ENABLED", TRUE, FALSE ) )
+		return FALSE;
+
+	if ( gWorldSectorX <= 0 || gWorldSectorY <= 0 )
+		return FALSE;
+
+	if ( gbWorldSectorZ > 0 )
+		sprintf( szSectorKey, "%c%d_B%d", 'A' + gWorldSectorY - 1, gWorldSectorX, gbWorldSectorZ );
+	else
+		sprintf( szSectorKey, "%c%d", 'A' + gWorldSectorY - 1, gWorldSectorX );
+
+	ini.ReadString( "SECTOR_OVERRIDES", szSectorKey, "", szProfile, sizeof( szProfile ) );
+
+	if ( szProfile[ 0 ] == 0 )
+	{
+		if ( gbWorldSectorZ > 0 )
+		{
+			ini.ReadString( "SETTINGS", "DEFAULT_UNDERGROUND_PROFILE", "UNDERGROUND", szProfile, sizeof( szProfile ) );
+		}
+		else
+		{
+			sprintf( szTilesetKey, "%d", giCurrentTilesetID );
+			ini.ReadString( "TILESET_PROFILES", szTilesetKey, "", szProfile, sizeof( szProfile ) );
+			if ( szProfile[ 0 ] == 0 )
+				ini.ReadString( "SETTINGS", "DEFAULT_PROFILE", "RURAL", szProfile, sizeof( szProfile ) );
+		}
+	}
+
+	if ( szProfile[ 0 ] == 0 )
+		return FALSE;
+
+	sprintf( szSection, "PROFILE_%s", szProfile );
+
+	AddVRSectorAmbientEntries( ini, szSection, "DAY", AMB_TOD_DAY );
+	AddVRSectorAmbientEntries( ini, szSection, "NIGHT", AMB_TOD_NIGHT );
+
+	fNight = ( gubEnvLightValue >= LIGHT_DUSK_CUTOFF );
+	fLoopStarted = StartVRSectorAmbienceLoop( ini, szSection, fNight );
+
+	if ( gsNumAmbData > 0 )
+		BuildDayAmbientSounds( );
+
+	if ( !fLoopStarted && gsNumAmbData == 0 )
+		return FALSE;
+
+	strncpy( gzVRSectorAmbienceProfile, szProfile, sizeof( gzVRSectorAmbienceProfile ) - 1 );
+	gzVRSectorAmbienceProfile[ sizeof( gzVRSectorAmbienceProfile ) - 1 ] = 0;
+	gfVRSectorAmbienceProfileActive = TRUE;
+	return TRUE;
+}
+
+
+UINT8 ubSector )
 {
 	switch( ubSector )
 	{
@@ -473,45 +635,49 @@ void GetAmbientDataPtr( AMBIENTDATA_STRUCT **ppAmbData, UINT16 *pusNumData )
 void StopAmbients( )
 {
 	SoundStopAllRandom( );
+	StopVRSectorAmbienceLoop( );
+	gfVRSectorAmbienceProfileActive = FALSE;
 }
 
 void HandleNewSectorAmbience( UINT8 ubAmbientID )
 {
-	// OK, we could have just loaded a sector, erase all ambient sounds from queue, shutdown all ambient groupings
+	// A newly loaded sector owns a fresh ambience state.
 	SoundStopAllRandom( );
-
+	StopVRSectorAmbienceLoop( );
 	DeleteAllStrategicEventsOfType( EVENT_AMBIENT );
+
+	// The Vengeance profile layer works both above and below ground.  Missing or
+	// disabled configuration falls through to the original JA2 tileset system.
+	if ( LoadVRSectorAmbienceProfile( ) )
+		return;
 
 	if( !gfBasement && !gfCaves )
 	{
-		// Do not make the Vengeance layer depend on a legacy tileset .bad file.
-		// Some custom maps intentionally have no legacy random-ambient definition.
-		gsNumAmbData = 0;
-		const BOOLEAN fLoadedLegacyAmbience = LoadAmbientControlFile( ubAmbientID );
-
-		if( !fLoadedLegacyAmbience )
+		if( LoadAmbientControlFile( ubAmbientID ) )
 		{
-			gsNumAmbData = 0;
-			DebugMsg(TOPIC_JA2, DBG_LEVEL_0, String("Cannot load Ambient data for tileset; using Vengeance sector ambience only" ) );
-		}
-
-		AppendVengeanceSectorAmbience( );
-
-		if( gsNumAmbData > 0 )
 			BuildDayAmbientSounds( );
+		}
+		else
+		{
+			DebugMsg(TOPIC_JA2, DBG_LEVEL_0, String("Cannot load Ambient data for tileset" ) );
+		}
 	}
 }
 
 void DeleteAllAmbients()
 {
-	// JA2Gold: it seems that ambient sounds don't get unloaded when we exit a sector!?
 	SoundStopAllRandom();
+	StopVRSectorAmbienceLoop( );
+	gfVRSectorAmbienceProfileActive = FALSE;
 	DeleteAllStrategicEventsOfType( EVENT_AMBIENT );
 }
 
 UINT32 SetupNewAmbientSound( UINT32 uiAmbientID )
 {
 	RANDOMPARMS rpParms;
+
+	// Existing TOD ambient events also keep the continuous sector bed in sync.
+	RefreshVRSectorAmbienceLoopForTimeOfDay( );
 
 	//SoundLog((CHAR8 *)String("	SetupNewAmbientSound()1:	uiAmbientID: '%d'", uiAmbientID ) );
 
