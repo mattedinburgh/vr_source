@@ -431,6 +431,8 @@ BOOLEAN AIKnownRouteExposureAcceptable(SOLDIERTYPE *pSoldier, INT32 sDestination
 BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier);
 BOOLEAN AIHasUsedTacticalFallback(SOLDIERTYPE *pSoldier);
 void AIRegisterTacticalFallback(SOLDIERTYPE *pSoldier);
+void AIRegisterCoverMoveIntent(SOLDIERTYPE *pSoldier, INT32 sFromGrid, INT32 sToGrid);
+BOOLEAN AIShouldRejectCoverOscillation(SOLDIERTYPE *pSoldier, INT32 sCandidateGrid);
 INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
 INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
 INT32 AILocalStress(SOLDIERTYPE *pSoldier);

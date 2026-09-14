@@ -6789,6 +6789,17 @@ static UINT32 guiAIDisengageStartTurn[MAX_NUM_SOLDIERS] = { 0 };
 static UINT8 gubAITacticalFallbackUsed[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAITacticalFallbackIdentity[MAX_NUM_SOLDIERS] = { 0 };
 
+// Short sector-local memory for cover moves. It prevents low-value A->B->A
+// shuffling while still allowing an emergency reversal to markedly safer cover.
+static INT32 gsAICoverMoveFrom[MAX_NUM_SOLDIERS] = { 0 };
+static INT32 gsAICoverMoveTo[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAICoverMoveTurn[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAICoverMoveIdentity[MAX_NUM_SOLDIERS] = { 0 };
+static INT16 gsAICoverMemorySectorX = -1;
+static INT16 gsAICoverMemorySectorY = -1;
+static INT8 gbAICoverMemorySectorZ = -1;
+static UINT32 guiAICoverMemoryLastTurn = 0;
+
 static UINT8 gubAIRecoveryStreak[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIRecoveryTurnStamp[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAIRecoveryIdentity[MAX_NUM_SOLDIERS] = { 0 };
@@ -6821,6 +6832,11 @@ void AIResetRetreatCoordinationStateForLoad(void)
 	gbAIDisengageSectorZ = -1;
 	guiAIDisengageLastTurnStamp = 0;
 
+	gsAICoverMemorySectorX = -1;
+	gsAICoverMemorySectorY = -1;
+	gbAICoverMemorySectorZ = -1;
+	guiAICoverMemoryLastTurn = 0;
+
 	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
 	{
 		gubAIFireteam[i] = AI_FIRETEAM_NONE;
@@ -6842,6 +6858,10 @@ void AIResetRetreatCoordinationStateForLoad(void)
 
 		gubAITacticalFallbackUsed[i] = 0;
 		guiAITacticalFallbackIdentity[i] = 0;
+		gsAICoverMoveFrom[i] = NOWHERE;
+		gsAICoverMoveTo[i] = NOWHERE;
+		guiAICoverMoveTurn[i] = 0;
+		guiAICoverMoveIdentity[i] = 0;
 
 		gubAIRecoveryStreak[i] = 0;
 		guiAIRecoveryTurnStamp[i] = 0;
@@ -6904,6 +6924,85 @@ void AIRegisterTacticalFallback(SOLDIERTYPE *pSoldier)
 
 	guiAITacticalFallbackIdentity[pSoldier->ubID] = pSoldier->uiUniqueSoldierIdValue;
 	gubAITacticalFallbackUsed[pSoldier->ubID] = 1;
+}
+
+static void AIMaintainCoverMoveMemory(void)
+{
+	UINT32 uiTurnStamp = guiTurnCnt + 1;
+	BOOLEAN fSectorChanged =
+		gsAICoverMemorySectorX != gWorldSectorX ||
+		gsAICoverMemorySectorY != gWorldSectorY ||
+		gbAICoverMemorySectorZ != gbWorldSectorZ;
+	BOOLEAN fRollback = guiAICoverMemoryLastTurn != 0 &&
+		uiTurnStamp < guiAICoverMemoryLastTurn;
+
+	if (fSectorChanged || fRollback)
+	{
+		for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
+		{
+			gsAICoverMoveFrom[i] = NOWHERE;
+			gsAICoverMoveTo[i] = NOWHERE;
+			guiAICoverMoveTurn[i] = 0;
+			guiAICoverMoveIdentity[i] = 0;
+		}
+	}
+
+	gsAICoverMemorySectorX = gWorldSectorX;
+	gsAICoverMemorySectorY = gWorldSectorY;
+	gbAICoverMemorySectorZ = gbWorldSectorZ;
+	guiAICoverMemoryLastTurn = uiTurnStamp;
+}
+
+void AIRegisterCoverMoveIntent(SOLDIERTYPE *pSoldier, INT32 sFromGrid, INT32 sToGrid)
+{
+	AIMaintainCoverMoveMemory();
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS ||
+		TileIsOutOfBounds(sFromGrid) || TileIsOutOfBounds(sToGrid) ||
+		sFromGrid == sToGrid)
+		return;
+
+	UINT8 ubID = pSoldier->ubID;
+	gsAICoverMoveFrom[ubID] = sFromGrid;
+	gsAICoverMoveTo[ubID] = sToGrid;
+	guiAICoverMoveTurn[ubID] = guiTurnCnt + 1;
+	guiAICoverMoveIdentity[ubID] = pSoldier->uiUniqueSoldierIdValue;
+}
+
+BOOLEAN AIShouldRejectCoverOscillation(SOLDIERTYPE *pSoldier, INT32 sCandidateGrid)
+{
+	AIMaintainCoverMoveMemory();
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS ||
+		TileIsOutOfBounds(sCandidateGrid))
+		return FALSE;
+
+	UINT8 ubID = pSoldier->ubID;
+	if (guiAICoverMoveIdentity[ubID] != pSoldier->uiUniqueSoldierIdValue ||
+		guiAICoverMoveTurn[ubID] == 0)
+		return FALSE;
+
+	UINT32 uiNow = guiTurnCnt + 1;
+	UINT32 uiAge = uiNow >= guiAICoverMoveTurn[ubID] ?
+		uiNow - guiAICoverMoveTurn[ubID] : 99;
+	if (uiAge > 2 ||
+		pSoldier->sGridNo != gsAICoverMoveTo[ubID] ||
+		sCandidateGrid != gsAICoverMoveFrom[ubID])
+		return FALSE;
+
+	if (pSoldier->aiData.bUnderFire && ShockLevelPercent(pSoldier) >= 60)
+		return FALSE;
+
+	UINT16 usCurrentExposure = AIKnownThreatExposure(
+		pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+	UINT16 usCandidateExposure = AIKnownThreatExposure(
+		pSoldier, sCandidateGrid, pSoldier->pathing.bLevel);
+	if (usCandidateExposure + 50 < usCurrentExposure)
+		return FALSE;
+
+	if (!AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) &&
+		AnyCoverAtSpot(pSoldier, sCandidateGrid))
+		return FALSE;
+
+	return TRUE;
 }
 
 BOOLEAN AIDisengagementActive(SOLDIERTYPE *pSoldier)

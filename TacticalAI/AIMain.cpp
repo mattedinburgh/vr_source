@@ -1265,6 +1265,57 @@ void FreeUpNPCFromRoofClimb(SOLDIERTYPE *pSoldier )
 
 
 
+static void VRRecordSelectedAIAction(SOLDIERTYPE *pSoldier)
+{
+	VRAnalyticsTacticalDecisionSelected(
+		pSoldier->ubID, pSoldier->bTeam, pSoldier->bSide,
+		pSoldier->aiData.bNeutral ? true : false,
+		pSoldier->ubProfile, pSoldier->ubSoldierClass,
+		pSoldier->aiData.bAction, pSoldier->aiData.usActionData,
+		pSoldier->sGridNo, pSoldier->bActionPoints,
+		pSoldier->stats.bLife, pSoldier->bBreath,
+		pSoldier->aiData.bAlertStatus, pSoldier->aiData.bAIMorale,
+		pSoldier->aiData.bOrders, pSoldier->aiData.bAttitude );
+}
+
+static BOOLEAN VRRejectRedundantSelectedAIAction(SOLDIERTYPE *pSoldier)
+{
+	const char* pReason = NULL;
+	INT8 bRejectedAction = pSoldier->aiData.bAction;
+
+	if (bRejectedAction == AI_ACTION_CHANGE_FACING &&
+		pSoldier->aiData.usActionData == pSoldier->ubDirection)
+		pReason = "redundant_change_facing_already_aligned";
+	else if (bRejectedAction == AI_ACTION_RAISE_GUN && WeaponReady(pSoldier))
+		pReason = "redundant_raise_gun_weapon_already_ready";
+	else if (bRejectedAction == AI_ACTION_TAKE_COVER &&
+		AIShouldRejectCoverOscillation(pSoldier, pSoldier->aiData.usActionData))
+		pReason = "cover_ping_pong_hysteresis";
+
+	if (!pReason)
+		return FALSE;
+
+	VRRecordSelectedAIAction(pSoldier);
+	VRAnalyticsTacticalActionRejected(
+		pSoldier->ubID, bRejectedAction, pSoldier->aiData.usActionData, pReason );
+	pSoldier->aiData.bLastAction = bRejectedAction;
+
+	if (pSoldier->aiData.bNextAction != AI_ACTION_NONE &&
+		pSoldier->aiData.bNextAction != bRejectedAction)
+	{
+		pSoldier->aiData.bAction = pSoldier->aiData.bNextAction;
+		pSoldier->aiData.usActionData = pSoldier->aiData.usNextActionData;
+		pSoldier->aiData.bNextAction = AI_ACTION_NONE;
+		pSoldier->aiData.usNextActionData = 0;
+	}
+	else
+	{
+		pSoldier->aiData.bAction = AI_ACTION_NONE;
+		pSoldier->aiData.usActionData = NOWHERE;
+	}
+	return TRUE;
+}
+
 void ActionDone(SOLDIERTYPE *pSoldier)
 {
 	DebugAI(AI_MSG_INFO, pSoldier, String("ActionDone: bAction %d usActionData %d", pSoldier->aiData.bAction, pSoldier->aiData.usActionData));
@@ -1670,24 +1721,27 @@ void TurnBasedHandleNPCAI(SOLDIERTYPE *pSoldier)
 			NPCDoesNothing(pSoldier);  // sets pSoldier->moved to TRUE
 			return;
 		}
+		for (UINT8 ubVRSetupGuard = 0;
+			ubVRSetupGuard < 3 && pSoldier->aiData.bAction != AI_ACTION_NONE;
+			++ubVRSetupGuard)
+		{
+			if (!VRRejectRedundantSelectedAIAction(pSoldier))
+				break;
+		}
+		if (pSoldier->aiData.bAction == AI_ACTION_NONE)
+		{
+			NPCDoesNothing(pSoldier);
+			return;
+		}
+
 		// to get here, we MUST have an action selected, but not in progress...
-		VRAnalyticsTacticalDecisionSelected(
-			pSoldier->ubID,
-			pSoldier->bTeam,
-			pSoldier->aiData.bAction,
-			pSoldier->aiData.usActionData,
-			pSoldier->sGridNo,
-			pSoldier->bActionPoints,
-			pSoldier->stats.bLife,
-			pSoldier->bBreath,
-			pSoldier->aiData.bAlertStatus,
-			pSoldier->aiData.bAIMorale,
-			pSoldier->aiData.bOrders,
-			pSoldier->aiData.bAttitude );
+		VRRecordSelectedAIAction(pSoldier);
 
 		// see if we can afford to do this action
 		if (IsActionAffordable(pSoldier))
 		{
+			if (pSoldier->aiData.bAction == AI_ACTION_TAKE_COVER)
+				AIRegisterCoverMoveIntent(pSoldier, pSoldier->sGridNo, pSoldier->aiData.usActionData);
 			NPCDoesAct(pSoldier);
 
 			// perform the chosen action
