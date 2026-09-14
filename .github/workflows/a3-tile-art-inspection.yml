@@ -3,7 +3,7 @@ name: A3 tile art inspection
 on:
   push:
     branches:
-      - install/all-2026-09-12
+      - a3/hand-authored-v2
     paths:
       - '.github/workflows/a3-tile-art-inspection.yml'
   workflow_dispatch:
