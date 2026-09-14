@@ -771,6 +771,49 @@ static BOOLEAN MapFactoryLoadPilotMap( const STR8 pMapName )
 	return TRUE;
 }
 
+
+static BOOLEAN MapFactoryStageRemasteredMap( const STR8 pMapName )
+{
+	if ( pMapName == NULL || pMapName[0] == 0 )
+		return FALSE;
+
+	CHAR8 zExePath[MAX_PATH];
+	DWORD dwLen = GetModuleFileNameA( NULL, zExePath, MAX_PATH );
+	if ( dwLen == 0 || dwLen >= MAX_PATH )
+		return FALSE;
+	CHAR8 *pSlash = strrchr( zExePath, '\\' );
+	if ( pSlash == NULL )
+		return FALSE;
+	*pSlash = 0;
+
+	CHAR8 zSource[MAX_PATH + 320];
+	_snprintf( zSource, sizeof(zSource) - 1,
+		"%s\\Profiles\\UserProfile_Vengeance\\MAPS\\%s", zExePath, pMapName );
+	zSource[sizeof(zSource) - 1] = 0;
+
+	const CHAR8 *pStageRoot = getenv( "JA2_MAP_FACTORY_OUTPUT" );
+	CHAR8 zFallback[MAX_PATH];
+	if ( pStageRoot == NULL || pStageRoot[0] == 0 )
+	{
+		strncpy( zFallback, "C:\\VENGENCE\\Jagged Alliance 2\\MapFactoryOutput", sizeof(zFallback) - 1 );
+		zFallback[sizeof(zFallback) - 1] = 0;
+		pStageRoot = zFallback;
+	}
+
+	CreateDirectoryA( pStageRoot, NULL );
+	CHAR8 zDestination[MAX_PATH + 320];
+	_snprintf( zDestination, sizeof(zDestination) - 1, "%s\\%s", pStageRoot, pMapName );
+	zDestination[sizeof(zDestination) - 1] = 0;
+
+	const BOOLEAN fCopied = CopyFileA( zSource, zDestination, FALSE ) ? TRUE : FALSE;
+	CHAR8 zStatus[480];
+	_snprintf( zStatus, sizeof(zStatus) - 1, "STAGE_%s map=%s destination=%s",
+		fCopied ? "OK" : "FAIL", pMapName, zDestination );
+	zStatus[sizeof(zStatus) - 1] = 0;
+	MapPreviewWriteStatus( zStatus );
+	return fCopied;
+}
+
 static void MapFactoryRunPilotSector( const STR8 pMapName, UINT8 ubArchetype )
 {
 	if ( pMapName == NULL )
@@ -801,6 +844,8 @@ static void MapFactoryRunPilotSector( const STR8 pMapName, UINT8 ubArchetype )
 	_snprintf( zRemastered, sizeof(zRemastered) - 1, "%s_REMASTERED.dat", zBase );
 	zRemastered[sizeof(zRemastered) - 1] = 0;
 	const BOOLEAN fSaved = ( uiPieces > 0 ) ? SaveWorld( zRemastered ) : FALSE;
+	if ( fSaved )
+		MapFactoryStageRemasteredMap( zRemastered );
 
 	if ( fSaved && MapFactoryLoadPilotMap( zRemastered ) )
 		SaveMapFactoryTacticalPreviewSet( zRemastered );
