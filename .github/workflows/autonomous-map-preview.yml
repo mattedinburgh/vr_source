@@ -9,6 +9,8 @@ on:
       - '.github/workflows/autonomous-map-preview.yml'
       - 'TileEngine/worlddef.cpp'
       - 'Tools/ComposeA3CropMaster.ps1'
+      - 'Tools/compose_a3_rural_props.py'
+      - 'Tools/audit_rural_sti.py'
   workflow_dispatch:
 
 permissions:
@@ -74,6 +76,25 @@ jobs:
         run: |
           $dataRoot = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir\Data-Maps-Tiles'
           & '.\Tools\ComposeA3CropMaster.ps1' -DataMapsTilesRoot $dataRoot
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Set up Python for A3 art composition
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install A3 image dependency
+        shell: powershell
+        run: |
+          python -m pip install --disable-pip-version-check pillow
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Compose proven rural prop families for A3
+        shell: powershell
+        run: |
+          $tilesets = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir\Data-Maps-Tiles\Tilesets'
+          $target = Join-Path $tilesets '38'
+          python '.\Tools\compose_a3_rural_props.py' --tilesets-root $tilesets --target-38 $target
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Retarget VS2013 projects to v120
