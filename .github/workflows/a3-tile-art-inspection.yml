@@ -6,6 +6,7 @@ on:
       - a3/hand-authored-v2
     paths:
       - '.github/workflows/a3-tile-art-inspection.yml'
+      - 'Tools/ComposeA3CropMaster.ps1'
   workflow_dispatch:
 
 jobs:
