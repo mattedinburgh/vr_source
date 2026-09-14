@@ -3,3 +3,4 @@ Source hardening: VFS-safe A3 bake filename handling
 Const-correct A3 VFS leaf helper validation
 A3 authored composition V2 visual loop
 A3 authored composition V3 engine review
+custom-art-v1=2026-09-14T15:36Z
