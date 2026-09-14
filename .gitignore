@@ -1,0 +1,5 @@
+# Machine-local Visual Studio settings
+ja2_LocalToolset.props
+.vs/
+*.VC.db
+*.VC.VC.opendb
