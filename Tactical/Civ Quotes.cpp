@@ -39,6 +39,8 @@
 #include "Soldier Profile.h"
 #include "Campaign.h"
 #include "opplist.h"
+#include "Items.h"
+#include "Weapons.h"
 
 // sevenfm: for voice taunts
 #include "Sound Control.h"
@@ -145,8 +147,24 @@ UINT16	gusCivQuoteBoxHeight;
 // anv: store times, when enemy taunt will be finished (so they won't taunt 50 times / second)
 UINT32	uiTauntFinishTimes[ TOTAL_SOLDIERS ];
 
-// VR: global anti-spam gate for action-driven battlefield command popups.
+// VR battlefield communication state. One display gate plus one pending
+// high-priority semantic callout keeps large sectors readable without silently
+// losing important grenade/medic/withdrawal warnings.
 static UINT32 guiLastAIActionPopupTime = 0;
+static UINT8 gubLastAICombatCalloutEvent[ TOTAL_SOLDIERS ];
+static UINT32 guiLastAICombatCalloutEventTime[ TOTAL_SOLDIERS ];
+
+typedef struct
+{
+	BOOLEAN fActive;
+	UINT8 ubSoldierID;
+	AI_BATTLE_CALLOUT ubCallout;
+	UINT8 ubPriority;
+	UINT32 uiQueuedAt;
+} AI_PENDING_CALLOUT;
+
+static AI_PENDING_CALLOUT gPendingAICombatCallout;
+static void FlushPendingAICombatCallout();
 
 TAUNT_VALUES zApplicableTaunts[NUM_TAUNT];
 
@@ -941,6 +959,9 @@ void HandleCivQuote( )
 			ShutDownQuoteBox( TRUE );
 		}
 	}
+
+	if ( !gCivQuoteData.bActive )
+		FlushPendingAICombatCallout();
 }
 
 void StartCivQuote( SOLDIERTYPE *pCiv )
@@ -1079,6 +1100,9 @@ void InitCivQuoteSystem( )
 	gCivQuoteData.iVideoOverlay	= -1;
 	gCivQuoteData.iDialogueBox	= -1;
 	guiLastAIActionPopupTime = 0;
+	memset( &gubLastAICombatCalloutEvent, 0, sizeof(gubLastAICombatCalloutEvent) );
+	memset( &guiLastAICombatCalloutEventTime, 0, sizeof(guiLastAICombatCalloutEventTime) );
+	memset( &gPendingAICombatCallout, 0, sizeof(gPendingAICombatCallout) );
 }
 
 //--------------------------------------------------------------
@@ -1105,6 +1129,9 @@ BOOLEAN LoadCivQuotesFromLoadGameFile( HWFILE hFile )
 	// anv: reset taunt timers after game is loaded (guiBaseJA2Clock can decrease)
 	memset( &uiTauntFinishTimes, 0, sizeof( uiTauntFinishTimes ) );
 	guiLastAIActionPopupTime = 0;
+	memset( &gubLastAICombatCalloutEvent, 0, sizeof(gubLastAICombatCalloutEvent) );
+	memset( &guiLastAICombatCalloutEventTime, 0, sizeof(guiLastAICombatCalloutEventTime) );
+	memset( &gPendingAICombatCallout, 0, sizeof(gPendingAICombatCallout) );
 
 	FileRead( hFile, &gCivQuotes, sizeof( gCivQuotes ), &uiNumBytesRead );
 	if( uiNumBytesRead != sizeof( gCivQuotes ) )
@@ -1338,163 +1365,697 @@ void PossiblyStartEnemyTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, UINT32 ui
 
 }
 
-// VR: short semantic text for voice-taunt events. This exposes the tactical
-// meaning even when the event is delivered by an audio file.
-static BOOLEAN BuildVoiceTauntPopupText( TAUNTTYPE iTauntType, STR16 zText )
+// VR battlefield communication -------------------------------------------------
+// 22 semantic classes x 10 variants = 220 concise contextual lines.  The text
+// lives here rather than in decision code so AI behaviour and presentation stay
+// independent and later localisation/XML migration is straightforward.
+static const CHAR16 * const gAICombatLines_CONTACT[] =
+{
+	L"\"Contact!\"",
+	L"\"Enemy spotted!\"",
+	L"\"There! Contact!\"",
+	L"\"Eyes on them!\"",
+	L"\"I see them!\"",
+	L"\"Contact ahead!\"",
+	L"\"They're here!\"",
+	L"\"Movement! Contact!\"",
+	L"\"Enemy in sight!\"",
+	L"\"We've got contact!\""
+};
+
+static const CHAR16 * const gAICombatLines_ADVANCE[] =
+{
+	L"\"Move up!\"",
+	L"\"Advance!\"",
+	L"\"Push forward!\"",
+	L"\"Keep moving!\"",
+	L"\"Go! Go!\"",
+	L"\"Forward!\"",
+	L"\"Close the distance!\"",
+	L"\"Move on them!\"",
+	L"\"Keep the pressure on!\"",
+	L"\"Up! Move!\""
+};
+
+static const CHAR16 * const gAICombatLines_TAKE_COVER[] =
+{
+	L"\"Take cover!\"",
+	L"\"Get down!\"",
+	L"\"Find cover!\"",
+	L"\"Behind something!\"",
+	L"\"Heads down!\"",
+	L"\"Get under cover!\"",
+	L"\"Move to cover!\"",
+	L"\"Stay low!\"",
+	L"\"Get out of the open!\"",
+	L"\"Cover! Now!\""
+};
+
+static const CHAR16 * const gAICombatLines_FLANK_LEFT[] =
+{
+	L"\"Flank left!\"",
+	L"\"Go left!\"",
+	L"\"Around the left!\"",
+	L"\"Left side! Move!\"",
+	L"\"Work around left!\"",
+	L"\"Take their left!\"",
+	L"\"Swing left!\"",
+	L"\"Push the left side!\"",
+	L"\"Get around them left!\"",
+	L"\"Left flank, go!\""
+};
+
+static const CHAR16 * const gAICombatLines_FLANK_RIGHT[] =
+{
+	L"\"Flank right!\"",
+	L"\"Go right!\"",
+	L"\"Around the right!\"",
+	L"\"Right side! Move!\"",
+	L"\"Work around right!\"",
+	L"\"Take their right!\"",
+	L"\"Swing right!\"",
+	L"\"Push the right side!\"",
+	L"\"Get around them right!\"",
+	L"\"Right flank, go!\""
+};
+
+static const CHAR16 * const gAICombatLines_WITHDRAW[] =
+{
+	L"\"Fall back!\"",
+	L"\"Break contact!\"",
+	L"\"Pull back!\"",
+	L"\"Back! Back!\"",
+	L"\"Give ground!\"",
+	L"\"Get out of there!\"",
+	L"\"Withdraw!\"",
+	L"\"Move back!\"",
+	L"\"Disengage!\"",
+	L"\"Back to cover!\""
+};
+
+static const CHAR16 * const gAICombatLines_REGROUP[] =
+{
+	L"\"Regroup!\"",
+	L"\"Link up!\"",
+	L"\"Stay together!\"",
+	L"\"Back to the group!\"",
+	L"\"Close up!\"",
+	L"\"Get with the others!\"",
+	L"\"Form up!\"",
+	L"\"Don't get isolated!\"",
+	L"\"Join the others!\"",
+	L"\"Pull together!\""
+};
+
+static const CHAR16 * const gAICombatLines_RALLY[] =
+{
+	L"\"Move! You're fine!\"",
+	L"\"Back in the fight!\"",
+	L"\"Get up and move!\"",
+	L"\"Come on! Move!\"",
+	L"\"Stay with us!\"",
+	L"\"Keep it together!\"",
+	L"\"Get moving!\"",
+	L"\"Up! Up!\"",
+	L"\"Don't freeze!\"",
+	L"\"Move with the group!\""
+};
+
+static const CHAR16 * const gAICombatLines_SUPPRESS[] =
+{
+	L"\"Keep them down!\"",
+	L"\"Suppress them!\"",
+	L"\"Fire! Keep them pinned!\"",
+	L"\"Hold them there!\"",
+	L"\"Put fire on them!\"",
+	L"\"Keep firing!\"",
+	L"\"Pin them down!\"",
+	L"\"Covering fire!\"",
+	L"\"Don't let them move!\"",
+	L"\"Fire on that position!\""
+};
+
+static const CHAR16 * const gAICombatLines_GRENADE[] =
+{
+	L"\"Grenade!\"",
+	L"\"Grenade out!\"",
+	L"\"Frag out!\"",
+	L"\"Fire in the hole!\"",
+	L"\"Grenade, take cover!\"",
+	L"\"Throwing grenade!\"",
+	L"\"Explosive out!\"",
+	L"\"Get down! Grenade!\"",
+	L"\"Grenade on them!\"",
+	L"\"Watch the blast!\""
+};
+
+static const CHAR16 * const gAICombatLines_SMOKE[] =
+{
+	L"\"Smoke out!\"",
+	L"\"Smoke that position!\"",
+	L"\"Put smoke down!\"",
+	L"\"Smoke! Move!\"",
+	L"\"Cover them with smoke!\"",
+	L"\"Screen that area!\"",
+	L"\"Smoke the approach!\"",
+	L"\"Get smoke in there!\"",
+	L"\"Smoke between us!\"",
+	L"\"Use the smoke!\""
+};
+
+static const CHAR16 * const gAICombatLines_HEAVY_WEAPON[] =
+{
+	L"\"Launcher!\"",
+	L"\"Heavy weapon!\"",
+	L"\"RPG!\"",
+	L"\"Launcher firing!\"",
+	L"\"Rocket! Get down!\"",
+	L"\"Heavy shot!\"",
+	L"\"Watch the launcher!\"",
+	L"\"Clear the backblast!\"",
+	L"\"Rocket going out!\"",
+	L"\"Heavy weapon firing!\""
+};
+
+static const CHAR16 * const gAICombatLines_MEDIC[] =
+{
+	L"\"Medic!\"",
+	L"\"Medic, here!\"",
+	L"\"Get the medic!\"",
+	L"\"He's hit! Medic!\"",
+	L"\"Help him!\"",
+	L"\"Medic, move!\"",
+	L"\"Get over here, medic!\"",
+	L"\"We need aid!\"",
+	L"\"Treat him!\"",
+	L"\"Medic! He's bleeding!\""
+};
+
+static const CHAR16 * const gAICombatLines_RELOAD[] =
+{
+	L"\"Reloading!\"",
+	L"\"Cover me, reloading!\"",
+	L"\"Magazine! Cover me!\"",
+	L"\"Reload!\"",
+	L"\"I'm reloading!\"",
+	L"\"Cover while I reload!\"",
+	L"\"Changing magazine!\"",
+	L"\"Need a second! Reloading!\"",
+	L"\"Reloading, watch me!\"",
+	L"\"Weapon empty, reloading!\""
+};
+
+static const CHAR16 * const gAICombatLines_OUT_OF_AMMO[] =
+{
+	L"\"Out of ammo!\"",
+	L"\"I'm empty!\"",
+	L"\"No rounds!\"",
+	L"\"Weapon's empty!\"",
+	L"\"Cover me, I'm dry!\"",
+	L"\"I'm out!\"",
+	L"\"No ammo!\"",
+	L"\"Empty! Cover me!\"",
+	L"\"I need ammunition!\"",
+	L"\"Dry!\""
+};
+
+static const CHAR16 * const gAICombatLines_CASUALTY[] =
+{
+	L"\"I'm hit!\"",
+	L"\"Man hit!\"",
+	L"\"I've been hit!\"",
+	L"\"Hit!\"",
+	L"\"I'm wounded!\"",
+	L"\"Taking fire! I'm hit!\"",
+	L"\"They got me!\"",
+	L"\"Wounded here!\"",
+	L"\"I'm hurt!\"",
+	L"\"Hit over here!\""
+};
+
+static const CHAR16 * const gAICombatLines_INCOMING[] =
+{
+	L"\"Incoming!\"",
+	L"\"Get down!\"",
+	L"\"Shots incoming!\"",
+	L"\"Take cover! Incoming!\"",
+	L"\"We're taking fire!\"",
+	L"\"Down! Down!\"",
+	L"\"Fire coming in!\"",
+	L"\"Watch it!\"",
+	L"\"They're firing on us!\"",
+	L"\"Incoming fire!\""
+};
+
+static const CHAR16 * const gAICombatLines_SEARCH[] =
+{
+	L"\"Check that noise!\"",
+	L"\"Search there!\"",
+	L"\"Look around!\"",
+	L"\"Check it out!\"",
+	L"\"Something's there!\"",
+	L"\"Watch that area!\"",
+	L"\"Search that position!\"",
+	L"\"Go check it!\"",
+	L"\"Eyes open!\"",
+	L"\"Find out what that was!\""
+};
+
+static const CHAR16 * const gAICombatLines_REINFORCE[] =
+{
+	L"\"Tell the others!\"",
+	L"\"Call it in!\"",
+	L"\"Alert everyone!\"",
+	L"\"Get the others here!\"",
+	L"\"Contact! Call for support!\"",
+	L"\"Radio it in!\"",
+	L"\"Tell the squad!\"",
+	L"\"Get help over here!\"",
+	L"\"Call the others!\"",
+	L"\"Report contact!\""
+};
+
+static const CHAR16 * const gAICombatLines_VEHICLE[] =
+{
+	L"\"Vehicle!\"",
+	L"\"Armored vehicle!\"",
+	L"\"Tank!\"",
+	L"\"Tank! Take cover!\"",
+	L"\"Armor ahead!\"",
+	L"\"Watch the vehicle!\"",
+	L"\"Heavy vehicle!\"",
+	L"\"Tank in sight!\"",
+	L"\"Armor! Get down!\"",
+	L"\"Vehicle contact!\""
+};
+
+static const CHAR16 * const gAICombatLines_HOLD[] =
+{
+	L"\"Hold!\"",
+	L"\"Hold here!\"",
+	L"\"Stay put!\"",
+	L"\"Keep this position!\"",
+	L"\"Hold the line!\"",
+	L"\"Don't move yet!\"",
+	L"\"Stay ready!\"",
+	L"\"Wait for it!\"",
+	L"\"Hold position!\"",
+	L"\"Keep your ground!\""
+};
+
+static const CHAR16 * const gAICombatLines_TARGET_DOWN[] =
+{
+	L"\"Target down!\"",
+	L"\"He's down!\"",
+	L"\"Got one!\"",
+	L"\"Enemy down!\"",
+	L"\"One down!\"",
+	L"\"Dropped him!\"",
+	L"\"Target's down!\"",
+	L"\"He's out!\"",
+	L"\"That one's down!\"",
+	L"\"Enemy hit and down!\""
+};
+
+static BOOLEAN BuildAICombatCalloutText( AI_BATTLE_CALLOUT ubCallout, STR16 zText )
 {
 	if ( zText == NULL )
 		return FALSE;
 
+	switch ( ubCallout )
+	{
+		case AI_BATTLE_CALL_CONTACT:
+			wcscpy( zText, gAICombatLines_CONTACT[ Random( sizeof(gAICombatLines_CONTACT) / sizeof(gAICombatLines_CONTACT[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_ADVANCE:
+			wcscpy( zText, gAICombatLines_ADVANCE[ Random( sizeof(gAICombatLines_ADVANCE) / sizeof(gAICombatLines_ADVANCE[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_TAKE_COVER:
+			wcscpy( zText, gAICombatLines_TAKE_COVER[ Random( sizeof(gAICombatLines_TAKE_COVER) / sizeof(gAICombatLines_TAKE_COVER[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_FLANK_LEFT:
+			wcscpy( zText, gAICombatLines_FLANK_LEFT[ Random( sizeof(gAICombatLines_FLANK_LEFT) / sizeof(gAICombatLines_FLANK_LEFT[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_FLANK_RIGHT:
+			wcscpy( zText, gAICombatLines_FLANK_RIGHT[ Random( sizeof(gAICombatLines_FLANK_RIGHT) / sizeof(gAICombatLines_FLANK_RIGHT[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_WITHDRAW:
+			wcscpy( zText, gAICombatLines_WITHDRAW[ Random( sizeof(gAICombatLines_WITHDRAW) / sizeof(gAICombatLines_WITHDRAW[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_REGROUP:
+			wcscpy( zText, gAICombatLines_REGROUP[ Random( sizeof(gAICombatLines_REGROUP) / sizeof(gAICombatLines_REGROUP[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_RALLY:
+			wcscpy( zText, gAICombatLines_RALLY[ Random( sizeof(gAICombatLines_RALLY) / sizeof(gAICombatLines_RALLY[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_SUPPRESS:
+			wcscpy( zText, gAICombatLines_SUPPRESS[ Random( sizeof(gAICombatLines_SUPPRESS) / sizeof(gAICombatLines_SUPPRESS[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_GRENADE:
+			wcscpy( zText, gAICombatLines_GRENADE[ Random( sizeof(gAICombatLines_GRENADE) / sizeof(gAICombatLines_GRENADE[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_SMOKE:
+			wcscpy( zText, gAICombatLines_SMOKE[ Random( sizeof(gAICombatLines_SMOKE) / sizeof(gAICombatLines_SMOKE[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_HEAVY_WEAPON:
+			wcscpy( zText, gAICombatLines_HEAVY_WEAPON[ Random( sizeof(gAICombatLines_HEAVY_WEAPON) / sizeof(gAICombatLines_HEAVY_WEAPON[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_MEDIC:
+			wcscpy( zText, gAICombatLines_MEDIC[ Random( sizeof(gAICombatLines_MEDIC) / sizeof(gAICombatLines_MEDIC[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_RELOAD:
+			wcscpy( zText, gAICombatLines_RELOAD[ Random( sizeof(gAICombatLines_RELOAD) / sizeof(gAICombatLines_RELOAD[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_OUT_OF_AMMO:
+			wcscpy( zText, gAICombatLines_OUT_OF_AMMO[ Random( sizeof(gAICombatLines_OUT_OF_AMMO) / sizeof(gAICombatLines_OUT_OF_AMMO[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_CASUALTY:
+			wcscpy( zText, gAICombatLines_CASUALTY[ Random( sizeof(gAICombatLines_CASUALTY) / sizeof(gAICombatLines_CASUALTY[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_INCOMING:
+			wcscpy( zText, gAICombatLines_INCOMING[ Random( sizeof(gAICombatLines_INCOMING) / sizeof(gAICombatLines_INCOMING[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_SEARCH:
+			wcscpy( zText, gAICombatLines_SEARCH[ Random( sizeof(gAICombatLines_SEARCH) / sizeof(gAICombatLines_SEARCH[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_REINFORCE:
+			wcscpy( zText, gAICombatLines_REINFORCE[ Random( sizeof(gAICombatLines_REINFORCE) / sizeof(gAICombatLines_REINFORCE[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_VEHICLE:
+			wcscpy( zText, gAICombatLines_VEHICLE[ Random( sizeof(gAICombatLines_VEHICLE) / sizeof(gAICombatLines_VEHICLE[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_HOLD:
+			wcscpy( zText, gAICombatLines_HOLD[ Random( sizeof(gAICombatLines_HOLD) / sizeof(gAICombatLines_HOLD[0]) ) ] );
+			return TRUE;
+		case AI_BATTLE_CALL_TARGET_DOWN:
+			wcscpy( zText, gAICombatLines_TARGET_DOWN[ Random( sizeof(gAICombatLines_TARGET_DOWN) / sizeof(gAICombatLines_TARGET_DOWN[0]) ) ] );
+			return TRUE;
+		default:
+			return FALSE;
+	}
+}
+
+static UINT8 AICombatCalloutPriority( AI_BATTLE_CALLOUT ubCallout )
+{
+	switch ( ubCallout )
+	{
+		case AI_BATTLE_CALL_GRENADE:
+		case AI_BATTLE_CALL_VEHICLE:
+			return 100;
+		case AI_BATTLE_CALL_SMOKE:
+		case AI_BATTLE_CALL_MEDIC:
+			return 92;
+		case AI_BATTLE_CALL_WITHDRAW:
+		case AI_BATTLE_CALL_INCOMING:
+			return 88;
+		case AI_BATTLE_CALL_HEAVY_WEAPON:
+		case AI_BATTLE_CALL_CONTACT:
+		case AI_BATTLE_CALL_REINFORCE:
+			return 82;
+		case AI_BATTLE_CALL_FLANK_LEFT:
+		case AI_BATTLE_CALL_FLANK_RIGHT:
+		case AI_BATTLE_CALL_SUPPRESS:
+			return 75;
+		case AI_BATTLE_CALL_REGROUP:
+		case AI_BATTLE_CALL_RALLY:
+			return 65;
+		case AI_BATTLE_CALL_TAKE_COVER:
+		case AI_BATTLE_CALL_OUT_OF_AMMO:
+		case AI_BATTLE_CALL_CASUALTY:
+			return 58;
+		case AI_BATTLE_CALL_TARGET_DOWN:
+			return 48;
+		case AI_BATTLE_CALL_RELOAD:
+			return 38;
+		case AI_BATTLE_CALL_ADVANCE:
+		case AI_BATTLE_CALL_SEARCH:
+		case AI_BATTLE_CALL_HOLD:
+			return 30;
+		default:
+			return 0;
+	}
+}
+
+static UINT8 AICombatCalloutChance( AI_BATTLE_CALLOUT ubCallout )
+{
+	switch ( ubCallout )
+	{
+		case AI_BATTLE_CALL_GRENADE:
+		case AI_BATTLE_CALL_VEHICLE:
+			return 100;
+		case AI_BATTLE_CALL_SMOKE:
+		case AI_BATTLE_CALL_MEDIC:
+		case AI_BATTLE_CALL_HEAVY_WEAPON:
+			return 90;
+		case AI_BATTLE_CALL_WITHDRAW:
+		case AI_BATTLE_CALL_REINFORCE:
+			return 80;
+		case AI_BATTLE_CALL_FLANK_LEFT:
+		case AI_BATTLE_CALL_FLANK_RIGHT:
+			return 72;
+		case AI_BATTLE_CALL_CONTACT:
+		case AI_BATTLE_CALL_INCOMING:
+			return 65;
+		case AI_BATTLE_CALL_REGROUP:
+		case AI_BATTLE_CALL_RALLY:
+		case AI_BATTLE_CALL_OUT_OF_AMMO:
+			return 55;
+		case AI_BATTLE_CALL_SUPPRESS:
+		case AI_BATTLE_CALL_CASUALTY:
+			return 42;
+		case AI_BATTLE_CALL_TAKE_COVER:
+		case AI_BATTLE_CALL_TARGET_DOWN:
+			return 35;
+		case AI_BATTLE_CALL_RELOAD:
+		case AI_BATTLE_CALL_SEARCH:
+			return 25;
+		case AI_BATTLE_CALL_ADVANCE:
+		case AI_BATTLE_CALL_HOLD:
+			return 22;
+		default:
+			return 0;
+	}
+}
+
+static UINT32 AICombatCalloutMaxQueueAge( AI_BATTLE_CALLOUT ubCallout )
+{
+	UINT8 ubPriority = AICombatCalloutPriority( ubCallout );
+	if ( ubPriority >= 90 )
+		return 1800;
+	if ( ubPriority >= 75 )
+		return 2600;
+	return 3500;
+}
+
+static BOOLEAN AIHandItemIsSmoke( SOLDIERTYPE *pCiv )
+{
+	if ( !pCiv )
+		return FALSE;
+
+	UINT16 usItem = pCiv->inv[HANDPOS].usItem;
+	if ( usItem >= MAXITEMS || !(Item[usItem].usItemClass & IC_GRENADE) )
+		return FALSE;
+
+	UINT16 usExplosiveIndex = Item[usItem].ubClassIndex;
+	if ( usExplosiveIndex > MAXITEMS )
+		return FALSE;
+
+	return Explosive[usExplosiveIndex].ubType == EXPLOSV_SMOKE ||
+		Explosive[usExplosiveIndex].ubType == EXPLOSV_SIGNAL_SMOKE;
+}
+
+static BOOLEAN AICombatCalloutSpeakerValid( SOLDIERTYPE *pCiv )
+{
+	return pCiv &&
+		pCiv->bActive && pCiv->bInSector &&
+		(pCiv->bTeam == ENEMY_TEAM || pCiv->bTeam == MILITIA_TEAM) &&
+		pCiv->bVisible != -1 &&
+		pCiv->stats.bLife >= OKLIFE &&
+		!pCiv->bCollapsed && !pCiv->bBreathCollapsed &&
+		!pCiv->IsZombie();
+}
+
+static void ShowAICombatCalloutNow( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout )
+{
+	CHAR16 zText[320];
+	if ( !AICombatCalloutSpeakerValid( pCiv ) || !BuildAICombatCalloutText( ubCallout, zText ) )
+		return;
+
+	ShowTauntPopupBox( pCiv, zText );
+	guiLastAIActionPopupTime = GetJA2Clock();
+	gubLastAICombatCalloutEvent[pCiv->ubID] = (UINT8)ubCallout;
+	guiLastAICombatCalloutEventTime[pCiv->ubID] = guiLastAIActionPopupTime;
+	uiTauntFinishTimes[pCiv->ubID] = guiLastAIActionPopupTime +
+		min( gTauntsSettings.sMaxDelay,
+			max( gTauntsSettings.sMinDelay, FindDelayForString( zText ) + gTauntsSettings.sModDelay ) );
+}
+
+void QueueAICombatCallout( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout )
+{
+	if ( is_networked || !AICombatCalloutSpeakerValid( pCiv ) )
+		return;
+	if ( !(gTacticalStatus.uiFlags & INCOMBAT) )
+		return;
+	if ( gGameSettings.fOptions[TOPTION_ALLOW_TAUNTS] == FALSE ||
+		gTauntsSettings.fTauntShowPopupBox == FALSE )
+		return;
+	if ( ubCallout <= AI_BATTLE_CALL_NONE || ubCallout >= AI_BATTLE_CALL_MAX )
+		return;
+
+	UINT8 ubChance = AICombatCalloutChance( ubCallout );
+	if ( ubChance == 0 || Random(100) >= ubChance )
+		return;
+
+	UINT32 uiNow = GetJA2Clock();
+	// Per-speaker/event debounce prevents the same intent from being repeated
+	// every AI evaluation while allowing a different urgent event immediately.
+	if ( gubLastAICombatCalloutEvent[pCiv->ubID] == (UINT8)ubCallout &&
+		guiLastAICombatCalloutEventTime[pCiv->ubID] != 0 &&
+		(uiNow - guiLastAICombatCalloutEventTime[pCiv->ubID]) < 3500 )
+	{
+		return;
+	}
+
+	if ( gCivQuoteData.bActive == FALSE &&
+		(guiLastAIActionPopupTime == 0 || (uiNow - guiLastAIActionPopupTime) >= 900) &&
+		uiTauntFinishTimes[pCiv->ubID] <= uiNow )
+	{
+		ShowAICombatCalloutNow( pCiv, ubCallout );
+		return;
+	}
+
+	UINT8 ubPriority = AICombatCalloutPriority( ubCallout );
+	// Keep the most important waiting event. Equal-priority events keep the first
+	// call so rapid grenade/contact bursts do not churn the queue.
+	if ( !gPendingAICombatCallout.fActive || ubPriority > gPendingAICombatCallout.ubPriority )
+	{
+		gPendingAICombatCallout.fActive = TRUE;
+		gPendingAICombatCallout.ubSoldierID = pCiv->ubID;
+		gPendingAICombatCallout.ubCallout = ubCallout;
+		gPendingAICombatCallout.ubPriority = ubPriority;
+		gPendingAICombatCallout.uiQueuedAt = uiNow;
+	}
+}
+
+static void FlushPendingAICombatCallout()
+{
+	if ( !gPendingAICombatCallout.fActive || gCivQuoteData.bActive )
+		return;
+
+	UINT32 uiNow = GetJA2Clock();
+	if ( uiNow - gPendingAICombatCallout.uiQueuedAt >
+		AICombatCalloutMaxQueueAge( gPendingAICombatCallout.ubCallout ) )
+	{
+		gPendingAICombatCallout.fActive = FALSE;
+		return;
+	}
+	if ( guiLastAIActionPopupTime != 0 && (uiNow - guiLastAIActionPopupTime) < 900 )
+		return;
+
+	UINT8 ubSoldierID = gPendingAICombatCallout.ubSoldierID;
+	AI_BATTLE_CALLOUT ubCallout = gPendingAICombatCallout.ubCallout;
+	gPendingAICombatCallout.fActive = FALSE;
+
+	if ( ubSoldierID >= TOTAL_SOLDIERS )
+		return;
+	SOLDIERTYPE *pCiv = MercPtrs[ubSoldierID];
+	if ( !AICombatCalloutSpeakerValid( pCiv ) || uiTauntFinishTimes[pCiv->ubID] > uiNow )
+		return;
+
+	ShowAICombatCalloutNow( pCiv, ubCallout );
+}
+
+static AI_BATTLE_CALLOUT AICombatCalloutFromTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTarget )
+{
 	switch ( iTauntType )
 	{
-		case TAUNT_FIRE_GUN: swprintf( zText, L"\"Engaging!\"" ); return TRUE;
-		case TAUNT_FIRE_LAUNCHER: swprintf( zText, L"\"Launcher! Get down!\"" ); return TRUE;
-		case TAUNT_THROW_GRENADE: swprintf( zText, L"\"Grenade! Take cover!\"" ); return TRUE;
-		case TAUNT_OUT_OF_AMMO: swprintf( zText, L"\"Out of ammo! Cover me!\"" ); return TRUE;
-		case TAUNT_RELOAD: swprintf( zText, L"\"Reloading! Cover me!\"" ); return TRUE;
-		case TAUNT_RUN_AWAY: swprintf( zText, L"\"Fall back!\"" ); return TRUE;
-		case TAUNT_SEEK_NOISE: swprintf( zText, L"\"Check that noise!\"" ); return TRUE;
-		case TAUNT_ALERT: swprintf( zText, L"\"Contact! Take cover!\"" ); return TRUE;
-		case TAUNT_SUSPICIOUS: swprintf( zText, L"\"Stay alert!\"" ); return TRUE;
-		case TAUNT_NOTICED_UNSEEN: swprintf( zText, L"\"Incoming! Find cover!\"" ); return TRUE;
-		case TAUNT_INFORM_ABOUT: swprintf( zText, L"\"Enemy spotted!\"" ); return TRUE;
-		case TAUNT_GOT_HIT_BLOODLOSS: swprintf( zText, L"\"Medic! I'm bleeding!\"" ); return TRUE;
+		case TAUNT_FIRE_GUN:
+			return (pCiv && (pCiv->bDoBurst || pCiv->bDoAutofire > 1)) ? AI_BATTLE_CALL_SUPPRESS : AI_BATTLE_CALL_NONE;
+		case TAUNT_FIRE_LAUNCHER:
+			return AI_BATTLE_CALL_HEAVY_WEAPON;
+		case TAUNT_THROW_GRENADE:
+			return AIHandItemIsSmoke( pCiv ) ? AI_BATTLE_CALL_SMOKE : AI_BATTLE_CALL_GRENADE;
+		case TAUNT_OUT_OF_AMMO:
+			return AI_BATTLE_CALL_OUT_OF_AMMO;
+		case TAUNT_RELOAD:
+			return AI_BATTLE_CALL_RELOAD;
+		case TAUNT_CHARGE_BLADE:
+		case TAUNT_CHARGE_HTH:
+			return AI_BATTLE_CALL_ADVANCE;
+		case TAUNT_RUN_AWAY:
+			return AI_BATTLE_CALL_WITHDRAW;
+		case TAUNT_SEEK_NOISE:
+			return AI_BATTLE_CALL_SEARCH;
+		case TAUNT_ALERT:
+			return AI_BATTLE_CALL_REINFORCE;
+		case TAUNT_SUSPICIOUS:
+			return AI_BATTLE_CALL_HOLD;
+		case TAUNT_NOTICED_UNSEEN:
+			return AI_BATTLE_CALL_INCOMING;
+		case TAUNT_INFORM_ABOUT:
+			return (pTarget && TANK(pTarget)) ? AI_BATTLE_CALL_VEHICLE : AI_BATTLE_CALL_CONTACT;
+		case TAUNT_GOT_HIT_BLOODLOSS:
+			return AI_BATTLE_CALL_MEDIC;
 		case TAUNT_GOT_HIT:
 		case TAUNT_GOT_HIT_GUNFIRE:
 		case TAUNT_GOT_HIT_BLADE:
 		case TAUNT_GOT_HIT_HTH:
-		case TAUNT_GOT_HIT_THROWING_KNIFE:
-			swprintf( zText, L"\"I'm hit!\"" ); return TRUE;
 		case TAUNT_GOT_HIT_EXPLOSION:
 		case TAUNT_GOT_HIT_STRUCTURE_EXPLOSION:
-		case TAUNT_GOT_HIT_FALLROOF:
-			swprintf( zText, L"\"Get down!\"" ); return TRUE;
+		case TAUNT_GOT_HIT_OBJECT:
+		case TAUNT_GOT_HIT_THROWING_KNIFE:
+			return AI_BATTLE_CALL_CASUALTY;
+		case TAUNT_GOT_MISSED:
+		case TAUNT_GOT_MISSED_GUNFIRE:
+		case TAUNT_GOT_MISSED_BLADE:
+		case TAUNT_GOT_MISSED_HTH:
+		case TAUNT_GOT_MISSED_THROWING_KNIFE:
+			return AI_BATTLE_CALL_INCOMING;
 		case TAUNT_KILL:
 		case TAUNT_KILL_GUNFIRE:
 		case TAUNT_KILL_BLADE:
 		case TAUNT_KILL_HTH:
 		case TAUNT_KILL_THROWING_KNIFE:
-			swprintf( zText, L"\"Target down!\"" ); return TRUE;
-		default: return FALSE;
-	}
-}
-
-// VR: action-driven battlefield commands tied to actual tactical AI actions.
-static BOOLEAN BuildAIActionPopupText( INT8 bAction, STR16 zText )
-{
-	if ( zText == NULL )
-		return FALSE;
-
-	switch ( bAction )
-	{
-		case AI_ACTION_TAKE_COVER:
-			switch ( Random( 4 ) )
-			{
-				case 0: swprintf( zText, L"\"Take cover!\"" ); break;
-				case 1: swprintf( zText, L"\"Get behind something!\"" ); break;
-				case 2: swprintf( zText, L"\"Find cover!\"" ); break;
-				default: swprintf( zText, L"\"Keep your heads down!\"" ); break;
-			}
-			return TRUE;
-
-		case AI_ACTION_GET_CLOSER:
-			switch ( Random( 4 ) )
-			{
-				case 0: swprintf( zText, L"\"Move up!\"" ); break;
-				case 1: swprintf( zText, L"\"Advance!\"" ); break;
-				case 2: swprintf( zText, L"\"Push forward!\"" ); break;
-				default: swprintf( zText, L"\"Close the distance!\"" ); break;
-			}
-			return TRUE;
-
-		case AI_ACTION_WITHDRAW:
-			switch ( Random( 4 ) )
-			{
-				case 0: swprintf( zText, L"\"Fall back!\"" ); break;
-				case 1: swprintf( zText, L"\"Break contact!\"" ); break;
-				case 2: swprintf( zText, L"\"Pull back!\"" ); break;
-				default: swprintf( zText, L"\"Back! Back!\"" ); break;
-			}
-			return TRUE;
-
-		case AI_ACTION_FLANK_LEFT:
-			switch ( Random( 4 ) )
-			{
-				case 0: swprintf( zText, L"\"Flank left!\"" ); break;
-				case 1: swprintf( zText, L"\"Go left! Get around them!\"" ); break;
-				case 2: swprintf( zText, L"\"Left side! Move!\"" ); break;
-				default: swprintf( zText, L"\"Work around their left!\"" ); break;
-			}
-			return TRUE;
-
-		case AI_ACTION_FLANK_RIGHT:
-			switch ( Random( 4 ) )
-			{
-				case 0: swprintf( zText, L"\"Flank right!\"" ); break;
-				case 1: swprintf( zText, L"\"Go right! Get around them!\"" ); break;
-				case 2: swprintf( zText, L"\"Right side! Move!\"" ); break;
-				default: swprintf( zText, L"\"Work around their right!\"" ); break;
-			}
-			return TRUE;
-
-		default: return FALSE;
+			return AI_BATTLE_CALL_TARGET_DOWN;
+		default:
+			return AI_BATTLE_CALL_NONE;
 	}
 }
 
 void ShowAIActionPopup( SOLDIERTYPE *pCiv, INT8 bAction )
 {
-	CHAR16 zActionText[320];
-	UINT32 uiNow;
-	UINT8 ubChance = 0;
-
-	if ( is_networked || pCiv == NULL )
-		return;
-	if ( gGameSettings.fOptions[TOPTION_ALLOW_TAUNTS] == FALSE || gTauntsSettings.fTauntShowPopupBox == FALSE )
-		return;
-	if ( !( gTacticalStatus.uiFlags & INCOMBAT ) )
-		return;
-	if ( pCiv->bTeam != ENEMY_TEAM && pCiv->bTeam != MILITIA_TEAM )
-		return;
-	if ( pCiv->bVisible == -1 || pCiv->stats.bLife < OKLIFE || pCiv->bCollapsed || pCiv->bBreathCollapsed )
-		return;
-	if ( gCivQuoteData.bActive == TRUE )
+	if ( !pCiv )
 		return;
 
-	// Important manoeuvres should usually be audible/visible; routine movement
-	// should only occasionally create chatter. The message still always
-	// describes the action the AI actually selected.
+	AI_BATTLE_CALLOUT ubCallout = AI_BATTLE_CALL_NONE;
 	switch ( bAction )
 	{
-		case AI_ACTION_FLANK_LEFT:
-		case AI_ACTION_FLANK_RIGHT:
-		case AI_ACTION_WITHDRAW:
-			ubChance = 75;
-			break;
-		case AI_ACTION_TAKE_COVER:
-			ubChance = 35;
-			break;
+		case AI_ACTION_TAKE_COVER: ubCallout = AI_BATTLE_CALL_TAKE_COVER; break;
 		case AI_ACTION_GET_CLOSER:
-			ubChance = 25;
+		case AI_ACTION_SEEK_OPPONENT: ubCallout = AI_BATTLE_CALL_ADVANCE; break;
+		case AI_ACTION_SEEK_FRIEND: ubCallout = AI_BATTLE_CALL_REGROUP; break;
+		case AI_ACTION_WITHDRAW:
+		case AI_ACTION_RUN_AWAY: ubCallout = AI_BATTLE_CALL_WITHDRAW; break;
+		case AI_ACTION_FLANK_LEFT: ubCallout = AI_BATTLE_CALL_FLANK_LEFT; break;
+		case AI_ACTION_FLANK_RIGHT: ubCallout = AI_BATTLE_CALL_FLANK_RIGHT; break;
+		case AI_ACTION_RED_ALERT: ubCallout = AI_BATTLE_CALL_REINFORCE; break;
+		case AI_ACTION_YELLOW_ALERT:
+		case AI_ACTION_SEEK_NOISE: ubCallout = AI_BATTLE_CALL_SEARCH; break;
+		case AI_ACTION_GIVE_AID: ubCallout = AI_BATTLE_CALL_MEDIC; break;
+		case AI_ACTION_RELOAD_GUN: ubCallout = AI_BATTLE_CALL_RELOAD; break;
+		case AI_ACTION_TOSS_PROJECTILE:
+			ubCallout = AIHandItemIsSmoke( pCiv ) ? AI_BATTLE_CALL_SMOKE : AI_BATTLE_CALL_GRENADE;
 			break;
-		default:
-			return;
+		case AI_ACTION_FIRE_GUN:
+			if ( pCiv->bDoBurst || pCiv->bDoAutofire > 1 )
+				ubCallout = AI_BATTLE_CALL_SUPPRESS;
+			break;
+		case AI_ACTION_STOP_COWERING: ubCallout = AI_BATTLE_CALL_RALLY; break;
+		default: break;
 	}
 
-	if ( Random( 100 ) >= ubChance )
-		return;
-
-	uiNow = GetJA2Clock();
-	if ( guiLastAIActionPopupTime != 0 && ( uiNow - guiLastAIActionPopupTime ) < 1200 )
-		return;
-	if ( uiTauntFinishTimes[pCiv->ubID] > uiNow )
-		return;
-	if ( !BuildAIActionPopupText( bAction, zActionText ) )
-		return;
-
-	ShowTauntPopupBox( pCiv, zActionText );
-	guiLastAIActionPopupTime = uiNow;
-	uiTauntFinishTimes[pCiv->ubID] = uiNow + min( gTauntsSettings.sMaxDelay,
-		max( gTauntsSettings.sMinDelay, FindDelayForString( zActionText ) + gTauntsSettings.sModDelay ) );
+	if ( ubCallout != AI_BATTLE_CALL_NONE )
+		QueueAICombatCallout( pCiv, ubCallout );
 }
 
 // SANDRO - soldier taunts 
@@ -1508,28 +2069,29 @@ void StartEnemyTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTar
 	if ( pCiv->IsZombie() )
 		return;
 
-	// sevenfm: play audio taunt if possible. VR keeps the visual semantic
-	// popup independent from audio so VOICE_TAUNTS no longer swallows it.
+	// sevenfm: audio and visual combat communication are independent. Audio keeps
+	// the original Vengeance voice bank; semantic text goes through the priority
+	// queue so important calls are not lost behind an existing bubble.
 	if( gGameExternalOptions.fVoiceTaunts )		
 	{		
-		CHAR16 zVoicePopup[320];
 		PlayVoiceTaunt( pCiv, iTauntType, pTarget );
 
-		if ( BuildVoiceTauntPopupText( iTauntType, zVoicePopup ) )
+		AI_BATTLE_CALLOUT ubVoiceCallout = AICombatCalloutFromTaunt( pCiv, iTauntType, pTarget );
+		if ( ubVoiceCallout != AI_BATTLE_CALL_NONE )
 		{
-			if ( gTauntsSettings.fTauntShowPopupBox == TRUE &&
-				( gbPublicOpplist[gbPlayerNum][pCiv->ubID] == SEEN_CURRENTLY || gTauntsSettings.fTauntAlwaysShowPopupBox == TRUE ) )
-			{
-				ShowTauntPopupBox( pCiv, zVoicePopup );
-			}
+			QueueAICombatCallout( pCiv, ubVoiceCallout );
+
 			if ( gTauntsSettings.fTauntShowInLog == TRUE &&
 				( gbPublicOpplist[gbPlayerNum][pCiv->ubID] == SEEN_CURRENTLY || gTauntsSettings.fTauntAlwaysShowInLog == TRUE ) )
 			{
-				ScreenMsg( FONT_GRAY2, MSG_INTERFACE, L"%s: %s", pCiv->GetName(), zVoicePopup );
+				CHAR16 zVoiceLog[320];
+				if ( BuildAICombatCalloutText( ubVoiceCallout, zVoiceLog ) )
+					ScreenMsg( FONT_GRAY2, MSG_INTERFACE, L"%s: %s", pCiv->GetName(), zVoiceLog );
 			}
 		}
 
-		uiTauntFinishTimes[pCiv->ubID] = GetJA2Clock() + min( gTauntsSettings.sMaxDelay , max( gTauntsSettings.sMinDelay, FindDelayForString( L"You're the disease and I'm the cure!" ) + gTauntsSettings.sModDelay ) );
+		uiTauntFinishTimes[pCiv->ubID] = GetJA2Clock() + min( gTauntsSettings.sMaxDelay,
+			max( gTauntsSettings.sMinDelay, FindDelayForString( L"You're the disease and I'm the cure!" ) + gTauntsSettings.sModDelay ) );
 		return;
 	}
 
