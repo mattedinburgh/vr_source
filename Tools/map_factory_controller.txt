@@ -158,21 +158,56 @@ def cmd_next(a):
     return 0
 
 def cmd_gate(a):
-    attempted=a.attempted; accepted=a.accepted
-    if attempted < 5:
-        action="continue_pilot"
-    elif accepted >= 3:
-        action="continue_map_factory"
+    attempted=max(0,a.attempted); accepted=max(0,min(a.accepted,attempted))
+    rate=(accepted/attempted) if attempted else 0.0
+    cycles=max(0,a.optimization_cycles)
+
+    if a.phase=="pilot":
+        if attempted < 5:
+            action="continue_pilot"
+            reason="need_representative_sample"
+        elif rate >= 0.80:
+            action="freeze_and_produce"
+            reason="method_good_enough"
+        elif rate >= 0.60 and cycles < 1:
+            action="optimize_once"
+            reason="method_viable_but_needs_one_targeted_pass"
+        elif rate >= 0.70:
+            action="freeze_and_produce"
+            reason="good_enough_after_optimization"
+        else:
+            action="switch_method"
+            reason="method_not_reliable_enough"
     else:
-        action="switch_to_composition_kits"
-    print(json.dumps({"attempted":attempted,"accepted":accepted,"action":action}))
+        if attempted < max(4,a.minimum_wave):
+            action="continue_wave"
+            reason="sample_too_small"
+        elif rate >= 0.75:
+            action="keep_method"
+            reason="production_acceptance_good_enough"
+        elif rate >= 0.50 and cycles < 1:
+            action="optimize_once"
+            reason="production_degradation_but_method_still_viable"
+        else:
+            action="switch_method"
+            reason="production_acceptance_too_low"
+
+    print(json.dumps({
+        "phase":a.phase,
+        "attempted":attempted,
+        "accepted":accepted,
+        "acceptance_rate":round(rate,4),
+        "optimization_cycles":cycles,
+        "action":action,
+        "reason":reason
+    },sort_keys=True))
     return 0
 
 def main():
     p=argparse.ArgumentParser(); s=p.add_subparsers(dest="cmd",required=True)
     q=s.add_parser("plan"); q.add_argument("--manifest",default=""); q.add_argument("--pilot",action="store_true"); q.set_defaults(fn=cmd_plan)
-    q=s.add_parser("recipe"); q.add_argument("--manifest",default="MapFactory/top_rows_A-F.csv"); q.add_argument("--sector",required=True); q.add_argument("--profile",required=True); q.add_argument("--output",required=True); q.add_argument("--meta"); q.add_argument("--strategy",choices=STRATEGIES,default=STRATEGIES[0]); q.set_defaults(fn=cmd_recipe)
+    q=s.add_parser("recipe"); q.add_argument("--manifest",default=""); q.add_argument("--sector",required=True); q.add_argument("--profile",required=True); q.add_argument("--output",required=True); q.add_argument("--meta"); q.add_argument("--strategy",choices=STRATEGIES,default=STRATEGIES[0]); q.set_defaults(fn=cmd_recipe)
     q=s.add_parser("next"); q.add_argument("--strategy",choices=STRATEGIES,required=True); q.add_argument("--bake-ok",action="store_true"); q.add_argument("--visual-changed",action="store_true"); q.add_argument("--reason",default=""); q.set_defaults(fn=cmd_next)
-    q=s.add_parser("gate"); q.add_argument("--attempted",type=int,required=True); q.add_argument("--accepted",type=int,required=True); q.set_defaults(fn=cmd_gate)
+    q=s.add_parser("gate"); q.add_argument("--phase",choices=("pilot","wave"),default="pilot"); q.add_argument("--attempted",type=int,required=True); q.add_argument("--accepted",type=int,required=True); q.add_argument("--optimization-cycles",type=int,default=0); q.add_argument("--minimum-wave",type=int,default=8); q.set_defaults(fn=cmd_gate)
     a=p.parse_args(); return a.fn(a)
 if __name__=="__main__": raise SystemExit(main())
