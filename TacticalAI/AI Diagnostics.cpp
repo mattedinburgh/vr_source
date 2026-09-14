@@ -55,7 +55,7 @@ static void AITraceEnsureHeader()
 	if (ftell(fp) == 0)
 	{
 		fprintf(fp,
-			"schema_version\tframework_version\tsession_id\tbattle_id\tturn_id\tdecision_id\tworld_min\tday\thour\tminute\tsector_x\tsector_y\tsector_z\tevent\tsource\tactor_team\tactor_id\tactor_class\tcompetence\treliability\tintent\trole\ttarget_grid\taction\tcandidate_grid\tscore\trunner_up\texposure\troute_cost\tsupport\tcrossfire\treaction_risk\ttarget_saturation\tlife\tap\tbreath\tshock\tstress\tpersonal_risk\trisk_tolerance\tbattle_situation\trout_pressure\tsmoke_reserve\tfriction_changed\treason\n");
+			"schema_version\tframework_version\tsession_id\tbattle_id\tturn_id\tdecision_id\tworld_min\tday\thour\tminute\tsector_x\tsector_y\tsector_z\tevent\tsource\tactor_team\tactor_id\tactor_class\tcompetence\treliability\tintent\trole\ttarget_grid\taction\tcandidate_grid\tscore\trunner_up\texposure\troute_cost\tsupport\tcrossfire\treaction_risk\ttarget_saturation\tlife\tap\tbreath\tshock\tstress\tpersonal_risk\trisk_tolerance\tbattle_situation\trout_pressure\tsmoke_reserve\tfriction_changed\tdoctrine\tlocal_command\tfireteam_id\tfireteam_alive\treason\n");
 	}
 	fclose(fp);
 }
@@ -87,9 +87,13 @@ static void AITraceWrite(SOLDIERTYPE *pSoldier, UINT32 uiDecisionID,
 		TileIsOutOfBounds(sCandidateGrid) ? pSoldier->sGridNo : sCandidateGrid,
 		pSoldier->pathing.bLevel);
 	INT32 iSaturation = TileIsOutOfBounds(sTargetSpot) ? 0 : AITargetSaturation(pSoldier, sTargetSpot);
+	INT32 iDoctrine = (pSoldier->bTeam == ENEMY_TEAM) ? (INT32)AIGetDoctrineProfile(pSoldier) : -1;
+	INT32 iLocalCommand = AIHasLocalCommandSupport(pSoldier) ? 1 : 0;
+	INT32 iFireteam = (pSoldier->bTeam == ENEMY_TEAM) ? (INT32)AIFireteamId(pSoldier) : -1;
+	INT32 iFireteamAlive = (pSoldier->bTeam == ENEMY_TEAM) ? (INT32)AIFireteamAliveCount(pSoldier) : -1;
 
 	fprintf(fp,
-		"%u\t%s\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%d\t%d\t%d\t%s\t%s\t%d\t%d\t%d\t%d\t%u\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
+		"%u\t%s\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%d\t%d\t%d\t%s\t%s\t%d\t%d\t%d\t%d\t%u\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
 		VR_AI_COMPANION_SCHEMA_VERSION,
 		VR_AI_FRAMEWORK_VERSION,
 		VR_TacticalTelemetrySessionID(),
@@ -132,6 +136,10 @@ static void AITraceWrite(SOLDIERTYPE *pSoldier, UINT32 uiDecisionID,
 		AILocalRoutPressure(pSoldier),
 		AILocalSmokeReserve(pSoldier),
 		fFrictionChangedChoice ? 1 : 0,
+		iDoctrine,
+		iLocalCommand,
+		iFireteam,
+		iFireteamAlive,
 		zReason);
 	fclose(fp);
 
@@ -144,11 +152,12 @@ static void AITraceWrite(SOLDIERTYPE *pSoldier, UINT32 uiDecisionID,
 		if (fc)
 		{
 			fprintf(fc,
-				"[TACTICAL_DECISION][S%u][B%u][T%u][D%u][%c%d] actor=%u class=%u competence=%d event=%s source=%s intent=%d role=%d target=%d action=%d grid=%d score=%d reason=%s\n",
+				"[TACTICAL_DECISION][S%u][B%u][T%u][D%u][%c%d] actor=%u class=%u competence=%d doctrine=%d command=%d fireteam=%d/%d event=%s source=%s intent=%d role=%d target=%d action=%d grid=%d score=%d reason=%s\n",
 				VR_TacticalTelemetrySessionID(), VR_TacticalTelemetryBattleID(),
 				VR_TacticalTelemetryTurnID(), uiDecisionID,
 				'A' + gWorldSectorY - 1, gWorldSectorX,
 				pSoldier->ubID, pSoldier->ubSoldierClass, AICompetenceTier(pSoldier),
+				iDoctrine, iLocalCommand, iFireteam, iFireteamAlive,
 				pEvent, zSource, bIntent, bRole, sTargetSpot, bAction,
 				sCandidateGrid, iScore, zReason);
 			fclose(fc);
