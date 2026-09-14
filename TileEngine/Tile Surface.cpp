@@ -17,6 +17,8 @@
 #endif
 
 #include "ExceptionHandling.h"
+#include "Isometric Utils.h"
+#include "GameSettings.h"
 
 
 TILE_IMAGERY				*gTileSurfaceArray[ NUMBEROFTILETYPES ];
@@ -68,9 +70,32 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 	STR										cEndOfName;
 	STRUCTURE_FILE_REF *	pStructureFileRef;
 	BOOLEAN								fOk;
+	UINT8 ubLoadedVHDScale = 1;
 
+	// Vengeance HD overlay.  Keep map/JSD filenames untouched and only replace
+	// the visual package.  A 2x game looks under VHD2\..., a 4x game under
+	// VHD4\..., first for a multi-frame JPC package and then for a single PNG.
+	// Missing HD art falls through to the normal VFS/legacy path.
+	hImage = NULL;
+	const UINT8 ubRequestedVHDScale = GetVHDRenderScale();
+	if ( gGameExternalOptions.fVHDPreferNativeAssets &&
+		 ( ubRequestedVHDScale == 2 || ubRequestedVHDScale == 4 ) )
+	{
+		CHAR8 cVHDVisualFilename[512];
+		const int iVHDNameLen = sprintf( cVHDVisualFilename, "VHD%u\\%s",
+			(unsigned int)ubRequestedVHDScale, cVisualFilename );
+		if ( iVHDNameLen > 0 && iVHDNameLen < (int)sizeof(cVHDVisualFilename) )
+		{
+			hImage = CreateImage( cVHDVisualFilename, IMAGE_ALLDATA, ImageFileType::JPC );
+			if ( hImage == NULL )
+				hImage = CreateImage( cVHDVisualFilename, IMAGE_ALLDATA, ImageFileType::PNG );
+			if ( hImage != NULL )
+				ubLoadedVHDScale = ubRequestedVHDScale;
+		}
+	}
 
-	hImage = CreateImage( cVisualFilename, IMAGE_ALLDATA );
+	if ( hImage == NULL )
+		hImage = CreateImage( cVisualFilename, IMAGE_ALLDATA );
 	if ( hImage == NULL && fC5VisualOverride )
 	{
 		TraceSanMonaC5VisualAsset( "PIXEL_OVERRIDE_FALLBACK", cVisualFilename, 0, 0, cFilename, 0 );
@@ -87,7 +112,9 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 		return( NULL );
 	}
 	if ( fTraceC5Asset )
-		TraceSanMonaC5VisualAsset( hImage->ubBitDepth == 32 ? "IMAGE_TRUECOLOR" : "IMAGE_LEGACY", hImage->ImageFile, hImage->usNumberOfObjects, hImage->ubBitDepth, "", 0 );
+		TraceSanMonaC5VisualAsset( ubLoadedVHDScale > 1 ? "IMAGE_VHD_NATIVE" :
+			( hImage->ubBitDepth == 32 ? "IMAGE_TRUECOLOR" : "IMAGE_LEGACY" ),
+			hImage->ImageFile, hImage->usNumberOfObjects, hImage->ubBitDepth, "", 0 );
 	if ( fTraceB1Asset )
 	{
 		TraceB1RemasterLoad( "CREATE IMAGE OK", cFilename );
@@ -104,6 +131,9 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 	VObjectDesc.hImage = hImage;
 
 	hVObject = CreateVideoObject( &VObjectDesc );
+
+	if ( hVObject != NULL )
+		hVObject->ubVHDAssetScale = ubLoadedVHDScale;
 
 	if ( hVObject == NULL )
 	{
