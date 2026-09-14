@@ -271,6 +271,7 @@ static void ApplyEnemySupplyToGeneratedLoadout(INT8 bSoldierClass, INT8 *pbWeapo
 		if (Chance((UINT8)(60 - weaponSupply))) --(*pbWeaponClass);
 	if (pbAmmoClips && *pbAmmoClips > 2 && weaponSupply < 55 && Chance((UINT8)(55 - weaponSupply))) --(*pbAmmoClips);
 
+	BOOLEAN fHadMortar = (pfMortar && *pfMortar);
 	BOOLEAN fHasSpecial = (pfGrenadeLauncher && *pfGrenadeLauncher) || (pfLAW && *pfLAW) ||
 		(pfMortar && *pfMortar) || (pfRPG && *pfRPG);
 	if (fHasSpecial)
@@ -281,6 +282,7 @@ static void ApplyEnemySupplyToGeneratedLoadout(INT8 bSoldierClass, INT8 *pbWeapo
 			if (pfLAW) *pfLAW = FALSE;
 			if (pfMortar) *pfMortar = FALSE;
 			if (pfRPG) *pfRPG = FALSE;
+			if (fHadMortar && guiMortarsRolledByTeam > 0) --guiMortarsRolledByTeam;
 			if (pbGrenades && *pbGrenades > 2) *pbGrenades = 2;
 		}
 		else if (pbGrenades && *pbGrenades > 0)
@@ -1049,6 +1051,10 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 	DebugEnemySupplyProfile(bSoldierClass);
 	ApplyEnemySupplyToGeneratedLoadout(bSoldierClass, &bWeaponClass, &bAmmoClips, &bGrenades,
 		&fGrenadeLauncher, &fLAW, &fMortar, &fRPG);
+
+	// If a regional shortage cancelled a rolled heavy weapon, its special-ammo class must not survive.
+	if (!fRPG && bGrenadeClass == RPG_GRENADE_CLASS) bGrenadeClass = bRating;
+	if (!fMortar && bGrenadeClass == MORTAR_GRENADE_CLASS) bGrenadeClass = bRating;
 
 	UINT32 invsize = pp->Inv.size();
 	for( i = 0; i < invsize; ++i )
