@@ -6,6 +6,10 @@ on:
       - integration/unified-ai-fireteams-doctrine-2026-09-14
   workflow_dispatch:
 
+concurrency:
+  group: unified-ai-tactical-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   compile-tactical-ai:
     runs-on: [self-hosted, Windows]
