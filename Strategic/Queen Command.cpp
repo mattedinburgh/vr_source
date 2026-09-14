@@ -2174,18 +2174,12 @@ void EnemyCapturesPlayerSoldier( SOLDIERTYPE *pSoldier )
 
 	AssertNotNIL(pSoldier);
 
-	// ATE: Check first if ! in player captured sequence already
-	// CJC Dec 1 2002: fixing multiple captures
-	if ( ( gStrategicStatus.uiFlags & STRATEGIC_PLAYER_CAPTURED_FOR_RESCUE ) && (gStrategicStatus.uiFlags & STRATEGIC_PLAYER_CAPTURED_FOR_ESCAPE) )
-	{
-		return;
-	}
-
-	// ATE: If maximum prisoners captured, return!
-	if ( gStrategicStatus.ubNumCapturedForRescue > 3 )
-	{
-	return;
-	}
+	// The configured POW maps provide three insertion/item-drop points. Reuse
+	// them cyclically so larger captures never index beyond the fixed arrays.
+	const UINT8 ubCaptureSlot = gStrategicStatus.ubNumCapturedForRescue % 3;
+	// VR: POW capture is no longer limited to the two legacy story sequences.
+	// If those sequences are exhausted, the existing interrogation sector acts
+	// as the continuing detention/holding location.
 
 
   // If this is an EPC , just kill them...
@@ -2255,7 +2249,7 @@ void EnemyCapturesPlayerSoldier( SOLDIERTYPE *pSoldier )
 			if( pSoldier->inv[ i ].exists() == true )
 			{
 				WorldItem.fExists = TRUE;
-				WorldItem.sGridNo = gModSettings.iInitialPOWItemGridNo[ gStrategicStatus.ubNumCapturedForRescue ];
+				WorldItem.sGridNo = gModSettings.iInitialPOWItemGridNo[ ubCaptureSlot ];
 				WorldItem.ubLevel = 0;
 				WorldItem.usFlags = 0;
 				WorldItem.bVisible = FALSE;
@@ -2263,16 +2257,19 @@ void EnemyCapturesPlayerSoldier( SOLDIERTYPE *pSoldier )
 				pSoldier->inv[ i ].MoveThisObjectTo(WorldItem.object);
 				//dnl ch75 271013
 				pWorldItem[0] = WorldItem;
-				AddWorldItemsToUnLoadedSector( gModSettings.ubInitialPOWSectorX, gModSettings.ubInitialPOWSectorY, 0, gModSettings.iInitialPOWItemGridNo[ gStrategicStatus.ubNumCapturedForRescue ], 1, pWorldItem, FALSE );
+				AddWorldItemsToUnLoadedSector( gModSettings.ubInitialPOWSectorX, gModSettings.ubInitialPOWSectorY, 0, gModSettings.iInitialPOWItemGridNo[ ubCaptureSlot ], 1, pWorldItem, FALSE );
 			}
 		}
 
 		pSoldier->ubStrategicInsertionCode = INSERTION_CODE_GRIDNO;
-		pSoldier->usStrategicInsertionData = gModSettings.iInitialPOWGridNo[ gStrategicStatus.ubNumCapturedForRescue ];
+		pSoldier->usStrategicInsertionData = gModSettings.iInitialPOWGridNo[ ubCaptureSlot ];
 
 		gStrategicStatus.ubNumCapturedForRescue++;
 	}
-	else if ( gubQuest[ QUEST_HELD_IN_ALMA ] == QUESTDONE )
+	else
+	{
+		// Alma is no longer the active initial POW destination. Use the existing
+		// interrogation sector as the persistent detention/holding location.
 	{
 		//-teleport him to N7
 		pSoldier->sSectorX = gModSettings.ubMeanwhileInterrogatePOWSectorX; //7
@@ -2289,7 +2286,7 @@ void EnemyCapturesPlayerSoldier( SOLDIERTYPE *pSoldier )
 			if( pSoldier->inv[ i ].exists() == true )
 			{
 				WorldItem.fExists = TRUE;
-				WorldItem.sGridNo = gModSettings.iMeanwhileInterrogatePOWItemGridNo[ gStrategicStatus.ubNumCapturedForRescue ];
+				WorldItem.sGridNo = gModSettings.iMeanwhileInterrogatePOWItemGridNo[ ubCaptureSlot ];
 				WorldItem.ubLevel = 0;
 				WorldItem.usFlags = 0;
 				WorldItem.bVisible = FALSE;
@@ -2297,12 +2294,12 @@ void EnemyCapturesPlayerSoldier( SOLDIERTYPE *pSoldier )
 				pSoldier->inv[ i ].MoveThisObjectTo(WorldItem.object);
 				//dnl ch75 271013
 				pWorldItem[0] = WorldItem;
-				AddWorldItemsToUnLoadedSector( gModSettings.ubMeanwhileInterrogatePOWSectorX, gModSettings.ubMeanwhileInterrogatePOWSectorY, 0, gModSettings.iMeanwhileInterrogatePOWItemGridNo[ gStrategicStatus.ubNumCapturedForRescue ], 1, pWorldItem, FALSE );
+				AddWorldItemsToUnLoadedSector( gModSettings.ubMeanwhileInterrogatePOWSectorX, gModSettings.ubMeanwhileInterrogatePOWSectorY, 0, gModSettings.iMeanwhileInterrogatePOWItemGridNo[ ubCaptureSlot ], 1, pWorldItem, FALSE );
 			}
 		}
 
 		pSoldier->ubStrategicInsertionCode = INSERTION_CODE_GRIDNO;
-		pSoldier->usStrategicInsertionData = gModSettings.iMeanwhileInterrogatePOWGridNo[ gStrategicStatus.ubNumCapturedForRescue ];
+		pSoldier->usStrategicInsertionData = gModSettings.iMeanwhileInterrogatePOWGridNo[ ubCaptureSlot ];
 
 		gStrategicStatus.ubNumCapturedForRescue++;
 	}
