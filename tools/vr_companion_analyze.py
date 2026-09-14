@@ -149,6 +149,67 @@ def tactical_summary(
             else:
                 ties += 1
 
+    # Black Box v2 decision-forensics: summarize both actor perception and
+    # omniscient formation snapshots without mixing the two information scopes.
+    state_samples: Dict[str, List[float]] = defaultdict(list)
+    perceived_force_ratios: List[float] = []
+    retreat_candidate_types = Counter()
+    retreat_eligible = Counter()
+
+    for decision in tactical:
+        for key, value in decision["states"].items():
+            if isinstance(value, (int, float)):
+                state_samples[str(key)].append(float(value))
+
+        friends = decision["states"].get("perceived_friendly_strength")
+        enemies = decision["states"].get("perceived_enemy_strength")
+        if (
+            isinstance(friends, (int, float))
+            and isinstance(enemies, (int, float))
+            and float(enemies) > 0
+        ):
+            perceived_force_ratios.append(float(friends) / float(enemies))
+
+        for candidate in decision["candidates"]:
+            name = str(candidate.get("candidate", "unknown"))
+            if name in {"hold_ground", "organized_disengagement", "sector_escape"}:
+                retreat_candidate_types[name] += 1
+                if candidate.get("eligible"):
+                    retreat_eligible[name] += 1
+
+    formation_snapshots = [
+        event
+        for event in events
+        if event.get("layer") == "tactical"
+        and event.get("kind") == "formation_snapshot"
+    ]
+    ready_ratios: List[float] = []
+    formation_stress: List[float] = []
+    formation_casualties: List[float] = []
+    peak_escaping = 0
+    peak_disengaging = 0
+    peak_cowering = 0
+
+    for snap in formation_snapshots:
+        living = snap.get("living")
+        ready = snap.get("combat_ready")
+        if (
+            isinstance(living, (int, float))
+            and isinstance(ready, (int, float))
+            and float(living) > 0
+        ):
+            ready_ratios.append(float(ready) / float(living))
+        if isinstance(snap.get("average_stress"), (int, float)):
+            formation_stress.append(float(snap["average_stress"]))
+        if isinstance(snap.get("casualty_percent"), (int, float)):
+            formation_casualties.append(float(snap["casualty_percent"]))
+        if isinstance(snap.get("escaping"), (int, float)):
+            peak_escaping = max(peak_escaping, int(snap["escaping"]))
+        if isinstance(snap.get("disengaging"), (int, float)):
+            peak_disengaging = max(peak_disengaging, int(snap["disengaging"]))
+        if isinstance(snap.get("cowering"), (int, float)):
+            peak_cowering = max(peak_cowering, int(snap["cowering"]))
+
     diagnostics = Counter(
         event.get("code", "unknown")
         for event in events
@@ -176,6 +237,23 @@ def tactical_summary(
         "offense_wins": offense_wins,
         "ties": ties,
         "avg_cover_minus_attack_score": safe_mean(score_gaps),
+        "v2_state_means": {
+            key: safe_mean(values) for key, values in sorted(state_samples.items())
+        },
+        "avg_perceived_force_ratio": safe_mean(perceived_force_ratios),
+        "retreat_candidate_types": dict(retreat_candidate_types.most_common()),
+        "retreat_eligible": dict(retreat_eligible.most_common()),
+        "formation_snapshots": len(formation_snapshots),
+        "avg_formation_ready_rate": (
+            100.0 * safe_mean(ready_ratios)
+            if safe_mean(ready_ratios) is not None
+            else None
+        ),
+        "avg_formation_stress": safe_mean(formation_stress),
+        "avg_formation_casualty_pct": safe_mean(formation_casualties),
+        "peak_escaping": peak_escaping,
+        "peak_disengaging": peak_disengaging,
+        "peak_cowering": peak_cowering,
         "diagnostics": dict(diagnostics.most_common()),
     }
 
@@ -613,6 +691,25 @@ def recommendations(summary: Dict[str, Any], baseline: Optional[Dict[str, Any]])
                 f"(average adjusted attack advantage {-gap:.1f}). Check exposure and casualty outcomes."
             )
 
+    escape_eligible = tac.get("retreat_eligible", {}).get("sector_escape", 0)
+    disengage_eligible = tac.get("retreat_eligible", {}).get("organized_disengagement", 0)
+    hold_mean = tac.get("v2_state_means", {}).get("hold_confidence")
+    if escape_eligible and hold_mean is not None and hold_mean >= 50:
+        findings.append(
+            f"Black Box v2 courage anomaly: sector escape was eligible {escape_eligible} time(s) while mean recorded hold confidence was {hold_mean:.1f}. "
+            "Inspect the decision IDs for force-ratio, collapse-streak and rout-pressure disagreement."
+        )
+    if tac.get("formation_snapshots", 0) and tac.get("peak_escaping", 0) >= 2:
+        findings.append(
+            f"Formation-level rout signal: up to {tac['peak_escaping']} soldier(s) were simultaneously in escape state. "
+            "Compare formation combat-ready strength with each actor's perceived force ratio before changing courage weights."
+        )
+    if disengage_eligible and not escape_eligible and tac.get("peak_disengaging", 0):
+        findings.append(
+            "Organized disengagement occurred without sector-escape eligibility. "
+            "This is normally healthy behavior; inspect outcomes only if the formation became excessively passive."
+        )
+
     if mobility["unmatched_arrivals"]:
         findings.append(
             f"Strategic execution trace has {mobility['unmatched_arrivals']} arrival(s) without a matching move order. "
@@ -701,6 +798,28 @@ def render_markdown(
         f"| Attack-vs-cover comparisons | {tac['attack_cover_pairs']} |",
         f"| Cover wins / attack wins / ties | {tac['defense_wins']} / {tac['offense_wins']} / {tac['ties']} |",
         f"| Mean cover-minus-attack adjusted score | {fmt(tac['avg_cover_minus_attack_score'])} |",
+        "",
+        "### Black Box v2 decision forensics",
+        "",
+        "| Metric | Result |",
+        "|---|---:|",
+        f"| Formation snapshots | {tac['formation_snapshots']} |",
+        f"| Mean formation combat-ready rate | {fmt(tac['avg_formation_ready_rate'])}% |",
+        f"| Mean formation stress | {fmt(tac['avg_formation_stress'])} |",
+        f"| Mean formation casualty rate | {fmt(tac['avg_formation_casualty_pct'])}% |",
+        f"| Peak simultaneous disengaging | {tac['peak_disengaging']} |",
+        f"| Peak simultaneous escaping | {tac['peak_escaping']} |",
+        f"| Peak simultaneous cowering | {tac['peak_cowering']} |",
+        f"| Mean perceived friendly/enemy strength ratio | {fmt(tac['avg_perceived_force_ratio'], 2)} |",
+        f"| Mean hold confidence | {fmt(tac['v2_state_means'].get('hold_confidence'))} |",
+        f"| Mean local stress | {fmt(tac['v2_state_means'].get('local_stress'))} |",
+        f"| Mean personal risk | {fmt(tac['v2_state_means'].get('personal_risk'))} |",
+        f"| Mean rout pressure | {fmt(tac['v2_state_means'].get('rout_pressure'))} |",
+        f"| Eligible organized disengagements | {tac['retreat_eligible'].get('organized_disengagement', 0)} |",
+        f"| Eligible sector escapes | {tac['retreat_eligible'].get('sector_escape', 0)} |",
+        "",
+        "Omniscient formation snapshots are reported separately from actor perception. "
+        "Use decision IDs to inspect a soldier's perceived force strength, stress, risk, cover, leadership, weapon state and collapse streak before attributing a retreat to bad AI.",
         "",
         "### Battle outcomes",
         "",
