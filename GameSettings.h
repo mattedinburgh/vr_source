@@ -411,6 +411,10 @@ typedef struct
 	//Video settings	
 	BOOLEAN gfVSync;
 
+	// Vengeance HD (VHD) experimental renderer. 1 = legacy, 2/4 = HD tactical scale.
+	UINT8 ubVHDRenderScale;
+	BOOLEAN fVHDPreferNativeAssets;
+
 	// Flugente: zombie settings
 	INT8	sZombieRiseBehaviour;
 	BOOLEAN fZombieSpawnWaves;
