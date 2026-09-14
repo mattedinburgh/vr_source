@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "canonical_branch": "install/all-2026-09-12",
+  "policy": "Archived AI branches are frozen. If a pinned branch tip changes, review and forward-port any unique work into canonical before updating this registry.",
+  "branches": [
+    {
+      "name": "ai/ap-budgeting",
+      "pinned_sha": "7eff6523364d84b99f799211a0c052b835e6cc93",
+      "classification": "subsumed"
+    },
+    {
+      "name": "ai/combat-dispersion",
+      "pinned_sha": "085b6b8d15d32d0cd7f5d07babbb48179d77e6a5",
+      "classification": "subsumed"
+    },
+    {
+      "name": "ai/combat-medic-rescue",
+      "pinned_sha": "9476b3dd0ee99203a07eba31d64c006ebb4ce5ed",
+      "classification": "subsumed"
+    },
+    {
+      "name": "ai/covering-fire-cooperation",
+      "pinned_sha": "c33da50b09e054ed45daaae7bc3388ba294c5402",
+      "classification": "subsumed"
+    },
+    {
+      "name": "ai/deidranna-doctrine",
+      "pinned_sha": "3e939dbe78d963cca05c6a0c95def83913949e70",
+      "classification": "superseded"
+    },
+    {
+      "name": "ai/emergency-casualty-smoke",
+      "pinned_sha": "4d809d30d5c49c284d92245b7aebe3f896ced366",
+      "classification": "subsumed"
+    },
+    {
+      "name": "ai/fireteam-cohesion",
+      "pinned_sha": "0c0059375e0cf13239bd108934fa31d21c6abdb9",
+      "classification": "subsumed"
+    },
+    {
+      "name": "ai/human-tactical-final",
+      "pinned_sha": "60fe0fb7770fb658716b0caf4bb997ac96285945",
+      "classification": "superseded"
+    },
+    {
+      "name": "ai/individual-self-preservation",
+      "pinned_sha": "2c4264c4a5be23e99526fa37fb976f7653f2a325",
+      "classification": "subsumed"
+    },
+    {
+      "name": "ai/legacy-core-modernization",
+      "pinned_sha": "e77abdd5a69b4326dbddcc0a082850bc9d48a5bb",
+      "classification": "superseded"
+    },
+    {
+      "name": "ai/local-advance-cooperation",
+      "pinned_sha": "01aa8633c7e2318f489828944579d4c55b4b1d95",
+      "classification": "subsumed"
+    },
+    {
+      "name": "ai/no-weapon-self-preservation",
+      "pinned_sha": "9e6727baae5e87faf23d42508a47e463ebf5f2a2",
+      "classification": "subsumed"
+    },
+    {
+      "name": "ai/radio-support-doctrine",
+      "pinned_sha": "435d8a403af3587eeb9eb810a4e0c654abd7d661",
+      "classification": "superseded"
+    },
+    {
+      "name": "ai/range-aware-positioning",
+      "pinned_sha": "1f0d5c06edaa85789c4cc08c2e3848f98390149c",
+      "classification": "subsumed"
+    },
+    {
+      "name": "ai/search-confidence-decay",
+      "pinned_sha": "ff6b01deadf9ec80d87a909e57ac6eee9cd4a577",
+      "classification": "subsumed"
+    },
+    {
+      "name": "ai/shared-enemy-militia-brain",
+      "pinned_sha": "c26818cce00052bea1fcf2f799b0070879dbe59f",
+      "classification": "superseded"
+    },
+    {
+      "name": "ai/support-aware-withdrawal",
+      "pinned_sha": "953cd3ee116be6f467f1b69ed0357239d743db3f",
+      "classification": "subsumed"
+    },
+    {
+      "name": "ai/target-allocation",
+      "pinned_sha": "d1d331334c89285f7794fb4312c83295bcc9311e",
+      "classification": "subsumed"
+    },
+    {
+      "name": "ai/team-coordination",
+      "pinned_sha": "878cfd3d3f63692d59fedd56af2dd1d7a4e33e79",
+      "classification": "superseded"
+    },
+    {
+      "name": "ai/utility-squad-planner",
+      "pinned_sha": "114694a208d1f875084f222bdfbf58651293903b",
+      "classification": "superseded"
+    },
+    {
+      "name": "ai/wound-self-preservation",
+      "pinned_sha": "939e4e99a09ae2126f3c89588ce7a40732a184b3",
+      "classification": "subsumed"
+    },
+    {
+      "name": "ai/wounded-tactical-withdrawal",
+      "pinned_sha": "9389e92819593ff866824465bc0f4d99f04ffa57",
+      "classification": "subsumed"
+    },
+    {
+      "name": "final-human-ai-modern-113",
+      "pinned_sha": "435d8a403af3587eeb9eb810a4e0c654abd7d661",
+      "classification": "superseded"
+    },
+    {
+      "name": "feature/enemy-role-identification-113",
+      "pinned_sha": "435d8a403af3587eeb9eb810a4e0c654abd7d661",
+      "classification": "superseded"
+    },
+    {
+      "name": "integration/unified-ai-fireteams-doctrine-2026-09-14",
+      "pinned_sha": "a1d6b1b46861daf47bda1882e3bb5bfd3dfbed0c",
+      "classification": "superseded"
+    },
+    {
+      "name": "integration/unified-ai-framework-2026-09-14",
+      "pinned_sha": "38e3694c539dc9e5ffbcf6ec313aaf1f0e04c817",
+      "classification": "superseded"
+    },
+    {
+      "name": "inactive/cqb-building-doctrine-2026-09-14",
+      "pinned_sha": "ee0f85d4d1a0295f69878ee10b69717f1852ac0a",
+      "classification": "forward-ported-dormant"
+    },
+    {
+      "name": "inactive/strategic-modernization",
+      "pinned_sha": "3cf20e201b8177365c70cb91c19fbf29c9aff7e2",
+      "classification": "staged-reference"
+    },
+    {
+      "name": "integration/unified-strategic-companion-2026-09-14",
+      "pinned_sha": "7eaa5d46e0f1f9083eca5b7aa2a67ea633694380",
+      "classification": "staged-reference"
+    },
+    {
+      "name": "consolidation/install-all-2026-09-14",
+      "pinned_sha": "eb322b0e66f301edf6390df8c2747f5e38dac7b3",
+      "classification": "staged-reference"
+    },
+    {
+      "name": "diagnostics/campaign-companion-v2",
+      "pinned_sha": "98fd2d3a84cafbf4f2bdf76e40bb3567464efdc0",
+      "classification": "staged-reference"
+    },
+    {
+      "name": "diagnostics/strategic-campaign-blackbox",
+      "pinned_sha": "1a7f0c68d0f4d17c1e13b1c276f2560c4c3d3bdb",
+      "classification": "staged-reference"
+    },
+    {
+      "name": "diagnostics/strategic-campaign-companion",
+      "pinned_sha": "77f2dfb716df0e4e2f08cb85b40c1b32c5224865",
+      "classification": "staged-reference"
+    },
+    {
+      "name": "telemetry/companion-sessions",
+      "pinned_sha": "da8b19d54f58d9f9d197d5efd1c133e9de2c3d65",
+      "classification": "superseded-telemetry"
+    }
+  ]
+}
