@@ -55,6 +55,8 @@ STR8 gStr8AlertStatus[] = { "Green", "Yellow", "Red", "Black" };
 STR8 gStr8Attitude[] = { "DEFENSIVE", "BRAVESOLO", "BRAVEAID", "CUNNINGSOLO", "CUNNINGAID", "AGGRESSIVE", "MAXATTITUDES", "ATTACKSLAYONLY" };
 STR8 gStr8Orders[] = { "STATIONARY", "ONGUARD", "CLOSEPATROL", "FARPATROL", "POINTPATROL", "ONCALL", "SEEKENEMY", "RNDPTPATROL", "SNIPER" };
 STR8 gStr8Team[] = { "OUR_TEAM", "ENEMY_TEAM", "CREATURE_TEAM", "MILITIA_TEAM", "CIV_TEAM", "LAST_TEAM", "PLAYER_PLAN", "LAN_TEAM_ONE", "LAN_TEAM_TWO", "LAN_TEAM_THREE", "LAN_TEAM_FOUR" };
+static STR8 gStr8TacticalIntent[] = { "HOLD", "PRESS", "FLANK", "FALLBACK", "DISENGAGE", "RESCUE" };
+static STR8 gStr8TacticalRole[] = { "SUPPORT", "MANEUVER", "FLANKER", "SCREEN", "RESERVE" };
 STR8 gStr8Class[] = { "SOLDIER_CLASS_NONE", "SOLDIER_CLASS_ADMINISTRATOR", "SOLDIER_CLASS_ELITE", "SOLDIER_CLASS_ARMY", "SOLDIER_CLASS_GREEN_MILITIA", "SOLDIER_CLASS_REG_MILITIA", "SOLDIER_CLASS_ELITE_MILITIA", "SOLDIER_CLASS_CREATURE", "SOLDIER_CLASS_MINER", "SOLDIER_CLASS_ZOMBIE" };
 STR8 gStr8Knowledge[] = { "HEARD_3_TURNS_AGO", "HEARD_2_TURNS_AGO", "HEARD_LAST_TURN", "HEARD_THIS_TURN", "NOT_HEARD_OR_SEEN", "SEEN_CURRENTLY", "SEEN_THIS_TURN", "SEEN_LAST_TURN", "SEEN_2_TURNS_AGO", "SEEN_3_TURNS_AGO" };
 
@@ -10934,6 +10936,16 @@ void LogDecideInfo(SOLDIERTYPE *pSoldier)
 	DebugAI(AI_MSG_INFO, pSoldier, String("current team %d interrupt (top message) %d interrupt occurred %d", gTacticalStatus.ubCurrentTeam, AICheckInterrupt(), gTacticalStatus.fInterruptOccurred));
 	DebugAI(AI_MSG_INFO, pSoldier, String("AP=%d/%d %s %s %s %s %s", pSoldier->bActionPoints, pSoldier->bInitialActionPoints, gStr8AlertStatus[pSoldier->aiData.bAlertStatus], gStr8Orders[pSoldier->aiData.bOrders], gStr8Attitude[pSoldier->aiData.bAttitude], gStr8Team[pSoldier->bTeam], gStr8Class[pSoldier->ubSoldierClass]));
 	DebugAI(AI_MSG_INFO, pSoldier, String("Health %d/%d Breath %d/%d Shock %d Tolerance %d AI Morale %d Morale %d", pSoldier->stats.bLife, pSoldier->stats.bLifeMax, pSoldier->bBreath, pSoldier->bBreathMax, pSoldier->aiData.bShock, CalcSuppressionTolerance(pSoldier), pSoldier->aiData.bAIMorale, pSoldier->aiData.bMorale));
+	if (AICombatTeam(pSoldier))
+	{
+		INT32 sPlanTarget = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		INT8 bPlanIntent = AITacticalIntent(pSoldier, sPlanTarget);
+		INT8 bPlanRole = AITacticalRole(pSoldier, sPlanTarget);
+		DebugAI(AI_MSG_INFO, pSoldier, String("Plan %s/%s target %d stress %d risk %d/%d exposure %d",
+			gStr8TacticalIntent[bPlanIntent], gStr8TacticalRole[bPlanRole], sPlanTarget,
+			AILocalStress(pSoldier), AIPersonalRisk(pSoldier), AIPersonalRiskTolerance(pSoldier),
+			AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel)));
+	}
 	DebugAI(AI_MSG_INFO, pSoldier, String("Spot %d level %d opponents %d", pSoldier->sGridNo, pSoldier->pathing.bLevel, pSoldier->aiData.bOppCnt));
 	DebugAI(AI_MSG_INFO, pSoldier, String("ubServiceCount %d ubServicePartner %d fDoingSurgery %d", pSoldier->ubServiceCount, pSoldier->ubServicePartner, pSoldier->fDoingSurgery));
 	if (pSoldier->IsCowering())
