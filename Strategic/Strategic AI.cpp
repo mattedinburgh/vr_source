@@ -5470,6 +5470,12 @@ void InvestigateSector( UINT8 ubSectorID )
 			return;
 		}
 
+		// Scouts/investigators confirmed activity. Strength remains an estimate.
+		VR_CampaignRecord( "OBSERVATION", "investigation", ubSectorID, -1,
+			ubSectorID, ubSectorID, ubTotal, 85,
+			"investigating forces confirmed hostile activity; distribute a higher-confidence report" );
+		VR_ReportOperationalIntel( ubSectorID, 85 );
+
 		//Now we have decided who to send, so send them.
 		for( i = 0; i < 4; i++ )
 		{
