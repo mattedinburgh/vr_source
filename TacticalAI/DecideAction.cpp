@@ -5547,6 +5547,13 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 					return bDisengageAction;
 			}
 
+			if (AICombatTeam(pSoldier) && !AIDisengagementActive(pSoldier))
+			{
+				INT8 bPressureAction = DecideSuppressionResponse(pSoldier, ubCanMove);
+				if (bPressureAction != AI_ACTION_NONE)
+					return bPressureAction;
+			}
+
 			// Hopeless local odds make survival/defence outrank another advance.
 			if (AICombatTeam(pSoldier) && !AIDisengagementActive(pSoldier) && AIShouldAvoidAdvance(pSoldier))
 			{
