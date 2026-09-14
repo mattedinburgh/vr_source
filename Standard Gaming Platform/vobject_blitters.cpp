@@ -20,6 +20,7 @@
 	#include "sgp_logger.h"
 #endif
 
+// VR_VISIBLE_EQUIPMENT_SGP_REBUILD_NOTE: renderer depends on clipped shadow blitters below.
 #include <map>
 std::map<UINT32,ClipRectangle> g_SurfaceRectangle;
 
