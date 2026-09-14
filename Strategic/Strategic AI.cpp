@@ -3290,6 +3290,12 @@ void EvaluateQueenSituation()
 	VRAnalyticsStateInt( uiAnalyticsDecision, "reinforcement_pool", giReinforcementPool );
 	VRAnalyticsStateInt( uiAnalyticsDecision, "difficulty", gGameOptions.ubDifficultyLevel );
 	VRAnalyticsStateInt( uiAnalyticsDecision, "player_progress", CurrentPlayerProgressPercentage() );
+	VRAnalyticsStateInt( uiAnalyticsDecision, "queen_ai_awake", gfQueenAIAwake ? 1 : 0 );
+	VRAnalyticsStateInt( uiAnalyticsDecision, "army_alertness", giArmyAlertness );
+	VRAnalyticsStateInt( uiAnalyticsDecision, "force_percentage", giForcePercentage );
+	VRAnalyticsStateInt( uiAnalyticsDecision, "aware_battles", gubNumAwareBattles );
+	VRAnalyticsStateInt( uiAnalyticsDecision, "garrison_count", giGarrisonArraySize );
+	VRAnalyticsStateInt( uiAnalyticsDecision, "patrol_count", giPatrolArraySize );
 
 	ValidateWeights( 26 );
 
@@ -3323,6 +3329,7 @@ void EvaluateQueenSituation()
 			uiOffset += (UINT32)(dGeneralDecisionFactor * (gGameExternalOptions.ubInsaneTimeEvaluateInMinutes + Random( gGameExternalOptions.ubInsaneTimeEvaluateVariance )));
 			break;
 	}
+	VRAnalyticsStateInt( uiAnalyticsDecision, "next_evaluation_delay_minutes", uiOffset );
 
 	// sevenfm: allow recruiting when pool size drops below QUEEN_POOL_INCREMENT_PER_DIFFICULTY_LEVEL, this should result in more stable strategic AI behavior
 	if (giReinforcementPool <= 0 || !gfUnlimitedTroops && giReinforcementPool < gGameExternalOptions.guiBaseQueenPoolIncrement)
@@ -3370,41 +3377,88 @@ void EvaluateQueenSituation()
 	{
 		RecalculateGarrisonWeight( i );
 		iWeight = gGarrisonGroup[ i ].bWeight;
-		if( iWeight > 0 )
+
+		if( iWeight <= 0 )
 		{
-			if( !gGarrisonGroup[ i ].ubPendingGroupID &&
-					EnemyPermittedToAttackSector( NULL, gGarrisonGroup[ i ].ubSectorID ) &&
-					GarrisonRequestingMinimumReinforcements( i ) )
-			{
-				if( ReinforcementsApproved( i, &usDefencePoints ) )
-				{
-					VRAnalyticsCandidate( uiAnalyticsDecision, "garrison_reinforcement",
-						gGarrisonGroup[ i ].ubSectorID,
-						iWeight, iWeight, true, "eligible_and_approved" );
-					iApplicableGarrisonIds[iApplicableGarrisons] = i;
-					iApplicableGarrisons++;
-					iApplicableRequestPoints += gGarrisonGroup[ i ].bWeight;
-				}
-			}
+			VRAnalyticsCandidate( uiAnalyticsDecision, "garrison_reinforcement",
+				gGarrisonGroup[ i ].ubSectorID,
+				iWeight, iWeight, false, "nonpositive_request_weight" );
+			continue;
 		}
+		if( gGarrisonGroup[ i ].ubPendingGroupID )
+		{
+			VRAnalyticsCandidate( uiAnalyticsDecision, "garrison_reinforcement",
+				gGarrisonGroup[ i ].ubSectorID,
+				iWeight, iWeight, false, "reinforcement_already_pending" );
+			continue;
+		}
+		if( !EnemyPermittedToAttackSector( NULL, gGarrisonGroup[ i ].ubSectorID ) )
+		{
+			VRAnalyticsCandidate( uiAnalyticsDecision, "garrison_reinforcement",
+				gGarrisonGroup[ i ].ubSectorID,
+				iWeight, iWeight, false, "sector_not_permitted_for_enemy_operation" );
+			continue;
+		}
+		if( !GarrisonRequestingMinimumReinforcements( i ) )
+		{
+			VRAnalyticsCandidate( uiAnalyticsDecision, "garrison_reinforcement",
+				gGarrisonGroup[ i ].ubSectorID,
+				iWeight, iWeight, false, "below_minimum_reinforcement_request" );
+			continue;
+		}
+		if( !ReinforcementsApproved( i, &usDefencePoints ) )
+		{
+			VRAnalyticsCandidate( uiAnalyticsDecision, "garrison_reinforcement",
+				gGarrisonGroup[ i ].ubSectorID,
+				iWeight, iWeight, false, "reinforcement_not_approved" );
+			continue;
+		}
+
+		VRAnalyticsCandidate( uiAnalyticsDecision, "garrison_reinforcement",
+			gGarrisonGroup[ i ].ubSectorID,
+			iWeight, iWeight, true, "eligible_and_approved" );
+		iApplicableGarrisonIds[iApplicableGarrisons] = i;
+		iApplicableGarrisons++;
+		iApplicableRequestPoints += gGarrisonGroup[ i ].bWeight;
 	}
 	for( i = 0; i < giPatrolArraySize; i++ )
 	{
 		RecalculatePatrolWeight( i );
 		iWeight = gPatrolGroup[ i ].bWeight;
-		if( iWeight > 0 )
+
+		if( iWeight <= 0 )
 		{
-			if( !gPatrolGroup[ i ].ubPendingGroupID && PatrolRequestingMinimumReinforcements( i ) )
-			{
-				VRAnalyticsCandidate( uiAnalyticsDecision, "patrol_reinforcement",
-					gPatrolGroup[ i ].ubSectorID[ 1 ],
-					iWeight, iWeight, true, "eligible" );
-				iApplicablePatrolIds[iApplicablePatrols] = i;
-				iApplicablePatrols++;
-				iApplicableRequestPoints += gPatrolGroup[ i ].bWeight;
-			}
+			VRAnalyticsCandidate( uiAnalyticsDecision, "patrol_reinforcement",
+				gPatrolGroup[ i ].ubSectorID[ 1 ],
+				iWeight, iWeight, false, "nonpositive_request_weight" );
+			continue;
 		}
+		if( gPatrolGroup[ i ].ubPendingGroupID )
+		{
+			VRAnalyticsCandidate( uiAnalyticsDecision, "patrol_reinforcement",
+				gPatrolGroup[ i ].ubSectorID[ 1 ],
+				iWeight, iWeight, false, "reinforcement_already_pending" );
+			continue;
+		}
+		if( !PatrolRequestingMinimumReinforcements( i ) )
+		{
+			VRAnalyticsCandidate( uiAnalyticsDecision, "patrol_reinforcement",
+				gPatrolGroup[ i ].ubSectorID[ 1 ],
+				iWeight, iWeight, false, "below_minimum_reinforcement_request" );
+			continue;
+		}
+
+		VRAnalyticsCandidate( uiAnalyticsDecision, "patrol_reinforcement",
+			gPatrolGroup[ i ].ubSectorID[ 1 ],
+			iWeight, iWeight, true, "eligible" );
+		iApplicablePatrolIds[iApplicablePatrols] = i;
+		iApplicablePatrols++;
+		iApplicableRequestPoints += gPatrolGroup[ i ].bWeight;
 	}
+
+	VRAnalyticsStateInt( uiAnalyticsDecision, "applicable_garrisons", iApplicableGarrisons );
+	VRAnalyticsStateInt( uiAnalyticsDecision, "applicable_patrols", iApplicablePatrols );
+	VRAnalyticsStateInt( uiAnalyticsDecision, "applicable_request_points", iApplicableRequestPoints );
 
 	if( !iApplicableRequestPoints )
 	{
@@ -3417,6 +3471,7 @@ void EvaluateQueenSituation()
 	// giRequestPoints is the combined sum of all the individual weights of all garrisons and patrols requesting reinforcements
 	//iRandom = Random( giRequestPoints );
 	iRandom = Random( iApplicableRequestPoints );
+	VRAnalyticsStateInt( uiAnalyticsDecision, "weighted_selection_roll", iRandom );
 
 	iOrigRequestPoints = giRequestPoints;	// debug only!
 
