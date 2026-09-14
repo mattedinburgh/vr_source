@@ -662,59 +662,89 @@ static BOOLEAN MapFactoryAnchorMatches( INT32 sGridNo, UINT8 ubArchetype )
 	}
 }
 
-static UINT16 MapFactoryPlacePilotModule( INT32 sAnchor, UINT8 ubArchetype, UINT32 uiSeed )
+static UINT16 MapFactoryPlaceCompositionKit( INT32 sAnchor, UINT8 ubArchetype, UINT32 uiSeed )
 {
 	const INT32 sRow = sAnchor / WORLD_COLS;
 	const INT32 sCol = sAnchor % WORLD_COLS;
-	const INT8 bDx[4] = { 0, 2, 0, 2 };
-	const INT8 bDy[4] = { 0, 0, 2, 2 };
 
-	UINT32 uiTypes[4];
+	// Larger authored footprints. These are deliberately different in shape by
+	// archetype; this is a composition kit, not a denser version of random clutter.
+	static const INT8 gMilitaryDx[12]   = {0,2,4,6,0,6,0,6,1,3,5,3};
+	static const INT8 gMilitaryDy[12]   = {0,0,0,0,2,2,4,4,6,6,6,3};
+	static const INT8 gIndustrialDx[12] = {0,2,4,6,8,1,3,5,7,2,4,6};
+	static const INT8 gIndustrialDy[12] = {0,0,0,0,0,2,2,2,2,4,4,4};
+	static const INT8 gWildDx[12]       = {0,3,6,1,5,8,0,4,7,2,6,4};
+	static const INT8 gWildDy[12]       = {0,0,1,2,2,3,4,4,5,6,6,8};
+	static const INT8 gFarmDx[12]       = {0,2,4,6,0,2,4,6,0,2,4,6};
+	static const INT8 gFarmDy[12]       = {0,0,0,0,3,3,3,3,6,6,6,6};
+	static const INT8 gTownDx[12]       = {0,2,4,6,1,5,0,6,2,4,1,5};
+	static const INT8 gTownDy[12]       = {0,0,0,0,2,2,4,4,6,6,8,8};
+
+	const INT8 *pDx = gWildDx;
+	const INT8 *pDy = gWildDy;
 	switch ( ubArchetype )
 	{
-		case MAP_FACTORY_MILITARY:
-			uiTypes[0] = DEBRISMISC; uiTypes[1] = DEBRISWOOD;
-			uiTypes[2] = DEBRISROCKS; uiTypes[3] = DEBRISMISC; break;
-		case MAP_FACTORY_INDUSTRIAL:
-			uiTypes[0] = DEBRISMISC; uiTypes[1] = DEBRISWOOD;
-			uiTypes[2] = DEBRISROCKS; uiTypes[3] = DEBRISGRASS; break;
-		case MAP_FACTORY_SETTLEMENT:
-			uiTypes[0] = DEBRISMISC; uiTypes[1] = DEBRISWOOD;
-			uiTypes[2] = DEBRISWEEDS; uiTypes[3] = DEBRISROCKS; break;
-		case MAP_FACTORY_ROADSIDE:
-			uiTypes[0] = DEBRISSAND; uiTypes[1] = DEBRISROCKS;
-			uiTypes[2] = DEBRISWEEDS; uiTypes[3] = DEBRISWOOD; break;
-		case MAP_FACTORY_FARMLAND:
-			uiTypes[0] = DEBRISGRASS; uiTypes[1] = DEBRISWEEDS;
-			uiTypes[2] = DEBRISSAND; uiTypes[3] = DEBRISWOOD; break;
-		case MAP_FACTORY_WILDERNESS:
-			uiTypes[0] = DEBRISWEEDS; uiTypes[1] = DEBRISROCKS;
-			uiTypes[2] = DEBRISGRASS; uiTypes[3] = DEBRISWOOD; break;
-		default:
-			uiTypes[0] = DEBRISWEEDS; uiTypes[1] = DEBRISROCKS;
-			uiTypes[2] = DEBRISGRASS; uiTypes[3] = DEBRISWOOD; break;
+		case MAP_FACTORY_MILITARY:   pDx = gMilitaryDx; pDy = gMilitaryDy; break;
+		case MAP_FACTORY_INDUSTRIAL: pDx = gIndustrialDx; pDy = gIndustrialDy; break;
+		case MAP_FACTORY_FARMLAND:   pDx = gFarmDx; pDy = gFarmDy; break;
+		case MAP_FACTORY_SETTLEMENT: pDx = gTownDx; pDy = gTownDy; break;
+		case MAP_FACTORY_ROADSIDE:   pDx = gIndustrialDx; pDy = gIndustrialDy; break;
+		default: break;
 	}
 
-	INT32 sGrid[4];
-	UINT16 usSub[4];
-	for ( UINT8 i = 0; i < 4; ++i )
+	UINT32 uiTypes[12];
+	for ( UINT8 i = 0; i < 12; ++i )
 	{
-		const INT32 r = sRow + bDy[i];
-		const INT32 col = sCol + bDx[i];
-		if ( r < 0 || col < 0 || col >= WORLD_COLS )
-			return 0;
-		sGrid[i] = r * WORLD_COLS + col;
-		if ( sGrid[i] < 0 || sGrid[i] >= WORLD_MAX || !MapFactoryVisualGridSafe( sGrid[i] ) )
-			return 0;
-		usSub[i] = MapFactoryPickSubIndex( uiTypes[i], uiSeed + i * 17u );
-		if ( usSub[i] == 0 )
-			return 0;
+		switch ( ubArchetype )
+		{
+			case MAP_FACTORY_MILITARY:
+				uiTypes[i] = (i % 4 == 0) ? DEBRISMISC :
+					(i % 4 == 1) ? DEBRISWOOD :
+					(i % 4 == 2) ? DEBRISROCKS : DEBRISWEEDS;
+				break;
+			case MAP_FACTORY_INDUSTRIAL:
+				uiTypes[i] = (i % 4 == 0) ? DEBRISMISC :
+					(i % 4 == 1) ? DEBRISWOOD :
+					(i % 4 == 2) ? DEBRISROCKS : DEBRISGRASS;
+				break;
+			case MAP_FACTORY_FARMLAND:
+				uiTypes[i] = (i % 4 == 0) ? DEBRISGRASS :
+					(i % 4 == 1) ? DEBRISSAND :
+					(i % 4 == 2) ? DEBRISWEEDS : DEBRISWOOD;
+				break;
+			case MAP_FACTORY_SETTLEMENT:
+				uiTypes[i] = (i % 4 == 0) ? DEBRISMISC :
+					(i % 4 == 1) ? DEBRISWOOD :
+					(i % 4 == 2) ? DEBRISWEEDS : DEBRISROCKS;
+				break;
+			case MAP_FACTORY_ROADSIDE:
+				uiTypes[i] = (i % 4 == 0) ? DEBRISSAND :
+					(i % 4 == 1) ? DEBRISROCKS :
+					(i % 4 == 2) ? DEBRISWEEDS : DEBRISWOOD;
+				break;
+			default:
+				uiTypes[i] = (i % 4 == 0) ? DEBRISWEEDS :
+					(i % 4 == 1) ? DEBRISROCKS :
+					(i % 4 == 2) ? DEBRISGRASS : DEBRISWOOD;
+				break;
+		}
 	}
 
 	UINT16 usPlaced = 0;
-	for ( UINT8 i = 0; i < 4; ++i )
-		if ( MapFactoryAddVisual( sGrid[i], uiTypes[i], usSub[i], FALSE ) )
+	for ( UINT8 i = 0; i < 12; ++i )
+	{
+		const INT32 r = sRow + pDy[i];
+		const INT32 col = sCol + pDx[i];
+		if ( r < 0 || col < 0 || col >= WORLD_COLS )
+			continue;
+		const INT32 sGridNo = r * WORLD_COLS + col;
+		if ( sGridNo < 0 || sGridNo >= WORLD_MAX || !MapFactoryVisualGridSafe( sGridNo ) )
+			continue;
+
+		const UINT16 usSub = MapFactoryPickSubIndex( uiTypes[i], uiSeed + i * 29u );
+		if ( usSub != 0 && MapFactoryAddVisual( sGridNo, uiTypes[i], usSub, FALSE ) )
 			++usPlaced;
+	}
 	return usPlaced;
 }
 
@@ -725,27 +755,27 @@ static UINT32 MapFactoryApplyPilotDesign( UINT8 ubArchetype )
 
 	const INT32 sRows = WORLD_MAX / WORLD_COLS;
 	INT32 sLastRow = -1000, sLastCol = -1000;
-	UINT32 uiModules = 0, uiPieces = 0;
+	UINT32 uiKits = 0, uiPieces = 0;
 
-	for ( INT32 sRow = 5; sRow < sRows - 5 && uiModules < 8; sRow += 3 )
+	for ( INT32 sRow = 5; sRow < sRows - 10 && uiKits < 6; sRow += 3 )
 	{
-		for ( INT32 sCol = 5; sCol < WORLD_COLS - 5 && uiModules < 8; sCol += 3 )
+		for ( INT32 sCol = 5; sCol < WORLD_COLS - 10 && uiKits < 6; sCol += 3 )
 		{
 			const INT32 sGridNo = sRow * WORLD_COLS + sCol;
 			if ( !MapFactoryAnchorMatches( sGridNo, ubArchetype ) )
 				continue;
 
-			if ( abs( sRow - sLastRow ) + abs( sCol - sLastCol ) < 24 )
+			if ( abs( sRow - sLastRow ) + abs( sCol - sLastCol ) < 32 )
 				continue;
 
 			const UINT32 uiHash = (UINT32)sGridNo * 2654435761u + (UINT32)ubArchetype * 2246822519u;
-			if ( (uiHash & 3u) != 0u )
+			if ( (uiHash & 1u) != 0u )
 				continue;
 
-			const UINT16 usPlaced = MapFactoryPlacePilotModule( sGridNo, ubArchetype, uiHash );
-			if ( usPlaced == 4 )
+			const UINT16 usPlaced = MapFactoryPlaceCompositionKit( sGridNo, ubArchetype, uiHash );
+			if ( usPlaced >= 7 )
 			{
-				++uiModules;
+				++uiKits;
 				uiPieces += usPlaced;
 				sLastRow = sRow;
 				sLastCol = sCol;
@@ -753,9 +783,9 @@ static UINT32 MapFactoryApplyPilotDesign( UINT8 ubArchetype )
 		}
 	}
 
-	CHAR8 zStatus[160];
-	_snprintf( zStatus, sizeof(zStatus) - 1, "PILOT_DESIGN archetype=%u modules=%lu pieces=%lu",
-		(UINT16)ubArchetype, uiModules, uiPieces );
+	CHAR8 zStatus[176];
+	_snprintf( zStatus, sizeof(zStatus) - 1, "PILOT_KIT_DESIGN archetype=%u kits=%lu pieces=%lu",
+		(UINT16)ubArchetype, uiKits, uiPieces );
 	zStatus[sizeof(zStatus) - 1] = 0;
 	MapPreviewWriteStatus( zStatus );
 	return uiPieces;
