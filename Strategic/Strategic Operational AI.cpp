@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "Strategic Operational AI.h"
+#include "Campaign Strategic Telemetry.h"
 #include "Strategic Movement.h"
 #include "Strategic AI.h"
 #include "Strategic Mines.h"
@@ -138,6 +139,15 @@ void VR_LogOperationalDecision( GROUP *pGroup, const CHAR8 *szEvent, const VR_OP
 	if( !VR_IsEnemyFormation( pGroup ) || !VR_FormationStateIsInitialized( pGroup ) )
 		return;
 
+	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+	VR_CampaignRecord( szEvent ? szEvent : "OPERATIONAL", "formation",
+		pEnemy->ubOperationalMission, pGroup->ubGroupID,
+		SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ),
+		pEnemy->ubOperationalTargetSectorID,
+		pScore ? pScore->iTotal : 0,
+		pEnemy->ubOperationalLastDecisionReason,
+		VR_OperationalReasonName( pEnemy->ubOperationalLastDecisionReason ) );
+
 	FILE *pFile = fopen( "Strategic Operational BlackBox.txt", "a" );
 	if( !pFile )
 		return;
@@ -147,7 +157,6 @@ void VR_LogOperationalDecision( GROUP *pGroup, const CHAR8 *szEvent, const VR_OP
 	UINT32 hour = ( totalMinutes / 60U ) % 24U;
 	UINT32 minute = totalMinutes % 60U;
 
-	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
 	fprintf( pFile,
 		"[D%u %02u:%02u] F=%u G=%u EVENT=%s MISSION=%s RESERVE=%s POS=%c%d TARGET=%c%d HOME=%c%d SIZE=%u SUP=%u MORALE=%u INTEL=%u KNOWN=%c%d PSTR=%u MSTR=%u RETREATS=%u REASON=%s",
 		(unsigned)day, (unsigned)hour, (unsigned)minute,
@@ -500,6 +509,8 @@ void VR_OnEnemyGroupAssigned( GROUP *pGroup, UINT8 ubTargetSectorID, UINT8 ubLeg
 	{
 		pEnemy->ubOperationalReserveRole = VR_RESERVE_NONE;
 	}
+
+	VR_CampaignStartOrRefreshPlan( pGroup, ubTargetSectorID, ubLegacyIntention, pGroup->ubMoveType );
 
 	VR_OPERATIONAL_SCORE score;
 	VR_ScoreOperationalTarget( pGroup, ubTargetSectorID, &score );
