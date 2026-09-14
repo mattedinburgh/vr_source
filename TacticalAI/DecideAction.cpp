@@ -36,7 +36,7 @@
 #include "connect.h"
 #include "Text.h"
 #include "Game Clock.h"			// sevenfm
-#include "Rotting Corpses.h"	// sevenfm
+#include "VRAnalytics.h"\r\n#include "Rotting Corpses.h"	// sevenfm
 
 //////////////////////////////////////////////////////////////////////////////
 // SANDRO - In this file, all APBPConstants[AP_CROUCH] and APBPConstants[AP_PRONE] were changed to GetAPsCrouch() and GetAPsProne()
@@ -5605,6 +5605,23 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		case AGGRESSIVE:		iOffense += 10; break;
 		case ATTACKSLAYONLY:iOffense += 30; break;
 		}
+
+		VRAnalyticsTacticalCandidate(
+			pSoldier->ubID,
+			"attack_option",
+			BestAttack.sTarget,
+			BestAttack.ubChanceToReallyHit,
+			iOffense,
+			true,
+			"black_ai_attack_vs_cover" );
+		VRAnalyticsTacticalCandidate(
+			pSoldier->ubID,
+			"cover_option",
+			sBestCover,
+			iCoverPercentBetter,
+			iDefense,
+			true,
+			"black_ai_attack_vs_cover" );
 
 		DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"DecideActionBlack: if his defensive instincts win out, forget all about the attack");
 		// if his defensive instincts win out, forget all about the attack
