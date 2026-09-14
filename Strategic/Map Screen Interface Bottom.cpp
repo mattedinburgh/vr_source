@@ -92,7 +92,7 @@ UINT16 MESSAGE_SCROLL_AREA_END_X;
 // delay for paused flash
 #define PAUSE_GAME_TIMER						500
 
-#define MAP_BOTTOM_FONT_COLOR					( 32 * 4 - 9 )
+#define MAP_BOTTOM_FONT_COLOR					FONT_METALGRAY
 
 /*
 // delay to start auto message scroll
@@ -620,7 +620,7 @@ void DrawNameOfLoadedSector( void )
 	SetFontDestBuffer( FRAME_BUFFER, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, FALSE );
 
 	SetFont( COMPFONT );
-	SetFontForeground( 183 );
+	SetFontForeground( FONT_LTBLUE );
 	SetFontBackground( FONT_BLACK );
 
 
@@ -1504,7 +1504,7 @@ void DisplayCurrentBalanceForMapBottom( void )
 
 	// set up the font
 	SetFont( COMPFONT );
-	SetFontForeground( 183 );
+	SetFontForeground( FONT_LTBLUE );
 	SetFontBackground( FONT_BLACK );
 
 	swprintf( sString, L"%d", LaptopSaveInfo.iCurrentBalance );
@@ -1602,7 +1602,7 @@ void DisplayProjectedDailyMineIncome( void )
 
 	// set up the font
 	SetFont( COMPFONT );
-	SetFontForeground( 183 );
+	SetFontForeground( FONT_LTBLUE );
 	SetFontBackground( FONT_BLACK );
 
 	swprintf( sString, L"%d", iRate );
@@ -1648,7 +1648,7 @@ void DisplayProjectedDailyExpenses( void )
 	SetFont( COMPFONT );
 	if (iRate == 0)
 	{
-		SetFontForeground( 183 );
+		SetFontForeground( FONT_LTBLUE );
 	}
 	else
 	{

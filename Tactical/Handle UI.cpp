@@ -33,6 +33,7 @@
 #include "opplist.h"
 #include "worldman.h"
 #include "weapons.h"
+#include "Items.h"
 #include "renderworld.h"
 #include "structure.h"
 #include "interface panels.h"
@@ -2711,7 +2712,7 @@ UINT32 UIHandleCAMercShoot( UI_EVENT *pUIEvent )
 			{
 				// If this is one of our own guys.....pop up requiester...
 				if ( ( pTSoldier->bTeam == gbPlayerNum || pTSoldier->bTeam == MILITIA_TEAM ) 
-					&& Item[ pSoldier->inv[ HANDPOS ].usItem ].usItemClass != IC_MEDKIT 
+					&& !ItemCanGiveFirstAid( pSoldier->inv[ HANDPOS ].usItem ) 
 					&& !Item[pSoldier->inv[ HANDPOS ].usItem].gascan
 					&& !ItemCanBeAppliedToOthers( pSoldier->inv[ HANDPOS ].usItem )
 					&& gTacticalStatus.ubLastRequesterTargetID != pTSoldier->ubProfile 
@@ -4546,7 +4547,7 @@ BOOLEAN UIMouseOnValidAttackLocation( SOLDIERTYPE *pSoldier )
 	{
 		fGuyHere = TRUE;
 
-		if ( guiUIFullTargetFlags & SELECTED_MERC && Item[ usInHand ].usItemClass != IC_MEDKIT )
+		if ( guiUIFullTargetFlags & SELECTED_MERC && !ItemCanGiveFirstAid( usInHand ) )
 		{
 			return( FALSE );
 		}
@@ -4581,7 +4582,7 @@ BOOLEAN UIMouseOnValidAttackLocation( SOLDIERTYPE *pSoldier )
 	//	}
 	//}
 
-	if ( Item[ usInHand ].usItemClass == IC_MEDKIT )
+	if ( ItemCanGiveFirstAid( usInHand ) )
 	{
 		if ( !fGuyHere )
 		{

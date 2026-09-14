@@ -1,0 +1,5 @@
+San Mona C5 inherited visual source extraction
+requested_utc=2026-09-14T20:44:00Z
+scope=read-only exact STI frame/offset references for dominant inherited C5 art
+assets=sgrass1,build_01,build_21,build_06,flat_r1,flat_r2
+rule=no map or gameplay metadata changes

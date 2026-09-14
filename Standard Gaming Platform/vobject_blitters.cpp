@@ -755,6 +755,119 @@ SGPRect	ClippingRect;
 
 UINT32	guiTranslucentMask=0x3def; //0x7bef;		// mask for halving 5,6,5
 
+// Tactical cover / vision overlays need to remain readable without painting over
+// the map. The legacy translucent blitters are a 50/50 mix; this helper runs the
+// same RGB565-safe average twice, producing approximately 25% source colour over
+// 75% of the existing framebuffer while preserving the stock palette hue.
+static UINT16 BlendVeryTranslucent565( UINT16 usSource, UINT16 usDest )
+{
+	// Use the engine's colour conversion helpers instead of packed shifts. The
+	// renderer can use 15/16-bit layouts depending on configuration; explicit
+	// RGB mixing keeps red, orange, yellow and green hue-stable in either case.
+	const UINT32 uiSourceRGB = GetRGBColor( usSource );
+	const UINT32 uiDestRGB   = GetRGBColor( usDest );
+
+	const UINT8 ubRed = (UINT8)( ( ( uiSourceRGB & 0xff ) +
+		3 * ( uiDestRGB & 0xff ) + 2 ) / 4 );
+	const UINT8 ubGreen = (UINT8)( ( ( ( uiSourceRGB >> 8 ) & 0xff ) +
+		3 * ( ( uiDestRGB >> 8 ) & 0xff ) + 2 ) / 4 );
+	const UINT8 ubBlue = (UINT8)( ( ( ( uiSourceRGB >> 16 ) & 0xff ) +
+		3 * ( ( uiDestRGB >> 16 ) & 0xff ) + 2 ) / 4 );
+
+	return Get16BPPColor( FROMRGB( ubRed, ubGreen, ubBlue ) );
+}
+
+static BOOLEAN Blt8BPPDataTo16BPPBufferVeryTranslucentCommon(
+	UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue,
+	HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex,
+	SGPRect *clipregion, BOOLEAN fZWrite )
+{
+	Assert( hSrcVObject != NULL );
+	Assert( pBuffer != NULL );
+	Assert( pZBuffer != NULL );
+
+	ETRLEObject *pTrav = &( hSrcVObject->pETRLEObject[ usIndex ] );
+	UINT8 *pSrc = (UINT8 *)hSrcVObject->pPixData + pTrav->uiDataOffset;
+	UINT16 *pPalette = hSrcVObject->pShadeCurrent;
+
+	const INT32 iDestLeft = iX + pTrav->sOffsetX;
+	const INT32 iDestTop  = iY + pTrav->sOffsetY;
+	const INT32 iClipLeft   = clipregion ? clipregion->iLeft   : ClippingRect.iLeft;
+	const INT32 iClipTop    = clipregion ? clipregion->iTop    : ClippingRect.iTop;
+	const INT32 iClipRight  = clipregion ? clipregion->iRight  : ClippingRect.iRight;
+	const INT32 iClipBottom = clipregion ? clipregion->iBottom : ClippingRect.iBottom;
+
+	for( UINT32 uiY = 0; uiY < (UINT32)pTrav->usHeight; ++uiY )
+	{
+		INT32 iSourceX = 0;
+		const INT32 iDestY = iDestTop + (INT32)uiY;
+		const BOOLEAN fRowVisible = ( iDestY >= iClipTop && iDestY < iClipBottom );
+		UINT16 *pDestRow = NULL;
+		UINT16 *pZRow = NULL;
+		if( fRowVisible )
+		{
+			pDestRow = (UINT16 *)( (UINT8 *)pBuffer + ( uiDestPitchBYTES * iDestY ) );
+			pZRow = (UINT16 *)( (UINT8 *)pZBuffer + ( uiDestPitchBYTES * iDestY ) );
+		}
+
+		for( ;; )
+		{
+			const INT8 bRun = (INT8)( *pSrc++ );
+			if( bRun == 0 )
+				break;
+
+			if( bRun < 0 )
+			{
+				iSourceX += ( bRun & 0x7f );
+				continue;
+			}
+
+			for( INT32 i = 0; i < (INT32)bRun; ++i, ++iSourceX )
+			{
+				const UINT8 ubPaletteIndex = *pSrc++;
+				if( !fRowVisible )
+					continue;
+
+				const INT32 iDestX = iDestLeft + iSourceX;
+				if( iDestX < iClipLeft || iDestX >= iClipRight )
+					continue;
+
+				UINT16 *pDestPixel = pDestRow + iDestX;
+				UINT16 *pZPixel = pZRow + iDestX;
+
+				if( *pZPixel > usZValue )
+					continue;
+
+				*pDestPixel = BlendVeryTranslucent565( pPalette[ ubPaletteIndex ], *pDestPixel );
+				if( fZWrite )
+					*pZPixel = usZValue;
+			}
+		}
+	}
+
+	return TRUE;
+}
+
+BOOLEAN Blt8BPPDataTo16BPPBufferTransZVeryTranslucent( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex )
+{
+	return Blt8BPPDataTo16BPPBufferVeryTranslucentCommon( pBuffer, uiDestPitchBYTES, pZBuffer, usZValue, hSrcVObject, iX, iY, usIndex, NULL, TRUE );
+}
+
+BOOLEAN Blt8BPPDataTo16BPPBufferTransZClipVeryTranslucent( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion )
+{
+	return Blt8BPPDataTo16BPPBufferVeryTranslucentCommon( pBuffer, uiDestPitchBYTES, pZBuffer, usZValue, hSrcVObject, iX, iY, usIndex, clipregion, TRUE );
+}
+
+BOOLEAN Blt8BPPDataTo16BPPBufferTransZNBVeryTranslucent( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex )
+{
+	return Blt8BPPDataTo16BPPBufferVeryTranslucentCommon( pBuffer, uiDestPitchBYTES, pZBuffer, usZValue, hSrcVObject, iX, iY, usIndex, NULL, FALSE );
+}
+
+BOOLEAN Blt8BPPDataTo16BPPBufferTransZNBClipVeryTranslucent( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion )
+{
+	return Blt8BPPDataTo16BPPBufferVeryTranslucentCommon( pBuffer, uiDestPitchBYTES, pZBuffer, usZValue, hSrcVObject, iX, iY, usIndex, clipregion, FALSE );
+}
+
 // GLOBALS for pre-calculating skip values
 INT32		gLeftSkip, gRightSkip, gTopSkip, gBottomSkip;
 BOOLEAN	gfUsePreCalcSkips = FALSE;

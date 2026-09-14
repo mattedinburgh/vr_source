@@ -5759,11 +5759,7 @@ void HandleTeamServices( UINT8 ubTeamNum )
                             }
                             else
                             {
-                                bSlot = FindFirstAidKit ( pTeamSoldier );
-                                if ( bSlot == NO_SLOT )
-                                {
-                                    bSlot = FindMedKit( pTeamSoldier );
-                                }
+                                bSlot = FindBestFirstAidItem( pTeamSoldier );
                             }
                             if ( bSlot != NO_SLOT )
                             {
@@ -5850,11 +5846,7 @@ void HandlePlayerServices( SOLDIERTYPE *pTeamSoldier )
                             }
                             else
                             {
-                                bSlot = FindFirstAidKit ( pTeamSoldier);
-                                if ( bSlot == NO_SLOT )
-                                {
-                                    bSlot = FindMedKit ( pTeamSoldier );
-                                }
+                                bSlot = FindBestFirstAidItem( pTeamSoldier );
                             }
                         }
 

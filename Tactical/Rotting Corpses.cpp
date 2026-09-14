@@ -797,6 +797,42 @@ BOOLEAN CreateCorpsePalette( ROTTING_CORPSE *pCorpse )
 }
 
 
+// Vengeance: guarantee that a normal enemy does not leave an empty loot result
+// merely because every legitimate carried item failed its normal drop roll.
+// Quest/special items marked default-undroppable remain protected.
+static void EnsureMinimumEnemyLootDrop( SOLDIERTYPE *pSoldier )
+{
+	if ( pSoldier == NULL || pSoldier->bTeam != ENEMY_TEAM )
+		return;
+
+	UINT32 invsize = pSoldier->inv.size();
+	BOOLEAN fHasNormalDrop = FALSE;
+	INT32 iFallbackSlot = -1;
+	UINT32 uiFallbackCandidates = 0;
+
+	for ( UINT32 uiLootSlot = 0; uiLootSlot < invsize; ++uiLootSlot )
+	{
+		OBJECTTYPE *pLootObj = &( pSoldier->inv[ uiLootSlot ] );
+
+		if ( pLootObj->exists() == false || Item[ pLootObj->usItem ].defaultundroppable )
+			continue;
+
+		if ( !( pLootObj->fFlags & OBJECT_UNDROPPABLE ) )
+		{
+			fHasNormalDrop = TRUE;
+			break;
+		}
+
+		// Reservoir sampling keeps every eligible carried item equally likely.
+		++uiFallbackCandidates;
+		if ( Random( uiFallbackCandidates ) == 0 )
+			iFallbackSlot = (INT32)uiLootSlot;
+	}
+
+	if ( !fHasNormalDrop && iFallbackSlot >= 0 )
+		pSoldier->inv[ iFallbackSlot ].fFlags &= ~OBJECT_UNDROPPABLE;
+}
+
 BOOLEAN TurnSoldierIntoCorpse( SOLDIERTYPE *pSoldier, BOOLEAN fRemoveMerc, BOOLEAN fCheckForLOS )
 {	
 	if (TileIsOutOfBounds(pSoldier->sGridNo))
@@ -986,6 +1022,9 @@ BOOLEAN TurnSoldierIntoCorpse( SOLDIERTYPE *pSoldier, BOOLEAN fRemoveMerc, BOOLE
 	{
 		// OK, Place what objects this guy was carrying on the ground!
 		UINT32 invsize = pSoldier->inv.size();
+
+		EnsureMinimumEnemyLootDrop( pSoldier );
+
 		for ( cnt = 0; cnt < invsize; ++cnt )
 		{
 			pObj = &( pSoldier->inv[ cnt ] );

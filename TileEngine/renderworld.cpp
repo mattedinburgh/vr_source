@@ -50,6 +50,7 @@
 	#include "Soldier Find.h"
 #endif
 
+#include "TileDat.h"
 #include "LogicalBodyTypes/BodyTypeDB.h"
 #include "LogicalBodyTypes/Layers.h"
 #include <string>
@@ -1100,6 +1101,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 	BOOLEAN			fMultiTransShadowZBlitter = FALSE;
 	INT16				sMultiTransShadowZBlitterIndex=-1;
 	BOOLEAN			fTranslucencyType=FALSE;
+	BOOLEAN			fVeryTranslucentCover=FALSE;
 	INT16				sX, sY;
 	BOOLEAN			fTileInvisible = FALSE;
 	BOOLEAN			fConvertTo16=FALSE;
@@ -1313,6 +1315,10 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 							sZStripIndex					= -1;
 
 							uiLevelNodeFlags			= pNode->uiFlags;
+							fVeryTranslucentCover =
+								( ( uiLevelNodeFlags & LEVELNODE_REVEAL ) != 0 ) &&
+								( pNode->usIndex >= SPECIALTILE_COVER_1 ) &&
+								( pNode->usIndex <= SPECIALTILE_COVER_5 );
 
 							if ( fCheckForRedundency )
 							{
@@ -2648,12 +2654,13 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 												if(fPixelate)
 												{
 													if(fTranslucencyType)
-													{
-														//if(fZWrite)
-														//	Blt8BPPDataTo16BPPBufferTransZClipTranslucent((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex, &gClippingRect);
-														//else
-															Blt8BPPDataTo16BPPBufferTransZNBClipTranslucent((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex, &gClippingRect);
-													}
+									{
+										// The clipped reveal path never writes Z here; preserve that behavior.
+										if( fVeryTranslucentCover )
+											Blt8BPPDataTo16BPPBufferTransZNBClipVeryTranslucent((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex, &gClippingRect);
+										else
+											Blt8BPPDataTo16BPPBufferTransZNBClipTranslucent((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex, &gClippingRect);
+									}
 													else
 													{
 														//if(fZWrite)
@@ -2796,12 +2803,19 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 												if(fPixelate)
 												{
 													if(fTranslucencyType)
-													{
-														if(fZWrite)
-															Blt8BPPDataTo16BPPBufferTransZTranslucent((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex);
-														else
-															Blt8BPPDataTo16BPPBufferTransZNBTranslucent((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex);
-													}
+									{
+										if( fVeryTranslucentCover )
+										{
+											if(fZWrite)
+												Blt8BPPDataTo16BPPBufferTransZVeryTranslucent((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex);
+											else
+												Blt8BPPDataTo16BPPBufferTransZNBVeryTranslucent((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex);
+										}
+										else if(fZWrite)
+											Blt8BPPDataTo16BPPBufferTransZTranslucent((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex);
+										else
+											Blt8BPPDataTo16BPPBufferTransZNBTranslucent((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex);
+									}
 													else
 													{
 														if(fZWrite)

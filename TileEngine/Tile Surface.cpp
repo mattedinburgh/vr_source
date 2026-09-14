@@ -53,10 +53,34 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 	{
 		const CHAR8 *pLeaf = strrchr( cFilename, '\\' );
 		pLeaf = ( pLeaf != NULL ) ? pLeaf + 1 : cFilename;
-		if ( _stricmp( pLeaf, "FLAT_R3.STI" ) == 0 )
+
+		// C5 may visually override inherited GENERIC-1 art without changing the
+		// logical STI/JSD identity.  Missing C5 assets fall back automatically to
+		// cFilename below, so the list can be populated incrementally and safely.
+		struct C5_VISUAL_ALIAS
 		{
-			strcpy( cVisualFilename, "TILESETS\\18\\C5_FLAT_R3.STI" );
-			fC5VisualOverride = TRUE;
+			const CHAR8 *pOriginal;
+			const CHAR8 *pVisual;
+		};
+		static const C5_VISUAL_ALIAS gC5VisualAliases[] =
+		{
+			{ "SGRASS1.STI",  "TILESETS\\18\\C5_SGRASS1.STI" },
+			{ "BUILD_01.STI", "TILESETS\\18\\C5_BUILD_01.STI" },
+			{ "BUILD_21.STI", "TILESETS\\18\\C5_BUILD_21.STI" },
+			{ "BUILD_06.STI", "TILESETS\\18\\C5_BUILD_06.STI" },
+			{ "FLAT_R1.STI",  "TILESETS\\18\\C5_FLAT_R1.STI" },
+			{ "FLAT_R2.STI",  "TILESETS\\18\\C5_FLAT_R2.STI" },
+			{ "FLAT_R3.STI",  "TILESETS\\18\\C5_FLAT_R3.STI" },
+		};
+
+		for ( UINT32 uiAlias = 0; uiAlias < sizeof(gC5VisualAliases) / sizeof(gC5VisualAliases[0]); ++uiAlias )
+		{
+			if ( _stricmp( pLeaf, gC5VisualAliases[uiAlias].pOriginal ) == 0 )
+			{
+				strcpy( cVisualFilename, gC5VisualAliases[uiAlias].pVisual );
+				fC5VisualOverride = TRUE;
+				break;
+			}
 		}
 	}
 	const BOOLEAN fTraceB1Asset = ( cFilename != NULL && strstr( cFilename, "B1_" ) != NULL );

@@ -247,7 +247,7 @@ INT32 HandleItem( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel, UINT16 usHa
 	{
 		pTargetSoldier = MercPtrs[ usSoldierIndex ];
 
-		if (fFromUI && Item[usHandItem].usItemClass != IC_MEDKIT)
+		if (fFromUI && !ItemCanGiveFirstAid( usHandItem ))
 		{
 			INT32 sInteractiveGridNo;
 
@@ -290,7 +290,7 @@ INT32 HandleItem( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel, UINT16 usHa
 	// sevenfm: r8451
 	if ( fFromUI && pSoldier->bTeam == gbPlayerNum && pTargetSoldier && 
 		(pTargetSoldier->bTeam == gbPlayerNum || pTargetSoldier->aiData.bNeutral) && pTargetSoldier->ubBodyType != CROW && 
-		Item[usHandItem].usItemClass != IC_MEDKIT && !Item[usHandItem].gascan &&
+		!ItemCanGiveFirstAid( usHandItem ) && !Item[usHandItem].gascan &&
 		!ItemCanBeAppliedToOthers( usHandItem ) )
 	{
 		// Current 1.13 safety fix: never let an attack resolve against the acting soldier.
@@ -810,7 +810,7 @@ INT32 HandleItem( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel, UINT16 usHa
 	}
 
 	//USING THE MEDKIT
-	if ( Item[ usHandItem ].usItemClass == IC_MEDKIT )
+	if ( ItemCanGiveFirstAid( usHandItem ) )
 	{
 		// ATE: AI CANNOT GO THROUGH HERE!
 		INT32 usMapPos;
@@ -5507,7 +5507,7 @@ BOOLEAN HandItemWorks( SOLDIERTYPE *pSoldier, INT8 bSlot )
 	// shape to be usable, and doesn't break during use.
 	// Exception: land mines.	You can bury them broken, they just won't blow!
 	//	if ( (Item[ pObj->usItem ].fFlags & ITEM_DAMAGEABLE) && (pObj->usItem != MINE) && (Item[ pObj->usItem ].usItemClass != IC_MEDKIT) && pObj->usItem != GAS_CAN )
-	if ( (Item[ pObj->usItem ].damageable ) && (!Item[pObj->usItem].mine ) && (Item[ pObj->usItem ].usItemClass != IC_MEDKIT) && !Item[pObj->usItem].gascan )
+	if ( (Item[ pObj->usItem ].damageable ) && (!Item[pObj->usItem].mine ) && (!ItemCanGiveFirstAid( pObj->usItem )) && !Item[pObj->usItem].gascan )
 	{
 		// if it's still usable, check whether it breaks
 		if ( (*pObj)[0]->data.objectStatus >= USABLE)

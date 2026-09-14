@@ -2886,6 +2886,11 @@ UINT8 GetActionModeCursor( SOLDIERTYPE *pSoldier )
 	// Start off with what is in our hand
 	ubCursor = Item[ usInHand ].ubCursor;
 
+	// Vengeance: improvised bandages must enter the normal aid UI even when
+	// an older Items.xml/save still describes the rag as a generic misc item.
+	if ( ItemIsImprovisedBandage( usInHand ) )
+		ubCursor = AIDCURS;
+
 	// OK, check if what is in our hands has a detonator attachment...
 	// Detonators can only be on invalidcurs things...
 	if ( ubCursor == INVALIDCURS )

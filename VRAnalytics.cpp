@@ -820,30 +820,69 @@ void VRAnalyticsTacticalActionDone(
 	trace = &gTacticalTrace[soldierId];
 	if( !trace->decisionId )
 	{
-		VRAnalyticsDiagnostic(
-			VR_ANALYTICS_TACTICAL, "soldier", soldierId,
-			"uncorrelated_action_done", "ActionDone without an open decision chain" );
+		// Some legacy/pending actions legitimately reach ActionDone without passing
+		// through the central selection hook. Preserve the completion as an explicit
+		// completion-only chain rather than emitting a noisy orphan diagnostic or
+		// inventing a start AP/grid that we never observed.
+		unsigned long completionId = VRAnalyticsBeginDecision(
+			VR_ANALYTICS_TACTICAL, "soldier", soldierId, "tactical_action_completion" );
+		sprintf( detail,
+			"action=%d;end_grid=%ld;end_ap=%d;life=%d;breath=%d;"
+			"last_attack_hit=%d;correlation=completion_only;ap_spent_valid=0",
+			action, gridNo, actionPoints, life, breath, lastAttackHit ? 1 : 0 );
+		VRAnalyticsOutcome(
+			completionId,
+			"completed_uncorrelated",
+			"end_grid", gridNo,
+			"end_ap", actionPoints,
+			detail );
 		return;
 	}
 
 	if( trace->action != action )
 	{
-		VRAnalyticsDiagnostic(
-			VR_ANALYTICS_TACTICAL, "soldier", soldierId,
-			"action_mismatch", "completed action differs from recorded selected action" );
+		// Do not attach the actual completion to the wrong selected action. Close the
+		// stale chain and emit a completion-only chain for the action that really
+		// finished; AP cost is intentionally unknown in this case.
+		VRAnalyticsOutcome(
+			trace->decisionId,
+			"superseded",
+			"end_grid", gridNo,
+			"end_ap", actionPoints,
+			"action_done_mismatch_previous_selection" );
+		*trace = TacticalDecisionTrace();
+
+		unsigned long completionId = VRAnalyticsBeginDecision(
+			VR_ANALYTICS_TACTICAL, "soldier", soldierId, "tactical_action_completion" );
+		sprintf( detail,
+			"action=%d;end_grid=%ld;end_ap=%d;life=%d;breath=%d;"
+			"last_attack_hit=%d;correlation=action_mismatch;ap_spent_valid=0",
+			action, gridNo, actionPoints, life, breath, lastAttackHit ? 1 : 0 );
+		VRAnalyticsOutcome(
+			completionId,
+			"completed_uncorrelated",
+			"end_grid", gridNo,
+			"end_ap", actionPoints,
+			detail );
+		return;
 	}
 
 	const int rawAPDelta = trace->startAP - actionPoints;
 	const bool apIncreaseDetected = rawAPDelta < 0;
-	const int observedAPSpent = apIncreaseDetected ? -1 : rawAPDelta;
+	// AP can increase across a turn/AP refresh boundary. That means the cost is
+	// unknown, not negative. Record zero in the numeric field and carry an
+	// explicit validity bit so the companion can exclude it from AP statistics.
+	const int observedAPSpent = apIncreaseDetected ? 0 : rawAPDelta;
 	sprintf( detail,
 		"life_delta=%d;breath_delta=%d;last_attack_hit=%d;action=%d;"
-		"ap_before=%d;ap_after=%d;ap_increase_detected=%d",
+		"ap_before=%d;ap_after=%d;ap_increase_detected=%d;ap_spent_valid=%d;"
+		"correlation=selected_action",
 		life - trace->startLife,
 		breath - trace->startBreath,
 		lastAttackHit ? 1 : 0,
 		action, trace->startAP, actionPoints,
-		apIncreaseDetected ? 1 : 0 );
+		apIncreaseDetected ? 1 : 0,
+		apIncreaseDetected ? 0 : 1 );
 	VRAnalyticsOutcome(
 		trace->decisionId,
 		"completed",

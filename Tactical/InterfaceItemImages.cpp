@@ -19,6 +19,12 @@ UINT32					guiPITEMS[MAX_PITEMS];
 MDItemVideoObjects		g_oGUNSM;
 MDItemVideoObjects		g_oPITEMS[MAX_PITEMS];
 
+// Optional per-graphic PNG overrides. They deliberately do not require
+// USE_PNG_ITEM_IMAGES, so a mod can replace a handful of icons without
+// providing the entire item-art catalogue in PNG form.
+MDItemVideoObjects		g_oGUNSMOverrides;
+MDItemVideoObjects		g_oPITEMSOverrides[MAX_PITEMS];
+
 /******************************************************************************/
 
 MDItemVideoObjects::MDItemVideoObjects()
@@ -32,6 +38,12 @@ UINT32 MDItemVideoObjects::getVObjectForItem(UINT32 key)
 		return it->second;
 	}
 	SGP_THROW(_BS(L"Item key not registered : ") << key << _BS::wget);	
+}
+
+bool MDItemVideoObjects::hasItem(UINT32 key) const
+{
+	std::map<UINT32,UINT32>::const_iterator it = m_mapVObjects.find(key);
+	return it != m_mapVObjects.end();
 }
 
 void MDItemVideoObjects::registerItem(UINT32 key, vfs::Path const& sFileName)
@@ -53,14 +65,14 @@ void MDItemVideoObjects::registerItem(UINT32 key, vfs::Path const& sFileName)
 	m_mapVObjects.insert(std::make_pair(key,uiVObject));
 }
 
-bool MDItemVideoObjects::registerItemsFromFilePattern(vfs::Path const& sFilePattern)
+bool MDItemVideoObjects::registerItemsFromFilePattern(vfs::Path const& sFilePattern, bool optional)
 {
 	std::wstringstream wss;
 	int item = 0;
 	vfs::CVirtualFileSystem::Iterator it = getVFS()->begin(sFilePattern);
 	if(it.end())
 	{
-		return false;
+		return optional;
 	}
 	for(; !it.end(); it.next())
 	{
@@ -91,6 +103,23 @@ void MDItemVideoObjects::unRegisterAllItems()
 	{
 		// later
 	}
+}
+
+/******************************************************************************/
+
+UINT16 GetInterfaceGraphicSubIndex(UINT8 ubGraphicType, UINT16 ubGraphicNum)
+{
+	// Standalone PNG images contain a single video object, so their subindex is 0.
+	if(g_bUsePngItemImages)
+		return 0;
+
+	if(ubGraphicType == 0)
+		return g_oGUNSMOverrides.hasItem(ubGraphicNum) ? 0 : ubGraphicNum;
+
+	if(ubGraphicType <= MAX_PITEMS)
+		return g_oPITEMSOverrides[ubGraphicType-1].hasItem(ubGraphicNum) ? 0 : ubGraphicNum;
+
+	return ubGraphicNum;
 }
 
 /******************************************************************************/
@@ -127,6 +156,19 @@ bool RegisterItemImages()
 			return false;
 		}
 
+	}
+
+	// Sparse PNG override layer. Missing override folders are expected and harmless.
+	if(!g_oGUNSMOverrides.registerItemsFromFilePattern(L"INTERFACE/ItemOverrides/GUN/*.png", true))
+		return false;
+
+	for (UINT8 ubLoop = 0; ubLoop < gGameExternalOptions.ubNumPItems; ubLoop++)
+	{
+		if(!g_oPITEMSOverrides[ubLoop].registerItemsFromFilePattern(
+			String("INTERFACE/ItemOverrides/P%d/*.png",ubLoop+1), true))
+		{
+			return false;
+		}
 	}
 
 	return true;
