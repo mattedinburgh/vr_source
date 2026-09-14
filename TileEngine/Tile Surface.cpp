@@ -102,6 +102,24 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 		hImage = CreateImage( cFilename, IMAGE_ALLDATA );
 		fC5VisualOverride = FALSE;
 	}
+
+	// If no native VHD package exists, enlarge the loaded legacy imagery once.
+	// Existing blitters can then keep drawing at native sprite size while the
+	// logical map/JSD data remains untouched.
+	if ( hImage != NULL && ubLoadedVHDScale == 1 &&
+		 ( ubRequestedVHDScale == 2 || ubRequestedVHDScale == 4 ) )
+	{
+		if ( ScaleImageNearestForVHD( hImage, ubRequestedVHDScale ) )
+		{
+			ubLoadedVHDScale = ubRequestedVHDScale;
+		}
+		else
+		{
+			BlackBoxEvent( "VHD", "fallback scale failed file=%s scale=%u",
+				cFilename != NULL ? cFilename : "(null)", ubRequestedVHDScale );
+		}
+	}
+
 	if (hImage == NULL)
 	{
 		if ( fTraceB1Asset )
