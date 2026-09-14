@@ -1,5 +1,5 @@
 San Mona C5 graphics-only engine validation
-requested_utc=2026-09-14T19:23:00Z
+requested_utc=2026-09-14T20:39:00Z
 rule=do not modify c5.dat or gameplay metadata
-gamedir_target=9c1a54c54dedae7d11c6f4ebaed63a22d50d25a1
-qa=v2.3 material redraw + dominant flat roof + no runtime San Mona dressing + compile fixes
+gamedir_target=e5e9a2b90d13f95849263d68d85fd324574e240c
+qa=v2.3 material redraw + dominant flat roof + exact-JSD visual override + current build-info quoting fix
