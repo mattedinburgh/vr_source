@@ -39,6 +39,9 @@
 
 // Lion Paratroops
 #include "Strategic Town Loyalty.h"
+#include "Strategic Modernization.h"
+#include "Strategic Operational AI.h"
+#include "Campaign Strategic Telemetry.h"
 // End Lion
 
 #define SAI_VERSION		29
@@ -1120,6 +1123,7 @@ void SAIReportError( STR16 wErrorString )
 
 void InitStrategicAI()
 {
+	VR_InitStrategicModernization();
 	INT32 i, cnt, iRandom;
 	INT32 iEliteChance, iTroopChance, iAdminChance;
 	INT32 iWeight;
@@ -1657,6 +1661,7 @@ void InitStrategicAI()
 	}
 
 	ValidateWeights( 1 );
+	VR_EnsureAllEnemyFormationStates();
 }
 
 void KillStrategicAI()
