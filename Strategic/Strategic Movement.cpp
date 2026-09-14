@@ -4003,6 +4003,7 @@ BOOLEAN LoadStrategicMovementGroupsFromSavedGameFile( HWFILE hFile )
 		else //else its an enemy group
 		{
 			LoadEnemyGroupStructFromSavedGame( hFile, pTemp );
+			VR_EnsureEnemyFormationState( pTemp );
 		}
 
 
