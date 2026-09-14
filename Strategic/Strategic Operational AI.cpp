@@ -362,6 +362,121 @@ void VR_RecordFormationArrival( GROUP *pGroup )
 }
 
 
+static GROUP *VR_FindTacticalRetreatRemnant( UINT8 ubSourceSectorID,
+	UINT8 ubDestinationX, UINT8 ubDestinationY )
+{
+	for( GROUP *pGroup = gpGroupList; pGroup; pGroup = pGroup->next )
+	{
+		if( !VR_FormationStateIsInitialized( pGroup ) ||
+			pGroup->fBetweenSectors ||
+			pGroup->ubSectorX != ubDestinationX ||
+			pGroup->ubSectorY != ubDestinationY )
+		{
+			continue;
+		}
+
+		ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+		if( pEnemy->ubOperationalMission == VR_OPMISSION_RETREAT &&
+			pEnemy->ubOperationalHomeSectorID == ubSourceSectorID &&
+			pEnemy->ubOperationalTargetSectorID ==
+				(UINT8)SECTOR( ubDestinationX, ubDestinationY ) &&
+			(pEnemy->usOperationalFlags & VR_OPFLAG_REGROUPING) )
+		{
+			return pGroup;
+		}
+	}
+
+	return NULL;
+}
+
+BOOLEAN VR_RegisterTacticalRetreatSoldier( UINT8 ubSourceX, UINT8 ubSourceY,
+	UINT8 ubDestinationX, UINT8 ubDestinationY,
+	UINT8 ubAdmins, UINT8 ubTroops, UINT8 ubElites )
+{
+	if( ubSourceX < 1 || ubSourceX > 16 ||
+		ubSourceY < 1 || ubSourceY > 16 ||
+		ubDestinationX < 1 || ubDestinationX > 16 ||
+		ubDestinationY < 1 || ubDestinationY > 16 ||
+		( UINT16 )ubAdmins + ( UINT16 )ubTroops + ( UINT16 )ubElites != 1 )
+	{
+		return FALSE;
+	}
+
+	const UINT8 ubSourceSectorID =
+		(UINT8)SECTOR( ubSourceX, ubSourceY );
+	const UINT8 ubDestinationSectorID =
+		(UINT8)SECTOR( ubDestinationX, ubDestinationY );
+
+	GROUP *pGroup = VR_FindTacticalRetreatRemnant(
+		ubSourceSectorID, ubDestinationX, ubDestinationY );
+
+	if( pGroup )
+	{
+		pGroup->pEnemyGroup->ubNumAdmins += ubAdmins;
+		pGroup->pEnemyGroup->ubNumTroops += ubTroops;
+		pGroup->pEnemyGroup->ubNumElites += ubElites;
+		++pGroup->ubGroupSize;
+	}
+	else
+	{
+		pGroup = CreateNewEnemyGroupDepartingFromSector(
+			ubDestinationSectorID, ubAdmins, ubTroops, ubElites );
+		if( !pGroup )
+			return FALSE;
+
+		// Native tactical traversal is instantaneous at the strategic level. The
+		// remnant therefore exists in the destination already, but its previous
+		// sector records the edge it escaped through for any immediate pursuit.
+		pGroup->ubPrevX = ubSourceX;
+		pGroup->ubPrevY = ubSourceY;
+		pGroup->ubMoveType = ONE_WAY;
+		pGroup->ubCreatedSectorID = ubSourceSectorID;
+		pGroup->pEnemyGroup->ubIntention = NO_INTENTIONS;
+
+		VR_EnsureEnemyFormationState( pGroup );
+		if( !VR_FormationStateIsInitialized( pGroup ) )
+			return FALSE;
+
+		pGroup->pEnemyGroup->ubOperationalHomeSectorID = ubSourceSectorID;
+		VR_RecordFormationRetreat( pGroup, ubDestinationSectorID );
+	}
+
+	const unsigned long uiDecision = VRAnalyticsBeginDecision(
+		VR_ANALYTICS_STRATEGIC, "enemy_formation",
+		(unsigned int)pGroup->pEnemyGroup->usFormationID,
+		"tactical_retreat_transfer" );
+	if( uiDecision )
+	{
+		VRAnalyticsStateInt( uiDecision, "source_sector", ubSourceSectorID );
+		VRAnalyticsStateInt( uiDecision, "destination_sector", ubDestinationSectorID );
+		VRAnalyticsStateInt( uiDecision, "group_id", pGroup->ubGroupID );
+		VRAnalyticsStateInt( uiDecision, "group_size", pGroup->ubGroupSize );
+		VRAnalyticsCommitDecision( uiDecision, "preserve_retreat_remnant",
+			ubDestinationSectorID, pGroup->ubGroupSize,
+			"map-edge escape transferred into persistent formation" );
+	}
+
+	return TRUE;
+}
+
+void VR_CompleteRetreatInSector( UINT8 ubSectorX, UINT8 ubSectorY )
+{
+	for( GROUP *pGroup = gpGroupList; pGroup; pGroup = pGroup->next )
+	{
+		if( !VR_FormationStateIsInitialized( pGroup ) ||
+			pGroup->fBetweenSectors ||
+			pGroup->ubSectorX != ubSectorX ||
+			pGroup->ubSectorY != ubSectorY )
+		{
+			continue;
+		}
+
+		if( pGroup->pEnemyGroup->ubOperationalMission == VR_OPMISSION_RETREAT )
+			VR_RecordFormationArrival( pGroup );
+	}
+}
+
+
 static INT32 VR_OperationalAbs( INT32 iValue )
 {
 	return iValue < 0 ? -iValue : iValue;
