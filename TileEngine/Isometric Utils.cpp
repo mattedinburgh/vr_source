@@ -39,6 +39,7 @@ BOOLEAN SetVHDRenderScale( UINT8 ubScale )
 	gubVHDRenderScale = ubScale;
 	SCROLL_X_STEP = (INT16)( WORLD_TILE_X * ubScale );
 	SCROLL_Y_STEP = (INT16)( WORLD_TILE_Y * 2 * ubScale );
+	gsRenderWorldOffsetY = (INT16)( 10 * ubScale );
 	guiForceRefreshMousePositionCalculation = 1;
 	return TRUE;
 }
@@ -669,7 +670,7 @@ BOOLEAN GetMouseWorldCoords( INT16 *psMouseX, INT16 *psMouseY )
 	}
 
 	sOffsetX = gViewportRegion.MouseXPos - ( ( gsVIEWPORT_END_X - gsVIEWPORT_START_X ) /2 ); // + gsRenderWorldOffsetX;
-	sOffsetY = gViewportRegion.MouseYPos - ( ( gsVIEWPORT_END_Y - gsVIEWPORT_START_Y ) /2 ) + 10;// + gsRenderWorldOffsetY;
+	sOffsetY = gViewportRegion.MouseYPos - ( ( gsVIEWPORT_END_Y - gsVIEWPORT_START_Y ) /2 ) + VHDScaleScreenValue( 10 );// + gsRenderWorldOffsetY;
 
 	// OK, Let's offset by a value if our interfac level is changed!
 	if ( gsInterfaceLevel != 0 )
