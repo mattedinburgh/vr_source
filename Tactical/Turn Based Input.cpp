@@ -31,6 +31,7 @@
 #include "Interactive Tiles.h"
 #include "interface cursors.h"
 #include "weapons.h"
+#include "Items.h"
 #include "lighting.h"
 #include "sound control.h"
 #include "environment.h"
