@@ -462,6 +462,7 @@ def session_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "session": e.get("session"),
                 "build_date": e.get("build_date"),
                 "build_time": e.get("build_time"),
+                "experiment_tag": e.get("experiment_tag", "unlabeled"),
             }
             for e in starts
         ],
@@ -639,6 +640,15 @@ def render_markdown(
         "# Vengeance Reloaded Campaign Companion",
         "",
         f"Source: `{source}`",
+        "",
+        "Experiments: " + ", ".join(
+            sorted(
+                {
+                    str(item.get("experiment_tag", "unlabeled"))
+                    for item in summary["session"]["builds"]
+                }
+            )
+        ),
         "",
         "## Tactical refinement subsystem",
         "",
