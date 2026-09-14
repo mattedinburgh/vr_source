@@ -107,6 +107,23 @@ void MDItemVideoObjects::unRegisterAllItems()
 
 /******************************************************************************/
 
+UINT16 GetInterfaceGraphicSubIndex(UINT8 ubGraphicType, UINT16 ubGraphicNum)
+{
+	// Standalone PNG images contain a single video object, so their subindex is 0.
+	if(g_bUsePngItemImages)
+		return 0;
+
+	if(ubGraphicType == 0)
+		return g_oGUNSMOverrides.hasItem(ubGraphicNum) ? 0 : ubGraphicNum;
+
+	if(ubGraphicType <= MAX_PITEMS)
+		return g_oPITEMSOverrides[ubGraphicType-1].hasItem(ubGraphicNum) ? 0 : ubGraphicNum;
+
+	return ubGraphicNum;
+}
+
+/******************************************************************************/
+
 bool RegisterItemImages()
 {
 	VOBJECT_DESC	VObjectDesc;
