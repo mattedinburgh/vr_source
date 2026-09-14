@@ -531,6 +531,10 @@ def strategic_summary(
     eligible_scores = [
         float(c.get("adjusted_score", 0)) for c in candidates if c.get("eligible")
     ]
+    rejected_candidates = [c for c in candidates if not c.get("eligible")]
+    rejection_reasons = Counter(
+        c.get("reason", "unknown") for c in rejected_candidates
+    )
 
     no_action = selections.get("no_action", 0)
     diagnostics = Counter(
@@ -553,6 +557,9 @@ def strategic_summary(
         "selections": dict(selections.most_common()),
         "reasons": dict(reasons.most_common()),
         "candidate_types": dict(candidate_types.most_common()),
+        "eligible_candidates": len(candidates) - len(rejected_candidates),
+        "rejected_candidates": len(rejected_candidates),
+        "candidate_rejection_reasons": dict(rejection_reasons.most_common()),
         "avg_candidate_score": safe_mean(eligible_scores),
         "avg_candidates_per_decision": (
             float(len(candidates)) / len(strategic) if strategic else 0.0
@@ -885,7 +892,22 @@ def render_markdown(
         f"| Commits | {strat['commits']} |",
         f"| No-action selections | {strat['no_action']} ({strat['no_action_rate']:.1f}%) |",
         f"| Candidates / decision | {strat['avg_candidates_per_decision']:.2f} |",
+        f"| Eligible candidates | {strat['eligible_candidates']} |",
+        f"| Rejected candidates | {strat['rejected_candidates']} |",
         f"| Mean eligible candidate score | {fmt(strat['avg_candidate_score'])} |",
+        "",
+        "### Strategic candidate rejection reasons",
+        "",
+    ]
+
+    if strat["candidate_rejection_reasons"]:
+        lines += ["| Reason | Count |", "|---|---:|"]
+        for reason, count in strat["candidate_rejection_reasons"].items():
+            lines.append(f"| {reason} | {count} |")
+    else:
+        lines.append("No rejected strategic candidates recorded.")
+
+    lines += [
         "",
         "### Strategic movement execution",
         "",
