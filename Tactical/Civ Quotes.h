@@ -169,6 +169,9 @@ void PossiblyStartEnemyTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, UINT32 ui
 void StartEnemyTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTarget = NULL ); //enemy taunts - SANDRO // anv: added pTarget argument
 void ShowTauntPopupBox( SOLDIERTYPE *pCiv, STR16 gzTauntQuote );
 
+// VR: visible battlefield command/reaction popups tied to actual AI actions.
+void ShowAIActionPopup( SOLDIERTYPE *pCiv, INT8 bAction );
+
 // sevenfm: voice taunts
 BOOLEAN PlayVoiceTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTarget );
 
