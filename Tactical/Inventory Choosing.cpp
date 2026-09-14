@@ -308,15 +308,20 @@ static void ApplyEnemyInventoryLogisticsVariability( SOLDIERCREATE_STRUCT *pp, I
 	}
 }
 
-static BOOLEAN IsNormalHEHandGrenade( UINT16 usItem )
+static BOOLEAN IsNormalHEOrdnance( UINT16 usItem )
 {
-	return usItem > 0 &&
-		ItemIsHandGrenade( usItem ) &&
-		GetLauncherFromLaunchable( usItem ) == NOTHING &&
+	if ( usItem == 0 )
+		return FALSE;
+
+	const BOOLEAN fThrowable = ItemIsHandGrenade( usItem ) &&
+		GetLauncherFromLaunchable( usItem ) == NOTHING;
+	const BOOLEAN fLauncherAmmo = GetLauncherFromLaunchable( usItem ) != NOTHING;
+
+	return ( fThrowable || fLauncherAmmo ) &&
 		Explosive[Item[usItem].ubClassIndex].ubType == EXPLOSV_NORMAL;
 }
 
-static UINT8 CountNormalHEHandGrenadesInSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp )
+static UINT8 CountNormalHEOrdnanceInSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp )
 {
 	if ( !pp )
 		return 0;
@@ -325,7 +330,7 @@ static UINT8 CountNormalHEHandGrenadesInSoldierCreateStruct( SOLDIERCREATE_STRUC
 	const UINT32 uiInvSize = pp->Inv.size();
 	for ( UINT32 i = 0; i < uiInvSize; ++i )
 	{
-		if ( pp->Inv[i].exists() && IsNormalHEHandGrenade( pp->Inv[i].usItem ) )
+		if ( pp->Inv[i].exists() && IsNormalHEOrdnance( pp->Inv[i].usItem ) )
 		{
 			usCount += pp->Inv[i].ubNumberOfObjects;
 			if ( usCount >= 255 )
@@ -338,15 +343,15 @@ static UINT8 CountNormalHEHandGrenadesInSoldierCreateStruct( SOLDIERCREATE_STRUC
 
 static BOOLEAN AddExtraThrowableRespectingHECap( SOLDIERCREATE_STRUCT *pp, UINT16 usItem, INT8 bStatus )
 {
-	const UINT8 ubHEHandGrenadeCap = 2;
+	const UINT8 ubHEOrdnanceCap = 2;
 
 	if ( !pp || usItem == NOTHING )
 		return FALSE;
 
 	// Smoke, tear gas, flares, flashbangs and other utility throwables do not
-	// consume the HE allowance. Only normal explosive hand grenades are capped.
-	if ( IsNormalHEHandGrenade( usItem ) &&
-		CountNormalHEHandGrenadesInSoldierCreateStruct( pp ) >= ubHEHandGrenadeCap )
+	// consume the HE allowance. Only normal HE explosive ordnance is capped.
+	if ( IsNormalHEOrdnance( usItem ) &&
+		CountNormalHEOrdnanceInSoldierCreateStruct( pp ) >= ubHEOrdnanceCap )
 	{
 		return FALSE;
 	}
@@ -359,9 +364,9 @@ static BOOLEAN AddExtraThrowableRespectingHECap( SOLDIERCREATE_STRUCT *pp, UINT1
 
 static UINT16 PickGeneratedHandGrenadeRespectingHECap( SOLDIERCREATE_STRUCT *pp, INT8 bGrenadeClass )
 {
-	const UINT8 ubHEHandGrenadeCap = 2;
+	const UINT8 ubHEOrdnanceCap = 2;
 	const BOOLEAN fHEAtCap =
-		CountNormalHEHandGrenadesInSoldierCreateStruct( pp ) >= ubHEHandGrenadeCap;
+		CountNormalHEOrdnanceInSoldierCreateStruct( pp ) >= ubHEOrdnanceCap;
 
 	// If HE is already capped, make several attempts to find a utility throwable
 	// of the requested class rather than simply deleting the soldier's remaining
@@ -372,7 +377,28 @@ static UINT16 PickGeneratedHandGrenadeRespectingHECap( SOLDIERCREATE_STRUCT *pp,
 		if ( usItem == 0 )
 			return 0;
 
-		if ( !fHEAtCap || !IsNormalHEHandGrenade( usItem ) )
+		if ( !fHEAtCap || !IsNormalHEOrdnance( usItem ) )
+			return usItem;
+	}
+
+	return 0;
+}
+
+static UINT16 PickLaunchableRespectingHECap( SOLDIERCREATE_STRUCT *pp, UINT16 usLauncher )
+{
+	const UINT8 ubHEOrdnanceCap = 2;
+	const BOOLEAN fHEAtCap =
+		CountNormalHEOrdnanceInSoldierCreateStruct( pp ) >= ubHEOrdnanceCap;
+
+	// Prefer a utility/special-purpose round once the HE allowance is exhausted.
+	// If the launcher only has HE ammunition, no extra HE is generated.
+	for ( UINT8 ubAttempt = 0; ubAttempt < 8; ++ubAttempt )
+	{
+		const UINT16 usItem = PickARandomLaunchable( usLauncher );
+		if ( usItem == 0 )
+			return 0;
+
+		if ( !fHEAtCap || !IsNormalHEOrdnance( usItem ) )
 			return usItem;
 	}
 
@@ -1771,7 +1797,7 @@ void ChooseGrenadesForSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp, INT8 bGrena
 			// sevenfm: more variety for mortar shells
 			for (int i = 0; i < bGrenades; i++)
 			{
-				usItem = PickARandomLaunchable(itemMortar);
+				usItem = PickLaunchableRespectingHECap( pp, itemMortar );
 				if (usItem > 0)
 				{
 					CreateItems(usItem, (INT8)(80 + Random(21)), 1, &gTempObject);
@@ -1794,16 +1820,15 @@ void ChooseGrenadesForSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp, INT8 bGrena
 		// return here in any case
 		if (itemRPG > 0)
 		{
-			usItem = PickARandomLaunchable(itemRPG);
-			if (usItem > 0)
+			for (int i = 0; i < bGrenades; i++)
 			{
-				for (int i = 0; i < bGrenades; i++)
+				usItem = PickLaunchableRespectingHECap( pp, itemRPG );
+				if (usItem > 0)
 				{
 					CreateItem(usItem, (INT8)(70 + Random(31)), &gTempObject);
 					gTempObject.fFlags |= OBJECT_UNDROPPABLE;
 					PlaceObjectInSoldierCreateStruct(pp, &gTempObject);
 				}
-
 			}
 		}
 		return;
@@ -1816,22 +1841,20 @@ void ChooseGrenadesForSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp, INT8 bGrena
 	ubBaseQuality = (UINT8)min( 45 + bGrenadeClass * 5, 90 );
 	ubQualityVariation = 101 - ubBaseQuality;
 
-	// Madd: GL guys don't get hand grenades anymore
+	// GL specialists carry launcher ammunition instead of ordinary hand grenades.
+	// Generate round-by-round to encourage mixed HE/smoke/gas/utility loads.
 	if (itemGrenadeLauncher > 0)
 	{
-		//do this for every 1-2 grenades so that we can get more variety
 		while (bGrenades > 0)
 		{
-			count = min(1 + Random(3), bGrenades);
-
-			usItem = PickARandomLaunchable(itemGrenadeLauncher);
-			if (usItem > 0 && count > 0)
+			usItem = PickLaunchableRespectingHECap( pp, itemGrenadeLauncher );
+			if (usItem > 0)
 			{
-				CreateItems(usItem, (INT8)(ubBaseQuality + Random(ubQualityVariation)), count, &gTempObject);
+				CreateItems(usItem, (INT8)(ubBaseQuality + Random(ubQualityVariation)), 1, &gTempObject);
 				gTempObject.fFlags |= OBJECT_UNDROPPABLE;
 				PlaceObjectInSoldierCreateStruct(pp, &gTempObject);
 			}
-			bGrenades -= count;
+			bGrenades--;
 		}
 
 		return;
@@ -1839,7 +1862,7 @@ void ChooseGrenadesForSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp, INT8 bGrena
 
 
 	// Hand-grenade allocation may include several throwable types, but normal
-	// HE fragmentation grenades have a separate hard ceiling of two per soldier.
+	// HE explosive ordnance has a separate hard ceiling of two per soldier.
 	// Utility throwables remain available beyond that ceiling.
 	while (bGrenades > 0)
 	{
@@ -1848,9 +1871,9 @@ void ChooseGrenadesForSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp, INT8 bGrena
 		usItem = PickGeneratedHandGrenadeRespectingHECap( pp, bGrenadeClass );
 		if (usItem > 0 && count > 0)
 		{
-			if ( IsNormalHEHandGrenade( usItem ) )
+			if ( IsNormalHEOrdnance( usItem ) )
 			{
-				const UINT8 ubCurrentHE = CountNormalHEHandGrenadesInSoldierCreateStruct( pp );
+				const UINT8 ubCurrentHE = CountNormalHEOrdnanceInSoldierCreateStruct( pp );
 				const UINT8 ubHERemaining = (ubCurrentHE < 2) ? (UINT8)(2 - ubCurrentHE) : 0;
 				count = (UINT8)min( count, ubHERemaining );
 			}
