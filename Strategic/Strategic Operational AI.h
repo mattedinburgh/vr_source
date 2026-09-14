@@ -92,7 +92,7 @@ void VR_UpdateOperationalReadinessHourly();
 void VR_TraceOperationalRecommendationsHourly();
 BOOLEAN VR_IsReadyOperationalReserve( GROUP *pGroup );
 GROUP *VR_FindReadyOperationalReserveForSector( UINT8 ubTargetSectorID );
-void VR_RecordFormationRetreat( GROUP *pGroup, UINT8 ubDestinationSectorID );
+void VR_RecordFormationRetreat( GROUP *pGroup, UINT8 ubSourceSectorID, UINT8 ubDestinationSectorID );
 void VR_RecordFormationArrival( GROUP *pGroup );
 BOOLEAN VR_RegisterTacticalRetreatSoldier( UINT8 ubSourceX, UINT8 ubSourceY,
 	UINT8 ubDestinationX, UINT8 ubDestinationY,
