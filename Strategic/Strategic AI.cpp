@@ -261,6 +261,12 @@ BOOLEAN gfDisplayStrategicAILogs = FALSE;
 static BOOLEAN gfSAICampaignBlackBoxEnabled = TRUE;
 static UINT32 guiSAICampaignDecisionSerial = 0;
 static UINT32 guiSAICampaignCurrentDecision = 0;
+static UINT32 guiSAICampaignPlanSerial = 0;
+static UINT32 guiSAIGroupPlanID[256] = { 0 };
+static UINT32 guiSAIGroupPlanDecisionID[256] = { 0 };
+static UINT32 guiSAIGroupPlanStartedAt[256] = { 0 };
+static UINT8  gubSAIGroupPlanTarget[256] = { 0 };
+static UINT8  gubSAIGroupPlanIntention[256] = { 0 };
 
 static void SAICampaignSectorName( INT32 iSectorID, CHAR8 *pOut )
 {
@@ -288,7 +294,7 @@ static void SAICampaignEnsureHeaders()
 		if( iLength == 0 )
 		{
 			fprintf( fp,
-				"world_min\tday\thour\tminute\tdecision_id\tevent\tsubject\tsubject_id\tgroup_id\tsource\ttarget\tscore\taux\tpool\trequest_points\treinforcement_points\tprogress\tqueen_phase\treason\n" );
+				"world_min\tday\thour\tminute\tdecision_id\tplan_id\tevent\tsubject\tsubject_id\tgroup_id\tsource\ttarget\tscore\taux\tpool\trequest_points\treinforcement_points\tprogress\tqueen_phase\treason\n" );
 		}
 		fclose( fp );
 	}
@@ -322,6 +328,9 @@ static void SAICampaignRecord(
 	CHAR8 zSource[16];
 	CHAR8 zTarget[16];
 	UINT32 uiDecision = guiSAICampaignCurrentDecision;
+	UINT32 uiPlan = 0;
+	if( iGroupID >= 0 && iGroupID < 256 )
+		uiPlan = guiSAIGroupPlanID[ iGroupID ];
 
 	if( !gfSAICampaignBlackBoxEnabled )
 		return;
@@ -334,12 +343,13 @@ static void SAICampaignRecord(
 	if( fp )
 	{
 		fprintf( fp,
-			"%u\t%u\t%u\t%u\t%u\t%s\t%s\t%d\t%d\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
+			"%u\t%u\t%u\t%u\t%u\t%u\t%s\t%s\t%d\t%d\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
 			GetWorldTotalMin(),
 			GetWorldDay(),
 			GetWorldHour(),
 			GetWorldMinutesInDay() % 60,
 			uiDecision,
+			uiPlan,
 			pEvent ? pEvent : "-",
 			pSubject ? pSubject : "-",
 			iSubjectID,
@@ -361,11 +371,12 @@ static void SAICampaignRecord(
 	if( fp )
 	{
 		fprintf( fp,
-			"[Day %02u %02u:%02u][D%06u][%s] %s #%d",
+			"[Day %02u %02u:%02u][D%06u][P%06u][%s] %s #%d",
 			GetWorldDay(),
 			GetWorldHour(),
 			GetWorldMinutesInDay() % 60,
 			uiDecision,
+			uiPlan,
 			pEvent ? pEvent : "-",
 			pSubject ? pSubject : "-" );
 		if( iGroupID >= 0 )
@@ -393,6 +404,77 @@ static void SAICampaignEndDecision( const CHAR8 *pReason )
 {
 	SAICampaignRecord( "DECISION_END", "queen", -1, -1, -1, -1, 0, 0, pReason ? pReason : "complete" );
 	guiSAICampaignCurrentDecision = 0;
+}
+
+static UINT32 SAICampaignStartOrRefreshPlan( GROUP *pGroup, UINT8 ubTargetSector, UINT8 ubIntention, UINT32 uiMoveCode )
+{
+	UINT8 ubID;
+	CHAR8 zReason[192];
+
+	if( !pGroup || !pGroup->pEnemyGroup )
+		return 0;
+
+	ubID = pGroup->ubGroupID;
+	if( !guiSAIGroupPlanID[ ubID ] ||
+		gubSAIGroupPlanTarget[ ubID ] != ubTargetSector ||
+		gubSAIGroupPlanIntention[ ubID ] != ubIntention )
+	{
+		guiSAICampaignPlanSerial++;
+		if( guiSAICampaignPlanSerial == 0 )
+			guiSAICampaignPlanSerial = 1;
+		guiSAIGroupPlanID[ ubID ] = guiSAICampaignPlanSerial;
+		guiSAIGroupPlanDecisionID[ ubID ] = guiSAICampaignCurrentDecision;
+		guiSAIGroupPlanStartedAt[ ubID ] = GetWorldTotalMin();
+		gubSAIGroupPlanTarget[ ubID ] = ubTargetSector;
+		gubSAIGroupPlanIntention[ ubID ] = ubIntention;
+
+		sprintf( zReason, "new strategic mobile plan: intention=%u move_policy=%u parent_decision=%u",
+			ubIntention, uiMoveCode, guiSAIGroupPlanDecisionID[ ubID ] );
+		SAICampaignRecord( "PLAN_BEGIN", "mobile_group", ubIntention, ubID,
+			SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ), ubTargetSector,
+			pGroup->ubGroupSize, uiMoveCode, zReason );
+	}
+	else
+	{
+		sprintf( zReason, "existing plan repathed/refreshed: intention=%u move_policy=%u age_minutes=%u",
+			ubIntention, uiMoveCode, GetWorldTotalMin() - guiSAIGroupPlanStartedAt[ ubID ] );
+		SAICampaignRecord( "PLAN_REFRESH", "mobile_group", ubIntention, ubID,
+			SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ), ubTargetSector,
+			pGroup->ubGroupSize, uiMoveCode, zReason );
+	}
+	return guiSAIGroupPlanID[ ubID ];
+}
+
+static void SAICampaignClosePlan( GROUP *pGroup, const CHAR8 *pOutcome )
+{
+	UINT8 ubID;
+	CHAR8 zReason[192];
+
+	if( !pGroup )
+		return;
+
+	ubID = pGroup->ubGroupID;
+	if( !guiSAIGroupPlanID[ ubID ] )
+		return;
+
+	sprintf( zReason, "%s; plan_age_minutes=%u parent_decision=%u",
+		pOutcome ? pOutcome : "plan closed",
+		GetWorldTotalMin() - guiSAIGroupPlanStartedAt[ ubID ],
+		guiSAIGroupPlanDecisionID[ ubID ] );
+	SAICampaignRecord( "PLAN_END", "mobile_group",
+		pGroup->pEnemyGroup ? pGroup->pEnemyGroup->ubIntention : 0,
+		ubID,
+		SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ),
+		gubSAIGroupPlanTarget[ ubID ],
+		pGroup->ubGroupSize,
+		GetWorldTotalMin() - guiSAIGroupPlanStartedAt[ ubID ],
+		zReason );
+
+	guiSAIGroupPlanID[ ubID ] = 0;
+	guiSAIGroupPlanDecisionID[ ubID ] = 0;
+	guiSAIGroupPlanStartedAt[ ubID ] = 0;
+	gubSAIGroupPlanTarget[ ubID ] = 0;
+	gubSAIGroupPlanIntention[ ubID ] = 0;
 }
 
 void ValidatePendingGroups();
@@ -3422,6 +3504,10 @@ void SendReinforcementsForPatrol( INT32 iPatrolID, GROUP **pOptionalGroup )
 						//Send the lowest of the two:	number requested or number available
 						iReinforcementsApproved = min( iReinforcementsRequested, iReinforcementsAvailable );
 						pGroup = CreateNewEnemyGroupDepartingFromSector( gGarrisonGroup[ iSrcGarrisonID ].ubSectorID, 0, (UINT8)iReinforcementsApproved, 0 );
+						SAICampaignRecord( "ORDER_ISSUED", "patrol", iPatrolID, pGroup ? pGroup->ubGroupID : -1,
+							gGarrisonGroup[ iSrcGarrisonID ].ubSectorID, gPatrolGroup[ iPatrolID ].ubSectorID[1],
+							iReinforcementsApproved, iReinforcementsRequested,
+							"detached troops from a donor garrison to reinforce the selected patrol" );
 						pGroup->ubOriginalSector = (UINT8)SECTOR( ubDstSectorX, ubDstSectorY );
 						gPatrolGroup[ iPatrolID ].ubPendingGroupID = pGroup->ubGroupID;
 
@@ -5435,7 +5521,88 @@ void ExecuteStrategicAIAction( UINT16 usActionCode, INT16 sSectorX, INT16 sSecto
 // WDS - New AI
 void HourlyCheckStrategicAI()
 {
-	// Nothing (yet!)
+	GROUP *pGroup;
+	INT32 iGroups = 0;
+	INT32 iTroops = 0;
+	INT32 iPursuit = 0;
+	INT32 iStaging = 0;
+	INT32 iPatrol = 0;
+	INT32 iReinforcements = 0;
+	INT32 iAssault = 0;
+	INT32 iOther = 0;
+	INT32 iPendingGarrisons = 0;
+	INT32 iPendingPatrols = 0;
+	INT32 i;
+	CHAR8 zReason[384];
+
+	Ensure_RepairedGarrisonGroup( &gGarrisonGroup, &giGarrisonArraySize );
+
+	for( i = 0; i < giGarrisonArraySize; ++i )
+	{
+		if( gGarrisonGroup[ i ].ubPendingGroupID )
+			++iPendingGarrisons;
+	}
+	for( i = 0; i < giPatrolArraySize; ++i )
+	{
+		if( gPatrolGroup[ i ].ubPendingGroupID )
+			++iPendingPatrols;
+	}
+
+	pGroup = gpGroupList;
+	while( pGroup )
+	{
+		if( !pGroup->fPlayer && pGroup->pEnemyGroup )
+		{
+			INT32 iTarget = -1;
+			WAYPOINT *pFinal = GetFinalWaypoint( pGroup );
+			CHAR8 zGroupReason[256];
+
+			++iGroups;
+			iTroops += pGroup->ubGroupSize;
+			switch( pGroup->pEnemyGroup->ubIntention )
+			{
+				case PURSUIT:        ++iPursuit; break;
+				case STAGING:        ++iStaging; break;
+				case PATROL:         ++iPatrol; break;
+				case REINFORCEMENTS: ++iReinforcements; break;
+				case ASSAULT:        ++iAssault; break;
+				default:             ++iOther; break;
+			}
+
+			if( pFinal )
+				iTarget = SECTOR( pFinal->x, pFinal->y );
+
+			if( !guiSAIGroupPlanID[ pGroup->ubGroupID ] && iTarget >= 0 )
+			{
+				// A save/load can restore strategic groups while the diagnostic plan
+				// table is intentionally unsaved. Rehydrate a plan from live orders.
+				SAICampaignStartOrRefreshPlan( pGroup, (UINT8)iTarget,
+					pGroup->pEnemyGroup->ubIntention, 255 );
+			}
+
+			sprintf( zGroupReason,
+				"hourly group state: between=%d original_sector=%u last_reassignment=%u pending_reinforcements=%u",
+				pGroup->fBetweenSectors,
+				pGroup->ubOriginalSector,
+				pGroup->ubSectorIDOfLastReassignment,
+				pGroup->pEnemyGroup->ubPendingReinforcements );
+			SAICampaignRecord( "GROUP_STATUS", "mobile_group", pGroup->pEnemyGroup->ubIntention,
+				pGroup->ubGroupID,
+				SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ),
+				iTarget,
+				pGroup->ubGroupSize,
+				pGroup->fBetweenSectors,
+				zGroupReason );
+		}
+		pGroup = pGroup->next;
+	}
+
+	sprintf( zReason,
+		"hourly campaign heartbeat: groups=%d troops=%d intentions[pursuit=%d staging=%d patrol=%d reinforcement=%d assault=%d other=%d] pending[garrison=%d patrol=%d]",
+		iGroups, iTroops, iPursuit, iStaging, iPatrol, iReinforcements, iAssault, iOther,
+		iPendingGarrisons, iPendingPatrols );
+	SAICampaignRecord( "CAMPAIGN_SNAPSHOT", "enemy_army", iGroups, -1, -1, -1,
+		iTroops, giReinforcementPool, zReason );
 }
 
 
@@ -6395,6 +6562,9 @@ INT16 FindGarrisonIndexForGroupIDPending( UINT8 ubGroupID )
 
 void TransferGroupToPool( GROUP **pGroup )
 {
+	if( pGroup && *pGroup )
+		SAICampaignClosePlan( *pGroup, "group returned to the strategic reinforcement pool" );
+
 	//Madd: unlimited reinforcements?
 	if ( !gfUnlimitedTroops )
 		giReinforcementPool += (*pGroup)->ubGroupSize;
@@ -6406,6 +6576,16 @@ void TransferGroupToPool( GROUP **pGroup )
 //NOTE:	Make sure you call SetEnemyGroupSector() first if the group is between sectors!!	See example in ReassignAIGroup()...
 void SendGroupToPool( GROUP **pGroup )
 {
+	if( pGroup && *pGroup )
+	{
+		SAICampaignRecord( "REASSIGNMENT", "mobile_group",
+			(*pGroup)->pEnemyGroup ? (*pGroup)->pEnemyGroup->ubIntention : 0,
+			(*pGroup)->ubGroupID,
+			SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY ),
+			SECTOR( gModSettings.ubSAISpawnSectorX, gModSettings.ubSAISpawnSectorY ),
+			(*pGroup)->ubGroupSize, giRequestPoints,
+			"no higher-priority field assignment was found; return this group to the queen reserve pool" );
+	}
 	if( (*pGroup)->ubSectorX == gModSettings.ubSAISpawnSectorX && (*pGroup)->ubSectorY == gModSettings.ubSAISpawnSectorY )
 	{
 		TransferGroupToPool( pGroup );
@@ -6424,8 +6604,23 @@ void ReassignAIGroup( GROUP **pGroup )
 	UINT16 usDefencePoints = 0;
 	INT32 iReloopLastIndex = -1;
 	UINT8 ubSectorID;
+	BOOLEAN fOwnDecision = FALSE;
+
+	if( !pGroup || !*pGroup )
+		return;
+
+	if( !guiSAICampaignCurrentDecision )
+	{
+		SAICampaignBeginDecision( "mobile enemy group reassignment" );
+		fOwnDecision = TRUE;
+	}
 
 	ubSectorID = (UINT8)SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY );
+	SAICampaignRecord( "REASSIGN_BEGIN", "mobile_group",
+		(*pGroup)->pEnemyGroup ? (*pGroup)->pEnemyGroup->ubIntention : 0,
+		(*pGroup)->ubGroupID, ubSectorID, -1, (*pGroup)->ubGroupSize, giRequestPoints,
+		"old assignment is no longer valid/completed; search current strategic demand for the best new use of this force" );
+	SAICampaignClosePlan( *pGroup, "previous assignment ended before strategic reassignment" );
 
 	(*pGroup)->ubSectorIDOfLastReassignment = ubSectorID;
 
@@ -6438,13 +6633,21 @@ void ReassignAIGroup( GROUP **pGroup )
 
 	if( giRequestPoints <= 0	)
 	{ //we have no request for reinforcements, so send the group to Meduna for reassignment in the pool.
+		SAICampaignRecord( "NO_ACTION", "allocation", -1, (*pGroup)->ubGroupID, ubSectorID, -1,
+			giRequestPoints, giReinforcementPoints,
+			"no garrison or patrol is currently requesting reinforcements; recycle this force into the pool" );
 		SendGroupToPool( pGroup );
+		if( fOwnDecision )
+			SAICampaignEndDecision( "reassigned group to reserve pool because no demand exists" );
 		return;
 	}
 
 	//now randomly choose who gets the reinforcements.
 	// giRequestPoints is the combined sum of all the individual weights of all garrisons and patrols requesting reinforcements
 	iRandom = Random( giRequestPoints );
+	SAICampaignRecord( "WEIGHTED_ROLL", "reassignment", -1, (*pGroup)->ubGroupID,
+		ubSectorID, -1, iRandom, giRequestPoints,
+		"weighted starting point for assigning this existing mobile force to current strategic demand" );
 
 	//go through garrisons first and begin considering where the random value dictates.	If that garrison doesn't require
 	//reinforcements, it'll continue on considering all subsequent garrisons till the end of the array.	If it fails at that
@@ -6463,7 +6666,12 @@ void ReassignAIGroup( GROUP **pGroup )
 				{ //This is the group that gets the reinforcements!
 					if( ReinforcementsApproved( i, &usDefencePoints ) )
 					{
+						SAICampaignRecord( "CHOICE", "garrison", i, (*pGroup)->ubGroupID,
+							ubSectorID, gGarrisonGroup[ i ].ubSectorID, iWeight, usDefencePoints,
+							"existing mobile group reassigned to this eligible garrison after weighted demand scan" );
 						SendReinforcementsForGarrison( i, usDefencePoints, pGroup );
+						if( fOwnDecision )
+							SAICampaignEndDecision( "mobile group reassigned to garrison" );
 						return;
 					}
 				}
@@ -6493,7 +6701,12 @@ void ReassignAIGroup( GROUP **pGroup )
 				{ //This is the group that gets the reinforcements!
 					if( ReinforcementsApproved( i, &usDefencePoints ) )
 					{
+						SAICampaignRecord( "CHOICE", "garrison", i, (*pGroup)->ubGroupID,
+							ubSectorID, gGarrisonGroup[ i ].ubSectorID, iWeight, usDefencePoints,
+							"fallback scan found an eligible garrison for this existing mobile group" );
 						SendReinforcementsForGarrison( i, usDefencePoints, pGroup );
+						if( fOwnDecision )
+							SAICampaignEndDecision( "mobile group reassigned to fallback garrison" );
 						return;
 					}
 				}
@@ -6513,7 +6726,13 @@ void ReassignAIGroup( GROUP **pGroup )
 				{
 					if( !gPatrolGroup[ i ].ubPendingGroupID && PatrolRequestingMinimumReinforcements( i ) )
 					{ //This is the group that gets the reinforcements!
+						SAICampaignRecord( "CHOICE", "patrol", i, (*pGroup)->ubGroupID,
+							ubSectorID, gPatrolGroup[ i ].ubSectorID[1], iWeight,
+							PatrolReinforcementsRequested( i ),
+							"existing mobile group reassigned to this patrol after weighted demand scan" );
 						SendReinforcementsForPatrol( i, pGroup );
+						if( fOwnDecision )
+							SAICampaignEndDecision( "mobile group reassigned to patrol" );
 						return;
 					}
 				}
@@ -6539,7 +6758,13 @@ void ReassignAIGroup( GROUP **pGroup )
 		{
 			if( !gPatrolGroup[ i ].ubPendingGroupID && PatrolRequestingMinimumReinforcements( i ) )
 			{ //This is the group that gets the reinforcements!
+				SAICampaignRecord( "CHOICE", "patrol", i, (*pGroup)->ubGroupID,
+					ubSectorID, gPatrolGroup[ i ].ubSectorID[1], iWeight,
+					PatrolReinforcementsRequested( i ),
+					"fallback patrol scan found an eligible use for this existing mobile group" );
 				SendReinforcementsForPatrol( i, pGroup );
+				if( fOwnDecision )
+					SAICampaignEndDecision( "mobile group reassigned to fallback patrol" );
 				return;
 			}
 		}
@@ -6548,7 +6773,12 @@ void ReassignAIGroup( GROUP **pGroup )
 	// sevenfm: r7895 fix
 	//TransferGroupToPool( pGroup );
 	// Flugente: at least have them walk back correctly instead of just having them vanish
+	SAICampaignRecord( "NO_ELIGIBLE_ASSIGNMENT", "mobile_group", -1, (*pGroup)->ubGroupID,
+		ubSectorID, -1, (*pGroup)->ubGroupSize, giRequestPoints,
+		"demand exists, but no currently valid garrison or patrol accepted this group; return it to the pool" );
 	SendGroupToPool( pGroup );
+	if( fOwnDecision )
+		SAICampaignEndDecision( "no eligible reassignment destination; group returning to pool" );
 }
 
 //When an enemy AI group is eliminated by the player, apply a grace period in which the
@@ -6597,6 +6827,11 @@ void RepollSAIGroup( GROUP *pGroup )
 {
 	INT32 i;
 	Assert( !pGroup->fPlayer );
+	SAICampaignRecord( "GROUP_REPOLL", "mobile_group",
+		pGroup->pEnemyGroup ? pGroup->pEnemyGroup->ubIntention : 0,
+		pGroup->ubGroupID, SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ), -1,
+		pGroup->ubGroupSize, pGroup->fBetweenSectors,
+		"strategic group state is being re-evaluated after load, arrival or campaign-state change" );
 
  Ensure_RepairedGarrisonGroup( &gGarrisonGroup, &giGarrisonArraySize );	/* added NULL fix, 2007-03-03, Sgt. Kolja */
 	if( GroupAtFinalDestination( pGroup ) )
@@ -6786,6 +7021,11 @@ void RemoveSoldiersFromGarrisonBasedOnComposition( INT32 iGarrisonID, UINT8 ubSi
 void MoveSAIGroupToSector( GROUP **pGroup, UINT8 ubSectorID, UINT32 uiMoveCode, UINT8 ubIntention )
 {
 	UINT8 ubDstSectorX, ubDstSectorY;
+
+	if( !pGroup || !*pGroup || !(*pGroup)->pEnemyGroup )
+		return;
+
+	SAICampaignStartOrRefreshPlan( *pGroup, ubSectorID, ubIntention, uiMoveCode );
 
 	ubDstSectorX = (UINT8)SECTORX( ubSectorID );
 	ubDstSectorY = (UINT8)SECTORY( ubSectorID );
