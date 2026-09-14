@@ -15,6 +15,10 @@ on:
       - '*.sln'
       - 'DEPLOY_*.ps1'
       - 'GENERATE_VR_BUILD_INFO.ps1'
+      - 'Tools/AI/**'
+      - 'UNIFIED_AI_FRAMEWORK.md'
+      - 'TacticalAI/AI_SUBSYSTEM_MAP.md'
+      - 'Strategic/STRATEGIC_AI_STAGING_MANIFEST.md'
       - '.github/workflows/integration-build.yml'
   workflow_dispatch:
 
@@ -34,11 +38,15 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 20
 
-      - name: Parse deployment PowerShell
+      - name: Parse deployment and AI audit PowerShell
         shell: powershell
         run: |
-          Get-ChildItem $env:GITHUB_WORKSPACE -Filter 'DEPLOY_*.ps1' -File | ForEach-Object {
-            Write-Host "Parsing $($_.Name)"
+          $scripts = @(
+            Get-ChildItem $env:GITHUB_WORKSPACE -Filter 'DEPLOY_*.ps1' -File
+            Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE 'Tools\AI') -Filter '*.ps1' -File
+          )
+          $scripts | ForEach-Object {
+            Write-Host "Parsing $($_.FullName)"
             $tokens = $null
             $errors = $null
             [void][System.Management.Automation.Language.Parser]::ParseFile(
@@ -48,10 +56,15 @@ jobs:
             )
             if ($errors.Count -gt 0) {
               $errors | Format-List
-              throw "PowerShell syntax errors in $($_.Name)"
+              throw "PowerShell syntax errors in $($_.FullName)"
             }
           }
 
+      - name: Verify unified AI source integrity
+        shell: powershell
+        run: |
+          & (Join-Path $env:GITHUB_WORKSPACE 'Tools\AI\VERIFY_AI_INTEGRITY.ps1') -RepositoryRoot $env:GITHUB_WORKSPACE
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Find MSBuild
         id: msbuild
