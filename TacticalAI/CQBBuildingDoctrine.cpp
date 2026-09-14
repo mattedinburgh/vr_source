@@ -1439,6 +1439,19 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 	default: break;
 	}
 
+	// Elite mobile elements can maintain clearing momentum from one known room
+	// into the next. This affects willingness to continue a valid plan only; it
+	// never changes AP, sight, accuracy or opponent knowledge.
+	if (Assessment.eState == VRCQB_STATE_ASSAULT &&
+		Context.fKnownThreatInSameBuilding &&
+		VRCQB_HasCapability(&Model, VRCQB_CAP_COMPLEX_ROOM_FLOW))
+	{
+		const VRCQB_STATE ePrevious = VRCQBPreviousState(pSoldier);
+		if (ePrevious == VRCQB_STATE_ASSAULT || ePrevious == VRCQB_STATE_SECURE)
+			ubRequiredConfidence = (UINT8)__max((INT32)38,
+				(INT32)ubRequiredConfidence - 8);
+	}
+
 	if (Assessment.ubConfidence < ubRequiredConfidence)
 	{
 		VRCQB_InvalidateSoldierPlan(pSoldier);
@@ -1469,7 +1482,21 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 		UINT8 ubCommittedMovers =
 			VRCQBCountCommittedMovers(pSoldier, &Assessment);
 
-		if (ubCommittedMovers >= Assessment.ubMaxCoordinatedMovers)
+		// A soldier selected as SUPPORT in a two-man-capable element does not
+		// follow the point man through the same threshold. He establishes a local
+		// cover position, leaving the doorway/foothold to the maneuver role.
+		if (Assessment.eRole == VRCQB_ROLE_SUPPORT &&
+			VRCQB_HasCapability(&Model, VRCQB_CAP_TWO_MAN_ENTRY) &&
+			Context.fHasLocalSupport)
+		{
+			eMovementState = VRCQB_STATE_HOLD;
+			eMovementRole = VRCQB_ROLE_SUPPORT;
+			sDesiredSpot = VRCQBFindBestLocalPosition(
+				pSoldier, &Context, &Model, eMovementState, eMovementRole);
+			bAction = AI_ACTION_TAKE_COVER;
+			pActionReason = "CQB two-man entry: support covers point";
+		}
+		else if (ubCommittedMovers >= Assessment.ubMaxCoordinatedMovers)
 		{
 			// Do not join a doorway queue. Convert excess movers into local
 			// support/hold positions instead of allowing legacy seek logic to
