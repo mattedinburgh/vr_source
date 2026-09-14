@@ -65,6 +65,8 @@
 #include "CampaignStats.h"				// added by Flugente
 #endif
 
+// Needed in PRECOMPILEDHEADERS builds for EffectiveStrength used by grenade telemetry.
+#include "SkillCheck.h"
 #include "../VRAnalytics.h"
 
 // anv: for enemy taunts
