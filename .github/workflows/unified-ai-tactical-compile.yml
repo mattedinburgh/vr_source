@@ -1,0 +1,55 @@
+name: unified-ai-tactical-compile
+
+on:
+  push:
+    branches:
+      - integration/unified-ai-fireteams-doctrine-2026-09-14
+  workflow_dispatch:
+
+jobs:
+  compile-tactical-ai:
+    runs-on: [self-hosted, Windows]
+    timeout-minutes: 20
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+
+      - name: Locate MSBuild and compile TacticalAI
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $msbuild = $null
+          $toolset = $null
+
+          if (Test-Path $vswhere) {
+            $msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
+            $vsMajor = & $vswhere -latest -property catalog_productLineVersion
+            if ($vsMajor -eq "2022") { $toolset = "v143" }
+            elseif ($vsMajor -eq "2019") { $toolset = "v142" }
+            elseif ($vsMajor -eq "2017") { $toolset = "v141" }
+          }
+
+          if (-not $msbuild) {
+            $cmd = Get-Command msbuild.exe -ErrorAction SilentlyContinue
+            if ($cmd) { $msbuild = $cmd.Source }
+          }
+
+          if (-not $msbuild) {
+            throw "MSBuild was not found on the self-hosted runner."
+          }
+
+          Write-Host "MSBuild: $msbuild"
+          if ($toolset) {
+            Write-Host "Toolset override: $toolset"
+            & $msbuild "TacticalAI\TacticalAI_VS2013.vcxproj" /m /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=$toolset
+          }
+          else {
+            Write-Host "No Visual Studio generation detected; using project toolset."
+            & $msbuild "TacticalAI\TacticalAI_VS2013.vcxproj" /m /p:Configuration=Release /p:Platform=Win32
+          }
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "TacticalAI project compilation failed with exit code $LASTEXITCODE."
+          }
