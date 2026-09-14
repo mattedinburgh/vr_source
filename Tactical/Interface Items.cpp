@@ -72,6 +72,7 @@
 	#include "Map Screen Interface Map.h"
 	#include "Interface Enhanced.h"
 	#include "InterfaceItemImages.h"
+#include <vfs/Core/vfs.h>
 	#include "Auto Resolve.h"
 	#include "popup_callback.h"
 	// BOB : quick attachment popup
@@ -10321,15 +10322,22 @@ UINT32 GetInterfaceGraphicForItem( INVTYPE *pItem )
 	UINT32 id;
 	UINT8 ubGraphicType = pItem->ubGraphicType;
 
-	// CHECK SUBCLASS
+	// Sparse high-colour override takes precedence over both legacy STI sheets
+	// and the all-PNG mode. If no override exists, behaviour is unchanged.
 	if ( ubGraphicType == 0 )
 	{
-		SGP_TRYCATCH_RETHROW( id = g_bUsePngItemImages ? g_oGUNSM.getVObjectForItem(pItem->ubGraphicNum) : guiGUNSM,
+		SGP_TRYCATCH_RETHROW(
+			id = g_oGUNSMOverrides.hasItem(pItem->ubGraphicNum)
+				? g_oGUNSMOverrides.getVObjectForItem(pItem->ubGraphicNum)
+				: (g_bUsePngItemImages ? g_oGUNSM.getVObjectForItem(pItem->ubGraphicNum) : guiGUNSM),
 			L"Failed to retrieve gun image" );
 	}
 	else 
 	{
-		SGP_TRYCATCH_RETHROW( id = g_bUsePngItemImages ? g_oPITEMS[ubGraphicType-1].getVObjectForItem(pItem->ubGraphicNum) : guiPITEMS[ubGraphicType-1],
+		SGP_TRYCATCH_RETHROW(
+			id = g_oPITEMSOverrides[ubGraphicType-1].hasItem(pItem->ubGraphicNum)
+				? g_oPITEMSOverrides[ubGraphicType-1].getVObjectForItem(pItem->ubGraphicNum)
+				: (g_bUsePngItemImages ? g_oPITEMS[ubGraphicType-1].getVObjectForItem(pItem->ubGraphicNum) : guiPITEMS[ubGraphicType-1]),
 			String("Failed to retrieve interface image, graphic type = %d",ubGraphicType) );
 	}
 
@@ -10417,8 +10425,18 @@ BOOLEAN LoadTileGraphicForItem( INVTYPE *pItem, UINT32 *puiVo )
 	}
 
 
-	//Load item
+	// Load an optional high-colour PNG override first. This is intentionally
+	// sparse: if no override file exists the original STI/PNG asset is used.
 	VObjectDesc.fCreateFlags = VOBJECT_CREATE_FROMFILE;
+	sprintf( VObjectDesc.ImageFile, "BIGITEMS\\ItemOverrides\\%s.png", zName );
+	if ( getVFS()->fileExists( vfs::Path( VObjectDesc.ImageFile ) ) )
+	{
+		CHECKF( AddVideoObject( &VObjectDesc, &uiVo) );
+		*puiVo = uiVo;
+		DebugMsg(TOPIC_JA2,DBG_LEVEL_3,String("LoadTileGraphicForItem: sparse PNG override"));
+		return( TRUE );
+	}
+
 	sprintf( VObjectDesc.ImageFile, "BIGITEMS\\%s%s", zName, ext );
 	CHECKF( AddVideoObject( &VObjectDesc, &uiVo) );
 
