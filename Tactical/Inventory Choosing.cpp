@@ -57,7 +57,7 @@ UINT16 itemRPG;
 
 // #define MAX_MORTARS_PER_TEAM			1			// one team can't randomly roll more than this many mortars per sector
 // sevenfm: increase max mortars number
-#define MAX_MORTARS_PER_TEAM (gGameOptions.ubDifficultyLevel / 2 + 1)
+#define MAX_MORTARS_PER_TEAM 1
 
 UINT32 guiMortarsRolledByTeam = 0;
 
@@ -229,19 +229,18 @@ static UINT32 EnemyInventorySupplyHash( UINT32 uiValue )
 	return uiValue;
 }
 
-static INT8 GetEnemySectorSupplyBias( INT8 bSoldierClass, UINT8 ubCategory )
+static INT8 GetEnemySectorSupplyBias( INT8 bSoldierClass, UINT8 ubCategory, INT16 sSectorX, INT16 sSectorY )
 {
 	if ( !SOLDIER_CLASS_ENEMY( bSoldierClass ) )
 		return 0;
 
-	// Keep the same broad supply character within a sector and campaign phase.
-	// Different categories use different hashes so a sector can be rich in rifles
-	// but short on armour, grenades or support gear.
-	UINT32 uiSectorX = ( gWorldSectorX > 0 ) ? (UINT32)gWorldSectorX : 0;
-	UINT32 uiSectorY = ( gWorldSectorY > 0 ) ? (UINT32)gWorldSectorY : 0;
-	UINT32 uiProgressBand = (UINT32)( HighestPlayerProgressPercentage() / 20 );
+	// Keep the same broad supply character within a sector for the campaign.
+	// Progress already improves equipment through the normal 1.13/Vengeance rating path;
+	// it should not randomly reroll a sector's logistics identity every few weeks.
+	UINT32 uiSectorX = ( sSectorX > 0 ) ? (UINT32)sSectorX : ( ( gWorldSectorX > 0 ) ? (UINT32)gWorldSectorX : 0 );
+	UINT32 uiSectorY = ( sSectorY > 0 ) ? (UINT32)sSectorY : ( ( gWorldSectorY > 0 ) ? (UINT32)gWorldSectorY : 0 );
 	UINT32 uiSeed = uiSectorX * 131U + uiSectorY * 977U + (UINT32)ubCategory * 3571U +
-		(UINT32)bSoldierClass * 101U + uiProgressBand * 8191U;
+		(UINT32)bSoldierClass * 101U;
 	UINT8 ubRoll = (UINT8)( EnemyInventorySupplyHash( uiSeed ) % 100U );
 
 	if ( ubRoll < 5 )
@@ -254,37 +253,40 @@ static INT8 GetEnemySectorSupplyBias( INT8 bSoldierClass, UINT8 ubCategory )
 	return 0;
 }
 
-static INT8 ApplyEnemySupplyBiasToClass( INT8 bClass, INT8 bSoldierClass, UINT8 ubCategory )
+static INT8 ApplyEnemySupplyBiasToClass( INT8 bClass, INT8 bSoldierClass, UINT8 ubCategory, INT16 sSectorX, INT16 sSectorY )
 {
 	if ( bClass <= 0 || !SOLDIER_CLASS_ENEMY( bSoldierClass ) )
 		return bClass;
 
-	bClass += GetEnemySectorSupplyBias( bSoldierClass, ubCategory );
+	bClass += GetEnemySectorSupplyBias( bSoldierClass, ubCategory, sSectorX, sSectorY );
 	return (INT8)max( MIN_EQUIPMENT_CLASS, min( MAX_EQUIPMENT_CLASS, bClass ) );
 }
 
-static void ApplyEnemyInventoryLogisticsVariability( INT8 bSoldierClass,
+static void ApplyEnemyInventoryLogisticsVariability( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass,
 	INT8 &bWeaponClass, INT8 &bHelmetClass, INT8 &bVestClass, INT8 &bLeggingClass,
 	INT8 &bAttachClass, INT8 &bGrenadeClass, INT8 &bKitClass, INT8 &bMiscClass,
 	INT8 &bAmmoClips, INT8 &bGrenades,
 	BOOLEAN fGrenadeLauncher, BOOLEAN fMortar, BOOLEAN fRPG )
 {
-	if ( !SOLDIER_CLASS_ENEMY( bSoldierClass ) )
+	if ( !pp || !SOLDIER_CLASS_ENEMY( bSoldierClass ) )
 		return;
+
+	INT16 sSectorX = pp->sSectorX;
+	INT16 sSectorY = pp->sSectorY;
 
 	// Sector supply biases are category-specific. This creates believable local stock
 	// patterns without overriding class/progress/difficulty quality progression.
-	bWeaponClass  = ApplyEnemySupplyBiasToClass( bWeaponClass,  bSoldierClass, 0 );
-	bHelmetClass  = ApplyEnemySupplyBiasToClass( bHelmetClass,  bSoldierClass, 1 );
-	bVestClass    = ApplyEnemySupplyBiasToClass( bVestClass,    bSoldierClass, 1 );
-	bLeggingClass = ApplyEnemySupplyBiasToClass( bLeggingClass, bSoldierClass, 1 );
-	bAttachClass  = ApplyEnemySupplyBiasToClass( bAttachClass,  bSoldierClass, 2 );
-	bKitClass     = ApplyEnemySupplyBiasToClass( bKitClass,     bSoldierClass, 4 );
-	bMiscClass    = ApplyEnemySupplyBiasToClass( bMiscClass,    bSoldierClass, 5 );
+	bWeaponClass  = ApplyEnemySupplyBiasToClass( bWeaponClass,  bSoldierClass, 0, sSectorX, sSectorY );
+	bHelmetClass  = ApplyEnemySupplyBiasToClass( bHelmetClass,  bSoldierClass, 1, sSectorX, sSectorY );
+	bVestClass    = ApplyEnemySupplyBiasToClass( bVestClass,    bSoldierClass, 1, sSectorX, sSectorY );
+	bLeggingClass = ApplyEnemySupplyBiasToClass( bLeggingClass, bSoldierClass, 1, sSectorX, sSectorY );
+	bAttachClass  = ApplyEnemySupplyBiasToClass( bAttachClass,  bSoldierClass, 2, sSectorX, sSectorY );
+	bKitClass     = ApplyEnemySupplyBiasToClass( bKitClass,     bSoldierClass, 4, sSectorX, sSectorY );
+	bMiscClass    = ApplyEnemySupplyBiasToClass( bMiscClass,    bSoldierClass, 5, sSectorX, sSectorY );
 
 	// Do not reinterpret special-ammunition class constants as normal coolness classes.
 	if ( bGrenadeClass != RPG_GRENADE_CLASS && bGrenadeClass != MORTAR_GRENADE_CLASS )
-		bGrenadeClass = ApplyEnemySupplyBiasToClass( bGrenadeClass, bSoldierClass, 3 );
+		bGrenadeClass = ApplyEnemySupplyBiasToClass( bGrenadeClass, bSoldierClass, 3, sSectorX, sSectorY );
 
 	// Individual issue is imperfect even inside the same formation. Most soldiers stay
 	// near doctrine, but some are short a magazine or grenade and a few are over-issued.
@@ -332,6 +334,13 @@ static void MaybeAddEnemyFirstAid( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass 
 	ubChance += (UINT8)( HighestPlayerProgressPercentage() / 25 );
 	if ( pp->bMedical > 0 )
 		ubChance += (UINT8)min( 6, pp->bMedical / 15 );
+
+	// Medical availability follows the same local logistics picture as other support gear.
+	INT8 bMedicalSupply = GetEnemySectorSupplyBias( bSoldierClass, 4, pp->sSectorX, pp->sSectorY );
+	if ( bMedicalSupply < 0 )
+		ubChance = (UINT8)max( 2, (INT16)ubChance + (INT16)bMedicalSupply * 4 );
+	else if ( bMedicalSupply > 0 )
+		ubChance = (UINT8)min( 40, (INT16)ubChance + 4 );
 
 	if ( Chance( ubChance ) )
 	{
@@ -980,7 +989,7 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 			break;
 	}
 
-	ApplyEnemyInventoryLogisticsVariability( bSoldierClass,
+	ApplyEnemyInventoryLogisticsVariability( pp, bSoldierClass,
 		bWeaponClass, bHelmetClass, bVestClass, bLeggingClass,
 		bAttachClass, bGrenadeClass, bKitClass, bMiscClass,
 		bAmmoClips, bGrenades, fGrenadeLauncher, fMortar, fRPG );
@@ -3543,15 +3552,14 @@ UINT16 SelectStandardArmyGun( UINT8 uiGunLevel, INT8 bSoldierClass )
 	while (usGunIndex == -1)
 	{
 		UINT8 ubChoices = pGunChoiceTable[ uiGunLevel ].ubChoices;
-		if ( SOLDIER_CLASS_ENEMY( bOriginalSoldierClass ) && ubChoices > 2 && Chance( 72 ) )
+		if ( SOLDIER_CLASS_ENEMY( bOriginalSoldierClass ) && !IsAutoResolveActive() && ubChoices > 2 && Chance( 72 ) )
 		{
 			// Local depots and procurement create recurring weapon families within a sector.
 			// A preferred 2-3 item window gets most rolls, while the rest remain possible.
 			UINT32 uiSectorX = ( gWorldSectorX > 0 ) ? (UINT32)gWorldSectorX : 0;
 			UINT32 uiSectorY = ( gWorldSectorY > 0 ) ? (UINT32)gWorldSectorY : 0;
-			UINT32 uiProgressBand = (UINT32)( HighestPlayerProgressPercentage() / 20 );
 			UINT32 uiSeed = uiSectorX * 313U + uiSectorY * 1597U + (UINT32)uiGunLevel * 7919U +
-				(UINT32)bOriginalSoldierClass * 101U + uiProgressBand * 65537U;
+				(UINT32)bOriginalSoldierClass * 101U;
 			UINT8 ubWindow = ( ubChoices >= 6 ) ? 3 : 2;
 			UINT8 ubAnchor = (UINT8)( EnemyInventorySupplyHash( uiSeed ) % ubChoices );
 			uiChoice = ( ubAnchor + Random( ubWindow ) ) % ubChoices;
