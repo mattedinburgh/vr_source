@@ -13,6 +13,9 @@ UINT32 SetupNewAmbientSound( UINT32 uiAmbientID );
 void StopAmbients( );
 void DeleteAllAmbients();
 
+// Vengeance adaptive ambience state updater (time/weather/combat).
+void UpdateVRSectorAmbience();
+
 extern AMBIENTDATA_STRUCT		gAmbData[ MAX_AMBIENT_SOUNDS ];
 extern INT16								gsNumAmbData;
 
