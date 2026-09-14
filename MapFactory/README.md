@@ -52,3 +52,21 @@ Production-wave rule:
 Once a method is frozen, individual difficult sectors are handled as outliers. They do not reopen the whole methodology unless an entire production wave degrades.
 
 The objective is acceptable visual quality at useful throughput, not theoretical perfection.
+
+
+## Automated visual scoring
+
+Tactical QA uses six representative camera views. A sector passes the technical visual gate only when:
+- all six comparisons are available,
+- average pristine-to-dressed pixel change is at least 0.75%,
+- at least three of six views change by at least 0.50%,
+- average dressed-to-reloaded difference is at most 0.05%, and
+- at least five of six reload views are stable.
+
+This rejects technically saved maps whose changes are effectively invisible.
+
+## Production waves
+
+After a methodology is frozen, production runs in balanced waves rather than one 88-map batch. Wave 1 contains twelve deliberately mixed sectors. Remaining sectors are automatically interleaved by archetype so a bad method degrades visibly across a wave instead of silently ruining a whole geographic row.
+
+Every accepted remastered map is staged outside the temporary render sandbox before cleanup.
