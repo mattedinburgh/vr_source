@@ -96,6 +96,9 @@ UINT16 MovementMode[LAST_MOVEMENT_ACTION + 1][NUM_URGENCY_STATES] =
 	{RUNNING,	 RUNNING,  RUNNING},	// AI_ACTION_MOVE_TO_CLIMB
 };
 
+static BOOLEAN AIKnownThreatHasSightToSpot(SOLDIERTYPE *pSoldier, INT32 sSpot,
+	BOOLEAN fUnlimited, UINT8 ubTargetStance, UINT8 ubTargetLOSPos);
+
 INT8 OKToAttack(SOLDIERTYPE * pSoldier, int target)
 {
 	// can't shoot yourself
