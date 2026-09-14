@@ -6153,7 +6153,10 @@ static BOOLEAN VR_TryOperationalGarrisonReassignment( GROUP **pGroup )
 
 	// Preserve strategic uncertainty: one decision in five deliberately falls back to legacy weighted selection.
 	if( Chance( 20 ) )
+	{
+		VR_LogOperationalDecision( *pGroup, "LEGACY_WEIGHTED_FALLBACK", NULL );
 		return FALSE;
+	}
 
 	INT32 iBestGarrison = -1;
 	INT32 iBestScore = -32767;
@@ -6176,10 +6179,18 @@ static BOOLEAN VR_TryOperationalGarrisonReassignment( GROUP **pGroup )
 		INT32 iOperationalScore = VR_ScoreOperationalTarget( *pGroup, ubTargetSector, &score );
 
 		// Existing Queen need remains important; operational context modifies rather than replaces it.
-		iOperationalScore += iWeight * 3;
+		INT32 iQueenNeedBonus = iWeight * 3;
+		INT32 iUncertainty = (INT32)Random( 31 ) - 15;
+		iOperationalScore += iQueenNeedBonus + iUncertainty;
 
-		// Avoid deterministic perfect play. Equivalent candidates can be chosen differently from campaign to campaign.
-		iOperationalScore += (INT32)Random( 31 ) - 15;
+		// Log the actual decision score, including legacy need and uncertainty, without changing the live target yet.
+		VR_OPERATIONAL_SCORE decisionScore = score;
+		decisionScore.iBasePriority += iQueenNeedBonus;
+		decisionScore.iTotal = iOperationalScore;
+		UINT8 ubOriginalLoggedTarget = (*pGroup)->pEnemyGroup->ubOperationalTargetSectorID;
+		(*pGroup)->pEnemyGroup->ubOperationalTargetSectorID = ubTargetSector;
+		VR_LogOperationalDecision( *pGroup, "CANDIDATE_GARRISON", &decisionScore );
+		(*pGroup)->pEnemyGroup->ubOperationalTargetSectorID = ubOriginalLoggedTarget;
 
 		if( iOperationalScore > iBestScore )
 		{
@@ -6190,6 +6201,12 @@ static BOOLEAN VR_TryOperationalGarrisonReassignment( GROUP **pGroup )
 
 	if( iBestGarrison >= 0 )
 	{
+		UINT8 ubBestTarget = gGarrisonGroup[ iBestGarrison ].ubSectorID;
+		UINT8 ubOriginalLoggedTarget = (*pGroup)->pEnemyGroup->ubOperationalTargetSectorID;
+		(*pGroup)->pEnemyGroup->ubOperationalTargetSectorID = ubBestTarget;
+		VR_LogOperationalDecision( *pGroup, "SELECT_GARRISON", NULL );
+		(*pGroup)->pEnemyGroup->ubOperationalTargetSectorID = ubOriginalLoggedTarget;
+
 		UINT16 usDefencePoints = 0;
 		if( ReinforcementsApproved( iBestGarrison, &usDefencePoints ) )
 		{
