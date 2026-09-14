@@ -33,3 +33,22 @@ Progress is accepted maps / 88 surface maps. Workflow runs and experiments are d
 After five representative pilot sectors, the controller evaluates the method itself. If fewer than 3 of 5 sectors pass bake persistence plus visible tactical QA, the generic recipe approach is abandoned for production. The next method is archetype-specific composition kits: complete isometric farms, checkpoints, wilderness clusters and industrial compounds designed as coherent blocks, sliced into reusable JA2 tile frames, then placed by the same engine compiler.
 
 After the pilot passes, production proceeds in waves. A wave that repeatedly falls below 50% acceptance is a methodology failure, not a reason to keep retrying individual maps.
+
+## Optimization discipline
+
+The methodology is not optimized indefinitely.
+
+Pilot rule:
+- Below 60% acceptance after five representative sectors: switch method.
+- 60% to 79%: allow one targeted optimization cycle only.
+- 80% or better: freeze the method and start production.
+- After that one optimization cycle, 70% or better is considered good enough and the method is frozen; below that, switch method.
+
+Production-wave rule:
+- 75% or better acceptance: keep the frozen method.
+- 50% to 74%: allow one targeted optimization cycle.
+- Below 50%, or still below the acceptable threshold after that optimization: switch method.
+
+Once a method is frozen, individual difficult sectors are handled as outliers. They do not reopen the whole methodology unless an entire production wave degrades.
+
+The objective is acceptable visual quality at useful throughput, not theoretical perfection.
