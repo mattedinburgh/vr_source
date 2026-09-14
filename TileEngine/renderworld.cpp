@@ -3753,10 +3753,15 @@ static void BlitOcclusionBubble8BitWallFadeZStrip(
 	const INT32 iEndY = __min(
 		iBottom, (INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
 
-	if ( ( iY ^ gsOcclusionBubbleScreenCenterY ) & 1 )
+	// Structural cues are intentionally gentler than the plain-wall feather:
+	// retain roughly one third of rows inside the bubble.
+	while ( iY < iEndY &&
+			 ( ( iY - gsOcclusionBubbleScreenCenterY ) % 3 + 3 ) % 3 != 0 )
+	{
 		++iY;
+	}
 
-	for ( ; iY < iEndY; iY += 2 )
+	for ( ; iY < iEndY; iY += 3 )
 	{
 		const INT32 iHalfWidth = OcclusionBubbleEllipseHalfWidthAtY(
 			iY, OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
@@ -3814,10 +3819,15 @@ static void BlitOcclusionBubbleTrueColorWallFadeZStrip(
 	const INT32 iEndY = __min(
 		iBottom, (INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
 
-	if ( ( iY ^ gsOcclusionBubbleScreenCenterY ) & 1 )
+	// Structural cues are intentionally gentler than the plain-wall feather:
+	// retain roughly one third of rows inside the bubble.
+	while ( iY < iEndY &&
+			 ( ( iY - gsOcclusionBubbleScreenCenterY ) % 3 + 3 ) % 3 != 0 )
+	{
 		++iY;
+	}
 
-	for ( ; iY < iEndY; iY += 2 )
+	for ( ; iY < iEndY; iY += 3 )
 	{
 		const INT32 iHalfWidth = OcclusionBubbleEllipseHalfWidthAtY(
 			iY, OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
