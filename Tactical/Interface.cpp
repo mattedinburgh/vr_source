@@ -6613,7 +6613,10 @@ void ShowRankIcon( INT16 sXPos, INT16 sYPos, SOLDIERTYPE* pSoldier )
 		if ( iBack != -1 )
 			SetBackgroundRectFilled( iBack );
 
-		DrawRoleIcon( pSoldier, sX, sY );
+		// Match 1.13: specialist identity is learned only after sustained observation.
+		// Four observed turns is the upstream default reveal threshold.
+		if ( pSoldier->usSkillCounter[SOLDIER_COUNTER_ROLE_OBSERVED] >= 4 )
+			DrawRoleIcon( pSoldier, sX, sY );
 	}
 }
 
