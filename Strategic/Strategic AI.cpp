@@ -6116,6 +6116,61 @@ void SendGroupToPool( GROUP **pGroup )
 	}
 }
 
+static BOOLEAN VR_TryOperationalGarrisonReassignment( GROUP **pGroup )
+{
+	if( !VR_OPERATIONAL_GARRISON_REASSIGNMENT_ENABLED || !pGroup || !(*pGroup) || !(*pGroup)->pEnemyGroup )
+		return FALSE;
+
+	// Preserve strategic uncertainty: one decision in five deliberately falls back to legacy weighted selection.
+	if( Chance( 20 ) )
+		return FALSE;
+
+	INT32 iBestGarrison = -1;
+	INT32 iBestScore = -32767;
+
+	Ensure_RepairedGarrisonGroup( &gGarrisonGroup, &giGarrisonArraySize );
+
+	for( INT32 i = 0; i < giGarrisonArraySize; ++i )
+	{
+		RecalculateGarrisonWeight( i );
+		INT32 iWeight = gGarrisonGroup[ i ].bWeight;
+
+		if( iWeight <= 0 || gGarrisonGroup[ i ].ubPendingGroupID )
+			continue;
+
+		UINT8 ubTargetSector = gGarrisonGroup[ i ].ubSectorID;
+		if( !EnemyPermittedToAttackSector( NULL, ubTargetSector ) || !GarrisonRequestingMinimumReinforcements( i ) )
+			continue;
+
+		VR_OPERATIONAL_SCORE score;
+		INT32 iOperationalScore = VR_ScoreOperationalTarget( *pGroup, ubTargetSector, &score );
+
+		// Existing Queen need remains important; operational context modifies rather than replaces it.
+		iOperationalScore += iWeight * 3;
+
+		// Avoid deterministic perfect play. Equivalent candidates can be chosen differently from campaign to campaign.
+		iOperationalScore += (INT32)Random( 31 ) - 15;
+
+		if( iOperationalScore > iBestScore )
+		{
+			iBestScore = iOperationalScore;
+			iBestGarrison = i;
+		}
+	}
+
+	if( iBestGarrison >= 0 )
+	{
+		UINT16 usDefencePoints = 0;
+		if( ReinforcementsApproved( iBestGarrison, &usDefencePoints ) )
+		{
+			SendReinforcementsForGarrison( iBestGarrison, usDefencePoints, pGroup );
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
 void ReassignAIGroup( GROUP **pGroup )
 {
 	INT32 i, iRandom;
@@ -6138,6 +6193,11 @@ void ReassignAIGroup( GROUP **pGroup )
 	if( giRequestPoints <= 0	)
 	{ //we have no request for reinforcements, so send the group to Meduna for reassignment in the pool.
 		SendGroupToPool( pGroup );
+		return;
+	}
+
+	if( VR_TryOperationalGarrisonReassignment( pGroup ) )
+	{
 		return;
 	}
 
