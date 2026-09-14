@@ -40,6 +40,7 @@
 #include "Map Edgepoints.h"	// Chunk 5 escape route planning
 #include "MilitiaSquads.h"	// strategic militia retreat handoff
 #include "VRAnalytics.h"
+#include "CQBBuildingDoctrine.h"
 
 //////////////////////////////////////////////////////////////////////////////
 // SANDRO - In this file, all APBPConstants[AP_CROUCH] and APBPConstants[AP_PRONE] were changed to GetAPsCrouch() and GetAPsProne()
@@ -3181,6 +3182,20 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		INT8 bCasualtyAction = DecideCombatCasualtyResponse(pSoldier, ubCanMove);
 		if (bCasualtyAction != AI_ACTION_NONE)
 			return bCasualtyAction;
+	}
+
+	// Building-aware CQB sits below survival, suppression, cohesion, disengagement,
+	// tactical fallback and casualty response, but above generic investigation/
+	// scavenging movement. RED has no desirable immediate direct-fire attack to preserve.
+	if (!fCivilian &&
+		!gfHiddenInterrupt &&
+		!gTacticalStatus.fInterruptOccurred &&
+		pSoldier->bTeam == ENEMY_TEAM &&
+		AICombatTeam(pSoldier))
+	{
+		INT8 bCQBAction = VRCQB_DecideAction(pSoldier, ubCanMove, TRUE);
+		if (bCQBAction != AI_ACTION_NONE)
+			return bCQBAction;
 	}
 
 	// If we don't have a gun, enemy combatants may scavenge one when the local
@@ -7490,6 +7505,20 @@ L_NEWAIM:
 			pSoldier->bTargetLevel = BestAttack.bTargetLevel;
 			return(ubBestAttackAction);
 		}
+	}
+
+	// If BLACK combat produced no executable/desirable attack, let the CQB layer
+	// choose building-specific hold, secure, fallback, entry or local counterattack
+	// movement before generic cover/approach logic. Good shots always remain senior.
+	if (!fCivilian &&
+		!gfHiddenInterrupt &&
+		!gTacticalStatus.fInterruptOccurred &&
+		pSoldier->bTeam == ENEMY_TEAM &&
+		AICombatTeam(pSoldier))
+	{
+		INT8 bCQBAction = VRCQB_DecideAction(pSoldier, ubCanMove, TRUE);
+		if (bCQBAction != AI_ACTION_NONE)
+			return bCQBAction;
 	}
 
 	// end of tank AI
