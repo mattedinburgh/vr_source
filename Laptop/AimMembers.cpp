@@ -1611,7 +1611,7 @@ BOOLEAN DisplayMercsInventory(UINT8 ubMercID)
 
 				pItem = &Item[ usItem ];
 				GetVideoObject( &hVObject, GetInterfaceGraphicForItem( pItem ) );
-				UINT16 usGraphicNum = g_bUsePngItemImages ? 0 : pItem->ubGraphicNum;
+				UINT16 usGraphicNum = GetInterfaceGraphicSubIndex(pItem->ubGraphicType, pItem->ubGraphicNum);
 				
 				if(usGraphicNum < hVObject->usNumberOfObjects)
 				{
@@ -1686,7 +1686,7 @@ BOOLEAN DisplayMercsInventory(UINT8 ubMercID)
 
 				pItem = &Item[ usItem ];
 				GetVideoObject( &hVObject, GetInterfaceGraphicForItem( pItem ) );
-				UINT16 usGraphicNum = g_bUsePngItemImages ? 0 : pItem->ubGraphicNum;
+				UINT16 usGraphicNum = GetInterfaceGraphicSubIndex(pItem->ubGraphicType, pItem->ubGraphicNum);
 				if(usGraphicNum < hVObject->usNumberOfObjects)
 				{
 					pTrav = &(hVObject->pETRLEObject[ usGraphicNum ] );
