@@ -1289,9 +1289,10 @@ static BOOLEAN VRRejectRedundantSelectedAIAction(SOLDIERTYPE *pSoldier)
 		pReason = "redundant_change_facing_already_aligned";
 	else if (bRejectedAction == AI_ACTION_RAISE_GUN && WeaponReady(pSoldier))
 		pReason = "redundant_raise_gun_weapon_already_ready";
-	else if (bRejectedAction == AI_ACTION_TAKE_COVER &&
+	else if (bRejectedAction >= FIRST_MOVEMENT_ACTION &&
+		bRejectedAction <= LAST_MOVEMENT_ACTION &&
 		AIShouldRejectCoverOscillation(pSoldier, pSoldier->aiData.usActionData))
-		pReason = "cover_ping_pong_hysteresis";
+		pReason = "movement_ping_pong_hysteresis";
 
 	if (!pReason)
 		return FALSE;
@@ -1728,12 +1729,35 @@ void TurnBasedHandleNPCAI(SOLDIERTYPE *pSoldier)
 			NPCDoesNothing(pSoldier);  // sets pSoldier->moved to TRUE
 			return;
 		}
-		for (UINT8 ubVRSetupGuard = 0;
-			ubVRSetupGuard < 3 && pSoldier->aiData.bAction != AI_ACTION_NONE;
-			++ubVRSetupGuard)
+		for (UINT8 ubVRSetupGuard = 0; ubVRSetupGuard < 3; ++ubVRSetupGuard)
 		{
-			if (!VRRejectRedundantSelectedAIAction(pSoldier))
+			if (pSoldier->aiData.bAction == AI_ACTION_NONE ||
+				!VRRejectRedundantSelectedAIAction(pSoldier))
+			{
 				break;
+			}
+
+			// A rejected setup action is not a reason to throw away the rest of the
+			// soldier's turn. Re-run the tactical plan immediately so a redundant
+			// ready/facing/movement choice can flow into the intended shot, move or
+			// survival action while AP and battlefield state are still current.
+			if (pSoldier->aiData.bAction == AI_ACTION_NONE &&
+				!(gTacticalStatus.uiFlags & ENGAGED_IN_CONV))
+			{
+				if (!pSoldier->ai_masterplan_)
+				{
+					if (pSoldier->bAIIndex == 0)
+						pSoldier->bAIIndex = pSoldier->bTeam + 1;
+					AI::tactical::AIInputData ai_input;
+					AI::tactical::PlanFactoryLibrary* plan_lib(AI::tactical::PlanFactoryLibrary::instance());
+					pSoldier->ai_masterplan_ = plan_lib->create_plan(pSoldier->bAIIndex, pSoldier, ai_input);
+				}
+				if (pSoldier->ai_masterplan_)
+				{
+					AI::tactical::PlanInputData plan_input(true, gTacticalStatus);
+					pSoldier->ai_masterplan_->execute(plan_input);
+				}
+			}
 		}
 		if (pSoldier->aiData.bAction == AI_ACTION_NONE)
 		{
@@ -1747,8 +1771,12 @@ void TurnBasedHandleNPCAI(SOLDIERTYPE *pSoldier)
 		// see if we can afford to do this action
 		if (IsActionAffordable(pSoldier))
 		{
-			if (pSoldier->aiData.bAction == AI_ACTION_TAKE_COVER)
-				AIRegisterCoverMoveIntent(pSoldier, pSoldier->sGridNo, pSoldier->aiData.usActionData);
+			if (pSoldier->aiData.bAction >= FIRST_MOVEMENT_ACTION &&
+				pSoldier->aiData.bAction <= LAST_MOVEMENT_ACTION)
+			{
+				AIRegisterCoverMoveIntent(
+					pSoldier, pSoldier->sGridNo, pSoldier->aiData.usActionData);
+			}
 			NPCDoesAct(pSoldier);
 
 			// perform the chosen action
@@ -2549,13 +2577,22 @@ INT8 ExecuteAction(SOLDIERTYPE *pSoldier)
             pSoldier->SoldierReadyWeapon();
             HandleSight(pSoldier, SIGHT_LOOK | SIGHT_RADIO);
 
-            //AXP 23.03.2007: Sniper deadlock fix
-            //if ( pSoldier->aiData.bOrders == SNIPER && pSoldier->aiData.bLastAction == AI_ACTION_RAISE_GUN)
-            if ( pSoldier->aiData.bLastAction == AI_ACTION_RAISE_GUN)
+            // The old sniper deadlock guard converted a repeated ready-weapon
+            // action directly into END_TURN. With the unified planner that turns
+            // a harmless duplicate setup choice into lost combat tempo. Preserve
+            // any meaningful queued follow-up and otherwise force a clean replan.
+            if (pSoldier->aiData.bLastAction == AI_ACTION_RAISE_GUN)
             {
-				DebugAI(AI_MSG_INFO, pSoldier, String("sniper deadlock fix !!! repeated AI_ACTION_RAISE_GUN, set next action to AI_ACTION_END_TURN"));
-                pSoldier->aiData.bNextAction = AI_ACTION_END_TURN;
-				pSoldier->aiData.usNextActionData = 0;
+				if (pSoldier->aiData.bNextAction == AI_ACTION_RAISE_GUN)
+				{
+					pSoldier->aiData.bNextAction = AI_ACTION_NONE;
+					pSoldier->aiData.usNextActionData = 0;
+				}
+				if (pSoldier->aiData.bNextAction == AI_ACTION_NONE)
+				{
+					pSoldier->aiData.bNewSituation = IS_NEW_SITUATION;
+				}
+				DebugAI(AI_MSG_INFO, pSoldier, String("repeated AI_ACTION_RAISE_GUN: replan without ending turn"));
             }
 
             ActionDone( pSoldier );
