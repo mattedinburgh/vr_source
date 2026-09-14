@@ -256,6 +256,21 @@ void VR_UpdateOperationalReadinessHourly()
 		const UINT8 ubCurrentSector =
 			(UINT8)SECTOR( pGroup->ubSectorX, pGroup->ubSectorY );
 
+		// Some legacy callers create a GROUP first and assign ubIntention
+		// immediately afterwards. Formation state may therefore have been born as
+		// NONE even though the group is now a patrol/staging/reinforcement group.
+		// Mirror that authoritative legacy intent before considering reserve status.
+		if( pEnemy->ubOperationalMission == VR_OPMISSION_NONE &&
+			pEnemy->ubIntention != NO_INTENTIONS )
+		{
+			pEnemy->ubOperationalMission =
+				VR_MissionFromLegacyIntention( pEnemy->ubIntention );
+			pEnemy->ubOperationalReserveRole = VR_RESERVE_NONE;
+			pEnemy->ubOperationalLastDecisionReason =
+				VR_OPREASON_LEGACY_ASSIGNMENT;
+		}
+
+
 		// Logistics model is intentionally information-independent: it depends only
 		// on the formation's own movement and Queen-controlled infrastructure.
 		if( pGroup->fBetweenSectors )
@@ -304,7 +319,10 @@ void VR_UpdateOperationalReadinessHourly()
 
 		// Only idle/recovering formations receive reserve classification here.
 		// Active legacy Queen assignments remain untouched.
-		if( pEnemy->ubOperationalMission == VR_OPMISSION_NONE ||
+		if( (pEnemy->ubOperationalMission == VR_OPMISSION_NONE &&
+			 pEnemy->ubIntention == NO_INTENTIONS &&
+			 !pGroup->fBetweenSectors &&
+			 pGroup->pWaypoints == NULL) ||
 			pEnemy->ubOperationalMission == VR_OPMISSION_RESERVE )
 		{
 			const UINT8 ubRole = VR_SelectReserveRole( pGroup );
