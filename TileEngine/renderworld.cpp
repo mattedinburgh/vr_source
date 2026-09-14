@@ -1325,15 +1325,25 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 
 							fRenderTile=TRUE;
 							pDirtyBackPtr=NULL;
-							if(uiLevelNodeFlags&LEVELNODE_REVEAL)
+							// The inner bubble removes ordinary wall art. The outer ring reuses
+							// JA2's established dynamic translucent reveal path. Door/window nodes
+							// are only ever assigned OCCLUSION_FADE by the updater above.
+							if ( uiLevelNodeFlags & LEVELNODE_OCCLUSION_HIDE )
 							{
-								if(!fDynamic)
-									fRenderTile=FALSE;
+								fRenderTile = FALSE;
+								fPixelate = FALSE;
+							}
+							else if ( uiLevelNodeFlags & ( LEVELNODE_REVEAL | LEVELNODE_OCCLUSION_FADE ) )
+							{
+								if ( !fDynamic )
+									fRenderTile = FALSE;
 								else
-									fPixelate=TRUE;
+									fPixelate = TRUE;
 							}
 							else
-								fPixelate=FALSE;
+							{
+								fPixelate = FALSE;
+							}
 
 							// non-type specific setup
 							sXPos = (INT16)iTempPosX_S;
@@ -3096,6 +3106,199 @@ void ScrollBackground(UINT32 uiDirection, INT16 sScrollXIncrement, INT16 sScroll
 
 }
 
+// -----------------------------------------------------------------------------
+// Selected-merc occlusion cutaway
+//
+// JA2's structure graphics can cover a merc even though the merc is perfectly
+// visible according to tactical LOS. Fallout solved the same fixed-isometric
+// camera problem with a local visibility bubble. We reproduce that behaviour
+// without touching any tactical data: only LEVELNODE render state is changed.
+//
+// A wall's orientation tells us which neighbouring tile lies "behind" it from
+// the camera. The inner part of the bubble removes ordinary wall art; the outer
+// ring uses the engine's established translucent/pixelated reveal path. Doors
+// and windows are deliberately never fully removed, leaving their frames and
+// openings readable as architectural cues.
+// -----------------------------------------------------------------------------
+
+#define OCCLUSION_BUBBLE_SCAN_RADIUS       4
+#define OCCLUSION_BUBBLE_INNER_RADIUS_SQ   1
+#define OCCLUSION_BUBBLE_OUTER_RADIUS_SQ   5
+
+static INT32  gsOcclusionBubbleLastGridNo = NOWHERE;
+static INT8   gbOcclusionBubbleLastLevel = -1;
+static UINT16 gusOcclusionBubbleLastSoldier = NOBODY;
+static BOOLEAN gfOcclusionBubbleActive = FALSE;
+
+static BOOLEAN ClearSelectedMercOcclusionBubble( )
+{
+	BOOLEAN fChanged = FALSE;
+
+	for ( INT32 sGridNo = 0; sGridNo < WORLD_MAX; ++sGridNo )
+	{
+		LEVELNODE *pNode = gpWorldLevelData[ sGridNo ].pStructHead;
+		while ( pNode != NULL )
+		{
+			if ( pNode->uiFlags & ( LEVELNODE_OCCLUSION_FADE | LEVELNODE_OCCLUSION_HIDE ) )
+			{
+				pNode->uiFlags &= ~( LEVELNODE_OCCLUSION_FADE | LEVELNODE_OCCLUSION_HIDE );
+				fChanged = TRUE;
+			}
+			pNode = pNode->pNext;
+		}
+	}
+
+	return fChanged;
+}
+
+static BOOLEAN GetOcclusionBubbleHiddenSide( STRUCTURE *pStructure, INT32 *psHiddenSideGridNo )
+{
+	if ( pStructure == NULL || psHiddenSideGridNo == NULL )
+		return FALSE;
+
+	switch ( pStructure->ubWallOrientation )
+	{
+		case OUTSIDE_TOP_LEFT:
+		case INSIDE_TOP_LEFT:
+			*psHiddenSideGridNo = NewGridNo( pStructure->sGridNo, DirectionInc( SOUTH ) );
+			break;
+
+		case OUTSIDE_TOP_RIGHT:
+		case INSIDE_TOP_RIGHT:
+			*psHiddenSideGridNo = NewGridNo( pStructure->sGridNo, DirectionInc( EAST ) );
+			break;
+
+		default:
+			return FALSE;
+	}
+
+	return !TileIsOutOfBounds( *psHiddenSideGridNo );
+}
+
+static INT32 OcclusionBubbleGridDistanceSquared( INT32 sGridNoA, INT32 sGridNoB )
+{
+	const INT32 iRowA = sGridNoA / WORLD_COLS;
+	const INT32 iColA = sGridNoA % WORLD_COLS;
+	const INT32 iRowB = sGridNoB / WORLD_COLS;
+	const INT32 iColB = sGridNoB % WORLD_COLS;
+	const INT32 iDeltaRow = iRowA - iRowB;
+	const INT32 iDeltaCol = iColA - iColB;
+
+	return iDeltaRow * iDeltaRow + iDeltaCol * iDeltaCol;
+}
+
+static void UpdateSelectedMercOcclusionBubble( )
+{
+	SOLDIERTYPE *pViewSoldier = NULL;
+	BOOLEAN fShouldBeActive = FALSE;
+
+	if ( guiCurrentScreen == GAME_SCREEN && !gfEditMode &&
+		 gusSelectedSoldier != NOBODY && MercPtrs[ gusSelectedSoldier ] != NULL )
+	{
+		pViewSoldier = MercPtrs[ gusSelectedSoldier ];
+		fShouldBeActive =
+			pViewSoldier->bActive &&
+			pViewSoldier->bInSector &&
+			pViewSoldier->bTeam == gbPlayerNum &&
+			pViewSoldier->pathing.bLevel == 0 &&
+			!TileIsOutOfBounds( pViewSoldier->sGridNo );
+	}
+
+	const BOOLEAN fAlreadyFullRender = ( gRenderFlags & RENDER_FLAG_FULL ) != 0;
+
+	// Re-evaluate on a full render as well: doors can open, structures can be
+	// damaged, and map geometry can change while the selected merc stands still.
+	if ( fShouldBeActive &&
+		 !fAlreadyFullRender &&
+		 gfOcclusionBubbleActive &&
+		 gusOcclusionBubbleLastSoldier == gusSelectedSoldier &&
+		 gsOcclusionBubbleLastGridNo == pViewSoldier->sGridNo &&
+		 gbOcclusionBubbleLastLevel == pViewSoldier->pathing.bLevel )
+	{
+		return;
+	}
+
+	BOOLEAN fChanged = ClearSelectedMercOcclusionBubble( );
+
+	if ( fShouldBeActive )
+	{
+		const INT32 sMercGridNo = pViewSoldier->sGridNo;
+		const INT32 iMercRow = sMercGridNo / WORLD_COLS;
+		const INT32 iMercCol = sMercGridNo % WORLD_COLS;
+
+		for ( INT32 iRowOffset = -OCCLUSION_BUBBLE_SCAN_RADIUS;
+			  iRowOffset <= OCCLUSION_BUBBLE_SCAN_RADIUS; ++iRowOffset )
+		{
+			for ( INT32 iColOffset = -OCCLUSION_BUBBLE_SCAN_RADIUS;
+				  iColOffset <= OCCLUSION_BUBBLE_SCAN_RADIUS; ++iColOffset )
+			{
+				const INT32 iRow = iMercRow + iRowOffset;
+				const INT32 iCol = iMercCol + iColOffset;
+
+				if ( iRow < 0 || iRow >= WORLD_ROWS || iCol < 0 || iCol >= WORLD_COLS )
+					continue;
+
+				const INT32 sGridNo = iRow * WORLD_COLS + iCol;
+				LEVELNODE *pNode = gpWorldLevelData[ sGridNo ].pStructHead;
+
+				while ( pNode != NULL )
+				{
+					STRUCTURE *pStructure = pNode->pStructureData;
+
+					if ( pStructure != NULL && ( pStructure->fFlags & STRUCTURE_WALLSTUFF ) )
+					{
+						INT32 sHiddenSideGridNo = NOWHERE;
+
+						if ( GetOcclusionBubbleHiddenSide( pStructure, &sHiddenSideGridNo ) )
+						{
+							const INT32 iDistanceSq =
+								OcclusionBubbleGridDistanceSquared( sHiddenSideGridNo, sMercGridNo );
+
+							if ( iDistanceSq <= OCCLUSION_BUBBLE_OUTER_RADIUS_SQ )
+							{
+								const BOOLEAN fPreserveOpening =
+									( pStructure->fFlags & ( STRUCTURE_ANYDOOR | STRUCTURE_WALLNWINDOW ) ) != 0;
+
+								if ( iDistanceSq <= OCCLUSION_BUBBLE_INNER_RADIUS_SQ && !fPreserveOpening )
+								{
+									pNode->uiFlags |= LEVELNODE_OCCLUSION_HIDE;
+								}
+								else
+								{
+									pNode->uiFlags |= LEVELNODE_OCCLUSION_FADE;
+								}
+
+								fChanged = TRUE;
+							}
+						}
+					}
+
+					pNode = pNode->pNext;
+				}
+			}
+		}
+
+		gfOcclusionBubbleActive = TRUE;
+		gusOcclusionBubbleLastSoldier = gusSelectedSoldier;
+		gsOcclusionBubbleLastGridNo = pViewSoldier->sGridNo;
+		gbOcclusionBubbleLastLevel = pViewSoldier->pathing.bLevel;
+	}
+	else
+	{
+		gfOcclusionBubbleActive = FALSE;
+		gusOcclusionBubbleLastSoldier = NOBODY;
+		gsOcclusionBubbleLastGridNo = NOWHERE;
+		gbOcclusionBubbleLastLevel = -1;
+	}
+
+	// The static save buffer contains normal wall art. Rebuild it only when the
+	// bubble membership changes; dynamic frames then use the fade path cheaply.
+	if ( fChanged && !fAlreadyFullRender )
+	{
+		SetRenderFlags( RENDER_FLAG_FULL );
+	}
+}
+
 // Render routine takes center X, Y and Z coordinate and gets world
 // Coordinates for the window from that using the following functions
 // For coordinate transformations
@@ -3107,6 +3310,10 @@ TILE_ANIMATION_DATA		*pAnimData;
 UINT32 cnt = 0;
 
 	gfRenderFullThisFrame = FALSE;
+
+	// Synchronize the Fallout-style visibility bubble before deciding whether
+	// this frame needs a static-world rebuild.
+	UpdateSelectedMercOcclusionBubble( );
 
 	// If we are testing renderer, set background to pink!
 	if ( gTacticalStatus.uiFlags & DEBUGCLIFFS )
