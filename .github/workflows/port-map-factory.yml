@@ -68,7 +68,9 @@ jobs:
 
           & $git -C $env:GITHUB_WORKSPACE fetch origin install/all-2026-09-12
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $git -C $env:GITHUB_WORKSPACE checkout -B map-factory-port FETCH_HEAD
+          & $git -C $env:GITHUB_WORKSPACE clean -fdx
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $git -C $env:GITHUB_WORKSPACE checkout -f -B map-factory-port FETCH_HEAD
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Oldest -> newest. Trigger-only commits are intentionally excluded.
