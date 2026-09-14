@@ -115,3 +115,16 @@ A second pass against the current public 1.13 source confirms the key Vengeance 
 The useful difference is that current 1.13 has additional widescreen-specific UI handling (for example a 1280x720 map-bottom asset). Vengeance does not currently mirror all of that handling, so this cold pilot deliberately themes the assets Vengeance actually requests rather than importing the newer 1.13 layout wholesale.
 
 This reinforces the chosen approach: preserve JA2/1.13 layout semantics and modernise the Vengeance presentation layer rather than redesigning the UI architecture.
+
+
+## Source pilot now staged
+
+The branch now contains one deliberately narrow source-side visual change:
+
+- `Tactical/Interface Items.cpp`
+  - item-condition/status-bar shadow: warm grey-brown -> dark steel blue
+  - item-condition/status-bar foreground: tan -> restrained cold steel/cyan
+
+No health, damage, warning, morale or other semantic gameplay colours were changed.
+
+Map-screen palette-index text and Bobby Ray palette-index text remain untouched until the real asset preview sheets are reviewed, because changing those indices without seeing the themed backgrounds would be guesswork.
