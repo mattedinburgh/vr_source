@@ -1597,7 +1597,7 @@ static const CHAR16 * const gAICombatLines_CASUALTY[] =
 static const CHAR16 * const gAICombatLines_INCOMING[] =
 {
 	L"\"Incoming!\"",
-	L"\"Get down!\"",
+	L"\"Down, now!\"",
 	L"\"Shots incoming!\"",
 	L"\"Take cover! Incoming!\"",
 	L"\"We're taking fire!\"",
@@ -1648,6 +1648,20 @@ static const CHAR16 * const gAICombatLines_VEHICLE[] =
 	L"\"Tank in sight!\"",
 	L"\"Armor! Get down!\"",
 	L"\"Vehicle contact!\""
+};
+
+static const CHAR16 * const gAICombatLines_CIVILIAN[] =
+{
+	L"\"Civilian! Watch your fire!\"",
+	L"\"Civilians near the target!\"",
+	L"\"Watch the civilians!\"",
+	L"\"Noncombatant! Check your fire!\"",
+	L"\"Civilian in the line!\"",
+	L"\"Careful! Civilian!\"",
+	L"\"Watch your shots! Civilian!\"",
+	L"\"Civilian close!\"",
+	L"\"Check fire! Civilian nearby!\"",
+	L"\"Mind the civilians!\""
 };
 
 static const CHAR16 * const gAICombatLines_HOLD[] =
@@ -1745,6 +1759,9 @@ static BOOLEAN BuildAICombatCalloutText( AI_BATTLE_CALLOUT ubCallout, STR16 zTex
 		case AI_BATTLE_CALL_VEHICLE:
 			wcscpy( zText, gAICombatLines_VEHICLE[ Random( sizeof(gAICombatLines_VEHICLE) / sizeof(gAICombatLines_VEHICLE[0]) ) ] );
 			return TRUE;
+		case AI_BATTLE_CALL_CIVILIAN:
+			wcscpy( zText, gAICombatLines_CIVILIAN[ Random( sizeof(gAICombatLines_CIVILIAN) / sizeof(gAICombatLines_CIVILIAN[0]) ) ] );
+			return TRUE;
 		case AI_BATTLE_CALL_HOLD:
 			wcscpy( zText, gAICombatLines_HOLD[ Random( sizeof(gAICombatLines_HOLD) / sizeof(gAICombatLines_HOLD[0]) ) ] );
 			return TRUE;
@@ -1772,6 +1789,7 @@ static UINT8 AICombatCalloutPriority( AI_BATTLE_CALLOUT ubCallout )
 		case AI_BATTLE_CALL_HEAVY_WEAPON:
 		case AI_BATTLE_CALL_CONTACT:
 		case AI_BATTLE_CALL_REINFORCE:
+		case AI_BATTLE_CALL_CIVILIAN:
 			return 82;
 		case AI_BATTLE_CALL_FLANK_LEFT:
 		case AI_BATTLE_CALL_FLANK_RIGHT:
@@ -1816,6 +1834,7 @@ static UINT8 AICombatCalloutChance( AI_BATTLE_CALLOUT ubCallout )
 			return 72;
 		case AI_BATTLE_CALL_CONTACT:
 		case AI_BATTLE_CALL_INCOMING:
+		case AI_BATTLE_CALL_CIVILIAN:
 			return 65;
 		case AI_BATTLE_CALL_REGROUP:
 		case AI_BATTLE_CALL_RALLY:
@@ -1900,6 +1919,7 @@ static const CHAR8 * AICombatCalloutName( AI_BATTLE_CALLOUT ubCallout )
 		case AI_BATTLE_CALL_SEARCH: return "search";
 		case AI_BATTLE_CALL_REINFORCE: return "reinforce";
 		case AI_BATTLE_CALL_VEHICLE: return "vehicle";
+		case AI_BATTLE_CALL_CIVILIAN: return "civilian";
 		case AI_BATTLE_CALL_HOLD: return "hold";
 		case AI_BATTLE_CALL_TARGET_DOWN: return "target_down";
 		default: return "unknown";
@@ -2054,6 +2074,38 @@ static AI_BATTLE_CALLOUT AICombatCalloutFromTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE 
 	}
 }
 
+static SOLDIERTYPE * AICombatActionTarget( SOLDIERTYPE *pCiv )
+{
+	if ( !pCiv || pCiv->ubOppNum == NOBODY || pCiv->ubOppNum >= TOTAL_SOLDIERS )
+		return NULL;
+	return MercPtrs[pCiv->ubOppNum];
+}
+
+static BOOLEAN AICombatTargetIsVehicle( SOLDIERTYPE *pCiv )
+{
+	SOLDIERTYPE *pTarget = AICombatActionTarget( pCiv );
+	return pTarget && pTarget->bActive && pTarget->bInSector && TANK( pTarget );
+}
+
+static BOOLEAN AICivilianNearActionTarget( SOLDIERTYPE *pCiv )
+{
+	if ( !pCiv || TileIsOutOfBounds( pCiv->aiData.usActionData ) )
+		return FALSE;
+
+	for ( UINT8 ubID = gTacticalStatus.Team[CIV_TEAM].bFirstID;
+		ubID <= gTacticalStatus.Team[CIV_TEAM].bLastID; ++ubID )
+	{
+		SOLDIERTYPE *pOther = MercPtrs[ubID];
+		if ( !pOther || !pOther->bActive || !pOther->bInSector || pOther->stats.bLife <= 0 )
+			continue;
+		if ( pOther->pathing.bLevel != pCiv->bTargetLevel )
+			continue;
+		if ( PythSpacesAway( pCiv->aiData.usActionData, pOther->sGridNo ) <= 2 )
+			return TRUE;
+	}
+	return FALSE;
+}
+
 static BOOLEAN AIActionLooksLikeMedicRescue( SOLDIERTYPE *pCiv )
 {
 	if ( !pCiv || FindObjClass( pCiv, IC_MEDKIT ) == NO_SLOT ||
@@ -2106,7 +2158,11 @@ void ShowAIActionPopup( SOLDIERTYPE *pCiv, INT8 bAction )
 			ubCallout = AIHandItemIsSmoke( pCiv ) ? AI_BATTLE_CALL_SMOKE : AI_BATTLE_CALL_GRENADE;
 			break;
 		case AI_ACTION_FIRE_GUN:
-			if ( pCiv->bDoBurst || pCiv->bDoAutofire > 1 )
+			if ( AICombatTargetIsVehicle( pCiv ) )
+				ubCallout = AI_BATTLE_CALL_VEHICLE;
+			else if ( AICivilianNearActionTarget( pCiv ) )
+				ubCallout = AI_BATTLE_CALL_CIVILIAN;
+			else if ( pCiv->bDoBurst || pCiv->bDoAutofire > 1 )
 				ubCallout = AI_BATTLE_CALL_SUPPRESS;
 			break;
 		case AI_ACTION_STOP_COWERING: ubCallout = AI_BATTLE_CALL_RALLY; break;
