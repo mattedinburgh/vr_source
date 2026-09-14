@@ -555,6 +555,71 @@ void VRAnalyticsTacticalStateInt(
 	VRAnalyticsStateInt( decisionId, key, value );
 }
 
+void VRAnalyticsTacticalRetreatAssessment(
+	unsigned int soldierId,
+	unsigned long turn,
+	int battleSituation,
+	long perceivedFriendlyStrength,
+	long perceivedEnemyStrength,
+	int knownOpponents,
+	int friendlyCasualtyPct,
+	int localCasualtyPct,
+	int holdConfidence,
+	int localStress,
+	int personalRisk,
+	int riskTolerance,
+	int routPressure,
+	int collapseStreak,
+	bool lastSurvivorPressure,
+	int nearbyOperationalFriends,
+	bool stableLeaderNearby,
+	bool hasCover,
+	bool hasSightCover,
+	bool underFire,
+	int lifePct,
+	int marksmanship,
+	int experienceLevel,
+	int gunDeadliness,
+	int gunAmmo,
+	bool lastAttackHit,
+	bool lastTargetSuppressed,
+	bool escapeIntentActive )
+{
+	unsigned long decisionId = EnsureTacticalDecision( soldierId );
+	FILE* file = BeginEvent( VR_ANALYTICS_TACTICAL, "assessment", decisionId );
+	if( !file )
+		return;
+
+	fprintf( file,
+		",\"assessment_type\":\"retreat_courage\",\"actor_id\":%u,\"turn\":%lu,"
+		"\"battle_situation\":%d,\"perceived_friendly_strength\":%ld,"
+		"\"perceived_enemy_strength\":%ld,\"known_opponents\":%d,"
+		"\"friendly_casualty_pct\":%d,\"local_casualty_pct\":%d,"
+		"\"hold_confidence\":%d,\"local_stress\":%d,"
+		"\"personal_risk\":%d,\"risk_tolerance\":%d,"
+		"\"rout_pressure\":%d,\"collapse_streak\":%d,"
+		"\"last_survivor_pressure\":%s,\"nearby_operational_friends\":%d,"
+		"\"stable_leader_nearby\":%s,\"has_cover\":%s,\"has_sight_cover\":%s,"
+		"\"under_fire\":%s,\"life_pct\":%d,\"marksmanship\":%d,"
+		"\"experience_level\":%d,\"gun_deadliness\":%d,\"gun_ammo\":%d,"
+		"\"last_attack_hit\":%s,\"last_target_suppressed\":%s,"
+		"\"escape_intent_active\":%s",
+		soldierId, turn, battleSituation,
+		perceivedFriendlyStrength, perceivedEnemyStrength, knownOpponents,
+		friendlyCasualtyPct, localCasualtyPct, holdConfidence, localStress,
+		personalRisk, riskTolerance, routPressure, collapseStreak,
+		lastSurvivorPressure ? "true" : "false", nearbyOperationalFriends,
+		stableLeaderNearby ? "true" : "false",
+		hasCover ? "true" : "false",
+		hasSightCover ? "true" : "false",
+		underFire ? "true" : "false",
+		lifePct, marksmanship, experienceLevel, gunDeadliness, gunAmmo,
+		lastAttackHit ? "true" : "false",
+		lastTargetSuppressed ? "true" : "false",
+		escapeIntentActive ? "true" : "false" );
+	EndEvent( file );
+}
+
 void VRAnalyticsTacticalFormationSnapshot(
 	unsigned long turn,
 	int team,
