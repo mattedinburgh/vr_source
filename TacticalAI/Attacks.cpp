@@ -1314,11 +1314,11 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 	UINT8	ubLoop, ubLoop2;
 	INT32	iAttackValue;
 	INT32	iHitRate, iThreatValue, iTotalThreatValue,iOppThreatValue[MAXMERCS];
-	INT32	sGridNo, sEndGridNo, sFriendTile[MAXMERCS], sFriendMoveTile[MAXMERCS], sOpponentTile[MAXMERCS];
-	INT8	bFriendLevel[MAXMERCS], bOpponentLevel[MAXMERCS];
+	INT32	sGridNo, sEndGridNo, sFriendTile[MAXMERCS], sFriendMoveTile[MAXMERCS], sNeutralTile[MAXMERCS], sOpponentTile[MAXMERCS];
+	INT8	bFriendLevel[MAXMERCS], bNeutralLevel[MAXMERCS], bOpponentLevel[MAXMERCS];
 	BOOLEAN fFriendCritical[MAXMERCS];
 	INT32	iEstDamage;
-	UINT8	ubFriendCnt = 0,ubOpponentCnt = 0, ubOpponentID[MAXMERCS];
+	UINT8	ubFriendCnt = 0, ubNeutralCnt = 0, ubOpponentCnt = 0, ubOpponentID[MAXMERCS];
 	UINT8	ubOpponentCertainty[MAXMERCS];
 	BOOLEAN fOpponentStateKnown[MAXMERCS];
 	UINT8	ubMaxPossibleAimTime;
@@ -1495,8 +1495,20 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 			continue;
 		}
 
-		// If this man is neutral / NOT on the same side, he's not a friend.
-		if (pFriend->aiData.bNeutral || (pSoldier->bSide != pFriend->bSide))
+		// Neutral civilians are tracked separately from real friendlies. Friendly/
+		// militia explosives must protect them; enemy explosives may accept limited
+		// collateral risk without treating civilians as their own troops.
+		if (pFriend->aiData.bNeutral)
+		{
+			if (pFriend->bTeam == CIV_TEAM && ubNeutralCnt < MAXMERCS)
+			{
+				sNeutralTile[ubNeutralCnt] = pFriend->sGridNo;
+				bNeutralLevel[ubNeutralCnt] = pFriend->pathing.bLevel;
+				++ubNeutralCnt;
+			}
+			continue;
+		}
+		if (pSoldier->bSide != pFriend->bSide)
 		{
 			continue;
 		}
@@ -1981,6 +1993,32 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 				if (fFriendsNearby)
 					continue;		// this location is no good, move along now
 
+				UINT8 ubNeutralRiskCount = 0;
+				BOOLEAN fCollateralRelevant =
+					usGrenade != NOTHING &&
+					!Item[usGrenade].flare &&
+					Explosive[Item[usGrenade].ubClassIndex].ubType != EXPLOSV_SMOKE &&
+					Explosive[Item[usGrenade].ubClassIndex].ubType != EXPLOSV_SIGNAL_SMOKE &&
+					Explosive[Item[usGrenade].ubClassIndex].ubType != EXPLOSV_NOISE;
+
+				if (fCollateralRelevant)
+				{
+					for (ubLoop2 = 0; ubLoop2 < ubNeutralCnt; ++ubLoop2)
+					{
+						if (bNeutralLevel[ubLoop2] == bOpponentLevel[ubLoop] &&
+							PythSpacesAway(sNeutralTile[ubLoop2], sGridNo) <= ubSafetyMargin)
+						{
+							++ubNeutralRiskCount;
+						}
+					}
+
+					// Friendly/militia AI must not create the civilian casualties for which
+					// the player's side is then punished. Enemy troops are deliberately
+					// allowed to continue and take a modest scoring penalty below.
+					if (ubNeutralRiskCount > 0 && pSoldier->bTeam != ENEMY_TEAM)
+						continue;
+				}
+
 				// Well this place shows some promise, evaluate its "damage potential"
 				iTotalThreatValue = 0;
 				ubOppsInRange = 0;
@@ -2231,6 +2269,15 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 				// typical attack value here should be about 500 thousand
 				DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"calcbestthrow: checking attack value");
 				iAttackValue = (iHitRate * ubChanceToReallyHit * iTotalThreatValue) / 1000;
+
+				// Enemy explosives may endanger civilians, but do not treat collateral as
+				// completely free. Ten percent per exposed civilian (max 30%) means a
+				// strong grenade/launcher shot still goes ahead while a marginal one may not.
+				if (pSoldier->bTeam == ENEMY_TEAM && ubNeutralRiskCount > 0)
+				{
+					INT32 iCivilianCollateralPenalty = __min(30, 10 * (INT32)ubNeutralRiskCount);
+					iAttackValue = iAttackValue * (100 - iCivilianCollateralPenalty) / 100;
+				}
 
 				// Sequential AI grenade deconfliction. A recent same-fireteam toss
 				// into essentially the same area reduces utility, but dense clusters
