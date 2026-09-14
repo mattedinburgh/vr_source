@@ -522,7 +522,7 @@ $bodySpecs = @(
         Catalogs = @("LBT_RGM/AnimationSurfaces_LBT_RGM.xml","LBT_RGM/AnimationSurfaces_LBT_RGM_moregear.xml")
         TargetBody = "LBT_RGM/LogicalBodyType_RGM_VR_equipment.xml"
         TargetCatalog = "LBT_RGM/AnimationSurfaces_RGM_VR_equipment.xml"
-        Unsupported = @("RGMBAYONET_S_P","RGMBAYONET_S_S","RGMCROUCH_D_RDY","RGMCROUCH_P_RDY","RGMCROUCH_R_RDY")
+        Unsupported = @("CRYO_EXPLODE","CRYO_EXPLODE_CROUCHED","RGMBAYONET_S_P","RGMBAYONET_S_S","RGMCROUCH_D_RDY","RGMCROUCH_P_RDY","RGMCROUCH_R_RDY")
     },
     [pscustomobject]@{
         Key = "BGM"
@@ -530,7 +530,7 @@ $bodySpecs = @(
         Catalogs = @("LBT_BGM/AnimationSurfaces_BGM.xml","LBT_BGM/AnimationSurfaces_BGM_moregear.xml")
         TargetBody = "LBT_BGM/LogicalBodyType_BGM_VR_equipment.xml"
         TargetCatalog = "LBT_BGM/AnimationSurfaces_BGM_VR_equipment.xml"
-        Unsupported = @("BGMBAYONET_S_P","BGMBAYONET_S_S","BGMCROUCH_D_RDY","BGMCROUCH_P_RDY","BGMCROUCH_R_RDY")
+        Unsupported = @("CRYO_EXPLODE","CRYO_EXPLODE_CROUCHED","BGMBAYONET_S_P","BGMBAYONET_S_S","BGMCROUCH_D_RDY","BGMCROUCH_P_RDY","BGMCROUCH_R_RDY")
     },
     [pscustomobject]@{
         Key = "RGF"
@@ -538,7 +538,7 @@ $bodySpecs = @(
         Catalogs = @("LBT_RGF/AnimationSurfaces_LBT_RGF.xml","LBT_RGF/AnimationSurfaces_LBT_RGF_moregear.xml")
         TargetBody = "LBT_RGF/LogicalBodyType_RGF_VR_equipment.xml"
         TargetCatalog = "LBT_RGF/AnimationSurfaces_RGF_VR_equipment.xml"
-        Unsupported = @("RGFBAYONET_S_P","RGFBAYONET_S_S","RGFCROUCH_D_RDY","RGFCROUCH_P_RDY","RGFCROUCH_R_RDY","RGFLOWKICK","RGFSPINKICK","RGF_LOOK","RGF_PULL","RGF_SPIT","RGF_SQUISH")
+        Unsupported = @("CRYO_EXPLODE","CRYO_EXPLODE_CROUCHED","RGFBAYONET_S_P","RGFBAYONET_S_S","RGFCROUCH_D_RDY","RGFCROUCH_P_RDY","RGFCROUCH_R_RDY","RGFLOWKICK","RGFSPINKICK","RGF_LOOK","RGF_PULL","RGF_SPIT","RGF_SQUISH")
     }
 )
 
@@ -740,7 +740,7 @@ $fullModelSpecs = @(
         Catalogs = @("LBT_RGM/AnimationSurfaces_LBT_RGM.xml","LBT_RGM/AnimationSurfaces_LBT_RGM_sawnoff.xml","LBT_RGM/AnimationSurfaces_LBT_RGM_moreguns.xml","LBT_RGM/AnimationSurfaces_LBT_RGM_moregear.xml","LBT_RGM/AnimationSurfaces_LBT_RGM_moremelee.xml")
         TargetBody = "LBT_RGM/LogicalBodyType_RGM_VR_equipment.xml"
         TargetCatalog = "LBT_RGM/AnimationSurfaces_RGM_VR_equipment.xml"
-        Unsupported = @("RGMBAYONET_S_P","RGMBAYONET_S_S","RGMCROUCH_D_RDY","RGMCROUCH_P_RDY","RGMCROUCH_R_RDY")
+        Unsupported = @("CRYO_EXPLODE","CRYO_EXPLODE_CROUCHED","RGMBAYONET_S_P","RGMBAYONET_S_S","RGMCROUCH_D_RDY","RGMCROUCH_P_RDY","RGMCROUCH_R_RDY")
     },
     [pscustomobject]@{
         Key = "BGM"
@@ -751,7 +751,7 @@ $fullModelSpecs = @(
         Catalogs = @("LBT_BGM/AnimationSurfaces_BGM.xml","LBT_BGM/AnimationSurfaces_BGM_sawnoff.xml","LBT_BGM/AnimationSurfaces_BGM_moreguns.xml","LBT_BGM/AnimationSurfaces_BGM_moregear.xml","LBT_BGM/AnimationSurfaces_BGM_moremelee.xml")
         TargetBody = "LBT_BGM/LogicalBodyType_BGM_VR_equipment.xml"
         TargetCatalog = "LBT_BGM/AnimationSurfaces_BGM_VR_equipment.xml"
-        Unsupported = @("BGMBAYONET_S_P","BGMBAYONET_S_S","BGMCROUCH_D_RDY","BGMCROUCH_P_RDY","BGMCROUCH_R_RDY")
+        Unsupported = @("CRYO_EXPLODE","CRYO_EXPLODE_CROUCHED","BGMBAYONET_S_P","BGMBAYONET_S_S","BGMCROUCH_D_RDY","BGMCROUCH_P_RDY","BGMCROUCH_R_RDY")
     },
     [pscustomobject]@{
         Key = "RGF"
@@ -762,7 +762,7 @@ $fullModelSpecs = @(
         Catalogs = @("LBT_RGF/AnimationSurfaces_LBT_RGF.xml","LBT_RGF/AnimationSurfaces_LBT_RGF_SAWNOFF.xml","LBT_RGF/AnimationSurfaces_LBT_RGF_moreguns.xml","LBT_RGF/AnimationSurfaces_LBT_RGF_moregear.xml","LBT_RGF/AnimationSurfaces_LBT_RGF_moremelee.xml")
         TargetBody = "LBT_RGF/LogicalBodyType_RGF_VR_equipment.xml"
         TargetCatalog = "LBT_RGF/AnimationSurfaces_RGF_VR_equipment.xml"
-        Unsupported = @("RGFBAYONET_S_P","RGFBAYONET_S_S","RGFCROUCH_D_RDY","RGFCROUCH_P_RDY","RGFCROUCH_R_RDY","RGFLOWKICK","RGFSPINKICK","RGF_LOOK","RGF_PULL","RGF_SPIT","RGF_SQUISH")
+        Unsupported = @("CRYO_EXPLODE","CRYO_EXPLODE_CROUCHED","RGFBAYONET_S_P","RGFBAYONET_S_S","RGFCROUCH_D_RDY","RGFCROUCH_P_RDY","RGFCROUCH_R_RDY","RGFLOWKICK","RGFSPINKICK","RGF_LOOK","RGF_PULL","RGF_SPIT","RGF_SQUISH")
     }
 )
 
