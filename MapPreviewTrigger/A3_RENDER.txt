@@ -1,2 +1,3 @@
 A3 V2 first hand-authored in-game composition
-Purpose: render explicit crop fields, irrigation, working-yard and paddock compositions plus six tactical-view screenshots.
+Purpose: validate generic Map Factory mapshot compiler, pristine/source/remastered tactical capture, and persisted A3 remaster.
+Trigger: map-factory engine validation pass 2026-09-14.
