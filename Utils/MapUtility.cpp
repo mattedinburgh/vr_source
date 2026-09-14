@@ -1114,7 +1114,6 @@ static BOOLEAN MapFactoryRunSector( const STR8 pMapName, UINT8 ubArchetype )
 	SaveMapFactoryTacticalPreviewSet( zPristine );
 
 	const UINT32 uiPieces = MapFactoryApplyPilotDesign( ubArchetype );
-	SaveMapFactoryTacticalPreviewSet( pMapName );
 
 	CHAR8 zRemastered[320];
 	_snprintf( zRemastered, sizeof(zRemastered) - 1, "%s_REMASTERED.dat", zBase );
@@ -1123,6 +1122,13 @@ static BOOLEAN MapFactoryRunSector( const STR8 pMapName, UINT8 ubArchetype )
 	if ( fSaved )
 		MapFactoryStageRemasteredMap( zRemastered );
 
+	// First remastered load: capture the actual redesigned/material-graded map,
+	// but label it with the source name so existing comparison tooling reads it
+	// as the dressed frame set.
+	if ( fSaved && MapFactoryLoadPilotMap( zRemastered ) )
+		SaveMapFactoryTacticalPreviewSet( pMapName );
+
+	// Second clean load: verify the baked map and art direction survive reload.
 	if ( fSaved && MapFactoryLoadPilotMap( zRemastered ) )
 		SaveMapFactoryTacticalPreviewSet( zRemastered );
 
