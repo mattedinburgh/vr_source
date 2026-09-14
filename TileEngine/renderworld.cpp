@@ -971,9 +971,21 @@ static BOOLEAN RenderHybridLogicalMercModel(
 	// allowing the ordered body/armour layers to compose on top of one another.
 	Layers::LayerGraphIterator layerIter = Layers::Instance().GetIterator( pSoldier->bMovementDirection );
 	Layers::LayerGraphIterator layerEnd = Layers::Instance().GetIterationEnd( pSoldier->bMovementDirection );
+	std::string shadowLayerName( "shadow" );
+	std::string bloodLayerName( "blood" );
+	const Layers::LayerPropertiesVector::size_type shadowLayerIndex =
+		Layers::Instance().GetIndex( shadowLayerName );
+	const Layers::LayerPropertiesVector::size_type bloodLayerIndex =
+		Layers::Instance().GetIndex( bloodLayerName );
 
 	for ( ; layerIter != layerEnd; ++layerIter )
 	{
+		// Keep Vengeance's native shadow and our custom blood/gore presentation.
+		// The logical model is providing body/equipment composition here, not
+		// replacing those effects.
+		if ( layerIter->index == shadowLayerIndex || layerIter->index == bloodLayerIndex )
+			continue;
+
 		const Layers::LayerProperties *pLayerProperties =
 			pBodyType->GetLayerProperties( layerIter->index );
 		if ( pLayerProperties == NULL || !pLayerProperties->render )
