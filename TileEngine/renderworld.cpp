@@ -3146,6 +3146,7 @@ void ScrollBackground(UINT32 uiDirection, INT16 sScrollXIncrement, INT16 sScroll
 
 static INT32  gsOcclusionBubbleLastGridNo = NOWHERE;
 static INT8   gbOcclusionBubbleLastLevel = -1;
+static UINT8  gubOcclusionBubbleLastStance = 0xFF;
 static UINT16 gusOcclusionBubbleLastSoldier = NOBODY;
 static BOOLEAN gfOcclusionBubbleActive = FALSE;
 static INT32  gsOcclusionBubbleMarkedGrids[ OCCLUSION_BUBBLE_MAX_MARKED_GRIDS ];
@@ -3164,6 +3165,17 @@ static BOOLEAN ClearSelectedMercOcclusionBubble( )
 			continue;
 
 		LEVELNODE *pNode = gpWorldLevelData[ sGridNo ].pStructHead;
+		while ( pNode != NULL )
+		{
+			if ( pNode->uiFlags & ( LEVELNODE_OCCLUSION_FADE | LEVELNODE_OCCLUSION_HIDE ) )
+			{
+				pNode->uiFlags &= ~( LEVELNODE_OCCLUSION_FADE | LEVELNODE_OCCLUSION_HIDE );
+				fChanged = TRUE;
+			}
+			pNode = pNode->pNext;
+		}
+
+		pNode = gpWorldLevelData[ sGridNo ].pShadowHead;
 		while ( pNode != NULL )
 		{
 			if ( pNode->uiFlags & ( LEVELNODE_OCCLUSION_FADE | LEVELNODE_OCCLUSION_HIDE ) )
@@ -3268,6 +3280,24 @@ static void GetOcclusionBubbleWallAnchor(
 	*psAnchorY = (INT16)( *psAnchorY - WALL_HEIGHT / 2 );
 }
 
+static void SetOcclusionBubbleNodeState(
+	INT32 sGridNo, LEVELNODE *pStructNode, BOOLEAN fHide )
+{
+	if ( pStructNode == NULL )
+		return;
+
+	const UINT32 uiState = fHide ? LEVELNODE_OCCLUSION_HIDE : LEVELNODE_OCCLUSION_FADE;
+	pStructNode->uiFlags |= uiState;
+
+	// A wall that disappears while its cast shadow remains looks broken. Keep
+	// the buddy shadow in the same visual state as the owning structure node.
+	LEVELNODE *pShadow = FindShadow( sGridNo, pStructNode->usIndex );
+	if ( pShadow != NULL )
+	{
+		pShadow->uiFlags |= uiState;
+	}
+}
+
 static void UpdateSelectedMercOcclusionBubble( )
 {
 	SOLDIERTYPE *pViewSoldier = NULL;
@@ -3289,12 +3319,16 @@ static void UpdateSelectedMercOcclusionBubble( )
 
 	// Re-evaluate on a full render as well: doors can open, structures can be
 	// damaged, and map geometry can change while the selected merc stands still.
+	const UINT8 ubCurrentStance =
+		fShouldBeActive ? gAnimControl[ pViewSoldier->usAnimState ].ubHeight : 0xFF;
+
 	if ( fShouldBeActive &&
 		 !fAlreadyFullRender &&
 		 gfOcclusionBubbleActive &&
 		 gusOcclusionBubbleLastSoldier == gusSelectedSoldier &&
 		 gsOcclusionBubbleLastGridNo == pViewSoldier->sGridNo &&
-		 gbOcclusionBubbleLastLevel == pViewSoldier->pathing.bLevel )
+		 gbOcclusionBubbleLastLevel == pViewSoldier->pathing.bLevel &&
+		 gubOcclusionBubbleLastStance == ubCurrentStance )
 	{
 		return;
 	}
@@ -3365,11 +3399,11 @@ static void UpdateSelectedMercOcclusionBubble( )
 								// understanding where the room boundary actually is.
 								if ( fInsideInner && !fPreserveOpening && !fPreserveCorner )
 								{
-									pNode->uiFlags |= LEVELNODE_OCCLUSION_HIDE;
+									SetOcclusionBubbleNodeState( sGridNo, pNode, TRUE );
 								}
 								else
 								{
-									pNode->uiFlags |= LEVELNODE_OCCLUSION_FADE;
+									SetOcclusionBubbleNodeState( sGridNo, pNode, FALSE );
 								}
 
 								fGridMarked = TRUE;
@@ -3392,6 +3426,7 @@ static void UpdateSelectedMercOcclusionBubble( )
 		gusOcclusionBubbleLastSoldier = gusSelectedSoldier;
 		gsOcclusionBubbleLastGridNo = pViewSoldier->sGridNo;
 		gbOcclusionBubbleLastLevel = pViewSoldier->pathing.bLevel;
+		gubOcclusionBubbleLastStance = ubCurrentStance;
 	}
 	else
 	{
@@ -3399,6 +3434,7 @@ static void UpdateSelectedMercOcclusionBubble( )
 		gusOcclusionBubbleLastSoldier = NOBODY;
 		gsOcclusionBubbleLastGridNo = NOWHERE;
 		gbOcclusionBubbleLastLevel = -1;
+		gubOcclusionBubbleLastStance = 0xFF;
 	}
 
 	// The static save buffer contains normal wall art. Rebuild it only when the
