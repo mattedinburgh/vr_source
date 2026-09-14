@@ -5945,6 +5945,229 @@ INT8 AIDoctrineAnchorModifier(SOLDIERTYPE *pSoldier)
 		return 0;
 	}
 }
+// Unified competence/friction adapter. Doctrine remains the authoritative training
+// model; these helpers translate it into planner complexity/reliability without
+// granting AP, CTH or hidden-information bonuses.
+static UINT32 AIStableDecisionHash(SOLDIERTYPE *pSoldier, UINT32 uiSalt)
+{
+	if (!pSoldier)
+		return uiSalt * 2246822519u;
+
+	UINT32 uiValue = pSoldier->uiUniqueSoldierIdValue;
+	uiValue ^= (guiTurnCnt + 1) * 2654435761u;
+	uiValue ^= uiSalt * 2246822519u;
+	uiValue ^= uiValue >> 13;
+	uiValue *= 3266489917u;
+	uiValue ^= uiValue >> 16;
+	return uiValue;
+}
+
+INT8 AICompetenceTier(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier)
+		return AI_COMPETENCE_BASIC;
+
+	if (pSoldier->bTeam == ENEMY_TEAM)
+	{
+		switch (AIGetDoctrineProfile(pSoldier))
+		{
+		case AI_DOCTRINE_SECURITY:
+			return (AICheckIsCommander(pSoldier) || AICheckIsOfficer(pSoldier)) ?
+				AI_COMPETENCE_REGULAR : AI_COMPETENCE_BASIC;
+		case AI_DOCTRINE_LINE:
+			return AI_COMPETENCE_REGULAR;
+		case AI_DOCTRINE_VETERAN:
+		case AI_DOCTRINE_ELITE_MOBILE:
+		case AI_DOCTRINE_ELITE_GUARD:
+			return AI_COMPETENCE_ELITE;
+		default:
+			return AI_COMPETENCE_REGULAR;
+		}
+	}
+
+	switch (pSoldier->ubSoldierClass)
+	{
+	case SOLDIER_CLASS_ADMINISTRATOR:
+	case SOLDIER_CLASS_GREEN_MILITIA:
+		return AI_COMPETENCE_BASIC;
+	case SOLDIER_CLASS_ELITE:
+	case SOLDIER_CLASS_ELITE_MILITIA:
+		return AI_COMPETENCE_ELITE;
+	default:
+		return AI_COMPETENCE_REGULAR;
+	}
+}
+
+UINT8 AIPlannerReliability(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier)
+		return 50;
+
+	INT32 iReliability = 76;
+	switch (AICompetenceTier(pSoldier))
+	{
+	case AI_COMPETENCE_BASIC:   iReliability = 52; break;
+	case AI_COMPETENCE_REGULAR: iReliability = 76; break;
+	case AI_COMPETENCE_ELITE:   iReliability = 93; break;
+	}
+
+	if (pSoldier->bTeam == ENEMY_TEAM)
+	{
+		switch (AIGetDoctrineProfile(pSoldier))
+		{
+		case AI_DOCTRINE_VETERAN: iReliability -= 5; break;
+		case AI_DOCTRINE_ELITE_GUARD: iReliability -= 2; break;
+		default: break;
+		}
+	}
+
+	if (pSoldier->aiData.bAIMorale == MORALE_HOPELESS)
+		iReliability -= 20;
+	else if (pSoldier->aiData.bAIMorale == MORALE_WORRIED)
+		iReliability -= 10;
+	else if (pSoldier->aiData.bAIMorale == MORALE_FEARLESS)
+		iReliability += 3;
+
+	iReliability -= __min((INT32)25, AILocalStress(pSoldier) / 4);
+	if (pSoldier->aiData.bUnderFire)
+		iReliability -= 5;
+
+	return (UINT8)__max(20, __min(98, iReliability));
+}
+
+BOOLEAN AIAllowsPlanComplexity(SOLDIERTYPE *pSoldier, INT8 bComplexity, UINT32 uiSalt)
+{
+	if (!pSoldier || bComplexity <= AI_PLAN_BASIC)
+		return TRUE;
+
+	INT8 bTier = AICompetenceTier(pSoldier);
+	INT32 iChance = AIPlannerReliability(pSoldier);
+
+	if (pSoldier->bTeam == ENEMY_TEAM && !AIAllowsComplexManeuver(pSoldier))
+	{
+		if (bComplexity >= AI_PLAN_ADVANCED)
+			return FALSE;
+		iChance = __min(iChance, 42);
+	}
+
+	if (bComplexity == AI_PLAN_COORDINATED)
+	{
+		if (bTier == AI_COMPETENCE_BASIC)
+			iChance = __min(iChance, AIHasLocalCommandSupport(pSoldier) ? 45 : 30);
+		else if (bTier == AI_COMPETENCE_REGULAR)
+			iChance = __min(iChance, 82);
+	}
+	else
+	{
+		if (bTier == AI_COMPETENCE_BASIC)
+			return FALSE;
+		if (bTier == AI_COMPETENCE_REGULAR)
+			iChance = __min(iChance, 45);
+		else
+			iChance = __min(iChance, 92);
+	}
+
+	return (INT32)(AIStableDecisionHash(pSoldier,
+		uiSalt + 17u * (UINT32)bComplexity) % 100) < iChance;
+}
+
+INT32 AICompetenceUtilityNoise(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, UINT32 uiSalt)
+{
+	if (!pSoldier)
+		return 0;
+
+	INT32 iAmplitude = 5;
+	switch (AICompetenceTier(pSoldier))
+	{
+	case AI_COMPETENCE_BASIC:   iAmplitude = 24; break;
+	case AI_COMPETENCE_REGULAR: iAmplitude = 11; break;
+	case AI_COMPETENCE_ELITE:   iAmplitude = 4; break;
+	}
+
+	UINT32 uiValue = AIStableDecisionHash(pSoldier,
+		uiSalt ^ (UINT32)(sCandidateSpot + 32768));
+	return (INT32)(uiValue % (UINT32)(2 * iAmplitude + 1)) - iAmplitude;
+}
+
+UINT8 AILocalSmokeReserve(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier)
+		return 0;
+
+	UINT8 ubSmoke = 0;
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE ||
+			(pSoldier->bTeam == ENEMY_TEAM && !AISameFireteam(pSoldier, pFriend)) ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE / 2)
+		{
+			continue;
+		}
+
+		if (FindThrowableGrenade(pFriend, EXPLOSV_SMOKE) != NO_SLOT)
+			++ubSmoke;
+	}
+
+	return ubSmoke;
+}
+
+INT32 AIInferredReactionRisk(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT8 bLevel)
+{
+	if (!AICombatTeam(pSoldier) || TileIsOutOfBounds(sCandidateSpot))
+		return 0;
+
+	INT32 iRisk = 0;
+	for (UINT16 uiLoop = 0; uiLoop < MAX_NUM_SOLDIERS; ++uiLoop)
+	{
+		SOLDIERTYPE *pOpponent = MercPtrs[uiLoop];
+		if (!pOpponent || pOpponent == pSoldier ||
+			CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pSoldier->bSide == pOpponent->bSide)
+		{
+			continue;
+		}
+
+		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+		if (bKnowledge == NOT_HEARD_OR_SEEN)
+			continue;
+
+		INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
+		INT8 bKnownLevel = KnownLevel(pSoldier, pOpponent->ubID);
+		if (TileIsOutOfBounds(sKnownSpot) || bKnownLevel != bLevel)
+			continue;
+
+		if (PythSpacesAway(sKnownSpot, sCandidateSpot) > MAX_VISION_RANGE ||
+			!LocationToLocationLineOfSightTest(sKnownSpot, bKnownLevel,
+				sCandidateSpot, bLevel, TRUE, MAX_VISION_RANGE))
+		{
+			continue;
+		}
+
+		INT32 iContactRisk = 8 + ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE] / 5;
+		if (bKnowledge == SEEN_CURRENTLY || bKnowledge == SEEN_THIS_TURN)
+			iContactRisk += 12;
+		else if (bKnowledge == SEEN_LAST_TURN)
+			iContactRisk += 6;
+
+		if ((bKnowledge == SEEN_CURRENTLY || bKnowledge == SEEN_THIS_TURN) &&
+			(pOpponent->aiData.bAction == AI_ACTION_FIRE_GUN ||
+			 pOpponent->aiData.bLastAction == AI_ACTION_FIRE_GUN))
+		{
+			iContactRisk -= 8;
+		}
+
+		iRisk += __max(0, iContactRisk);
+	}
+
+	if (InSmoke(sCandidateSpot, bLevel))
+		iRisk /= 3;
+
+	return __min((INT32)120, iRisk);
+}
+
 // Individual willingness to accept danger. Personality and current morale change
 // the threshold, but no ordinary attitude makes a soldier completely suicidal.
 INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier)
@@ -6133,6 +6356,484 @@ INT32 AIManeuverRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 	return __max(-100, __min(150, iScore));
 }
+// -----------------------------------------------------------------------------
+// Layered squad tactical planner
+// -----------------------------------------------------------------------------
+// The legacy Vengeance/1.13 AI contains many strong local heuristics, but they
+// historically compete by call order.  This lightweight planner gives those
+// heuristics a common context: persistent squad intent, dynamic fireteam role,
+// and a shared position utility score.  It deliberately uses only information
+// available through the normal JA2 knowledge model.
+static INT8 gbAITacticalIntentPlan[MAX_NUM_SOLDIERS] = { 0 };
+static INT8 gbAITacticalRolePlan[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAITacticalPlanUntil[MAX_NUM_SOLDIERS] = { 0 };
+static INT32 gsAITacticalPlanTarget[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAITacticalRoleUntil[MAX_NUM_SOLDIERS] = { 0 };
+
+static BOOLEAN AITacticalTargetChanged(UINT8 ubID, INT32 sTargetSpot)
+{
+	if (TileIsOutOfBounds(sTargetSpot) || TileIsOutOfBounds(gsAITacticalPlanTarget[ubID]))
+		return (sTargetSpot != gsAITacticalPlanTarget[ubID]);
+
+	return (PythSpacesAway(sTargetSpot, gsAITacticalPlanTarget[ubID]) > 5);
+}
+
+static UINT8 AIActiveManeuverCount(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
+{
+	if (!pSoldier)
+		return 0;
+
+	UINT8 ubCount = 0;
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			(pSoldier->bTeam == ENEMY_TEAM && !AISameFireteam(pSoldier, pFriend)) ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed)
+		{
+			continue;
+		}
+
+		BOOLEAN fMover = pFriend->IsFlanking() ||
+			pFriend->aiData.bAction == AI_ACTION_GET_CLOSER ||
+			pFriend->aiData.bAction == AI_ACTION_SEEK_OPPONENT ||
+			pFriend->aiData.bAction == AI_ACTION_FLANK_LEFT ||
+			pFriend->aiData.bAction == AI_ACTION_FLANK_RIGHT;
+
+		if (!fMover)
+			continue;
+
+		if (!TileIsOutOfBounds(sTargetSpot))
+		{
+			INT32 sFriendTarget = ClosestKnownOpponent(pFriend, NULL, NULL);
+			if (!TileIsOutOfBounds(sFriendTarget) && PythSpacesAway(sFriendTarget, sTargetSpot) > 5)
+				continue;
+		}
+
+		++ubCount;
+	}
+
+	return ubCount;
+}
+
+static INT8 AISharedIntentVote(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, UINT32 uiNow)
+{
+	if (!pSoldier || TileIsOutOfBounds(sTargetSpot))
+		return -1;
+
+	UINT8 ubVotes[AI_INTENT_RESCUE + 1] = { 0 };
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			(pSoldier->bTeam == ENEMY_TEAM && !AISameFireteam(pSoldier, pFriend)) ||
+			pFriend->stats.bLife < OKLIFE || guiAITacticalPlanUntil[pFriend->ubID] < uiNow ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE)
+		{
+			continue;
+		}
+
+		INT32 sFriendTarget = gsAITacticalPlanTarget[pFriend->ubID];
+		if (TileIsOutOfBounds(sFriendTarget) || PythSpacesAway(sFriendTarget, sTargetSpot) > 5)
+			continue;
+
+		INT8 bFriendIntent = gbAITacticalIntentPlan[pFriend->ubID];
+		if (bFriendIntent >= AI_INTENT_HOLD && bFriendIntent <= AI_INTENT_RESCUE)
+		{
+			UINT8 ubWeight = (AICheckIsCommander(pFriend) || AICheckIsOfficer(pFriend)) ? 2 : 1;
+			ubVotes[bFriendIntent] += ubWeight;
+		}
+	}
+
+	INT8 bBestIntent = -1;
+	UINT8 ubBestVotes = 0;
+	for (INT8 bIntent = AI_INTENT_HOLD; bIntent <= AI_INTENT_RESCUE; ++bIntent)
+	{
+		if (ubVotes[bIntent] > ubBestVotes)
+		{
+			ubBestVotes = ubVotes[bIntent];
+			bBestIntent = bIntent;
+		}
+	}
+
+	// A commander/officer carries two votes; otherwise at least two nearby soldiers
+	// must already agree before the blackboard overrides an individual's neutral plan.
+	return ubBestVotes >= 2 ? bBestIntent : -1;
+}
+
+static UINT8 AIPlannedRoleCount(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bRole, UINT32 uiNow)
+{
+	if (!pSoldier)
+		return 0;
+
+	UINT8 ubCount = 0;
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			(pSoldier->bTeam == ENEMY_TEAM && !AISameFireteam(pSoldier, pFriend)) ||
+			pFriend->stats.bLife < OKLIFE || guiAITacticalRoleUntil[pFriend->ubID] < uiNow ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE)
+		{
+			continue;
+		}
+
+		if (!TileIsOutOfBounds(sTargetSpot))
+		{
+			INT32 sFriendTarget = gsAITacticalPlanTarget[pFriend->ubID];
+			if (TileIsOutOfBounds(sFriendTarget) || PythSpacesAway(sFriendTarget, sTargetSpot) > 5)
+				continue;
+		}
+
+		if (gbAITacticalRolePlan[pFriend->ubID] == bRole)
+			++ubCount;
+	}
+
+	return ubCount;
+}
+
+INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
+{
+	if (!AICombatTeam(pSoldier))
+		return AI_INTENT_HOLD;
+
+	UINT8 ubID = pSoldier->ubID;
+	if (ubID >= MAX_NUM_SOLDIERS)
+		return AI_INTENT_HOLD;
+
+	if (TileIsOutOfBounds(sTargetSpot))
+		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+
+	UINT32 uiNow = guiTurnCnt + 1;
+	INT8 bSituation = AIBattleSituation(pSoldier);
+	INT32 iStress = AILocalStress(pSoldier);
+	INT32 iRisk = AIPersonalRisk(pSoldier);
+	INT32 iTolerance = AIPersonalRiskTolerance(pSoldier);
+	UINT16 usExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+
+	// Hard tactical emergencies immediately replace any previous plan.
+	INT8 bEmergencyIntent = -1;
+	if (AIEscapeActive(pSoldier) || AIDisengagementActive(pSoldier))
+		bEmergencyIntent = AI_INTENT_DISENGAGE;
+	else if (pSoldier->aiData.bUnderFire &&
+		(ShockLevelPercent(pSoldier) >= 45 || iRisk > iTolerance || usExposure >= 180))
+		bEmergencyIntent = AI_INTENT_FALLBACK;
+	else if ((bSituation == AI_BATTLE_CATASTROPHIC ||
+		(bSituation == AI_BATTLE_LOSING && AISeverelyIsolated(pSoldier))) &&
+		pSoldier->aiData.bOrders != STATIONARY)
+		bEmergencyIntent = AI_INTENT_FALLBACK;
+	else if (AICheckIsMedic(pSoldier) && CountFriendsNeedHelp(pSoldier) > 0 &&
+		!pSoldier->aiData.bUnderFire && iRisk + 10 < iTolerance)
+		bEmergencyIntent = AI_INTENT_RESCUE;
+
+	if (bEmergencyIntent < 0 &&
+		guiAITacticalPlanUntil[ubID] >= uiNow &&
+		!AITacticalTargetChanged(ubID, sTargetSpot))
+	{
+		return gbAITacticalIntentPlan[ubID];
+	}
+
+	INT8 bIntent = AI_INTENT_HOLD;
+	if (bEmergencyIntent >= 0)
+	{
+		bIntent = bEmergencyIntent;
+	}
+	else if (!TileIsOutOfBounds(sTargetSpot))
+	{
+		UINT8 ubNearbyFriends = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2);
+		BOOLEAN fLocalAdvantage = AICheckWeOutnumberLocal(pSoldier, sTargetSpot) ||
+			bSituation == AI_BATTLE_WINNING;
+		BOOLEAN fCanPress = !AIShouldAvoidAdvance(pSoldier) &&
+			iStress < 55 && iRisk <= iTolerance + 5 &&
+			(ubNearbyFriends > 0 || fLocalAdvantage);
+
+		if (fCanPress && fLocalAdvantage)
+		{
+			BOOLEAN fCunning = pSoldier->aiData.bAttitude == CUNNINGSOLO ||
+				pSoldier->aiData.bAttitude == CUNNINGAID;
+		if (fCunning && !pSoldier->aiData.bUnderFire &&
+			AIManeuverRoleScore(pSoldier, sTargetSpot) > AISupportRoleScore(pSoldier, sTargetSpot) + 5 &&
+			AIActiveManeuverCount(pSoldier, sTargetSpot) < 2 &&
+			AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED, (UINT32)(sTargetSpot + 211)))
+		{
+			bIntent = AI_INTENT_FLANK;
+		}
+		else
+		{
+			bIntent = AI_INTENT_PRESS;
+		}
+		}
+		else if (fCanPress && bSituation == AI_BATTLE_EVEN && ubNearbyFriends >= 2)
+		{
+			bIntent = AI_INTENT_PRESS;
+		}
+		else if (iStress >= 40 || iRisk + 10 >= iTolerance)
+		{
+			bIntent = AI_INTENT_FALLBACK;
+		}
+	}
+
+	// Distributed squad blackboard: soldiers fighting the same contact bias toward
+	// a common plan, while personal danger can still veto an aggressive consensus.
+	INT8 bSharedIntent = AISharedIntentVote(pSoldier, sTargetSpot, uiNow);
+	if (bEmergencyIntent < 0 && bSharedIntent >= AI_INTENT_HOLD)
+	{
+		if (bSharedIntent == AI_INTENT_FALLBACK || bSharedIntent == AI_INTENT_DISENGAGE)
+		{
+			if (bIntent != AI_INTENT_RESCUE && bSituation != AI_BATTLE_WINNING)
+				bIntent = bSharedIntent;
+		}
+		else if (bIntent != AI_INTENT_FALLBACK && bIntent != AI_INTENT_DISENGAGE &&
+			iRisk <= iTolerance + 5)
+		{
+			// Lower-quality troops do not automatically become a hive mind merely because
+			// nearby soldiers found a sophisticated plan. HOLD/PRESS remain simple; FLANK
+			// requires the competence layer to accept coordinated execution.
+			if (bSharedIntent != AI_INTENT_FLANK ||
+				AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED, (UINT32)(sTargetSpot + 307)))
+			{
+				bIntent = bSharedIntent;
+			}
+		}
+	}
+
+	gbAITacticalIntentPlan[ubID] = bIntent;
+	gsAITacticalPlanTarget[ubID] = sTargetSpot;
+	// One extra turn of persistence prevents oscillation between equally plausible
+	// plans. Emergencies above can still override this immediately.
+	guiAITacticalPlanUntil[ubID] = uiNow + 1;
+	return bIntent;
+}
+
+INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
+{
+	if (!AICombatTeam(pSoldier))
+		return AI_ROLE_RESERVE;
+
+	UINT8 ubID = pSoldier->ubID;
+	if (TileIsOutOfBounds(sTargetSpot))
+		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+
+	INT8 bIntent = AITacticalIntent(pSoldier, sTargetSpot);
+	INT32 iSupport = AISupportRoleScore(pSoldier, sTargetSpot);
+	INT32 iManeuver = AIManeuverRoleScore(pSoldier, sTargetSpot);
+	INT8 bRole = AI_ROLE_RESERVE;
+	UINT32 uiNow = guiTurnCnt + 1;
+	UINT8 ubPlannedFlankers = AIPlannedRoleCount(pSoldier, sTargetSpot, AI_ROLE_FLANKER, uiNow);
+	UINT8 ubPlannedMovers = ubPlannedFlankers + AIPlannedRoleCount(pSoldier, sTargetSpot, AI_ROLE_MANEUVER, uiNow);
+	UINT8 ubPlannedScreens = AIPlannedRoleCount(pSoldier, sTargetSpot, AI_ROLE_SCREEN, uiNow);
+
+	if (bIntent == AI_INTENT_RESCUE)
+	{
+		bRole = AICheckIsMedic(pSoldier) ? AI_ROLE_RESERVE : AI_ROLE_SCREEN;
+	}
+	else if (bIntent == AI_INTENT_DISENGAGE || bIntent == AI_INTENT_FALLBACK)
+	{
+		// Healthy long-range soldiers form the rear guard while more mobile soldiers
+		// displace. This creates alternating bounds instead of a simultaneous rout.
+		if (iSupport >= iManeuver + 5 && !pSoldier->aiData.bUnderFire && ubPlannedScreens < 2 &&
+			AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED, (UINT32)(sTargetSpot + 401)))
+			bRole = AI_ROLE_SCREEN;
+		else
+			bRole = AI_ROLE_MANEUVER;
+	}
+	else if (AICheckIsMachinegunner(pSoldier) || AICheckIsSniper(pSoldier) ||
+		AICheckIsMortarOperator(pSoldier) || iSupport >= iManeuver + 18)
+	{
+		bRole = AI_ROLE_SUPPORT;
+	}
+	else if (bIntent == AI_INTENT_FLANK && iManeuver > iSupport &&
+		ubPlannedFlankers < 2 &&
+		AIActiveManeuverCount(pSoldier, sTargetSpot) + ubPlannedMovers < 3 &&
+		AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED, (UINT32)(sTargetSpot + 503)))
+	{
+		bRole = AI_ROLE_FLANKER;
+	}
+	else if (bIntent == AI_INTENT_PRESS && iManeuver >= iSupport - 5 &&
+		ubPlannedMovers < 2 &&
+		AIActiveManeuverCount(pSoldier, sTargetSpot) < 2)
+	{
+		bRole = AI_ROLE_MANEUVER;
+	}
+	else if (iSupport >= iManeuver)
+	{
+		bRole = AI_ROLE_SUPPORT;
+	}
+
+	gbAITacticalRolePlan[ubID] = bRole;
+	guiAITacticalRoleUntil[ubID] = uiNow + 1;
+	return bRole;
+}
+
+INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
+	INT32 sTargetSpot, INT8 bIntent, INT8 bRole)
+{
+	if (!AICombatTeam(pSoldier) || TileIsOutOfBounds(sCandidateSpot))
+		return -10000;
+
+	if (TileIsOutOfBounds(sTargetSpot))
+		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	if (bIntent < AI_INTENT_HOLD || bIntent > AI_INTENT_RESCUE)
+		bIntent = AITacticalIntent(pSoldier, sTargetSpot);
+	if (bRole < AI_ROLE_SUPPORT || bRole > AI_ROLE_RESERVE)
+		bRole = AITacticalRole(pSoldier, sTargetSpot);
+
+	INT32 iScore = 0;
+	UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+	UINT16 usCandidateExposure = AIKnownThreatExposure(pSoldier, sCandidateSpot, pSoldier->pathing.bLevel);
+	INT32 iExposureDelta = (INT32)usCurrentExposure - (INT32)usCandidateExposure;
+	iScore += __max(-70, __min(70, iExposureDelta / 3));
+
+	BOOLEAN fCover = AnyCoverAtSpot(pSoldier, sCandidateSpot);
+	BOOLEAN fSightCover = SightCoverAtSpot(pSoldier, sCandidateSpot, FALSE);
+	BOOLEAN fProneCover = ProneSightCoverAtSpot(pSoldier, sCandidateSpot, FALSE);
+	if (fCover) iScore += 22;
+	if (fSightCover) iScore += 18;
+	if (fProneCover) iScore += 8;
+	if (!fCover && usCandidateExposure > 0) iScore -= 28;
+
+	UINT8 ubSupport = CountNearbyFriends(pSoldier, sCandidateSpot, DAY_VISION_RANGE / 3);
+	UINT8 ubAdjacent = NumberOfTeamMatesAdjacent(pSoldier, sCandidateSpot);
+	iScore += 6 * __min((UINT8)3, ubSupport);
+	if (ubSupport == 0) iScore -= 14;
+	if (ubAdjacent > 1) iScore -= 12 * (ubAdjacent - 1);
+
+	if (!TileIsOutOfBounds(sTargetSpot))
+	{
+		INT32 iCurrentDistance = PythSpacesAway(pSoldier->sGridNo, sTargetSpot);
+		INT32 iCandidateDistance = PythSpacesAway(sCandidateSpot, sTargetSpot);
+		INT32 iClosing = iCurrentDistance - iCandidateDistance;
+
+		switch (bIntent)
+		{
+		case AI_INTENT_PRESS:
+			iScore += __max(-30, __min(30, 5 * iClosing));
+			break;
+		case AI_INTENT_FLANK:
+			iScore += __max(-15, __min(18, 3 * iClosing));
+			break;
+		case AI_INTENT_FALLBACK:
+		case AI_INTENT_DISENGAGE:
+			iScore += __max(-30, __min(35, -5 * iClosing));
+			break;
+		default:
+			break;
+		}
+
+		// Basic troops understand cover and danger but do not reliably solve crossfire
+		// geometry. Regulars/elites use the richer planner when execution friction permits.
+		if (AICompetenceTier(pSoldier) >= AI_COMPETENCE_REGULAR &&
+			AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED, (UINT32)(sCandidateSpot + 31)))
+		{
+			INT32 iCrossfire = AICrossfirePositionScore(pSoldier, sCandidateSpot, sTargetSpot);
+			if (bRole == AI_ROLE_FLANKER)
+				iScore += 2 * iCrossfire;
+			else if (bRole == AI_ROLE_MANEUVER)
+				iScore += iCrossfire;
+			else if (bRole == AI_ROLE_SUPPORT && iCrossfire < 0)
+				iScore += iCrossfire / 2;
+		}
+
+		if (AICheckHasGun(pSoldier))
+		{
+			INT32 iGunRange = __max(1, (INT32)AIGunRange(pSoldier) / CELL_X_SIZE);
+			INT32 iIdealRange = iGunRange / 2;
+			if (bRole == AI_ROLE_SUPPORT || bRole == AI_ROLE_SCREEN)
+				iIdealRange = __max(2, (3 * iGunRange) / 4);
+			else if (AICheckShortWeaponRange(pSoldier))
+				iIdealRange = __max(2, iGunRange / 3);
+
+			INT32 iRangeError = abs(iCandidateDistance - iIdealRange);
+			iScore -= __min((INT32)24, iRangeError * 2);
+		}
+	}
+
+	if (InSmoke(sCandidateSpot, pSoldier->pathing.bLevel))
+	{
+		if (bIntent == AI_INTENT_FALLBACK || bIntent == AI_INTENT_DISENGAGE || pSoldier->aiData.bUnderFire)
+			iScore += 14;
+		else if (bRole == AI_ROLE_SUPPORT)
+			iScore -= 6;
+	}
+
+	if (pSoldier->aiData.bUnderFire && usCandidateExposure < usCurrentExposure)
+		iScore += 12;
+
+	// Competence now changes actual decision quality instead of merely scaling every
+	// candidate by the same percentage (which preserved the same ranking). Low-quality
+	// troops make noisier choices; elites remain close to the utility optimum.
+	INT32 iReactionRisk = AIInferredReactionRisk(pSoldier, sCandidateSpot, pSoldier->pathing.bLevel);
+	iScore -= iReactionRisk / 3;
+	iScore += AICompetenceUtilityNoise(pSoldier, sCandidateSpot,
+		(UINT32)(sTargetSpot + 173));
+
+	return __max(-250, __min(250, iScore));
+}
+
+INT32 AIPathExposureCost(SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMovementMode)
+{
+	if (!pSoldier || TileIsOutOfBounds(sDestination) || sDestination == pSoldier->sGridNo)
+		return 0;
+
+	INT16 sOldAPBudget = gubNPCAPBudget;
+	UINT8 ubOldDistLimit = gubNPCDistLimit;
+	gubNPCAPBudget = 0;
+	gubNPCDistLimit = 0;
+
+	BOOLEAN fPath = FindBestPath(pSoldier, sDestination, pSoldier->pathing.bLevel,
+		usMovementMode, COPYROUTE, 0);
+
+	gubNPCAPBudget = sOldAPBudget;
+	gubNPCDistLimit = ubOldDistLimit;
+
+	if (!fPath)
+		return 10000;
+
+	INT32 sPathSpot = pSoldier->sGridNo;
+	INT32 iCost = 0;
+	INT32 iExposedStreak = 0;
+
+	for (INT16 sLoop = pSoldier->pathing.usPathIndex;
+		sLoop < pSoldier->pathing.usPathDataSize; ++sLoop)
+	{
+		sPathSpot = NewGridNo(sPathSpot,
+			DirectionInc((UINT8)pSoldier->pathing.usPathingData[sLoop]));
+		if (TileIsOutOfBounds(sPathSpot))
+			break;
+
+		UINT16 usExposure = AIKnownThreatExposure(pSoldier, sPathSpot, pSoldier->pathing.bLevel);
+		// Existing smoke should make an otherwise exposed crossing substantially safer.
+		// Keep some residual risk because stale contacts can still fire through concealment.
+		if (InSmoke(sPathSpot, pSoldier->pathing.bLevel))
+			usExposure /= 3;
+		if (usExposure > 0)
+		{
+			++iExposedStreak;
+			iCost += __min((INT32)45, (INT32)usExposure / 8);
+			// Sample inferred reaction-fire risk on alternate path steps. Exact enemy AP
+			// is intentionally never inspected.
+			if ((sLoop & 1) == 0)
+				iCost += AIInferredReactionRisk(pSoldier, sPathSpot, pSoldier->pathing.bLevel) / 6;
+			if (!SightCoverAtSpot(pSoldier, sPathSpot, FALSE))
+				iCost += 6;
+			if (!AnyCoverAtSpot(pSoldier, sPathSpot))
+				iCost += 4;
+			iCost += __min((INT32)12, 2 * iExposedStreak);
+			if (InLightAtNight(sPathSpot, pSoldier->pathing.bLevel))
+				iCost += 4;
+		}
+		else
+		{
+			iExposedStreak = 0;
+		}
+	}
+
+	return __min((INT32)500, iCost);
+}
+
 // Score how much a candidate position creates a useful crossfire around a known contact.
 // Positive scores favor roughly perpendicular/oblique angles; standing on the same axis
 // as the rest of the fireteam is mildly discouraged. Only teammates with their own
