@@ -56,7 +56,8 @@
 #include "english.h"
 #endif
 
-#include "connect.h"\n#include "VRAnalytics.h"
+#include "connect.h"
+#include "VRAnalytics.h"
 // needed to use the modularized tactical AI:
 #include "ModularizedTacticalAI/include/Plan.h"
 #include "ModularizedTacticalAI/include/PlanFactoryLibrary.h"
