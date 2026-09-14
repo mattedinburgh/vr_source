@@ -36,7 +36,8 @@
 #include "connect.h"
 #include "Text.h"
 #include "Game Clock.h"			// sevenfm
-#include "VRAnalytics.h"\r\n#include "Rotting Corpses.h"	// sevenfm
+#include "VRAnalytics.h"
+#include "Rotting Corpses.h"	// sevenfm
 
 //////////////////////////////////////////////////////////////////////////////
 // SANDRO - In this file, all APBPConstants[AP_CROUCH] and APBPConstants[AP_PRONE] were changed to GetAPsCrouch() and GetAPsProne()
