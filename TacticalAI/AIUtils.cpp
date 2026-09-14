@@ -7298,6 +7298,51 @@ UINT8 AITargetSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	return __min((UINT8)3, ubSaturation);
 }
 
+UINT8 AISearchCommitmentCount(SOLDIERTYPE *pSoldier, INT32 sDisturbance)
+{
+	if (!pSoldier || TileIsOutOfBounds(sDisturbance))
+		return 0;
+
+	UINT8 ubCommitted = 0;
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE || !AISameFireteam(pSoldier, pFriend) ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE)
+		{
+			continue;
+		}
+
+		BOOLEAN fSearching =
+			pFriend->aiData.bAction == AI_ACTION_SEEK_OPPONENT ||
+			pFriend->aiData.bAction == AI_ACTION_GET_CLOSER ||
+			pFriend->aiData.bAction == AI_ACTION_FLANK_LEFT ||
+			pFriend->aiData.bAction == AI_ACTION_FLANK_RIGHT ||
+			((pFriend->aiData.bLastAction == AI_ACTION_SEEK_OPPONENT ||
+			  pFriend->aiData.bLastAction == AI_ACTION_GET_CLOSER) &&
+			 pFriend->bActionPoints < pFriend->bInitialActionPoints);
+
+		if (!fSearching)
+			continue;
+
+		INT32 sCommitSpot = pFriend->aiData.usActionData;
+		if (TileIsOutOfBounds(sCommitSpot))
+			sCommitSpot = pFriend->sLastTarget;
+
+		// Only reserve the same local search problem. A soldier investigating a
+		// different contact does not suppress this fireteam's search.
+		if (TileIsOutOfBounds(sCommitSpot) ||
+			PythSpacesAway(sCommitSpot, sDisturbance) <= 6)
+		{
+			++ubCommitted;
+		}
+	}
+
+	return __min((UINT8)3, ubCommitted);
+}
+
 // Check whether this target is directly threatening a nearby ally who needs
 // covering fire.  This uses only observed combat relationships (recent attackers
 // and actual fire lanes), so it does not grant the AI hidden information.
