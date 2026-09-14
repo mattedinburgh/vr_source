@@ -6775,6 +6775,8 @@ void SoldierStealItemFromSoldier( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
 	BOOLEAN			fShouldSayCoolQuote = FALSE;
 	BOOLEAN			fDidSayCoolQuote = FALSE;
 	BOOLEAN			fNotEnoughAPs = FALSE; // added by SANDRO
+	UINT8			ubItemsTaken = 0;
+	BOOLEAN			fCollapsedTarget = ( pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed );
 
 	// OK. CHECK IF WE ARE DOING ALL IN THIS POOL....
 	if ( iItemIndex == ITEM_PICKUP_ACTION_ALL || iItemIndex == ITEM_PICKUP_SELECTION )
@@ -6795,50 +6797,41 @@ void SoldierStealItemFromSoldier( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
 			cnt++;
 			if ( fPickup )
 			{
-				////////////////////////////////////////////////////////////////////
-				// SANDRO - added mechanism for APs needed to steal all items..
-				if ( gGameExternalOptions.fEnhancedCloseCombatSystem )
-				{
-					if (pSoldier->bActionPoints >= GetBasicAPsToPickupItem( pSoldier ) )
-					{					
-						// Make copy of item
-						gTempObject = pOpponent->inv[pTempItemPool->iItemIndex];
-						if ( ItemIsCool( &gTempObject ) )
-						{
-							fShouldSayCoolQuote = TRUE;
-						}
-						if ( !AutoPlaceObject( pSoldier, &gTempObject, TRUE ) )
-						{
-							AddItemToPool( pSoldier->sGridNo, &gTempObject, 1, pSoldier->pathing.bLevel, 0, -1 );
-						}
-						DeleteObj(&pOpponent->inv[pTempItemPool->iItemIndex]);
+				INT16 sPickupAPCost = 0;
 
-						// add to merc records
-						if ( pSoldier->ubProfile != NO_PROFILE )
-							gMercProfiles[ pSoldier->ubProfile ].records.usItemsStolen++;
-						
-						DeductPoints( pSoldier, GetBasicAPsToPickupItem( pSoldier ), 0, AFTERACTION_INTERRUPT );
-					}
-					else
-					{
-						fNotEnoughAPs = TRUE;
-					}
-				}
-				else // original code
+				// Vengeance: the base steal action covers the first item from a conscious enemy.
+				// Extra items cost normal pickup AP. Collapsed/dying targets have no base
+				// steal surcharge, so each item costs normal pickup AP.
+				if ( gGameExternalOptions.fEnhancedCloseCombatSystem && ( fCollapsedTarget || ubItemsTaken > 0 ) )
+					sPickupAPCost = GetBasicAPsToPickupItem( pSoldier );
+
+				if ( !gGameExternalOptions.fEnhancedCloseCombatSystem || pSoldier->bActionPoints >= sPickupAPCost )
 				{
-					// Make copy of item
 					gTempObject = pOpponent->inv[pTempItemPool->iItemIndex];
+					gTempObject.fFlags &= ~OBJECT_UNDROPPABLE;
+
 					if ( ItemIsCool( &gTempObject ) )
-					{
 						fShouldSayCoolQuote = TRUE;
-					}
+
+					// If inventory placement fails (including partial stack placement),
+					// leave the remaining stolen object on the thief's ground tile.
 					if ( !AutoPlaceObject( pSoldier, &gTempObject, TRUE ) )
-					{
 						AddItemToPool( pSoldier->sGridNo, &gTempObject, 1, pSoldier->pathing.bLevel, 0, -1 );
-					}
+
 					DeleteObj(&pOpponent->inv[pTempItemPool->iItemIndex]);
+
+					if ( pSoldier->ubProfile != NO_PROFILE )
+						gMercProfiles[ pSoldier->ubProfile ].records.usItemsStolen++;
+
+					if ( sPickupAPCost > 0 )
+						DeductPoints( pSoldier, sPickupAPCost, 0, AFTERACTION_INTERRUPT );
+
+					++ubItemsTaken;
 				}
-				////////////////////////////////////////////////////////////////////
+				else
+				{
+					fNotEnoughAPs = TRUE;
+				}
 			}
 			pTempItemPool = pTempItemPool->pNext;
 		}
