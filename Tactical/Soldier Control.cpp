@@ -19276,7 +19276,9 @@ void SOLDIERTYPE::SoldierPropertyUpkeep()
 	// effects eventually run out
 	for (UINT8 counter = 0; counter < SOLDIER_COUNTER_MAX; ++counter)
 	{
-		if (counter == SOLDIER_COUNTER_SPOTTER && usSkillCounter[counter] > 0)
+		if (counter == SOLDIER_COUNTER_ROLE_OBSERVED)
+			continue;	// learned role information persists, as in 1.13
+		else if (counter == SOLDIER_COUNTER_SPOTTER && usSkillCounter[counter] > 0)
 			usSkillCounter[counter] = min(255, usSkillCounter[counter] + 1);
 		else if (counter == SOLDIER_COUNTER_WATCH && usSkillCounter[counter] > 0)
 			usSkillCounter[counter] = min(255, usSkillCounter[counter] + 1);
@@ -19288,6 +19290,14 @@ void SOLDIERTYPE::SoldierPropertyUpkeep()
 			usSkillCounter[SOLDIER_COUNTER_COVER] = 0;
 		else
 			usSkillCounter[counter] = max(0, usSkillCounter[counter] - 1);
+	}
+
+	// 1.13 role discovery: one identification point for each turn this enemy was observed.
+	if ( this->usSoldierFlagMask & SOLDIER_ENEMY_OBSERVEDTHISTURN )
+	{
+		this->usSoldierFlagMask &= ~SOLDIER_ENEMY_OBSERVEDTHISTURN;
+		if ( usSkillCounter[SOLDIER_COUNTER_ROLE_OBSERVED] < 255 )
+			++usSkillCounter[SOLDIER_COUNTER_ROLE_OBSERVED];
 	}
 
 	// if there is a combat going and we are in sector, note that in the battle report
