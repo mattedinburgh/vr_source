@@ -113,6 +113,137 @@ def pct(numerator: float, denominator: float) -> float:
     return 100.0 * numerator / denominator if denominator else 0.0
 
 
+def grenade_throw_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    launches = [
+        event for event in events
+        if event.get("layer") == "tactical"
+        and event.get("kind") == "grenade_throw_launch"
+    ]
+    landings = [
+        event for event in events
+        if event.get("layer") == "tactical"
+        and event.get("kind") == "grenade_throw_landing"
+    ]
+
+    pending: Dict[Tuple[Any, Any], Dict[str, Any]] = {}
+    pairs: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
+    all_flight_events = sorted(
+        launches + landings,
+        key=lambda event: (
+            int(event.get("session", 0) or 0),
+            int(event.get("seq", 0) or 0),
+        ),
+    )
+    for event in all_flight_events:
+        key = (event.get("session"), event.get("projectile_id"))
+        if event.get("kind") == "grenade_throw_launch":
+            pending[key] = event
+        elif key in pending:
+            pairs.append((pending.pop(key), event))
+
+    max_ranges = [
+        float(event["max_range"]) for event in launches
+        if isinstance(event.get("max_range"), (int, float))
+    ]
+    target_distances = [
+        float(event["target_distance"]) for event in launches
+        if isinstance(event.get("target_distance"), (int, float))
+    ]
+    strengths = [
+        float(event["effective_strength"]) for event in launches
+        if isinstance(event.get("effective_strength"), (int, float))
+    ]
+    breath_pct = [
+        100.0 * float(event["breath"]) / float(event["breath_max"])
+        for event in launches
+        if isinstance(event.get("breath"), (int, float))
+        and isinstance(event.get("breath_max"), (int, float))
+        and float(event["breath_max"]) > 0
+    ]
+    target_offsets = [
+        float(event["target_offset_to_nearest_player"]) for event in launches
+        if isinstance(event.get("target_offset_to_nearest_player"), (int, float))
+        and float(event["target_offset_to_nearest_player"]) >= 0
+    ]
+    actual_distances: List[float] = []
+    landing_offsets: List[float] = []
+    overrange_records: List[Dict[str, Any]] = []
+    targeted_beyond_records: List[Dict[str, Any]] = []
+
+    for launch in launches:
+        target_distance = launch.get("target_distance")
+        max_range = launch.get("max_range")
+        if (
+            isinstance(target_distance, (int, float))
+            and isinstance(max_range, (int, float))
+            and float(target_distance) > float(max_range)
+        ):
+            targeted_beyond_records.append({
+                "session": launch.get("session"),
+                "actor_id": launch.get("actor_id"),
+                "projectile_id": launch.get("projectile_id"),
+                "item": launch.get("item"),
+                "target_distance": target_distance,
+                "max_range": max_range,
+                "distance_to_nearest_player": launch.get("distance_to_nearest_player"),
+                "target_offset_to_nearest_player": launch.get("target_offset_to_nearest_player"),
+            })
+
+    for launch, landing in pairs:
+        actual = landing.get("actual_distance")
+        max_range = launch.get("max_range")
+        if isinstance(actual, (int, float)) and float(actual) >= 0:
+            actual_distances.append(float(actual))
+        offset = landing.get("landing_offset_to_nearest_player")
+        if isinstance(offset, (int, float)) and float(offset) >= 0:
+            landing_offsets.append(float(offset))
+        # Allow one tile for discrete-grid/first-move bookkeeping. Anything
+        # beyond that is a high-confidence range-rule anomaly.
+        if (
+            isinstance(actual, (int, float))
+            and isinstance(max_range, (int, float))
+            and float(actual) >= 0
+            and float(actual) > float(max_range) + 1.0
+        ):
+            overrange_records.append({
+                "session": launch.get("session"),
+                "actor_id": launch.get("actor_id"),
+                "projectile_id": launch.get("projectile_id"),
+                "item": launch.get("item"),
+                "max_range": max_range,
+                "target_distance": launch.get("target_distance"),
+                "actual_distance": actual,
+                "strength": launch.get("effective_strength"),
+                "breath": launch.get("breath"),
+                "breath_max": launch.get("breath_max"),
+                "stance": launch.get("stance"),
+                "throwing_traits": launch.get("throwing_traits"),
+            })
+
+    stance_counts = Counter(str(event.get("stance", "unknown")) for event in launches)
+    trait_counts = Counter(str(event.get("throwing_traits", "unknown")) for event in launches)
+
+    return {
+        "launches": len(launches),
+        "landings": len(landings),
+        "paired_flights": len(pairs),
+        "unmatched_launches": len(pending),
+        "avg_max_range": safe_mean(max_ranges),
+        "avg_target_distance": safe_mean(target_distances),
+        "avg_actual_distance": safe_mean(actual_distances),
+        "avg_effective_strength": safe_mean(strengths),
+        "avg_breath_pct": safe_mean(breath_pct),
+        "avg_target_offset_to_player": safe_mean(target_offsets),
+        "avg_landing_offset_to_player": safe_mean(landing_offsets),
+        "targeted_beyond_range": len(targeted_beyond_records),
+        "actual_overrange": len(overrange_records),
+        "stance_counts": dict(stance_counts.most_common()),
+        "throwing_trait_counts": dict(trait_counts.most_common()),
+        "targeted_beyond_records": targeted_beyond_records[:20],
+        "overrange_records": overrange_records[:20],
+    }
+
+
 def tactical_summary(
     events: List[Dict[str, Any]], decisions: Dict[Tuple[Any, int], Dict[str, Any]]
 ) -> Dict[str, Any]:
@@ -681,6 +812,7 @@ def summarize(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         "session": session_summary(events),
         "battle": battle_summary(events),
         "tactical": tactical_summary(events, decisions),
+        "grenades": grenade_throw_summary(events),
         "interaction": interaction_summary(events),
         "strategic_mobility": strategic_mobility_summary(events),
         "strategic": strategic_summary(events, decisions),
@@ -733,6 +865,7 @@ def recommendations(summary: Dict[str, Any], baseline: Optional[Dict[str, Any]])
     battle = summary["battle"]
     interaction = summary["interaction"]
     tac = summary["tactical"]
+    grenades = summary["grenades"]
     mobility = summary["strategic_mobility"]
     strat = summary["strategic"]
 
@@ -756,6 +889,17 @@ def recommendations(summary: Dict[str, Any], baseline: Optional[Dict[str, Any]])
             f"Across {battle['resolved']} resolved battles, player success is {battle['player_success_rate']:.1f}%. "
             "Do not tune difficulty from this alone, but inspect whether strategic pressure and tactical survival are both underperforming."
         )
+    if grenades["actual_overrange"]:
+        findings.append(
+            f"AI grenade range anomaly: {grenades['actual_overrange']} resolved hand-grenade flight(s) exceeded calculated max range by more than the one-tile bookkeeping tolerance. "
+            "Inspect the listed projectile IDs before making any balance change."
+        )
+    if grenades["targeted_beyond_range"]:
+        findings.append(
+            f"AI grenade targeting anomaly: {grenades['targeted_beyond_range']} committed hand-grenade throw(s) targeted a grid beyond the actor's calculated max range. "
+            "This can indicate planner/execution disagreement even when physics clamps the actual flight."
+        )
+
     if tac["rejected_rate"] > 5.0:
         findings.append(
             f"Tactical planning/execution mismatch: {tac['rejected_rate']:.1f}% of recorded outcomes were rejected. "
@@ -860,6 +1004,7 @@ def render_markdown(
     battle = summary["battle"]
     interaction = summary["interaction"]
     tac = summary["tactical"]
+    grenades = summary["grenades"]
     mobility = summary["strategic_mobility"]
     strat = summary["strategic"]
 
@@ -924,6 +1069,26 @@ def render_markdown(
         f"| Attack-vs-cover comparisons | {tac['attack_cover_pairs']} |",
         f"| Cover wins / attack wins / ties | {tac['defense_wins']} / {tac['offense_wins']} / {tac['ties']} |",
         f"| Mean cover-minus-attack adjusted score | {fmt(tac['avg_cover_minus_attack_score'])} |",
+        "",
+        "### AI grenade range fairness",
+        "",
+        "| Metric | Result |",
+        "|---|---:|",
+        f"| AI hand-grenade launches | {grenades['launches']} |",
+        f"| Resolved/paired flights | {grenades['paired_flights']} |",
+        f"| Mean calculated max range | {fmt(grenades['avg_max_range'])} tiles |",
+        f"| Mean committed target distance | {fmt(grenades['avg_target_distance'])} tiles |",
+        f"| Mean actual flight distance | {fmt(grenades['avg_actual_distance'])} tiles |",
+        f"| Mean effective strength | {fmt(grenades['avg_effective_strength'])} |",
+        f"| Mean breath at release | {fmt(grenades['avg_breath_pct'])}% |",
+        f"| Mean target offset from nearest player merc | {fmt(grenades['avg_target_offset_to_player'])} tiles |",
+        f"| Mean landing offset from nearest player merc | {fmt(grenades['avg_landing_offset_to_player'])} tiles |",
+        f"| Targets beyond calculated max | {grenades['targeted_beyond_range']} |",
+        f"| Actual flights beyond max + 1 tile | {grenades['actual_overrange']} |",
+        f"| Unmatched launch records | {grenades['unmatched_launches']} |",
+        "",
+        "A one-tile tolerance is used only for final flight auditing because the physics object records its first moved grid rather than the exact sub-tile release point. "
+        "Committed targets are checked against max range with no tolerance.",
         "",
         "### Black Box v2 decision forensics",
         "",
