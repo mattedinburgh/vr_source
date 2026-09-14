@@ -410,7 +410,8 @@ static void PlayVRAmbienceOneShot( )
 	spParms.uiLoop = 1;
 	spParms.uiPriority = GROUP_AMBIENT;
 
-	SoundPlay( pPhase->szSound[ ubIndex ], &spParms );
+	// Legacy SoundPlay takes mutable STR even though it only reads the filename.
+	SoundPlay( (STR)pPhase->szSound[ ubIndex ], &spParms );
 	gVRAmbience.bLastOneShot = (INT8)ubIndex;
 }
 
