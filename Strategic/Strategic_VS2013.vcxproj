@@ -57,6 +57,9 @@
     <ClInclude Include="Reinforcement.h" />
     <ClInclude Include="Scheduling.h" />
     <ClInclude Include="Strategic AI.h" />
+    <ClInclude Include="Strategic Modernization.h" />
+    <ClInclude Include="Strategic Operational AI.h" />
+    <ClInclude Include="Strategic Transport Groups.h" />
     <ClInclude Include="Strategic All.h" />
     <ClInclude Include="Strategic Event Handler.h" />
     <ClInclude Include="Strategic Merc Handler.h" />
@@ -109,6 +112,9 @@
     <ClCompile Include="Reinforcement.cpp" />
     <ClCompile Include="Scheduling.cpp" />
     <ClCompile Include="Strategic AI.cpp" />
+    <ClCompile Include="Strategic Modernization.cpp" />
+    <ClCompile Include="Strategic Operational AI.cpp" />
+    <ClCompile Include="Strategic Transport Groups.cpp" />
     <ClCompile Include="Strategic Event Handler.cpp" />
     <ClCompile Include="Strategic Merc Handler.cpp" />
     <ClCompile Include="Strategic Mines LUA.cpp" />
