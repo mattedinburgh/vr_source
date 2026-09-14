@@ -755,10 +755,20 @@ UINT32	guiTranslucentMask=0x3def; //0x7bef;		// mask for halving 5,6,5
 // 75% of the existing framebuffer while preserving the stock palette hue.
 static UINT16 BlendVeryTranslucent565( UINT16 usSource, UINT16 usDest )
 {
-	UINT32 uiHalf = ( ( usSource >> 1 ) & guiTranslucentMask ) +
-						( ( usDest   >> 1 ) & guiTranslucentMask );
-	return (UINT16)( ( ( uiHalf >> 1 ) & guiTranslucentMask ) +
-								 ( ( usDest >> 1 ) & guiTranslucentMask ) );
+	// Use the engine's colour conversion helpers instead of packed shifts. The
+	// renderer can use 15/16-bit layouts depending on configuration; explicit
+	// RGB mixing keeps red, orange, yellow and green hue-stable in either case.
+	const UINT32 uiSourceRGB = GetRGBColor( usSource );
+	const UINT32 uiDestRGB   = GetRGBColor( usDest );
+
+	const UINT8 ubRed = (UINT8)( ( ( uiSourceRGB & 0xff ) +
+		3 * ( uiDestRGB & 0xff ) + 2 ) / 4 );
+	const UINT8 ubGreen = (UINT8)( ( ( ( uiSourceRGB >> 8 ) & 0xff ) +
+		3 * ( ( uiDestRGB >> 8 ) & 0xff ) + 2 ) / 4 );
+	const UINT8 ubBlue = (UINT8)( ( ( ( uiSourceRGB >> 16 ) & 0xff ) +
+		3 * ( ( uiDestRGB >> 16 ) & 0xff ) + 2 ) / 4 );
+
+	return Get16BPPColor( FROMRGB( ubRed, ubGreen, ubBlue ) );
 }
 
 static BOOLEAN Blt8BPPDataTo16BPPBufferVeryTranslucentCommon(
@@ -786,6 +796,13 @@ static BOOLEAN Blt8BPPDataTo16BPPBufferVeryTranslucentCommon(
 		INT32 iSourceX = 0;
 		const INT32 iDestY = iDestTop + (INT32)uiY;
 		const BOOLEAN fRowVisible = ( iDestY >= iClipTop && iDestY < iClipBottom );
+		UINT16 *pDestRow = NULL;
+		UINT16 *pZRow = NULL;
+		if( fRowVisible )
+		{
+			pDestRow = (UINT16 *)( (UINT8 *)pBuffer + ( uiDestPitchBYTES * iDestY ) );
+			pZRow = (UINT16 *)( (UINT8 *)pZBuffer + ( uiDestPitchBYTES * iDestY ) );
+		}
 
 		for( ;; )
 		{
@@ -809,10 +826,8 @@ static BOOLEAN Blt8BPPDataTo16BPPBufferVeryTranslucentCommon(
 				if( iDestX < iClipLeft || iDestX >= iClipRight )
 					continue;
 
-				UINT16 *pDestPixel = (UINT16 *)( (UINT8 *)pBuffer +
-					( uiDestPitchBYTES * iDestY ) ) + iDestX;
-				UINT16 *pZPixel = (UINT16 *)( (UINT8 *)pZBuffer +
-					( uiDestPitchBYTES * iDestY ) ) + iDestX;
+				UINT16 *pDestPixel = pDestRow + iDestX;
+				UINT16 *pZPixel = pZRow + iDestX;
 
 				if( *pZPixel > usZValue )
 					continue;
