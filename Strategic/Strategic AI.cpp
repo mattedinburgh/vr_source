@@ -37,6 +37,7 @@
 	#include "interface dialogue.h"
 #endif
 
+#include <stdio.h>
 #include "Strategic Modernization.h"
 #include "Strategic Operational AI.h"
 
@@ -249,6 +250,243 @@ UINT8 *gubPatrolReinforcementsDenied = NULL;
 
 //Unsaved vars
 BOOLEAN gfDisplayStrategicAILogs = FALSE;
+
+// ---------------------------------------------------------------------------
+// VR campaign companion / strategic AI black box
+//
+// The legacy "Strategic Decisions.txt" mostly records what happened. This
+// diagnostic stream records WHY a strategic choice was made: campaign state,
+// candidates, rejected alternatives, weighted selection, orders and outcomes.
+// It lives on the inactive strategic-modernization diagnostic branch.
+// ---------------------------------------------------------------------------
+static BOOLEAN gfSAICampaignBlackBoxEnabled = TRUE;
+static UINT32 guiSAICampaignDecisionSerial = 0;
+static UINT32 guiSAICampaignCurrentDecision = 0;
+static UINT32 guiSAICampaignPlanSerial = 0;
+static UINT32 guiSAIGroupPlanID[256] = { 0 };
+static UINT32 guiSAIGroupPlanDecisionID[256] = { 0 };
+static UINT32 guiSAIGroupPlanStartedAt[256] = { 0 };
+static UINT8  gubSAIGroupPlanTarget[256] = { 0 };
+static UINT8  gubSAIGroupPlanIntention[256] = { 0 };
+
+UINT32 VR_GetSAICampaignPlanID( UINT8 ubGroupID )
+{
+	return guiSAIGroupPlanID[ ubGroupID ];
+}
+
+UINT32 VR_GetSAICampaignPlanDecisionID( UINT8 ubGroupID )
+{
+	return guiSAIGroupPlanDecisionID[ ubGroupID ];
+}
+
+static void SAICampaignSectorName( INT32 iSectorID, CHAR8 *pOut )
+{
+	if( iSectorID < 0 || iSectorID > 255 )
+	{
+		sprintf( pOut, "-" );
+		return;
+	}
+	sprintf( pOut, "%c%d", SECTORY( (UINT8)iSectorID ) + 'A' - 1, SECTORX( (UINT8)iSectorID ) );
+}
+
+static void SAICampaignEnsureHeaders()
+{
+	FILE *fp;
+	long iLength;
+
+	if( !gfSAICampaignBlackBoxEnabled )
+		return;
+
+	fp = fopen( "Campaign AI Black Box.tsv", "a+" );
+	if( fp )
+	{
+		fseek( fp, 0, SEEK_END );
+		iLength = ftell( fp );
+		if( iLength == 0 )
+		{
+			fprintf( fp,
+				"world_min\tday\thour\tminute\tdecision_id\tplan_id\tevent\tsubject\tsubject_id\tgroup_id\tsource\ttarget\tscore\taux\tpool\trequest_points\treinforcement_points\tprogress\tqueen_phase\treason\n" );
+		}
+		fclose( fp );
+	}
+
+	fp = fopen( "Campaign AI Companion.txt", "a+" );
+	if( fp )
+	{
+		fseek( fp, 0, SEEK_END );
+		iLength = ftell( fp );
+		if( iLength == 0 )
+		{
+			fprintf( fp, "VENGEANCE CAMPAIGN AI COMPANION\n" );
+			fprintf( fp, "Persistent notes explaining strategic AI observations, alternatives, choices and outcomes.\n\n" );
+		}
+		fclose( fp );
+	}
+}
+
+static void SAICampaignRecord(
+	const CHAR8 *pEvent,
+	const CHAR8 *pSubject,
+	INT32 iSubjectID,
+	INT32 iGroupID,
+	INT32 iSourceSector,
+	INT32 iTargetSector,
+	INT32 iScore,
+	INT32 iAux,
+	const CHAR8 *pReason )
+{
+	FILE *fp;
+	CHAR8 zSource[16];
+	CHAR8 zTarget[16];
+	UINT32 uiDecision = guiSAICampaignCurrentDecision;
+	UINT32 uiPlan = 0;
+	if( iGroupID >= 0 && iGroupID < 256 )
+		uiPlan = guiSAIGroupPlanID[ iGroupID ];
+
+	if( !gfSAICampaignBlackBoxEnabled )
+		return;
+
+	SAICampaignEnsureHeaders();
+	SAICampaignSectorName( iSourceSector, zSource );
+	SAICampaignSectorName( iTargetSector, zTarget );
+
+	fp = fopen( "Campaign AI Black Box.tsv", "a" );
+	if( fp )
+	{
+		fprintf( fp,
+			"%u\t%u\t%u\t%u\t%u\t%u\t%s\t%s\t%d\t%d\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
+			GetWorldTotalMin(),
+			GetWorldDay(),
+			GetWorldHour(),
+			GetWorldMinutesInDay() % 60,
+			uiDecision,
+			uiPlan,
+			pEvent ? pEvent : "-",
+			pSubject ? pSubject : "-",
+			iSubjectID,
+			iGroupID,
+			zSource,
+			zTarget,
+			iScore,
+			iAux,
+			giReinforcementPool,
+			giRequestPoints,
+			giReinforcementPoints,
+			CurrentPlayerProgressPercentage(),
+			gubQueenPriorityPhase,
+			pReason ? pReason : "-" );
+		fclose( fp );
+	}
+
+	fp = fopen( "Campaign AI Companion.txt", "a" );
+	if( fp )
+	{
+		fprintf( fp,
+			"[Day %02u %02u:%02u][D%06u][P%06u][%s] %s #%d",
+			GetWorldDay(),
+			GetWorldHour(),
+			GetWorldMinutesInDay() % 60,
+			uiDecision,
+			uiPlan,
+			pEvent ? pEvent : "-",
+			pSubject ? pSubject : "-" );
+		if( iGroupID >= 0 )
+			fprintf( fp, " group=%d", iGroupID );
+		if( iSourceSector >= 0 )
+			fprintf( fp, " from=%s", zSource );
+		if( iTargetSector >= 0 )
+			fprintf( fp, " to=%s", zTarget );
+		fprintf( fp, " score=%d aux=%d | %s\n", iScore, iAux, pReason ? pReason : "-" );
+		fclose( fp );
+	}
+}
+
+static void SAICampaignBeginDecision( const CHAR8 *pTrigger )
+{
+	guiSAICampaignDecisionSerial++;
+	if( guiSAICampaignDecisionSerial == 0 )
+		guiSAICampaignDecisionSerial = 1;
+	guiSAICampaignCurrentDecision = guiSAICampaignDecisionSerial;
+	SAICampaignRecord( "DECISION_BEGIN", "queen", -1, -1, -1, -1, giRequestPoints, giReinforcementPoints,
+		pTrigger ? pTrigger : "strategic evaluation" );
+}
+
+static void SAICampaignEndDecision( const CHAR8 *pReason )
+{
+	SAICampaignRecord( "DECISION_END", "queen", -1, -1, -1, -1, 0, 0, pReason ? pReason : "complete" );
+	guiSAICampaignCurrentDecision = 0;
+}
+
+static UINT32 SAICampaignStartOrRefreshPlan( GROUP *pGroup, UINT8 ubTargetSector, UINT8 ubIntention, UINT32 uiMoveCode )
+{
+	UINT8 ubID;
+	CHAR8 zReason[192];
+
+	if( !pGroup || !pGroup->pEnemyGroup )
+		return 0;
+
+	ubID = pGroup->ubGroupID;
+	if( !guiSAIGroupPlanID[ ubID ] ||
+		gubSAIGroupPlanTarget[ ubID ] != ubTargetSector ||
+		gubSAIGroupPlanIntention[ ubID ] != ubIntention )
+	{
+		guiSAICampaignPlanSerial++;
+		if( guiSAICampaignPlanSerial == 0 )
+			guiSAICampaignPlanSerial = 1;
+		guiSAIGroupPlanID[ ubID ] = guiSAICampaignPlanSerial;
+		guiSAIGroupPlanDecisionID[ ubID ] = guiSAICampaignCurrentDecision;
+		guiSAIGroupPlanStartedAt[ ubID ] = GetWorldTotalMin();
+		gubSAIGroupPlanTarget[ ubID ] = ubTargetSector;
+		gubSAIGroupPlanIntention[ ubID ] = ubIntention;
+
+		sprintf( zReason, "new strategic mobile plan: intention=%u move_policy=%u parent_decision=%u",
+			ubIntention, uiMoveCode, guiSAIGroupPlanDecisionID[ ubID ] );
+		SAICampaignRecord( "PLAN_BEGIN", "mobile_group", ubIntention, ubID,
+			SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ), ubTargetSector,
+			pGroup->ubGroupSize, uiMoveCode, zReason );
+	}
+	else
+	{
+		sprintf( zReason, "existing plan repathed/refreshed: intention=%u move_policy=%u age_minutes=%u",
+			ubIntention, uiMoveCode, GetWorldTotalMin() - guiSAIGroupPlanStartedAt[ ubID ] );
+		SAICampaignRecord( "PLAN_REFRESH", "mobile_group", ubIntention, ubID,
+			SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ), ubTargetSector,
+			pGroup->ubGroupSize, uiMoveCode, zReason );
+	}
+	return guiSAIGroupPlanID[ ubID ];
+}
+
+static void SAICampaignClosePlan( GROUP *pGroup, const CHAR8 *pOutcome )
+{
+	UINT8 ubID;
+	CHAR8 zReason[192];
+
+	if( !pGroup )
+		return;
+
+	ubID = pGroup->ubGroupID;
+	if( !guiSAIGroupPlanID[ ubID ] )
+		return;
+
+	sprintf( zReason, "%s; plan_age_minutes=%u parent_decision=%u",
+		pOutcome ? pOutcome : "plan closed",
+		GetWorldTotalMin() - guiSAIGroupPlanStartedAt[ ubID ],
+		guiSAIGroupPlanDecisionID[ ubID ] );
+	SAICampaignRecord( "PLAN_END", "mobile_group",
+		pGroup->pEnemyGroup ? pGroup->pEnemyGroup->ubIntention : 0,
+		ubID,
+		SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ),
+		gubSAIGroupPlanTarget[ ubID ],
+		pGroup->ubGroupSize,
+		GetWorldTotalMin() - guiSAIGroupPlanStartedAt[ ubID ],
+		zReason );
+
+	guiSAIGroupPlanID[ ubID ] = 0;
+	guiSAIGroupPlanDecisionID[ ubID ] = 0;
+	guiSAIGroupPlanStartedAt[ ubID ] = 0;
+	gubSAIGroupPlanTarget[ ubID ] = 0;
+	gubSAIGroupPlanIntention[ ubID ] = 0;
+}
 
 void ValidatePendingGroups();
 void ValidateWeights( INT32 iID );
@@ -3270,15 +3508,16 @@ void EvaluateQueenSituation()
 	INT32 iApplicableRequestPoints = 0;
 	INT32 iApplicableGarrisons = 0;
 	INT32 iApplicableGarrisonIds[ MAX_GARRISON_GROUPS ];
+	UINT16 usApplicableGarrisonDefencePoints[ MAX_GARRISON_GROUPS ];
 	INT32 iApplicablePatrols = 0;
 	INT32 iApplicablePatrolIds[ MAX_PATROL_GROUPS ];
 
+	SAICampaignBeginDecision( "periodic queen strategic evaluation" );
+	SAICampaignRecord( "STATE", "army", -1, -1, -1, -1, giReinforcementPool, giRequestPoints,
+		"starting strategic poll: snapshot of reserve pool, demand, supply, player progress and queen priority phase" );
+
 	ValidateWeights( 26 );
 
-	// figure out how long it shall be before we call this again
-
-	// The more work to do there is (request points the queen's army is asking for), the more often she will make decisions
-	// This can increase the decision intervals by up to 500 extra minutes (> 8 hrs)
 	uiOffset = max( 100 - giRequestPoints, 0);
 	uiOffset = uiOffset + Random( uiOffset * 4 );
 	switch( gGameOptions.ubDifficultyLevel )
@@ -3296,115 +3535,194 @@ void EvaluateQueenSituation()
 			uiOffset += gGameExternalOptions.ubInsaneTimeEvaluateInMinutes + Random( gGameExternalOptions.ubInsaneTimeEvaluateVariance );
 			break;
 	}
+	SAICampaignRecord( "SCHEDULE", "queen", -1, -1, -1, -1, uiOffset, giRequestPoints,
+		"next strategic think interval chosen from difficulty plus unmet-request pressure and randomness" );
 
-	// sevenfm: allow recruiting when pool size drops below QUEEN_POOL_INCREMENT_PER_DIFFICULTY_LEVEL, this should result in more stable strategic AI behavior
 	if (giReinforcementPool <= 0 || !gfUnlimitedTroops && giReinforcementPool < gGameExternalOptions.guiBaseQueenPoolIncrement)
 	{
-		//Queen has run out of reinforcements. Simulate recruiting and training new troops.
+		INT32 iRecruitment = (gGameExternalOptions.guiBaseQueenPoolIncrement * gGameOptions.ubDifficultyLevel) *
+			(100 + CurrentPlayerProgressPercentage()) / 100;
 		uiOffset *= 10;
-		giReinforcementPool += (gGameExternalOptions.guiBaseQueenPoolIncrement * gGameOptions.ubDifficultyLevel) * (100 + CurrentPlayerProgressPercentage()) / 100;
+		giReinforcementPool += iRecruitment;
+		SAICampaignRecord( "STRATEGY", "recruitment", -1, -1, -1, -1, iRecruitment, uiOffset,
+			"reserve pool is critically low; recruit/train replacements and delay the next strategic allocation cycle" );
 		AddStrategicEvent(EVENT_EVALUATE_QUEEN_SITUATION, GetWorldTotalMin() + uiOffset, 0);
+		SAICampaignEndDecision( "recruitment/training consumed this strategic cycle" );
 		return;
 	}
 
-	//Re-post the event
 	AddStrategicEvent( EVENT_EVALUATE_QUEEN_SITUATION, GetWorldTotalMin() + uiOffset, 0 );
 
-	// if the queen hasn't been alerted to player's presence yet
 	if( !gfQueenAIAwake )
-	{ //no decisions can be made yet.
+	{
+		SAICampaignRecord( "NO_ACTION", "queen", -1, -1, -1, -1, 0, 0,
+			"queen AI has not been alerted to the player yet" );
+		SAICampaignEndDecision( "queen asleep" );
 		return;
 	}
 
-	// Adjust queen's disposition based on player's progress
 	EvolveQueenPriorityPhase( FALSE );
-
-	// Gradually promote any remaining admins into troops
 	UpgradeAdminsToTroops();
 
 	if( ( giRequestPoints <= 0 ) || ( ( giReinforcementPoints <= 0 ) && ( giReinforcementPool <= 0 ) ) )
-	{ //we either have no reinforcements or request for reinforcements.
+	{
+		SAICampaignRecord( "NO_ACTION", "army", -1, -1, -1, -1, giRequestPoints, giReinforcementPoints,
+			"no strategic demand exists, or no reinforcement source exists to satisfy demand" );
+		SAICampaignEndDecision( "nothing allocatable this cycle" );
 		return;
 	}
 
-	// anv: only consider garrisons and patrols that can be reinforced
-	// otherwise unreinforcable groups will stall the rest, effectively breaking entire system
-
-	Ensure_RepairedGarrisonGroup( &gGarrisonGroup, &giGarrisonArraySize );	/* added NULL fix, 2007-03-03, Sgt. Kolja */
+	Ensure_RepairedGarrisonGroup( &gGarrisonGroup, &giGarrisonArraySize );
 
 	for( i = 0; i < giGarrisonArraySize; i++ )
 	{
+		BOOLEAN fPermitted = FALSE;
+		BOOLEAN fMinimum = FALSE;
+		BOOLEAN fApproved = FALSE;
+		CHAR8 zReason[192];
+		UINT16 usThisDefencePoints = 0;
+
 		RecalculateGarrisonWeight( i );
 		iWeight = gGarrisonGroup[ i ].bWeight;
-		if( iWeight > 0 )
+
+		if( iWeight <= 0 )
+			sprintf( zReason, "rejected: weight %d means this garrison is not requesting troops", iWeight );
+		else if( gGarrisonGroup[ i ].ubPendingGroupID )
+			sprintf( zReason, "rejected: reinforcement group %d is already pending", gGarrisonGroup[ i ].ubPendingGroupID );
+		else
 		{
-			if( !gGarrisonGroup[ i ].ubPendingGroupID &&
-					EnemyPermittedToAttackSector( NULL, gGarrisonGroup[ i ].ubSectorID ) &&
-					GarrisonRequestingMinimumReinforcements( i ) )
+			fPermitted = EnemyPermittedToAttackSector( NULL, gGarrisonGroup[ i ].ubSectorID );
+			if( !fPermitted )
+				sprintf( zReason, "rejected: strategic rules do not permit movement into this sector" );
+			else
 			{
-				if( ReinforcementsApproved( i, &usDefencePoints ) )
+				fMinimum = GarrisonRequestingMinimumReinforcements( i );
+				if( !fMinimum )
+					sprintf( zReason, "rejected: request is below the minimum useful reinforcement size" );
+				else
 				{
-					iApplicableGarrisonIds[iApplicableGarrisons] = i;
-					iApplicableGarrisons++;
-					iApplicableRequestPoints += gGarrisonGroup[ i ].bWeight;
+					fApproved = ReinforcementsApproved( i, &usDefencePoints );
+					usThisDefencePoints = usDefencePoints;
+					if( fApproved )
+						sprintf( zReason, "eligible: positive need, movement permitted, useful size met, strength test approved" );
+					else
+						sprintf( zReason, "rejected: estimated player/militia defence is too strong" );
 				}
 			}
 		}
+
+		SAICampaignRecord( fApproved ? "CANDIDATE" : "REJECTED", "garrison", i,
+			gGarrisonGroup[ i ].ubPendingGroupID, gGarrisonGroup[ i ].ubSectorID, gGarrisonGroup[ i ].ubSectorID,
+			iWeight, usThisDefencePoints, zReason );
+
+		if( fApproved )
+		{
+			iApplicableGarrisonIds[iApplicableGarrisons] = i;
+			usApplicableGarrisonDefencePoints[iApplicableGarrisons] = usThisDefencePoints;
+			iApplicableGarrisons++;
+			iApplicableRequestPoints += gGarrisonGroup[ i ].bWeight;
+		}
 	}
+
 	for( i = 0; i < giPatrolArraySize; i++ )
 	{
+		BOOLEAN fEligible = FALSE;
+		CHAR8 zReason[192];
+		GROUP *pExistingPatrol = NULL;
+		INT32 iCurrentSize = 0;
+
 		RecalculatePatrolWeight( i );
 		iWeight = gPatrolGroup[ i ].bWeight;
-		if( iWeight > 0 )
+		if( gPatrolGroup[ i ].ubGroupID )
+			pExistingPatrol = GetGroup( gPatrolGroup[ i ].ubGroupID );
+		if( pExistingPatrol )
+			iCurrentSize = pExistingPatrol->ubGroupSize;
+
+		if( iWeight <= 0 )
+			sprintf( zReason, "rejected: patrol weight %d means no positive reinforcement need", iWeight );
+		else if( gPatrolGroup[ i ].ubPendingGroupID )
+			sprintf( zReason, "rejected: reinforcement group %d is already pending", gPatrolGroup[ i ].ubPendingGroupID );
+		else if( !PatrolRequestingMinimumReinforcements( i ) )
+			sprintf( zReason, "rejected: patrol shortage is below the minimum useful reinforcement size" );
+		else
 		{
-			if( !gPatrolGroup[ i ].ubPendingGroupID && PatrolRequestingMinimumReinforcements( i ) )
-			{
-				iApplicablePatrolIds[iApplicablePatrols] = i;
-				iApplicablePatrols++;
-				iApplicableRequestPoints += gPatrolGroup[ i ].bWeight;
-			}
+			fEligible = TRUE;
+			sprintf( zReason, "eligible: positive shortage, no pending reinforcement, minimum useful size met" );
+		}
+
+		SAICampaignRecord( fEligible ? "CANDIDATE" : "REJECTED", "patrol", i,
+			gPatrolGroup[ i ].ubGroupID, gPatrolGroup[ i ].ubSectorID[1], gPatrolGroup[ i ].ubSectorID[1],
+			iWeight, iCurrentSize, zReason );
+
+		if( fEligible )
+		{
+			iApplicablePatrolIds[iApplicablePatrols] = i;
+			iApplicablePatrols++;
+			iApplicableRequestPoints += gPatrolGroup[ i ].bWeight;
 		}
 	}
 
 	if( !iApplicableRequestPoints )
 	{
+		SAICampaignRecord( "NO_ACTION", "allocation", -1, -1, -1, -1, 0, 0,
+			"requests exist globally, but every concrete garrison/patrol candidate was filtered out" );
+		SAICampaignEndDecision( "no eligible reinforcement destination" );
 		return;
 	}
 
-	//now randomly choose who gets the reinforcements.
-	// giRequestPoints is the combined sum of all the individual weights of all garrisons and patrols requesting reinforcements
-	//iRandom = Random( giRequestPoints );
 	iRandom = Random( iApplicableRequestPoints );
+	SAICampaignRecord( "WEIGHTED_ROLL", "allocation", -1, -1, -1, -1, iRandom, iApplicableRequestPoints,
+		"roulette-wheel selection across eligible garrison and patrol weights" );
 
-	iOrigRequestPoints = giRequestPoints;	// debug only!
+	iOrigRequestPoints = giRequestPoints;
 
-	//go through garrisons first
 	for( i = 0; i < iApplicableGarrisons; i++ )
 	{
-		iSumOfAllWeights += iWeight;	// debug only!
+		iSumOfAllWeights += iWeight;
 		iWeight = gGarrisonGroup[ iApplicableGarrisonIds[i] ].bWeight;
 		if( iRandom < iWeight )
-		{ //This is the group that gets the reinforcements!
+		{
+			CHAR8 zReason[192];
+			sprintf( zReason, "selected by weighted roll; candidate defence=%u, legacy defence argument=%u",
+				usApplicableGarrisonDefencePoints[i], usDefencePoints );
+			SAICampaignRecord( "CHOICE", "garrison", iApplicableGarrisonIds[i],
+				gGarrisonGroup[ iApplicableGarrisonIds[i] ].ubPendingGroupID,
+				-1, gGarrisonGroup[ iApplicableGarrisonIds[i] ].ubSectorID, iWeight, iRandom, zReason );
+			if( usApplicableGarrisonDefencePoints[i] != usDefencePoints )
+			{
+				SAICampaignRecord( "DIAGNOSTIC_WARNING", "garrison", iApplicableGarrisonIds[i], -1, -1,
+					gGarrisonGroup[ iApplicableGarrisonIds[i] ].ubSectorID,
+					usApplicableGarrisonDefencePoints[i], usDefencePoints,
+					"legacy code passes defence points from the last approved garrison, not necessarily the selected garrison" );
+			}
 			SendReinforcementsForGarrison( iApplicableGarrisonIds[i] , usDefencePoints, NULL );
+			SAICampaignEndDecision( "garrison reinforcement allocation selected" );
 			return;
 		}
 		iRandom -= iWeight;
 	}
 
-	//go through the patrol groups
 	for( i = 0; i < iApplicablePatrols; i++ )
 	{
-		iSumOfAllWeights += iWeight;	// debug only!
+		iSumOfAllWeights += iWeight;
 		iWeight = gPatrolGroup[ iApplicablePatrolIds[i] ].bWeight;
 		if( iRandom < iWeight )
-		{ //This is the group that gets the reinforcements!
+		{
+			SAICampaignRecord( "CHOICE", "patrol", iApplicablePatrolIds[i],
+				gPatrolGroup[ iApplicablePatrolIds[i] ].ubGroupID,
+				-1, gPatrolGroup[ iApplicablePatrolIds[i] ].ubSectorID[1], iWeight, iRandom,
+				"selected by weighted roll for patrol reinforcement" );
 			SendReinforcementsForPatrol( iApplicablePatrolIds[i], NULL );
+			SAICampaignEndDecision( "patrol reinforcement allocation selected" );
 			return;
 		}
 		iRandom -= iWeight;
 	}
 
 	ValidateWeights( 27 );
+	SAICampaignRecord( "DIAGNOSTIC_ERROR", "allocation", -1, -1, -1, -1, iRandom, iApplicableRequestPoints,
+		"weighted selection exhausted all candidates without choosing one; investigate weight/accounting inconsistency" );
+	SAICampaignEndDecision( "selection accounting failure" );
 }
 
 
@@ -4312,6 +4630,18 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Strategic7");
 void ExecuteStrategicAIAction( UINT16 usActionCode, INT16 sSectorX, INT16 sSectorY, 
 							   INT32 option1, INT32 option2 )
 {
+	BOOLEAN fOwnDecision = FALSE;
+	INT32 iTargetSector = -1;
+	if( sSectorX >= 1 && sSectorX <= 16 && sSectorY >= 1 && sSectorY <= 16 )
+		iTargetSector = SECTOR( sSectorX, sSectorY );
+	if( !guiSAICampaignCurrentDecision )
+	{
+		SAICampaignBeginDecision( "scripted strategic action" );
+		fOwnDecision = TRUE;
+	}
+	SAICampaignRecord( "SCRIPTED_ACTION", "action_code", usActionCode, -1, -1, iTargetSector, option1, option2,
+		"campaign/NPC trigger requested a strategic AI action" );
+
 	GROUP *pGroup, *pGroup0, *pGroup1, *pGroup2, *pGroup3, *pPendingGroup = NULL;
 	SECTORINFO *pSector;
 	UINT8 ubSectorID;
@@ -5139,6 +5469,9 @@ void ExecuteStrategicAIAction( UINT16 usActionCode, INT16 sSectorX, INT16 sSecto
 			ScreenMsg( FONT_RED, MSG_DEBUG, L"QueenAI failed to handle action code %d.", usActionCode );
 			break;
 	}
+
+	if( fOwnDecision )
+		SAICampaignEndDecision( "scripted strategic action processing complete" );
 }
 
 
@@ -6396,6 +6729,11 @@ void RepollSAIGroup( GROUP *pGroup )
 {
 	INT32 i;
 	Assert( !pGroup->fPlayer );
+	SAICampaignRecord( "GROUP_REPOLL", "mobile_group",
+		pGroup->pEnemyGroup ? pGroup->pEnemyGroup->ubIntention : 0,
+		pGroup->ubGroupID, SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ), -1,
+		pGroup->ubGroupSize, pGroup->fBetweenSectors,
+		"strategic group state is being re-evaluated after load, arrival or campaign-state change" );
 
  Ensure_RepairedGarrisonGroup( &gGarrisonGroup, &giGarrisonArraySize );	/* added NULL fix, 2007-03-03, Sgt. Kolja */
 	if( GroupAtFinalDestination( pGroup ) )
