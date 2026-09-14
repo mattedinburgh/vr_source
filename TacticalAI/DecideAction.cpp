@@ -61,6 +61,15 @@ static STR8 gStr8TacticalRole[] = { "SUPPORT", "MANEUVER", "FLANKER", "SCREEN", 
 STR8 gStr8Class[] = { "SOLDIER_CLASS_NONE", "SOLDIER_CLASS_ADMINISTRATOR", "SOLDIER_CLASS_ELITE", "SOLDIER_CLASS_ARMY", "SOLDIER_CLASS_GREEN_MILITIA", "SOLDIER_CLASS_REG_MILITIA", "SOLDIER_CLASS_ELITE_MILITIA", "SOLDIER_CLASS_CREATURE", "SOLDIER_CLASS_MINER", "SOLDIER_CLASS_ZOMBIE" };
 STR8 gStr8Knowledge[] = { "HEARD_3_TURNS_AGO", "HEARD_2_TURNS_AGO", "HEARD_LAST_TURN", "HEARD_THIS_TURN", "NOT_HEARD_OR_SEEN", "SEEN_CURRENTLY", "SEEN_THIS_TURN", "SEEN_LAST_TURN", "SEEN_2_TURNS_AGO", "SEEN_3_TURNS_AGO" };
 
+extern UINT32 guiTurnCnt;
+
+// Sector-local reinforcement pacing. Kept outside SOLDIERTYPE/savegames.
+static UINT32 guiAIEnemyResponseStartTurn = 0;
+static INT32 gsAIEnemyResponseSpot = NOWHERE;
+static INT16 gsAIEnemyResponseSectorX = -1;
+static INT16 gsAIEnemyResponseSectorY = -1;
+static INT8 gbAIEnemyResponseSectorZ = -1;
+
 // global status time counters to determine what takes the most time
 
 #define CENTER_OF_RING 11237//dnl!!!
