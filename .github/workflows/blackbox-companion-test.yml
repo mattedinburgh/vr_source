@@ -33,6 +33,48 @@ jobs:
       - name: Compile logger as C++03
         run: g++ -std=c++03 -Wall -Wextra -pedantic -c VRAnalytics.cpp -o /tmp/VRAnalytics.o
 
+      - name: End-to-end Black Box smoke test
+        shell: bash
+        run: |
+          cat > /tmp/vr_blackbox_smoke.cpp <<'CPP'
+          #include "VRAnalytics.h"
+          int main()
+          {
+              VRAnalyticsBattleStarted(100, 1, 1, 0, 6, 10, 0);
+              VRAnalyticsTacticalCandidate(1, "attack_option", 1234, 55, 70, true, "smoke_test");
+              VRAnalyticsTacticalDecisionSelected(1, 1, 4, 1234, 1200, 25, 90, 80, 3, 2, 5, 1);
+              VRAnalyticsTacticalActionDone(1, 4, 1201, 17, 90, 77, true);
+              unsigned long d = VRAnalyticsBeginDecision(VR_ANALYTICS_STRATEGIC, "queen", 0, "smoke_strategy");
+              VRAnalyticsStateInt(d, "request_points", 20);
+              VRAnalyticsCandidate(d, "reinforce_garrison", 17, 40, 40, true, "eligible");
+              VRAnalyticsCommitDecision(d, "reinforce_garrison", 17, 40, "weighted_selection");
+              VRAnalyticsOutcome(d, "completed", "troops", 8, "travel_minutes", 60, "smoke_test");
+              VRAnalyticsStrategicMoveOrdered(110, 7, 0, 17, 8, 0, 0);
+              VRAnalyticsStrategicGroupArrived(170, 7, 17, 8, "garrison_reinforcement");
+              VRAnalyticsBattleEnded("victory", 200, 1, 1, 0, 6, 0, 0, false);
+              return 0;
+          }
+          CPP
+          rm -f VR_BlackBox.jsonl VR_Companion_Report.md VR_Companion_Summary.json
+          g++ -std=c++03 -I. VRAnalytics.cpp /tmp/vr_blackbox_smoke.cpp -o /tmp/vr_blackbox_smoke
+          /tmp/vr_blackbox_smoke
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("VR_BlackBox.jsonl")
+          assert p.exists() and p.stat().st_size > 0
+          events = [json.loads(line) for line in p.read_text(encoding="utf-8").splitlines() if line.strip()]
+          assert any(e.get("kind") == "battle_start" for e in events)
+          assert any(e.get("kind") == "decision_commit" for e in events)
+          assert any(e.get("kind") == "strategic_move_order" for e in events)
+          assert any(e.get("kind") == "strategic_group_arrived" for e in events)
+          assert any(e.get("kind") == "battle_end" for e in events)
+          print(f"Parsed {len(events)} Black Box events")
+          PY
+          python tools/vr_companion_analyze.py VR_BlackBox.jsonl
+          test -s VR_Companion_Report.md
+          test -s VR_Companion_Summary.json
+
       - name: Run Companion unit tests
         working-directory: tools
         run: python -m unittest -v test_vr_companion.py
