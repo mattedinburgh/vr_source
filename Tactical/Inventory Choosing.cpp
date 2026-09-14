@@ -313,7 +313,11 @@ static INT8 CapGeneratedGrenadeLoad( INT8 bGrenades )
 	// Vengeance doctrine: grenades are useful but scarce.  The same bGrenades
 	// counter is also reused for GL rounds, RPG rockets and mortar shells, so
 	// this cap prevents both hand-grenade spam and overstocked specialists.
-	return (INT8)min( 2, max( 0, (INT32)bGrenades ) );
+	if ( bGrenades < 0 )
+		return 0;
+	if ( bGrenades > 2 )
+		return 2;
+	return bGrenades;
 }
 
 static UINT8 CountGrenadeObjectsInSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp )
