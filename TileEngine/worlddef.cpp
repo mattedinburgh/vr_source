@@ -152,6 +152,20 @@ enum SectorVisualProfile
 
 static UINT8 gubSectorVisualProfile = SECTOR_VISUAL_DEFAULT;
 static UINT8 gubLoadedSectorVisualProfile = 0xFF;
+static UINT32 guiMapFactorySurfaceSeen = 0;
+static UINT32 guiMapFactoryPaletteSurfaceGraded = 0;
+static UINT32 guiMapFactoryNonPaletteSurfaceSkipped = 0;
+
+static BOOLEAN IsMapFactoryVisualProfileValue( UINT8 ubProfile )
+{
+	return ubProfile == SECTOR_VISUAL_MAPFACTORY_MILITARY ||
+		ubProfile == SECTOR_VISUAL_MAPFACTORY_WILDERNESS ||
+		ubProfile == SECTOR_VISUAL_MAPFACTORY_INDUSTRIAL ||
+		ubProfile == SECTOR_VISUAL_MAPFACTORY_SETTLEMENT ||
+		ubProfile == SECTOR_VISUAL_MAPFACTORY_ROADSIDE ||
+		ubProfile == SECTOR_VISUAL_MAPFACTORY_FARMLAND ||
+		ubProfile == SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY;
+}
 
 
 // From memman.c in SGP
@@ -2400,13 +2414,23 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 	if ( gubSectorVisualProfile == SECTOR_VISUAL_DEFAULT || pTileSurf == NULL || pTileSurf->vo == NULL )
 		return;
 
+	const BOOLEAN fMapFactoryTelemetry = IsMapFactoryVisualProfileValue( gubSectorVisualProfile );
+	if ( fMapFactoryTelemetry )
+		++guiMapFactorySurfaceSeen;
+
 	// Restrict grading to tactical-world art. Never recolour UI/item tiles or dedicated shadow sprites.
 	if ( ubType >= FIRSTSWITCHES || IsSectorVisualShadowType( ubType ) )
 		return;
 
 	HVOBJECT pObject = pTileSurf->vo;
 	if ( pObject->pPaletteEntry == NULL || pObject->ubBitDepth != 8 )
+	{
+		if ( fMapFactoryTelemetry )
+			++guiMapFactoryNonPaletteSurfaceSkipped;
 		return;
+	}
+	if ( fMapFactoryTelemetry )
+		++guiMapFactoryPaletteSurfaceGraded;
 
 	SGPPaletteEntry palette[256];
 	memcpy( palette, pObject->pPaletteEntry, sizeof( palette ) );
@@ -2469,14 +2493,7 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 		  ubType == DEBRISWEEDS || ubType == DEBRISGRASS || ubType == DEBRISMISC ||
 		  ubType == DEBRIS2MISC );
 
-	const BOOLEAN fMapFactoryProfile =
-		gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_MILITARY ||
-		gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_WILDERNESS ||
-		gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_INDUSTRIAL ||
-		gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_SETTLEMENT ||
-		gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_ROADSIDE ||
-		gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_FARMLAND ||
-		gubSectorVisualProfile == SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY;
+	const BOOLEAN fMapFactoryProfile = fMapFactoryTelemetry;
 	const BOOLEAN fMFTerrain = fMapFactoryProfile && ( ubType >= FIRSTTEXTURE && ubType <= SEVENTHTEXTURE );
 	const BOOLEAN fMFGreen = fMapFactoryProfile &&
 		( (ubType >= THIRDTEXTURE && ubType <= SIXTHTEXTURE) ||
@@ -6528,6 +6545,13 @@ giOldTilesetUsed = giCurrentTilesetID;
 	// Init tile surface used values
 	memset( gbNewTileSurfaceLoaded, 0, sizeof( gbNewTileSurfaceLoaded ) );
 
+	if ( IsMapFactoryVisualProfileValue( gubSectorVisualProfile ) )
+	{
+		guiMapFactorySurfaceSeen = 0;
+		guiMapFactoryPaletteSurfaceGraded = 0;
+		guiMapFactoryNonPaletteSurfaceSkipped = 0;
+	}
+
 	// A shared tileset can be used by both Oronegro and unrelated sectors. Reload when the
 	// sector visual profile changes so palette grading never leaks into another map.
 	if( iTilesetID == giCurrentTilesetID && gubSectorVisualProfile == gubLoadedSectorVisualProfile )
@@ -6562,6 +6586,27 @@ giOldTilesetUsed = giCurrentTilesetID;
 	gubLoadedSectorVisualProfile = gubSectorVisualProfile;
 
 	return( TRUE );
+}
+
+
+UINT8 GetMapFactoryCurrentVisualProfile( void )
+{
+	return gubSectorVisualProfile;
+}
+
+UINT32 GetMapFactorySurfaceSeenCount( void )
+{
+	return guiMapFactorySurfaceSeen;
+}
+
+UINT32 GetMapFactoryPaletteGradedCount( void )
+{
+	return guiMapFactoryPaletteSurfaceGraded;
+}
+
+UINT32 GetMapFactoryNonPaletteSkippedCount( void )
+{
+	return guiMapFactoryNonPaletteSurfaceSkipped;
 }
 
 
