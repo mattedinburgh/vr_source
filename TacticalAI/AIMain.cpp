@@ -3024,7 +3024,8 @@ void HandleAITacticalTraversal( SOLDIERTYPE * pSoldier )
 			// above, so this remains a transfer rather than a duplication.
 			ProcessQueenCmdImplicationsOfDeath( pSoldier );
 			TacticalRemoveSoldier( pSoldier->ubID );
-		}	}
+		}
+	}
 	CheckForEndOfBattle( fEnemyRetreated );
 }
 
