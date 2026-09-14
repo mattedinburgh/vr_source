@@ -61,6 +61,7 @@
 #include "ExceptionHandling.h"
 #include "MilitiaSquads.h"	// routed militia strategic traversal
 #include "Strategic Movement.h"	// enemy retreat destination battles
+#include "VRAnalytics.h"
 // needed to use the modularized tactical AI:
 #include "ModularizedTacticalAI/include/Plan.h"
 #include "ModularizedTacticalAI/include/PlanFactoryLibrary.h"
@@ -1268,6 +1269,18 @@ void ActionDone(SOLDIERTYPE *pSoldier)
 {
 	DebugAI(AI_MSG_INFO, pSoldier, String("ActionDone: bAction %d usActionData %d", pSoldier->aiData.bAction, pSoldier->aiData.usActionData));
 
+	if (pSoldier->aiData.bAction != AI_ACTION_NONE)
+	{
+		VRAnalyticsTacticalActionDone(
+			pSoldier->ubID,
+			pSoldier->aiData.bAction,
+			pSoldier->sGridNo,
+			pSoldier->bActionPoints,
+			pSoldier->stats.bLife,
+			pSoldier->bBreath,
+			pSoldier->aiData.bLastAttackHit ? true : false );
+	}
+
 	// if an action is currently selected
 	if (pSoldier->aiData.bAction != AI_ACTION_NONE)
 	{
@@ -1658,6 +1671,20 @@ void TurnBasedHandleNPCAI(SOLDIERTYPE *pSoldier)
 			return;
 		}
 		// to get here, we MUST have an action selected, but not in progress...
+		VRAnalyticsTacticalDecisionSelected(
+			pSoldier->ubID,
+			pSoldier->bTeam,
+			pSoldier->aiData.bAction,
+			pSoldier->aiData.usActionData,
+			pSoldier->sGridNo,
+			pSoldier->bActionPoints,
+			pSoldier->stats.bLife,
+			pSoldier->bBreath,
+			pSoldier->aiData.bAlertStatus,
+			pSoldier->aiData.bAIMorale,
+			pSoldier->aiData.bOrders,
+			pSoldier->aiData.bAttitude );
+
 		// see if we can afford to do this action
 		if (IsActionAffordable(pSoldier))
 		{
@@ -1675,6 +1702,11 @@ void TurnBasedHandleNPCAI(SOLDIERTYPE *pSoldier)
 		}
 		else
 		{
+			VRAnalyticsTacticalActionRejected(
+				pSoldier->ubID,
+				pSoldier->aiData.bAction,
+				pSoldier->aiData.usActionData,
+				"action_not_affordable" );
 #ifdef DEBUGDECISIONS
 			AINumMessage("HandleManAI - Not enough APs, skipping guy#",pSoldier->ubID);
 #endif
