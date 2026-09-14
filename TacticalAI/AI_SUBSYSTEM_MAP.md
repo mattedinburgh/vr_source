@@ -32,7 +32,7 @@ A behaviour may call helpers from several files, but it has exactly one orchestr
 | Fireteam identity/cohesion | `AIUtils.cpp` |
 | Tactical intent / role | `AIUtils.cpp` |
 | Position utility / range / exposure | `AIUtils.cpp` |
-| Disengagement / escape state | `AIUtils.cpp` |
+| Disengagement / escape state | `DecideAction.cpp` (decision) + `AIUtils.cpp` (state/helpers) |
 | Suppression response | `DecideAction.cpp` |
 | Alert-state priority | `DecideAction.cpp` |
 | Flank decision gate | `DecideAction.cpp` |
