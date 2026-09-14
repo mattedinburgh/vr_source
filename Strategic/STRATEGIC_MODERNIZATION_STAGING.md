@@ -66,3 +66,40 @@ Do not merge this branch to `master` while any of the following are true:
 ## Intended end state
 
 The long-term target is modern team-owned strategic groups plus Vengeance-specific operational AI. The 1.13 systems are inputs, not a blind wholesale port.
+
+
+## Operational AI milestone — approved design
+
+The operational layer is now being built around these campaign rules:
+
+1. **Persistent enemy formations** — approved. Mobile enemy groups keep formation identity, mission, morale, supply, intelligence and retreat history across strategic movement and saves.
+2. **Real operational objectives** — approved. Mission vocabulary includes garrison, patrol, recon, attack, raid, reinforce, relieve, intercept, block-road, escort, supply, retreat, regroup and reserve.
+3. **Dynamic strategic target evaluation** — approved. Current scoring combines Queen priority, ownership, town/mine/SAM value, remembered hostile strength, distance and supply.
+4. **Strategic reserves** — approved. Returning mobile formations can remain intact as local/regional/central reserves instead of being dissolved into anonymous pool points.
+5. **Logistics / supply** — approved. Formation supply is persistent; movement consumes it, friendly infrastructure restores it, and critical supply forces regrouping.
+6. **Recon / imperfect information** — approved. Operational scoring uses remembered strength snapshots rather than hidden live player counts. Sector loss, investigation and direct contact create reports with different confidence.
+7. **Militia operational layer** — approved with a Vengeance constraint: keep garrison militia and mobile militia as separate concepts. Mobile militia must remain materially more expensive. Current Vengeance data already uses a 3x mobile training-cost multiplier; treat this as a floor, not a reason to merge the systems.
+8. **Enemy helicopters / SAM interaction** — approved, but remains staged and disabled until the team-group/operational core is stable.
+9. **Enemy strategic economy** — explicitly deferred. Do not make economy a required dependency for the operational AI, convoys or ASD.
+10. **One connected campaign loop** — approved. Tactical outcomes, retreat/regrouping, formation morale, strategic movement, reserves, logistics, intelligence and subsequent objectives should feed one another.
+
+### Current active experimental behavior on this branch
+
+- team-aware strategic-group compatibility bridge;
+- persistent operational state stored in legacy ENEMYGROUP padding with unchanged struct size;
+- operational black box logging to `Strategic Operational BlackBox.txt`;
+- imperfect-information snapshots and confidence decay;
+- supply and morale recovery/degradation;
+- persistent retreat history;
+- operational target scoring;
+- bounded operational garrison reassignment with deliberate legacy fallback/randomness;
+- returning formations preserved as central reserves and eligible for later redispatch;
+- critical-supply / critical-morale formations forced to regroup.
+
+### Still staged OFF
+
+- strategic transport/convoy runtime;
+- enemy helicopter runtime;
+- ASD asset purchasing/runtime.
+
+Those systems stay compile-staged behind default-OFF gates until the operational core is validated.
