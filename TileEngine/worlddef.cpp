@@ -692,6 +692,131 @@ static const CHAR8 *SectorVisualLeafName( const CHAR8 *pFilename )
 	return pLeaf;
 }
 
+typedef struct
+{
+	const CHAR8 *pMapName;
+	UINT8 ubProfile;
+} MAP_FACTORY_PROFILE_ENTRY;
+
+static UINT8 MapFactoryProfileForLeaf( const CHAR8 *pFilename )
+{
+	if ( pFilename == NULL || pFilename[0] == 0 )
+		return SECTOR_VISUAL_DEFAULT;
+
+	CHAR8 zMapName[64];
+	strncpy( zMapName, pFilename, sizeof(zMapName) - 1 );
+	zMapName[sizeof(zMapName) - 1] = 0;
+
+	// A remastered QA file should use the same art direction as its source.
+	CHAR8 *pRemastered = strstr( zMapName, "_REMASTERED" );
+	if ( pRemastered != NULL )
+	{
+		CHAR8 *pExtension = strrchr( zMapName, '.' );
+		if ( pExtension != NULL )
+			strcpy( pRemastered, pExtension );
+		else
+			strcpy( pRemastered, ".dat" );
+	}
+
+	static const MAP_FACTORY_PROFILE_ENTRY gProfiles[] =
+	{
+		{ "a1.dat", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "A2.dat", SECTOR_VISUAL_MAPFACTORY_SETTLEMENT },
+		{ "A3.dat", SECTOR_VISUAL_MAPFACTORY_SETTLEMENT },
+		{ "A6.DAT", SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY },
+		{ "A7.DAT", SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY },
+		{ "A8.dat", SECTOR_VISUAL_MAPFACTORY_MILITARY },
+		{ "A9.dat", SECTOR_VISUAL_MAPFACTORY_SETTLEMENT },
+		{ "A10.dat", SECTOR_VISUAL_MAPFACTORY_SETTLEMENT },
+		{ "A11.dat", SECTOR_VISUAL_MAPFACTORY_FARMLAND },
+		{ "A12.DAT", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "A13.DAT", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "A14.DAT", SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY },
+		{ "A15.DAT", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "B1.dat", SECTOR_VISUAL_MAPFACTORY_INDUSTRIAL },
+		{ "b2.dat", SECTOR_VISUAL_MAPFACTORY_SETTLEMENT },
+		{ "B3.DAT", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "B4.DAT", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "B5.DAT", SECTOR_VISUAL_MAPFACTORY_FARMLAND },
+		{ "B6.DAT", SECTOR_VISUAL_MAPFACTORY_FARMLAND },
+		{ "B7.DAT", SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY },
+		{ "B8.DAT", SECTOR_VISUAL_MAPFACTORY_FARMLAND },
+		{ "b9.dat", SECTOR_VISUAL_MAPFACTORY_MILITARY },
+		{ "b10.dat", SECTOR_VISUAL_MAPFACTORY_SETTLEMENT },
+		{ "b11.dat", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "b12.dat", SECTOR_VISUAL_MAPFACTORY_ROADSIDE },
+		{ "b13.dat", SECTOR_VISUAL_MAPFACTORY_INDUSTRIAL },
+		{ "B14.DAT", SECTOR_VISUAL_MAPFACTORY_SETTLEMENT },
+		{ "B15.DAT", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "B16.DAT", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "c1.dat", SECTOR_VISUAL_MAPFACTORY_SETTLEMENT },
+		{ "c2.dat", SECTOR_VISUAL_MAPFACTORY_ROADSIDE },
+		{ "C3.DAT", SECTOR_VISUAL_MAPFACTORY_ROADSIDE },
+		{ "C4.DAT", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "c5.dat", SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY },
+		{ "C6.DAT", SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY },
+		{ "c7.dat", SECTOR_VISUAL_MAPFACTORY_ROADSIDE },
+		{ "c8.dat", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "c9.dat", SECTOR_VISUAL_MAPFACTORY_ROADSIDE },
+		{ "c10.dat", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "c11.dat", SECTOR_VISUAL_MAPFACTORY_MILITARY },
+		{ "c12.dat", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "c13.dat", SECTOR_VISUAL_MAPFACTORY_SETTLEMENT },
+		{ "c14.dat", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "C15.DAT", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "c16.dat", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "d2.dat", SECTOR_VISUAL_MAPFACTORY_MILITARY },
+		{ "D3.DAT", SECTOR_VISUAL_MAPFACTORY_ROADSIDE },
+		{ "D4.DAT", SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY },
+		{ "D5.DAT", SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY },
+		{ "D6.DAT", SECTOR_VISUAL_MAPFACTORY_FARMLAND },
+		{ "D7.DAT", SECTOR_VISUAL_MAPFACTORY_ROADSIDE },
+		{ "D8.DAT", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "d9.dat", SECTOR_VISUAL_MAPFACTORY_SETTLEMENT },
+		{ "d10.dat", SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY },
+		{ "D11.DAT", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "d12.dat", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "d13.dat", SECTOR_VISUAL_MAPFACTORY_SETTLEMENT },
+		{ "d14.dat", SECTOR_VISUAL_MAPFACTORY_INDUSTRIAL },
+		{ "d15.dat", SECTOR_VISUAL_MAPFACTORY_MILITARY },
+		{ "d16.dat", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "E2.DAT", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "E3.DAT", SECTOR_VISUAL_MAPFACTORY_ROADSIDE },
+		{ "E4.DAT", SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY },
+		{ "E5.DAT", SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY },
+		{ "E6.DAT", SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY },
+		{ "E7.DAT", SECTOR_VISUAL_MAPFACTORY_ROADSIDE },
+		{ "e8.dat", SECTOR_VISUAL_MAPFACTORY_FARMLAND },
+		{ "e9.dat", SECTOR_VISUAL_MAPFACTORY_ROADSIDE },
+		{ "E10.DAT", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "E11.DAT", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "E12.DAT", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "e13.dat", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "E14.DAT", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "e15.dat", SECTOR_VISUAL_MAPFACTORY_ROADSIDE },
+		{ "f2.dat", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "f3.dat", SECTOR_VISUAL_MAPFACTORY_ROADSIDE },
+		{ "F4.DAT", SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY },
+		{ "f5.dat", SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY },
+		{ "F6.DAT", SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY },
+		{ "f7.dat", SECTOR_VISUAL_MAPFACTORY_SETTLEMENT },
+		{ "f8.dat", SECTOR_VISUAL_MAPFACTORY_SETTLEMENT },
+		{ "f9.dat", SECTOR_VISUAL_MAPFACTORY_SETTLEMENT },
+		{ "f10.dat", SECTOR_VISUAL_MAPFACTORY_INDUSTRIAL },
+		{ "f11.dat", SECTOR_VISUAL_MAPFACTORY_OPEN_COUNTRY },
+		{ "f12.dat", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "f13.dat", SECTOR_VISUAL_MAPFACTORY_WILDERNESS },
+		{ "f14.dat", SECTOR_VISUAL_MAPFACTORY_ROADSIDE },
+		{ "f15.dat", SECTOR_VISUAL_MAPFACTORY_MILITARY },
+	};
+
+	for ( UINT16 i = 0; i < (UINT16)(sizeof(gProfiles)/sizeof(gProfiles[0])); ++i )
+		if ( _stricmp( zMapName, gProfiles[i].pMapName ) == 0 )
+			return gProfiles[i].ubProfile;
+
+	return SECTOR_VISUAL_DEFAULT;
+}
+
 static UINT8 DetermineSectorVisualProfile( const CHAR8 *pFilename )
 {
 	if ( pFilename == NULL )
@@ -733,17 +858,14 @@ static UINT8 DetermineSectorVisualProfile( const CHAR8 *pFilename )
 	if ( _stricmp( pFilename, "D4_B1.dat" ) == 0 || _stricmp( pFilename, "D5_B1.dat" ) == 0 )
 		return SECTOR_VISUAL_SAN_MONA_UNDERGROUND;
 
-	// Map Factory macro-remaster profiles are deliberately active only in the
-	// automated preview/remaster path until the methodology passes visual QA.
+	// Map Factory profiles stay QA-only until the methodology is accepted.
+	// Pristine files intentionally do not match the table; remastered files are
+	// normalized back to their source name by MapFactoryProfileForLeaf().
 	if ( gfMapPreviewCaptureMode )
 	{
-		if ( _stricmp( pFilename, "A8.dat" ) == 0 || _stricmp( pFilename, "A8_REMASTERED.dat" ) == 0 ||
-			 _stricmp( pFilename, "f15.dat" ) == 0 || _stricmp( pFilename, "f15_REMASTERED.dat" ) == 0 )
-			return SECTOR_VISUAL_MAPFACTORY_MILITARY;
-		if ( _stricmp( pFilename, "A12.DAT" ) == 0 || _stricmp( pFilename, "A12_REMASTERED.dat" ) == 0 )
-			return SECTOR_VISUAL_MAPFACTORY_WILDERNESS;
-		if ( _stricmp( pFilename, "b13.dat" ) == 0 || _stricmp( pFilename, "b13_REMASTERED.dat" ) == 0 )
-			return SECTOR_VISUAL_MAPFACTORY_INDUSTRIAL;
+		const UINT8 ubFactoryProfile = MapFactoryProfileForLeaf( pFilename );
+		if ( ubFactoryProfile != SECTOR_VISUAL_DEFAULT )
+			return ubFactoryProfile;
 	}
 
 	return SECTOR_VISUAL_DEFAULT;
