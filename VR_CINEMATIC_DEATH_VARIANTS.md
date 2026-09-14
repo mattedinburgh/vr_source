@@ -41,11 +41,14 @@ The fatal gunshot selector in `Tactical/Soldier Control.cpp` now exposes 35 in-g
 
 ## Selection rules
 
-- Base selection: `Random(30)`.
-- Head hits: 80% bias toward variants 5-9.
-- Leg hits: 75% bias toward variants 15-19.
-- Torso hits: 70% bias toward variants 20-24.
-- Crouched/prone deaths keep the 30-way gore selection but finish through stance-safe JA2 death states.
+- Motion-only falls and collapses are the default fatal outcome.
+- Dismemberment only enters the pool on sufficiently hard fatal hits.
+- Dismemberment chance rises with damage: approximately 10% at 18-29 damage, 24% at 30-44, 38% at 45-59, and 52% at 60+ before small hit-location adjustments.
+- Fatal head and leg hits receive a small (+5 percentage point) dismemberment bias.
+- Standing high-energy upper-body hits can select variants 30-32 (detached forearm/hand-sized limb effect); severe leg hits can select 33.
+- Variant 34 is an exceptionally rare catastrophic mixed-limb event.
+- Moving victims preserve momentum for ordinary fatal falls, but momentum no longer overrides an already-selected dismemberment.
+- Crouched/prone deaths finish through stance-safe JA2 states.
 - Water deaths are intentionally excluded from this system.
 - Human merc body types only for this pass.
 
