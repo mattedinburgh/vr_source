@@ -308,8 +308,16 @@ static BOOLEAN MapFactoryVisualGridSafe( INT32 sGridNo )
 
 static BOOLEAN MapFactoryAddVisual( INT32 sGridNo, UINT32 uiType, UINT16 usSubIndex, BOOLEAN fOnRoof )
 {
-	if ( sGridNo < 0 || sGridNo >= WORLD_MAX || uiType >= NUMBEROFTILETYPES ||
-		 usSubIndex == 0 || !MapFactoryVisualGridSafe( sGridNo ) )
+	if ( sGridNo < 0 || sGridNo >= WORLD_MAX || uiType >= NUMBEROFTILETYPES || usSubIndex == 0 )
+		return FALSE;
+
+	if ( fOnRoof )
+	{
+		if ( gpWorldLevelData == NULL || gpWorldLevelData[sGridNo].pRoofHead == NULL ||
+			 gpWorldLevelData[sGridNo].pOnRoofHead != NULL )
+			return FALSE;
+	}
+	else if ( !MapFactoryVisualGridSafe( sGridNo ) )
 		return FALSE;
 
 	UINT16 usTileIndex = NO_TILE;
