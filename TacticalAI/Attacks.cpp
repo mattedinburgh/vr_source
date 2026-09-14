@@ -4960,10 +4960,22 @@ void CheckTossGrenadeSpecial(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 							//DebugShot(pSoldier, String("spot %d, found obstacle and %d nearby! value %d opponents in dir %d", sSpot, ubCount, iValue, CountKnownEnemiesInDirection(pSoldier, ubSpotDir, sMaxEnemyDistance, TRUE)));
 						}
 
-						// too close to soldier or any friend
-						if (PythSpacesAway(pSoldier->sGridNo, sSpot) < ubMinDistance || CountNearbyFriends(pSoldier, sSpot, ubMinDistance) > 0 || CountNearbyNeutrals(pSoldier, sSpot, ubMinDistance))
+						// Special-purpose grenades obey the same collateral doctrine as normal
+						// explosive targeting. Never trade our own troops for an obstacle/corpse.
+						if (PythSpacesAway(pSoldier->sGridNo, sSpot) < ubMinDistance ||
+							CountNearbyFriends(pSoldier, sSpot, ubMinDistance) > 0)
 						{
-							iValue = iValue / 2;
+							continue;
+						}
+
+						UINT8 ubNearbyNeutrals = CountNearbyNeutrals(pSoldier, sSpot, ubMinDistance);
+						if (ubNearbyNeutrals > 0)
+						{
+							if (pSoldier->bTeam != ENEMY_TEAM)
+								continue;
+
+							INT32 iCivilianCollateralPenalty = __min(30, 10 * (INT32)ubNearbyNeutrals);
+							iValue = iValue * (100 - iCivilianCollateralPenalty) / 100;
 						}
 
 						// for regular explosives, prefer closest spot
