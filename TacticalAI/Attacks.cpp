@@ -164,6 +164,46 @@ void ResetWeaponMode( SOLDIERTYPE * pSoldier )
 }
 //</SB>
 
+
+// Count only recent, LOCAL friendly fire commitments.  This creates limited
+// target discipline without giving the entire enemy force perfect knowledge.
+UINT8 CountLocalFriendsTargetingOpponent(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent)
+{
+	if (!pSoldier || !pOpponent || pSoldier->bTeam >= MAXTEAMS)
+		return 0;
+
+	UINT8 ubCount = 0;
+	const INT16 sLocalRadius = __max(8, DAY_VISION_RANGE / 2);
+
+	for (UINT16 uiLoop = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		uiLoop <= (UINT16)gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++uiLoop)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[uiLoop];
+
+		if (!pFriend ||
+			pFriend == pSoldier ||
+			!pFriend->bActive ||
+			pFriend->stats.bLife < OKLIFE ||
+			pFriend->aiData.bNeutral ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > sLocalRadius ||
+			TileIsOutOfBounds(pFriend->sLastTarget))
+		{
+			continue;
+		}
+
+		// Last fire commitment is intentionally used instead of permanent
+		// public knowledge: squads coordinate from what nearby mates just did.
+		if ((pFriend->aiData.bLastAction == AI_ACTION_FIRE_GUN ||
+			 pFriend->aiData.bLastAction == AI_ACTION_TOSS_PROJECTILE) &&
+			PythSpacesAway(pFriend->sLastTarget, pOpponent->sGridNo) <= 1)
+		{
+			ubCount++;
+		}
+	}
+
+	return ubCount;
+}
+
 void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 {
 	UINT32 uiLoop;
@@ -653,6 +693,29 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		if (pOpponent->stats.bLife < OKLIFE || pOpponent->bCollapsed && pSoldier->bBreath == 0)
 		{
 			iAttackValue /= 4;
+		}
+
+		// Team AI target discipline: one or two local shooters reinforce a
+		// useful fire commitment, but a fourth rifleman is encouraged to cover
+		// something else.  Machine gunners may keep fixing an already-engaged
+		// target because suppression is their team contribution.
+		if (pSoldier->bTeam == ENEMY_TEAM && pOpponent->stats.bLife >= OKLIFE)
+		{
+			UINT8 ubLocalShooters = CountLocalFriendsTargetingOpponent(pSoldier, pOpponent);
+
+			if (ubLocalShooters == 1)
+				iAttackValue = iAttackValue * 115 / 100;
+			else if (ubLocalShooters == 2)
+				iAttackValue = iAttackValue * 108 / 100;
+			else if (ubLocalShooters >= 3 && !AICheckIsMachinegunner(pSoldier))
+				iAttackValue = iAttackValue * 85 / 100;
+
+			if (ubLocalShooters > 0)
+			{
+				DebugAI(AI_MSG_INFO, pSoldier,
+					String("[TeamAI] target discipline opponent=%d localShooters=%d value=%d",
+					pOpponent->ubID, ubLocalShooters, iAttackValue));
+			}
 		}
 
 #ifdef DEBUGATTACKS
