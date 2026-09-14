@@ -1156,7 +1156,8 @@ static INT8 VRCQBTryProactiveEntrySmoke(SOLDIERTYPE *pSoldier,
 		pContext->sPreferredEntry : pContext->sPreferredFoothold;
 	if (TileIsOutOfBounds(sSmokeGrid) ||
 		Water(sSmokeGrid, pSoldier->pathing.bLevel) ||
-		InSmokeNearby(sSmokeGrid, pSoldier->pathing.bLevel))
+		InSmokeNearby(sSmokeGrid, pSoldier->pathing.bLevel) ||
+		AIRecentTossSaturation(pSoldier, sSmokeGrid, pSoldier->pathing.bLevel) > 0)
 	{
 		return AI_ACTION_NONE;
 	}
@@ -1302,6 +1303,10 @@ static INT8 VRCQBTryAlternateWindowEntry(SOLDIERTYPE *pSoldier,
 		return AI_ACTION_CHANGE_FACING;
 	}
 
+	// BeginSoldierClimbWindow() normally follows the active path direction. CQB
+	// selected this window explicitly, so discard only the remaining cached path
+	// cursor and let the native executor use the facing we just validated.
+	pSoldier->pathing.usPathIndex = pSoldier->pathing.usPathDataSize;
 	pSoldier->aiData.usActionData = sBestLanding;
 	if (uiDecision)
 	{
