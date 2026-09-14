@@ -30,7 +30,7 @@ INT16									gsNumAmbData = 0;
  * -----------------------------------
  * This is intentionally a small state-driven soundscape layer, not another
  * pile of looping files.  A sector profile owns:
- *   - a subtle loop for each time phase (dawn/day/dusk/night, with fallbacks)
+ *   - a streamed loop for each time phase (dawn/day/dusk/night, with fallbacks)
  *   - one random-container style pool of contextual one-shots per phase
  *   - weighted selection, no immediate repeats, random stereo placement
  *   - rain attenuation / lower event density
@@ -298,7 +298,7 @@ static BOOLEAN StartVRSectorAmbienceLoopForPhase( UINT8 ubPhase )
 	spParms.uiLoop = LOOPING;
 	spParms.uiPriority = GROUP_AMBIENT;
 
-	gVRAmbience.uiLoopHandle = SoundPlay( (STR)szLoop, &spParms );
+	gVRAmbience.uiLoopHandle = SoundPlayStreamedFile( (STR)szLoop, &spParms );
 	if ( gVRAmbience.uiLoopHandle == NO_SAMPLE )
 		return FALSE;
 
