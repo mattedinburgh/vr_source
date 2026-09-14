@@ -92,6 +92,10 @@ void VR_UpdateOperationalReadinessHourly();
 void VR_TraceOperationalRecommendationsHourly();
 void VR_RecordFormationRetreat( GROUP *pGroup, UINT8 ubDestinationSectorID );
 void VR_RecordFormationArrival( GROUP *pGroup );
+BOOLEAN VR_RegisterTacticalRetreatSoldier( UINT8 ubSourceX, UINT8 ubSourceY,
+	UINT8 ubDestinationX, UINT8 ubDestinationY,
+	UINT8 ubAdmins, UINT8 ubTroops, UINT8 ubElites );
+void VR_CompleteRetreatInSector( UINT8 ubSectorX, UINT8 ubSectorY );
 INT32 VR_ScoreOperationalTarget( GROUP *pGroup, UINT8 ubSectorID, VR_OPERATIONAL_SCORE *pBreakdown );
 UINT8 VR_FindBestOperationalTarget( GROUP *pGroup, INT32 *piBestScore );
 
