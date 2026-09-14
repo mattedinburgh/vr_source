@@ -97,6 +97,7 @@
 #include "Queen Command.h" // sevenfm: for r8380
 #endif
 
+#include "Campaign Tactical Telemetry.h"
 #include "ub_config.h"
 #include "../ModularizedTacticalAI/include/Plan.h" // for plan destructor call
 
@@ -5979,7 +5980,7 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 		}
 	}
 	// marke added one 'or' for explosive ammo. variation of: AmmoTypes[this->inv[this->ubAttackingHand ][0]->data.gun.ubGunAmmoType].explosionSize > 1
-	//  extracting attacker´s ammo type
+	//  extracting attackerÂ´s ammo type
 	else if ( Item[ usWeaponIndex ].usItemClass & IC_EXPLOSV || AmmoTypes[MercPtrs[ubAttackerID]->inv[MercPtrs[ubAttackerID]->ubAttackingHand ][0]->data.gun.ubGunAmmoType].explosionSize > 1)
 	{
 		INT8 bDeafValue;
@@ -7147,6 +7148,7 @@ BOOLEAN SOLDIERTYPE::EVENT_InternalGetNewSoldierPath( INT32 sDestGridNo, UINT16 
 
 void SOLDIERTYPE::EVENT_GetNewSoldierPath( INT32 sDestGridNo, UINT16 usMovementAnim )
 {
+	VR_TacticalTelemetryMoveOrder( this, sDestGridNo, usMovementAnim );
 	// ATE: Default restart of animation to TRUE
 	this->EVENT_InternalGetNewSoldierPath( sDestGridNo, usMovementAnim, FALSE, TRUE );
 }
@@ -9829,6 +9831,7 @@ UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPo
 		}
 
 		VehicleTakeDamage( this->bVehicleID, ubReason, sLifeDeduct, this->sGridNo, ubAttacker );
+		VR_TacticalTelemetryDamage( this, ubAttacker, ubReason, bOldLife, sBreathLoss, sSourceGrid );
 		HandleTakeDamageDeath( this, bOldLife, ubReason );
 		return( 0 );
 	}
@@ -10331,6 +10334,7 @@ UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPo
 		}
 	}
 
+	VR_TacticalTelemetryDamage( this, ubAttacker, ubReason, bOldLife, sBreathLoss, sSourceGrid );
 	HandleTakeDamageDeath( this, bOldLife, ubReason );
 
 	// Check if we are < unconscious, and shutup if so! also wipe sight
