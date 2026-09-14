@@ -8834,6 +8834,58 @@ void PrepareMainRedAIWeights(SOLDIERTYPE *pSoldier, INT8 &bSeekPts, INT8 &bHelpP
 			bWatchPts += 1;
 	}
 
+	// Shared squad-plan utility layer. The old seek/help/hide/watch system remains
+	// intact, but its preferences now agree with the current squad intent and role.
+	if (AICombatTeam(pSoldier))
+	{
+		INT32 sPlanTarget = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		INT8 bPlanIntent = AITacticalIntent(pSoldier, sPlanTarget);
+		INT8 bPlanRole = AITacticalRole(pSoldier, sPlanTarget);
+
+		switch (bPlanIntent)
+		{
+		case AI_INTENT_PRESS:
+			if (bSeekPts > -90) bSeekPts += 3;
+			if (bWatchPts > -90) bWatchPts += 1;
+			break;
+		case AI_INTENT_FLANK:
+			if (bSeekPts > -90) bSeekPts += 2;
+			if (bHidePts > -90) bHidePts += 1;
+			break;
+		case AI_INTENT_FALLBACK:
+		case AI_INTENT_DISENGAGE:
+			if (bSeekPts > -90) bSeekPts -= 5;
+			if (bHidePts > -90) bHidePts += 4;
+			if (bWatchPts > -90) bWatchPts += 2;
+			break;
+		case AI_INTENT_RESCUE:
+			if (bHelpPts > -90) bHelpPts += 5;
+			if (bSeekPts > -90) bSeekPts -= 2;
+			break;
+		default:
+			if (bSeekPts > -90) bSeekPts -= 1;
+			if (bWatchPts > -90) bWatchPts += 2;
+			break;
+		}
+
+		if (bPlanRole == AI_ROLE_SUPPORT || bPlanRole == AI_ROLE_SCREEN)
+		{
+			if (bSeekPts > -90) bSeekPts -= 2;
+			if (bWatchPts > -90) bWatchPts += 3;
+		}
+		else if (bPlanRole == AI_ROLE_MANEUVER || bPlanRole == AI_ROLE_FLANKER)
+		{
+			if (bSeekPts > -90) bSeekPts += 2;
+		}
+
+		UINT16 usExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+		if (usExposure >= 150 || (pSoldier->aiData.bUnderFire && !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo)))
+		{
+			if (bHidePts > -90) bHidePts += 3;
+			if (bSeekPts > -90) bSeekPts -= 2;
+		}
+	}
+
 	// Break ties and near-ties between otherwise sensible RED choices. This is
 	// deliberately applied after deterministic tactical modifiers so randomness
 	// cannot resurrect actions that safety/morale/order logic disabled.
