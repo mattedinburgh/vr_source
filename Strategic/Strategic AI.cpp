@@ -5141,7 +5141,64 @@ void ExecuteStrategicAIAction( UINT16 usActionCode, INT16 sSectorX, INT16 sSecto
 // WDS - New AI
 void HourlyCheckStrategicAI()
 {
-	// Nothing (yet!)
+	VR_HourlyOperationalUpdate();
+
+	INT32 iGroups = 0;
+	INT32 iTroops = 0;
+	INT32 iReserve = 0;
+	INT32 iRegroup = 0;
+	INT32 iLowSupply = 0;
+	INT32 iLowMorale = 0;
+
+	for( GROUP *pGroup = gpGroupList; pGroup; pGroup = pGroup->next )
+	{
+		if( pGroup->fPlayer || !pGroup->pEnemyGroup )
+			continue;
+
+		VR_EnsureEnemyFormationState( pGroup );
+		++iGroups;
+		iTroops += pGroup->ubGroupSize;
+
+		if( pGroup->pEnemyGroup->ubOperationalMission == VR_OPMISSION_RESERVE ) ++iReserve;
+		if( pGroup->pEnemyGroup->ubOperationalMission == VR_OPMISSION_REGROUP ) ++iRegroup;
+		if( pGroup->pEnemyGroup->ubOperationalSupply < 40 ) ++iLowSupply;
+		if( pGroup->pEnemyGroup->ubOperationalMorale < 40 ) ++iLowMorale;
+
+		INT32 iTarget = pGroup->pEnemyGroup->ubOperationalTargetSectorID;
+		if( pGroup->pEnemyGroup->ubOperationalMission != VR_OPMISSION_NONE &&
+			pGroup->pEnemyGroup->ubOperationalMission != VR_OPMISSION_RESERVE &&
+			iTarget >= 0 && iTarget < 256 && !VR_GetSAICampaignPlanID( pGroup->ubGroupID ) )
+		{
+			VR_CampaignStartOrRefreshPlan( pGroup, (UINT8)iTarget,
+				pGroup->pEnemyGroup->ubIntention, 255 );
+		}
+
+		CHAR8 zReason[256];
+		sprintf( zReason,
+			"hourly formation state: mission=%s reserve=%s supply=%u morale=%u intel=%u known=%c%d pstr=%u mstr=%u between=%d",
+			VR_OperationalMissionName( pGroup->pEnemyGroup->ubOperationalMission ),
+			VR_OperationalReserveRoleName( pGroup->pEnemyGroup->ubOperationalReserveRole ),
+			pGroup->pEnemyGroup->ubOperationalSupply,
+			pGroup->pEnemyGroup->ubOperationalMorale,
+			pGroup->pEnemyGroup->ubOperationalIntelConfidence,
+			SECTORY( pGroup->pEnemyGroup->ubOperationalLastKnownPlayerSectorID ) + 'A' - 1,
+			SECTORX( pGroup->pEnemyGroup->ubOperationalLastKnownPlayerSectorID ),
+			pGroup->pEnemyGroup->ubOperationalLastKnownPlayerStrength,
+			pGroup->pEnemyGroup->ubOperationalLastKnownMilitiaStrength,
+			pGroup->fBetweenSectors );
+
+		VR_CampaignRecord( "GROUP_STATUS", "mobile_group",
+			pGroup->pEnemyGroup->ubOperationalMission, pGroup->ubGroupID,
+			SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ), iTarget,
+			pGroup->ubGroupSize, pGroup->pEnemyGroup->ubOperationalSupply, zReason );
+	}
+
+	CHAR8 zSnapshot[256];
+	sprintf( zSnapshot,
+		"hourly campaign heartbeat: groups=%d troops=%d reserve=%d regroup=%d low_supply=%d low_morale=%d",
+		iGroups, iTroops, iReserve, iRegroup, iLowSupply, iLowMorale );
+	VR_CampaignRecord( "CAMPAIGN_SNAPSHOT", "enemy_army", iGroups, -1, -1, -1,
+		iTroops, giReinforcementPool, zSnapshot );
 }
 
 
