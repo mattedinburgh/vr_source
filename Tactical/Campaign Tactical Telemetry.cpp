@@ -8,6 +8,8 @@
 #include "Soldier Profile.h"
 #include "Game Clock.h"
 #include "Items.h"
+#include "Strategic Movement.h"
+#include "Strategic AI.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -37,6 +39,8 @@ static UINT32 guiVRKills[MAXTEAMS];
 static UINT32 guiVRDeaths[MAXTEAMS];
 static UINT32 guiVRMoves[MAXTEAMS];
 static UINT32 guiVRSuppressionAPLost[MAXTEAMS];
+static UINT32 guiVRExplosions[MAXTEAMS];
+static UINT32 guiVRSmokeEffects[MAXTEAMS];
 
 static INT32 VR_TacticalSafeTeam( INT32 iTeam )
 {
@@ -252,6 +256,8 @@ void VR_TacticalTelemetryBattleStart( UINT8 ubStartingTeam )
 	memset( guiVRDeaths, 0, sizeof( guiVRDeaths ) );
 	memset( guiVRMoves, 0, sizeof( guiVRMoves ) );
 	memset( guiVRSuppressionAPLost, 0, sizeof( guiVRSuppressionAPLost ) );
+	memset( guiVRExplosions, 0, sizeof( guiVRExplosions ) );
+	memset( guiVRSmokeEffects, 0, sizeof( guiVRSmokeEffects ) );
 
 	for( uiCount = 0; uiCount < TOTAL_SOLDIERS; ++uiCount )
 	{
@@ -272,6 +278,39 @@ void VR_TacticalTelemetryBattleStart( UINT8 ubStartingTeam )
 	{
 		if( gfVRTacticalParticipant[ uiCount ] )
 			VR_TacticalLogParticipant( MercPtrs[ uiCount ], "PARTICIPANT_START" );
+	}
+
+	// Link this battle to any live strategic movement groups occupying the sector.
+	// This is the bridge from "why did the strategic AI send them?" to "what happened
+	// when that plan reached tactical combat?"
+	{
+		GROUP *pGroup = gpGroupList;
+		while( pGroup )
+		{
+			if( pGroup->ubSectorX == gWorldSectorX &&
+				pGroup->ubSectorY == gWorldSectorY &&
+				pGroup->ubSectorZ == gbWorldSectorZ )
+			{
+				UINT32 uiPlanID = VR_GetSAICampaignPlanID( pGroup->ubGroupID );
+				UINT32 uiParentDecision = VR_GetSAICampaignPlanDecisionID( pGroup->ubGroupID );
+				UINT8 ubStrategicTeam = VR_GetStrategicGroupTeam( pGroup );
+				UINT8 ubIntention = 0;
+				CHAR8 zGroupReason[256];
+
+				if( VR_IsEnemyStrategicGroup( pGroup ) && pGroup->pEnemyGroup )
+					ubIntention = pGroup->pEnemyGroup->ubIntention;
+
+				sprintf( zGroupReason,
+					"strategic group present at battle start: group=%u team=%u size=%u intention=%u plan=%u parent_decision=%u between_sectors=%d created_sector=%u original_sector=%u",
+					pGroup->ubGroupID, ubStrategicTeam, pGroup->ubGroupSize, ubIntention,
+					uiPlanID, uiParentDecision, pGroup->fBetweenSectors,
+					pGroup->ubCreatedSectorID, pGroup->ubOriginalSector );
+
+				VR_TacticalWrite( "STRATEGIC_GROUP_CONTEXT", NULL, NULL, ubStrategicTeam, 0,
+					pGroup->ubGroupID, uiPlanID, uiParentDecision, zGroupReason );
+			}
+			pGroup = pGroup->next;
+		}
 	}
 }
 
@@ -299,13 +338,15 @@ void VR_TacticalTelemetryBattleEnd( const CHAR8 *pResult, BOOLEAN fEnemyRetreate
 	{
 		if( guiVRShots[iTeam] || guiVRProjectileHits[iTeam] || guiVRProjectileMisses[iTeam] ||
 			guiVRDamageDealt[iTeam] || guiVRDamageTaken[iTeam] || guiVRKills[iTeam] ||
-			guiVRDeaths[iTeam] || guiVRMoves[iTeam] || guiVRSuppressionAPLost[iTeam] )
+			guiVRDeaths[iTeam] || guiVRMoves[iTeam] || guiVRSuppressionAPLost[iTeam] ||
+			guiVRExplosions[iTeam] || guiVRSmokeEffects[iTeam] )
 		{
 			sprintf( zReason,
-				"team summary: shots=%u hits=%u misses=%u damage_dealt=%u damage_taken=%u kills=%u deaths=%u moves=%u suppression_ap_lost=%u",
+				"team summary: shots=%u hits=%u misses=%u damage_dealt=%u damage_taken=%u kills=%u deaths=%u moves=%u suppression_ap_lost=%u explosions=%u smoke=%u",
 				guiVRShots[iTeam], guiVRProjectileHits[iTeam], guiVRProjectileMisses[iTeam],
 				guiVRDamageDealt[iTeam], guiVRDamageTaken[iTeam], guiVRKills[iTeam],
-				guiVRDeaths[iTeam], guiVRMoves[iTeam], guiVRSuppressionAPLost[iTeam] );
+				guiVRDeaths[iTeam], guiVRMoves[iTeam], guiVRSuppressionAPLost[iTeam],
+				guiVRExplosions[iTeam], guiVRSmokeEffects[iTeam] );
 			VR_TacticalWrite( "TEAM_SUMMARY", NULL, NULL, iTeam, 0,
 				guiVRShots[iTeam], guiVRProjectileHits[iTeam], guiVRDamageDealt[iTeam], zReason );
 		}
@@ -336,6 +377,14 @@ void VR_TacticalTelemetryTurnStart( UINT8 ubTeam )
 	for( uiCount = 0; uiCount < TOTAL_SOLDIERS; ++uiCount )
 	{
 		pSoldier = MercPtrs[ uiCount ];
+		if( pSoldier && pSoldier->bActive && pSoldier->bInSector )
+		{
+			if( !gfVRTacticalParticipant[ uiCount ] )
+			{
+				gfVRTacticalParticipant[ uiCount ] = TRUE;
+				VR_TacticalLogParticipant( pSoldier, "PARTICIPANT_JOIN" );
+			}
+		}
 		if( pSoldier && pSoldier->bActive && pSoldier->bInSector && pSoldier->bTeam == ubTeam && pSoldier->stats.bLife > 0 )
 		{
 			iAlive++;
@@ -472,4 +521,36 @@ void VR_TacticalTelemetrySuppression( SOLDIERTYPE *pTarget, UINT8 ubAttackerID,
 		pAttacker ? pAttacker->bTeam : -1, 0,
 		ubSuppressionPoints, ubAPLost, ubNewStance,
 		"suppression resolved: accumulated near-fire pressure, AP loss and resulting stance/cower decision" );
+}
+
+void VR_TacticalTelemetryExplosion( UINT8 ubOwner, INT32 sGridNo, UINT16 usItem, INT8 bLevel )
+{
+	SOLDIERTYPE *pOwner = VR_TacticalSoldierByID( ubOwner );
+	INT32 iTeam = pOwner ? VR_TacticalSafeTeam( pOwner->bTeam ) : -1;
+
+	if( !gfVRTacticalBattleActive )
+		return;
+
+	if( iTeam >= 0 )
+		guiVRExplosions[iTeam]++;
+
+	VR_TacticalWrite( "EXPLOSION", pOwner, NULL, iTeam, usItem,
+		sGridNo, bLevel, 0,
+		"explosive effect ignited; subsequent DAMAGE events contain actual casualties and post-mitigation injury" );
+}
+
+void VR_TacticalTelemetrySmoke( UINT8 ubOwner, INT32 sGridNo, UINT16 usItem, INT8 bLevel )
+{
+	SOLDIERTYPE *pOwner = VR_TacticalSoldierByID( ubOwner );
+	INT32 iTeam = pOwner ? VR_TacticalSafeTeam( pOwner->bTeam ) : -1;
+
+	if( !gfVRTacticalBattleActive )
+		return;
+
+	if( iTeam >= 0 )
+		guiVRSmokeEffects[iTeam]++;
+
+	VR_TacticalWrite( "SMOKE_DEPLOYED", pOwner, NULL, iTeam, usItem,
+		sGridNo, bLevel, 0,
+		"new smoke/gas effect created; useful for later cover, withdrawal and suppression-response analysis" );
 }
