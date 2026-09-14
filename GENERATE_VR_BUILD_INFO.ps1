@@ -50,7 +50,23 @@ if ($git) {
         if ($status.Count -gt 0) { $dirty = 1 }
 
         $diffText = ((& $git.Source -C $RepoRoot diff --binary HEAD -- . 2>$null) | Out-String)
-        $fingerprintMaterial = (($status -join "`n") + "`n" + $diffText)
+
+        # git diff does not include untracked files. Hash their contents as well
+        # so two different local builds with the same untracked filenames cannot
+        # accidentally share a provenance fingerprint.
+        $untracked = @(& $git.Source -C $RepoRoot ls-files --others --exclude-standard 2>$null)
+        $untrackedEvidence = New-Object System.Collections.Generic.List[string]
+        foreach ($relativePath in $untracked) {
+            $fullPath = Join-Path $RepoRoot $relativePath
+            if (Test-Path -LiteralPath $fullPath -PathType Leaf) {
+                $fileHash = (Get-FileHash -LiteralPath $fullPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                $untrackedEvidence.Add($relativePath + ':' + $fileHash)
+            } else {
+                $untrackedEvidence.Add($relativePath + ':non-file')
+            }
+        }
+
+        $fingerprintMaterial = (($status -join "`n") + "`n" + $diffText + "`n" + ($untrackedEvidence -join "`n"))
         $sha256 = [Security.Cryptography.SHA256]::Create()
         try {
             $bytes = [Text.Encoding]::UTF8.GetBytes($fingerprintMaterial)
@@ -59,7 +75,7 @@ if ($git) {
             $sha256.Dispose()
         }
 
-        $recent = @(& $git.Source -C $RepoRoot log -n 8 --pretty=format:%s 2>$null)
+        $recent = @(& $git.Source -C $RepoRoot log -n 8 --pretty=format:'%h %s' 2>$null)
     } catch {
         $branch = 'metadata-error'
         $fingerprint = 'metadata-error'

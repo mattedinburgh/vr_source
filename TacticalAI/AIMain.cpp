@@ -1312,6 +1312,12 @@ static BOOLEAN VRRejectRedundantSelectedAIAction(SOLDIERTYPE *pSoldier)
 	{
 		pSoldier->aiData.bAction = AI_ACTION_NONE;
 		pSoldier->aiData.usActionData = NOWHERE;
+
+		// Do not leave the same rejected setup action queued. Otherwise a
+		// redundant ready/facing action can reappear on the next AI pass even
+		// though we correctly rejected it here.
+		pSoldier->aiData.bNextAction = AI_ACTION_NONE;
+		pSoldier->aiData.usNextActionData = 0;
 	}
 	return TRUE;
 }

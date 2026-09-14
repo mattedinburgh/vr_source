@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 1
+          fetch-depth: 20
 
       - name: Parse deployment PowerShell
         shell: powershell
@@ -52,24 +52,6 @@ jobs:
             }
           }
 
-      - name: Retarget VS2013 projects to installed v120 toolset
-        shell: powershell
-        run: |
-          Get-ChildItem $env:GITHUB_WORKSPACE -Recurse -Filter '*.vcxproj' -File | ForEach-Object {
-            $path = $_.FullName
-            $text = [System.IO.File]::ReadAllText($path)
-            $newText = $text.Replace(
-              '<PlatformToolset>v120_xp</PlatformToolset>',
-              '<PlatformToolset>v120</PlatformToolset>'
-            )
-            if ($newText -ne $text) {
-              [System.IO.File]::WriteAllText(
-                $path,
-                $newText,
-                (New-Object System.Text.UTF8Encoding($false))
-              )
-            }
-          }
 
       - name: Find MSBuild
         id: msbuild
@@ -93,7 +75,7 @@ jobs:
       - name: Build Vengeance Release Win32
         shell: powershell
         run: |
-          & '${{ steps.msbuild.outputs.path }}' '.\ja2_VS2013.sln' /m /t:ja2 /p:Configuration=Release /p:Platform=Win32
+          & '${{ steps.msbuild.outputs.path }}' '.\ja2_VS2013.sln' /m /t:ja2 /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v120
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $exe = Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\JA2_EN_Release.exe'
