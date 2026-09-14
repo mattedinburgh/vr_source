@@ -1,3 +1,2 @@
-A3 two-pass remaster validation trigger
-Source hardening: VFS-safe A3 bake filename handling
-Const-correct A3 VFS leaf helper validation
+A3 hand-authored V2 clean baseline
+Purpose: disable legacy procedural dressing and render authored-map baseline before deliberate composition work.
