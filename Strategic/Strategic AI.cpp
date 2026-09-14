@@ -6295,6 +6295,61 @@ void SendGroupToPool( GROUP **pGroup )
 	}
 }
 
+static BOOLEAN VR_TryOperationalGarrisonReassignment( GROUP **pGroup )
+{
+	if( !VR_OPERATIONAL_GARRISON_REASSIGNMENT_ENABLED || !pGroup || !(*pGroup) || !(*pGroup)->pEnemyGroup )
+		return FALSE;
+
+	// Deidranna's army is uneven: most reassignments still use legacy weighted logic; a minority use operational context.
+	if( Chance( 55 ) )
+		return FALSE;
+
+	INT32 iBestGarrison = -1;
+	INT32 iBestScore = -32767;
+
+	Ensure_RepairedGarrisonGroup( &gGarrisonGroup, &giGarrisonArraySize );
+
+	for( INT32 i = 0; i < giGarrisonArraySize; ++i )
+	{
+		RecalculateGarrisonWeight( i );
+		INT32 iWeight = gGarrisonGroup[ i ].bWeight;
+
+		if( iWeight <= 0 || gGarrisonGroup[ i ].ubPendingGroupID )
+			continue;
+
+		UINT8 ubTargetSector = gGarrisonGroup[ i ].ubSectorID;
+		if( !EnemyPermittedToAttackSector( NULL, ubTargetSector ) || !GarrisonRequestingMinimumReinforcements( i ) )
+			continue;
+
+		VR_OPERATIONAL_SCORE score;
+		INT32 iOperationalScore = VR_ScoreOperationalTarget( *pGroup, ubTargetSector, &score );
+
+		// Existing Queen need remains important; operational context modifies rather than replaces it.
+		iOperationalScore += iWeight * 3;
+
+		// Avoid deterministic perfect play. Equivalent candidates can be chosen differently from campaign to campaign.
+		iOperationalScore += (INT32)Random( 31 ) - 15;
+
+		if( iOperationalScore > iBestScore )
+		{
+			iBestScore = iOperationalScore;
+			iBestGarrison = i;
+		}
+	}
+
+	if( iBestGarrison >= 0 )
+	{
+		UINT16 usDefencePoints = 0;
+		if( ReinforcementsApproved( iBestGarrison, &usDefencePoints ) )
+		{
+			SendReinforcementsForGarrison( iBestGarrison, usDefencePoints, pGroup );
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
 void ReassignAIGroup( GROUP **pGroup )
 {
 	INT32 i, iRandom;
@@ -6314,9 +6369,24 @@ void ReassignAIGroup( GROUP **pGroup )
 	//strategic pathing can break if the group is between sectors upon reassignment.
 	SetEnemyGroupSector( *pGroup, ubSectorID );
 
+	VR_EnsureEnemyFormationState( *pGroup );
+	if( (*pGroup)->pEnemyGroup->ubOperationalSupply < 20 || (*pGroup)->pEnemyGroup->ubOperationalMorale < 30 )
+	{
+		VR_SetFormationMission( *pGroup, VR_OPMISSION_REGROUP,
+			(*pGroup)->pEnemyGroup->ubOperationalSupply < 20 ? VR_OPREASON_LOW_SUPPLY : VR_OPREASON_REGROUP );
+		VR_LogOperationalDecision( *pGroup, "NOT_COMBAT_READY", NULL );
+		SendGroupToPool( pGroup );
+		return;
+	}
+
 	if( giRequestPoints <= 0	)
 	{ //we have no request for reinforcements, so send the group to Meduna for reassignment in the pool.
 		SendGroupToPool( pGroup );
+		return;
+	}
+
+	if( VR_TryOperationalGarrisonReassignment( pGroup ) )
+	{
 		return;
 	}
 
