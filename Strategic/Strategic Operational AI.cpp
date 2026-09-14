@@ -221,6 +221,147 @@ void VR_DecayOperationalIntelHourly()
 	}
 }
 
+static UINT8 VR_SelectReserveRole( const GROUP *pGroup )
+{
+	if( !pGroup )
+		return VR_RESERVE_NONE;
+
+	// Reserve depth is organizational, not a difficulty bonus. Small remnants
+	// remain local; larger intact formations can serve at regional/central depth.
+	if( pGroup->ubGroupSize >= 20 )
+		return VR_RESERVE_CENTRAL;
+	if( pGroup->ubGroupSize >= 10 )
+		return VR_RESERVE_REGIONAL;
+	return VR_RESERVE_LOCAL;
+}
+
+void VR_UpdateOperationalReadinessHourly()
+{
+	for( GROUP *pGroup = gpGroupList; pGroup; pGroup = pGroup->next )
+	{
+		VR_EnsureEnemyFormationState( pGroup );
+		if( !VR_FormationStateIsInitialized( pGroup ) )
+			continue;
+
+		ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+
+		if( pEnemy->ubOperationalSupply < 25 )
+		{
+			pEnemy->usOperationalFlags |=
+				VR_OPFLAG_SUPPLY_LOW | VR_OPFLAG_SUPPLY_CRITICAL;
+		}
+		else if( pEnemy->ubOperationalSupply < 50 )
+		{
+			pEnemy->usOperationalFlags |= VR_OPFLAG_SUPPLY_LOW;
+			pEnemy->usOperationalFlags &= ~VR_OPFLAG_SUPPLY_CRITICAL;
+		}
+		else
+		{
+			pEnemy->usOperationalFlags &=
+				~( VR_OPFLAG_SUPPLY_LOW | VR_OPFLAG_SUPPLY_CRITICAL );
+		}
+
+		// Only idle/recovering formations receive reserve classification here.
+		// Active legacy Queen assignments remain untouched.
+		if( pEnemy->ubOperationalMission == VR_OPMISSION_NONE ||
+			pEnemy->ubOperationalMission == VR_OPMISSION_RESERVE )
+		{
+			const UINT8 ubRole = VR_SelectReserveRole( pGroup );
+			if( pEnemy->ubOperationalReserveRole != ubRole )
+			{
+				pEnemy->ubOperationalReserveRole = ubRole;
+				pEnemy->ubOperationalMission = VR_OPMISSION_RESERVE;
+				pEnemy->ubOperationalLastDecisionReason =
+					VR_OPREASON_RESERVE_POSTURE;
+			}
+		}
+
+		// A formation that has completed its retreat and is physically stationary
+		// may progress from REGROUP to RESERVE once basic readiness is restored.
+		if( pEnemy->ubOperationalMission == VR_OPMISSION_REGROUP &&
+			!pGroup->fBetweenSectors &&
+			pEnemy->ubOperationalSupply >= 60 &&
+			pEnemy->ubOperationalMorale >= 55 )
+		{
+			pEnemy->ubOperationalMission = VR_OPMISSION_RESERVE;
+			pEnemy->ubOperationalReserveRole = VR_SelectReserveRole( pGroup );
+			pEnemy->usOperationalFlags &= ~VR_OPFLAG_REGROUPING;
+			pEnemy->ubOperationalLastDecisionReason =
+				VR_OPREASON_RESERVE_POSTURE;
+		}
+	}
+}
+
+void VR_RecordFormationRetreat( GROUP *pGroup, UINT8 ubDestinationSectorID )
+{
+	VR_EnsureEnemyFormationState( pGroup );
+	if( !VR_FormationStateIsInitialized( pGroup ) )
+		return;
+
+	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+	pEnemy->ubOperationalMission = VR_OPMISSION_RETREAT;
+	pEnemy->ubOperationalTargetSectorID = ubDestinationSectorID;
+	pEnemy->ubOperationalReserveRole = VR_RESERVE_NONE;
+	pEnemy->usOperationalFlags |=
+		VR_OPFLAG_RETREATED_ONCE | VR_OPFLAG_REGROUPING;
+	if( pEnemy->ubOperationalRetreatCount < 255 )
+		++pEnemy->ubOperationalRetreatCount;
+	pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_RETREAT;
+
+	const unsigned long uiDecision = VRAnalyticsBeginDecision(
+		VR_ANALYTICS_STRATEGIC, "enemy_formation",
+		(unsigned int)pEnemy->usFormationID, "formation_retreat" );
+	if( uiDecision )
+	{
+		VRAnalyticsStateInt( uiDecision, "group_id", pGroup->ubGroupID );
+		VRAnalyticsStateInt( uiDecision, "destination_sector", ubDestinationSectorID );
+		VRAnalyticsStateInt( uiDecision, "retreat_count",
+			pEnemy->ubOperationalRetreatCount );
+		VRAnalyticsCommitDecision( uiDecision, "retreat",
+			ubDestinationSectorID, pGroup->ubGroupSize,
+			"persistent formation retreat state" );
+	}
+}
+
+void VR_RecordFormationArrival( GROUP *pGroup )
+{
+	VR_EnsureEnemyFormationState( pGroup );
+	if( !VR_FormationStateIsInitialized( pGroup ) )
+		return;
+
+	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+	const UINT8 ubSectorID =
+		(UINT8)SECTOR( pGroup->ubSectorX, pGroup->ubSectorY );
+
+	if( pEnemy->ubOperationalMission == VR_OPMISSION_RETREAT )
+	{
+		pEnemy->ubOperationalMission = VR_OPMISSION_REGROUP;
+		pEnemy->ubOperationalTargetSectorID = ubSectorID;
+		pEnemy->ubOperationalReserveRole = VR_RESERVE_NONE;
+		pEnemy->usOperationalFlags |= VR_OPFLAG_REGROUPING;
+		pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_REGROUP;
+	}
+	else if( pEnemy->ubOperationalMission == VR_OPMISSION_REGROUP )
+	{
+		pEnemy->ubOperationalTargetSectorID = ubSectorID;
+	}
+
+	const unsigned long uiDecision = VRAnalyticsBeginDecision(
+		VR_ANALYTICS_STRATEGIC, "enemy_formation",
+		(unsigned int)pEnemy->usFormationID, "formation_arrival" );
+	if( uiDecision )
+	{
+		VRAnalyticsStateInt( uiDecision, "group_id", pGroup->ubGroupID );
+		VRAnalyticsStateInt( uiDecision, "sector", ubSectorID );
+		VRAnalyticsStateInt( uiDecision, "mission",
+			pEnemy->ubOperationalMission );
+		VRAnalyticsCommitDecision( uiDecision, "arrive",
+			ubSectorID, pGroup->ubGroupSize,
+			"persistent formation arrival state" );
+	}
+}
+
+
 static INT32 VR_OperationalAbs( INT32 iValue )
 {
 	return iValue < 0 ? -iValue : iValue;
@@ -331,6 +472,54 @@ UINT8 VR_FindBestOperationalTarget( GROUP *pGroup, INT32 *piBestScore )
 	if( piBestScore )
 		*piBestScore = iBestScore;
 	return ubBestSector;
+}
+
+
+void VR_TraceOperationalRecommendationsHourly()
+{
+	for( GROUP *pGroup = gpGroupList; pGroup; pGroup = pGroup->next )
+	{
+		if( !VR_FormationStateIsInitialized( pGroup ) ||
+			pGroup->fBetweenSectors )
+		{
+			continue;
+		}
+
+		INT32 iBestScore = 0;
+		const UINT8 ubBestSector =
+			VR_FindBestOperationalTarget( pGroup, &iBestScore );
+		if( ubBestSector == 0xff )
+			continue;
+
+		VR_OPERATIONAL_SCORE Score;
+		VR_ScoreOperationalTarget( pGroup, ubBestSector, &Score );
+
+		ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+		const unsigned long uiDecision = VRAnalyticsBeginDecision(
+			VR_ANALYTICS_STRATEGIC, "enemy_formation",
+			(unsigned int)pEnemy->usFormationID, "operational_target_recommendation" );
+		if( !uiDecision )
+			continue;
+
+		VRAnalyticsStateInt( uiDecision, "group_id", pGroup->ubGroupID );
+		VRAnalyticsStateInt( uiDecision, "mission", pEnemy->ubOperationalMission );
+		VRAnalyticsStateInt( uiDecision, "supply", pEnemy->ubOperationalSupply );
+		VRAnalyticsStateInt( uiDecision, "morale", pEnemy->ubOperationalMorale );
+		VRAnalyticsStateInt( uiDecision, "intel_confidence",
+			pEnemy->ubOperationalIntelConfidence );
+		VRAnalyticsStateInt( uiDecision, "base_priority", Score.iBasePriority );
+		VRAnalyticsStateInt( uiDecision, "ownership_value", Score.iOwnershipValue );
+		VRAnalyticsStateInt( uiDecision, "town_value", Score.iTownValue );
+		VRAnalyticsStateInt( uiDecision, "mine_value", Score.iMineValue );
+		VRAnalyticsStateInt( uiDecision, "sam_value", Score.iSAMValue );
+		VRAnalyticsStateInt( uiDecision, "player_force_risk", Score.iPlayerForceRisk );
+		VRAnalyticsStateInt( uiDecision, "militia_risk", Score.iMilitiaRisk );
+		VRAnalyticsStateInt( uiDecision, "distance_cost", Score.iDistanceCost );
+		VRAnalyticsStateInt( uiDecision, "supply_risk", Score.iSupplyRisk );
+		VRAnalyticsCommitDecision( uiDecision, "recommend_target",
+			ubBestSector, iBestScore,
+			"advisory only; operational movement loop disabled" );
+	}
 }
 
 UINT16 VR_GetFormationID( GROUP *pGroup )
