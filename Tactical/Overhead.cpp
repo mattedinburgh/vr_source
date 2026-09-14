@@ -113,6 +113,7 @@
 #include "CampaignStats.h"				// added by Flugente
 #include "Creature Spreading.h"			// added by Flugente forResetCreatureAttackVariables()
 #endif
+#include "Campaign Tactical Telemetry.h"
 #include "connect.h"
 
 #include "Luaglobal.h"
@@ -6025,6 +6026,7 @@ void EnterCombatMode( UINT8 ubStartingTeam )
     }
 
     CommonEnterCombatModeCode( );
+    VR_TacticalTelemetryBattleStart( ubStartingTeam );
 
     DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"EnterCombatMode continuing...");
 
@@ -7054,6 +7056,10 @@ BOOLEAN CheckForEndOfBattle( BOOLEAN fAnEnemyRetreated )
 			gGameExternalOptions.ubDefeatMode == 4 && !fFoundAliveMerc)
 			fDefeat = TRUE;
 
+		// Freeze the forensic battle state before defeat cleanup, sector transfer,
+		// strategic ownership updates or other post-battle normalization.
+		VR_TacticalTelemetryBattleEnd( fDefeat ? "DEFEAT" : "TACTICAL_LOSS_NO_DEFEAT", fAnEnemyRetreated );
+
         // CJC: End AI's turn here.... first... so that UnSetUIBusy will succeed if militia win
         // battle for us
         EndAllAITurns( );
@@ -7164,6 +7170,10 @@ BOOLEAN CheckForEndOfBattle( BOOLEAN fAnEnemyRetreated )
                 return( FALSE );
             }
         }
+
+        // Freeze the forensic battle state after final incapacitated-enemy resolution,
+        // but before prisoner removal, militia restoration, autobandage and sector cleanup.
+        VR_TacticalTelemetryBattleEnd( "VICTORY", fAnEnemyRetreated );
 
         // Flugente: remove those enemies that are captured and add them to the prisoner pool
         RemoveCapturedEnemiesFromSectorInfo( gWorldSectorX, gWorldSectorY, gbWorldSectorZ );
@@ -8816,6 +8826,10 @@ void HandleSuppressionFire( UINT8 ubTargetedMerc, UINT8 ubCausedAttacker )
 			// show suppression counters - use original damage counter timer for this
 			if( showSuppression && ubPointsLost > 0 )
 					SetDamageDisplayCounter( pSoldier );
+
+            // Record resolved suppression before the temporary point accumulator is cleared.
+            VR_TacticalTelemetrySuppression( pSoldier, ubCausedAttacker,
+                pSoldier->ubSuppressionPoints, ubPointsLost, ubNewStance );
 
             // HEADROCK HAM 3.5: After sufficient testing, suppression clearing now works immediately at the end of
             // the attack. ubAPsLostToSuppression is only cleared at the end of the turn, but no longer plays a role
