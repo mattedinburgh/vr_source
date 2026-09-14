@@ -18,8 +18,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: vengeance-integration-build
-  cancel-in-progress: true
+  group: ja2-render-shared
+  cancel-in-progress: false
 
 jobs:
   build-release:
