@@ -3143,6 +3143,8 @@ INT32 FindAdvanceSpot(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bAction, UI
 	INT32	iSearchRange = min(AI_PATHCOST_RADIUS, TACTICAL_RANGE);
 	INT16	sMaxLeft, sMaxRight, sMaxUp, sMaxDown, sXOffset, sYOffset;
 	INT32	iPathCost, iBestPathCost = 0;
+	INT32	iBestUtility = -100000, iUtility;
+	INT8	bTacticalIntent, bTacticalRole;
 	INT16	usMovementMode;
 	INT32	iRoamRange, iDistFromOrigin, sOrigin;
 	//BOOLEAN	fClimbingNecessary;
@@ -3162,6 +3164,10 @@ INT32 FindAdvanceSpot(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bAction, UI
 	}
 
 	fHasMortar = AICheckIsMortarOperator(pSoldier);
+
+	// Use the shared squad plan when ranking reachable advance positions.
+	bTacticalIntent = AITacticalIntent(pSoldier, sTargetSpot);
+	bTacticalRole = AITacticalRole(pSoldier, sTargetSpot);
 
 	usMovementMode = DetermineMovementMode(pSoldier, bAction);
 
@@ -3397,10 +3403,25 @@ INT32 FindAdvanceSpot(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bAction, UI
 				continue;
 			}
 
-			//if( sBestSpot == NOWHERE || iPathCost < iBestPathCost )
-			if (iPathCost < iBestPathCost)
+			// Modern utility ranking: path progress is still useful, but it competes
+			// with exposure, cover, mutual support, spacing, crossfire geometry and
+			// the soldier's assigned fireteam role. This is deliberately more
+			// expensive than the old shortest-path choice; tactical quality wins.
+			iUtility = AIUtilityPositionScore(pSoldier, sGridNo, sTargetSpot,
+				bTacticalIntent, bTacticalRole);
+			iUtility -= __min((INT32)30, iPathCost / 2);
+			iUtility -= __min((INT32)18, PythSpacesAway(pSoldier->sGridNo, sGridNo));
+
+			if (ubType == ADVANCE_SPOT_SIGHT_COVER)
+				iUtility += 10;
+			else if (ubType == ADVANCE_SPOT_PRONE_COVER)
+				iUtility += 6;
+
+			if (sBestSpot == NOWHERE || iUtility > iBestUtility ||
+				(iUtility == iBestUtility && iPathCost < iBestPathCost))
 			{
 				sBestSpot = sGridNo;
+				iBestUtility = iUtility;
 				iBestPathCost = iPathCost;
 			}
 		}
