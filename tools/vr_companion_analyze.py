@@ -109,8 +109,8 @@ def tactical_summary(
 
     ap_spent: List[float] = []
     grid_delta: List[float] = []
-    attack_hits = 0
-    attack_samples = 0
+    last_attack_hit_flags = 0
+    completed_action_samples = 0
 
     for outcome in outcomes:
         if outcome.get("metric_a") == "grid_delta":
@@ -119,8 +119,8 @@ def tactical_summary(
             ap_spent.append(float(outcome.get("value_b", 0)))
         detail = parse_detail(outcome.get("detail"))
         if "last_attack_hit" in detail:
-            attack_samples += 1
-            attack_hits += 1 if detail["last_attack_hit"] == "1" else 0
+            completed_action_samples += 1
+            last_attack_hit_flags += 1 if detail["last_attack_hit"] == "1" else 0
 
     attack_cover_pairs = 0
     defense_wins = 0
@@ -166,8 +166,8 @@ def tactical_summary(
         "superseded_rate": pct(status.get("superseded", 0), total_outcomes),
         "avg_ap_spent": safe_mean(ap_spent),
         "avg_abs_grid_delta": safe_mean(grid_delta),
-        "attack_hit_rate": pct(attack_hits, attack_samples),
-        "attack_hit_samples": attack_samples,
+        "last_attack_hit_flag_rate": pct(last_attack_hit_flags, completed_action_samples),
+        "completed_action_samples": completed_action_samples,
         "action_counts": dict(actions.most_common()),
         "attack_cover_pairs": attack_cover_pairs,
         "defense_wins": defense_wins,
@@ -175,6 +175,54 @@ def tactical_summary(
         "ties": ties,
         "avg_cover_minus_attack_score": safe_mean(score_gaps),
         "diagnostics": dict(diagnostics.most_common()),
+    }
+
+
+def battle_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    starts = {
+        event.get("battle_id"): event
+        for event in events
+        if event.get("kind") == "battle_start" and isinstance(event.get("battle_id"), int)
+    }
+    ends = [
+        event
+        for event in events
+        if event.get("kind") == "battle_end" and isinstance(event.get("battle_id"), int)
+    ]
+
+    results = Counter(event.get("result", "unknown") for event in ends)
+    resolved_ids = {event.get("battle_id") for event in ends}
+    unresolved_ids = sorted(battle_id for battle_id in starts if battle_id not in resolved_ids)
+
+    player_deltas = [
+        float(event.get("player_count_delta", 0))
+        for event in ends
+        if isinstance(event.get("player_count_delta"), (int, float))
+    ]
+    enemy_deltas = [
+        float(event.get("enemy_count_delta", 0))
+        for event in ends
+        if isinstance(event.get("enemy_count_delta"), (int, float))
+    ]
+    militia_deltas = [
+        float(event.get("militia_count_delta", 0))
+        for event in ends
+        if isinstance(event.get("militia_count_delta"), (int, float))
+    ]
+
+    player_successes = results.get("victory", 0) + results.get("enemy_retreat", 0)
+    resolved = len(ends)
+
+    return {
+        "starts": len(starts),
+        "resolved": resolved,
+        "unresolved": len(unresolved_ids),
+        "unresolved_ids": unresolved_ids,
+        "results": dict(results.most_common()),
+        "player_success_rate": pct(player_successes, resolved),
+        "avg_player_count_delta": safe_mean(player_deltas),
+        "avg_enemy_count_delta": safe_mean(enemy_deltas),
+        "avg_militia_count_delta": safe_mean(militia_deltas),
     }
 
 
@@ -245,6 +293,7 @@ def summarize(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     decisions = build_decisions(events)
     return {
         "session": session_summary(events),
+        "battle": battle_summary(events),
         "tactical": tactical_summary(events, decisions),
         "strategic": strategic_summary(events, decisions),
     }
@@ -266,7 +315,10 @@ def comparison_rows(current: Dict[str, Any], baseline: Dict[str, Any]) -> List[T
         ("Tactical rejected rate %", "tactical", "rejected_rate"),
         ("Tactical superseded rate %", "tactical", "superseded_rate"),
         ("Tactical average AP spent", "tactical", "avg_ap_spent"),
-        ("Tactical attack hit rate %", "tactical", "attack_hit_rate"),
+        ("Completed actions with last-attack-hit flag %", "tactical", "last_attack_hit_flag_rate"),
+        ("Battle player success rate %", "battle", "player_success_rate"),
+        ("Battle average player-count delta", "battle", "avg_player_count_delta"),
+        ("Battle average enemy-count delta", "battle", "avg_enemy_count_delta"),
         ("Cover - attack adjusted score", "tactical", "avg_cover_minus_attack_score"),
         ("Strategic no-action rate %", "strategic", "no_action_rate"),
         ("Strategic candidates / decision", "strategic", "avg_candidates_per_decision"),
@@ -284,9 +336,21 @@ def comparison_rows(current: Dict[str, Any], baseline: Dict[str, Any]) -> List[T
 
 def recommendations(summary: Dict[str, Any], baseline: Optional[Dict[str, Any]]) -> List[str]:
     findings: List[str] = []
+    battle = summary["battle"]
+    battle = summary["battle"]
     tac = summary["tactical"]
     strat = summary["strategic"]
 
+    if battle["unresolved"]:
+        findings.append(
+            f"Battle lifecycle telemetry has {battle['unresolved']} unresolved battle(s). "
+            "Use the Black Box battle IDs to determine whether the session ended mid-battle or an end condition bypassed instrumentation."
+        )
+    if battle["resolved"] >= 5 and battle["player_success_rate"] > 90.0:
+        findings.append(
+            f"Across {battle['resolved']} resolved battles, player success is {battle['player_success_rate']:.1f}%. "
+            "Do not tune difficulty from this alone, but inspect whether strategic pressure and tactical survival are both underperforming."
+        )
     if tac["rejected_rate"] > 5.0:
         findings.append(
             f"Tactical planning/execution mismatch: {tac['rejected_rate']:.1f}% of recorded outcomes were rejected. "
@@ -327,8 +391,15 @@ def recommendations(summary: Dict[str, Any], baseline: Optional[Dict[str, Any]])
         )
 
     if baseline:
+        base_battle = baseline["battle"]
         base_tac = baseline["tactical"]
         base_strat = baseline["strategic"]
+        if battle["resolved"] >= 3 and base_battle["resolved"] >= 3:
+            if battle["player_success_rate"] > base_battle["player_success_rate"] + 15.0:
+                findings.append(
+                    "Change-impact signal: player battle success increased by more than 15 percentage points versus baseline. "
+                    "Inspect tactical and strategic causal chains before attributing this to any single change."
+                )
         if tac["rejected_rate"] > base_tac["rejected_rate"] + 3.0:
             findings.append(
                 "Regression versus baseline: tactical rejected-action rate increased by more than 3 percentage points."
@@ -374,6 +445,31 @@ def render_markdown(
         f"| Attack-vs-cover comparisons | {tac['attack_cover_pairs']} |",
         f"| Cover wins / attack wins / ties | {tac['defense_wins']} / {tac['offense_wins']} / {tac['ties']} |",
         f"| Mean cover-minus-attack adjusted score | {fmt(tac['avg_cover_minus_attack_score'])} |",
+        "",
+        "### Battle outcomes",
+        "",
+        "| Metric | Result |",
+        "|---|---:|",
+        f"| Battles started | {battle['starts']} |",
+        f"| Battles resolved | {battle['resolved']} |",
+        f"| Unresolved battle IDs | {', '.join(map(str, battle['unresolved_ids'])) if battle['unresolved_ids'] else 'none'} |",
+        f"| Player success rate | {battle['player_success_rate']:.1f}% |",
+        f"| Mean player-count delta | {fmt(battle['avg_player_count_delta'])} |",
+        f"| Mean enemy-count delta | {fmt(battle['avg_enemy_count_delta'])} |",
+        f"| Mean militia-count delta | {fmt(battle['avg_militia_count_delta'])} |",
+        "",
+        "#### Results",
+        "",
+    ]
+
+    if battle["results"]:
+        lines += ["| Result | Count |", "|---|---:|"]
+        for result, count in battle["results"].items():
+            lines.append(f"| {result} | {count} |")
+    else:
+        lines.append("No completed battles recorded.")
+
+    lines += [
         "",
         "### Tactical action mix",
         "",
