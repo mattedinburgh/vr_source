@@ -135,17 +135,61 @@ jobs:
             Remove-Item -LiteralPath $Path -Recurse -Force
           }
 
+          # Cancelled self-hosted runs can leave old render sandboxes behind. Since this
+          # workflow is serialized by ja2-render-shared, no other A3 render can be using
+          # one now. Reclaim those stale folders before allocating anything new.
+          Get-ChildItem -LiteralPath 'C:\VENGENCE' -Force -Directory -Filter 'JA2_RENDER_SANDBOX_*' -ErrorAction SilentlyContinue |
+            ForEach-Object {
+              try {
+                Write-Host "Reclaiming stale render sandbox: $($_.FullName)"
+                Remove-SandboxSafely -Path $_.FullName
+              } catch {
+                Write-Warning "Could not fully remove stale sandbox $($_.FullName): $($_.Exception.Message)"
+              }
+            }
+
           Remove-SandboxSafely -Path $sandbox
           New-Item -ItemType Directory -Force -Path $sandbox | Out-Null
 
-          # Copy only root files (DLLs, INIs, renderer files, etc.). The multi-gigabyte
-          # immutable game data directories are exposed through NTFS junctions below.
+          $driveBefore = Get-PSDrive -Name C
+          Write-Host ("C: free before sandbox root setup: {0:N2} GB" -f ($driveBefore.Free / 1GB))
+
+          # Do not duplicate the game-root payload. The sandbox and the live game are on
+          # the same NTFS volume, so immutable runtime files can be hard-linked at zero
+          # additional payload cost. Ja2.ini and ddraw.ini stay private copies because
+          # the render harness edits only those two files.
+          $privateRootFiles = @('Ja2.ini', 'ddraw.ini')
+          $skipRootFiles = @('JA2_EN_Release.exe', 'MapEditor_Vengeance.exe')
+
           Get-ChildItem -LiteralPath $gameRoot -Force -File | ForEach-Object {
-            if ($_.Name -notlike '*.log' -and $_.Name -notlike '*.pdb' -and
-                $_.Name -ne 'JA2_EN_Release.exe' -and $_.Name -ne 'MapEditor_Vengeance.exe') {
-              Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $sandbox $_.Name) -Force
+            if ($_.Name -like '*.log' -or $_.Name -like '*.pdb' -or $skipRootFiles -contains $_.Name) {
+              return
+            }
+
+            $destination = Join-Path $sandbox $_.Name
+            if ($privateRootFiles -contains $_.Name) {
+              Copy-Item -LiteralPath $_.FullName -Destination $destination -Force
+              Write-Host "Private copy: $($_.Name)"
+              return
+            }
+
+            try {
+              New-Item -ItemType HardLink -Path $destination -Target $_.FullName -ErrorAction Stop | Out-Null
+              Write-Host "Hard link: $($_.Name)"
+            } catch {
+              # Small-file fallback only. A large fallback copy would recreate the exact
+              # disk-exhaustion failure this step is designed to eliminate.
+              if ($_.Length -le 16MB) {
+                Copy-Item -LiteralPath $_.FullName -Destination $destination -Force
+                Write-Warning "Hard link failed for $($_.Name); copied small file instead."
+              } else {
+                throw "Could not hard-link large root file $($_.FullName) ($($_.Length) bytes): $($_.Exception.Message)"
+              }
             }
           }
+
+          $driveAfter = Get-PSDrive -Name C
+          Write-Host ("C: free after sandbox root setup: {0:N2} GB" -f ($driveAfter.Free / 1GB))
 
           $excludedDirs = @(
             '00000', 'Profiles', 'MAP_PREVIEWS', '.git', 'FORK',
