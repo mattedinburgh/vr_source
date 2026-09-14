@@ -200,6 +200,8 @@ namespace
 		JsonString( gFile, kind );
 		if( decisionId )
 			fprintf( gFile, ",\"decision_id\":%lu", decisionId );
+		if( layer == VR_ANALYTICS_TACTICAL && gActiveBattleId )
+			fprintf( gFile, ",\"battle_id\":%lu", gActiveBattleId );
 		return gFile;
 	}
 
