@@ -53,17 +53,19 @@ def parse_detail(detail: Any) -> Dict[str, str]:
     return result
 
 
-def build_decisions(events: Iterable[Dict[str, Any]]) -> Dict[int, Dict[str, Any]]:
-    decisions: Dict[int, Dict[str, Any]] = {}
+def build_decisions(events: Iterable[Dict[str, Any]]) -> Dict[Tuple[Any, int], Dict[str, Any]]:
+    decisions: Dict[Tuple[Any, int], Dict[str, Any]] = {}
     for event in events:
         decision_id = event.get("decision_id")
         if not isinstance(decision_id, int):
             continue
 
+        key = (event.get("session"), decision_id)
         record = decisions.setdefault(
-            decision_id,
+            key,
             {
                 "id": decision_id,
+                "session": event.get("session"),
                 "layer": event.get("layer"),
                 "begin": None,
                 "states": {},
@@ -98,7 +100,7 @@ def pct(numerator: float, denominator: float) -> float:
 
 
 def tactical_summary(
-    events: List[Dict[str, Any]], decisions: Dict[int, Dict[str, Any]]
+    events: List[Dict[str, Any]], decisions: Dict[Tuple[Any, int], Dict[str, Any]]
 ) -> Dict[str, Any]:
     tactical = [d for d in decisions.values() if d.get("layer") == "tactical"]
     commits = [c for d in tactical for c in d["commits"] if "action" in c]
@@ -180,7 +182,7 @@ def tactical_summary(
 
 def battle_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     starts = {
-        event.get("battle_id"): event
+        (event.get("session"), event.get("battle_id")): event
         for event in events
         if event.get("kind") == "battle_start" and isinstance(event.get("battle_id"), int)
     }
@@ -191,8 +193,13 @@ def battle_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     ]
 
     results = Counter(event.get("result", "unknown") for event in ends)
-    resolved_ids = {event.get("battle_id") for event in ends}
-    unresolved_ids = sorted(battle_id for battle_id in starts if battle_id not in resolved_ids)
+    resolved_ids = {(event.get("session"), event.get("battle_id")) for event in ends}
+    unresolved_keys = sorted(
+        (session, battle_id)
+        for session, battle_id in starts
+        if (session, battle_id) not in resolved_ids
+    )
+    unresolved_ids = [f"{session}:{battle_id}" for session, battle_id in unresolved_keys]
 
     player_deltas = [
         float(event.get("player_count_delta", 0))
@@ -227,7 +234,7 @@ def battle_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def strategic_summary(
-    events: List[Dict[str, Any]], decisions: Dict[int, Dict[str, Any]]
+    events: List[Dict[str, Any]], decisions: Dict[Tuple[Any, int], Dict[str, Any]]
 ) -> Dict[str, Any]:
     strategic = [d for d in decisions.values() if d.get("layer") == "strategic"]
     commits = [c for d in strategic for c in d["commits"]]
