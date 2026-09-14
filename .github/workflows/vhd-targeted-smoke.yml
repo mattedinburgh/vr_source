@@ -8,6 +8,7 @@ on:
       - 'Standard Gaming Platform/**'
       - 'TileEngine/**'
       - 'Tactical/**'
+      - 'Editor/**'
       - '.github/workflows/vhd-targeted-smoke.yml'
   workflow_dispatch:
 
@@ -30,10 +31,10 @@ jobs:
       - name: Set up MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Build SGP TileEngine Tactical
+      - name: Build SGP TileEngine Tactical Editor
         shell: powershell
         run: |
-          $projects = @('SGP','TileEngine','Tactical')
+          $projects = @('SGP','TileEngine','Tactical','Editor')
           foreach ($project in $projects) {
             $log = Join-Path $env:GITHUB_WORKSPACE ("vhd-" + $project + ".log")
             Write-Host "===== Building $project ====="
