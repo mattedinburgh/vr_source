@@ -40,6 +40,7 @@
 // Lion Paratroops
 #include "Strategic Town Loyalty.h"
 #include "VRAnalytics.h"
+#include "Strategic Operational AI.h"
 // End Lion
 
 #define SAI_VERSION		29
@@ -6617,6 +6618,9 @@ void MoveSAIGroupToSector( GROUP **pGroup, UINT8 ubSectorID, UINT32 uiMoveCode, 
 	}
 
 	(*pGroup)->pEnemyGroup->ubIntention = ubIntention;
+	// Mirror legacy Queen orders into persistent formation metadata only. The
+	// legacy Queen AI remains the movement/assignment authority at this stage.
+	VR_RecordLegacyAssignment( *pGroup, ubSectorID, ubIntention );
 	(*pGroup)->ubMoveType = ONE_WAY;
 
 	if( (*pGroup)->ubSectorX == ubDstSectorX && (*pGroup)->ubSectorY == ubDstSectorY )
