@@ -121,6 +121,26 @@ class CompanionAnalysisTests(unittest.TestCase):
         self.assertEqual(1, result["retreat_eligible"]["organized_disengagement"])
         self.assertEqual(0, result["retreat_eligible"].get("sector_escape", 0))
 
+    def test_blackbox_v2_keeps_repeated_assessments(self):
+        events = [
+            {"schema": "vr-blackbox-1", "session": 10, "layer": "tactical",
+             "kind": "decision_begin", "decision_id": 2},
+            {"schema": "vr-blackbox-1", "session": 10, "layer": "tactical",
+             "kind": "assessment", "decision_id": 2,
+             "assessment_type": "retreat_courage",
+             "hold_confidence": 80, "perceived_friendly_strength": 600,
+             "perceived_enemy_strength": 300},
+            {"schema": "vr-blackbox-1", "session": 10, "layer": "tactical",
+             "kind": "assessment", "decision_id": 2,
+             "assessment_type": "retreat_courage",
+             "hold_confidence": 40, "perceived_friendly_strength": 300,
+             "perceived_enemy_strength": 300},
+        ]
+        decisions = companion.build_decisions(events)
+        result = companion.tactical_summary(events, decisions)
+        self.assertEqual(60.0, result["v2_state_means"]["hold_confidence"])
+        self.assertEqual(1.5, result["avg_perceived_force_ratio"])
+
 
 if __name__ == "__main__":
     unittest.main()
