@@ -62,6 +62,9 @@
     <CharacterSet>NotSet</CharacterSet>
     <PlatformToolset>v120_xp</PlatformToolset>
   </PropertyGroup>
+  <!-- Optional machine-local toolset override.
+       Use ja2_LocalToolset.props instead of retargeting this tracked project file. -->
+  <Import Project="ja2_LocalToolset.props" Condition="Exists('ja2_LocalToolset.props')" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
