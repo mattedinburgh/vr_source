@@ -7,6 +7,8 @@ on:
     paths:
       - 'MapPreviewTrigger/A3_RENDER.txt'
       - '.github/workflows/autonomous-map-preview.yml'
+      - 'TileEngine/worlddef.cpp'
+      - 'Tools/ComposeA3CropMaster.ps1'
   workflow_dispatch:
 
 permissions:
