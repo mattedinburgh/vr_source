@@ -37,6 +37,10 @@
 	#include "interface dialogue.h"
 #endif
 
+#include "Strategic Modernization.h"
+#include "Strategic Operational AI.h"
+#include "Strategic AI Diagnostics.h"
+
 // Lion Paratroops
 #include "Strategic Town Loyalty.h"
 // End Lion
@@ -1130,6 +1134,8 @@ void InitStrategicAI()
 	INT32 iPercentElitesBonus;
 	INT32 iMaxEnemyGroupSize = gGameExternalOptions.iMaxEnemyGroupSize;
 	DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Strategic3");
+	VR_InitStrategicModernization();
+	VR_StrategicDiagnosticsInit();
 
 	//Initialize the basic variables.
 
@@ -5136,7 +5142,21 @@ void ExecuteStrategicAIAction( UINT16 usActionCode, INT16 sSectorX, INT16 sSecto
 // WDS - New AI
 void HourlyCheckStrategicAI()
 {
-	// Nothing (yet!)
+	// Operational state is persistent, but decisions remain deliberately imperfect.
+	VR_HourlyOperationalUpdate();
+	VR_StrategicDiagnosticsHourly();
+
+	// A ready persistent reserve may be reconsidered when the legacy Queen AI has
+	// unmet reinforcement demand. ReassignAIGroup still preserves legacy fallback.
+	if( giRequestPoints > 0 )
+	{
+		GROUP *pReserve = VR_FindReadyOperationalReserve();
+		if( pReserve )
+		{
+			VR_LogOperationalDecision( pReserve, "RESERVE_DISPATCH_POLL", NULL );
+			ReassignAIGroup( &pReserve );
+		}
+	}
 }
 
 
@@ -6491,6 +6511,8 @@ void MoveSAIGroupToSector( GROUP **pGroup, UINT8 ubSectorID, UINT32 uiMoveCode, 
 	}
 
 	(*pGroup)->pEnemyGroup->ubIntention = ubIntention;
+	VR_OnEnemyGroupAssigned( *pGroup, ubSectorID, ubIntention );
+	VR_StrategicDiagnosticsGroupOrder( *pGroup, ubSectorID, ubIntention, uiMoveCode );
 	(*pGroup)->ubMoveType = ONE_WAY;
 
 	if( (*pGroup)->ubSectorX == ubDstSectorX && (*pGroup)->ubSectorY == ubDstSectorY )
