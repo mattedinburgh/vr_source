@@ -2270,7 +2270,6 @@ void EnemyCapturesPlayerSoldier( SOLDIERTYPE *pSoldier )
 	{
 		// Alma is no longer the active initial POW destination. Use the existing
 		// interrogation sector as the persistent detention/holding location.
-	{
 		//-teleport him to N7
 		pSoldier->sSectorX = gModSettings.ubMeanwhileInterrogatePOWSectorX; //7
 		pSoldier->sSectorY = gModSettings.ubMeanwhileInterrogatePOWSectorY; //14
