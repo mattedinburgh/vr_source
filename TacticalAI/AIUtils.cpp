@@ -5251,7 +5251,10 @@ static INT8 AISharedIntentVote(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, UINT32 
 
 		INT8 bFriendIntent = gbAITacticalIntentPlan[pFriend->ubID];
 		if (bFriendIntent >= AI_INTENT_HOLD && bFriendIntent <= AI_INTENT_RESCUE)
-			++ubVotes[bFriendIntent];
+		{
+			UINT8 ubWeight = (AICheckIsCommander(pFriend) || AICheckIsOfficer(pFriend)) ? 2 : 1;
+			ubVotes[bFriendIntent] += ubWeight;
+		}
 	}
 
 	INT8 bBestIntent = -1;
@@ -5265,9 +5268,9 @@ static INT8 AISharedIntentVote(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, UINT32 
 		}
 	}
 
-	// One nearby leader/partner can seed a plan; two votes make it a strong squad
-	// preference. Safety checks in AITacticalIntent can still override it.
-	return ubBestVotes > 0 ? bBestIntent : -1;
+	// A commander/officer carries two votes; otherwise at least two nearby soldiers
+	// must already agree before the blackboard overrides an individual's neutral plan.
+	return ubBestVotes >= 2 ? bBestIntent : -1;
 }
 
 static UINT8 AIPlannedRoleCount(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bRole, UINT32 uiNow)
