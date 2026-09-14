@@ -30,6 +30,9 @@ jobs:
           python -m py_compile tools/vr_companion_analyze.py
           python -m py_compile tools/test_vr_companion.py
 
+      - name: Compile logger as C++03
+        run: g++ -std=c++03 -Wall -Wextra -pedantic -c VRAnalytics.cpp -o /tmp/VRAnalytics.o
+
       - name: Run Companion unit tests
         working-directory: tools
         run: python -m unittest -v test_vr_companion.py
