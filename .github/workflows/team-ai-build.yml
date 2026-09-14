@@ -1,0 +1,34 @@
+name: Team AI compile check
+
+on:
+  push:
+    branches:
+      - ai/team-coordination
+
+jobs:
+  build-tactical-ai:
+    runs-on: self-hosted
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build TacticalAI
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (!(Test-Path $vswhere)) {
+            throw "vswhere.exe not found"
+          }
+
+          $msbuild = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          if (!$msbuild) {
+            throw "MSBuild not found"
+          }
+
+          Write-Host "Using MSBuild: $msbuild"
+          & $msbuild ".\ja2_VS2013.sln" /t:TacticalAI /m /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /v:minimal
+          if ($LASTEXITCODE -ne 0) {
+            throw "TacticalAI build failed with exit code $LASTEXITCODE"
+          }
