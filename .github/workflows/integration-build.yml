@@ -5,20 +5,14 @@ on:
     branches:
       - install/all-2026-09-12
     paths:
-      - 'GameVersion.h'
-      - 'SaveLoadGame.cpp'
-      - 'Tactical/**'
-      - 'TacticalAI/**'
-      - 'ModularizedTacticalAI/**'
-      - 'Strategic/**'
-      - 'TileEngine/**'
-      - 'Standard Gaming Platform/**'
-      - 'Utils/**'
-      - 'Editor/**'
-      - 'Laptop/**'
-      - 'Console/**'
-      - 'lua/**'
-      - 'ext/**'
+      - '**/*.c'
+      - '**/*.cc'
+      - '**/*.cpp'
+      - '**/*.h'
+      - '**/*.hpp'
+      - '**/*.vcxproj'
+      - '**/*.props'
+      - '*.sln'
       - 'DEPLOY_*.ps1'
       - '.github/workflows/integration-build.yml'
   workflow_dispatch:
