@@ -762,15 +762,14 @@ void GetAmbientDataPtr( AMBIENTDATA_STRUCT **ppAmbData, UINT16 *pusNumData )
 void StopAmbients( )
 {
 	SoundStopAllRandom( );
-	StopVRSectorAmbienceLoop( );
-	gfVRSectorAmbienceProfileActive = FALSE;
+	ResetVRSectorAmbience( );
 }
 
 void HandleNewSectorAmbience( UINT8 ubAmbientID )
 {
 	// A newly loaded sector owns a fresh ambience state.
 	SoundStopAllRandom( );
-	StopVRSectorAmbienceLoop( );
+	ResetVRSectorAmbience( );
 	DeleteAllStrategicEventsOfType( EVENT_AMBIENT );
 
 	// The Vengeance profile layer works both above and below ground.  Missing or
@@ -794,8 +793,7 @@ void HandleNewSectorAmbience( UINT8 ubAmbientID )
 void DeleteAllAmbients()
 {
 	SoundStopAllRandom();
-	StopVRSectorAmbienceLoop( );
-	gfVRSectorAmbienceProfileActive = FALSE;
+	ResetVRSectorAmbience( );
 	DeleteAllStrategicEventsOfType( EVENT_AMBIENT );
 }
 
