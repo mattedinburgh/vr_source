@@ -5339,6 +5339,9 @@ void InvestigateSector( UINT8 ubSectorID )
 			return;
 		}
 
+		// Scouts/investigators have confirmed activity in the sector; distribute a stronger but still imperfect report.
+		VR_ReportOperationalIntel( ubSectorID, 85 );
+
 		//Now we have decided who to send, so send them.
 		for( i = 0; i < 4; i++ )
 		{
@@ -5389,6 +5392,8 @@ void StrategicHandleQueenLosingControlOfSector( INT16 sSectorX, INT16 sSectorY, 
 
 	ubSectorID = SECTOR( sSectorX, sSectorY );
 	pSector = &SectorInfo[ ubSectorID ];
+	// Operational intel: loss of a surface sector is known to command, but exact hostile strength is uncertain.
+	VR_ReportOperationalIntel( ubSectorID, 65 );
 
 	//Keep track of victories and wake up the queen after x number of battles.
 	gusPlayerBattleVictories++;
