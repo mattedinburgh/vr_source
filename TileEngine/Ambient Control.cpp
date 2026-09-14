@@ -49,13 +49,14 @@ static void StopVRSectorAmbienceLoop( )
 	}
 }
 
-static BOOLEAN StartVRSectorAmbienceLoop( CIniReader &ini, const CHAR8 *szSection, BOOLEAN fNight )
+static BOOLEAN StartVRSectorAmbienceLoop( CIniReader &ini, STR8 szSection, BOOLEAN fNight )
 {
 	CHAR8 szLoop[ 260 ];
-	const CHAR8 *szLoopKey = fNight ? "NIGHT_LOOP" : "DAY_LOOP";
+	CHAR8 szLoopKey[ 16 ];
 	SOUNDPARMS spParms;
 	UINT32 uiVolume;
 
+	strcpy( szLoopKey, fNight ? "NIGHT_LOOP" : "DAY_LOOP" );
 	ini.ReadString( szSection, szLoopKey, "", szLoop, sizeof( szLoop ) );
 	if ( szLoop[ 0 ] == 0 )
 		return FALSE;
@@ -91,7 +92,7 @@ static void RefreshVRSectorAmbienceLoopForTimeOfDay( )
 	StartVRSectorAmbienceLoop( ini, szSection, fNight );
 }
 
-static void AddVRSectorAmbientEntries( CIniReader &ini, const CHAR8 *szSection, const CHAR8 *szPrefix, UINT8 ubTimeCategory )
+static void AddVRSectorAmbientEntries( CIniReader &ini, STR8 szSection, const CHAR8 *szPrefix, UINT8 ubTimeCategory )
 {
 	CHAR8 szKey[ 32 ];
 	CHAR8 szSound[ 260 ];
