@@ -2091,6 +2091,9 @@ BOOLEAN AddZStripInfoToVObject( HVOBJECT hVObject, STRUCTURE_FILE_REF * pStructu
 	UINT32					uiDestVoIndex;
 	BOOLEAN					fCopyIntoVo;
 	BOOLEAN					fFirstTime;
+	const UINT8 ubVHDAssetScale = ( hVObject != NULL &&
+		( hVObject->ubVHDAssetScale == 2 || hVObject->ubVHDAssetScale == 4 ) )
+		? hVObject->ubVHDAssetScale : 1;
 
 
 	if (pStructureFileRef->usNumberOfStructuresStored == 0)
@@ -2228,6 +2231,20 @@ BOOLEAN AddZStripInfoToVObject( HVOBJECT hVObject, STRUCTURE_FILE_REF * pStructu
 						sOffsetY = hVObject->pETRLEObject[uiLoop].sOffsetY;
 						usWidth = hVObject->pETRLEObject[uiLoop].usWidth;
 						usHeight = hVObject->pETRLEObject[uiLoop].usHeight;
+
+						// VHD assets carry more source pixels for the same logical structure.
+						// JSD/Z-strip geometry must stay in legacy sprite-pixel space, otherwise
+						// 2x/4x walls would acquire extra depth strips and sort incorrectly.
+						if ( ubVHDAssetScale > 1 )
+						{
+							INT32 iLegacyOffsetX = sOffsetX;
+							if ( iLegacyOffsetX < 0 )
+								iLegacyOffsetX -= ( ubVHDAssetScale - 1 );
+							sOffsetX = (INT16)( iLegacyOffsetX / ubVHDAssetScale );
+							sOffsetY = (INT16)( sOffsetY / (INT16)ubVHDAssetScale );
+							usWidth = (UINT16)( ( usWidth + ubVHDAssetScale - 1 ) / ubVHDAssetScale );
+							usHeight = (UINT16)( ( usHeight + ubVHDAssetScale - 1 ) / ubVHDAssetScale );
+						}
 						if (pDBStructure->fFlags & (STRUCTURE_MOBILE | STRUCTURE_CORPSE) )
 						{
 							// adjust for the difference between the animation and structure base tile
