@@ -269,6 +269,16 @@ static UINT32 guiSAIGroupPlanStartedAt[256] = { 0 };
 static UINT8  gubSAIGroupPlanTarget[256] = { 0 };
 static UINT8  gubSAIGroupPlanIntention[256] = { 0 };
 
+UINT32 VR_GetSAICampaignPlanID( UINT8 ubGroupID )
+{
+	return guiSAIGroupPlanID[ ubGroupID ];
+}
+
+UINT32 VR_GetSAICampaignPlanDecisionID( UINT8 ubGroupID )
+{
+	return guiSAIGroupPlanDecisionID[ ubGroupID ];
+}
+
 static void SAICampaignSectorName( INT32 iSectorID, CHAR8 *pOut )
 {
 	if( iSectorID < 0 || iSectorID > 255 )
