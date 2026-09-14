@@ -305,6 +305,8 @@ jobs:
           $pristineBmp = Join-Path $previewDir 'A3_PRISTINE_overview.bmp'
           $finalBmp = Join-Path $previewDir 'A3_REMASTERED_overview.bmp'
 
+          . (Join-Path $env:GITHUB_WORKSPACE 'Tools\VRMapDisplayRouting.ps1')
+
           $pilotOut = Join-Path $env:GITHUB_WORKSPACE 'MapPreviews\Pilot5'
           $pilotMaps = Join-Path $pilotOut 'Maps'
           New-Item -ItemType Directory -Force -Path $pilotOut | Out-Null
@@ -322,7 +324,7 @@ jobs:
             Remove-Item -Force -ErrorAction SilentlyContinue $ExpectedBmp
 
             Write-Host "Launching Vengeance editor MAPSHOT: $editor -MAPSHOT=$MapName"
-            $p = Start-Process -FilePath $editor -ArgumentList "-MAPSHOT=$MapName" -WorkingDirectory $sandbox -PassThru
+            $p = Start-VRProcessOnSecondary -FilePath $editor -ArgumentList "-MAPSHOT=$MapName" -WorkingDirectory $sandbox -RequireSecondary
             $deadline = (Get-Date).AddSeconds(180)
             $startupDeadline = (Get-Date).AddSeconds(60)
             $lastStatus = ''
@@ -332,6 +334,9 @@ jobs:
             while ((Get-Date) -lt $deadline) {
               $p.Refresh()
               if ($p.HasExited) { break }
+              if ([Environment]::UserInteractive) {
+                [void](Move-VRProcessWindowsToSecondary -Process $p -RequireSecondary)
+              }
 
               if (Test-Path $statusFile) {
                 $status = (Get-Content $statusFile -Raw -ErrorAction SilentlyContinue).Trim()
