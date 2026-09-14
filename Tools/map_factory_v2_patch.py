@@ -284,8 +284,7 @@ static UINT32 MapFactoryApplyPilotDesign( const STR8 pMapName, UINT8 ubArchetype
     for old_mix, new_mix, label in replacements:
         text = replace_once(text, old_mix, new_mix, label)
 
-    MAPUTIL.write_text(text, encoding="utf-8", newline="
-")
+    MAPUTIL.write_text(text, encoding="utf-8", newline="\\n")
 
 
 def patch_worlddef() -> None:
@@ -469,8 +468,7 @@ def patch_worlddef() -> None:
             + ", ".join(changed)
         )
 
-    WORLDDEF.write_text(text, encoding="utf-8", newline="
-")
+    WORLDDEF.write_text(text, encoding="utf-8", newline="\\n")
     print("Applied colour restraint:", ", ".join(changed))
 
 
