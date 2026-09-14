@@ -15060,6 +15060,7 @@ UINT32 SOLDIERTYPE::SoldierDressWound( SOLDIERTYPE *pVictim, INT16 sKitPts, INT1
 	UINT8 ubBelowOKlife = 0, ubPtsLeft = 0;
 	BOOLEAN	fRanOut = FALSE;
 	BOOLEAN	fOnSurgery = FALSE;
+	BOOLEAN fImprovisedRag = FALSE;
 	INT8 bInitialBleeding;
 
 	if ((pVictim->bBleeding < 1 && pVictim->stats.bLife >= OKLIFE) && !(pVictim->iHealableInjury > 0 && this->fDoingSurgery))
@@ -15073,6 +15074,9 @@ UINT32 SOLDIERTYPE::SoldierDressWound( SOLDIERTYPE *pVictim, INT16 sKitPts, INT1
 	}
 
 	bInitialBleeding = pVictim->bBleeding;
+	// Vengeance: item 1022 is the improvised cloth rag. It uses the normal
+	// first-aid wound path, but is intentionally far slower and more wasteful.
+	fImprovisedRag = (this->inv[ HANDPOS ].exists() && this->inv[ HANDPOS ].usItem == 1022);
 
 	// in case he has multiple kits in hand, limit influence of kit status to 100%!
 	if (sStatus >= 100)
@@ -15143,6 +15147,13 @@ UINT32 SOLDIERTYPE::SoldierDressWound( SOLDIERTYPE *pVictim, INT16 sKitPts, INT1
 		uiPossible += ( uiPossible * gSkillTraitValues.ubDOBandagingSpeedPercent * NUM_SKILL_TRAITS( this, DOCTOR_NT ) + this->GetBackgroundValue(BG_PERC_BANDAGING) ) / 100;
 	}
 
+	// Improvised rags secure wounds exactly like a first-aid kit (bleeding/yellow
+	// becomes bandaged/pink), but only at 20% of the normal treatment rate.
+	if ( fImprovisedRag )
+	{
+		uiPossible = (uiPossible + 4) / 5;
+	}
+
 	uiActual = uiPossible;		// start by assuming maximum possible
 
 
@@ -15199,12 +15210,28 @@ UINT32 SOLDIERTYPE::SoldierDressWound( SOLDIERTYPE *pVictim, INT16 sKitPts, INT1
 	}
 	else
 	{
-		uiMedcost = uiActual;
-
-		if ( uiMedcost > (UINT32)sKitPts)		// can't afford it
+		if ( fImprovisedRag )
 		{
-			fRanOut = TRUE;
-			uiMedcost = uiActual = sKitPts;   	// recalc cost AND aid
+			// A rag is a crude pressure dressing: five condition points are needed
+			// for every one point of actual wound treatment.
+			uiMedcost = uiActual * 5;
+
+			if ( uiMedcost > (UINT32)sKitPts )
+			{
+				fRanOut = TRUE;
+				uiActual = (UINT32)sKitPts / 5;
+				uiMedcost = uiActual * 5;
+			}
+		}
+		else
+		{
+			uiMedcost = uiActual;
+
+			if ( uiMedcost > (UINT32)sKitPts)		// can't afford it
+			{
+				fRanOut = TRUE;
+				uiMedcost = uiActual = sKitPts;   	// recalc cost AND aid
+			}
 		}
 	}
 
