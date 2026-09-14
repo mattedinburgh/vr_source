@@ -149,9 +149,9 @@ Indexed shade level 0 is a special glow palette; true-colour map art treats leve
 
 True-colour map art now gets a deliberately gentle atmospheric colour treatment based on distance from the currently selected merc.
 
-- close terrain receives only a tiny baseline saturation reduction;
-- colour softens progressively through the middle distance;
-- the strongest treatment is reached beyond the normal viewing range and is capped at about 20% desaturation;
+- close terrain now receives a mild baseline saturation reduction of about 4%;
+- colour starts softening a little earlier but transitions more gradually through the middle distance;
+- the strongest treatment is reached farther beyond the normal viewing range and is capped at about 25% desaturation;
 - luminance is preserved, so the effect does not brighten darkness or replace JA2's existing day/night shade system;
 - the effect is visual only and does not change LOS, spotting, CTH, AI knowledge or weapon range;
 - legacy indexed sprites, mercs, UI and special transparency paths are untouched.
