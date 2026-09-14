@@ -1593,7 +1593,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 											FloatFromCellToScreenCoordinates( dOffsetX, dOffsetY, &dTempX_S, &dTempY_S );
 
 											sXPos = ( ( gsVIEWPORT_END_X - gsVIEWPORT_START_X ) /2 ) + (INT16)dTempX_S;
-											sYPos = ( ( gsVIEWPORT_END_Y - gsVIEWPORT_START_Y ) /2 ) + (INT16)dTempY_S - sTileHeight;
+											sYPos = ( ( gsVIEWPORT_END_Y - gsVIEWPORT_START_Y ) /2 ) + (INT16)dTempY_S - VHDScaleScreenValue( sTileHeight );
 
 											// Adjust for offset position on screen
 											sXPos -= gsRenderWorldOffsetX;
@@ -1606,16 +1606,16 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 											usImageIndex=TileElem->usRegionIndex;
 
 											// ADJUST FOR WORLD MAPELEM HIEGHT
-											sYPos-=TileElem->sOffsetHeight;
+											sYPos-=VHDScaleScreenValue( TileElem->sOffsetHeight );
 
 											if((TileElem->uiFlags&IGNORE_WORLD_HEIGHT) )
 											{
-												sYPos = sYPos - sModifiedTileHeight;
+												sYPos = sYPos - VHDScaleScreenValue( sModifiedTileHeight );
 												//sYPos -= sTileHeight;
 											}
 
 											if( !(uiLevelNodeFlags&LEVELNODE_IGNOREHEIGHT) && !(TileElem->uiFlags&IGNORE_WORLD_HEIGHT ))
-												sYPos-=sTileHeight;
+												sYPos-=VHDScaleScreenValue( sTileHeight );
 
 											if(!(uiFlags&TILES_DIRTY))
 											{
@@ -1629,13 +1629,13 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 										//ADJUST FOR RELATIVE OFFSETS
 										if ( uiLevelNodeFlags & LEVELNODE_USERELPOS )
 										{
-											sXPos += pNode->sRelativeX;
-											sYPos += pNode->sRelativeY;
+											sXPos += VHDScaleScreenValue( pNode->sRelativeX );
+											sYPos += VHDScaleScreenValue( pNode->sRelativeY );
 										}
 
 										if ( uiLevelNodeFlags& LEVELNODE_USEZ )
 										{
-											sYPos -= pNode->sRelativeZ;
+											sYPos -= VHDScaleScreenValue( pNode->sRelativeZ );
 										}
 
 										//ADJUST FOR ABSOLUTE POSITIONING
@@ -1657,7 +1657,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 											sYPos -= gsRenderWorldOffsetY;
 
 
-											sYPos -= pNode->sRelativeZ;
+											sYPos -= VHDScaleScreenValue( pNode->sRelativeZ );
 
 										}
 
@@ -1715,7 +1715,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 										}
 										if ( pItemPool->bRenderZHeightAboveLevel > 0 )
 										{
-											sYPos -= pItemPool->bRenderZHeightAboveLevel;
+											sYPos -= VHDScaleScreenValue( pItemPool->bRenderZHeightAboveLevel );
 										}
 
 									}
@@ -1993,14 +1993,14 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 									FloatFromCellToScreenCoordinates( dOffsetX, dOffsetY, &dTempX_S, &dTempY_S );
 
 									sXPos = ( ( gsVIEWPORT_END_X - gsVIEWPORT_START_X ) /2 ) + (INT16)dTempX_S;
-									sYPos = ( ( gsVIEWPORT_END_Y - gsVIEWPORT_START_Y ) /2 ) + (INT16)dTempY_S - sTileHeight;
+									sYPos = ( ( gsVIEWPORT_END_Y - gsVIEWPORT_START_Y ) /2 ) + (INT16)dTempY_S - VHDScaleScreenValue( sTileHeight );
 
 									// Adjust for offset position on screen
 									sXPos -= gsRenderWorldOffsetX;
 									sYPos -= gsRenderWorldOffsetY;
 
 									// Adjust for soldier height
-									sYPos -= pSoldier->sHeightAdjustment;
+									sYPos -= VHDScaleScreenValue( pSoldier->sHeightAdjustment );
 
 									// Handle shade stuff....
 									if ( !pSoldier->flags.fBeginFade )
