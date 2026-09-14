@@ -69,6 +69,7 @@ def build_decisions(events: Iterable[Dict[str, Any]]) -> Dict[Tuple[Any, int], D
                 "layer": event.get("layer"),
                 "begin": None,
                 "states": {},
+                "assessments": [],
                 "candidates": [],
                 "commits": [],
                 "outcomes": [],
@@ -81,6 +82,19 @@ def build_decisions(events: Iterable[Dict[str, Any]]) -> Dict[Tuple[Any, int], D
             record["layer"] = event.get("layer")
         elif kind == "state":
             record["states"][event.get("key")] = event.get("value")
+        elif kind == "assessment":
+            record["assessments"].append(event)
+            metadata = {
+                "schema", "seq", "session", "layer", "kind", "decision_id",
+                "battle_id", "assessment_type", "actor_id",
+            }
+            for field, value in event.items():
+                if field in metadata:
+                    continue
+                if isinstance(value, bool):
+                    record["states"][field] = 1 if value else 0
+                elif isinstance(value, (int, float)):
+                    record["states"][field] = value
         elif kind == "candidate":
             record["candidates"].append(event)
         elif kind == "decision_commit":
