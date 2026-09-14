@@ -226,9 +226,13 @@ static BOOLEAN SaveEngineMapPreviewBMP( const STR8 pMapFilename, UINT32 uiSurfac
 }
 
 
-static void SaveA3TacticalPreviewSet( const STR8 pMapFilename )
+
+static void MapFactoryBaseName( const STR8 pMapFilename, CHAR8 *pOut, UINT32 uiOutSize )
 {
-	if ( !gfMapPreviewCaptureMode || pMapFilename == NULL )
+	if ( pOut == NULL || uiOutSize == 0 )
+		return;
+	pOut[0] = 0;
+	if ( pMapFilename == NULL )
 		return;
 
 	const CHAR8 *pLeaf = pMapFilename;
@@ -237,28 +241,342 @@ static void SaveA3TacticalPreviewSet( const STR8 pMapFilename )
 	if ( pBackslash != NULL && pBackslash + 1 > pLeaf ) pLeaf = pBackslash + 1;
 	if ( pSlash != NULL && pSlash + 1 > pLeaf ) pLeaf = pSlash + 1;
 
-	if ( _stricmp( pLeaf, "A3.dat" ) != 0 && _stricmp( pLeaf, "A3_REMASTERED.dat" ) != 0 )
-		return;
+	strncpy( pOut, pLeaf, uiOutSize - 1 );
+	pOut[uiOutSize - 1] = 0;
+	CHAR8 *pDot = strrchr( pOut, '.' );
+	if ( pDot != NULL ) *pDot = 0;
+}
 
-	// Real tactical-camera checkpoints, chosen to cover the major authored A3
-	// building/field groups.  These use the normal tactical renderer, not the
-	// low-detail overhead/radar renderer, and therefore show the actual art,
-	// palette, roofs, vegetation, clutter and Z ordering the player will see.
-	const INT32 sCameraGrid[] =
+static BOOLEAN MapFactoryHasSuffixNoCase( const STR8 pText, const STR8 pSuffix )
+{
+	if ( pText == NULL || pSuffix == NULL )
+		return FALSE;
+	const size_t nText = strlen( pText );
+	const size_t nSuffix = strlen( pSuffix );
+	if ( nSuffix > nText )
+		return FALSE;
+	return _stricmp( pText + nText - nSuffix, pSuffix ) == 0;
+}
+
+static BOOLEAN MapFactoryTileTypeFromName( const STR8 pName, UINT32 *pType )
+{
+	if ( pName == NULL || pType == NULL )
+		return FALSE;
+
+	struct TYPE_NAME { const CHAR8 *pName; UINT32 uiType; };
+	static const TYPE_NAME gTypes[] =
 	{
-		3292,   // north-east young field
-		7290,   // cattle paddock / north-central farm
-		10914,  // large western barn / processing hall
-		11136,  // central farmhouse / workyard
-		17672,  // southern building group
-		19912   // main irrigated crop beds / farmhouse
+		{ "FIRSTDECORATIONS", FIRSTDECORATIONS },
+		{ "SECONDDECORATIONS", SECONDDECORATIONS },
+		{ "THIRDDECORATIONS", THIRDDECORATIONS },
+		{ "FOURTHDECORATIONS", FOURTHDECORATIONS },
+		{ "DEBRISWEEDS", DEBRISWEEDS },
+		{ "DEBRISROCKS", DEBRISROCKS },
+		{ "DEBRISWOOD", DEBRISWOOD },
+		{ "DEBRISMISC", DEBRISMISC },
+		{ "DEBRISGRASS", DEBRISGRASS },
+		{ "DEBRISSAND", DEBRISSAND }
 	};
-
-	for ( UINT8 i = 0; i < (UINT8)(sizeof(sCameraGrid)/sizeof(sCameraGrid[0])); ++i )
+	for ( UINT32 i = 0; i < sizeof(gTypes) / sizeof(gTypes[0]); ++i )
 	{
-		if ( sCameraGrid[i] < 0 || sCameraGrid[i] >= WORLD_MAX )
+		if ( _stricmp( pName, gTypes[i].pName ) == 0 )
+		{
+			*pType = gTypes[i].uiType;
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+static BOOLEAN MapFactoryVisualGridSafe( INT32 sGridNo )
+{
+	if ( sGridNo < 0 || sGridNo >= WORLD_MAX || gpWorldLevelData == NULL )
+		return FALSE;
+
+	MAP_ELEMENT *pMap = &gpWorldLevelData[sGridNo];
+	if ( pMap->pLandHead == NULL || pMap->pStructHead != NULL ||
+		 pMap->pRoofHead != NULL || pMap->pOnRoofHead != NULL )
+		return FALSE;
+
+	UINT32 uiLandType = 0;
+	if ( !GetTileType( pMap->pLandHead->usIndex, &uiLandType ) )
+		return FALSE;
+	if ( uiLandType == REGWATERTEXTURE || uiLandType == DEEPWATERTEXTURE )
+		return FALSE;
+	return TRUE;
+}
+
+static BOOLEAN MapFactoryAddVisual( INT32 sGridNo, UINT32 uiType, UINT16 usSubIndex, BOOLEAN fOnRoof )
+{
+	if ( sGridNo < 0 || sGridNo >= WORLD_MAX || uiType >= NUMBEROFTILETYPES ||
+		 usSubIndex == 0 || !MapFactoryVisualGridSafe( sGridNo ) )
+		return FALSE;
+
+	UINT16 usTileIndex = NO_TILE;
+	if ( !GetTileIndexFromTypeSubIndex( uiType, usSubIndex, &usTileIndex ) ||
+		 usTileIndex == NO_TILE || usTileIndex >= giNumberOfTiles )
+		return FALSE;
+
+	LEVELNODE *pNode = fOnRoof
+		? AddOnRoofToTail( sGridNo, usTileIndex )
+		: AddObjectToTail( sGridNo, usTileIndex );
+	if ( pNode == NULL )
+		return FALSE;
+
+	pNode->ubShadeLevel = LightGetAmbient();
+	pNode->ubNaturalShadeLevel = pNode->ubShadeLevel;
+	return TRUE;
+}
+
+static BOOLEAN MapFactoryRecipePath( const STR8 pBase, CHAR8 *pOut, UINT32 uiOutSize )
+{
+	if ( pBase == NULL || pOut == NULL || uiOutSize < 32 )
+		return FALSE;
+
+	CHAR8 zExePath[MAX_PATH];
+	DWORD dwLen = GetModuleFileNameA( NULL, zExePath, MAX_PATH );
+	if ( dwLen == 0 || dwLen >= MAX_PATH )
+		return FALSE;
+	CHAR8 *pSlash = strrchr( zExePath, '\\' );
+	if ( pSlash == NULL )
+		return FALSE;
+	*pSlash = 0;
+
+	_snprintf( pOut, uiOutSize - 1, "%s\\MAP_FACTORY\\%s.mfr", zExePath, pBase );
+	pOut[uiOutSize - 1] = 0;
+	return TRUE;
+}
+
+static UINT32 MapFactoryApplyRecipe( const STR8 pMapFilename )
+{
+	if ( !gfMapPreviewCaptureMode || pMapFilename == NULL )
+		return 0;
+
+	CHAR8 zBase[260];
+	MapFactoryBaseName( pMapFilename, zBase, sizeof(zBase) );
+	if ( zBase[0] == 0 || MapFactoryHasSuffixNoCase( zBase, "_PRISTINE" ) ||
+		 MapFactoryHasSuffixNoCase( zBase, "_REMASTERED" ) )
+		return 0;
+
+	CHAR8 zRecipe[MAX_PATH + 320];
+	if ( !MapFactoryRecipePath( zBase, zRecipe, sizeof(zRecipe) ) )
+		return 0;
+
+	FILE *fp = fopen( zRecipe, "r" );
+	if ( fp == NULL )
+		return 0;
+
+	UINT32 uiApplied = 0;
+	CHAR8 zLine[512];
+	while ( fgets( zLine, sizeof(zLine), fp ) != NULL )
+	{
+		CHAR8 *pNL = strpbrk( zLine, "\r\n" );
+		if ( pNL != NULL ) *pNL = 0;
+		if ( zLine[0] == 0 || zLine[0] == '#' )
 			continue;
 
+		CHAR8 zCommand[64] = {0};
+		CHAR8 zType[64] = {0};
+		INT32 sGridNo = NOWHERE;
+		UINT16 usSubIndex = 0;
+		if ( sscanf( zLine, "%63[^,],%d,%63[^,],%hu", zCommand, &sGridNo, zType, &usSubIndex ) == 4 )
+		{
+			UINT32 uiType = 0;
+			if ( MapFactoryTileTypeFromName( zType, &uiType ) )
+			{
+				const BOOLEAN fOnRoof = ( _stricmp( zCommand, "ADD_ONROOF" ) == 0 );
+				if ( ( _stricmp( zCommand, "ADD_OBJECT" ) == 0 || fOnRoof ) &&
+					 MapFactoryAddVisual( sGridNo, uiType, usSubIndex, fOnRoof ) )
+					++uiApplied;
+			}
+		}
+	}
+	fclose( fp );
+
+	CHAR8 zStatus[128];
+	_snprintf( zStatus, sizeof(zStatus) - 1, "FACTORY recipe=%s applied=%lu", zBase, uiApplied );
+	zStatus[sizeof(zStatus) - 1] = 0;
+	MapPreviewWriteStatus( zStatus );
+	return uiApplied;
+}
+
+static BOOLEAN MapFactoryNeighbourFlags( INT32 sGridNo, BOOLEAN *pfNearStruct,
+	BOOLEAN *pfNearWater, BOOLEAN *pfNearTrail )
+{
+	if ( sGridNo < 0 || sGridNo >= WORLD_MAX || gpWorldLevelData == NULL )
+		return FALSE;
+
+	*pfNearStruct = FALSE;
+	*pfNearWater = FALSE;
+	*pfNearTrail = FALSE;
+	const INT32 sCol = sGridNo % WORLD_COLS;
+	const INT32 sNeighbours[4] =
+	{
+		sGridNo - WORLD_COLS, sGridNo + WORLD_COLS, sGridNo - 1, sGridNo + 1
+	};
+	for ( UINT8 i = 0; i < 4; ++i )
+	{
+		const INT32 sNext = sNeighbours[i];
+		if ( sNext < 0 || sNext >= WORLD_MAX ) continue;
+		if ( i == 2 && sCol == 0 ) continue;
+		if ( i == 3 && sCol + 1 >= WORLD_COLS ) continue;
+
+		MAP_ELEMENT *pNext = &gpWorldLevelData[sNext];
+		if ( pNext->pStructHead != NULL || pNext->pRoofHead != NULL )
+			*pfNearStruct = TRUE;
+		if ( pNext->pLandHead != NULL )
+		{
+			UINT32 uiType = 0;
+			if ( GetTileType( pNext->pLandHead->usIndex, &uiType ) )
+			{
+				if ( uiType == REGWATERTEXTURE || uiType == DEEPWATERTEXTURE )
+					*pfNearWater = TRUE;
+				if ( uiType == SEVENTHTEXTURE )
+					*pfNearTrail = TRUE;
+			}
+		}
+	}
+	return TRUE;
+}
+
+static void MapFactoryWriteProfile( const STR8 pMapFilename )
+{
+	if ( !gfMapPreviewCaptureMode || pMapFilename == NULL || gpWorldLevelData == NULL )
+		return;
+
+	CHAR8 zBase[260];
+	MapFactoryBaseName( pMapFilename, zBase, sizeof(zBase) );
+	CHAR8 zPreviewDir[MAX_PATH + 32];
+	if ( !GetMapPreviewDirectory( zPreviewDir, sizeof(zPreviewDir) ) )
+		return;
+
+	CHAR8 zOutput[MAX_PATH + 320];
+	_snprintf( zOutput, sizeof(zOutput) - 1, "%s\\%s_factory_profile.csv", zPreviewDir, zBase );
+	zOutput[sizeof(zOutput) - 1] = 0;
+
+	FILE *fp = fopen( zOutput, "w" );
+	if ( fp == NULL )
+		return;
+	fprintf( fp, "kind,grid,row,col,land_type,near_structure,near_water,near_trail\n" );
+
+	const INT32 sRows = WORLD_MAX / WORLD_COLS;
+	for ( INT32 sGridNo = 0; sGridNo < WORLD_MAX; ++sGridNo )
+	{
+		const INT32 sRow = sGridNo / WORLD_COLS;
+		const INT32 sCol = sGridNo % WORLD_COLS;
+		MAP_ELEMENT *pMap = &gpWorldLevelData[sGridNo];
+
+		if ( pMap->pRoofHead != NULL && ((sRow + sCol) % 7) == 0 )
+		{
+			fprintf( fp, "roof,%d,%d,%d,0,1,0,0\n", sGridNo, sRow, sCol );
+			continue;
+		}
+
+		if ( (sRow % 4) != 0 || (sCol % 4) != 0 || !MapFactoryVisualGridSafe( sGridNo ) )
+			continue;
+
+		UINT32 uiLandType = 0;
+		if ( pMap->pLandHead == NULL || !GetTileType( pMap->pLandHead->usIndex, &uiLandType ) )
+			continue;
+		BOOLEAN fNearStruct = FALSE, fNearWater = FALSE, fNearTrail = FALSE;
+		MapFactoryNeighbourFlags( sGridNo, &fNearStruct, &fNearWater, &fNearTrail );
+		fprintf( fp, "open,%d,%d,%d,%lu,%u,%u,%u\n", sGridNo, sRow, sCol, uiLandType,
+			fNearStruct ? 1 : 0, fNearWater ? 1 : 0, fNearTrail ? 1 : 0 );
+	}
+	fclose( fp );
+
+	CHAR8 zStatus[128];
+	_snprintf( zStatus, sizeof(zStatus) - 1, "PROFILE_OK %s", zBase );
+	zStatus[sizeof(zStatus) - 1] = 0;
+	MapPreviewWriteStatus( zStatus );
+}
+
+static UINT8 MapFactoryLoadRecipeCameras( const STR8 pMapFilename, INT32 *pCamera, UINT8 ubMax )
+{
+	if ( pMapFilename == NULL || pCamera == NULL || ubMax == 0 )
+		return 0;
+
+	CHAR8 zBase[260];
+	MapFactoryBaseName( pMapFilename, zBase, sizeof(zBase) );
+	if ( MapFactoryHasSuffixNoCase( zBase, "_PRISTINE" ) )
+		zBase[strlen(zBase) - strlen("_PRISTINE")] = 0;
+	else if ( MapFactoryHasSuffixNoCase( zBase, "_REMASTERED" ) )
+		zBase[strlen(zBase) - strlen("_REMASTERED")] = 0;
+
+	CHAR8 zRecipe[MAX_PATH + 320];
+	if ( !MapFactoryRecipePath( zBase, zRecipe, sizeof(zRecipe) ) )
+		return 0;
+	FILE *fp = fopen( zRecipe, "r" );
+	if ( fp == NULL )
+		return 0;
+
+	UINT8 ubCount = 0;
+	CHAR8 zLine[512];
+	while ( ubCount < ubMax && fgets( zLine, sizeof(zLine), fp ) != NULL )
+	{
+		INT32 sGridNo = NOWHERE;
+		if ( sscanf( zLine, "CAMERA,%d", &sGridNo ) == 1 &&
+			 sGridNo >= 0 && sGridNo < WORLD_MAX )
+			pCamera[ubCount++] = sGridNo;
+	}
+	fclose( fp );
+	return ubCount;
+}
+
+static UINT8 MapFactoryBuildCameraSet( const STR8 pMapFilename, INT32 *pCamera, UINT8 ubMax )
+{
+	UINT8 ubCount = MapFactoryLoadRecipeCameras( pMapFilename, pCamera, ubMax );
+	const INT32 sRows = WORLD_MAX / WORLD_COLS;
+
+	// Prefer roofs/structures so tactical QA samples authored points of interest.
+	for ( INT32 sGridNo = 0; ubCount < ubMax && sGridNo < WORLD_MAX; ++sGridNo )
+	{
+		if ( gpWorldLevelData[sGridNo].pRoofHead == NULL )
+			continue;
+		const INT32 sRow = sGridNo / WORLD_COLS;
+		const INT32 sCol = sGridNo % WORLD_COLS;
+		BOOLEAN fFarEnough = TRUE;
+		for ( UINT8 i = 0; i < ubCount; ++i )
+		{
+			const INT32 r = pCamera[i] / WORLD_COLS;
+			const INT32 c = pCamera[i] % WORLD_COLS;
+			if ( abs( r - sRow ) + abs( c - sCol ) < 28 )
+			{
+				fFarEnough = FALSE;
+				break;
+			}
+		}
+		if ( fFarEnough )
+			pCamera[ubCount++] = sGridNo;
+	}
+
+	const INT32 sFallback[][2] =
+	{
+		{ sRows / 4, WORLD_COLS / 4 },
+		{ sRows / 4, (WORLD_COLS * 3) / 4 },
+		{ sRows / 2, WORLD_COLS / 2 },
+		{ (sRows * 3) / 4, WORLD_COLS / 4 },
+		{ (sRows * 3) / 4, (WORLD_COLS * 3) / 4 },
+		{ sRows / 2, (WORLD_COLS * 3) / 4 }
+	};
+	for ( UINT8 i = 0; ubCount < ubMax && i < (UINT8)(sizeof(sFallback)/sizeof(sFallback[0])); ++i )
+	{
+		const INT32 sGridNo = sFallback[i][0] * WORLD_COLS + sFallback[i][1];
+		if ( sGridNo >= 0 && sGridNo < WORLD_MAX )
+			pCamera[ubCount++] = sGridNo;
+	}
+	return ubCount;
+}
+
+static void SaveMapFactoryTacticalPreviewSet( const STR8 pMapFilename )
+{
+	if ( !gfMapPreviewCaptureMode || pMapFilename == NULL || gpWorldLevelData == NULL )
+		return;
+
+	INT32 sCameraGrid[6];
+	const UINT8 ubCameraCount = MapFactoryBuildCameraSet( pMapFilename, sCameraGrid, 6 );
+	for ( UINT8 i = 0; i < ubCameraCount; ++i )
+	{
 		INT16 sCellX = 0, sCellY = 0;
 		ConvertGridNoToCenterCellXY( sCameraGrid[i], &sCellX, &sCellY );
 		SetRenderCenter( sCellX, sCellY );
@@ -266,16 +584,19 @@ static void SaveA3TacticalPreviewSet( const STR8 pMapFilename )
 		SetRenderFlags( RENDER_FLAG_FULL | RENDER_FLAG_SHADOWS );
 		RenderWorld();
 
-		CHAR8 zShotName[260];
-		_snprintf( zShotName, sizeof(zShotName) - 1, "%s_tactical_%02u.dat", pLeaf, (UINT16)(i + 1) );
-		zShotName[ sizeof(zShotName) - 1 ] = 0;
+		CHAR8 zShotName[320];
+		_snprintf( zShotName, sizeof(zShotName) - 1, "%s_tactical_%02u.dat", pMapFilename, (UINT16)(i + 1) );
+		zShotName[sizeof(zShotName) - 1] = 0;
 
 		const UINT16 usCaptureHeight = ( gsVIEWPORT_END_Y > 0 && gsVIEWPORT_END_Y <= SCREEN_HEIGHT )
 			? (UINT16)gsVIEWPORT_END_Y : (UINT16)SCREEN_HEIGHT;
 		SaveEngineMapPreviewBMP( zShotName, FRAME_BUFFER, (UINT16)SCREEN_WIDTH, usCaptureHeight );
 	}
 
-	MapPreviewWriteStatus( "TACTICAL_OK six gameplay-view captures written" );
+	CHAR8 zStatus[96];
+	_snprintf( zStatus, sizeof(zStatus) - 1, "TACTICAL_OK captures=%u", ubCameraCount );
+	zStatus[sizeof(zStatus) - 1] = 0;
+	MapPreviewWriteStatus( zStatus );
 }
 
 void GenerateAllMapsInit(void)
@@ -393,6 +714,7 @@ UINT32 MapUtilScreenInit(void)
 UINT32 MapUtilScreenHandle(void)
 {
 	InputAtom InputEvent;
+	UINT32 uiMapFactoryChanges = 0;
 	SGPPaletteEntry pPalette[256];
 	CHAR8 zFilename[260], zFilename2[260];
 	UINT8 *pDataPtr, ubMinorMapVersion;
@@ -451,6 +773,8 @@ UINT32 MapUtilScreenHandle(void)
 		// OK, load maps and do overhead shrinkage of them... //dnl ch79 301113
 		if(!LoadWorld(zFilename, &dMajorMapVersion, &ubMinorMapVersion))
 			return(ERROR_SCREEN);
+		uiMapFactoryChanges = MapFactoryApplyRecipe( zFilename );
+		MapFactoryWriteProfile( zFilename );
 		if(strcmp(gzCommandLine, "-DOMAPSCNV") == 0)
 			if(!(dMajorMapVersion == MAJOR_MAP_VERSION && ubMinorMapVersion == MINOR_MAP_VERSION && gMapInformation.ubMapVersion == MINOR_MAP_VERSION))
 				if(!SaveWorld(zFilename))
@@ -461,7 +785,7 @@ UINT32 MapUtilScreenHandle(void)
 	// Capture normal tactical views first.  These are the primary visual-QA
 	// images for A3 art iteration; the overhead render below remains useful only
 	// for composition/navigation.
-	SaveA3TacticalPreviewSet( zFilename );
+	SaveMapFactoryTacticalPreviewSet( zFilename );
 
 	// Render small map
 	//iOffsetHorizontal = (SCREEN_WIDTH / 2) - (640 / 2);// Horizontal start postion of the overview map
@@ -480,23 +804,30 @@ UINT32 MapUtilScreenHandle(void)
 		(UINT16)(640 * WORLD_COLS / OLD_WORLD_COLS),
 		(UINT16)(320 * WORLD_ROWS / OLD_WORLD_ROWS) );
 
-	// MAPSHOT is also our safe A3 baking path.  The farm dressing has already
-	// been applied to the in-memory world by LoadWorld().  Persist it under a
-	// separate filename so QA can inspect a real map without touching live A3.dat.
+	// MAPSHOT is also the Map Factory compiler path. Any source sector may be
+	// persisted as <SECTOR>_REMASTERED.dat after recipe/visual-profile changes.
 	BOOLEAN fBakeSaved = TRUE;
-	const CHAR8 *pBakeLeaf = zFilename;
-	const CHAR8 *pBakeBackslash = strrchr( zFilename, '\\' );
-	const CHAR8 *pBakeSlash = strrchr( zFilename, '/' );
-	if ( pBakeBackslash != NULL && pBakeBackslash + 1 > pBakeLeaf )
-		pBakeLeaf = pBakeBackslash + 1;
-	if ( pBakeSlash != NULL && pBakeSlash + 1 > pBakeLeaf )
-		pBakeLeaf = pBakeSlash + 1;
-
-	if ( gfMapPreviewCaptureMode && _stricmp( pBakeLeaf, "A3.dat" ) == 0 )
+	CHAR8 zBakeBase[260];
+	MapFactoryBaseName( zFilename, zBakeBase, sizeof(zBakeBase) );
+	if ( gfMapPreviewCaptureMode &&
+		 !MapFactoryHasSuffixNoCase( zBakeBase, "_PRISTINE" ) &&
+		 !MapFactoryHasSuffixNoCase( zBakeBase, "_REMASTERED" ) )
 	{
-		MapPreviewWriteStatus( "BAKE begin A3_REMASTERED.dat" );
-		fBakeSaved = SaveWorld( "A3_REMASTERED.dat" );
-		MapPreviewWriteStatus( fBakeSaved ? "BAKE_OK A3_REMASTERED.dat" : "BAKE_FAIL A3_REMASTERED.dat" );
+		CHAR8 zBakeName[320];
+		_snprintf( zBakeName, sizeof(zBakeName) - 1, "%s_REMASTERED.dat", zBakeBase );
+		zBakeName[sizeof(zBakeName) - 1] = 0;
+
+		CHAR8 zBegin[384];
+		_snprintf( zBegin, sizeof(zBegin) - 1, "BAKE begin %s changes=%lu", zBakeName, uiMapFactoryChanges );
+		zBegin[sizeof(zBegin) - 1] = 0;
+		MapPreviewWriteStatus( zBegin );
+
+		fBakeSaved = SaveWorld( zBakeName );
+
+		CHAR8 zDone[384];
+		_snprintf( zDone, sizeof(zDone) - 1, "%s %s", fBakeSaved ? "BAKE_OK" : "BAKE_FAIL", zBakeName );
+		zDone[sizeof(zDone) - 1] = 0;
+		MapPreviewWriteStatus( zDone );
 	}
 
 	// MAPSHOT is a single-purpose automation path. Do not spend another pass
