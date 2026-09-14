@@ -14785,7 +14785,7 @@ void DrawBufferItemPic(UINT16 usItem, INT16 sCenterX, INT16 sCenterY )
 	HVOBJECT	hVObject;
 	
 	pItem = &Item[ usItem ];
-	usGraphicNum = g_bUsePngItemImages ? 0 : pItem->ubGraphicNum;
+	usGraphicNum = GetInterfaceGraphicSubIndex(pItem->ubGraphicType, pItem->ubGraphicNum);
 
 	uiImage = GetInterfaceGraphicForItem( pItem );
 
