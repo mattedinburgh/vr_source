@@ -3,7 +3,7 @@ import argparse, csv, json
 from dataclasses import dataclass
 from pathlib import Path
 
-STRATEGIES=("authored_modules","strong_modules","manual_required")
+STRATEGIES=("authored_modules","strong_modules","composition_kits","manual_required")
 PILOT=("A3","A8","A12","B13","F15")
 RULES=[
  (("farm","farmland"),"farmland"),
@@ -21,6 +21,16 @@ SURFACE_MAPS={
     "d2.dat":"SAM Site","D3.DAT":"Plains, road","D4.DAT":"San Mona Mine","D5.DAT":"San Mona","D6.DAT":"Farmland","D7.DAT":"Forest, road","D8.DAT":"Forest","d9.dat":"Field Hospital","d10.dat":"Plains","D11.DAT":"Woods","d12.dat":"Swamp","d13.dat":"Drassen Mine","d14.dat":"Arulco Dam","d15.dat":"SAM Site","d16.dat":"Forest",
     "E2.DAT":"Tropical","E3.DAT":"Plains, road","E4.DAT":"Hills","E5.DAT":"Hills","E6.DAT":"Plains","E7.DAT":"Farm, road","e8.dat":"Farmland","e9.dat":"Farm, road","E10.DAT":"Swamp","E11.DAT":"Woods","E12.DAT":"Woods","e13.dat":"Water","E14.DAT":"Swamp","e15.dat":"Forest, road",
     "f2.dat":"Coastline","f3.dat":"Plains, road","F4.DAT":"Hills","f5.dat":"Hills","F6.DAT":"Hills","f7.dat":"Salinas","f8.dat":"Salinas, Hospital","f9.dat":"Salinas","f10.dat":"Distribution Centre","f11.dat":"Plains","f12.dat":"Woods","f13.dat":"Woods","f14.dat":"Plains, road","f15.dat":"Checkpoint"
+}
+
+COMPOSITION_KITS={
+ "farmland":[(0,0,"SECONDDECORATIONS",1),(2,0,"SECONDDECORATIONS",2),(4,0,"SECONDDECORATIONS",3),(0,2,"DEBRISGRASS",1),(2,2,"DEBRISSAND",3),(4,2,"DEBRISWOOD",3),(1,4,"DEBRISWEEDS",5),(3,4,"DEBRISWEEDS",7)],
+ "wilderness":[(0,0,"DEBRISWEEDS",1),(2,0,"DEBRISROCKS",2),(4,0,"DEBRISGRASS",1),(0,2,"DEBRISWOOD",3),(2,2,"DEBRISWEEDS",5),(4,2,"DEBRISROCKS",4),(1,4,"DEBRISGRASS",3),(3,4,"DEBRISWOOD",5)],
+ "military":[(0,0,"DEBRISMISC",5),(2,0,"DEBRISWOOD",1),(4,0,"DEBRISROCKS",4),(0,2,"DEBRISMISC",7),(2,2,"DEBRISWOOD",4),(4,2,"DEBRISROCKS",6),(1,4,"DEBRISWEEDS",3),(3,4,"DEBRISMISC",3)],
+ "industrial":[(0,0,"DEBRISMISC",1),(2,0,"DEBRISWOOD",4),(4,0,"DEBRISROCKS",4),(0,2,"DEBRISMISC",5),(2,2,"DEBRISWOOD",1),(4,2,"DEBRISGRASS",5),(1,4,"DEBRISMISC",7),(3,4,"DEBRISROCKS",6)],
+ "settlement":[(0,0,"DEBRISMISC",1),(2,0,"DEBRISWOOD",3),(4,0,"DEBRISWEEDS",5),(0,2,"DEBRISROCKS",3),(2,2,"DEBRISMISC",4),(4,2,"DEBRISWOOD",2),(1,4,"DEBRISGRASS",5),(3,4,"DEBRISWEEDS",3)],
+ "roadside":[(0,0,"DEBRISSAND",3),(2,0,"DEBRISROCKS",3),(4,0,"DEBRISWEEDS",8),(0,2,"DEBRISWOOD",2),(2,2,"DEBRISMISC",4),(4,2,"DEBRISGRASS",2),(1,4,"DEBRISROCKS",6),(3,4,"DEBRISWEEDS",3)],
+ "open_country":[(0,0,"DEBRISWEEDS",2),(2,0,"DEBRISROCKS",2),(4,0,"DEBRISGRASS",3),(0,2,"DEBRISWOOD",5),(2,2,"DEBRISWEEDS",5),(4,2,"DEBRISROCKS",4),(1,4,"DEBRISGRASS",1),(3,4,"DEBRISWOOD",3)],
 }
 
 MODULES={
@@ -98,7 +108,21 @@ def make_recipe(sec,a,strategy,p):
     lines=["# Vengeance Map Factory",f"# sector={sec}",f"# archetype={a}",f"# strategy={strategy}"]+[f"CAMERA,{g}" for g in cams]
     if strategy=="manual_required":
         return lines,{"placements":0,"cameras":cams,"strategy":strategy}
-    xs=pool(p,a); count=5 if strategy=="authored_modules" else 9; dist=24 if strategy=="authored_modules" else 16
+    xs=pool(p,a)
+    if strategy=="composition_kits":
+        anchors=spread(xs,4,32); placements=0
+        lookup={(x.row,x.col):x for x in xs}
+        for an in anchors:
+            placed=0
+            for dy,dx,tile,sub in COMPOSITION_KITS[a]:
+                cand=lookup.get((an.row+dy,an.col+dx))
+                if cand:
+                    lines.append(f"ADD_OBJECT,{cand.grid},{tile},{sub}"); placements+=1; placed+=1
+            if placed<4:
+                lines.append(f"# KIT_PARTIAL anchor={an.grid} placed={placed}")
+        return lines,{"placements":placements,"cameras":cams,"strategy":strategy,"candidates":len(xs),"modules":len(anchors)}
+    count=5 if strategy=="authored_modules" else 9
+    dist=24 if strategy=="authored_modules" else 16
     anchors=spread(xs,count,dist); placements=0; module=MODULES[a]
     for an in anchors:
         near=sorted((c for c in xs if abs(c.row-an.row)<=8 and abs(c.col-an.col)<=8),key=lambda c:(abs(c.row-an.row)+abs(c.col-an.col),c.grid))
