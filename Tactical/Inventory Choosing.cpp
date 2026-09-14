@@ -308,6 +308,47 @@ static void ApplyEnemyInventoryLogisticsVariability( SOLDIERCREATE_STRUCT *pp, I
 	}
 }
 
+static INT8 CapGeneratedGrenadeLoad( INT8 bGrenades )
+{
+	// Vengeance doctrine: grenades are useful but scarce.  The same bGrenades
+	// counter is also reused for GL rounds, RPG rockets and mortar shells, so
+	// this cap prevents both hand-grenade spam and overstocked specialists.
+	return (INT8)min( 2, max( 0, (INT32)bGrenades ) );
+}
+
+static UINT8 CountGrenadeObjectsInSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp )
+{
+	if ( !pp )
+		return 0;
+
+	UINT16 usCount = 0;
+	const UINT32 uiInvSize = pp->Inv.size();
+	for ( UINT32 i = 0; i < uiInvSize; ++i )
+	{
+		if ( pp->Inv[i].exists() && Item[pp->Inv[i].usItem].usItemClass == IC_GRENADE )
+		{
+			usCount += pp->Inv[i].ubNumberOfObjects;
+			if ( usCount >= 255 )
+				return 255;
+		}
+	}
+
+	return (UINT8)usCount;
+}
+
+static BOOLEAN AddExtraGrenadeWithinCap( SOLDIERCREATE_STRUCT *pp, UINT16 usItem, INT8 bStatus )
+{
+	const UINT8 ubGrenadeCap = 2;
+
+	if ( !pp || usItem == NOTHING || CountGrenadeObjectsInSoldierCreateStruct( pp ) >= ubGrenadeCap )
+		return FALSE;
+
+	CreateItems( usItem, bStatus, 1, &gTempObject );
+	gTempObject.fFlags |= OBJECT_UNDROPPABLE;
+	PlaceObjectInSoldierCreateStruct( pp, &gTempObject );
+	return TRUE;
+}
+
 static void MaybeAddEnemyFirstAid( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass )
 {
 	if ( !pp || !SOLDIER_CLASS_ENEMY( bSoldierClass ) )
@@ -999,6 +1040,11 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 		bMiscClass, bBombClass, bLBEClass,
 		bAmmoClips, bGrenades, fGrenadeLauncher, fMortar, fRPG );
 
+	// Final hard ceiling after all class/difficulty/logistics modifiers.
+	// Random generation may issue fewer, but never more than two grenade-class
+	// rounds/items to one soldier.
+	bGrenades = CapGeneratedGrenadeLoad( bGrenades );
+
 	UINT32 invsize = pp->Inv.size();
 	for( i = 0; i < invsize; ++i )
 	{
@@ -1193,18 +1239,14 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 		usItem = GetHandGrenadeOfType(MINI_GRENADE, EXPLOSV_NORMAL);
 		if (fMini && usItem > 0)
 		{
-			CreateItems(usItem, (INT8)(80 + Random(20)), 1, &gTempObject);
-			gTempObject.fFlags |= OBJECT_UNDROPPABLE;
-			PlaceObjectInSoldierCreateStruct(pp, &gTempObject);
+			AddExtraGrenadeWithinCap(pp, usItem, (INT8)(80 + Random(20)));
 		}
 
 		// mk2 grenade
 		usItem = GetHandGrenadeOfType(HAND_GRENADE, EXPLOSV_NORMAL);
 		if (fGrenade && usItem > 0)
 		{
-			CreateItems(usItem, (INT8)(80 + Random(20)), 1, &gTempObject);
-			gTempObject.fFlags |= OBJECT_UNDROPPABLE;
-			PlaceObjectInSoldierCreateStruct(pp, &gTempObject);
+			AddExtraGrenadeWithinCap(pp, usItem, (INT8)(80 + Random(20)));
 		}
 
 		// wirecutters
@@ -1304,36 +1346,28 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 		usItem = GetHandGrenadeOfType(SMOKE_GRENADE, EXPLOSV_SMOKE);
 		if (fSmokeGrenade && usItem > 0)
 		{
-			CreateItems(usItem, (INT8)(80 + Random(20)), 1, &gTempObject);
-			gTempObject.fFlags |= OBJECT_UNDROPPABLE;
-			PlaceObjectInSoldierCreateStruct(pp, &gTempObject);
+			AddExtraGrenadeWithinCap(pp, usItem, (INT8)(80 + Random(20)));
 		}
 
 		// tear gas
 		usItem = GetHandGrenadeOfType(TEARGAS_GRENADE, EXPLOSV_TEARGAS);
 		if (fTear && usItem > 0)
 		{
-			CreateItems(usItem, (INT8)(80 + Random(20)), 1, &gTempObject);
-			gTempObject.fFlags |= OBJECT_UNDROPPABLE;
-			PlaceObjectInSoldierCreateStruct(pp, &gTempObject);
+			AddExtraGrenadeWithinCap(pp, usItem, (INT8)(80 + Random(20)));
 		}
 
 		// flare
 		usItem = GetHandGrenadeOfType(BREAK_LIGHT, EXPLOSV_FLARE);
 		if (fFlare && usItem > 0)
 		{
-			CreateItems(usItem, (INT8)(80 + Random(20)), 1, &gTempObject);
-			gTempObject.fFlags |= OBJECT_UNDROPPABLE;
-			PlaceObjectInSoldierCreateStruct(pp, &gTempObject);
+			AddExtraGrenadeWithinCap(pp, usItem, (INT8)(80 + Random(20)));
 		}
 
 		// red smoke
 		usItem = GetHandGrenadeOfType(1701, EXPLOSV_SIGNAL_SMOKE);
 		if (fRedSmoke && usItem > 0)
 		{
-			CreateItems(usItem, (INT8)(80 + Random(20)), 1, &gTempObject);
-			gTempObject.fFlags |= OBJECT_UNDROPPABLE;
-			PlaceObjectInSoldierCreateStruct(pp, &gTempObject);
+			AddExtraGrenadeWithinCap(pp, usItem, (INT8)(80 + Random(20)));
 		}
 
 		// LAW
