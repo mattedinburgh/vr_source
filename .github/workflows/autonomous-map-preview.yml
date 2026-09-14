@@ -436,10 +436,12 @@ jobs:
             MapPreviews/Auto/A3_latest.json
             MapPreviews/Auto/A3_mapshot_status.txt
             MapPreviews/Auto/A3_REMASTERED.dat
+            MAP_PREVIEWS/A3_architecture.csv
           if-no-files-found: error
           retention-days: 14
 
       - name: Publish latest preview to repository
+        continue-on-error: true
         shell: powershell
         run: |
           $git = '${{ steps.git.outputs.path }}'
