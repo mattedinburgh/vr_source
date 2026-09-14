@@ -132,6 +132,19 @@ void VR_SyncFormationMissionFromLegacy( GROUP *pGroup )
 		VR_OPREASON_LEGACY_ASSIGNMENT;
 }
 
+void VR_RecordLegacyAssignment( GROUP *pGroup, UINT8 ubTargetSectorID, UINT8 ubLegacyIntention )
+{
+	VR_EnsureEnemyFormationState( pGroup );
+	if( !VR_FormationStateIsInitialized( pGroup ) )
+		return;
+
+	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+	pEnemy->ubOperationalMission = VR_MissionFromLegacyIntention( ubLegacyIntention );
+	pEnemy->ubOperationalTargetSectorID = ubTargetSectorID;
+	pEnemy->ubOperationalReserveRole = VR_RESERVE_NONE;
+	pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_LEGACY_ASSIGNMENT;
+}
+
 UINT16 VR_GetFormationID( GROUP *pGroup )
 {
 	VR_EnsureEnemyFormationState( pGroup );
