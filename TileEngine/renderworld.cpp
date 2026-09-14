@@ -816,106 +816,9 @@ static UINT16 *ResolveVisibleEquipmentShadeTable(
 	return pDefaultShadeTable;
 }
 
-static BOOLEAN IsVisibleEquipmentOverlayLayer( const char *pIdentifier )
-{
-	if ( pIdentifier == NULL )
-		return FALSE;
-
-	static const char *const equipmentLayers[] =
-	{
-		"legarmor",
-		"vest",
-		"legrig",
-		"legrig_left",
-		"knees",
-		"backpack",
-		"facegear",
-		"gasmask",
-		"ears",
-		"helmet"
-	};
-
-	UINT32 i;
-	for ( i = 0; i < sizeof( equipmentLayers ) / sizeof( equipmentLayers[ 0 ] ); ++i )
-	{
-		if ( strcmp( pIdentifier, equipmentLayers[ i ] ) == 0 )
-			return TRUE;
-	}
-
-	return FALSE;
-}
-
-// Render only the 1.13 LOBOT equipment layers over Vengeance's native soldier sprite.
-// This deliberately does not replace the base body/weapon animation: it preserves VR animation
-// compatibility while making equipped armour visible.  Equipment uses the same animation frame
-// index and Z test as the soldier, but never writes Z itself.
-static void RenderVisibleEquipmentLayers(
-	SOLDIERTYPE *pSoldier,
-	UINT8 *pDestBuf,
-	UINT32 uiDestPitchBYTES,
-	INT16 sZLevel,
-	INT16 sXPos,
-	INT16 sYPos,
-	UINT16 usImageIndex,
-	UINT16 *pShadeTable,
-	BOOLEAN fZBlitter,
-	BOOLEAN fObscuredBlitter )
-{
-	if ( !gfVisibleEquipmentRuntimeReady || pSoldier == NULL || pDestBuf == NULL || pShadeTable == NULL )
-		return;
-
-	using namespace LogicalBodyTypes;
-	BodyType *pBodyType = BodyTypeDB::Instance().Find( pSoldier );
-	if ( pBodyType == NULL )
-		return;
-
-	Layers::LayerGraphIterator layerIter = Layers::Instance().GetIterator( pSoldier->bMovementDirection );
-	Layers::LayerGraphIterator layerEnd  = Layers::Instance().GetIterationEnd( pSoldier->bMovementDirection );
-
-	for ( ; layerIter != layerEnd; ++layerIter )
-	{
-		const Layers::LayerProperties *pLayerProperties = pBodyType->GetLayerProperties( layerIter->index );
-		if ( pLayerProperties == NULL || !pLayerProperties->render )
-			continue;
-
-		BodyType::LogicalSurfaceType *pLogicalSurface = pBodyType->GetLogicalSurfaceType( layerIter->index, pSoldier );
-		if ( pLogicalSurface == NULL || pLogicalSurface->physicalSurfaceType == NULL )
-			continue;
-
-		HVOBJECT hEquipment = pLogicalSurface->physicalSurfaceType->hVideoObject;
-		if ( hEquipment == NULL || hEquipment->ubBitDepth != 8 || usImageIndex >= hEquipment->usNumberOfObjects )
-			continue;
-
-		// 1.13 gear surfaces are not palette-independent. Every production vest/helmet
-		// LayerProp selects an equipment palette, so translate VR's resolved shade/highlight
-		// table to the equivalent table in that palette before blitting.
-		UINT16 *pEquipmentShadeTable = ResolveVisibleEquipmentShadeTable(
-			pSoldier, pLogicalSurface->paletteTable, pShadeTable );
-		const BOOLEAN fIgnoreEquipmentShadows = pLayerProperties->renderShadows ? FALSE : TRUE;
-		if ( fZBlitter )
-		{
-			if ( fObscuredBlitter )
-			{
-				Blt8BPPDataTo16BPPBufferTransShadowZNBObscuredClip(
-					(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
-					hEquipment, sXPos, sYPos, usImageIndex, &gClippingRect, pEquipmentShadeTable, fIgnoreEquipmentShadows );
-			}
-			else
-			{
-				Blt8BPPDataTo16BPPBufferTransShadowZNBClip(
-					(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
-					hEquipment, sXPos, sYPos, usImageIndex, &gClippingRect, pEquipmentShadeTable, fIgnoreEquipmentShadows );
-			}
-		}
-		else
-		{
-			Blt8BPPDataTo16BPPBufferTransShadowClip(
-				(UINT16*)pDestBuf, uiDestPitchBYTES, hEquipment,
-				sXPos, sYPos, usImageIndex, &gClippingRect, pEquipmentShadeTable, fIgnoreEquipmentShadows );
-		}
-	}
-}
-
+// Quality-first hybrid renderer: full matched logical model or clean native
+// Vengeance fallback. We intentionally do not paste equipment-only sprites
+// onto an unmatched native body, because that is the source of floating gear.
 
 static LogicalBodyTypes::BodyType::LogicalSurfaceType *GetLogicalMercSurface(
 	LogicalBodyTypes::BodyType *pBodyType,
@@ -2954,15 +2857,8 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 									}
 								}
 
-								// VR LOBOT: visible armour overlays.  Dirty rendering is left on the native
-								// soldier path; the deployed overlay art stays within the normal merc footprint.
-								if ( !fRenderedFullLogicalMerc && fMerc && pSoldier != NULL && !fTileInvisible && !( uiFlags & TILES_DIRTY ) &&
-									pSoldier->ubID < MAX_NUM_SOLDIERS )
-								{
-									RenderVisibleEquipmentLayers( pSoldier, pDestBuf, uiDestPitchBYTES,
-										sZLevel, sXPos, sYPos, usImageIndex, pShadeTable,
-										fZBlitter, fObscuredBlitter );
-								}
+								// If the full logical model was unavailable, the native Vengeance merc
+								// above is intentionally left untouched. Do not paste unmatched gear.
 
 								// RENDR APS ONTOP OF PLANNED MERC GUY
 								if ( fRenderTile && !( uiFlags&TILES_DIRTY ) )
