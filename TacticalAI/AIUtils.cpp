@@ -6569,7 +6569,34 @@ static BOOLEAN AIShouldStartEscapeFromState(SOLDIERTYPE *pSoldier,
 		return FALSE;
 
 	if (fLastSurvivor)
-		return (iHoldConfidence < 25 && ubCollapseStreak >= 1);
+	{
+		// A lone remnant does not instantly abandon the sector on the first bad
+		// snapshot. Fireteam reattachment is checked before this function, so by
+		// the time we get here no viable reachable element is available. Require
+		// sustained collapse as well as genuinely hopeless local danger before the
+		// last fighter becomes a sector runner.
+		if (ubCasualties < 60 || iHoldConfidence >= 20)
+			return FALSE;
+
+		INT32 iStress = AILocalStress(pSoldier);
+		INT32 iRisk = AIPersonalRisk(pSoldier);
+		INT32 iTolerance = AIPersonalRiskTolerance(pSoldier);
+
+		if (bSituation == AI_BATTLE_CATASTROPHIC)
+		{
+			return (ubCollapseStreak >= 2 &&
+				(iStress >= 55 || iRisk >= iTolerance + 15));
+		}
+
+		if (bSituation == AI_BATTLE_LOSING)
+		{
+			return (ubCollapseStreak >= 3 &&
+				iStress >= 60 &&
+				iRisk >= iTolerance + 10);
+		}
+
+		return FALSE;
+	}
 
 	if (ubCasualties >= 90 && bSituation != AI_BATTLE_WINNING)
 		return (iHoldConfidence < 30 && ubCollapseStreak >= 1);

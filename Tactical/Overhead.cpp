@@ -7218,12 +7218,11 @@ BOOLEAN CheckForEndOfBattle( BOOLEAN fAnEnemyRetreated )
             gTacticalStatus.fLastBattleWon = TRUE;
 
             // OK, KILL any enemies that are incapacitated
-            if ( KillIncompacitatedEnemyInSector( ) )
-            {
-				// silversurfer: Why this? The rest of our enemies just bled to death so go on with the code!
-				// sevenfm: this may be the reason of bug when last enemy bleeds to death instead of being killed
-                return( FALSE );
-            }
+            // Finish incapacitated hostile cleanup, then complete victory in this
+            // same end-of-battle pass. Returning FALSE here left INCOMBAT active
+            // after the last capable hostile died/escaped until some unrelated later
+            // event happened to call CheckForEndOfBattle() again.
+            KillIncompacitatedEnemyInSector( );
         }
 
         // Flugente: remove those enemies that are captured and add them to the prisoner pool
