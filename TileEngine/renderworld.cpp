@@ -885,6 +885,164 @@ static void RenderVisibleEquipmentLayers(
 	}
 }
 
+
+static LogicalBodyTypes::BodyType::LogicalSurfaceType *GetLogicalMercSurface(
+	LogicalBodyTypes::BodyType *pBodyType,
+	SOLDIERTYPE *pSoldier,
+	const char *pLayerName )
+{
+	if ( pBodyType == NULL || pSoldier == NULL || pLayerName == NULL )
+		return NULL;
+
+	std::string layerName( pLayerName );
+	LogicalBodyTypes::Layers::LayerPropertiesVector::size_type layerIndex =
+		LogicalBodyTypes::Layers::Instance().GetIndex( layerName );
+
+	if ( layerIndex == (LogicalBodyTypes::Layers::LayerPropertiesVector::size_type)-1 )
+		return NULL;
+
+	return pBodyType->GetLogicalSurfaceType( layerIndex, pSoldier );
+}
+
+static BOOLEAN LogicalMercSurfaceFrameUsable(
+	LogicalBodyTypes::BodyType::LogicalSurfaceType *pSurface,
+	UINT16 usImageIndex )
+{
+	if ( pSurface == NULL || pSurface->physicalSurfaceType == NULL )
+		return FALSE;
+
+	HVOBJECT hVObject = pSurface->physicalSurfaceType->hVideoObject;
+	if ( hVObject == NULL || hVObject->ubBitDepth != 8 || usImageIndex >= hVObject->usNumberOfObjects )
+		return FALSE;
+
+	// Vengeance's older blitter set has no LOBOT alpha-surface path.
+	if ( pSurface->alphaSurfaceType != NULL )
+		return FALSE;
+
+	return TRUE;
+}
+
+// Render a complete 1.13 logical merc only when the current animation frame and
+// held weapon have a coherent matching layer set. Any incomplete state falls
+// back to Vengeance's native composite sprite plus the equipment-only overlay.
+static BOOLEAN RenderFullLogicalMercModel(
+	SOLDIERTYPE *pSoldier,
+	UINT8 *pDestBuf,
+	UINT32 uiDestPitchBYTES,
+	INT16 sZLevel,
+	INT16 sXPos,
+	INT16 sYPos,
+	UINT16 usImageIndex,
+	UINT16 *pDefaultShadeTable,
+	BOOLEAN fZBlitter,
+	BOOLEAN fZWrite,
+	BOOLEAN fObscuredBlitter )
+{
+	if ( !gfVisibleEquipmentRuntimeReady || pSoldier == NULL || pDestBuf == NULL || pDefaultShadeTable == NULL )
+		return FALSE;
+
+	using namespace LogicalBodyTypes;
+	BodyType *pBodyType = BodyTypeDB::Instance().Find( pSoldier );
+	if ( pBodyType == NULL )
+		return FALSE;
+
+	const char *requiredBodyLayers[] = { "legs", "body", "head", "arms" };
+	UINT32 i;
+	for ( i = 0; i < sizeof( requiredBodyLayers ) / sizeof( requiredBodyLayers[ 0 ] ); ++i )
+	{
+		if ( !LogicalMercSurfaceFrameUsable(
+			GetLogicalMercSurface( pBodyType, pSoldier, requiredBodyLayers[ i ] ),
+			usImageIndex ) )
+		{
+			return FALSE;
+		}
+	}
+
+	// If a hand contains an item, require the corresponding logical weapon
+	// surface. This intentionally rejects unmapped AIMNAS-only weapons.
+	if ( pSoldier->inv[ HANDPOS ].usItem != 0 )
+	{
+		if ( !LogicalMercSurfaceFrameUsable(
+			GetLogicalMercSurface( pBodyType, pSoldier, "gun" ),
+			usImageIndex ) )
+		{
+			return FALSE;
+		}
+	}
+
+	if ( pSoldier->inv[ SECONDHANDPOS ].usItem != 0 )
+	{
+		if ( !LogicalMercSurfaceFrameUsable(
+			GetLogicalMercSurface( pBodyType, pSoldier, "gunleft" ),
+			usImageIndex ) )
+		{
+			return FALSE;
+		}
+	}
+
+	Layers::LayerGraphIterator layerIter = Layers::Instance().GetIterator( pSoldier->bMovementDirection );
+	Layers::LayerGraphIterator layerEnd = Layers::Instance().GetIterationEnd( pSoldier->bMovementDirection );
+
+	for ( ; layerIter != layerEnd; ++layerIter )
+	{
+		const Layers::LayerProperties *pLayerProperties =
+			pBodyType->GetLayerProperties( layerIter->index );
+		if ( pLayerProperties == NULL || !pLayerProperties->render )
+			continue;
+
+		BodyType::LogicalSurfaceType *pLogicalSurface =
+			pBodyType->GetLogicalSurfaceType( layerIter->index, pSoldier );
+		if ( pLogicalSurface == NULL || pLogicalSurface->physicalSurfaceType == NULL )
+			continue;
+
+		// Never half-render an alpha-backed layer with the old VR blitters.
+		if ( pLogicalSurface->alphaSurfaceType != NULL )
+			return FALSE;
+
+		HVOBJECT hLayer = pLogicalSurface->physicalSurfaceType->hVideoObject;
+		if ( hLayer == NULL || hLayer->ubBitDepth != 8 || usImageIndex >= hLayer->usNumberOfObjects )
+			continue;
+
+		UINT16 *pLayerShadeTable = ResolveVisibleEquipmentShadeTable(
+			pSoldier, pLogicalSurface->paletteTable, pDefaultShadeTable );
+		const BOOLEAN fIgnoreLayerShadows = pLayerProperties->renderShadows ? FALSE : TRUE;
+
+		if ( fZBlitter )
+		{
+			if ( fZWrite )
+			{
+				Blt8BPPDataTo16BPPBufferTransShadowZClip(
+					(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
+					hLayer, sXPos, sYPos, usImageIndex, &gClippingRect,
+					pLayerShadeTable, fIgnoreLayerShadows );
+			}
+			else if ( fObscuredBlitter )
+			{
+				Blt8BPPDataTo16BPPBufferTransShadowZNBObscuredClip(
+					(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
+					hLayer, sXPos, sYPos, usImageIndex, &gClippingRect,
+					pLayerShadeTable, fIgnoreLayerShadows );
+			}
+			else
+			{
+				Blt8BPPDataTo16BPPBufferTransShadowZNBClip(
+					(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
+					hLayer, sXPos, sYPos, usImageIndex, &gClippingRect,
+					pLayerShadeTable, fIgnoreLayerShadows );
+			}
+		}
+		else
+		{
+			Blt8BPPDataTo16BPPBufferTransShadowClip(
+				(UINT16*)pDestBuf, uiDestPitchBYTES, hLayer,
+				sXPos, sYPos, usImageIndex, &gClippingRect,
+				pLayerShadeTable, fIgnoreLayerShadows );
+		}
+	}
+
+	return TRUE;
+}
+
 void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT32 iStartPointX_S, INT32 iStartPointY_S, INT32 iEndXS, INT32 iEndYS, UINT8 ubNumLevels, UINT32 *puiLevels, UINT16 *psLevelIDs )
 {
 
@@ -2018,8 +2176,27 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 									}
 								}
 
+								BOOLEAN fRenderedFullLogicalMerc = FALSE;
+								if ( !fTileInvisible && fMerc && pSoldier != NULL &&
+									pSoldier->ubID < MAX_NUM_SOLDIERS &&
+									!( uiFlags & TILES_DIRTY ) &&
+									hVObject->ubBitDepth == 8 &&
+									!( uiLevelNodeFlags & ( LEVELNODE_DISPLAY_AP | LEVELNODE_ERASEZ | LEVELNODE_ITEM | LEVELNODE_PHYSICSOBJECT | LEVELNODE_UPDATESAVEBUFFERONCE ) ) &&
+									!fPixelate && !fMultiTransShadowZBlitter && !fMultiZBlitter &&
+									!fShadowBlitter && !fIntensityBlitter )
+								{
+									fRenderedFullLogicalMerc = RenderFullLogicalMercModel(
+										pSoldier, pDestBuf, uiDestPitchBYTES,
+										sZLevel, sXPos, sYPos, usImageIndex, pShadeTable,
+										fZBlitter, fZWrite, fObscuredBlitter );
+								}
+
 								// RENDER
-								if ( fTileInvisible )
+								if ( fRenderedFullLogicalMerc )
+								{
+									// Complete logical body/equipment/weapon model already rendered.
+								}
+								else if ( fTileInvisible )
 								{
 
 								}
@@ -2732,7 +2909,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 
 								// VR LOBOT: visible armour overlays.  Dirty rendering is left on the native
 								// soldier path; the deployed overlay art stays within the normal merc footprint.
-								if ( fMerc && pSoldier != NULL && !fTileInvisible && !( uiFlags & TILES_DIRTY ) &&
+								if ( !fRenderedFullLogicalMerc && fMerc && pSoldier != NULL && !fTileInvisible && !( uiFlags & TILES_DIRTY ) &&
 									pSoldier->ubID < MAX_NUM_SOLDIERS )
 								{
 									RenderVisibleEquipmentLayers( pSoldier, pDestBuf, uiDestPitchBYTES,
