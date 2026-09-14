@@ -3724,39 +3724,59 @@ static void BlitOcclusionBubble8BitWallFadeZStrip(
 	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
 	UINT16 usImageIndex, INT16 sZStripIndex )
 {
-	ETRLEObject *pTrav = &( hVObject->pETRLEObject[ usImageIndex ] );
-	const INT32 iLeft = __max(
-		(INT32)gClippingRect.iLeft, (INT32)sXPos + (INT32)pTrav->sOffsetX );
-	const INT32 iTop = __max(
-		(INT32)gClippingRect.iTop, (INT32)sYPos + (INT32)pTrav->sOffsetY );
-	const INT32 iRight = __min(
-		(INT32)gClippingRect.iRight,
-		(INT32)sXPos + (INT32)pTrav->sOffsetX + (INT32)pTrav->usWidth );
-	const INT32 iBottom = __min(
-		(INT32)gClippingRect.iBottom,
-		(INT32)sYPos + (INT32)pTrav->sOffsetY + (INT32)pTrav->usHeight );
+	// Preserve the door/window/corner sprite at full strength outside the bubble.
+	SGPRect ClipRects[ OCCLUSION_BUBBLE_MAX_CLIP_RECTS ];
+	const UINT8 ubCount = BuildOcclusionBubbleOutsideEllipseClipRects(
+		hVObject, sXPos, sYPos, usImageIndex,
+		OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y,
+		ClipRects, OCCLUSION_BUBBLE_MAX_CLIP_RECTS );
 
-	if ( iRight <= iLeft || iBottom <= iTop )
+	for ( UINT8 ubRect = 0; ubRect < ubCount; ++ubRect )
+	{
+		Blt8BPPDataTo16BPPBufferTransZIncClipZSameZBurnsThrough(
+			pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
+			hVObject, sXPos, sYPos, usImageIndex, &ClipRects[ ubRect ], sZStripIndex );
+	}
+
+	// Inside the outer ellipse, keep a stable half-tone silhouette. This leaves
+	// door/window frames and corners readable without allowing them to hide the merc.
+	INT32 iLeft = 0, iTop = 0, iRight = 0, iBottom = 0;
+	if ( !GetOcclusionBubbleSpriteBounds(
+			hVObject, sXPos, sYPos, usImageIndex,
+			&iLeft, &iTop, &iRight, &iBottom ) )
+	{
 		return;
+	}
 
-	// Multi-Z walls bypass JA2's generic translucent path. Render alternate
-	// one-pixel rows with the normal Z-strip blitter: the skipped rows expose
-	// the merc/background while the surviving rows preserve correct wall depth.
-	INT32 iY = iTop;
+	INT32 iY = __max(
+		iTop, (INT32)gsOcclusionBubbleScreenCenterY - OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+	const INT32 iEndY = __min(
+		iBottom, (INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+
 	if ( ( iY ^ gsOcclusionBubbleScreenCenterY ) & 1 )
 		++iY;
 
-	for ( ; iY < iBottom; iY += 2 )
+	for ( ; iY < iEndY; iY += 2 )
 	{
+		const INT32 iHalfWidth = OcclusionBubbleEllipseHalfWidthAtY(
+			iY, OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+		if ( iHalfWidth <= 0 )
+			continue;
+
 		SGPRect ClipRect;
-		ClipRect.iLeft = iLeft;
+		ClipRect.iLeft = __max(
+			iLeft, (INT32)gsOcclusionBubbleScreenCenterX - iHalfWidth );
+		ClipRect.iRight = __min(
+			iRight, (INT32)gsOcclusionBubbleScreenCenterX + iHalfWidth );
 		ClipRect.iTop = iY;
-		ClipRect.iRight = iRight;
 		ClipRect.iBottom = __min( iY + 1, iBottom );
 
-		Blt8BPPDataTo16BPPBufferTransZIncClipZSameZBurnsThrough(
-			pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
-			hVObject, sXPos, sYPos, usImageIndex, &ClipRect, sZStripIndex );
+		if ( ClipRect.iRight > ClipRect.iLeft )
+		{
+			Blt8BPPDataTo16BPPBufferTransZIncClipZSameZBurnsThrough(
+				pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
+				hVObject, sXPos, sYPos, usImageIndex, &ClipRect, sZStripIndex );
+		}
 	}
 }
 
@@ -3766,38 +3786,60 @@ static void BlitOcclusionBubbleTrueColorWallFadeZStrip(
 	UINT16 usImageIndex, UINT8 ubShadeLevel, INT16 sZStripIndex,
 	BOOLEAN fSameZBurnsThrough, UINT8 ubViewSoftening )
 {
-	ETRLEObject *pTrav = &( hVObject->pETRLEObject[ usImageIndex ] );
-	const INT32 iLeft = __max(
-		(INT32)gClippingRect.iLeft, (INT32)sXPos + (INT32)pTrav->sOffsetX );
-	const INT32 iTop = __max(
-		(INT32)gClippingRect.iTop, (INT32)sYPos + (INT32)pTrav->sOffsetY );
-	const INT32 iRight = __min(
-		(INT32)gClippingRect.iRight,
-		(INT32)sXPos + (INT32)pTrav->sOffsetX + (INT32)pTrav->usWidth );
-	const INT32 iBottom = __min(
-		(INT32)gClippingRect.iBottom,
-		(INT32)sYPos + (INT32)pTrav->sOffsetY + (INT32)pTrav->usHeight );
+	SGPRect ClipRects[ OCCLUSION_BUBBLE_MAX_CLIP_RECTS ];
+	const UINT8 ubCount = BuildOcclusionBubbleOutsideEllipseClipRects(
+		hVObject, sXPos, sYPos, usImageIndex,
+		OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y,
+		ClipRects, OCCLUSION_BUBBLE_MAX_CLIP_RECTS );
 
-	if ( iRight <= iLeft || iBottom <= iTop )
+	for ( UINT8 ubRect = 0; ubRect < ubCount; ++ubRect )
+	{
+		BltTrueColorDataTo16BPPBufferZStrip(
+			pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
+			hVObject, sXPos, sYPos, usImageIndex, &ClipRects[ ubRect ],
+			ubShadeLevel, sZStripIndex, Z_STRIP_DELTA_Y,
+			fSameZBurnsThrough, FALSE, TRUE, ubViewSoftening );
+	}
+
+	INT32 iLeft = 0, iTop = 0, iRight = 0, iBottom = 0;
+	if ( !GetOcclusionBubbleSpriteBounds(
+			hVObject, sXPos, sYPos, usImageIndex,
+			&iLeft, &iTop, &iRight, &iBottom ) )
+	{
 		return;
+	}
 
-	INT32 iY = iTop;
+	INT32 iY = __max(
+		iTop, (INT32)gsOcclusionBubbleScreenCenterY - OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+	const INT32 iEndY = __min(
+		iBottom, (INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+
 	if ( ( iY ^ gsOcclusionBubbleScreenCenterY ) & 1 )
 		++iY;
 
-	for ( ; iY < iBottom; iY += 2 )
+	for ( ; iY < iEndY; iY += 2 )
 	{
+		const INT32 iHalfWidth = OcclusionBubbleEllipseHalfWidthAtY(
+			iY, OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+		if ( iHalfWidth <= 0 )
+			continue;
+
 		SGPRect ClipRect;
-		ClipRect.iLeft = iLeft;
+		ClipRect.iLeft = __max(
+			iLeft, (INT32)gsOcclusionBubbleScreenCenterX - iHalfWidth );
+		ClipRect.iRight = __min(
+			iRight, (INT32)gsOcclusionBubbleScreenCenterX + iHalfWidth );
 		ClipRect.iTop = iY;
-		ClipRect.iRight = iRight;
 		ClipRect.iBottom = __min( iY + 1, iBottom );
 
-		BltTrueColorDataTo16BPPBufferZStrip(
-			pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
-			hVObject, sXPos, sYPos, usImageIndex, &ClipRect,
-			ubShadeLevel, sZStripIndex, Z_STRIP_DELTA_Y,
-			fSameZBurnsThrough, FALSE, TRUE, ubViewSoftening );
+		if ( ClipRect.iRight > ClipRect.iLeft )
+		{
+			BltTrueColorDataTo16BPPBufferZStrip(
+				pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue,
+				hVObject, sXPos, sYPos, usImageIndex, &ClipRect,
+				ubShadeLevel, sZStripIndex, Z_STRIP_DELTA_Y,
+				fSameZBurnsThrough, FALSE, TRUE, ubViewSoftening );
+		}
 	}
 }
 
