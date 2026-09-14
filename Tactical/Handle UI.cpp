@@ -6538,7 +6538,7 @@ INT8 UIHandleInteractiveTilesAndItemsOnTerrain( SOLDIERTYPE *pSoldier, INT32 usM
 
 		if ( !fItemsOnlyIfOnIntTiles )
 		{
-			if ( ( guiUIFullTargetFlags & ENEMY_MERC ) && !( guiUIFullTargetFlags & UNCONSCIOUS_MERC ) )
+			if ( ( guiUIFullTargetFlags & ENEMY_MERC ) && !( guiUIFullTargetFlags & DEAD_MERC ) )
 			{
 				if ( !fOverEnemy )
 				{
