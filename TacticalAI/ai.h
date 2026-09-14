@@ -312,6 +312,41 @@ enum
 	AI_DOCTRINE_ELITE_GUARD
 };
 
+// Unified tactical planner. Intent, role and competence are transient decision state;
+// they do not alter SOLDIERTYPE or the savegame layout.
+enum
+{
+	AI_INTENT_HOLD = 0,
+	AI_INTENT_PRESS,
+	AI_INTENT_FLANK,
+	AI_INTENT_FALLBACK,
+	AI_INTENT_DISENGAGE,
+	AI_INTENT_RESCUE
+};
+
+enum
+{
+	AI_ROLE_SUPPORT = 0,
+	AI_ROLE_MANEUVER,
+	AI_ROLE_FLANKER,
+	AI_ROLE_SCREEN,
+	AI_ROLE_RESERVE
+};
+
+enum
+{
+	AI_COMPETENCE_BASIC = 0,
+	AI_COMPETENCE_REGULAR,
+	AI_COMPETENCE_ELITE
+};
+
+enum
+{
+	AI_PLAN_BASIC = 0,
+	AI_PLAN_COORDINATED,
+	AI_PLAN_ADVANCED
+};
+
 // Functional command hierarchy. The visible rank ladder mirrors 1.13 EnemyRank.xml
 // (experience levels 1-10); GENERAL is reserved for exceptional explicit commanders.
 // Rank changes command/cohesion behaviour only - never CTH, AP or weapon performance.
@@ -344,6 +379,17 @@ BOOLEAN AIAllowsIndependentFlank(SOLDIERTYPE *pSoldier);
 BOOLEAN AIAllowsProactiveSupport(SOLDIERTYPE *pSoldier);
 UINT8 AIDoctrineResponseLimit(SOLDIERTYPE *pSoldier);
 INT8 AIDoctrineAnchorModifier(SOLDIERTYPE *pSoldier);
+INT8 AICompetenceTier(SOLDIERTYPE *pSoldier);
+UINT8 AIPlannerReliability(SOLDIERTYPE *pSoldier);
+BOOLEAN AIAllowsPlanComplexity(SOLDIERTYPE *pSoldier, INT8 bComplexity, UINT32 uiSalt = 0);
+INT32 AICompetenceUtilityNoise(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, UINT32 uiSalt = 0);
+INT32 AIInferredReactionRisk(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT8 bLevel);
+UINT8 AILocalSmokeReserve(SOLDIERTYPE *pSoldier);
+INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
+INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
+INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT32 sTargetSpot, INT8 bIntent, INT8 bRole);
+INT32 AIPathExposureCost(SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMovementMode);
+INT8 DecideSuppressionResponse(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
 // Shared enemy/militia fireteam coordination. Fireteams are transient sector-local
 // AI state and deliberately do not alter SOLDIERTYPE/savegame layout.
 UINT8 AIFireteamId(SOLDIERTYPE *pSoldier);
