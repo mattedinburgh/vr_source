@@ -324,7 +324,9 @@ static BOOLEAN VHDUnpackETRLERegion( HIMAGE hImage, UINT16 usIndex, std::vector<
 
 	const ETRLEObject *pRegion = &hImage->pETRLEObject[ usIndex ];
 	const UINT32 uiPixelCount = (UINT32)pRegion->usWidth * (UINT32)pRegion->usHeight;
-	out.assign( uiPixelCount, 0 );
+	if ( uiPixelCount == 0 || uiPixelCount > 0x3FFFFFFFu )
+		return FALSE;
+	out.assign( (size_t)uiPixelCount, 0 );
 
 	const UINT8 *pSrc = hImage->pPixData8 + pRegion->uiDataOffset;
 	const UINT8 *pEnd = pSrc + pRegion->uiDataLength;
@@ -387,9 +389,15 @@ BOOLEAN ScaleImageNearestForVHD( HIMAGE hImage, UINT8 ubScale )
 			const INT32 iNewOffsetX = (INT32)srcRegion.sOffsetX * ubScale;
 			const INT32 iNewOffsetY = (INT32)srcRegion.sOffsetY * ubScale;
 
-			if ( uiNewWidth32 > 65535 || uiNewHeight32 > 65535 ||
+			if ( uiNewWidth32 == 0 || uiNewHeight32 == 0 ||
+				 uiNewWidth32 > 65535 || uiNewHeight32 > 65535 ||
 				 iNewOffsetX < -32768 || iNewOffsetX > 32767 ||
 				 iNewOffsetY < -32768 || iNewOffsetY > 32767 )
+				return FALSE;
+
+			const size_t uiScaledPixels = (size_t)uiNewWidth32 * (size_t)uiNewHeight32;
+			if ( uiScaledPixels > 0x3FFFFFFFu ||
+				 uiScaledPixels > ( (size_t)0xFFFFFFFFu - uiNewHeight32 - 16 ) / 3 )
 				return FALSE;
 
 			std::vector<UINT8> srcPixels;
@@ -398,7 +406,7 @@ BOOLEAN ScaleImageNearestForVHD( HIMAGE hImage, UINT8 ubScale )
 
 			const UINT16 usNewWidth = (UINT16)uiNewWidth32;
 			const UINT16 usNewHeight = (UINT16)uiNewHeight32;
-			std::vector<UINT8> scaled( uiNewWidth32 * uiNewHeight32, 0 );
+			std::vector<UINT8> scaled( uiScaledPixels, 0 );
 
 			for ( UINT16 y = 0; y < usNewHeight; ++y )
 			{
@@ -412,7 +420,7 @@ BOOLEAN ScaleImageNearestForVHD( HIMAGE hImage, UINT8 ubScale )
 			}
 
 			// Existing STI code uses 3x raw size as a safe ETRLE work buffer.
-			compressed[i].resize( scaled.size() * 3 + usNewHeight + 16, 0 );
+			compressed[i].resize( ( scaled.size() * 3 ) + usNewHeight + 16, 0 );
 			STCISubImage tempSub;
 			memset( &tempSub, 0, sizeof(tempSub) );
 			const UINT32 uiCompressed = ETRLECompressSubImage(
@@ -421,6 +429,8 @@ BOOLEAN ScaleImageNearestForVHD( HIMAGE hImage, UINT8 ubScale )
 			if ( uiCompressed == 0 )
 				return FALSE;
 			compressed[i].resize( uiCompressed );
+			if ( 0xFFFFFFFFu - uiTotalBytes < uiCompressed )
+				return FALSE;
 
 			ETRLEObject &dstRegion = newRegions[i];
 			memset( &dstRegion, 0, sizeof(dstRegion) );
@@ -476,15 +486,21 @@ BOOLEAN ScaleImageNearestForVHD( HIMAGE hImage, UINT8 ubScale )
 			const INT32 iNewOffsetX = (INT32)srcRegion.sOffsetX * ubScale;
 			const INT32 iNewOffsetY = (INT32)srcRegion.sOffsetY * ubScale;
 
-			if ( uiNewWidth32 > 65535 || uiNewHeight32 > 65535 ||
+			if ( uiNewWidth32 == 0 || uiNewHeight32 == 0 ||
+				 uiNewWidth32 > 65535 || uiNewHeight32 > 65535 ||
 				 iNewOffsetX < -32768 || iNewOffsetX > 32767 ||
 				 iNewOffsetY < -32768 || iNewOffsetY > 32767 )
+				return FALSE;
+
+			const size_t uiFrameBytes =
+				(size_t)uiNewWidth32 * (size_t)uiNewHeight32 * (size_t)uiBytesPerPixel;
+			if ( uiFrameBytes == 0 || uiFrameBytes > 0xFFFFFFFFu )
 				return FALSE;
 
 			ETRLEObject &dstRegion = newRegions[i];
 			memset( &dstRegion, 0, sizeof(dstRegion) );
 			dstRegion.uiDataOffset = uiTotalBytes;
-			dstRegion.uiDataLength = uiNewWidth32 * uiNewHeight32 * uiBytesPerPixel;
+			dstRegion.uiDataLength = (UINT32)uiFrameBytes;
 			dstRegion.sOffsetX = (INT16)iNewOffsetX;
 			dstRegion.sOffsetY = (INT16)iNewOffsetY;
 			dstRegion.usWidth = (UINT16)uiNewWidth32;
