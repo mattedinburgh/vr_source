@@ -317,6 +317,22 @@ void VR_UpdateOperationalReadinessHourly()
 				~( VR_OPFLAG_SUPPLY_LOW | VR_OPFLAG_SUPPLY_CRITICAL );
 		}
 
+		// Logistics affects staying power rather than combat statistics directly.
+		// Critically undersupplied formations erode; well-supplied stationary
+		// formations recover slowly, capped below perfect morale.
+		if( pEnemy->ubOperationalSupply < 25 )
+		{
+			pEnemy->ubOperationalMorale =
+				VR_ClampOperationalPercent( (INT32)pEnemy->ubOperationalMorale - 2 );
+		}
+		else if( !pGroup->fBetweenSectors &&
+			pEnemy->ubOperationalSupply > 60 &&
+			pEnemy->ubOperationalMorale < 85 )
+		{
+			pEnemy->ubOperationalMorale =
+				VR_ClampOperationalPercent( (INT32)pEnemy->ubOperationalMorale + 1 );
+		}
+
 		// Only idle/recovering formations receive reserve classification here.
 		// Active legacy Queen assignments remain untouched.
 		if( (pEnemy->ubOperationalMission == VR_OPMISSION_NONE &&
@@ -707,6 +723,11 @@ GROUP *VR_FindReadyOperationalReserveForSector( UINT8 ubTargetSectorID )
 		const INT32 iDistance =
 			VR_OperationalAbs( (INT32)pGroup->ubSectorX - (INT32)ubTargetX ) +
 			VR_OperationalAbs( (INT32)pGroup->ubSectorY - (INT32)ubTargetY );
+
+		// A reserve already in the destination is tactically available there but
+		// must be absorbed/handled locally, not issued a zero-distance move order.
+		if( iDistance == 0 )
+			continue;
 
 		// Pure readiness query: closer formations are preferred, with modest
 		// credit for strength/readiness. Reserve role is descriptive here, not
