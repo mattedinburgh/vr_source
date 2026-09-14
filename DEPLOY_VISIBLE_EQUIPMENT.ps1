@@ -1133,9 +1133,13 @@ if ($missing.Count -gt 0) {
 
 
 # Final structural gate: do not create the READY marker unless every intended
-# overlay layer exists for every player body type.
+# full-model and equipment layer exists for every player body type. The runtime
+# may still choose native Vengeance for a frame whose weapon/animation coverage
+# is incomplete, but the deployed logical catalog itself must be complete.
 $expectedEquipmentLayers = @(
-    "vest","helmet","legarmor","facegear","gasmask","ears","backpack","legrig","legrig_left","knees"
+    "blood","shadow","legs","legarmor","body","head","hands","arms",
+    "vest","legrig","legrig_left","knees","backpack","gun","gunleft",
+    "facegear","gasmask","ears","helmet"
 )
 $equipmentBodyFiles = @(
     "LBT_RGM/LogicalBodyType_RGM_VR_equipment.xml",
@@ -1160,8 +1164,8 @@ $markerText = @"
 Vengeance Reloaded visible tactical equipment
 Catalog: mattedinburgh/vr_gamedir $VrRef
 Source: 1dot13/gamedir $UpstreamRef Data/Anims/LOBOT art
-Mode: overlay-only (native Vengeance body/weapon + 1.13 equipment layers)
-Layers: vest, helmet, legarmor, facegear, gasmask, ears, backpack, legrig, legrig_left, knees
+Mode: hybrid (matched full 1.13 logical merc model; native Vengeance fallback when frame/weapon coverage is incomplete)
+Layers: blood, shadow, legs, legarmor, body, head, hands, arms, vest, legrig, legrig_left, knees, backpack, gun, gunleft, facegear, gasmask, ears, helmet
 Assets: $($assetPaths.Count)
 AssetBytes: $totalBytes
 Palettes: $($paletteFiles.Count)
@@ -1178,4 +1182,4 @@ Write-Host ("Palettes : {0}" -f $paletteFiles.Count)
 Write-Host ("Size     : {0:N1} MiB" -f (($totalBytes + $paletteBytes) / 1MB))
 Write-Host "Marker: $Marker"
 Write-Host ""
-Write-Host "Visible equipment enabled: helmet, vest, leg armour, face gear, gas mask, headset/ears, backpack, left/right leg rigs and knee pads."
+Write-Host "Hybrid logical merc model enabled: matched 1.13 body/equipment/weapon layers with automatic native Vengeance fallback."
