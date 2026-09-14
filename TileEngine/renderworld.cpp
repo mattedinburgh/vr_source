@@ -816,9 +816,11 @@ static UINT16 *ResolveVisibleEquipmentShadeTable(
 	return pDefaultShadeTable;
 }
 
-// Quality-first hybrid renderer: full matched logical model or clean native
-// Vengeance fallback. We intentionally do not paste equipment-only sprites
-// onto an unmatched native body, because that is the source of floating gear.
+// Quality-first hybrid renderer: keep Vengeance's native composite sprite as a
+// safety underlay, then draw the matched 1.13 logical body/equipment layers over
+// it in their proper layer order. This prevents one missing gun/accessory surface
+// from making *all* armour disappear, while special unsupported animations can
+// still fall back cleanly to the native Vengeance sprite.
 
 static LogicalBodyTypes::BodyType::LogicalSurfaceType *GetLogicalMercSurface(
 	LogicalBodyTypes::BodyType *pBodyType,
@@ -856,10 +858,62 @@ static BOOLEAN LogicalMercSurfaceFrameUsable(
 	return TRUE;
 }
 
-// Render a complete 1.13 logical merc only when the current animation frame and
-// held weapon have a coherent matching layer set. Any incomplete state falls
-// back to Vengeance's native composite sprite plus the equipment-only overlay.
-static BOOLEAN RenderFullLogicalMercModel(
+static void RenderLogicalMercLayer8BPP(
+	UINT8 *pDestBuf,
+	UINT32 uiDestPitchBYTES,
+	INT16 sZLevel,
+	INT16 sXPos,
+	INT16 sYPos,
+	UINT16 usImageIndex,
+	HVOBJECT hLayer,
+	UINT16 *pShadeTable,
+	BOOLEAN fZBlitter,
+	BOOLEAN fZWrite,
+	BOOLEAN fObscuredBlitter,
+	BOOLEAN fIgnoreLayerShadows )
+{
+	if ( pDestBuf == NULL || hLayer == NULL || pShadeTable == NULL )
+		return;
+
+	if ( fZBlitter )
+	{
+		if ( fZWrite )
+		{
+			Blt8BPPDataTo16BPPBufferTransShadowZClip(
+				(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
+				hLayer, sXPos, sYPos, usImageIndex, &gClippingRect,
+				pShadeTable );
+		}
+		else if ( fObscuredBlitter )
+		{
+			Blt8BPPDataTo16BPPBufferTransShadowZNBObscuredClip(
+				(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
+				hLayer, sXPos, sYPos, usImageIndex, &gClippingRect,
+				pShadeTable, fIgnoreLayerShadows );
+		}
+		else
+		{
+			Blt8BPPDataTo16BPPBufferTransShadowZNBClip(
+				(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
+				hLayer, sXPos, sYPos, usImageIndex, &gClippingRect,
+				pShadeTable, fIgnoreLayerShadows );
+		}
+	}
+	else
+	{
+		Blt8BPPDataTo16BPPBufferTransShadowClip(
+			(UINT16*)pDestBuf, uiDestPitchBYTES, hLayer,
+			sXPos, sYPos, usImageIndex, &gClippingRect,
+			pShadeTable, fIgnoreLayerShadows );
+	}
+}
+
+// Render the logical body/equipment model over a native Vengeance underlay.
+// Only the four core body layers are mandatory. Optional equipment and weapon
+// layers are best-effort: if a single AIMNAS item has no 1.13 visual mapping,
+// the rest of the armour remains visible and the native underlay preserves the
+// soldier/weapon silhouette underneath.
+static BOOLEAN RenderHybridLogicalMercModel(
 	SOLDIERTYPE *pSoldier,
 	UINT8 *pDestBuf,
 	UINT32 uiDestPitchBYTES,
@@ -867,12 +921,19 @@ static BOOLEAN RenderFullLogicalMercModel(
 	INT16 sXPos,
 	INT16 sYPos,
 	UINT16 usImageIndex,
+	HVOBJECT hNativeObject,
 	UINT16 *pDefaultShadeTable,
 	BOOLEAN fZBlitter,
 	BOOLEAN fZWrite,
 	BOOLEAN fObscuredBlitter )
 {
-	if ( !gfVisibleEquipmentRuntimeReady || pSoldier == NULL || pDestBuf == NULL || pDefaultShadeTable == NULL )
+	if ( !gfVisibleEquipmentRuntimeReady || pSoldier == NULL || pDestBuf == NULL ||
+		hNativeObject == NULL || pDefaultShadeTable == NULL )
+	{
+		return FALSE;
+	}
+
+	if ( hNativeObject->ubBitDepth != 8 || usImageIndex >= hNativeObject->usNumberOfObjects )
 		return FALSE;
 
 	using namespace LogicalBodyTypes;
@@ -880,6 +941,9 @@ static BOOLEAN RenderFullLogicalMercModel(
 	if ( pBodyType == NULL )
 		return FALSE;
 
+	// Do not switch to the layered renderer unless the core body for this exact
+	// animation frame is coherent. This is what keeps special Vengeance-only
+	// animations from producing detached/floating equipment.
 	const char *requiredBodyLayers[] = { "legs", "body", "head", "arms" };
 	UINT32 i;
 	for ( i = 0; i < sizeof( requiredBodyLayers ) / sizeof( requiredBodyLayers[ 0 ] ); ++i )
@@ -892,53 +956,21 @@ static BOOLEAN RenderFullLogicalMercModel(
 		}
 	}
 
-	// If a hand contains an item, require the corresponding logical weapon
-	// surface. This intentionally rejects unmapped AIMNAS-only weapons.
-	if ( pSoldier->inv[ HANDPOS ].usItem != 0 )
-	{
-		if ( !LogicalMercSurfaceFrameUsable(
-			GetLogicalMercSurface( pBodyType, pSoldier, "gun" ),
-			usImageIndex ) )
-		{
-			return FALSE;
-		}
-	}
+	// First draw the original Vengeance merc. It becomes a safety net for any
+	// optional logical layer that is unavailable (most importantly an unmapped
+	// AIMNAS weapon). It also performs the normal Z write once.
+	RenderLogicalMercLayer8BPP(
+		pDestBuf, uiDestPitchBYTES, sZLevel, sXPos, sYPos, usImageIndex,
+		hNativeObject, pDefaultShadeTable, fZBlitter, fZWrite,
+		fObscuredBlitter, FALSE );
 
-	if ( pSoldier->inv[ SECONDHANDPOS ].usItem != 0 )
-	{
-		if ( !LogicalMercSurfaceFrameUsable(
-			GetLogicalMercSurface( pBodyType, pSoldier, "gunleft" ),
-			usImageIndex ) )
-		{
-			return FALSE;
-		}
-	}
-
-	// Validation pass. Nothing is drawn until every selected layer for this
-	// frame is known to be compatible with the Vengeance renderer. This makes
-	// the full-model path atomic: failure means a completely clean fallback.
-	Layers::LayerGraphIterator validateIter = Layers::Instance().GetIterator( pSoldier->bMovementDirection );
+	// Then draw all usable logical layers in 1.13's configured graph order.
+	// These are Z-no-write overlays because the native underlay already handled
+	// the soldier's Z value; this preserves correct wall/obscured behaviour while
+	// allowing the ordered body/armour layers to compose on top of one another.
+	Layers::LayerGraphIterator layerIter = Layers::Instance().GetIterator( pSoldier->bMovementDirection );
 	Layers::LayerGraphIterator layerEnd = Layers::Instance().GetIterationEnd( pSoldier->bMovementDirection );
 
-	for ( ; validateIter != layerEnd; ++validateIter )
-	{
-		const Layers::LayerProperties *pLayerProperties =
-			pBodyType->GetLayerProperties( validateIter->index );
-		if ( pLayerProperties == NULL || !pLayerProperties->render )
-			continue;
-
-		BodyType::LogicalSurfaceType *pLogicalSurface =
-			pBodyType->GetLogicalSurfaceType( validateIter->index, pSoldier );
-		if ( pLogicalSurface == NULL )
-			continue;
-
-		if ( !LogicalMercSurfaceFrameUsable( pLogicalSurface, usImageIndex ) )
-			return FALSE;
-	}
-
-	// Drawing pass. At this point every selected logical surface has been
-	// validated, so this cannot leave a partially rendered logical merc.
-	Layers::LayerGraphIterator layerIter = Layers::Instance().GetIterator( pSoldier->bMovementDirection );
 	for ( ; layerIter != layerEnd; ++layerIter )
 	{
 		const Layers::LayerProperties *pLayerProperties =
@@ -948,7 +980,7 @@ static BOOLEAN RenderFullLogicalMercModel(
 
 		BodyType::LogicalSurfaceType *pLogicalSurface =
 			pBodyType->GetLogicalSurfaceType( layerIter->index, pSoldier );
-		if ( pLogicalSurface == NULL )
+		if ( !LogicalMercSurfaceFrameUsable( pLogicalSurface, usImageIndex ) )
 			continue;
 
 		HVOBJECT hLayer = pLogicalSurface->physicalSurfaceType->hVideoObject;
@@ -956,66 +988,13 @@ static BOOLEAN RenderFullLogicalMercModel(
 			pSoldier, pLogicalSurface->paletteTable, pDefaultShadeTable );
 		const BOOLEAN fIgnoreLayerShadows = pLayerProperties->renderShadows ? FALSE : TRUE;
 
-		if ( fZBlitter )
-		{
-			if ( fZWrite )
-			{
-				Blt8BPPDataTo16BPPBufferTransShadowZClip(
-					(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
-					hLayer, sXPos, sYPos, usImageIndex, &gClippingRect,
-					pLayerShadeTable );
-			}
-			else if ( fObscuredBlitter )
-			{
-				Blt8BPPDataTo16BPPBufferTransShadowZNBObscuredClip(
-					(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
-					hLayer, sXPos, sYPos, usImageIndex, &gClippingRect,
-					pLayerShadeTable, fIgnoreLayerShadows );
-			}
-			else
-			{
-				Blt8BPPDataTo16BPPBufferTransShadowZNBClip(
-					(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
-					hLayer, sXPos, sYPos, usImageIndex, &gClippingRect,
-					pLayerShadeTable, fIgnoreLayerShadows );
-			}
-		}
-		else
-		{
-			Blt8BPPDataTo16BPPBufferTransShadowClip(
-				(UINT16*)pDestBuf, uiDestPitchBYTES, hLayer,
-				sXPos, sYPos, usImageIndex, &gClippingRect,
-				pLayerShadeTable, fIgnoreLayerShadows );
-		}
+		RenderLogicalMercLayer8BPP(
+			pDestBuf, uiDestPitchBYTES, sZLevel, sXPos, sYPos, usImageIndex,
+			hLayer, pLayerShadeTable, fZBlitter, FALSE,
+			fObscuredBlitter, fIgnoreLayerShadows );
 	}
 
 	return TRUE;
-}
-
-// Cosmetic distance cue for true-colour map tiles. Close terrain keeps nearly
-// all of its colour; saturation eases down gradually toward and beyond the
-// selected merc's normal viewing range. This never feeds LOS/CTH/AI.
-static UINT8 TrueColorViewSofteningForTile(INT32 sTileGridNo, INT32 sViewerGridNo, INT32 iViewRange)
-{
-	const UINT8 ubNearSoftening = 6;   // ~2% desaturation up close
-	const UINT8 ubFarSoftening = 52;   // ~20% at the far edge; never grey/foggy
-
-	if(TileIsOutOfBounds(sTileGridNo) || TileIsOutOfBounds(sViewerGridNo))
-		return ubNearSoftening;
-
-	iViewRange = __max(12, iViewRange);
-	const INT32 iDistance = GetRangeFromGridNoDiff(sViewerGridNo, sTileGridNo);
-	const INT32 iNearRange = __max(6, (iViewRange * 45) / 100);
-	const INT32 iFarRange = __max(iNearRange + 8, (iViewRange * 135) / 100);
-
-	if(iDistance <= iNearRange)
-		return ubNearSoftening;
-	if(iDistance >= iFarRange)
-		return ubFarSoftening;
-
-	return (UINT8)(ubNearSoftening +
-		((iDistance - iNearRange) * (ubFarSoftening - ubNearSoftening)) /
-		(iFarRange - iNearRange));
 }
 
 void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT32 iStartPointX_S, INT32 iStartPointY_S, INT32 iEndXS, INT32 iEndYS, UINT8 ubNumLevels, UINT32 *puiLevels, UINT16 *psLevelIDs )
@@ -2164,7 +2143,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 									}
 								}
 
-								BOOLEAN fRenderedFullLogicalMerc = FALSE;
+								BOOLEAN fRenderedHybridLogicalMerc = FALSE;
 								if ( !fTileInvisible && fMerc && pSoldier != NULL &&
 									pSoldier->ubID < MAX_NUM_SOLDIERS &&
 									!( uiFlags & TILES_DIRTY ) &&
@@ -2173,16 +2152,16 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 									!fPixelate && !fMultiTransShadowZBlitter && !fMultiZBlitter &&
 									!fShadowBlitter && !fIntensityBlitter )
 								{
-									fRenderedFullLogicalMerc = RenderFullLogicalMercModel(
+									fRenderedHybridLogicalMerc = RenderHybridLogicalMercModel(
 										pSoldier, pDestBuf, uiDestPitchBYTES,
-										sZLevel, sXPos, sYPos, usImageIndex, pShadeTable,
+										sZLevel, sXPos, sYPos, usImageIndex, hVObject, pShadeTable,
 										fZBlitter, fZWrite, fObscuredBlitter );
 								}
 
 								// RENDER
-								if ( fRenderedFullLogicalMerc )
+								if ( fRenderedHybridLogicalMerc )
 								{
-									// Complete logical body/equipment/weapon model already rendered.
+									// Native underlay plus coherent logical body/equipment layers already rendered.
 								}
 								else if ( fTileInvisible )
 								{
