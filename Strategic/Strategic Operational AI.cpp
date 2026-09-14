@@ -11,6 +11,7 @@
 #include "Queen Command.h"
 #include "strategic.h"
 #include "strategicmap.h"
+#include "random.h"
 
 extern ARMY_COMPOSITION gArmyComp[ MAX_ARMY_COMPOSITIONS ];
 extern GARRISON_GROUP *gGarrisonGroup;
@@ -148,7 +149,7 @@ void VR_LogOperationalDecision( GROUP *pGroup, const CHAR8 *szEvent, const VR_OP
 
 	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
 	fprintf( pFile,
-		"[D%u %02u:%02u] F=%u G=%u EVENT=%s MISSION=%s RESERVE=%s POS=%c%d TARGET=%c%d HOME=%c%d SIZE=%u SUP=%u MORALE=%u INTEL=%u RETREATS=%u REASON=%s",
+		"[D%u %02u:%02u] F=%u G=%u EVENT=%s MISSION=%s RESERVE=%s POS=%c%d TARGET=%c%d HOME=%c%d SIZE=%u SUP=%u MORALE=%u INTEL=%u KNOWN=%c%d PSTR=%u MSTR=%u RETREATS=%u REASON=%s",
 		(unsigned)day, (unsigned)hour, (unsigned)minute,
 		(unsigned)pEnemy->usFormationID, (unsigned)pGroup->ubGroupID,
 		szEvent ? szEvent : "UNKNOWN",
@@ -161,6 +162,9 @@ void VR_LogOperationalDecision( GROUP *pGroup, const CHAR8 *szEvent, const VR_OP
 		(unsigned)pEnemy->ubOperationalSupply,
 		(unsigned)pEnemy->ubOperationalMorale,
 		(unsigned)pEnemy->ubOperationalIntelConfidence,
+		SECTORY( pEnemy->ubOperationalLastKnownPlayerSectorID ) + 'A' - 1, SECTORX( pEnemy->ubOperationalLastKnownPlayerSectorID ),
+		(unsigned)pEnemy->ubOperationalLastKnownPlayerStrength,
+		(unsigned)pEnemy->ubOperationalLastKnownMilitiaStrength,
 		(unsigned)pEnemy->ubOperationalRetreatCount,
 		VR_OperationalReasonName( pEnemy->ubOperationalLastDecisionReason ) );
 
@@ -205,7 +209,8 @@ void VR_EnsureEnemyFormationState( GROUP *pGroup )
 	pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_FORMATION_CREATED;
 	pEnemy->ubOperationalRetreatCount = 0;
 	pEnemy->usOperationalFlags = 0;
-	pEnemy->usOperationalDecisionStamp = (UINT16)( GetWorldTotalMin() & 0xffffU );
+	pEnemy->ubOperationalLastKnownPlayerStrength = 0;
+	pEnemy->ubOperationalLastKnownMilitiaStrength = 0;
 
 	VR_LogOperationalDecision( pGroup, "CREATE", NULL );
 }
@@ -229,7 +234,6 @@ void VR_SetFormationMission( GROUP *pGroup, UINT8 ubMission, UINT8 ubReason )
 
 	pGroup->pEnemyGroup->ubOperationalMission = ubMission;
 	pGroup->pEnemyGroup->ubOperationalLastDecisionReason = ubReason;
-	pGroup->pEnemyGroup->usOperationalDecisionStamp = (UINT16)( GetWorldTotalMin() & 0xffffU );
 }
 
 void VR_SetFormationReserveRole( GROUP *pGroup, UINT8 ubReserveRole, UINT8 ubReason )
@@ -240,7 +244,65 @@ void VR_SetFormationReserveRole( GROUP *pGroup, UINT8 ubReserveRole, UINT8 ubRea
 
 	pGroup->pEnemyGroup->ubOperationalReserveRole = ubReserveRole;
 	pGroup->pEnemyGroup->ubOperationalLastDecisionReason = ubReason;
-	pGroup->pEnemyGroup->usOperationalDecisionStamp = (UINT16)( GetWorldTotalMin() & 0xffffU );
+}
+
+static UINT8 VR_EstimateStrengthWithConfidence( INT32 iObservedStrength, UINT8 ubConfidence )
+{
+	INT32 iEstimate = iObservedStrength;
+	INT32 iError = ( 100 - ubConfidence ) / 5;
+
+	if( iError > 0 )
+		iEstimate += (INT32)Random( iError * 2 + 1 ) - iError;
+
+	return VR_ClampByte( iEstimate );
+}
+
+void VR_ReportOperationalIntel( UINT8 ubSectorID, UINT8 ubConfidence )
+{
+	UINT8 x = (UINT8)SECTORX( ubSectorID );
+	UINT8 y = (UINT8)SECTORY( ubSectorID );
+	SECTORINFO *pSector = &SectorInfo[ ubSectorID ];
+
+	INT32 iObservedPlayerStrength = (INT32)PlayerMercsInSector( x, y, 0 ) * 8;
+	INT32 iObservedMilitiaStrength =
+		(INT32)pSector->ubNumberOfCivsAtLevel[ GREEN_MILITIA ] +
+		(INT32)pSector->ubNumberOfCivsAtLevel[ REGULAR_MILITIA ] * 2 +
+		(INT32)pSector->ubNumberOfCivsAtLevel[ ELITE_MILITIA ] * 3;
+
+	GROUP *pGroup = gpGroupList;
+	while( pGroup )
+	{
+		if( !pGroup->fPlayer && pGroup->pEnemyGroup )
+		{
+			VR_EnsureEnemyFormationState( pGroup );
+			ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+
+			INT32 iDistance = VR_Abs( (INT32)pGroup->ubSectorX - x ) +
+				VR_Abs( (INT32)pGroup->ubSectorY - y );
+			INT32 iDeliveredConfidence = (INT32)ubConfidence - iDistance * 2;
+			if( iDeliveredConfidence < 10 )
+				iDeliveredConfidence = 10;
+			if( iDeliveredConfidence > 100 )
+				iDeliveredConfidence = 100;
+
+			pEnemy->ubOperationalLastKnownPlayerSectorID = ubSectorID;
+			pEnemy->ubOperationalIntelConfidence = (UINT8)iDeliveredConfidence;
+			pEnemy->ubOperationalLastKnownPlayerStrength =
+				VR_EstimateStrengthWithConfidence( iObservedPlayerStrength, (UINT8)iDeliveredConfidence );
+			pEnemy->ubOperationalLastKnownMilitiaStrength =
+				VR_EstimateStrengthWithConfidence( iObservedMilitiaStrength, (UINT8)iDeliveredConfidence );
+			pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_CONTACT;
+
+			if( iDeliveredConfidence >= 60 )
+				pEnemy->usOperationalFlags |= VR_OPFLAG_RECENT_CONTACT;
+			else
+				pEnemy->usOperationalFlags &= ~VR_OPFLAG_RECENT_CONTACT;
+
+			VR_LogOperationalDecision( pGroup, "INTEL_REPORT", NULL );
+		}
+
+		pGroup = pGroup->next;
+	}
 }
 
 INT32 VR_ScoreOperationalTarget( GROUP *pGroup, UINT8 ubSectorID, VR_OPERATIONAL_SCORE *pBreakdown )
@@ -271,11 +333,20 @@ INT32 VR_ScoreOperationalTarget( GROUP *pGroup, UINT8 ubSectorID, VR_OPERATIONAL
 	if( IsThisSectorASAMSector( x, y, 0 ) )
 		score.iSAMValue = 20;
 
-	score.iPlayerForceRisk = -(INT32)PlayerMercsInSector( x, y, 0 ) * 8;
-	score.iMilitiaRisk = -(INT32)(
-		pSector->ubNumberOfCivsAtLevel[ GREEN_MILITIA ] +
-		pSector->ubNumberOfCivsAtLevel[ REGULAR_MILITIA ] * 2 +
-		pSector->ubNumberOfCivsAtLevel[ ELITE_MILITIA ] * 3 );
+	// No omniscience: threat comes only from the formation's last received intelligence snapshot.
+	if( pGroup && pGroup->pEnemyGroup )
+	{
+		VR_EnsureEnemyFormationState( pGroup );
+		ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+		if( pEnemy->ubOperationalLastKnownPlayerSectorID == ubSectorID &&
+			pEnemy->ubOperationalIntelConfidence > 0 )
+		{
+			score.iPlayerForceRisk = -( (INT32)pEnemy->ubOperationalLastKnownPlayerStrength *
+				pEnemy->ubOperationalIntelConfidence / 100 );
+			score.iMilitiaRisk = -( (INT32)pEnemy->ubOperationalLastKnownMilitiaStrength *
+				pEnemy->ubOperationalIntelConfidence / 100 );
+		}
+	}
 
 	if( pGroup )
 	{
@@ -336,8 +407,16 @@ void VR_OnEnemyGroupAssigned( GROUP *pGroup, UINT8 ubTargetSectorID, UINT8 ubLeg
 	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
 	pEnemy->ubOperationalTargetSectorID = ubTargetSectorID;
 	pEnemy->ubOperationalMission = VR_MissionFromLegacyIntention( ubLegacyIntention );
+
+	if( pEnemy->ubOperationalMission == VR_OPMISSION_REINFORCE )
+	{
+		UINT8 targetX = (UINT8)SECTORX( ubTargetSectorID );
+		UINT8 targetY = (UINT8)SECTORY( ubTargetSectorID );
+		if( StrategicMap[ CALCULATE_STRATEGIC_INDEX( targetX, targetY ) ].fEnemyControlled == FALSE )
+			pEnemy->ubOperationalMission = VR_OPMISSION_RELIEVE;
+	}
+
 	pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_LEGACY_ASSIGNMENT;
-	pEnemy->usOperationalDecisionStamp = (UINT16)( GetWorldTotalMin() & 0xffffU );
 
 	if( pEnemy->ubOperationalMission == VR_OPMISSION_REINFORCE )
 	{
@@ -387,9 +466,8 @@ void VR_OnEnemyGroupArrived( GROUP *pGroup )
 
 	if( PlayerMercsInSector( pGroup->ubSectorX, pGroup->ubSectorY, 0 ) > 0 )
 	{
-		pEnemy->ubOperationalLastKnownPlayerSectorID = currentSector;
-		pEnemy->ubOperationalIntelConfidence = 100;
-		pEnemy->usOperationalFlags |= VR_OPFLAG_RECENT_CONTACT;
+		// A formation in direct contact radios a precise report; confidence degrades with dissemination distance.
+		VR_ReportOperationalIntel( currentSector, 100 );
 		pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_CONTACT;
 	}
 
@@ -408,7 +486,6 @@ void VR_OnEnemyGroupArrived( GROUP *pGroup )
 	if( currentSector == pEnemy->ubOperationalHomeSectorID )
 		pEnemy->ubOperationalSupply = VR_ClampByte( pEnemy->ubOperationalSupply + 10 );
 
-	pEnemy->usOperationalDecisionStamp = (UINT16)( GetWorldTotalMin() & 0xffffU );
 	VR_LogOperationalDecision( pGroup, "ARRIVE", NULL );
 }
 
@@ -427,7 +504,6 @@ void VR_OnEnemyGroupRetreated( GROUP *pGroup )
 	pEnemy->ubOperationalReserveRole = VR_RESERVE_NONE;
 	pEnemy->ubOperationalMorale = VR_ClampByte( pEnemy->ubOperationalMorale - 12 );
 	pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_RETREAT;
-	pEnemy->usOperationalDecisionStamp = (UINT16)( GetWorldTotalMin() & 0xffffU );
 
 	VR_LogOperationalDecision( pGroup, "RETREAT", NULL );
 }
