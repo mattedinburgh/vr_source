@@ -49,7 +49,7 @@ jobs:
           & $git -c core.longpaths=true clone --depth 1 --single-branch --branch install/all-2026-09-12 --filter=blob:none --no-checkout https://github.com/mattedinburgh/vr_gamedir.git $gamedir
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $git -C $gamedir sparse-checkout init --cone
-          & $git -C $gamedir sparse-checkout set Data-Maps-Tiles/Tilesets/37 Data-Maps-Tiles/Tilesets/38 Data-Maps-Tiles/FarmKit
+          & $git -C $gamedir sparse-checkout set Data-Maps-Tiles/Tilesets/10 Data-Maps-Tiles/Tilesets/35 Data-Maps-Tiles/Tilesets/37 Data-Maps-Tiles/Tilesets/38 Data-Maps-Tiles/Tilesets/50 Data-Maps-Tiles/Tilesets/53 Data-Maps-Tiles/Tilesets/58 Data-Maps-Tiles/FarmKit
           & $git -C $gamedir checkout install/all-2026-09-12
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
