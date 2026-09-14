@@ -106,6 +106,15 @@ Status: implemented on this branch.
 - 1x default
 
 ### VHD-1 — native 2x true-colour tile prototype
+Status: renderer plumbing implemented; build/runtime validation pending.
+
+Implemented foundations:
+- native `VHD2/` and `VHD4/` tactical tile lookup with legacy JSD identity preserved
+- scale-aware JSD generation and true-colour per-pixel Z lookup
+- legacy indexed map-tile fallback promoted to RGBA at 2x/4x, avoiding source-pixel-coupled assembly multi-Z blitters
+- legacy soldier animation fallback scaling while preserving palette recolouring
+- scale-aware C++ multi-Z palette path for scaled `SOLDIER_MULTITILE_Z`/corpse-style rendering, including palette index 254 trans-shadow semantics
+- scaled roof/height, render-origin, mouse, scrolling and occlusion-bubble screen-space offsets
 
 Use a small controlled test set:
 - ground tile
@@ -124,8 +133,9 @@ Requirements:
 - destruction/door state remains unchanged
 
 ### VHD-2 — generated legacy fallback
+Status: runtime nearest-neighbour fallback is implemented; persistent cache/quality upgrade remains future work.
 
-Create/cache 2x VHD representations for missing art so mixed converted/unconverted sectors remain visually coherent.
+Missing native tile art is currently enlarged in memory. Indexed map packages are promoted to RGBA so structure depth remains scale-aware; indexed soldier animation packages stay palette-based.
 
 ### VHD-3 — tactical actors/effects
 
@@ -140,6 +150,23 @@ Scale or replace:
 ### VHD-4 — 4x optional mode
 
 Only after 2x is stable.
+
+
+## Validation gate before any merge
+
+VHD remains experimental and must not be merged into the canonical integration branch until all of the following pass in a 2x test build:
+
+- clean Release Win32 compile
+- sector load with mixed native-HD and legacy fallback assets
+- ground/wall/door/window/roof/prop alignment
+- opening/closing doors and destruction states
+- correct JSD depth ordering at wall corners and multi-tile structures
+- normal and obscured multi-tile merc/corpse rendering
+- mouse-to-grid targeting across viewport edges
+- roof-level switching and camera centering
+- scrolling without seams or stale save-buffer rectangles
+- Fallout-style wall cutout at 2x
+- save/load without map or save-format changes
 
 ## Non-goals
 
