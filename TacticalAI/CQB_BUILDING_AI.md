@@ -79,7 +79,9 @@ The planner is deliberately bounded:
 - no second global pathfinder;
 - transient plan memory;
 - fireteam mover budget to avoid doorway queues;
-- final routes pass `AIKnownRouteExposureAcceptable`.
+- final routes pass `AIKnownRouteExposureAcceptable`;
+- veteran/mobile elements with `VRCQB_CAP_ALTERNATE_ENTRY` may use an adjacent jumpable window when it is a better alternate entry than the doorway approach;
+- commanded/experienced elements with `VRCQB_CAP_PROACTIVE_SUPPORT` may place smoke on an exposed entry before committing movers, while preserving a local smoke reserve when not already under fire.
 
 ## Analytics
 
@@ -92,8 +94,8 @@ Do not add a separate CQB log or Black Box.
 
 Future CQB work must stay inside the unified architecture.
 
-- destructive breaching, window entry, proactive smoke or additional room-clearing actions must enter through
-  the existing priority chain;
+- destructive breaching and additional room-clearing actions must enter through the existing priority chain;
+- window entry and proactive entry smoke are now active subordinate CQB actions and must remain competence-gated;
 - do not bypass survival, disengagement, casualty or immediate-attack priorities;
 - do not create separate squad state;
 - use legal known information only;
@@ -104,3 +106,12 @@ Future CQB work must stay inside the unified architecture.
 
 `inactive/cqb-building-doctrine-2026-09-14` is frozen at its archived tip. It may be used for archaeology only.
 All new CQB development starts from and returns to `install/all-2026-09-12`.
+
+## Advanced entry actions
+
+The canonical planner now has two active advanced entry actions in addition to normal movement:
+
+- **Proactive entry smoke:** only training profiles carrying `VRCQB_CAP_PROACTIVE_SUPPORT` may deliberately smoke an exposed entry. The normal grenade trajectory/AP calculation remains authoritative, water/already-smoked entry tiles are rejected, and scarce smoke is retained unless the element is already under fire.
+- **Alternate window entry:** only profiles carrying `VRCQB_CAP_ALTERNATE_ENTRY` may deliberately select a jumpable adjacent window. Candidate windows are scored against the desired foothold/building and known-threat exposure; the actor faces the selected opening before the native `AI_ACTION_JUMP_WINDOW` executor is used.
+
+Basic security and ordinary uncommanded line troops therefore continue to use simpler doorway/cover behaviour rather than receiving expert room-entry tactics for free.
