@@ -5760,6 +5760,162 @@ void InvalidateWorldRedundency( )
 
 }
 
+// VHD indexed multi-Z renderer.
+//
+// Legacy assembly Z-strip blitters advance depth every 20 raw sprite pixels.
+// VHD fallback sprites are 2x/4x larger, so raw source X must be mapped back to
+// authored/JSD pixel space. Keeping this path indexed preserves compact ETRLE
+// storage and soldier palette recolouring instead of expanding fallback art to RGBA.
+static UINT16 VHDIndexedZStripLevel(
+	ZStripInfo *pZInfo, UINT16 usBaseZ, INT32 iScaledSourceX, UINT8 ubAssetScale )
+{
+	if ( pZInfo == NULL )
+		return usBaseZ;
+
+	const INT32 iLegacySourceX = iScaledSourceX / (INT32)ubAssetScale;
+	INT32 iChanges = 0;
+
+	if ( iLegacySourceX >= (INT32)pZInfo->ubFirstZStripWidth )
+	{
+		iChanges = 1 + ( ( iLegacySourceX - (INT32)pZInfo->ubFirstZStripWidth ) / 20 );
+		if ( iChanges > (INT32)pZInfo->ubNumberOfZChanges )
+			iChanges = pZInfo->ubNumberOfZChanges;
+	}
+
+	INT32 iLevel = (INT32)usBaseZ +
+		( (INT32)pZInfo->bInitialZChange * (INT32)Z_STRIP_DELTA_Y );
+
+	for ( INT32 i = 0; i < iChanges; ++i )
+		iLevel += (INT32)pZInfo->pbZChange[i] * (INT32)Z_SUBLAYERS;
+
+	return (UINT16)iLevel;
+}
+
+static BOOLEAN VHDIndexedMultiZBlit(
+	UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue,
+	HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion,
+	INT16 sZIndex, UINT16 *p16BPPPalette,
+	BOOLEAN fSameZBurnsThrough, BOOLEAN fObscured, BOOLEAN fTransShadow )
+{
+	Assert( hSrcVObject != NULL );
+	Assert( pBuffer != NULL );
+	Assert( pZBuffer != NULL );
+	Assert( p16BPPPalette != NULL );
+
+	if ( hSrcVObject == NULL || pBuffer == NULL || pZBuffer == NULL || p16BPPPalette == NULL )
+		return FALSE;
+	if ( usIndex >= hSrcVObject->usNumberOfObjects || hSrcVObject->pETRLEObject == NULL ||
+		 hSrcVObject->pPixData == NULL || hSrcVObject->ppZStripInfo == NULL )
+		return FALSE;
+	if ( sZIndex < 0 || sZIndex >= (INT16)hSrcVObject->usNumberOfObjects ||
+		 hSrcVObject->ppZStripInfo[sZIndex] == NULL )
+		return FALSE;
+
+	const UINT8 ubAssetScale =
+		( hSrcVObject->ubVHDAssetScale == 2 || hSrcVObject->ubVHDAssetScale == 4 )
+			? hSrcVObject->ubVHDAssetScale : 1;
+	if ( ubAssetScale == 1 )
+		return FALSE;
+
+	const ETRLEObject *pRegion = &hSrcVObject->pETRLEObject[usIndex];
+	ZStripInfo *pZInfo = hSrcVObject->ppZStripInfo[sZIndex];
+
+	const INT32 iDestLeft = iX + pRegion->sOffsetX;
+	const INT32 iDestTop = iY + pRegion->sOffsetY;
+	const INT32 iClipLeft = clipregion ? clipregion->iLeft : ClippingRect.iLeft;
+	const INT32 iClipTop = clipregion ? clipregion->iTop : ClippingRect.iTop;
+	const INT32 iClipRight = clipregion ? clipregion->iRight : ClippingRect.iRight;
+	const INT32 iClipBottom = clipregion ? clipregion->iBottom : ClippingRect.iBottom;
+
+	if ( iDestLeft >= iClipRight || iDestTop >= iClipBottom ||
+		 iDestLeft + (INT32)pRegion->usWidth <= iClipLeft ||
+		 iDestTop + (INT32)pRegion->usHeight <= iClipTop )
+		return TRUE;
+
+	const UINT8 *pSrc = (const UINT8*)hSrcVObject->pPixData + pRegion->uiDataOffset;
+	const UINT8 *pSrcEnd = pSrc + pRegion->uiDataLength;
+
+	for ( UINT16 usSourceY = 0; usSourceY < pRegion->usHeight; ++usSourceY )
+	{
+		UINT16 usSourceX = 0;
+		BOOLEAN fSawEndOfLine = FALSE;
+
+		while ( pSrc < pSrcEnd )
+		{
+			const UINT8 ubCode = *pSrc++;
+
+			if ( ubCode == 0 )
+			{
+				fSawEndOfLine = TRUE;
+				break;
+			}
+
+			const UINT8 ubCount = ubCode & 0x7F;
+			if ( ubCount == 0 || (UINT32)usSourceX + ubCount > pRegion->usWidth )
+				return FALSE;
+
+			if ( ubCode & 0x80 )
+			{
+				usSourceX = (UINT16)( usSourceX + ubCount );
+				continue;
+			}
+
+			if ( pSrc + ubCount > pSrcEnd )
+				return FALSE;
+
+			for ( UINT8 ubRunPixel = 0; ubRunPixel < ubCount; ++ubRunPixel, ++usSourceX )
+			{
+				const UINT8 ubPaletteIndex = *pSrc++;
+				const INT32 iDestX = iDestLeft + usSourceX;
+				const INT32 iDestY = iDestTop + usSourceY;
+
+				if ( iDestX < iClipLeft || iDestX >= iClipRight ||
+					 iDestY < iClipTop || iDestY >= iClipBottom )
+					continue;
+
+				UINT16 *pDest = (UINT16*)((UINT8*)pBuffer +
+					((UINT32)iDestY * uiDestPitchBYTES)) + iDestX;
+				UINT16 *pZ = (UINT16*)((UINT8*)pZBuffer +
+					((UINT32)iDestY * uiDestPitchBYTES)) + iDestX;
+
+				const UINT16 usPixelZ = VHDIndexedZStripLevel(
+					pZInfo, usZValue, usSourceX, ubAssetScale );
+
+				BOOLEAN fDrawPixel;
+				if ( fObscured )
+				{
+					// Legacy obscured multi-Z: nearer pixels are solid; equal or
+					// farther pixels appear as the established checkerboard hint.
+					fDrawPixel = ( *pZ < usPixelZ ) ||
+						( ( iDestX & 1 ) == ( iDestY & 1 ) );
+				}
+				else if ( fSameZBurnsThrough )
+				fDrawPixel = ( *pZ <= usPixelZ );
+				else
+				fDrawPixel = ( *pZ < usPixelZ );
+
+				if ( !fDrawPixel )
+					continue;
+
+				*pZ = usPixelZ;
+
+				if ( fTransShadow && ubPaletteIndex == 254 )
+					*pDest = ShadeTable[*pDest];
+				else
+					*pDest = p16BPPPalette[ubPaletteIndex];
+			}
+		}
+
+		if ( !fSawEndOfLine && usSourceY + 1 < pRegion->usHeight )
+			return FALSE;
+		if ( usSourceX != pRegion->usWidth )
+			return FALSE;
+	}
+
+	return TRUE;
+}
+
+
 /**********************************************************************************************
  Blt8BPPDataTo16BPPBufferTransZIncClip
 
@@ -5772,6 +5928,11 @@ void InvalidateWorldRedundency( )
 **********************************************************************************************/
 BOOLEAN Blt8BPPDataTo16BPPBufferTransZIncClip( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion)
 {
+	if ( hSrcVObject != NULL && hSrcVObject->ubVHDAssetScale > 1 )
+		return VHDIndexedMultiZBlit(
+			pBuffer, uiDestPitchBYTES, pZBuffer, usZValue, hSrcVObject,
+			iX, iY, usIndex, clipregion, (INT16)usIndex, hSrcVObject->pShadeCurrent,
+			FALSE, FALSE, FALSE );
 	UINT16 *p16BPPPalette;
 	UINT32 uiOffset;
 	UINT32 usHeight, usWidth, Unblitted;
@@ -6170,6 +6331,11 @@ BlitDone:
 **********************************************************************************************/
 BOOLEAN Blt8BPPDataTo16BPPBufferTransZIncClipZSameZBurnsThrough( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion, INT16 usZStripIndex )
 {
+	if ( hSrcVObject != NULL && hSrcVObject->ubVHDAssetScale > 1 )
+		return VHDIndexedMultiZBlit(
+			pBuffer, uiDestPitchBYTES, pZBuffer, usZValue, hSrcVObject,
+			iX, iY, usIndex, clipregion, usZStripIndex, hSrcVObject->pShadeCurrent,
+			TRUE, FALSE, FALSE );
 	UINT16 *p16BPPPalette;
 	UINT32 uiOffset;
 	UINT32 usHeight, usWidth, Unblitted;
@@ -6571,6 +6737,11 @@ BlitDone:
 **********************************************************************************************/
 BOOLEAN Blt8BPPDataTo16BPPBufferTransZIncObscureClip( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion)
 {
+	if ( hSrcVObject != NULL && hSrcVObject->ubVHDAssetScale > 1 )
+		return VHDIndexedMultiZBlit(
+			pBuffer, uiDestPitchBYTES, pZBuffer, usZValue, hSrcVObject,
+			iX, iY, usIndex, clipregion, (INT16)usIndex, hSrcVObject->pShadeCurrent,
+			FALSE, TRUE, FALSE );
 	UINT16 *p16BPPPalette;
 	UINT32 uiOffset, uiLineFlag;
 	UINT32 usHeight, usWidth, Unblitted;
@@ -6986,167 +7157,13 @@ BlitDone:
 // 3 ) clipped
 // 4 ) trans shadow - if value is 254, makes a shadow
 //
-// VHD: scaled soldier/corpse animation surfaces must retain their indexed palette,
-// but the legacy assembly multi-Z blitters advance JSD depth every 20 *raw* pixels.
-// For 2x/4x imagery that is wrong. This C++ path keeps palette/shadow semantics
-// intact while evaluating depth in equivalent legacy source-pixel coordinates.
-static UINT16 VHDIndexedMultiZLevel(
-	ZStripInfo *pZInfo, UINT16 usBaseZ, INT32 iScaledSourceX, UINT8 ubAssetScale )
-{
-	if ( pZInfo == NULL )
-		return usBaseZ;
-
-	const INT32 iLegacySourceX = iScaledSourceX / (INT32)ubAssetScale;
-	INT32 iChanges = 0;
-
-	if ( iLegacySourceX >= (INT32)pZInfo->ubFirstZStripWidth )
-	{
-		iChanges = 1 + ( ( iLegacySourceX - (INT32)pZInfo->ubFirstZStripWidth ) / 20 );
-		if ( iChanges > (INT32)pZInfo->ubNumberOfZChanges )
-			iChanges = pZInfo->ubNumberOfZChanges;
-	}
-
-	INT32 iLevel = (INT32)usBaseZ +
-		( (INT32)pZInfo->bInitialZChange * (INT32)Z_SUBLAYERS * 10 );
-
-	for ( INT32 i = 0; i < iChanges; ++i )
-		iLevel += (INT32)pZInfo->pbZChange[i] * (INT32)Z_SUBLAYERS;
-
-	return (UINT16)iLevel;
-}
-
-static BOOLEAN VHDIndexedMultiZPaletteBlit(
-	UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue,
-	HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion,
-	INT16 sZIndex, UINT16 *p16BPPPalette, BOOLEAN fObscured )
-{
-	Assert( hSrcVObject != NULL );
-	Assert( pBuffer != NULL );
-	Assert( pZBuffer != NULL );
-	Assert( p16BPPPalette != NULL );
-
-	if ( hSrcVObject == NULL || pBuffer == NULL || pZBuffer == NULL || p16BPPPalette == NULL )
-		return FALSE;
-	if ( usIndex >= hSrcVObject->usNumberOfObjects || hSrcVObject->pETRLEObject == NULL ||
-		 hSrcVObject->pPixData == NULL || hSrcVObject->ppZStripInfo == NULL )
-		return FALSE;
-	if ( sZIndex < 0 || sZIndex >= (INT16)hSrcVObject->usNumberOfObjects ||
-		 hSrcVObject->ppZStripInfo[sZIndex] == NULL )
-		return FALSE;
-
-	const UINT8 ubAssetScale =
-		( hSrcVObject->ubVHDAssetScale == 2 || hSrcVObject->ubVHDAssetScale == 4 )
-			? hSrcVObject->ubVHDAssetScale : 1;
-	if ( ubAssetScale == 1 )
-		return FALSE;
-
-	const ETRLEObject *pRegion = &hSrcVObject->pETRLEObject[usIndex];
-	ZStripInfo *pZInfo = hSrcVObject->ppZStripInfo[sZIndex];
-
-	const INT32 iDestLeft = iX + pRegion->sOffsetX;
-	const INT32 iDestTop = iY + pRegion->sOffsetY;
-
-	const INT32 iClipLeft = clipregion ? clipregion->iLeft : ClippingRect.iLeft;
-	const INT32 iClipTop = clipregion ? clipregion->iTop : ClippingRect.iTop;
-	const INT32 iClipRight = clipregion ? clipregion->iRight : ClippingRect.iRight;
-	const INT32 iClipBottom = clipregion ? clipregion->iBottom : ClippingRect.iBottom;
-
-	if ( iDestLeft >= iClipRight || iDestTop >= iClipBottom ||
-		 iDestLeft + (INT32)pRegion->usWidth <= iClipLeft ||
-		 iDestTop + (INT32)pRegion->usHeight <= iClipTop )
-		return TRUE;
-
-	const UINT8 *pSrc = (const UINT8*)hSrcVObject->pPixData + pRegion->uiDataOffset;
-	const UINT8 *pSrcEnd = pSrc + pRegion->uiDataLength;
-
-	for ( UINT16 usSourceY = 0; usSourceY < pRegion->usHeight; ++usSourceY )
-	{
-		UINT16 usSourceX = 0;
-		BOOLEAN fSawEndOfLine = FALSE;
-
-		while ( pSrc < pSrcEnd )
-		{
-			const UINT8 ubCode = *pSrc++;
-
-			if ( ubCode == 0 )
-			{
-				fSawEndOfLine = TRUE;
-				break;
-			}
-
-			const UINT8 ubCount = ubCode & 0x7F;
-			if ( ubCount == 0 || (UINT32)usSourceX + ubCount > pRegion->usWidth )
-				return FALSE;
-
-			if ( ubCode & 0x80 )
-			{
-				usSourceX = (UINT16)( usSourceX + ubCount );
-				continue;
-			}
-
-			if ( pSrc + ubCount > pSrcEnd )
-				return FALSE;
-
-			for ( UINT8 ubRunPixel = 0; ubRunPixel < ubCount; ++ubRunPixel, ++usSourceX )
-			{
-				const UINT8 ubPaletteIndex = *pSrc++;
-				const INT32 iDestX = iDestLeft + usSourceX;
-				const INT32 iDestY = iDestTop + usSourceY;
-
-				if ( iDestX < iClipLeft || iDestX >= iClipRight ||
-					 iDestY < iClipTop || iDestY >= iClipBottom )
-					continue;
-
-				UINT16 *pDest = (UINT16*)((UINT8*)pBuffer +
-					((UINT32)iDestY * uiDestPitchBYTES)) + iDestX;
-				UINT16 *pZ = (UINT16*)((UINT8*)pZBuffer +
-					((UINT32)iDestY * uiDestPitchBYTES)) + iDestX;
-
-				const UINT16 usPixelZ = VHDIndexedMultiZLevel(
-					pZInfo, usZValue, usSourceX, ubAssetScale );
-
-				BOOLEAN fDrawPixel;
-				if ( fObscured )
-				{
-					// Legacy obscure semantics: destination Z >= source Z is
-					// revealed only as a checkerboard hint (including equal Z).
-					fDrawPixel = ( *pZ < usPixelZ ) ||
-						( ( iDestX & 1 ) == ( iDestY & 1 ) );
-				}
-				else
-				{
-					// Normal multi-Z merc path draws through equal Z.
-					fDrawPixel = ( *pZ <= usPixelZ );
-				}
-
-				if ( !fDrawPixel )
-					continue;
-
-				*pZ = usPixelZ;
-
-				// Palette index 254 is the JA2 trans-shadow sentinel.
-				if ( ubPaletteIndex == 254 )
-					*pDest = ShadeTable[*pDest];
-				else
-					*pDest = p16BPPPalette[ubPaletteIndex];
-			}
-		}
-
-		if ( !fSawEndOfLine && usSourceY + 1 < pRegion->usHeight )
-			return FALSE;
-		if ( usSourceX != pRegion->usWidth )
-			return FALSE;
-	}
-
-	return TRUE;
-}
-
 BOOLEAN Blt8BPPDataTo16BPPBufferTransZTransShadowIncObscureClip( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion, INT16 sZIndex, UINT16 *p16BPPPalette )
 {
 	if ( hSrcVObject != NULL && hSrcVObject->ubVHDAssetScale > 1 )
-		return VHDIndexedMultiZPaletteBlit(
+		return VHDIndexedMultiZBlit(
 			pBuffer, uiDestPitchBYTES, pZBuffer, usZValue, hSrcVObject,
-			iX, iY, usIndex, clipregion, sZIndex, p16BPPPalette, TRUE );
+			iX, iY, usIndex, clipregion, sZIndex, p16BPPPalette,
+			TRUE, TRUE, TRUE );
 	UINT32 uiOffset, uiLineFlag;
 	UINT32 usHeight, usWidth, Unblitted;
 	UINT8	 *SrcPtr, *DestPtr, *ZPtr;
@@ -7613,9 +7630,10 @@ void CorrectRenderCenter( INT16 sRenderX, INT16 sRenderY, INT16 *pSNewX, INT16 *
 BOOLEAN Blt8BPPDataTo16BPPBufferTransZTransShadowIncClip( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion, INT16 sZIndex, UINT16 *p16BPPPalette )
 {
 	if ( hSrcVObject != NULL && hSrcVObject->ubVHDAssetScale > 1 )
-		return VHDIndexedMultiZPaletteBlit(
+		return VHDIndexedMultiZBlit(
 			pBuffer, uiDestPitchBYTES, pZBuffer, usZValue, hSrcVObject,
-			iX, iY, usIndex, clipregion, sZIndex, p16BPPPalette, FALSE );
+			iX, iY, usIndex, clipregion, sZIndex, p16BPPPalette,
+			TRUE, FALSE, TRUE );
 	UINT32 uiOffset;
 	UINT32 usHeight, usWidth, Unblitted;
 	UINT8	 *SrcPtr, *DestPtr, *ZPtr;
