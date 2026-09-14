@@ -11,6 +11,8 @@
 #endif
 
 #include "AI Diagnostics.h"
+#include "Game Clock.h"
+#include "Campaign Tactical Telemetry.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -199,11 +201,13 @@ void AITraceSelect(SOLDIERTYPE *pSoldier, UINT32 uiDecisionID, const CHAR8 *pSou
 	BOOLEAN fFrictionChangedChoice, const CHAR8 *pReason)
 {
 	INT32 sTarget = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	INT32 sSupportSpot = TileIsOutOfBounds(sCandidateGrid) ? pSoldier->sGridNo : sCandidateGrid;
 	AITraceWrite(pSoldier, uiDecisionID, "SELECT", pSource, sTarget,
 		AITacticalIntent(pSoldier, sTarget), AITacticalRole(pSoldier, sTarget),
 		bAction, sCandidateGrid, iScore, iRunnerUpScore, 0,
-		CountNearbyFriends(pSoldier, sCandidateGrid, DAY_VISION_RANGE / 3),
-		TileIsOutOfBounds(sTarget) ? 0 : AICrossfirePositionScore(pSoldier, sCandidateGrid, sTarget),
+		CountNearbyFriends(pSoldier, sSupportSpot, DAY_VISION_RANGE / 3),
+		(TileIsOutOfBounds(sTarget) || TileIsOutOfBounds(sCandidateGrid)) ? 0 :
+			AICrossfirePositionScore(pSoldier, sCandidateGrid, sTarget),
 		fFrictionChangedChoice, pReason);
 }
 
