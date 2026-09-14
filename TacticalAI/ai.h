@@ -301,6 +301,27 @@ enum
 	AI_BATTLE_CATASTROPHIC
 };
 
+// Layered tactical planner: squad intent is selected first, then each soldier
+// receives a dynamic role. These are preferences, not hidden stat bonuses.
+enum
+{
+	AI_INTENT_HOLD = 0,
+	AI_INTENT_PRESS,
+	AI_INTENT_FLANK,
+	AI_INTENT_FALLBACK,
+	AI_INTENT_DISENGAGE,
+	AI_INTENT_RESCUE
+};
+
+enum
+{
+	AI_ROLE_SUPPORT = 0,
+	AI_ROLE_MANEUVER,
+	AI_ROLE_FLANKER,
+	AI_ROLE_SCREEN,
+	AI_ROLE_RESERVE
+};
+
 BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier);
 UINT8 AIObservedRecentCasualties(SOLDIERTYPE *pSoldier);
 UINT8 AILocalCasualtyPercent(SOLDIERTYPE *pSoldier);
@@ -323,6 +344,7 @@ INT8 DecideEscapeAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
 UINT16 AIKnownThreatExposure(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel);
 BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier);
 INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
+INT8 DecideSuppressionResponse(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
 INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
 INT32 AILocalStress(SOLDIERTYPE *pSoldier);
 INT32 AIPersonalRisk(SOLDIERTYPE *pSoldier);
@@ -330,6 +352,9 @@ INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier);
 INT32 AICrossfirePositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT32 sTargetSpot);
 INT32 AISupportRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT32 AIManeuverRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
+INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
+INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
+INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT32 sTargetSpot, INT8 bIntent, INT8 bRole);
 INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT32 sTargetSpot, INT8 bTargetLevel);
 INT8 AIEngagementRangeModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
