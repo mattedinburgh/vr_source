@@ -585,11 +585,11 @@ BOOLEAN IsGridNoInScreenRect( INT32 sGridNo, SGPRect *pRect )
 				return( TRUE );
 			}
 
-			iXTrav += WORLD_TILE_X;
+			iXTrav += VHDScaleScreenValue( WORLD_TILE_X );
 
 		} while( iXTrav < pRect->iRight );
 
-		iYTrav += WORLD_TILE_Y;
+		iYTrav += VHDScaleScreenValue( WORLD_TILE_Y );
 		iXTrav = pRect->iLeft;
 
 	} while( iYTrav < pRect->iBottom );
