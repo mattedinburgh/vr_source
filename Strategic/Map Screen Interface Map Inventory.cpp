@@ -596,10 +596,13 @@ static void PoolSquadSurplusHandSmoke()
 				if ( !fKeptOne )
 				{
 					fKeptOne = TRUE;
-
-					// If this stack contains extras, peel them off one at a time.
 					if ( pObj->ubNumberOfObjects == 1 )
 						break;
+				}
+				else if ( pObj->ubNumberOfObjects == 1 )
+				{
+					// This is the one smoke this merc keeps.
+					break;
 				}
 
 				OBJECTTYPE extra;
@@ -649,13 +652,21 @@ static INT8 SectorLoadoutAmmoPriority( UINT8 ubAmmoType )
 {
 	AMMOTYPE &ammo = AmmoTypes[ubAmmoType];
 
+	// AP family: standard-issue penetrators (AP/FMJ, SAP, SAP Match). Exotic
+	// penetrators such as AET/DU/cold variants remain in "other".
 	const BOOLEAN fAP =
+		ammo.standardIssue &&
 		ammo.armourImpactReductionMultiplier < ammo.armourImpactReductionDivisor;
 
+	// Glaser and Cold Glaser share extreme armour weakness plus a large
+	// post-armour damage multiplier. Hornet's Nest has the armour weakness but
+	// not the damage multiplier, so it remains "other".
 	const BOOLEAN fGlaser =
 		ammo.armourImpactReductionMultiplier >= ( ammo.armourImpactReductionDivisor * 3 ) &&
-		ammo.afterArmourDamageMultiplier >= ( ammo.afterArmourDamageDivisor * 3 );
+		ammo.afterArmourDamageMultiplier >= ( ammo.afterArmourDamageDivisor * 2 );
 
+	// HP is the user's blue category. More exotic expanding rounds that don't
+	// match this classic HP signature stay in "other".
 	const BOOLEAN fHP =
 		ammo.armourImpactReductionMultiplier > ammo.armourImpactReductionDivisor &&
 		ammo.afterArmourDamageMultiplier > ammo.afterArmourDamageDivisor;
@@ -991,6 +1002,8 @@ static void RedistributeSectorSmoke()
 	if ( uiOldFilter != IC_MAPFILTER_ALL )
 		MapInventoryFilterSet( IC_MAPFILTER_ALL );
 
+	// Leave one smoke on anyone who already has one; only surplus smokes join
+	// the common pool.
 	PoolSquadSurplusHandSmoke();
 
 	std::vector<SOLDIERTYPE*> mercs;
@@ -1002,24 +1015,28 @@ static void RedistributeSectorSmoke()
 			mercs.push_back( pSoldier );
 	}
 
-	UINT32 uiGiven = 0;
+	UINT32 uiEquipped = 0;
 
 	for ( UINT32 i = 0; i < mercs.size(); ++i )
 	{
+		if ( CountMercHandSmoke( mercs[i] ) >= 1 )
+		{
+			++uiEquipped;
+			continue;
+		}
+
 		OBJECTTYPE smoke;
 		if ( !TakeOneHandSmokeFromSector( &smoke ) )
-			break;
+			continue;
 
 		if ( PlaceInAnyPocket( mercs[i], &smoke, FALSE ) && !smoke.exists() )
 		{
-			++uiGiven;
+			++uiEquipped;
 		}
-		else
+		else if ( smoke.exists() )
 		{
-			// This merc has no suitable pocket. Return the grenade and let the next
-			// merc try it.
-			if ( smoke.exists() )
-				PoolObjectForSectorLoadout( &smoke );
+			// No suitable LBE/pocket on this merc: return it for another merc.
+			PoolObjectForSectorLoadout( &smoke );
 		}
 	}
 
@@ -1031,7 +1048,8 @@ static void RedistributeSectorSmoke()
 	fCharacterInfoPanelDirty = TRUE;
 
 	ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
-		L"SMK: un humo por mercenario: %d de %d equipados.", uiGiven, (UINT32)mercs.size() );
+		L"SMK: un humo por mercenario: %d de %d equipados.",
+		uiEquipped, (UINT32)mercs.size() );
 }
 
 // load the background panel graphics for inventory
@@ -3960,8 +3978,6 @@ void HandleButtonStatesWhileMapInventoryActive( void )
 		DisableButton( guiMapInvenSortButton[ 3 ] );
 		DisableButton( guiMapInvenLoadoutButton[0] );
 		DisableButton( guiMapInvenLoadoutButton[1] );
-		DisableButton( guiMapInvenLoadoutButton[0] );
-		DisableButton( guiMapInvenLoadoutButton[1] );
 	}
 	else
 	{
@@ -3985,6 +4001,8 @@ void HandleButtonStatesWhileMapInventoryActive( void )
 		DisableButton( guiMapInvenSortButton[ 1 ] );
 		DisableButton( guiMapInvenSortButton[ 2 ] );
 		DisableButton( guiMapInvenSortButton[ 3 ] );
+		DisableButton( guiMapInvenLoadoutButton[0] );
+		DisableButton( guiMapInvenLoadoutButton[1] );
 	}
 }
 
