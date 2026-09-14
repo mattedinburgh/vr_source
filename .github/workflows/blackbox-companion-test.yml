@@ -1,0 +1,35 @@
+name: Black Box Companion tests
+
+on:
+  push:
+    branches:
+      - install/all-2026-09-12
+    paths:
+      - 'VRAnalytics.cpp'
+      - 'VRAnalytics.h'
+      - 'tools/vr_companion_analyze.py'
+      - 'tools/test_vr_companion.py'
+      - '.github/workflows/blackbox-companion-test.yml'
+  workflow_dispatch:
+
+jobs:
+  companion-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out current branch head
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Compile Companion scripts
+        run: |
+          python -m py_compile tools/vr_companion_analyze.py
+          python -m py_compile tools/test_vr_companion.py
+
+      - name: Run Companion unit tests
+        working-directory: tools
+        run: python -m unittest -v test_vr_companion.py
