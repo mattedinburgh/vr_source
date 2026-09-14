@@ -1,0 +1,29 @@
+name: Validate Black Box v2 final
+
+on:
+  push:
+    branches:
+      - validation/blackbox-v2-final-2026-09-14
+  workflow_dispatch:
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+      - name: Retarget legacy projects
+        shell: powershell
+        run: |
+          Get-ChildItem $env:GITHUB_WORKSPACE -Recurse -Filter '*.vcxproj' -File | ForEach-Object {
+            $p=$_.FullName
+            $t=[IO.File]::ReadAllText($p)
+            $n=$t.Replace('<PlatformToolset>v120_xp</PlatformToolset>','<PlatformToolset>v143</PlatformToolset>').Replace('<PlatformToolset>v120</PlatformToolset>','<PlatformToolset>v143</PlatformToolset>')
+            if($n -ne $t){[IO.File]::WriteAllText($p,$n,(New-Object Text.UTF8Encoding($false)))}
+          }
+      - name: Build Release Win32
+        shell: powershell
+        run: |
+          msbuild '.\ja2_VS2013.sln' /m /t:ja2 /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
