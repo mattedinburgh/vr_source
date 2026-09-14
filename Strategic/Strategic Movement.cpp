@@ -845,6 +845,8 @@ UINT8 AddGroupToList( GROUP *pGroup )
 	unsigned ID = 0;
 
 	AssertNotNIL (pGroup);
+	// Central compatibility point: legacy callers still set fPlayer only.
+	VR_NormalizeStrategicGroupTeam( pGroup );
 	AssertGE (pGroup->ubSectorX, MINIMUM_VALID_X_COORDINATE);
 	AssertLE (pGroup->ubSectorX, MAXIMUM_VALID_X_COORDINATE);
 	AssertGE (pGroup->ubSectorY, MINIMUM_VALID_Y_COORDINATE);
@@ -4010,6 +4012,9 @@ BOOLEAN LoadStrategicMovementGroupsFromSavedGameFile( HWFILE hFile )
 
 
 		//
+				// Normalize old saves from legacy fPlayer before interpreting the union.
+		VR_NormalizeStrategicGroupTeam( pTemp );
+
 		// Add either the pointer or the linked list.
 		//
 
