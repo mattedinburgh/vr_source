@@ -349,6 +349,7 @@ enum
 };
 
 BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier);
+BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridNo);
 
 // Deidranna force-quality doctrine. These functions limit reasoning/initiative only.
 UINT8 AIGetDoctrineProfile(SOLDIERTYPE *pSoldier);
