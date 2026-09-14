@@ -408,97 +408,18 @@ jobs:
 
           # Tactical-view captures are the primary A3 art-QA images.
           $tacticalPngs = @()
-          Get-ChildItem -LiteralPath $previewDir -Filter '*_tactical_*_overview.bmp' -File -ErrorAction SilentlyContinue |
-            Sort-Object Name |
-            ForEach-Object {
-              $baseName = [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
-              $outName = ($baseName -replace '_overview
-          if (Test-Path $statusFile) {
-            Copy-Item -Force $statusFile (Join-Path $outDir 'A3_mapshot_status.txt')
+          $tacticalBmps = Get-ChildItem -LiteralPath $previewDir -Filter '*_tactical_*_overview.bmp' -File -ErrorAction SilentlyContinue | Sort-Object Name
+          foreach ($bmp in $tacticalBmps) {
+            $baseName = [System.IO.Path]::GetFileNameWithoutExtension($bmp.Name)
+            $baseName = $baseName.Replace('_overview','')
+            $outPath = Join-Path $outDir ($baseName + '.png')
+            $shot = [System.Drawing.Image]::FromFile($bmp.FullName)
+            try { $shot.Save($outPath, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $shot.Dispose() }
+            $tacticalPngs += $outPath
+            Write-Host ('Tactical QA capture: ' + $outPath)
           }
-          Copy-Item -Force $baked.FullName (Join-Path $outDir 'A3_REMASTERED.dat')
-
-          @{
-            sector = 'A3_REMASTERED'
-            source_sha = '${{ github.sha }}'
-            gamedir_sha = '${{ steps.gamedir.outputs.sha }}'
-            generated_utc = (Get-Date).ToUniversalTime().ToString('o')
-            renderer = 'Vengeance MapEditor two-pass MAPSHOT'
-            editor = 'MapEditor_Vengeance.exe'
-            vfs = 'vfs_config.Vengeance.ini'
-            sandbox = $sandbox
-            baked_map_bytes = $baked.Length
-            source_pass_forced_exit = $forcedBakeExit
-            final_pass_forced_exit = $forcedFinalExit
-          } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $outDir 'A3_latest.json')
-
-          Write-Host "A3 baked map validated by reload and rendered: $png"
-
-      - name: Upload render artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: A3-engine-preview
-          path: |
-            MapPreviews/Auto/A3_latest.png
-            MapPreviews/Auto/A3_latest.json
-            MapPreviews/Auto/A3_mapshot_status.txt
-            MapPreviews/Auto/A3_REMASTERED.dat
-            MapPreviews/Auto/A3_architecture.csv
-            MapPreviews/Auto/*_tactical_*.png
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Publish latest preview to repository
-        continue-on-error: true
-        shell: powershell
-        run: |
-          $git = '${{ steps.git.outputs.path }}'
-          & $git add MapPreviews/Auto/A3_latest.png MapPreviews/Auto/A3_latest.json
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $git diff --cached --quiet
-          if ($LASTEXITCODE -eq 0) { Write-Host 'Preview is unchanged.'; exit 0 }
-          & $git config user.name 'github-actions[bot]'
-          & $git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          & $git commit -m 'Update autonomous A3 engine preview'
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          for ($attempt = 1; $attempt -le 5; $attempt++) {
-            & $git pull --rebase origin a3/hand-authored-v2
-            if ($LASTEXITCODE -eq 0) {
-              & $git push origin HEAD:a3/hand-authored-v2
-              if ($LASTEXITCODE -eq 0) { exit 0 }
-            }
-            Start-Sleep -Seconds ($attempt * 2)
-          }
-          throw 'Could not publish A3 preview after 5 attempts.'
-      - name: Remove render sandbox
-        if: always()
-        shell: powershell
-        run: |
-          $sandbox = "C:\VENGENCE\JA2_RENDER_SANDBOX_$env:GITHUB_RUN_ID"
-          if (-not (Test-Path $sandbox)) { exit 0 }
-
-          Get-ChildItem -LiteralPath $sandbox -Force -Directory -ErrorAction SilentlyContinue |
-            Where-Object { ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 } |
-            ForEach-Object {
-              cmd /c rmdir "$($_.FullName)"
-              if ($LASTEXITCODE -ne 0) {
-                Write-Warning "Could not remove junction: $($_.FullName)"
-                $global:LASTEXITCODE = 0
-              }
-            }
-
-          Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue
-          Write-Host "Removed render sandbox: $sandbox"
-
-,'') + '.png'
-              $outPath = Join-Path $outDir $outName
-              $shot = [System.Drawing.Image]::FromFile($_.FullName)
-              try { $shot.Save($outPath, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $shot.Dispose() }
-              $tacticalPngs += $outPath
-              Write-Host "Tactical QA capture: $outPath"
-            }
           if ($tacticalPngs.Count -lt 6) {
-            throw "Expected at least 6 tactical A3 captures; found $($tacticalPngs.Count)."
+            throw ('Expected at least 6 tactical A3 captures; found ' + $tacticalPngs.Count)
           }
 
           $survey = Join-Path $previewDir 'A3_architecture.csv'
@@ -536,7 +457,8 @@ jobs:
             MapPreviews/Auto/A3_latest.json
             MapPreviews/Auto/A3_mapshot_status.txt
             MapPreviews/Auto/A3_REMASTERED.dat
-            MAP_PREVIEWS/A3_architecture.csv
+            MapPreviews/Auto/A3_architecture.csv
+            MapPreviews/Auto/*_tactical_*.png
           if-no-files-found: error
           retention-days: 14
 
