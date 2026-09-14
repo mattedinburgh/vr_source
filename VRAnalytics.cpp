@@ -811,6 +811,39 @@ void VRAnalyticsTacticalActionDone(
 	*trace = TacticalDecisionTrace();
 }
 
+void VRAnalyticsTacticalCombatHit(
+	unsigned int attackerId,
+	unsigned int targetId,
+	int attackerTeam,
+	int targetTeam,
+	int weaponIndex,
+	int requestedDamage,
+	int requestedBreathLoss,
+	int range,
+	int hitLocation,
+	int targetLifeBefore,
+	int targetLifeAfter,
+	int targetBreathBefore,
+	int targetBreathAfter )
+{
+	FILE* file = BeginEvent( VR_ANALYTICS_TACTICAL, "combat_hit", 0 );
+	if( !file )
+		return;
+	fprintf( file,
+		",\"attacker_id\":%u,\"target_id\":%u,\"attacker_team\":%d,\"target_team\":%d,"
+		"\"weapon\":%d,\"requested_damage\":%d,\"requested_breath_loss\":%d,"
+		"\"range\":%d,\"hit_location\":%d,\"life_before\":%d,\"life_after\":%d,"
+		"\"life_delta\":%d,\"breath_before\":%d,\"breath_after\":%d,\"breath_delta\":%d,"
+		"\"killed\":%s,\"incapacitated\":%s",
+		attackerId, targetId, attackerTeam, targetTeam,
+		weaponIndex, requestedDamage, requestedBreathLoss, range, hitLocation,
+		targetLifeBefore, targetLifeAfter, targetLifeAfter - targetLifeBefore,
+		targetBreathBefore, targetBreathAfter, targetBreathAfter - targetBreathBefore,
+		targetLifeAfter <= 0 ? "true" : "false",
+		targetLifeAfter > 0 && targetLifeAfter < 15 ? "true" : "false" );
+	EndEvent( file );
+}
+
 void VRAnalyticsTacticalActionRejected(
 	unsigned int soldierId,
 	int action,

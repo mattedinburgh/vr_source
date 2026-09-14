@@ -55,6 +55,7 @@
 #endif
 
 #include "../TileEngine/environment.h"
+#include "../VRAnalytics.h"
 
 //forward declarations of common classes to eliminate includes
 class OBJECTTYPE;
@@ -4805,7 +4806,15 @@ void WeaponHit( UINT16 usSoldierID, UINT16 usWeaponIndex, INT16 sDamage, INT16 s
 	// the poor bastard .. so check
 	if ( !pTargetSoldier->flags.fDoingExternalDeath )
 	{
+		const INT16 sLifeBefore = pTargetSoldier->stats.bLife;
+		const INT16 sBreathBefore = pTargetSoldier->bBreath;
 		pTargetSoldier->EVENT_SoldierGotHit( usWeaponIndex, sDamage, sBreathLoss, usDirection, sRange, ubAttackerID, ubSpecial, ubHitLocation, 0, NOWHERE );
+		VRAnalyticsTacticalCombatHit(
+			ubAttackerID, usSoldierID,
+			pSoldier ? pSoldier->bTeam : -1, pTargetSoldier->bTeam,
+			usWeaponIndex, sDamage, sBreathLoss, sRange, ubHitLocation,
+			sLifeBefore, pTargetSoldier->stats.bLife,
+			sBreathBefore, pTargetSoldier->bBreath );
 	}
 	// else
 	// {

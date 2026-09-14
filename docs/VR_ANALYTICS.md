@@ -34,9 +34,11 @@ tactical  strategic      tactical strategic
 
 The shared event stream is append-only JSONL using schema
 `vr-blackbox-1`. Every record has a session identifier and sequence number.
-Black Box v2 remains schema-compatible: the session-start record carries
-`blackbox_version: 2` and newer event kinds/fields are additive, so older
-Companion tooling can still read the stream.
+Black Box v3 remains schema-compatible: the session-start record carries
+`blackbox_version: 3` and newer event kinds/fields are additive, so older
+Companion tooling can still read the stream. v3 adds exact build provenance,
+actor identity/context, direct weapon-hit records, AP-refresh detection and
+explicit rejection of redundant tactical setup actions.
 
 High-frequency retreat/courage inputs are emitted as one compact `assessment`
 record per evaluation rather than dozens of separate `state` records. This keeps
@@ -174,6 +176,10 @@ Important identifiers:
 - `group_id`: strategic formation/movement identity
 - sector and `world_minutes`: cross-layer correlation
 - `experiment_tag`: tuning/code experiment attached to the executable session
+- `build_branch`, `build_commit`, `build_commit_short`: exact source revision embedded at compile time
+- `build_dirty` and `build_source_fingerprint`: identify local/uncommitted builds
+- `build_configuration`, `build_platform`, `build_target`: binary identity
+- `recent_changes`: recent commit subjects embedded into the executable
 
 The logger flushes after each record so a crash should still leave the recent
 decision history available.
