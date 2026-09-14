@@ -22,8 +22,26 @@ function Escape-CppString([string]$Value) {
     return $sb.ToString()
 }
 
-$RepoRoot = [IO.Path]::GetFullPath($RepoRoot)
-$OutputPath = [IO.Path]::GetFullPath($OutputPath)
+function Normalize-BuildPath([string]$Value, [string]$Name) {
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        throw "$Name path argument is empty."
+    }
+
+    # MSBuild properties such as $(ProjectDir) commonly end in a backslash.
+    # When such a value is quoted on a Windows command line, an older caller
+    # can leave a stray quote in the argument. Quotes are never valid in a
+    # Windows filesystem path, so remove only edge quotes and reject embedded
+    # ones with a useful diagnostic.
+    $clean = $Value.Trim().Trim([char]34)
+    if ($clean.IndexOf([char]34) -ge 0) {
+        throw "$Name path argument contains an unexpected quote: $Value"
+    }
+
+    return [IO.Path]::GetFullPath($clean)
+}
+
+$RepoRoot = Normalize-BuildPath $RepoRoot 'RepoRoot'
+$OutputPath = Normalize-BuildPath $OutputPath 'OutputPath'
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $OutputPath) | Out-Null
 
 $git = Get-Command git.exe -ErrorAction SilentlyContinue
