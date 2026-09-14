@@ -797,6 +797,19 @@ static BOOLEAN MapFactoryLoadPilotMap( const STR8 pMapName )
 	UINT8 ubMinorMapVersion = 0;
 	if ( !LoadWorld( (STR8)pMapName, &dMajorMapVersion, &ubMinorMapVersion ) )
 		return FALSE;
+
+	CHAR8 zTelemetry[256];
+	_snprintf( zTelemetry, sizeof(zTelemetry) - 1,
+		"FACTORY_PROFILE map=%s profile=%u surfaces=%lu paletteGraded=%lu nonPaletteSkipped=%lu tileset=%ld",
+		pMapName,
+		(UINT16)GetMapFactoryCurrentVisualProfile(),
+		GetMapFactorySurfaceSeenCount(),
+		GetMapFactoryPaletteGradedCount(),
+		GetMapFactoryNonPaletteSkippedCount(),
+		giCurrentTilesetID );
+	zTelemetry[sizeof(zTelemetry) - 1] = 0;
+	MapPreviewWriteStatus( zTelemetry );
+
 	LightReset();
 	LightSpriteRenderAll();
 	return TRUE;
