@@ -1,0 +1,22 @@
+name: Release legacy integration runner slot
+
+on:
+  push:
+    branches:
+      - install/all-2026-09-12
+    paths:
+      - '.github/workflows/release-legacy-integration-slot.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vengeance-integration-build
+  cancel-in-progress: true
+
+jobs:
+  release-slot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Release obsolete concurrency slot
+        run: echo "Cancelling obsolete pre-shared-runner integration build."
