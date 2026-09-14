@@ -9,6 +9,7 @@ on:
       - 'Tools/ComposeA3CropMaster.ps1'
       - 'Tools/compose_a3_field_beds.py'
       - 'Tools/audit_rural_sti.py'
+      - 'Tools/compose_a3_rural_props.py'
   workflow_dispatch:
 
 jobs:
@@ -74,6 +75,14 @@ jobs:
           $tilesets = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir\Data-Maps-Tiles\Tilesets'
           $target = Join-Path $tilesets '38'
           python '.\Tools\compose_a3_field_beds.py' --tilesets-root $tilesets --target-38 $target
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Compose actual A3 rural prop families
+        shell: powershell
+        run: |
+          $tilesets = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir\Data-Maps-Tiles\Tilesets'
+          $target = Join-Path $tilesets '38'
+          python '.\Tools\compose_a3_rural_props.py' --tilesets-root $tilesets --target-38 $target
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Decode A3 B1TC families to contact sheets
@@ -169,7 +178,8 @@ jobs:
             'A3_WOOD_YARD',
             'A3_EDGE_WEEDS',
             'A3_IRRIGATION',
-            'A3_FARM_JUNK'
+            'A3_FARM_JUNK',
+            'A3_DOMESTIC'
           )
           foreach ($name in $assets) {
             Decode-B1TC (Join-Path $src ($name+'.b1tc')) (Join-Path $out ($name+'.png')) (Join-Path $out ($name+'.json'))
