@@ -260,7 +260,7 @@
     <ClCompile Include="SaveLoadScreen.cpp" />
     <ClCompile Include="SCREENS.cpp" />
     <ClCompile Include="Sys Globals.cpp" />
-    <ClCompile Include="ub_config.cpp" />
+    <ClCompile Include="ub_config.cpp" />\n    <ClCompile Include="VRAnalytics.cpp" />
     <ClCompile Include="XML_IntroFiles.cpp" />
     <ClCompile Include="XML_Layout_MainMenu.cpp" />
   </ItemGroup>
@@ -309,7 +309,7 @@
     <ClInclude Include="SCREENS.H" />
     <ClInclude Include="Sys Globals.h" />
     <ClInclude Include="ub_config.h" />
-    <ClInclude Include="VtuneApi.h" />
+    <ClInclude Include="VtuneApi.h" />\n    <ClInclude Include="VRAnalytics.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Console\Console.rc" />
