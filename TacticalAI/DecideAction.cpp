@@ -8096,6 +8096,7 @@ struct AILOCALTEAMPICTURE
 	UINT8 ubInContact;
 	UINT8 ubUnderAttack;
 	UINT8 ubSupportWeapons;
+	UINT8 ubCommanders;
 	UINT8 ubFlanking;
 	UINT8 ubFlankingLeft;
 	UINT8 ubFlankingRight;
@@ -8140,6 +8141,9 @@ void BuildLocalTeamPicture(SOLDIERTYPE *pSoldier, INT32 sObjective, AILOCALTEAMP
 		if (AICheckIsMachinegunner(pFriend) || AICheckIsSniper(pFriend))
 			pPicture->ubSupportWeapons++;
 
+		if (AICheckIsCommander(pFriend))
+			pPicture->ubCommanders++;
+
 		if (pFriend->IsFlanking())
 		{
 			pPicture->ubFlanking++;
@@ -8171,6 +8175,7 @@ INT8 DetermineLocalTeamPlan(SOLDIERTYPE *pSoldier, INT32 sObjective, AILOCALTEAM
 	UINT8 ubUnderAttack = pPicture->ubUnderAttack + ((pSoldier->aiData.bUnderFire || pSoldier->aiData.bShock > 0) ? 1 : 0);
 	UINT8 ubInContact = pPicture->ubInContact + ((pSoldier->aiData.bAlertStatus >= STATUS_BLACK || GuySawEnemy(pSoldier)) ? 1 : 0);
 	UINT8 ubSupportWeapons = pPicture->ubSupportWeapons + ((AICheckIsMachinegunner(pSoldier) || AICheckIsSniper(pSoldier)) ? 1 : 0);
+	BOOLEAN fLed = (pPicture->ubCommanders > 0 || AICheckIsCommander(pSoldier));
 	UINT8 ubSuccessfulAttack = pPicture->ubSuccessfulAttack + (AICheckSuccessfulAttack(pSoldier, FALSE) ? 1 : 0);
 
 	// Administrators are deliberately less capable.  They support/regroup,
@@ -8193,10 +8198,11 @@ INT8 DetermineLocalTeamPlan(SOLDIERTYPE *pSoldier, INT32 sObjective, AILOCALTEAM
 
 	if (ubInContact > 0)
 	{
-		UINT8 ubAllowedFlankers = (ubLocalSize >= 7) ? 2 : 1;
+		UINT8 ubAllowedFlankers = (ubLocalSize >= 7 || (fLed && ubLocalSize >= 6)) ? 2 : 1;
+		UINT8 ubMinFireTeam = fLed ? 3 : 4;
 
 		if (fTrained &&
-			ubLocalSize >= 4 &&
+			ubLocalSize >= ubMinFireTeam &&
 			pPicture->ubFlanking < ubAllowedFlankers &&
 			(ubSupportWeapons > 0 || ubInContact >= 2 || ubSuccessfulAttack > 0) &&
 			ubUnderAttack * 2 < ubLocalSize + 1)
@@ -8294,9 +8300,9 @@ void ApplyLocalTeamPlanToRedWeights(SOLDIERTYPE *pSoldier, INT8 &bSeekPts, INT8 
 	}
 
 	DebugAI(AI_MSG_INFO, pSoldier,
-		String("[TeamAI] plan=%d local=%d contact=%d under=%d support=%d flank=%d success=%d weights=%d/%d/%d/%d",
+		String("[TeamAI] plan=%d local=%d contact=%d under=%d support=%d leaders=%d flank=%d success=%d weights=%d/%d/%d/%d",
 		bPlan, Picture.ubNearbyFriends + 1, Picture.ubInContact, Picture.ubUnderAttack,
-		Picture.ubSupportWeapons, Picture.ubFlanking, Picture.ubSuccessfulAttack,
+		Picture.ubSupportWeapons, Picture.ubCommanders, Picture.ubFlanking, Picture.ubSuccessfulAttack,
 		bSeekPts, bHelpPts, bHidePts, bWatchPts));
 }
 
@@ -8305,7 +8311,8 @@ BOOLEAN CanStartCoordinatedFlank(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbanc
 	AILOCALTEAMPICTURE Picture;
 	INT8 bPlan = DetermineLocalTeamPlan(pSoldier, sClosestDisturbance, &Picture);
 	UINT8 ubLocalSize = Picture.ubNearbyFriends + 1;
-	UINT8 ubAllowedFlankers = (ubLocalSize >= 7) ? 2 : 1;
+	BOOLEAN fLed = (Picture.ubCommanders > 0 || AICheckIsCommander(pSoldier));
+	UINT8 ubAllowedFlankers = (ubLocalSize >= 7 || (fLed && ubLocalSize >= 6)) ? 2 : 1;
 
 	if (Picture.ubFlanking >= ubAllowedFlankers)
 		return FALSE;
