@@ -6507,27 +6507,55 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 	static const UINT8 aubMotionVariants[ 9 ] = { 0, 1, 3, 4, 25, 26, 27, 28, 29 };
 	UINT8 ubVariant = aubMotionVariants[ Random( 9 ) ];
 
-	// Dismemberment is memorable because it is exceptional. Only sufficiently hard
-	// fatal hits can replace the motion-only choice with a location-biased gore family.
+	// Dismemberment is rare enough to remain memorable, but slightly more common than
+	// strict realism for cinematic feedback. It scales strongly with fatal hit energy.
+	BOOLEAN fDismemberment = FALSE;
 	if ( sDamage >= 18 )
 	{
-		UINT8 ubDismemberChance = ( sDamage >= 45 ) ? 55 : ( sDamage >= 30 ) ? 40 : 25;
+		UINT8 ubDismemberChance =
+			( sDamage >= 60 ) ? 52 :
+			( sDamage >= 45 ) ? 38 :
+			( sDamage >= 30 ) ? 24 : 10;
+
+		if ( ubHitLocation == AIM_SHOT_HEAD || ubHitLocation == AIM_SHOT_LEGS )
+			ubDismemberChance = (UINT8)__min( 60, ubDismemberChance + 5 );
+
 		if ( Random( 100 ) < ubDismemberChance )
 		{
+			fDismemberment = TRUE;
+
 			if ( ubHitLocation == AIM_SHOT_HEAD )
+			{
 				ubVariant = (UINT8)( 5 + Random( 5 ) );
+			}
 			else if ( ubHitLocation == AIM_SHOT_LEGS )
-				ubVariant = (UINT8)( 15 + Random( 5 ) );
-			else if ( Random( 100 ) < 30 )
-				ubVariant = (UINT8)( 10 + Random( 5 ) ); // occasional arm loss from a catastrophic upper-body hit
+			{
+				// Very hard standing leg hits can throw a detached limb laterally.
+				if ( ubHeight == ANIM_STAND && sDamage >= 35 && Random( 100 ) < 25 )
+					ubVariant = 33;
+				else
+					ubVariant = (UINT8)( 15 + Random( 5 ) );
+			}
 			else
-				ubVariant = (UINT8)( 20 + Random( 5 ) );
+			{
+				// Upper-body fatal hits can now throw a forearm/hand-sized fragment or
+				// a full arm. The special 30-32 variants use the existing directional
+				// limb art at larger offsets so the severed piece visibly clears the body.
+				if ( ubHeight == ANIM_STAND && sDamage >= 35 && Random( 100 ) < 35 )
+					ubVariant = (UINT8)( 30 + Random( 3 ) );
+				else if ( ubHeight == ANIM_STAND && sDamage >= 55 && Random( 100 ) < 8 )
+					ubVariant = 34;
+				else if ( Random( 100 ) < 35 )
+					ubVariant = (UINT8)( 10 + Random( 5 ) );
+				else
+					ubVariant = (UINT8)( 20 + Random( 5 ) );
+			}
 		}
 	}
 
-	// Moving victims preferentially keep their momentum into the fall instead of
-	// snapping into a stationary gore pose.
-	if ( fHadMomentum && Random( 100 ) < 70 )
+	// Moving victims preferentially keep their momentum into ordinary fatal falls.
+	// Do not overwrite an already-selected dismemberment event.
+	if ( !fDismemberment && fHadMomentum && Random( 100 ) < 70 )
 	{
 		static const UINT8 aubMomentumVariants[ 7 ] = { 0, 3, 4, 25, 27, 28, 29 };
 		ubVariant = aubMomentumVariants[ Random( 7 ) ];
@@ -6593,7 +6621,7 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 		return TRUE;
 	}
 
-	// Standing fatal reactions: thirty deliberately distinct cinematic packages.
+	// Standing fatal reactions: thirty-five deliberately distinct cinematic packages.
 	switch ( ubVariant )
 	{
 	case 0: // forward fold, dense exit spray
@@ -6815,6 +6843,46 @@ static BOOLEAN HandleVRFatalGunshotReaction( SOLDIERTYPE *pSoldier, UINT16 usWea
 		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
 		pSoldier->BeginTyingToFall();
 		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 30: // left forearm/hand fragment thrown clear
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_ARM_GIB.STI", ubLeftDirection, 36, 31, 65 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubLeftDirection, 34, 37, 30 );
+		pSoldier->EVENT_SetSoldierDirection( ubLeftDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 31: // right forearm/hand fragment thrown clear
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_ARM_GIB.STI", ubRightDirection, 36, 31, 65 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubRightDirection, 34, 37, 30 );
+		pSoldier->EVENT_SetSoldierDirection( ubRightDirection );
+		pSoldier->EVENT_SetSoldierDesiredDirection( pSoldier->ubDirection );
+		pSoldier->BeginTyingToFall();
+		pSoldier->EVENT_InitNewSoldierAnim( FALLFORWARD_FROMHIT_STAND, 0, FALSE );
+		return TRUE;
+
+	case 32: // arm/forearm detaches forward while body recoils backward
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_ARM_GIB.STI", ubExitDirection, 36, 30, 80 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubExitDirection, 33, 39, 45 );
+		pSoldier->ChangeToFallbackAnimation( ubIncomingDirection );
+		return TRUE;
+
+	case 33: // detached leg thrown laterally with immediate buckle
+	{
+		UINT8 ubLimbDirection = Random( 2 ) ? ubLeftDirection : ubRightDirection;
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_LEG_GIB.STI", ubLimbDirection, 18, 31, 80 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_GORE_SPRAY_SMALL.STI", ubExitDirection, 18, 38, 25 );
+		SoldierCollapse( pSoldier );
+		return TRUE;
+	}
+
+	case 34: // exceptionally rare mixed-limb catastrophic breakup
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_ARM_GIB.STI", ubLeftDirection, 36, 30, 75 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_LEG_GIB.STI", ubRightDirection, 18, 34, 85 );
+		SpawnVRDirectionalGoreSpray( pSoldier, "TILECACHE\\VR_FATAL_CHUNKS.STI", ubExitDirection, 31, 38, 55 );
+		pSoldier->EVENT_InitNewSoldierAnim( BODYEXPLODING, 0, FALSE );
 		return TRUE;
 
 	case 29: // loose randomized lateral collapse
