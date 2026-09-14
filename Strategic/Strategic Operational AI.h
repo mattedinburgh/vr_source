@@ -3,6 +3,9 @@
 
 #include "types.h"
 
+// Experimental branch-only decision gate. Master is unaffected because this file does not exist there.
+#define VR_OPERATIONAL_GARRISON_REASSIGNMENT_ENABLED 1
+
 struct GROUP;
 
 enum VR_OPERATIONAL_MISSION
