@@ -1443,6 +1443,9 @@ static void DressA3FarmEnvironment( void )
 	// chooses sector composition from a hash or random roll.
 	{
 		UINT32 uiCropBlocks = 0;
+		UINT32 uiFieldABlocks = 0;
+		UINT32 uiFieldBBlocks = 0;
+		UINT32 uiFieldCBlocks = 0;
 		UINT32 uiHarvestBlocks = 0;
 		UINT32 uiYardBlocks = 0;
 		UINT32 uiPaddockBlocks = 0;
@@ -1470,7 +1473,7 @@ static void DressA3FarmEnvironment( void )
 				}
 				else
 					usPlaced = A3PlaceFarmVisualBlock( sAnchor, gA3DenseCropBed, 8, FALSE );
-				if ( usPlaced ) { ++uiCropBlocks; uiPieces += usPlaced; }
+				if ( usPlaced ) { ++uiCropBlocks; ++uiFieldABlocks; uiPieces += usPlaced; }
 			}
 		}
 
@@ -1487,7 +1490,7 @@ static void DressA3FarmEnvironment( void )
 				const UINT16 usPlaced = A3PlaceFarmVisualBlock(
 					sAnchor, ((sRow / 5) & 1) ? gA3CropStripB : gA3CropPatch,
 					4, FALSE );
-				if ( usPlaced ) { ++uiCropBlocks; uiPieces += usPlaced; }
+				if ( usPlaced ) { ++uiCropBlocks; ++uiFieldBBlocks; uiPieces += usPlaced; }
 			}
 		}
 
@@ -1501,7 +1504,7 @@ static void DressA3FarmEnvironment( void )
 				const INT32 sAnchor = sRow * WORLD_COLS + sCol;
 				const UINT16 usPlaced = A3PlaceFarmVisualBlock(
 					sAnchor, gA3CropStripB, 4, FALSE );
-				if ( usPlaced ) { ++uiCropBlocks; uiPieces += usPlaced; }
+				if ( usPlaced ) { ++uiCropBlocks; ++uiFieldCBlocks; uiPieces += usPlaced; }
 			}
 		}
 
@@ -1574,10 +1577,15 @@ static void DressA3FarmEnvironment( void )
 
 		CHAR8 zHandmade[256];
 		sprintf( zHandmade,
-			"cropBlocks=%lu harvest=%lu yard=%lu paddock=%lu irrigation=%lu edges=%lu pieces=%lu explicit-layout",
-			uiCropBlocks, uiHarvestBlocks, uiYardBlocks, uiPaddockBlocks,
+			"cropBlocks=%lu fieldA=%lu fieldB=%lu fieldC=%lu harvest=%lu yard=%lu paddock=%lu irrigation=%lu edges=%lu pieces=%lu explicit-layout",
+			uiCropBlocks, uiFieldABlocks, uiFieldBBlocks, uiFieldCBlocks,
+			uiHarvestBlocks, uiYardBlocks, uiPaddockBlocks,
 			uiIrrigationBlocks, uiFieldEdges, uiPieces );
 		TraceA3FarmLoad( "HAND AUTHORED V2", zHandmade );
+
+		// Re-run the survey after dressing so A3_tile_usage.csv describes the
+		// actual baked remaster, not just the untouched source map.
+		A3WriteArchitectureSurvey();
 	}
 	return;
 

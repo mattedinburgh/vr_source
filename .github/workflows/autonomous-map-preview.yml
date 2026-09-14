@@ -429,12 +429,23 @@ jobs:
           # loadable map, not merely a transient dressed in-memory world.
           $forcedFinalExit = Invoke-VengeanceMapshot -MapName 'A3_REMASTERED.dat' -ExpectedBmp $finalBmp
 
+          $sourceOverviewHash = (Get-FileHash $sourceBmp -Algorithm SHA256).Hash
+          $finalOverviewHash = (Get-FileHash $finalBmp -Algorithm SHA256).Hash
+          $overviewChanged = ($sourceOverviewHash -ne $finalOverviewHash)
+          Write-Host ("A3 overview changed after bake: " + $overviewChanged)
+          Write-Host ("A3 source overview SHA256: " + $sourceOverviewHash)
+          Write-Host ("A3 final  overview SHA256: " + $finalOverviewHash)
+
           Add-Type -AssemblyName System.Drawing
           $outDir = Join-Path $env:GITHUB_WORKSPACE 'MapPreviews\Auto'
           New-Item -ItemType Directory -Force -Path $outDir | Out-Null
           $png = Join-Path $outDir 'A3_latest.png'
           $img = [System.Drawing.Image]::FromFile($finalBmp)
           try { $img.Save($png, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $img.Dispose() }
+
+          $sourcePng = Join-Path $outDir 'A3_source.png'
+          $sourceImg = [System.Drawing.Image]::FromFile($sourceBmp)
+          try { $sourceImg.Save($sourcePng, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $sourceImg.Dispose() }
 
           # Tactical-view captures are the primary A3 art-QA images.
           $tacticalPngs = @()
@@ -450,6 +461,32 @@ jobs:
           }
           if ($tacticalPngs.Count -lt 6) {
             throw ('Expected at least 6 tactical A3 captures; found ' + $tacticalPngs.Count)
+          }
+
+          $tacticalChangedPairs = 0
+          $comparisonLines = @(
+            ('overview_changed=' + $overviewChanged),
+            ('source_overview_sha256=' + $sourceOverviewHash),
+            ('final_overview_sha256=' + $finalOverviewHash)
+          )
+          for ($i = 1; $i -le 6; $i++) {
+            $slot = '{0:D2}' -f $i
+            $sourceTac = Join-Path $previewDir ('A3.dat_tactical_' + $slot + '_overview.bmp')
+            $finalTac = Join-Path $previewDir ('A3_REMASTERED.dat_tactical_' + $slot + '_overview.bmp')
+            if ((Test-Path $sourceTac) -and (Test-Path $finalTac)) {
+              $sourceTacHash = (Get-FileHash $sourceTac -Algorithm SHA256).Hash
+              $finalTacHash = (Get-FileHash $finalTac -Algorithm SHA256).Hash
+              $changed = ($sourceTacHash -ne $finalTacHash)
+              if ($changed) { $tacticalChangedPairs++ }
+              $comparisonLines += ('tactical_' + $slot + '_changed=' + $changed + ' source=' + $sourceTacHash + ' final=' + $finalTacHash)
+            }
+          }
+          $comparisonLines += ('tactical_changed_pairs=' + $tacticalChangedPairs)
+          $comparisonPath = Join-Path $outDir 'A3_visual_diff.txt'
+          $comparisonLines | Set-Content -Encoding ASCII $comparisonPath
+          Write-Host ('A3 tactical changed pairs: ' + $tacticalChangedPairs + '/6')
+          if ((-not $overviewChanged) -and $tacticalChangedPairs -eq 0) {
+            Write-Warning 'A3 bake changed map bytes but produced no visual difference in overview or tactical captures.'
           }
 
           $survey = Join-Path $previewDir 'A3_architecture.csv'
@@ -478,6 +515,8 @@ jobs:
             baked_map_bytes = $baked.Length
             source_pass_forced_exit = $forcedBakeExit
             final_pass_forced_exit = $forcedFinalExit
+            overview_changed = $overviewChanged
+            tactical_changed_pairs = $tacticalChangedPairs
           } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $outDir 'A3_latest.json')
 
           Write-Host "A3 baked map validated by reload and rendered: $png"
@@ -488,6 +527,8 @@ jobs:
           name: A3-engine-preview
           path: |
             MapPreviews/Auto/A3_latest.png
+            MapPreviews/Auto/A3_source.png
+            MapPreviews/Auto/A3_visual_diff.txt
             MapPreviews/Auto/A3_latest.json
             MapPreviews/Auto/A3_mapshot_status.txt
             MapPreviews/Auto/A3_REMASTERED.dat

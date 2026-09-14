@@ -87,8 +87,8 @@ def main():
     # stronger shading/perspective than the provisional flat-pixel versions.
     replacements = {
         4: ("35/2_GENS.STI", 1),   # cylindrical utility tank/pump assembly
-        7: ("53/FURN_MIX.STI", 5), # rough rural rack/shelter silhouette
-        8: ("53/FURN_MIX.STI", 6), # low wooden/mesh trough-like farm fixture
+        7: ("58/WORKSHOP.STI", 4), # weathered workbench; stronger yard focal point
+        8: ("53/FURN_MIX.STI", 1), # low rustic wooden feeder/trough-like fixture
     }
 
     for one_based, (rel, source_frame) in replacements.items():
