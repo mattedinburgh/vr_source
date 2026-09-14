@@ -520,7 +520,13 @@ BOOLEAN BltTrueColorDataTo16BPPBufferZStrip(UINT16 *pBuffer, UINT32 uiDestPitchB
 			if(ubAlpha == 0)
 				continue;
 
-			const UINT16 usPixelZ = TrueColorGetZStripLevel(pZInfo, usZValue, iSourceX, usZStripDelta, sCumulativeZChange);
+			// VHD source pixels may be 2x/4x denser than the JSD structure data.
+			// Resolve Z strips using the equivalent legacy source coordinate so each
+			// logical half-tile still owns exactly the same depth transition.
+			const UINT8 ubAssetScale = ( hSrcVObject->ubVHDAssetScale == 2 || hSrcVObject->ubVHDAssetScale == 4 )
+				? hSrcVObject->ubVHDAssetScale : 1;
+			const INT32 iZSourceX = iSourceX / ubAssetScale;
+			const UINT16 usPixelZ = TrueColorGetZStripLevel(pZInfo, usZValue, iZSourceX, usZStripDelta, sCumulativeZChange);
 			const BOOLEAN fBlocked = fSameZBurnsThrough ? (*pZ > usPixelZ) : (*pZ >= usPixelZ);
 			if(fBlocked)
 			{
