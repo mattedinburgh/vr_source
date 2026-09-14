@@ -179,6 +179,10 @@ void VRAnalyticsTacticalFormationSnapshot(
 void VRAnalyticsTacticalDecisionSelected(
 	unsigned int soldierId,
 	int team,
+	int side,
+	bool neutral,
+	int profile,
+	int soldierClass,
 	int action,
 	long actionData,
 	long gridNo,
@@ -204,5 +208,20 @@ void VRAnalyticsTacticalActionRejected(
 	int action,
 	long actionData,
 	const char* reason );
+
+void VRAnalyticsTacticalCombatHit(
+	unsigned int attackerId,
+	unsigned int targetId,
+	int attackerTeam,
+	int targetTeam,
+	int weaponIndex,
+	int requestedDamage,
+	int requestedBreathLoss,
+	int range,
+	int hitLocation,
+	int targetLifeBefore,
+	int targetLifeAfter,
+	int targetBreathBefore,
+	int targetBreathAfter );
 
 #endif // VR_ANALYTICS_H

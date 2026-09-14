@@ -5,6 +5,8 @@
 #include <string.h>
 #include <time.h>
 
+#include ".generated/VRBuildInfo.generated.h"
+
 namespace
 {
 	struct TacticalDecisionTrace
@@ -180,7 +182,36 @@ namespace
 		JsonString( gFile, __TIME__ );
 		fputs( ",\"experiment_tag\":", gFile );
 		JsonString( gFile, experimentTag );
-		fputs( ",\"blackbox_version\":2,\"decision_forensics\":true", gFile );
+		fputs( ",\"build_branch\":", gFile );
+		JsonString( gFile, VR_BUILD_BRANCH );
+		fputs( ",\"build_commit\":", gFile );
+		JsonString( gFile, VR_BUILD_COMMIT );
+		fputs( ",\"build_commit_short\":", gFile );
+		JsonString( gFile, VR_BUILD_COMMIT_SHORT );
+		fprintf( gFile, ",\"build_dirty\":%s", VR_BUILD_DIRTY ? "true" : "false" );
+		fputs( ",\"build_source_fingerprint\":", gFile );
+		JsonString( gFile, VR_BUILD_SOURCE_FINGERPRINT );
+		fputs( ",\"build_generated_at\":", gFile );
+		JsonString( gFile, VR_BUILD_GENERATED_AT );
+		fputs( ",\"build_configuration\":", gFile );
+		JsonString( gFile, VR_BUILD_CONFIGURATION );
+		fputs( ",\"build_platform\":", gFile );
+		JsonString( gFile, VR_BUILD_PLATFORM );
+		fputs( ",\"build_target\":", gFile );
+		JsonString( gFile, VR_BUILD_TARGET );
+		const char* recentChanges[8] = {
+			VR_BUILD_RECENT_CHANGE_1, VR_BUILD_RECENT_CHANGE_2,
+			VR_BUILD_RECENT_CHANGE_3, VR_BUILD_RECENT_CHANGE_4,
+			VR_BUILD_RECENT_CHANGE_5, VR_BUILD_RECENT_CHANGE_6,
+			VR_BUILD_RECENT_CHANGE_7, VR_BUILD_RECENT_CHANGE_8 };
+		fputs( ",\"recent_changes\":[", gFile );
+		for( int i = 0; i < VR_BUILD_RECENT_CHANGE_COUNT && i < 8; ++i )
+		{
+			if( i ) fputc( ',', gFile );
+			JsonString( gFile, recentChanges[i] );
+		}
+		fputc( ']', gFile );
+		fputs( ",\"blackbox_version\":3,\"decision_forensics\":true,\"build_provenance_version\":1", gFile );
 		fputs( "}\n", gFile );
 		fflush( gFile );
 	}
@@ -654,6 +685,10 @@ void VRAnalyticsTacticalFormationSnapshot(
 void VRAnalyticsTacticalDecisionSelected(
 	unsigned int soldierId,
 	int team,
+	int side,
+	bool neutral,
+	int profile,
+	int soldierClass,
 	int action,
 	long actionData,
 	long gridNo,
@@ -708,11 +743,13 @@ void VRAnalyticsTacticalDecisionSelected(
 		return;
 
 	fprintf( file,
-		",\"actor_id\":%u,\"team\":%d,\"action\":%d,\"action_data\":%ld,"
+		",\"actor_id\":%u,\"team\":%d,\"side\":%d,\"neutral\":%s,"
+		"\"profile\":%d,\"soldier_class\":%d,\"action\":%d,\"action_data\":%ld,"
 		"\"grid\":%ld,\"ap\":%d,\"life\":%d,\"breath\":%d,"
 		"\"alert\":%d,\"ai_morale\":%d,\"orders\":%d,\"attitude\":%d,"
 		"\"reason\":\"central_ai_selection\"",
-		soldierId, team, action, actionData, gridNo, actionPoints, life, breath,
+		soldierId, team, side, neutral ? "true" : "false", profile, soldierClass,
+		action, actionData, gridNo, actionPoints, life, breath,
 		alertStatus, aiMorale, orders, attitude );
 	EndEvent( file );
 }
@@ -727,7 +764,7 @@ void VRAnalyticsTacticalActionDone(
 	bool lastAttackHit )
 {
 	TacticalDecisionTrace* trace;
-	char detail[160];
+	char detail[256];
 
 	if( soldierId >= 256 )
 	{
@@ -753,18 +790,22 @@ void VRAnalyticsTacticalActionDone(
 			"action_mismatch", "completed action differs from recorded selected action" );
 	}
 
+	const int rawAPDelta = trace->startAP - actionPoints;
+	const bool apIncreaseDetected = rawAPDelta < 0;
+	const int observedAPSpent = apIncreaseDetected ? -1 : rawAPDelta;
 	sprintf( detail,
-		"life_delta=%d;breath_delta=%d;last_attack_hit=%d;action=%d",
+		"life_delta=%d;breath_delta=%d;last_attack_hit=%d;action=%d;"
+		"ap_before=%d;ap_after=%d;ap_increase_detected=%d",
 		life - trace->startLife,
 		breath - trace->startBreath,
 		lastAttackHit ? 1 : 0,
-		action );
-
+		action, trace->startAP, actionPoints,
+		apIncreaseDetected ? 1 : 0 );
 	VRAnalyticsOutcome(
 		trace->decisionId,
 		"completed",
 		"grid_delta", gridNo - trace->startGrid,
-		"ap_spent", trace->startAP - actionPoints,
+		"ap_spent", observedAPSpent,
 		detail );
 
 	*trace = TacticalDecisionTrace();
