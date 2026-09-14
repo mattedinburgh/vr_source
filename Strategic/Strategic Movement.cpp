@@ -3985,6 +3985,8 @@ BOOLEAN LoadStrategicMovementGroupsFromSavedGameFile( HWFILE hFile )
 		}
 
 
+		VR_NormalizeStrategicGroupTeam( pTemp );
+
 		//
 		// Add either the pointer or the linked list.
 		//
