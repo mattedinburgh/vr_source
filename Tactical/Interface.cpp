@@ -1732,6 +1732,61 @@ void DrawLocatorAboveGuy( UINT16 usSoldierID )
 	}
 }
 
+// 1.13-style enemy specialist identification.
+// Upstream 1.13 draws RoleIcons.sti. Vengeance does not ship that asset, so use compact
+// text badges while retaining the same gameplay concept: roles require sustained observation.
+BOOLEAN ShowSoldierRoleSymbol( SOLDIERTYPE *pSoldier )
+{
+	const UINT8 ROLE_TURNS_TO_UNCOVER = 4;
+	CHAR16 zRoleTags[96];
+
+	if ( !pSoldier || pSoldier->bTeam != ENEMY_TEAM )
+		return FALSE;
+
+	if ( pSoldier->bVisible == -1 && !(gTacticalStatus.uiFlags & SHOW_ALL_MERCS) )
+		return FALSE;
+
+	if ( pSoldier->usSkillCounter[SOLDIER_COUNTER_ROLE_OBSERVED] < ROLE_TURNS_TO_UNCOVER )
+		return FALSE;
+
+	zRoleTags[0] = 0;
+
+	if ( AICheckIsCommander(pSoldier) )
+		wcscat( zRoleTags, L"[CMD]" );
+	else if ( AICheckIsOfficer(pSoldier) )
+		wcscat( zRoleTags, L"[OFF]" );
+
+	if ( AICheckIsRadioOperator(pSoldier) )
+		wcscat( zRoleTags, L"[RAD]" );
+	if ( AICheckIsMedic(pSoldier) )
+		wcscat( zRoleTags, L"[MED]" );
+	if ( AICheckIsSniper(pSoldier) )
+		wcscat( zRoleTags, L"[SNP]" );
+	if ( AICheckIsMortarOperator(pSoldier) )
+		wcscat( zRoleTags, L"[MTR]" );
+	if ( AICheckIsMachinegunner(pSoldier) )
+		wcscat( zRoleTags, L"[MG]" );
+	if ( AICheckIsGLOperator(pSoldier) )
+		wcscat( zRoleTags, L"[GL]" );
+
+	if ( zRoleTags[0] == 0 )
+		return FALSE;
+
+	INT16 sXPos = 0;
+	INT16 sYPos = 0;
+	GetSoldierAboveGuyPositions( pSoldier, &sXPos, &sYPos, TRUE );
+	sXPos += 42;
+	sYPos += 18;
+
+	SetFont( TINYFONT1 );
+	SetFontBackground( FONT_MCOLOR_BLACK );
+	SetFontForeground( FONT_MCOLOR_LTYELLOW );
+	gprintfdirty( sXPos, sYPos, zRoleTags );
+	mprintf( sXPos, sYPos, zRoleTags );
+
+	return TRUE;
+}
+
 void DrawSelectedUIAboveGuy( UINT16 usSoldierID )
 {
 	SOLDIERTYPE		*pSoldier;
@@ -1887,6 +1942,10 @@ void DrawSelectedUIAboveGuy( UINT16 usSoldierID )
 			BltVideoObjectFromIndex( FRAME_BUFFER, guiUNDERWATER, pSoldier->sLocatorFrame, sXPos, sYPos, VO_BLT_SRCTRANSPARENCY, NULL );
 		}
 	}
+
+	// Specialist identity is independent of selection/locator state, as in 1.13.
+	if ( pSoldier->bTeam == ENEMY_TEAM )
+		ShowSoldierRoleSymbol( pSoldier );
 
 	if ( !pSoldier->flags.fShowLocator )
 	{
