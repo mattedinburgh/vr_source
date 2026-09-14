@@ -10276,6 +10276,31 @@ BOOLEAN InSmoke(INT32 sGridNo, INT8 bLevel)
 	return FALSE;
 }
 
+BOOLEAN InSmokeNearby(INT32 sGridNo, INT8 bLevel)
+{
+	if (TileIsOutOfBounds(sGridNo))
+		return FALSE;
+
+	if (gpWorldLevelData[sGridNo].ubExtFlags[bLevel] & MAPELEMENT_EXT_SMOKE)
+		return TRUE;
+
+	for (UINT8 ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ++ubDirection)
+	{
+		INT32 sTempGridNo = NewGridNo(sGridNo, DirectionInc(ubDirection));
+		if (sTempGridNo == sGridNo)
+			continue;
+
+		UINT8 ubMovementCost = gubWorldMovementCosts[sTempGridNo][ubDirection][bLevel];
+		if (ubMovementCost < TRAVELCOST_BLOCKED &&
+			(gpWorldLevelData[sTempGridNo].ubExtFlags[bLevel] & MAPELEMENT_EXT_SMOKE))
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
 BOOLEAN AICheckSpecialRole(SOLDIERTYPE *pSoldier)
 {
 	if (AICheckIsSniper(pSoldier) || AICheckIsMachinegunner(pSoldier) || AICheckIsMortarOperator(pSoldier) || AICheckIsRadioOperator(pSoldier) || AICheckIsCommander(pSoldier) || AICheckIsGLOperator(pSoldier))
