@@ -1,6 +1,7 @@
 #include "Strategic Operational AI.h"
 #include "Strategic Movement.h"
 #include "Campaign Types.h"
+#include "VRAnalytics.h"
 
 #define VR_OPERATIONAL_MAGIC0 'O'
 #define VR_OPERATIONAL_MAGIC1 'P'
@@ -110,8 +111,8 @@ void VR_EnsureEnemyFormationState( GROUP *pGroup )
 	pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_FORMATION_CREATED;
 	pEnemy->ubOperationalRetreatCount = 0;
 	pEnemy->usOperationalFlags = 0;
-	pEnemy->ubOperationalLastKnownPlayerStrength = 0;
-	pEnemy->ubOperationalLastKnownMilitiaStrength = 0;
+	pEnemy->ubOperationalLastKnownPlayerStrength = VR_OPERATIONAL_STRENGTH_UNKNOWN;
+	pEnemy->ubOperationalLastKnownMilitiaStrength = VR_OPERATIONAL_STRENGTH_UNKNOWN;
 }
 
 void VR_EnsureAllEnemyFormationStates()
@@ -143,6 +144,78 @@ void VR_RecordLegacyAssignment( GROUP *pGroup, UINT8 ubTargetSectorID, UINT8 ubL
 	pEnemy->ubOperationalTargetSectorID = ubTargetSectorID;
 	pEnemy->ubOperationalReserveRole = VR_RESERVE_NONE;
 	pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_LEGACY_ASSIGNMENT;
+}
+
+static UINT8 VR_ClampOperationalValue( UINT8 ubValue )
+{
+	if( ubValue == VR_OPERATIONAL_STRENGTH_UNKNOWN )
+		return ubValue;
+	return ubValue > 100 ? 100 : ubValue;
+}
+
+void VR_RecordOperationalContact( GROUP *pObserver, UINT8 ubSectorID,
+	UINT8 ubObservedPlayerStrength, UINT8 ubObservedMilitiaStrength, UINT8 ubConfidence )
+{
+	VR_EnsureEnemyFormationState( pObserver );
+	if( !VR_FormationStateIsInitialized( pObserver ) )
+		return;
+
+	ENEMYGROUP *pEnemy = pObserver->pEnemyGroup;
+	const UINT8 ubClampedConfidence = ubConfidence > 100 ? 100 : ubConfidence;
+
+	pEnemy->ubOperationalLastKnownPlayerSectorID = ubSectorID;
+	pEnemy->ubOperationalIntelConfidence = ubClampedConfidence;
+	if( ubObservedPlayerStrength != VR_OPERATIONAL_STRENGTH_UNKNOWN )
+		pEnemy->ubOperationalLastKnownPlayerStrength =
+			VR_ClampOperationalValue( ubObservedPlayerStrength );
+	if( ubObservedMilitiaStrength != VR_OPERATIONAL_STRENGTH_UNKNOWN )
+		pEnemy->ubOperationalLastKnownMilitiaStrength =
+			VR_ClampOperationalValue( ubObservedMilitiaStrength );
+
+	pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_CONTACT;
+	if( ubClampedConfidence >= 60 )
+		pEnemy->usOperationalFlags |= VR_OPFLAG_RECENT_CONTACT;
+	else
+		pEnemy->usOperationalFlags &= ~VR_OPFLAG_RECENT_CONTACT;
+
+	const unsigned long uiDecision = VRAnalyticsBeginDecision(
+		VR_ANALYTICS_STRATEGIC, "enemy_formation",
+		(unsigned int)pEnemy->usFormationID, "operational_intel_update" );
+	if( uiDecision )
+	{
+		VRAnalyticsStateInt( uiDecision, "observer_group", pObserver->ubGroupID );
+		VRAnalyticsStateInt( uiDecision, "reported_sector", ubSectorID );
+		VRAnalyticsStateInt( uiDecision, "confidence", ubClampedConfidence );
+		VRAnalyticsStateInt( uiDecision, "player_strength",
+			pEnemy->ubOperationalLastKnownPlayerStrength );
+		VRAnalyticsStateInt( uiDecision, "militia_strength",
+			pEnemy->ubOperationalLastKnownMilitiaStrength );
+		VRAnalyticsCommitDecision( uiDecision, "record_local_report",
+			ubSectorID, ubClampedConfidence, "direct/local strategic contact" );
+	}
+}
+
+void VR_DecayOperationalIntelHourly()
+{
+	for( GROUP *pGroup = gpGroupList; pGroup; pGroup = pGroup->next )
+	{
+		if( !VR_FormationStateIsInitialized( pGroup ) )
+			continue;
+
+		ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+		if( pEnemy->ubOperationalIntelConfidence == 0 )
+			continue;
+
+		const UINT8 ubOldConfidence = pEnemy->ubOperationalIntelConfidence;
+		pEnemy->ubOperationalIntelConfidence =
+			ubOldConfidence > 8 ? (UINT8)( ubOldConfidence - 8 ) : 0;
+
+		if( pEnemy->ubOperationalIntelConfidence < 60 )
+			pEnemy->usOperationalFlags &= ~VR_OPFLAG_RECENT_CONTACT;
+
+		if( pEnemy->ubOperationalIntelConfidence == 0 )
+			pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_INTEL_DECAY;
+	}
 }
 
 UINT16 VR_GetFormationID( GROUP *pGroup )
