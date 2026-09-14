@@ -8377,24 +8377,47 @@ SOLDIERTYPE *FindLocalTeamMemberNeedingSmoke(SOLDIERTYPE *pSoldier, INT32 sClose
 			continue;
 		}
 
-		if (!pFriend->aiData.bUnderFire && pFriend->aiData.bShock == 0 && !pFriend->IsFlanking())
+		// Smoke is scarce. Merely being on a flank or taking a few rounds is
+		// not enough: reserve it for a genuinely endangered manoeuvre/casualty
+		// element.
+		UINT8 ubShockPercent = ShockLevelPercent(pFriend);
+		if (!pFriend->aiData.bUnderFire && ubShockPercent < 40)
 			continue;
 
 		INT16 sScore = 0;
+
 		if (pFriend->aiData.bUnderFire)
-			sScore += 50;
-		sScore += __min(30, (INT16)pFriend->aiData.bShock * 5);
+			sScore += 40;
+
+		if (ubShockPercent >= 70)
+			sScore += 35;
+		else if (ubShockPercent >= 50)
+			sScore += 25;
+		else if (ubShockPercent >= 40)
+			sScore += 15;
+
+		// Flanking adds urgency only after the flanker is actually endangered.
 		if (pFriend->IsFlanking())
 			sScore += 20;
-		if (pFriend->stats.bLife < (pFriend->stats.bLifeMax * 2) / 3)
+
+		if (pFriend->stats.bLife < pFriend->stats.bLifeMax / 2)
+			sScore += 25;
+		if (pFriend->stats.bLife < pFriend->stats.bLifeMax / 3)
 			sScore += 15;
+
+		// Preserve command/support assets when the situation is already bad.
+		if (AICheckIsCommander(pFriend) || AICheckIsMachinegunner(pFriend))
+			sScore += 10;
+
 		if (!TileIsOutOfBounds(sClosestDisturbance) &&
 			PythSpacesAway(pFriend->sGridNo, sClosestDisturbance) < TACTICAL_RANGE / 2)
 		{
 			sScore += 10;
 		}
 
-		if (sScore > sBestScore)
+		// Deliberately high: one smoke grenade should usually solve a serious
+		// problem, not merely improve an already-viable move.
+		if (sScore >= 85 && sScore > sBestScore)
 		{
 			sBestScore = sScore;
 			pBestFriend = pFriend;
@@ -9206,8 +9229,16 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 
 	ATTACKTYPE BestThrow;
 	SOLDIERTYPE *pSmokeFriend = FindLocalTeamMemberNeedingSmoke(pSoldier, sClosestDisturbance);
+	UINT8 ubLocalUnderAttack = CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE / 2);
+	UINT8 ubLocalFriends = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2) + 1;
+	UINT8 ubSeenEnemies = CountSeenEnemiesLastTurn(pSoldier);
+	BOOLEAN fSelfPinned = (pSoldier->aiData.bUnderFire && ShockLevelPercent(pSoldier) >= 50);
+	BOOLEAN fMultiplePinned = (ubLocalUnderAttack >= 2);
+	BOOLEAN fBadLocalFight = (ubSeenEnemies > ubLocalFriends && ubLocalUnderAttack > 0);
+	BOOLEAN fSmokeEmergency = (pSmokeFriend != NULL || fSelfPinned || fMultiplePinned || fBadLocalFight);
 
-	// try to use smoke to cover movement
+	// Smoke is a reserve asset.  Spend it only when the local situation is
+	// materially bad; uncovered terrain by itself is not enough.
 	if (gfTurnBasedAI &&
 		SoldierAI(pSoldier) &&
 		FindThrowableGrenade(pSoldier, EXPLOSV_SMOKE) != NO_SLOT &&
@@ -9219,25 +9250,20 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 		!AICheckIsMachinegunner(pSoldier) &&
 		pSoldier->aiData.bOrders != STATIONARY &&
 		!AICheckSuccessfulAttack(pSoldier, TRUE) &&
-		(pSoldier->aiData.bUnderFire ||
-		pSmokeFriend != NULL ||
-		CountSeenEnemiesLastTurn(pSoldier) > CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2) ||
-		CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE) > CountFriendsLastAttackHit(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE) ||
-		CountCorpses(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE, TRUE, TRUE) > CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE)) &&
-		(InSmoke(pSoldier->sGridNo, pSoldier->pathing.bLevel) ||
-		(pSmokeFriend != NULL && Chance(20 + SoldierDifficultyLevel(pSoldier) * 10)) ||
-		Chance(SoldierDifficultyLevel(pSoldier) * 10) ||
-		Chance(TeamPercentKilled(pSoldier->bTeam)) ||
-		Chance(10 * CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE)) ||
-		Chance(10 * CountCorpses(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE, TRUE, TRUE))))
+		fSmokeEmergency &&
+		(!InSmoke(pSoldier->sGridNo, pSoldier->pathing.bLevel) || pSmokeFriend != NULL) &&
+		((pSmokeFriend != NULL && Chance(35 + SoldierDifficultyLevel(pSoldier) * 8)) ||
+		(fMultiplePinned && Chance(__min(60, 25 + 10 * ubLocalUnderAttack))) ||
+		(fSelfPinned && Chance(20 + SoldierDifficultyLevel(pSoldier) * 8)) ||
+		(fBadLocalFight && Chance(20 + SoldierDifficultyLevel(pSoldier) * 6))))
 	{
 		gubNPCAPBudget = 0;
 		gubNPCDistLimit = 0;
 
 		BestThrow.ubPossible = FALSE;
 
-		// First priority: protect a nearby teammate who is pinned, shocked, or
-		// exposed while flanking.  Place smoke on the friendly side of contact.
+		// First priority: protect a genuinely endangered local teammate.
+		// Routine suppression/flanking does not justify spending scarce smoke.
 		if (pSmokeFriend != NULL)
 		{
 			INT32 sTeamSmokeSpot = pSmokeFriend->sGridNo;
@@ -9264,7 +9290,7 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 
 			if (BestThrow.ubPossible)
 			{
-				DebugAI(AI_MSG_INFO, pSoldier, String("[TeamAI] smoke support for friend %d at %d", pSmokeFriend->ubID, BestThrow.sTarget));
+				DebugAI(AI_MSG_INFO, pSoldier, String("[TeamAI] scarce smoke support friend=%d target=%d localUnderAttack=%d", pSmokeFriend->ubID, BestThrow.sTarget, ubLocalUnderAttack));
 
 				if (BestThrow.bWeaponIn != HANDPOS)
 					RearrangePocket(pSoldier, HANDPOS, BestThrow.bWeaponIn, FOREVER);
