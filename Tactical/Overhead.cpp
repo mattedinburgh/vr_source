@@ -113,6 +113,7 @@
 #include "CampaignStats.h"				// added by Flugente
 #include "Creature Spreading.h"			// added by Flugente forResetCreatureAttackVariables()
 #endif
+#include "Campaign Tactical Telemetry.h"
 #include "connect.h"
 
 #include "Luaglobal.h"
@@ -6025,6 +6026,7 @@ void EnterCombatMode( UINT8 ubStartingTeam )
     }
 
     CommonEnterCombatModeCode( );
+    VR_TacticalTelemetryBattleStart( ubStartingTeam );
 
     DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"EnterCombatMode continuing...");
 
@@ -7146,6 +7148,7 @@ BOOLEAN CheckForEndOfBattle( BOOLEAN fAnEnemyRetreated )
         if (is_networked && is_server)
             game_over();
 
+        VR_TacticalTelemetryBattleEnd( fDefeat ? "DEFEAT" : "TACTICAL_LOSS_NO_DEFEAT", fAnEnemyRetreated );
         return( TRUE );
     }
 
@@ -7433,6 +7436,7 @@ BOOLEAN CheckForEndOfBattle( BOOLEAN fAnEnemyRetreated )
         if (is_networked && is_server)
             game_over();
 
+        VR_TacticalTelemetryBattleEnd( "VICTORY", fAnEnemyRetreated );
         return( TRUE );
     }
     // If we are the server, we escape this function at the top if we think the game should still be running
@@ -8816,6 +8820,10 @@ void HandleSuppressionFire( UINT8 ubTargetedMerc, UINT8 ubCausedAttacker )
 			// show suppression counters - use original damage counter timer for this
 			if( showSuppression && ubPointsLost > 0 )
 					SetDamageDisplayCounter( pSoldier );
+
+            // Record resolved suppression before the temporary point accumulator is cleared.
+            VR_TacticalTelemetrySuppression( pSoldier, ubCausedAttacker,
+                pSoldier->ubSuppressionPoints, ubPointsLost, ubNewStance );
 
             // HEADROCK HAM 3.5: After sufficient testing, suppression clearing now works immediately at the end of
             // the attack. ubAPsLostToSuppression is only cleared at the end of the turn, but no longer plays a role
