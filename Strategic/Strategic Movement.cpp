@@ -75,6 +75,64 @@ extern UINT32		guiLastTacticalRealTime;
 
 GROUP *gpGroupList;
 
+// -----------------------------------------------------------------------------
+// VR strategic-modernization staging: team-aware strategic movement groups.
+// Keep fPlayer alive for legacy VR code while new systems use usGroupTeam.
+// The STG marker lives in bytes that were formerly GROUP padding, preserving
+// the serialized GROUP size and allowing old savegames to be normalized safely.
+// -----------------------------------------------------------------------------
+BOOLEAN VR_StrategicGroupTeamIsInitialized( const GROUP *pGroup )
+{
+	return pGroup && pGroup->ubStrategicTeamMagic0 == 'S' && pGroup->ubStrategicTeamMagic1 == 'T' && pGroup->ubStrategicTeamMagic2 == 'G';
+}
+
+void VR_SetStrategicGroupTeam( GROUP *pGroup, UINT8 ubTeam )
+{
+	if( !pGroup )
+		return;
+
+	pGroup->usGroupTeam = ubTeam;
+	pGroup->ubStrategicTeamMagic0 = 'S';
+	pGroup->ubStrategicTeamMagic1 = 'T';
+	pGroup->ubStrategicTeamMagic2 = 'G';
+	pGroup->fPlayer = ( ubTeam == OUR_TEAM );
+}
+
+void VR_NormalizeStrategicGroupTeam( GROUP *pGroup )
+{
+	if( !pGroup )
+		return;
+
+	if( !VR_StrategicGroupTeamIsInitialized( pGroup ) )
+	{
+		VR_SetStrategicGroupTeam( pGroup, pGroup->fPlayer ? OUR_TEAM : ENEMY_TEAM );
+	}
+	else
+	{
+		// Legacy code still branches on fPlayer. Keep it synchronized during staging.
+		pGroup->fPlayer = ( pGroup->usGroupTeam == OUR_TEAM );
+	}
+}
+
+UINT8 VR_GetStrategicGroupTeam( const GROUP *pGroup )
+{
+	if( !pGroup )
+		return ENEMY_TEAM;
+	if( VR_StrategicGroupTeamIsInitialized( pGroup ) )
+		return pGroup->usGroupTeam;
+	return pGroup->fPlayer ? OUR_TEAM : ENEMY_TEAM;
+}
+
+BOOLEAN VR_IsPlayerStrategicGroup( const GROUP *pGroup )
+{
+	return VR_GetStrategicGroupTeam( pGroup ) == OUR_TEAM;
+}
+
+BOOLEAN VR_IsEnemyStrategicGroup( const GROUP *pGroup )
+{
+	return VR_GetStrategicGroupTeam( pGroup ) == ENEMY_TEAM;
+}
+
 GROUP *gpPendingSimultaneousGroup = NULL;
 
 // is the bottom of the map panel dirty?
@@ -174,6 +232,7 @@ UINT8 CreateNewPlayerGroupDepartingFromSector( UINT8 ubSectorX, UINT8 ubSectorY 
 	pNew->ubSectorY = pNew->ubNextY = ubSectorY;
 	pNew->ubOriginalSector = (UINT8)SECTOR( ubSectorX, ubSectorY );
 	pNew->fPlayer = TRUE;
+	VR_SetStrategicGroupTeam( pNew, OUR_TEAM );
 	pNew->ubMoveType = ONE_WAY;
 	pNew->ubNextWaypointID = 0;
 	pNew->ubFatigueLevel = 100;
@@ -205,6 +264,7 @@ UINT8 CreateNewVehicleGroupDepartingFromSector( UINT8 ubSectorX, UINT8 ubSectorY
 	pNew->ubRestAtFatigueLevel = 0;
 	pNew->fVehicle = TRUE;
 	pNew->fPlayer = TRUE;
+	VR_SetStrategicGroupTeam( pNew, OUR_TEAM );
 	pNew->pPlayerList = NULL;
 	pNew->ubCreatedSectorID = pNew->ubOriginalSector;
 	pNew->ubSectorIDOfLastReassignment = 255;
@@ -726,6 +786,7 @@ GROUP* CreateNewEnemyGroupDepartingFromSector( UINT32 uiSector, UINT8 ubNumAdmin
 	pNew->ubSectorY = (UINT8)SECTORY( uiSector );
 	pNew->ubOriginalSector = (UINT8)uiSector;
 	pNew->fPlayer = FALSE;
+	VR_SetStrategicGroupTeam( pNew, ENEMY_TEAM );
 	pNew->ubMoveType = CIRCULAR;
 	pNew->ubNextWaypointID = 0;
 	pNew->ubFatigueLevel = 100;
@@ -783,6 +844,7 @@ UINT8 AddGroupToList( GROUP *pGroup )
 	unsigned ID = 0;
 
 	AssertNotNIL (pGroup);
+	VR_NormalizeStrategicGroupTeam( pGroup );
 	AssertGE (pGroup->ubSectorX, MINIMUM_VALID_X_COORDINATE);
 	AssertLE (pGroup->ubSectorX, MAXIMUM_VALID_X_COORDINATE);
 	AssertGE (pGroup->ubSectorY, MINIMUM_VALID_Y_COORDINATE);
@@ -3833,6 +3895,7 @@ BOOLEAN SaveStrategicMovementGroupsToSaveGameFile( HWFILE hFile )
 	while( pGroup )
 	{
 		// Save each node in the LL
+		VR_NormalizeStrategicGroupTeam( pGroup );
 		FileWrite( hFile, pGroup, sizeof( GROUP ), &uiNumBytesWritten );
 		if( uiNumBytesWritten != sizeof( GROUP ) )
 		{
@@ -3933,6 +3996,8 @@ BOOLEAN LoadStrategicMovementGroupsFromSavedGameFile( HWFILE hFile )
 			return( FALSE );
 		}
 
+		// Old VR saves stored these bytes as padding. New staged saves carry the STG marker.
+		VR_NormalizeStrategicGroupTeam( pTemp );
 
 		//
 		// Add either the pointer or the linked list.
