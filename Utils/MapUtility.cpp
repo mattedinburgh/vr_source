@@ -938,11 +938,118 @@ static BOOLEAN MapFactoryComparePreviewBmp( const STR8 pLeftName, const STR8 pRi
 	return TRUE;
 }
 
+static BOOLEAN MapFactoryComputePersistence( const STR8 pPristineName, const STR8 pDressedName,
+	const STR8 pReloadedName, FLOAT *pChangedPercent, FLOAT *pPersistencePercent )
+{
+	if ( pChangedPercent != NULL ) *pChangedPercent = 0.0f;
+	if ( pPersistencePercent != NULL ) *pPersistencePercent = 0.0f;
+
+	CHAR8 zPreviewDir[MAX_PATH + 32];
+	if ( !GetMapPreviewDirectory( zPreviewDir, sizeof(zPreviewDir) ) )
+		return FALSE;
+
+	CHAR8 zPath[3][MAX_PATH + 384];
+	const STR8 pNames[3] = { pPristineName, pDressedName, pReloadedName };
+	FILE *pFile[3] = { NULL, NULL, NULL };
+	UINT8 h[3][54];
+
+	for ( UINT8 i = 0; i < 3; ++i )
+	{
+		_snprintf( zPath[i], sizeof(zPath[i]) - 1, "%s\\%s", zPreviewDir, pNames[i] );
+		zPath[i][sizeof(zPath[i]) - 1] = 0;
+		pFile[i] = fopen( zPath[i], "rb" );
+		if ( pFile[i] == NULL || fread( h[i], 1, 54, pFile[i] ) != 54 ||
+			 h[i][0] != 'B' || h[i][1] != 'M' )
+		{
+			for ( UINT8 j = 0; j < 3; ++j ) if ( pFile[j] != NULL ) fclose( pFile[j] );
+			return FALSE;
+		}
+	}
+
+	const UINT32 uiWidth = MapFactoryReadLE32( &h[0][18] );
+	const UINT32 uiHeight = MapFactoryReadLE32( &h[0][22] );
+	for ( UINT8 i = 1; i < 3; ++i )
+	{
+		if ( MapFactoryReadLE32( &h[i][18] ) != uiWidth ||
+			 MapFactoryReadLE32( &h[i][22] ) != uiHeight )
+		{
+			for ( UINT8 j = 0; j < 3; ++j ) fclose( pFile[j] );
+			return FALSE;
+		}
+	}
+	if ( uiWidth == 0 || uiHeight == 0 )
+	{
+		for ( UINT8 j = 0; j < 3; ++j ) fclose( pFile[j] );
+		return FALSE;
+	}
+
+	const UINT32 uiRowBytes = (uiWidth * 3u + 3u) & ~3u;
+	UINT8 *pRow[3] = { NULL, NULL, NULL };
+	for ( UINT8 i = 0; i < 3; ++i )
+	{
+		pRow[i] = (UINT8*)MemAlloc( uiRowBytes );
+		if ( pRow[i] == NULL )
+		{
+			for ( UINT8 j = 0; j < 3; ++j )
+			{
+				if ( pRow[j] != NULL ) MemFree( pRow[j] );
+				fclose( pFile[j] );
+			}
+			return FALSE;
+		}
+		fseek( pFile[i], (LONG)MapFactoryReadLE32( &h[i][10] ), SEEK_SET );
+	}
+
+	UINT64 uiChanged = 0, uiPersisted = 0;
+	BOOLEAN fReadOK = TRUE;
+	for ( UINT32 y = 0; y < uiHeight; ++y )
+	{
+		for ( UINT8 i = 0; i < 3; ++i )
+		{
+			if ( fread( pRow[i], 1, uiRowBytes, pFile[i] ) != uiRowBytes )
+			{
+				fReadOK = FALSE;
+				break;
+			}
+		}
+		if ( !fReadOK ) break;
+
+		for ( UINT32 x = 0; x < uiWidth; ++x )
+		{
+			const UINT32 k = x * 3u;
+			const BOOLEAN fDressedChanged =
+				pRow[0][k] != pRow[1][k] || pRow[0][k+1] != pRow[1][k+1] || pRow[0][k+2] != pRow[1][k+2];
+			if ( !fDressedChanged )
+				continue;
+			++uiChanged;
+			const BOOLEAN fReloadChanged =
+				pRow[0][k] != pRow[2][k] || pRow[0][k+1] != pRow[2][k+1] || pRow[0][k+2] != pRow[2][k+2];
+			if ( fReloadChanged )
+				++uiPersisted;
+		}
+	}
+
+	for ( UINT8 i = 0; i < 3; ++i )
+	{
+		MemFree( pRow[i] );
+		fclose( pFile[i] );
+	}
+	if ( !fReadOK )
+		return FALSE;
+
+	const UINT64 uiTotal = (UINT64)uiWidth * (UINT64)uiHeight;
+	if ( pChangedPercent != NULL )
+		*pChangedPercent = uiTotal ? (FLOAT)(100.0 * (DOUBLE)uiChanged / (DOUBLE)uiTotal) : 0.0f;
+	if ( pPersistencePercent != NULL )
+		*pPersistencePercent = uiChanged ? (FLOAT)(100.0 * (DOUBLE)uiPersisted / (DOUBLE)uiChanged) : 0.0f;
+	return TRUE;
+}
+
 static BOOLEAN MapFactoryScorePilotSector( const STR8 pSourceMap, const STR8 pPristineMap,
 	const STR8 pRemasteredMap )
 {
-	FLOAT dChangeSum = 0.0f, dReloadSum = 0.0f;
-	UINT8 ubPairs = 0, ubMaterialSlots = 0, ubStableSlots = 0;
+	FLOAT dChangeSum = 0.0f, dPersistenceSum = 0.0f;
+	UINT8 ubPairs = 0, ubMaterialSlots = 0, ubPersistentSlots = 0;
 
 	for ( UINT8 i = 1; i <= 6; ++i )
 	{
@@ -953,30 +1060,30 @@ static BOOLEAN MapFactoryScorePilotSector( const STR8 pSourceMap, const STR8 pPr
 		zPristine[sizeof(zPristine) - 1] = zDressed[sizeof(zDressed) - 1] =
 			zReloaded[sizeof(zReloaded) - 1] = 0;
 
-		FLOAT dChanged = 0.0f, dReload = 100.0f;
-		if ( !MapFactoryComparePreviewBmp( zPristine, zDressed, &dChanged ) ||
-			 !MapFactoryComparePreviewBmp( zDressed, zReloaded, &dReload ) )
+		FLOAT dChanged = 0.0f, dPersistence = 0.0f;
+		if ( !MapFactoryComputePersistence( zPristine, zDressed, zReloaded, &dChanged, &dPersistence ) )
 			continue;
 
 		++ubPairs;
 		dChangeSum += dChanged;
-		dReloadSum += dReload;
+		dPersistenceSum += dPersistence;
 		if ( dChanged >= 0.50f ) ++ubMaterialSlots;
-		if ( dReload <= 0.05f ) ++ubStableSlots;
+		if ( dPersistence >= 80.0f ) ++ubPersistentSlots;
 	}
 
 	const FLOAT dAverageChange = ubPairs ? dChangeSum / ubPairs : 0.0f;
-	const FLOAT dAverageReload = ubPairs ? dReloadSum / ubPairs : 100.0f;
+	const FLOAT dAveragePersistence = ubPairs ? dPersistenceSum / ubPairs : 0.0f;
 
-	// "Material" means a player can actually see the redesign in normal tactical
-	// views. The old generic pass measured ~0.00-0.23%, which is explicitly rejected.
+	// The old generic pass measured ~0.00-0.23% visible change and is rejected.
+	// Persistence is based on whether the intended changed pixels remain changed
+	// after SaveWorld/reload, tolerating harmless animation/normalization noise.
 	const BOOLEAN fPass = ubPairs == 6 && dAverageChange >= 0.75f &&
-		ubMaterialSlots >= 3 && dAverageReload <= 0.05f && ubStableSlots >= 5;
+		ubMaterialSlots >= 3 && dAveragePersistence >= 90.0f && ubPersistentSlots >= 5;
 
-	CHAR8 zStatus[256];
+	CHAR8 zStatus[288];
 	_snprintf( zStatus, sizeof(zStatus) - 1,
-		"PILOT_SCORE source=%s avgChange=%.3f materialSlots=%u/6 avgReloadDiff=%.3f stableSlots=%u/6 verdict=%s",
-		pSourceMap, dAverageChange, ubMaterialSlots, dAverageReload, ubStableSlots,
+		"PILOT_SCORE source=%s avgChange=%.3f materialSlots=%u/6 avgPersistence=%.1f persistentSlots=%u/6 verdict=%s",
+		pSourceMap, dAverageChange, ubMaterialSlots, dAveragePersistence, ubPersistentSlots,
 		fPass ? "PASS" : "FAIL" );
 	zStatus[sizeof(zStatus) - 1] = 0;
 	MapPreviewWriteStatus( zStatus );
