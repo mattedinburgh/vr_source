@@ -1061,7 +1061,7 @@ static BOOLEAN RenderFullLogicalMercModel(
 				Blt8BPPDataTo16BPPBufferTransShadowZClip(
 					(UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel,
 					hLayer, sXPos, sYPos, usImageIndex, &gClippingRect,
-					pLayerShadeTable, fIgnoreLayerShadows );
+					pLayerShadeTable );
 			}
 			else if ( fObscuredBlitter )
 			{
