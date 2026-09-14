@@ -2913,7 +2913,7 @@ void AddNewItemToSelectedMercsInventory( BOOLEAN fCreate )
 	uiVideoObjectIndex = GetInterfaceGraphicForItem( item );
 	GetVideoObject( &hVObject, uiVideoObjectIndex );
 
-	UINT16 usGraphicNum = g_bUsePngItemImages ? 0 : item->ubGraphicNum;
+	UINT16 usGraphicNum = GetInterfaceGraphicSubIndex(item->ubGraphicType, item->ubGraphicNum);
 	BltVideoObjectOutlineFromIndex( uiSrcID, uiVideoObjectIndex, usGraphicNum, 0, 0, 0, FALSE );
 
 	//crop the source image
