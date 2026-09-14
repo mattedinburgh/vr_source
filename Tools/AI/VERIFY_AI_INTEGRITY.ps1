@@ -185,6 +185,9 @@ if ($cqbText -notmatch "BOOLEAN\s+VRCQB_IsRuntimeEnabled\s*\(void\)\s*\{\s*retur
 if ($decideText.Contains("VRCQB_")) {
     Fail "DecideAction.cpp references VRCQB_* while CQB is classified as dormant staging."
 }
+if ($cqbText.Contains("VRCQB_DecideAction") -or $cqbHeaderText.Contains("VRCQB_DecideAction")) {
+    Fail "Dormant CQB staging exposes a runtime decision adapter before activation review."
+}
 
 # 7. No tracked duplicate canonical architecture document in TacticalAI under an old name.
 $obsoleteDocs = @(
