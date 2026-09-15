@@ -5844,6 +5844,41 @@ INT8 AIBattleSituation(SOLDIERTYPE *pSoldier)
 	return AI_BATTLE_EVEN;
 }
 
+BOOLEAN AIBuildTacticalDecisionContext(SOLDIERTYPE *pSoldier, AITACTICALDECISIONCONTEXT *pContext)
+{
+	if (!pContext)
+		return FALSE;
+
+	memset(pContext, 0, sizeof(AITACTICALDECISIONCONTEXT));
+	pContext->sPrimaryThreat = NOWHERE;
+	pContext->bBattleSituation = AI_BATTLE_UNKNOWN;
+
+	if (!AICombatTeam(pSoldier))
+		return FALSE;
+
+	pContext->sPrimaryThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	pContext->bBattleSituation = AIBattleSituation(pSoldier);
+	pContext->iStress = AILocalStress(pSoldier);
+	pContext->iPersonalRisk = AIPersonalRisk(pSoldier);
+	pContext->iRiskTolerance = AIPersonalRiskTolerance(pSoldier);
+	pContext->usKnownThreatExposure = AIKnownThreatExposure(
+		pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+	pContext->ubNearbyOperationalFriends = AICountNearbyOperationalFriends(
+		pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4);
+	pContext->fHasCover = AnyCoverAtSpot(pSoldier, pSoldier->sGridNo);
+	pContext->fUnderFire = pSoldier->aiData.bUnderFire;
+	pContext->fIsolated = (pContext->ubNearbyOperationalFriends == 0);
+	pContext->fHasLivePersonalContact = (pSoldier->aiData.bOppCnt > 0);
+
+	if (!TileIsOutOfBounds(pContext->sPrimaryThreat))
+	{
+		pContext->fBadRange =
+			(AIEngagementRangeModifier(pSoldier, pContext->sPrimaryThreat) < 0);
+	}
+
+	return TRUE;
+}
+
 BOOLEAN AISeverelyIsolated(SOLDIERTYPE *pSoldier)
 {
 	if (!AICombatTeam(pSoldier))
