@@ -215,12 +215,6 @@ static BOOLEAN ValidateAndCanonicalizeNativeVHDImage(
 
 	if ( fValid )
 	{
-		BlackBoxEvent( "VHD",
-			"native validation accepted file=%s native=%s frames=%u scale=%u",
-			pCanonicalFilename,
-			hNativeImage->ImageFile,
-			hNativeImage->usNumberOfObjects,
-			ubScale );
 		DestroyImage( hCanonicalImage );
 		return TRUE;
 	}
