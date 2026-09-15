@@ -385,6 +385,26 @@ BOOLEAN AIAllowsPlanComplexity(SOLDIERTYPE *pSoldier, INT8 bComplexity, UINT32 u
 INT32 AICompetenceUtilityNoise(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, UINT32 uiSalt = 0);
 INT32 AIInferredReactionRisk(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT8 bLevel);
 UINT8 AILocalSmokeReserve(SOLDIERTYPE *pSoldier);
+// Shared read-only tactical snapshot. Higher-level AI should prefer this over
+// independently recomputing the same battlefield interpretation in each behavior.
+// All opponent-derived fields must remain bounded by the normal JA2 knowledge model.
+struct AITACTICALDECISIONCONTEXT
+{
+	INT32 sPrimaryThreat;
+	INT8 bBattleSituation;
+	INT32 iStress;
+	INT32 iPersonalRisk;
+	INT32 iRiskTolerance;
+	UINT16 usKnownThreatExposure;
+	UINT8 ubNearbyOperationalFriends;
+	BOOLEAN fHasCover;
+	BOOLEAN fUnderFire;
+	BOOLEAN fBadRange;
+	BOOLEAN fIsolated;
+	BOOLEAN fHasLivePersonalContact;
+};
+
+BOOLEAN AIBuildTacticalDecisionContext(SOLDIERTYPE *pSoldier, AITACTICALDECISIONCONTEXT *pContext);
 INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT32 sTargetSpot, INT8 bIntent, INT8 bRole);
