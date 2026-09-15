@@ -1809,8 +1809,6 @@ void ShutdownJA2(void)
 
 	DeinitializeWorld( );
 
-	DeleteTileCache( );
-
 	ShutdownJA2Clock( );
 
 	ShutdownFonts();
