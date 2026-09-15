@@ -499,11 +499,32 @@ BOOLEAN AIBuildThreatMemoryCue(
 
 		INT32 iDistance =
 			PythSpacesAway(pSoldier->sGridNo, pSlot->sLastKnownGridNo);
+		UINT8 ubMemoryDir =
+			AIDirection(pSoldier->sGridNo, pSlot->sLastKnownGridNo);
+
+		INT32 sCorroboratingGridNo = NOWHERE;
+		INT8 bCorroboratingLevel = 0;
+		UINT8 ubCorroboratedCues = 0;
+		UINT8 ubCorroborationAge = 255;
+		UINT8 ubCorroborationStrength =
+			AIThreatMemoryNoiseCorroboration(
+				pSoldier, ubMemoryDir,
+				&sCorroboratingGridNo,
+				&bCorroboratingLevel,
+				&ubCorroboratedCues,
+				&ubCorroborationAge);
+
 		INT32 iScore =
 			(INT32)ubConfidence * 3 - __min(80, iDistance * 2);
 
 		if (pSlot->ubSource == AI_BELIEF_SOURCE_PERSONAL)
 			iScore += 20;
+
+		// Evidence fusion happens while choosing the hypothesis, not after it.
+		// This lets a fresh sound make the matching weaker memory more relevant than
+		// an unrelated stronger/staler memory, without identifying an unseen shooter.
+		iScore += 2 * (INT32)ubCorroborationStrength;
+		iScore += 6 * __min((UINT8)2, ubCorroboratedCues);
 
 		if (iScore > iBestScore)
 		{
@@ -511,23 +532,20 @@ BOOLEAN AIBuildThreatMemoryCue(
 			ubBestOpponent = (UINT8)i;
 			pCue->sGridNo = pSlot->sLastKnownGridNo;
 			pCue->bLevel = pSlot->bLevel;
-			pCue->ubDirection =
-				AIDirection(pSoldier->sGridNo, pSlot->sLastKnownGridNo);
+			pCue->ubDirection = ubMemoryDir;
 			pCue->ubConfidence = ubConfidence;
 			pCue->ubAgeTurns = AIContactMemoryAge(pSlot);
+			pCue->sCorroboratingGridNo = sCorroboratingGridNo;
+			pCue->bCorroboratingLevel = bCorroboratingLevel;
+			pCue->ubCorroborationStrength = ubCorroborationStrength;
+			pCue->ubCorroboratedCues = ubCorroboratedCues;
+			pCue->ubCorroborationAge = ubCorroborationAge;
 		}
 	}
 
 	if (ubBestOpponent == NOBODY || TileIsOutOfBounds(pCue->sGridNo))
 		return FALSE;
 
-	pCue->ubCorroborationStrength =
-		AIThreatMemoryNoiseCorroboration(
-			pSoldier, pCue->ubDirection,
-			&pCue->sCorroboratingGridNo,
-			&pCue->bCorroboratingLevel,
-			&pCue->ubCorroboratedCues,
-			&pCue->ubCorroborationAge);
 	pCue->fNoiseCorroborated =
 		pCue->ubCorroborationStrength > 0 &&
 		!TileIsOutOfBounds(pCue->sCorroboratingGridNo);
@@ -784,11 +802,6 @@ static UINT8 AIThreatMemoryNoiseCorroboration(
 		{
 			continue;
 		}
-
-		// Public/radio noise is useful corroboration, but direct personal hearing
-		// should remain more persuasive than a relayed cue.
-		if (pSlot->fPublic)
-			iEffectiveStrength = (3 * iEffectiveStrength) / 4;
 
 		if (iEffectiveStrength <= 0)
 			continue;
