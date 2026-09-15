@@ -119,6 +119,23 @@ changes pass their test workflow.
 - watchdog shutdown keeps synchronization handles alive if a hang dump is still finishing,
   avoiding an invalid-handle loop during teardown.
 
+## Structured analytics journal lifecycle
+
+`VR_BlackBox.jsonl` now has an explicit lifecycle separate from the fixed-size crash
+recorder:
+
+- a normal SGP shutdown appends a `session_end` record, flushes the C stream and closes it;
+- the Companion reports cleanly closed sessions separately from sessions that ended without
+  `session_end`, which is a useful crash/forced-termination signal;
+- at startup, journals at or above **64 MiB** rotate through
+  `VR_BlackBox_Previous.jsonl`, `_Previous_2` and `_Previous_3`;
+- rotation first secures the current journal as `VR_BlackBox_RotatePending.jsonl` before
+  shifting older generations, so a failed rename cannot silently discard the newest data;
+- the collector includes current, previous and pending analytics journals.
+
+The 64 MiB cap is compile-time configurable through `VR_ANALYTICS_MAX_BYTES`; CI uses a
+small override to exercise the rotation path without producing a large test artifact.
+
 ## Collection and analysis v5 changes
 
 - the evidence collector treats individual copy failures as recoverable and records them in
