@@ -60,6 +60,7 @@
 #endif
 
 #include "Multi Language Graphic Utils.h"
+#include "ExceptionHandling.h"
 
 //forward declarations of common classes to eliminate includes
 class OBJECTTYPE;
@@ -1399,6 +1400,22 @@ void InternalInitEDBTooltipRegion( OBJECTTYPE * gpItemDescObject, UINT32 guiCurr
 
 	InitEDBCoords( gpItemDescObject );
 
+	// BlackBox v5: the reported freeze occurred while opening/inspecting a
+	// melee weapon in the enhanced description box. Keep this breadcrumb narrow.
+	if( Item[ gpItemDescObject->usItem ].usItemClass & (IC_BLADE | IC_THROWING_KNIFE | IC_PUNCH) )
+	{
+		BlackBoxEvent( "ITEMDESC",
+			"EDB tooltip init item=%u class=0x%08lx descPage=%u genPage=%u screen=%u",
+			(UINT32)gpItemDescObject->usItem,
+			(ULONG)Item[gpItemDescObject->usItem].usItemClass,
+			(UINT32)gubDescBoxPage, (UINT32)gubDescGenPage, guiCurrentItemDescriptionScreen );
+		BlackBoxContext( "itemdesc.edb",
+			"item=%u class=0x%08lx descPage=%u genPage=%u screen=%u",
+			(UINT32)gpItemDescObject->usItem,
+			(ULONG)Item[gpItemDescObject->usItem].usItemClass,
+			(UINT32)gubDescBoxPage, (UINT32)gubDescGenPage, guiCurrentItemDescriptionScreen );
+	}
+
 	//start by deleting the currently defined regions if they exist
 	for ( cnt = 0; cnt < NUM_UDB_FASTHELP_REGIONS; cnt++ )
 	{
@@ -1721,6 +1738,14 @@ void InternalInitEDBTooltipRegion( OBJECTTYPE * gpItemDescObject, UINT32 guiCurr
 			
 			/////////////////// AP TO SINGLE ATTACK
 			{
+				if( Item[ gpItemDescObject->usItem ].usItemClass & (IC_BLADE | IC_THROWING_KNIFE | IC_PUNCH) )
+				{
+					BlackBoxCheckpoint( "ITEMDESC",
+						"EDB AP single-attack region enable item=%u class=0x%08lx region=%ld",
+						(UINT32)gpItemDescObject->usItem,
+						(ULONG)Item[gpItemDescObject->usItem].usItemClass,
+						(LONG)(iFirstDataRegion + 14) );
+				}
 				MSYS_EnableRegion( &gUDBFasthelpRegions[ iFirstDataRegion + 14 ] );
 			}
 
