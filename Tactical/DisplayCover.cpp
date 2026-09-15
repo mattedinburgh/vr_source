@@ -257,7 +257,7 @@ void AddCoverObjectToWorld( const INT32& sGridNo, const UINT16& usGraphic, const
 		pNode = gpWorldLevelData[ sGridNo ].pObjectHead;
 	}
 
-	pNode->uiFlags |= LEVELNODE_REVEAL;
+	pNode->uiFlags |= ( LEVELNODE_REVEAL | LEVELNODE_GENTLE_OVERLAY );
 
 	if( NightTime() )
 	{
