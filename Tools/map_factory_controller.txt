@@ -1,0 +1,240 @@
+from __future__ import annotations
+import argparse, csv, json
+from dataclasses import dataclass
+from pathlib import Path
+
+STRATEGIES=("authored_modules","strong_modules","composition_kits","manual_required")
+PILOT=("A3","A8","A12","B13","F15")
+WAVE1=("A11","A14","B1","B10","B12","C3","C11","D6","D9","E4","F7","F14")
+RULES=[
+ (("checkpoint","outpost","training camp","army","sam site"),"military"),
+ (("airport","distribution","oil rig","dam"),"industrial"),
+ (("omerta","oronegro","drassen","salinas","hospital"),"settlement"),
+ (("road",),"roadside"),
+ (("farm","farmland"),"farmland"),
+ (("forest","woods","tropical","swamp","coastline","water"),"wilderness"),
+ (("hills","plains"),"open_country"),
+]
+SURFACE_MAPS={
+    "a1.dat":"Tropical","A2.dat":"Oronegro","A3.dat":"Oronegro","A6.DAT":"Hills","A7.DAT":"Hills","A8.dat":"Army Outpost","A9.dat":"Omerta","A10.dat":"Omerta","A11.dat":"Farmland","A12.DAT":"Forest","A13.DAT":"Woods","A14.DAT":"Plains","A15.DAT":"Forest",
+    "B1.dat":"Oronegro Oil Rig","b2.dat":"Oronegro","B3.DAT":"Woods","B4.DAT":"Woods","B5.DAT":"Farmland","B6.DAT":"Farmland","B7.DAT":"Plains","B8.DAT":"Farmland","b9.dat":"Training Camp","b10.dat":"Omerta","b11.dat":"Woods","b12.dat":"Farm, road","b13.dat":"Drassen Airport","B14.DAT":"Drassen","B15.DAT":"Swamp","B16.DAT":"Forest",
+    "c1.dat":"Oronegro","c2.dat":"Tropical, road","C3.DAT":"Tropical, road","C4.DAT":"Woods","c5.dat":"San Mona","C6.DAT":"San Mona","c7.dat":"Plains, road","c8.dat":"Woods","c9.dat":"Plains, road","c10.dat":"Woods","c11.dat":"Rebel Outpost","c12.dat":"Woods","c13.dat":"Drassen","c14.dat":"Water","C15.DAT":"Swamp","c16.dat":"Swamp",
+    "d2.dat":"SAM Site","D3.DAT":"Plains, road","D4.DAT":"San Mona Mine","D5.DAT":"San Mona","D6.DAT":"Farmland","D7.DAT":"Forest, road","D8.DAT":"Forest","d9.dat":"Field Hospital","d10.dat":"Plains","D11.DAT":"Woods","d12.dat":"Swamp","d13.dat":"Drassen Mine","d14.dat":"Arulco Dam","d15.dat":"SAM Site","d16.dat":"Forest",
+    "E2.DAT":"Tropical","E3.DAT":"Plains, road","E4.DAT":"Hills","E5.DAT":"Hills","E6.DAT":"Plains","E7.DAT":"Farm, road","e8.dat":"Farmland","e9.dat":"Farm, road","E10.DAT":"Swamp","E11.DAT":"Woods","E12.DAT":"Woods","e13.dat":"Water","E14.DAT":"Swamp","e15.dat":"Forest, road",
+    "f2.dat":"Coastline","f3.dat":"Plains, road","F4.DAT":"Hills","f5.dat":"Hills","F6.DAT":"Hills","f7.dat":"Salinas","f8.dat":"Salinas, Hospital","f9.dat":"Salinas","f10.dat":"Distribution Centre","f11.dat":"Plains","f12.dat":"Woods","f13.dat":"Woods","f14.dat":"Plains, road","f15.dat":"Checkpoint"
+}
+
+COMPOSITION_KITS={
+ "farmland":[(0,0,"SECONDDECORATIONS",1),(2,0,"SECONDDECORATIONS",2),(4,0,"SECONDDECORATIONS",3),(0,2,"DEBRISGRASS",1),(2,2,"DEBRISSAND",3),(4,2,"DEBRISWOOD",3),(1,4,"DEBRISWEEDS",5),(3,4,"DEBRISWEEDS",7)],
+ "wilderness":[(0,0,"DEBRISWEEDS",1),(2,0,"DEBRISROCKS",2),(4,0,"DEBRISGRASS",1),(0,2,"DEBRISWOOD",3),(2,2,"DEBRISWEEDS",5),(4,2,"DEBRISROCKS",4),(1,4,"DEBRISGRASS",3),(3,4,"DEBRISWOOD",5)],
+ "military":[(0,0,"DEBRISMISC",5),(2,0,"DEBRISWOOD",1),(4,0,"DEBRISROCKS",4),(0,2,"DEBRISMISC",7),(2,2,"DEBRISWOOD",4),(4,2,"DEBRISROCKS",6),(1,4,"DEBRISWEEDS",3),(3,4,"DEBRISMISC",3)],
+ "industrial":[(0,0,"DEBRISMISC",1),(2,0,"DEBRISWOOD",4),(4,0,"DEBRISROCKS",4),(0,2,"DEBRISMISC",5),(2,2,"DEBRISWOOD",1),(4,2,"DEBRISGRASS",5),(1,4,"DEBRISMISC",7),(3,4,"DEBRISROCKS",6)],
+ "settlement":[(0,0,"DEBRISMISC",1),(2,0,"DEBRISWOOD",3),(4,0,"DEBRISWEEDS",5),(0,2,"DEBRISROCKS",3),(2,2,"DEBRISMISC",4),(4,2,"DEBRISWOOD",2),(1,4,"DEBRISGRASS",5),(3,4,"DEBRISWEEDS",3)],
+ "roadside":[(0,0,"DEBRISSAND",3),(2,0,"DEBRISROCKS",3),(4,0,"DEBRISWEEDS",8),(0,2,"DEBRISWOOD",2),(2,2,"DEBRISMISC",4),(4,2,"DEBRISGRASS",2),(1,4,"DEBRISROCKS",6),(3,4,"DEBRISWEEDS",3)],
+ "open_country":[(0,0,"DEBRISWEEDS",2),(2,0,"DEBRISROCKS",2),(4,0,"DEBRISGRASS",3),(0,2,"DEBRISWOOD",5),(2,2,"DEBRISWEEDS",5),(4,2,"DEBRISROCKS",4),(1,4,"DEBRISGRASS",1),(3,4,"DEBRISWOOD",3)],
+}
+
+MODULES={
+ "farmland":[("SECONDDECORATIONS",1),("SECONDDECORATIONS",2),("DEBRISWEEDS",9),("DEBRISGRASS",2)],
+ "wilderness":[("DEBRISWEEDS",1),("DEBRISROCKS",2),("DEBRISWOOD",3),("DEBRISGRASS",1)],
+ "military":[("DEBRISMISC",5),("DEBRISWOOD",1),("DEBRISROCKS",4),("DEBRISMISC",7)],
+ "industrial":[("DEBRISMISC",1),("DEBRISMISC",5),("DEBRISWOOD",4),("DEBRISROCKS",4)],
+ "settlement":[("DEBRISMISC",1),("DEBRISWOOD",3),("DEBRISWEEDS",5),("DEBRISROCKS",3)],
+ "roadside":[("DEBRISSAND",3),("DEBRISROCKS",3),("DEBRISWEEDS",8),("DEBRISWOOD",2)],
+ "open_country":[("DEBRISWEEDS",2),("DEBRISROCKS",2),("DEBRISGRASS",3),("DEBRISWOOD",5)],
+}
+
+@dataclass(frozen=True)
+class C:
+    kind:str; grid:int; row:int; col:int; near_structure:bool; near_water:bool; near_trail:bool
+
+def key(v): return v.strip().upper().replace(".DAT","")
+def archetype(name):
+    t=(name or "").lower()
+    for needles,a in RULES:
+        if any(n in t for n in needles): return a
+    return "open_country"
+
+def manifest(path=None):
+    if path and Path(path).exists():
+        with Path(path).open(newline="",encoding="utf-8-sig") as f:
+            rows=list(csv.DictReader(f))
+        for r in rows:
+            r["key"]=key(r["map_file"]); r["archetype"]=archetype(r.get("campaign_name",""))
+        return rows
+    return [{"map_file":m,"campaign_name":n,"priority":"surface","key":key(m),"archetype":archetype(n)} for m,n in SURFACE_MAPS.items()]
+
+def profile(path):
+    out=[]
+    with Path(path).open(newline="",encoding="utf-8-sig") as f:
+        for r in csv.DictReader(f):
+            out.append(C(r["kind"],int(r["grid"]),int(r["row"]),int(r["col"]),r.get("near_structure")=="1",r.get("near_water")=="1",r.get("near_trail")=="1"))
+    return out
+
+def spread(xs,n,d):
+    xs=sorted(xs,key=lambda c:(c.row,c.col,c.grid))
+    if not xs:return []
+    zig=[]; lo=0; hi=len(xs)-1
+    while lo<=hi:
+        zig.append(xs[lo]); lo+=1
+        if lo<=hi: zig.append(xs[hi]); hi-=1
+    chosen=[]
+    for c in zig:
+        if all(abs(c.row-x.row)+abs(c.col-x.col)>=d for x in chosen):
+            chosen.append(c)
+            if len(chosen)>=n: break
+    return chosen
+
+def cameras(p):
+    roofs=[c for c in p if c.kind=="roof"]; opens=[c for c in p if c.kind=="open"]
+    out=spread(roofs,4,26)
+    used={x.grid for x in out}
+    out += [x for x in spread(opens,6,30) if x.grid not in used]
+    return [x.grid for x in out[:6]]
+
+def pool(p,a):
+    xs=[c for c in p if c.kind=="open"]
+    if a in ("settlement","military","industrial"):
+        y=[c for c in xs if c.near_structure]; return y or xs
+    if a=="roadside":
+        y=[c for c in xs if c.near_trail]; return y or xs
+    if a=="farmland":
+        y=[c for c in xs if not c.near_structure and not c.near_water]; return y or xs
+    if a=="wilderness":
+        y=[c for c in xs if not c.near_structure]; return y or xs
+    return xs
+
+def make_recipe(sec,a,strategy,p):
+    cams=cameras(p)
+    lines=["# Vengeance Map Factory",f"# sector={sec}",f"# archetype={a}",f"# strategy={strategy}"]+[f"CAMERA,{g}" for g in cams]
+    if strategy=="manual_required":
+        return lines,{"placements":0,"cameras":cams,"strategy":strategy}
+    xs=pool(p,a)
+    if strategy=="composition_kits":
+        anchors=spread(xs,4,32); placements=0
+        lookup={(x.row,x.col):x for x in xs}
+        for an in anchors:
+            placed=0
+            for dy,dx,tile,sub in COMPOSITION_KITS[a]:
+                cand=lookup.get((an.row+dy,an.col+dx))
+                if cand:
+                    lines.append(f"ADD_OBJECT,{cand.grid},{tile},{sub}"); placements+=1; placed+=1
+            if placed<4:
+                lines.append(f"# KIT_PARTIAL anchor={an.grid} placed={placed}")
+        return lines,{"placements":placements,"cameras":cams,"strategy":strategy,"candidates":len(xs),"modules":len(anchors)}
+    count=5 if strategy=="authored_modules" else 9
+    dist=24 if strategy=="authored_modules" else 16
+    anchors=spread(xs,count,dist); placements=0; module=MODULES[a]
+    for an in anchors:
+        near=sorted((c for c in xs if abs(c.row-an.row)<=8 and abs(c.col-an.col)<=8),key=lambda c:(abs(c.row-an.row)+abs(c.col-an.col),c.grid))
+        for (tile,sub),cand in zip(module,near):
+            lines.append(f"ADD_OBJECT,{cand.grid},{tile},{sub}"); placements+=1
+    return lines,{"placements":placements,"cameras":cams,"strategy":strategy,"candidates":len(xs),"modules":len(anchors)}
+
+def production_waves(rows,size=12):
+    fixed=[r for r in rows if r["key"] in WAVE1]
+    remaining=[r for r in rows if r["key"] not in PILOT and r["key"] not in WAVE1]
+    groups={}
+    for r in remaining:
+        groups.setdefault(r["archetype"],[]).append(r)
+    for xs in groups.values():
+        xs.sort(key=lambda r:r["key"])
+    order=("farmland","wilderness","military","industrial","settlement","roadside","open_country")
+    interleaved=[]
+    while any(groups.get(k) for k in order):
+        for k in order:
+            xs=groups.get(k,[])
+            if xs: interleaved.append(xs.pop(0))
+    waves=[fixed]
+    for i in range(0,len(interleaved),size):
+        waves.append(interleaved[i:i+size])
+    return waves
+
+def cmd_plan(a):
+    all_rows=[r for r in manifest(a.manifest) if r.get("priority")=="surface"]
+    rows=all_rows
+    if a.pilot:
+        rows=[r for r in all_rows if r["key"] in PILOT]
+    elif a.wave:
+        waves=production_waves(all_rows)
+        if a.wave<1 or a.wave>len(waves):
+            raise SystemExit(f"Wave must be 1..{len(waves)}")
+        rows=waves[a.wave-1]
+    for r in rows: print(f"{r['key']:4} {r['archetype']:13} {r.get('campaign_name','')}")
+    print("TOTAL="+str(len(rows))); return 0
+
+def cmd_recipe(a):
+    rows=manifest(a.manifest); sec=key(a.sector)
+    r=next((x for x in rows if x["key"]==sec and x.get("priority")=="surface"),None)
+    if not r: raise SystemExit("Unknown surface sector "+sec)
+    lines,meta=make_recipe(sec,r["archetype"],a.strategy,profile(a.profile))
+    out=Path(a.output); out.parent.mkdir(parents=True,exist_ok=True); out.write_text("\n".join(lines)+"\n",encoding="ascii")
+    meta.update({"sector":sec,"archetype":r["archetype"]})
+    if a.meta: Path(a.meta).write_text(json.dumps(meta,indent=2)+"\n",encoding="utf-8")
+    print(json.dumps(meta,sort_keys=True))
+    return 0 if meta["placements"] or a.strategy=="manual_required" else 3
+
+def cmd_next(a):
+    cur=a.strategy
+    ok=a.bake_ok and a.visual_changed
+    if ok: nxt=cur; status="accepted"
+    else:
+        i=STRATEGIES.index(cur); nxt=STRATEGIES[min(i+1,len(STRATEGIES)-1)]
+        status="manual" if nxt=="manual_required" else "retry"
+    print(json.dumps({"current":cur,"next":nxt,"status":status,"reason":a.reason}))
+    return 0
+
+def cmd_gate(a):
+    attempted=max(0,a.attempted); accepted=max(0,min(a.accepted,attempted))
+    rate=(accepted/attempted) if attempted else 0.0
+    cycles=max(0,a.optimization_cycles)
+
+    if a.phase=="pilot":
+        if attempted < 5:
+            action="continue_pilot"
+            reason="need_representative_sample"
+        elif rate >= 0.80:
+            action="freeze_and_produce"
+            reason="method_good_enough"
+        elif rate >= 0.60 and cycles < 1:
+            action="optimize_once"
+            reason="method_viable_but_needs_one_targeted_pass"
+        elif rate >= 0.70:
+            action="freeze_and_produce"
+            reason="good_enough_after_optimization"
+        else:
+            action="switch_method"
+            reason="method_not_reliable_enough"
+    else:
+        if attempted < max(4,a.minimum_wave):
+            action="continue_wave"
+            reason="sample_too_small"
+        elif rate >= 0.75:
+            action="keep_method"
+            reason="production_acceptance_good_enough"
+        elif rate >= 0.50 and cycles < 1:
+            action="optimize_once"
+            reason="production_degradation_but_method_still_viable"
+        else:
+            action="switch_method"
+            reason="production_acceptance_too_low"
+
+    print(json.dumps({
+        "phase":a.phase,
+        "attempted":attempted,
+        "accepted":accepted,
+        "acceptance_rate":round(rate,4),
+        "optimization_cycles":cycles,
+        "action":action,
+        "reason":reason
+    },sort_keys=True))
+    return 0
+
+def main():
+    p=argparse.ArgumentParser(); s=p.add_subparsers(dest="cmd",required=True)
+    q=s.add_parser("plan"); q.add_argument("--manifest",default=""); q.add_argument("--pilot",action="store_true"); q.add_argument("--wave",type=int,default=0); q.set_defaults(fn=cmd_plan)
+    q=s.add_parser("recipe"); q.add_argument("--manifest",default=""); q.add_argument("--sector",required=True); q.add_argument("--profile",required=True); q.add_argument("--output",required=True); q.add_argument("--meta"); q.add_argument("--strategy",choices=STRATEGIES,default=STRATEGIES[0]); q.set_defaults(fn=cmd_recipe)
+    q=s.add_parser("next"); q.add_argument("--strategy",choices=STRATEGIES,required=True); q.add_argument("--bake-ok",action="store_true"); q.add_argument("--visual-changed",action="store_true"); q.add_argument("--reason",default=""); q.set_defaults(fn=cmd_next)
+    q=s.add_parser("gate"); q.add_argument("--phase",choices=("pilot","wave"),default="pilot"); q.add_argument("--attempted",type=int,required=True); q.add_argument("--accepted",type=int,required=True); q.add_argument("--optimization-cycles",type=int,default=0); q.add_argument("--minimum-wave",type=int,default=8); q.set_defaults(fn=cmd_gate)
+    a=p.parse_args(); return a.fn(a)
+if __name__=="__main__": raise SystemExit(main())
