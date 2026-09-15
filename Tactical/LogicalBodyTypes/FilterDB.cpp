@@ -337,7 +337,7 @@ namespace LogicalBodyTypes {
 		/*****************************************
 		  SOLDIER_CLASS
 		******************************************/
-	LOGBT_ENUMDB_ADD("SOLDIER_CLASS", 13,
+	LOGBT_ENUMDB_ADD("SOLDIER_CLASS", 10,
 			SOLDIER_CLASS_NONE,
 			SOLDIER_CLASS_ADMINISTRATOR,
 			SOLDIER_CLASS_ELITE,
@@ -347,10 +347,7 @@ namespace LogicalBodyTypes {
 			SOLDIER_CLASS_ELITE_MILITIA,
 			SOLDIER_CLASS_CREATURE,
 			SOLDIER_CLASS_MINER,
-			SOLDIER_CLASS_ZOMBIE,
-			SOLDIER_CLASS_TANK,
-			SOLDIER_CLASS_JEEP,
-			SOLDIER_CLASS_BANDIT
+			SOLDIER_CLASS_ZOMBIE,
 		);
 
 		/*****************************************
@@ -364,7 +361,7 @@ namespace LogicalBodyTypes {
 		/*****************************************
 		  SoldierBodyTypes
 		******************************************/
-		LOGBT_ENUMDB_ADD("BODYTYPE", 29,
+		LOGBT_ENUMDB_ADD("BODYTYPE", 28,
 			REGMALE,
 			BIGMALE,
 			STOCKYMALE,
@@ -393,13 +390,12 @@ namespace LogicalBodyTypes {
 			ELDORADO,
 			ICECREAMTRUCK,
 			JEEP,
-			COMBAT_JEEP
 		);
 
 		/*****************************************
 		  Civilian Groups
 		******************************************/
-		LOGBT_ENUMDB_ADD("CIVILIANGROUP", 255,
+		LOGBT_ENUMDB_ADD("CIVILIANGROUP", 242,
 			NON_CIV_GROUP,
 			REBEL_CIV_GROUP,
 			KINGPIN_CIV_GROUP,
@@ -423,21 +419,8 @@ namespace LogicalBodyTypes {
 			ASSASSIN_CIV_GROUP,
 			POW_PRISON_CIV_GROUP,
 			UNNAMED_CIV_GROUP_22,
-			UNNAMED_CIV_GROUP_23,
-			VOLUNTEER_CIV_GROUP,
-			BOUNTYHUNTER_CIV_GROUP,
-			DOWNEDPILOT_CIV_GROUP,
-			SCIENTIST_GROUP,
-			RADAR_TECHNICIAN_GROUP,
-			AIRPORT_STAFF_GROUP,
-			BARRACK_STAFF_GROUP,
-			FACTORY_GROUP,
-			ADMINISTRATIVE_STAFF_GROUP,
-			LOYAL_CIV_GROUP,
-			BLACKMARKET_GROUP,
-			UNNAMED_CIV_GROUP_35,
-			UNNAMED_CIV_GROUP_36,
-			UNNAMED_CIV_GROUP_37,
+			UNNAMED_CIV_GROUP_23,
+			UNNAMED_CIV_GROUP_36,
 			UNNAMED_CIV_GROUP_38,
 			UNNAMED_CIV_GROUP_39,
 			UNNAMED_CIV_GROUP_40,
