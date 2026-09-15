@@ -2449,7 +2449,7 @@ void LoadSkillTraitsExternalSettings()
 	gSkillTraitValues.ubRAMaxBonusesToTravelSpeed = iniReader.ReadInteger("Ranger","MAX_STACKABLE_LESS_TRAVEL_TIME_BONUSES", 2, 0, 20);
 	gSkillTraitValues.ubRABreathForTravellingReduction = iniReader.ReadInteger("Ranger","ENERGY_SPENT_TRAVEL_REDUCTION", 30, 0, 100);
 	gSkillTraitValues.ubRAWeatherPenaltiesReduction = iniReader.ReadInteger("Ranger","WEATHER_PENALTIES_REDUCTION", 50, 0, 100);
-	//gSkillTraitValues.ubRACamoEffectivenessBonus = iniReader.ReadInteger("Ranger","CAMO_EFFECTIVENESS_BONUS_PERCENT", 10, 0, 100);
+	gSkillTraitValues.ubRACamoEffectivenessBonus = iniReader.ReadInteger("Ranger","CAMO_EFFECTIVENESS_BONUS_PERCENT", 10, 0, 100);
 	gSkillTraitValues.ubRACamoWornountSpeedReduction = iniReader.ReadInteger("Ranger","CAMO_WORNOUT_SPEED_REDUCTION", 50, 0, 100);
 	// anv: VR - I think that option makes sense
 	gSkillTraitValues.fRAAsleepInCarAndStillGetsTravellingReduction= iniReader.ReadBoolean("Ranger","ASLEEP_IN_CAR_AND_STILL_GETS_TRAVELLING_REDUCTION", FALSE);
