@@ -13938,15 +13938,33 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		!pSoldier->aiData.bUnderFire && iRisk + 10 < iTolerance)
 		bEmergencyIntent = AI_INTENT_RESCUE;
 
+	BOOLEAN fActiveCQBShortPlan = FALSE;
+
 	if (bEmergencyIntent < 0)
 	{
 		AISHORTPLANSTATE ShortPlan;
 		if (AIGetShortPlan(pSoldier, &ShortPlan))
 		{
+			// CQB owns the detailed room/entry plan. The generic intent layer must
+			// preserve that commitment rather than translating it into HOLD/PRESS and
+			// then cancelling it. Senior emergencies below may still supersede it.
+			if (ShortPlan.ubType == AI_SHORT_PLAN_CQB)
+			{
+				fActiveCQBShortPlan =
+					!TileIsOutOfBounds(ShortPlan.sTargetGridNo) &&
+					(InARoom(pSoldier->sGridNo, NULL) ||
+					 CheckDoorNearGridno((UINT32)pSoldier->sGridNo) ||
+					 PythSpacesAway(pSoldier->sGridNo, ShortPlan.sTargetGridNo) <= TACTICAL_RANGE);
+
+				if (!fActiveCQBShortPlan)
+					AICancelShortPlan(pSoldier);
+			}
+
 			BOOLEAN fSameTarget =
-				(TileIsOutOfBounds(sTargetSpot) && TileIsOutOfBounds(ShortPlan.sTargetGridNo)) ||
-				(!TileIsOutOfBounds(sTargetSpot) && !TileIsOutOfBounds(ShortPlan.sTargetGridNo) &&
-				 PythSpacesAway(sTargetSpot, ShortPlan.sTargetGridNo) <= 3);
+				ShortPlan.ubType != AI_SHORT_PLAN_CQB &&
+				((TileIsOutOfBounds(sTargetSpot) && TileIsOutOfBounds(ShortPlan.sTargetGridNo)) ||
+				 (!TileIsOutOfBounds(sTargetSpot) && !TileIsOutOfBounds(ShortPlan.sTargetGridNo) &&
+				  PythSpacesAway(sTargetSpot, ShortPlan.sTargetGridNo) <= 3));
 
 			if (fSameTarget)
 			{
@@ -14098,7 +14116,7 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		if (!fKeepPlan)
 			AIBeginShortPlan(pSoldier, ubShortPlan, sTargetSpot, NOBODY, 2);
 	}
-	else
+	else if (!fActiveCQBShortPlan)
 	{
 		AICancelShortPlan(pSoldier);
 	}
