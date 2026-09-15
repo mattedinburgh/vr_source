@@ -79,6 +79,8 @@ typedef struct
 	INT32 sGridNo;
 	INT8 bLevel;
 	UINT8 ubStrength;
+	UINT8 ubObservedVolume;
+	BOOLEAN fPublic;
 	UINT32 uiEvidenceTurn;
 } AITHREATNOISEEVIDENCESLOT;
 
@@ -629,6 +631,7 @@ void AIRegisterThreatNoiseEvidence(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo,
 	AITHREATNOISEEVIDENCESLOT *pBest = NULL;
 	AITHREATNOISEEVIDENCESLOT *pWeakest = NULL;
 	INT32 iWeakestStrength = 1000000;
+	BOOLEAN fMatchedExisting = FALSE;
 
 	for (UINT8 i = 0; i < AI_THREAT_NOISE_EVIDENCE_SLOTS; ++i)
 	{
@@ -654,6 +657,7 @@ void AIRegisterThreatNoiseEvidence(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo,
 				__max(4, TACTICAL_RANGE / 3))
 		{
 			pBest = pSlot;
+			fMatchedExisting = TRUE;
 			break;
 		}
 
@@ -672,12 +676,36 @@ void AIRegisterThreatNoiseEvidence(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo,
 	if (!pBest)
 		return;
 
+	// MostImportantNoiseHeard() can reconsider the same stored JA2 noise many times.
+	// A decaying/re-read cue is not a new event and must not refresh our evidence age.
+	// A louder renewed cue, a moved cue, or personal evidence upgrading a public report
+	// is considered genuinely new information.
+	if (fMatchedExisting &&
+		pBest->fValid &&
+		pBest->uiObserverIdentity == pSoldier->uiUniqueSoldierIdValue)
+	{
+		BOOLEAN fSameLocation =
+			pBest->bLevel == bNoiseLevel &&
+			pBest->sGridNo == sNoiseGridNo;
+		BOOLEAN fSourceUpgrade =
+			pBest->fPublic && !fPublic;
+
+		if (fSameLocation &&
+			!fSourceUpgrade &&
+			ubNoiseVolume <= pBest->ubObservedVolume)
+		{
+			pBest->ubObservedVolume = ubNoiseVolume;
+			return;
+		}
+	}
+
 	INT32 iVolumeWeight = __min(25, (INT32)ubNoiseVolume / 2);
 	INT32 iStrength = __min(90, 10 + iRelevance + iVolumeWeight);
 	if (fPublic)
 		iStrength = (3 * iStrength) / 4;
 
-	if (pBest->fValid &&
+	if (fMatchedExisting &&
+		pBest->fValid &&
 		pBest->uiObserverIdentity == pSoldier->uiUniqueSoldierIdValue &&
 		guiTurnCnt >= pBest->uiEvidenceTurn &&
 		guiTurnCnt - pBest->uiEvidenceTurn <= AI_THREAT_NOISE_EVIDENCE_MAX_TURNS)
@@ -691,6 +719,8 @@ void AIRegisterThreatNoiseEvidence(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo,
 	pBest->sGridNo = sNoiseGridNo;
 	pBest->bLevel = bNoiseLevel;
 	pBest->ubStrength = (UINT8)__max(1, __min(100, iStrength));
+	pBest->ubObservedVolume = ubNoiseVolume;
+	pBest->fPublic = fPublic;
 	pBest->uiEvidenceTurn = guiTurnCnt;
 }
 
