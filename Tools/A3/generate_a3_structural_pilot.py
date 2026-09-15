@@ -74,21 +74,75 @@ def seed32(*parts: object) -> int:
     return int.from_bytes(hashlib.sha256(raw).digest()[:4], "little")
 
 
+def _is_overhead_asset(path: Path) -> bool:
+    # TileEngine/overhead map.cpp explicitly loads TILESETS\\<id>\\T\\...
+    # for the small overview renderer.  Those silhouettes are not valid
+    # contracts for tactical rendering.
+    return any(part.lower() == "t" for part in path.parts)
+
+
+def _contract_signature(frames, meta) -> str:
+    h = hashlib.sha256()
+    for frame, m in zip(frames, meta):
+        rgba = frame.convert("RGBA")
+        h.update(struct.pack(
+            "<HHhh",
+            rgba.width, rgba.height,
+            int(m["offset_x"]), int(m["offset_y"])
+        ))
+        h.update(hashlib.sha256(rgba.getchannel("A").tobytes()).digest())
+    return h.hexdigest()
+
+
 def resolve_source(tilesets_root: Path, filename: str) -> Path:
-    # Prefer the A3 tileset itself.  Vengeance can inherit the source art from
-    # another tileset, so search the fetched tile library when it is absent.
+    # Prefer an actual A3 tactical asset if one exists.
     preferred = tilesets_root / "38" / filename
-    if preferred.is_file():
+    if preferred.is_file() and not _is_overhead_asset(preferred):
         return preferred
 
     target = filename.lower()
     matches = sorted(
         p for p in tilesets_root.rglob("*")
-        if p.is_file() and p.name.lower() == target
+        if p.is_file()
+        and p.name.lower() == target
+        and not _is_overhead_asset(p)
     )
     if not matches:
-        raise FileNotFoundError(f"{filename} not found under {tilesets_root}")
-    return matches[0]
+        raise FileNotFoundError(
+            f"{filename} tactical contract not found under {tilesets_root}"
+        )
+
+    # Some Vengeance packs contain thumbnail-scale copies outside a literal T
+    # directory.  Select by tactical scale, then fail closed if more than one
+    # materially different full-size contract remains.
+    decoded = []
+    for path in matches:
+        frames, meta, _ = decode_sti(path)
+        total_area = sum(frame.width * frame.height for frame in frames)
+        decoded.append((
+            total_area,
+            _contract_signature(frames, meta),
+            path,
+        ))
+
+    max_area = max(area for area, _, _ in decoded)
+    tactical = [entry for entry in decoded if entry[0] >= max_area * 0.50]
+    signatures = {sig for _, sig, _ in tactical}
+    if len(signatures) != 1:
+        detail = "; ".join(
+            f"{path} area={area} sig={sig[:12]}"
+            for area, sig, path in tactical
+        )
+        raise RuntimeError(
+            f"{filename}: ambiguous full tactical contracts: {detail}"
+        )
+
+    # Deterministic choice among byte/contract-equivalent copies.
+    tactical.sort(key=lambda entry: (
+        0 if entry[2].parent.name == "50" else 1,
+        str(entry[2]).lower(),
+    ))
+    return tactical[0][2]
 
 
 def masked_base(mask: Image.Image, base: tuple[int, int, int], seed: int,
