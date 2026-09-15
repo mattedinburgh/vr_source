@@ -637,6 +637,20 @@ static void B1TCInheritSTIAppData( HIMAGE hImage, UINT16 fContents )
 	legacyImage.ImageFile[ sizeof(legacyImage.ImageFile) - 1 ] = 0;
 
 	if( !FileExists( legacyImage.ImageFile ) )
+	{
+		// Native VHD B1TC lives below VHD2\\/VHD4\\ while the canonical STI
+		// remains in the ordinary data stack. Inherit auxiliary STI metadata from
+		// that canonical identity rather than requiring a duplicated VHD STI.
+		const CHAR8 *pLegacyPath = legacyImage.ImageFile;
+		if( (_strnicmp( pLegacyPath, "VHD2\\\\", 5 ) == 0 ||
+			 _strnicmp( pLegacyPath, "VHD4\\\\", 5 ) == 0) &&
+			 strlen( pLegacyPath ) > 5 )
+		{
+			memmove( legacyImage.ImageFile, pLegacyPath + 5, strlen( pLegacyPath + 5 ) + 1 );
+		}
+	}
+
+	if( !FileExists( legacyImage.ImageFile ) )
 		return;
 
 	// B1TC replaces pixels only. Preserve any AuxObjectData/app-specific payload
