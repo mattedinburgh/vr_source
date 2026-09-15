@@ -449,7 +449,8 @@ void ToggleShowMoveItem()
 //   * then gives up to three spare magazines per carried weapon;
 //   * ranks combat ammo from XML data by actual armour penetration, with damage
 //     and combat flags as tie-breakers; pure utility rounds are last;
-//   * requires a real gun-sized magazine/loose-round item for automated loadout;
+//   * requires a weapon-ready magazine/loose-round item; native larger-magazine
+//     fallback is allowed, but bulk boxes/crates are never handed out as magazines;
 //   * shortages are distributed in fair per-weapon waves and surplus stays pooled;
 //   * magazines are placed through the normal NIV/LBE pocket-placement logic.
 //
@@ -800,23 +801,21 @@ static BOOLEAN SectorLoadoutAmmoTypeLess( UINT8 a, UINT8 b )
 	return a < b;
 }
 
-// Automated sector loadout should create ammunition the weapon can actually carry
-// as its ready magazine/loose rounds. 1.13's FindReplacementMagazine() deliberately
-// permits a larger same-type fallback for recovery/conversion cases; that is useful
-// elsewhere, but a 100-round box or oversized belt is not a valid "spare magazine".
-static UINT16 FindExactSectorLoadoutAmmoItem( UINT8 ubCalibre, UINT16 usMagSize, UINT8 ubAmmoType )
+// Find a weapon-ready ammo representation for the requested calibre/type/capacity.
+// Prefer an exact magazine/loose-round entry. If none exists, retain 1.13's native
+// FindReplacementMagazine() behaviour, which may choose the nearest larger magazine
+// of the SAME calibre and ammo type (important for attachment-driven mag-size changes).
+// Bulk boxes/crates are source storage only and are never returned as ready ammo.
+static UINT16 FindSectorLoadoutAmmoItem( UINT8 ubCalibre, UINT16 usMagSize, UINT8 ubAmmoType )
 {
-	UINT16 usBestItem = NOTHING;
-	UINT8 ubBestMagType = 255;
+	UINT16 usBestExact = NOTHING;
+	UINT8 ubBestExactMagType = 255;
 
 	for ( UINT16 usMagIndex = 0; Magazine[usMagIndex].ubCalibre != NOAMMO; ++usMagIndex )
 	{
 		MAGTYPE &mag = Magazine[usMagIndex];
 		if ( mag.ubCalibre != ubCalibre || mag.ubMagSize != usMagSize || mag.ubAmmoType != ubAmmoType )
 			continue;
-
-		// Boxes/crates are bulk containers.  Only magazines and loose-round entries
-		// may become weapon-ready ammo in the automated loadout.
 		if ( mag.ubMagType >= AMMO_BOX )
 			continue;
 
@@ -824,16 +823,26 @@ static UINT16 FindExactSectorLoadoutAmmoItem( UINT8 ubCalibre, UINT16 usMagSize,
 		if ( usItem == NOTHING )
 			continue;
 
-		// Prefer a normal magazine over a loose-round representation when both exist;
-		// otherwise keep the first deterministic exact match.
-		if ( usBestItem == NOTHING || mag.ubMagType < ubBestMagType )
+		if ( usBestExact == NOTHING || mag.ubMagType < ubBestExactMagType )
 		{
-			usBestItem = usItem;
-			ubBestMagType = mag.ubMagType;
+			usBestExact = usItem;
+			ubBestExactMagType = mag.ubMagType;
 		}
 	}
 
-	return usBestItem;
+	if ( usBestExact != NOTHING )
+		return usBestExact;
+
+	UINT16 usFallback = FindReplacementMagazine( ubCalibre, usMagSize, ubAmmoType );
+	if ( usFallback == NOTHING || !( Item[usFallback].usItemClass & IC_AMMO ) )
+		return NOTHING;
+
+	MAGTYPE &fallbackMag = Magazine[ Item[usFallback].ubClassIndex ];
+	if ( fallbackMag.ubCalibre != ubCalibre || fallbackMag.ubAmmoType != ubAmmoType ||
+		 fallbackMag.ubMagSize < usMagSize || fallbackMag.ubMagType >= AMMO_BOX )
+		return NOTHING;
+
+	return usFallback;
 }
 
 static void GetCompatibleSectorAmmoTypes( UINT8 ubCalibre, UINT16 usMagSize, std::vector<UINT8> &types )
@@ -853,7 +862,7 @@ static void GetCompatibleSectorAmmoTypes( UINT8 ubCalibre, UINT16 usMagSize, std
 		if ( mag.ubCalibre != ubCalibre )
 			continue;
 
-		if ( FindExactSectorLoadoutAmmoItem( ubCalibre, usMagSize, mag.ubAmmoType ) == NOTHING )
+		if ( FindSectorLoadoutAmmoItem( ubCalibre, usMagSize, mag.ubAmmoType ) == NOTHING )
 			continue;
 
 		if ( std::find( types.begin(), types.end(), mag.ubAmmoType ) == types.end() )
@@ -915,7 +924,7 @@ static UINT16 BuildSectorAmmoObject( UINT8 ubCalibre, UINT16 usMagSize,
 	if ( pOut == NULL || usWantedRounds == 0 )
 		return 0;
 
-	UINT16 usMagItem = FindExactSectorLoadoutAmmoItem( ubCalibre, usMagSize, ubAmmoType );
+	UINT16 usMagItem = FindSectorLoadoutAmmoItem( ubCalibre, usMagSize, ubAmmoType );
 	if ( usMagItem == NOTHING )
 		return 0;
 
@@ -990,7 +999,7 @@ static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject )
 		else
 		{
 			// Otherwise preserve the current ammo type and top it up if possible.
-			if ( FindExactSectorLoadoutAmmoItem( ubCalibre, usMagSize, ubCurrentType ) == NOTHING ||
+			if ( FindSectorLoadoutAmmoItem( ubCalibre, usMagSize, ubCurrentType ) == NOTHING ||
 				 CountSectorAmmoRounds( ubCalibre, ubCurrentType ) == 0 )
 				return 0;
 
