@@ -7,9 +7,11 @@ The legacy STI is a geometry contract only.  This tool reads:
   - frame dimensions and offsets;
   - transparent/non-transparent footprint.
 
-It NEVER samples or remaps legacy RGB.  Every visible RGB pixel in the generated
-B1TC families is newly authored.  The generated files are deliberately
-quarantined: no engine routing is changed by this script.
+Known structural frames are newly authored without remapping legacy RGB.
+Unknown/auxiliary frames are deliberately passed through from canonical artwork
+until their visual semantics are understood; guessing their appearance from alpha
+alone is unsafe. The generated files are deliberately quarantined: no engine
+routing is changed by this script.
 
 Target visual language:
   A3 / Oronegro outskirts — poor but functioning tropical agricultural compound,
@@ -903,10 +905,14 @@ def generate_family(tilesets_root: Path, out_root: Path, qa_root: Path,
         semantic = semantics.get(i)
 
         if kind == "wall":
-            frame = render_wall(mask, base, family, i, flavour, meta[i], semantic)
             if semantic is None:
-                label = "aux/shadow"
+                # Unknown/auxiliary frame semantics are not safe to invent from alpha
+                # alone. Preserve canonical artwork until the frame role is explicit.
+                # This prevents plausible-looking but false freestanding structures.
+                frame = legacy.convert("RGBA")
+                label = "legacy-aux-pass-through"
             else:
+                frame = render_wall(mask, base, family, i, flavour, meta[i], semantic)
                 flags = int(semantic.get("flags", 0))
                 if flags & STRUCTURE_WALLNWINDOW:
                     if flags & STRUCTURE_OPEN:
