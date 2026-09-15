@@ -5348,8 +5348,9 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 		SetRelativeStartAndEndPercentage(0, 86, 87, L"Loading placements...");
 		RenderProgressBar(0, 0);
 		LoadSoldiersFromMap(&pBuffer, dMajorMapVersion, ubMinorMapVersion);
-		if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM )
-			EnsureA3FarmCowPlacements();
+		// Map visual overhaul invariant: sector visual profiles must never add,
+		// remove or relocate soldier/civilian placements. A3 cow placement remains
+		// exactly as authored in the DAT.
 	}
 	if(uiFlags & MAP_EXITGRIDS_SAVED)
 	{
@@ -5443,9 +5444,8 @@ BOOLEAN LoadWorld(const STR8 puiFilename, FLOAT* pMajorMapVersion, UINT8* pMinor
 	{
 		GenerateBuildings();
 
-		if ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM &&
-			 _stricmp( SectorVisualLeafName( gubFilename ), "A3_REMASTERED.dat" ) != 0 )
-			DressA3FarmEnvironment();
+		// Map visual overhaul invariant: visual profiles replace/grade artwork only.
+		// Do not inject A3 objects, crops, roof details or other map nodes at load time.
 
 		// San Mona remaster invariant: graphics only. Do not add, move or remove
 		// runtime map objects; the authored DAT layout remains byte-for-byte authoritative.
