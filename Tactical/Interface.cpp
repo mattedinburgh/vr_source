@@ -1268,6 +1268,7 @@ void HandleUpDownArrowBackgrounds( )
 void RenderArrows( )
 {
 	TILE_ELEMENT							TileElem;
+	const INT16 sArrowStackStep = VHDScaleScreenValue( ARROWS_HEIGHT );
 
 	if ( guiShowUPDownArrows & ARROWS_HIDE_UP && guiShowUPDownArrows & ARROWS_HIDE_DOWN )
 	{
@@ -1297,21 +1298,21 @@ void RenderArrows( )
 			TileElem = gTileDatabase[ SECONDPOINTERS3 ];
 			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsUpArrowX, gsUpArrowY, VO_BLT_SRCTRANSPARENCY, NULL );
 			TileElem = gTileDatabase[ SECONDPOINTERS1 ];
-			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsUpArrowX, gsUpArrowY + 20, VO_BLT_SRCTRANSPARENCY, NULL );
+			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsUpArrowX, gsUpArrowY + sArrowStackStep, VO_BLT_SRCTRANSPARENCY, NULL );
 	}
 
 	if ( guiShowUPDownArrows & ARROWS_SHOW_UP_ABOVE_GG )
 	{
 			TileElem = gTileDatabase[ SECONDPOINTERS1 ];
 			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsUpArrowX, gsUpArrowY, VO_BLT_SRCTRANSPARENCY, NULL );
-			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsUpArrowX, gsUpArrowY + 20, VO_BLT_SRCTRANSPARENCY, NULL );
+			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsUpArrowX, gsUpArrowY + sArrowStackStep, VO_BLT_SRCTRANSPARENCY, NULL );
 	}
 
 	if ( guiShowUPDownArrows & ARROWS_SHOW_UP_ABOVE_YY )
 	{
 			TileElem = gTileDatabase[ SECONDPOINTERS3 ];
 			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsUpArrowX, gsUpArrowY, VO_BLT_SRCTRANSPARENCY, NULL );
-			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsUpArrowX, gsUpArrowY + 20, VO_BLT_SRCTRANSPARENCY, NULL );
+			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsUpArrowX, gsUpArrowY + sArrowStackStep, VO_BLT_SRCTRANSPARENCY, NULL );
 	}
 
 	if ( guiShowUPDownArrows & ARROWS_SHOW_UP_ABOVE_CLIMB )
@@ -1323,7 +1324,7 @@ void RenderArrows( )
 	if ( guiShowUPDownArrows & ARROWS_SHOW_UP_ABOVE_CLIMB2 )
 	{
 			TileElem = gTileDatabase[ SECONDPOINTERS3 ];
-			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsUpArrowX, gsUpArrowY + 20, VO_BLT_SRCTRANSPARENCY, NULL );
+			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsUpArrowX, gsUpArrowY + sArrowStackStep, VO_BLT_SRCTRANSPARENCY, NULL );
 			TileElem = gTileDatabase[ SECONDPOINTERS8 ];
 			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsUpArrowX, gsUpArrowY, VO_BLT_SRCTRANSPARENCY, NULL );
 	}
@@ -1333,8 +1334,8 @@ void RenderArrows( )
 			TileElem = gTileDatabase[ SECONDPOINTERS3 ];
 			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsUpArrowX, gsUpArrowY, VO_BLT_SRCTRANSPARENCY, NULL );
 			TileElem = gTileDatabase[ SECONDPOINTERS8 ];
-			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsUpArrowX, gsUpArrowY + 20, VO_BLT_SRCTRANSPARENCY, NULL );
-			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsUpArrowX, gsUpArrowY + 40, VO_BLT_SRCTRANSPARENCY, NULL );
+			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsUpArrowX, gsUpArrowY + sArrowStackStep, VO_BLT_SRCTRANSPARENCY, NULL );
+			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsUpArrowX, gsUpArrowY + ( 2 * sArrowStackStep ), VO_BLT_SRCTRANSPARENCY, NULL );
 	}
 
 	if ( guiShowUPDownArrows & ARROWS_SHOW_DOWN_BESIDE )
@@ -1366,21 +1367,21 @@ void RenderArrows( )
 			TileElem = gTileDatabase[ SECONDPOINTERS2 ];
 			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsDownArrowX, gsDownArrowY, VO_BLT_SRCTRANSPARENCY, NULL );
 			TileElem = gTileDatabase[ SECONDPOINTERS4 ];
-			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsDownArrowX, gsDownArrowY + 20, VO_BLT_SRCTRANSPARENCY, NULL );
+			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsDownArrowX, gsDownArrowY + sArrowStackStep, VO_BLT_SRCTRANSPARENCY, NULL );
 	}
 
 	if ( guiShowUPDownArrows & ARROWS_SHOW_DOWN_BELOW_GG )
 	{
 			TileElem = gTileDatabase[ SECONDPOINTERS2 ];
 			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsDownArrowX, gsDownArrowY, VO_BLT_SRCTRANSPARENCY, NULL );
-			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsDownArrowX, gsDownArrowY + 20, VO_BLT_SRCTRANSPARENCY, NULL );
+			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsDownArrowX, gsDownArrowY + sArrowStackStep, VO_BLT_SRCTRANSPARENCY, NULL );
 	}
 
 	if ( guiShowUPDownArrows & ARROWS_SHOW_DOWN_BELOW_YY )
 	{
 			TileElem = gTileDatabase[ SECONDPOINTERS4 ];
 			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsDownArrowX, gsDownArrowY, VO_BLT_SRCTRANSPARENCY, NULL );
-			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsDownArrowX, gsDownArrowY + 20, VO_BLT_SRCTRANSPARENCY, NULL );
+			BltVideoObject(	FRAME_BUFFER, TileElem.hTileSurface, TileElem.usRegionIndex, gsDownArrowX, gsDownArrowY + sArrowStackStep, VO_BLT_SRCTRANSPARENCY, NULL );
 	}
 
 
@@ -1411,7 +1412,7 @@ void GetArrowsBackground( )
 {
 	SOLDIERTYPE								*pSoldier;
 	INT16											sMercScreenX, sMercScreenY;
-	UINT16										sArrowHeight = ARROWS_HEIGHT, sArrowWidth = ARROWS_WIDTH;
+	UINT16										sArrowHeight = (UINT16)VHDScaleScreenValue( ARROWS_HEIGHT ), sArrowWidth = (UINT16)VHDScaleScreenValue( ARROWS_WIDTH );
 
 	if ( guiShowUPDownArrows & ARROWS_HIDE_UP && guiShowUPDownArrows & ARROWS_HIDE_DOWN )
 	{
@@ -1429,73 +1430,73 @@ void GetArrowsBackground( )
 		if ( guiShowUPDownArrows & ARROWS_SHOW_UP_BESIDE )
 		{
 			// Setup blt rect
-			gsUpArrowX = sMercScreenX + ARROWS_X_OFFSET;
-			gsUpArrowY = sMercScreenY + UPARROW_Y_OFFSET;
+			gsUpArrowX = sMercScreenX + VHDScaleScreenValue( ARROWS_X_OFFSET );
+			gsUpArrowY = sMercScreenY + VHDScaleScreenValue( UPARROW_Y_OFFSET );
 		}
 
 		if ( guiShowUPDownArrows & ARROWS_SHOW_UP_ABOVE_G || guiShowUPDownArrows & ARROWS_SHOW_UP_ABOVE_Y )
 		{
 			// Setup blt rect
-			gsUpArrowX = sMercScreenX - 10;
-			gsUpArrowY = sMercScreenY - 50;
+			gsUpArrowX = sMercScreenX - VHDScaleScreenValue( 10 );
+			gsUpArrowY = sMercScreenY - VHDScaleScreenValue( 50 );
 		}
 
 		if ( guiShowUPDownArrows & ARROWS_SHOW_UP_ABOVE_YG || guiShowUPDownArrows & ARROWS_SHOW_UP_ABOVE_GG || guiShowUPDownArrows & ARROWS_SHOW_UP_ABOVE_YY )
 		{
 			// Setup blt rect
-			gsUpArrowX = sMercScreenX - 10;
-			gsUpArrowY = sMercScreenY - 70;
+			gsUpArrowX = sMercScreenX - VHDScaleScreenValue( 10 );
+			gsUpArrowY = sMercScreenY - VHDScaleScreenValue( 70 );
 			sArrowHeight = 3 * ARROWS_HEIGHT;
 		}
 
 		if ( guiShowUPDownArrows & ARROWS_SHOW_UP_ABOVE_CLIMB )
 		{
 			// Setup blt rect
-			gsUpArrowX = sMercScreenX - 10;
-			gsUpArrowY = sMercScreenY - 70;
+			gsUpArrowX = sMercScreenX - VHDScaleScreenValue( 10 );
+			gsUpArrowY = sMercScreenY - VHDScaleScreenValue( 70 );
 			sArrowHeight = 2 * ARROWS_HEIGHT;
 		}
 
 		if ( guiShowUPDownArrows & ARROWS_SHOW_UP_ABOVE_CLIMB2 )
 		{
 			// Setup blt rect
-			gsUpArrowX = sMercScreenX - 10;
-			gsUpArrowY = sMercScreenY - 80;
+			gsUpArrowX = sMercScreenX - VHDScaleScreenValue( 10 );
+			gsUpArrowY = sMercScreenY - VHDScaleScreenValue( 80 );
 			sArrowHeight = 3 * ARROWS_HEIGHT;
 		}
 
 		if ( guiShowUPDownArrows & ARROWS_SHOW_UP_ABOVE_CLIMB3 )
 		{
 			// Setup blt rect
-			gsUpArrowX = sMercScreenX - 10;
-			gsUpArrowY = sMercScreenY - 900;
+			gsUpArrowX = sMercScreenX - VHDScaleScreenValue( 10 );
+			gsUpArrowY = sMercScreenY - VHDScaleScreenValue( 900 );
 			sArrowHeight = 5 * ARROWS_HEIGHT;
 		}
 
 
 		if ( guiShowUPDownArrows & ARROWS_SHOW_DOWN_BESIDE )
 		{
-			gsDownArrowX = sMercScreenX + ARROWS_X_OFFSET;
-			gsDownArrowY = sMercScreenY + DOWNARROW_Y_OFFSET;
+			gsDownArrowX = sMercScreenX + VHDScaleScreenValue( ARROWS_X_OFFSET );
+			gsDownArrowY = sMercScreenY + VHDScaleScreenValue( DOWNARROW_Y_OFFSET );
 		}
 
 		if ( guiShowUPDownArrows & ARROWS_SHOW_DOWN_BELOW_Y || guiShowUPDownArrows & ARROWS_SHOW_DOWN_BELOW_G )
 		{
-			gsDownArrowX = sMercScreenX -10;
-			gsDownArrowY = sMercScreenY + 10;
+			gsDownArrowX = sMercScreenX - VHDScaleScreenValue( 10 );
+			gsDownArrowY = sMercScreenY + VHDScaleScreenValue( 10 );
 		}
 
 		if ( guiShowUPDownArrows & ARROWS_SHOW_DOWN_CLIMB )
 		{
-			gsDownArrowX = sMercScreenX - 10;
-			gsDownArrowY = sMercScreenY + 10;
+			gsDownArrowX = sMercScreenX - VHDScaleScreenValue( 10 );
+			gsDownArrowY = sMercScreenY + VHDScaleScreenValue( 10 );
 			sArrowHeight = 3 * ARROWS_HEIGHT;
 		}
 
 		if ( guiShowUPDownArrows & ARROWS_SHOW_DOWN_BELOW_YG || guiShowUPDownArrows & ARROWS_SHOW_DOWN_BELOW_GG || guiShowUPDownArrows & ARROWS_SHOW_DOWN_BELOW_YY )
 		{
-			gsDownArrowX = sMercScreenX -10;
-			gsDownArrowY = sMercScreenY + 10;
+			gsDownArrowX = sMercScreenX - VHDScaleScreenValue( 10 );
+			gsDownArrowY = sMercScreenY + VHDScaleScreenValue( 10 );
 			sArrowHeight = 3 * ARROWS_HEIGHT;
 		}
 
