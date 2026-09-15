@@ -903,30 +903,22 @@ static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject )
 
 	UINT8 ubCalibre = Weapon[pGun->usItem].ubCalibre;
 	INT16 sAmmoType = -1;
+	BOOLEAN fReplaceCurrent = FALSE;
 
 	if ( usCurrent > 0 )
 	{
 		UINT8 ubCurrentType = (*pGun)[ubSubObject]->data.gun.ubGunAmmoType;
 		INT16 sBestFullType = FindSectorAmmoTypeForFill( ubCalibre, usMagSize, usMagSize );
 
-		// If a strictly better penetrator can completely refill the gun, return
-		// the old partial magazine to the pool and upgrade the weapon. Never swap
-		// a useful partial magazine for an incomplete "better" load.
+		// Upgrade a partial gun only if a strictly better penetrator can provide
+		// a complete replacement magazine. The actual swap happens only after
+		// that new load has been successfully built, so failure cannot empty the gun.
 		if ( sBestFullType >= 0 &&
 			 SectorLoadoutAmmoTypeLess( (UINT8)sBestFullType, ubCurrentType ) &&
 			 CountSectorAmmoRounds( ubCalibre, (UINT8)sBestFullType ) >= usMagSize )
 		{
-			UINT16 usOldAmmoItem = (*pGun)[ubSubObject]->data.gun.usGunAmmoItem;
-			if ( usOldAmmoItem != NONE )
-			{
-				OBJECTTYPE oldAmmo;
-				if ( CreateAmmo( usOldAmmoItem, &oldAmmo, usCurrent ) )
-					PoolObjectForSectorLoadout( &oldAmmo );
-			}
-
-			usCurrent = 0;
-			(*pGun)[ubSubObject]->data.gun.ubGunShotsLeft = 0;
 			sAmmoType = sBestFullType;
+			fReplaceCurrent = TRUE;
 		}
 		else
 		{
@@ -946,9 +938,9 @@ static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject )
 	if ( sAmmoType < 0 )
 		return 0;
 
-	UINT16 usNeed = usMagSize - usCurrent;
+	UINT16 usWanted = fReplaceCurrent ? usMagSize : ( usMagSize - usCurrent );
 	UINT32 uiAvailable = CountSectorAmmoRounds( ubCalibre, (UINT8)sAmmoType );
-	UINT16 usWanted = (UINT16)__min( (UINT32)usNeed, uiAvailable );
+	usWanted = (UINT16)__min( (UINT32)usWanted, uiAvailable );
 	if ( usWanted == 0 )
 		return 0;
 
@@ -958,14 +950,34 @@ static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject )
 		return 0;
 
 	UINT16 usAmmoItem = ammo.usItem;
-	DeleteObj( &ammo );
 
-	(*pGun)[ubSubObject]->data.gun.ubGunShotsLeft = usCurrent + usBuilt;
-	if ( usCurrent == 0 )
+	if ( fReplaceCurrent )
+	{
+		// Only now that the better full replacement exists do we return the old
+		// partial magazine to the common pool.
+		UINT16 usOldAmmoItem = (*pGun)[ubSubObject]->data.gun.usGunAmmoItem;
+		if ( usOldAmmoItem != NONE )
+		{
+			OBJECTTYPE oldAmmo;
+			if ( CreateAmmo( usOldAmmoItem, &oldAmmo, usCurrent ) )
+				PoolObjectForSectorLoadout( &oldAmmo );
+		}
+
+		(*pGun)[ubSubObject]->data.gun.ubGunShotsLeft = usBuilt;
+	}
+	else
+	{
+		(*pGun)[ubSubObject]->data.gun.ubGunShotsLeft = usCurrent + usBuilt;
+	}
+
+	// Empty guns and successful penetration upgrades both take the selected ammo type.
+	if ( usCurrent == 0 || fReplaceCurrent )
 	{
 		(*pGun)[ubSubObject]->data.gun.ubGunAmmoType = (UINT8)sAmmoType;
 		(*pGun)[ubSubObject]->data.gun.usGunAmmoItem = usAmmoItem;
 	}
+
+	DeleteObj( &ammo );
 
 	if ( (*pGun)[ubSubObject]->data.gun.bGunAmmoStatus >= 0 )
 		(*pGun)[ubSubObject]->data.gun.bGunAmmoStatus = 100;
@@ -1386,11 +1398,20 @@ static void RedistributeSectorGrenades()
 
 	// Priority reservation: strongest direct-damage grenades go to Matt and Buns
 	// before anyone else receives a grenade. Each receives at most one.
+	UINT32 uiPriorityEligible = 0;
 	UINT32 uiPriorityGiven = 0;
-	if ( pMatt != NULL && GiveBestHandGrenade( pMatt ) )
-		++uiPriorityGiven;
-	if ( pBuns != NULL && GiveBestHandGrenade( pBuns ) )
-		++uiPriorityGiven;
+	if ( pMatt != NULL )
+	{
+		++uiPriorityEligible;
+		if ( GiveBestHandGrenade( pMatt ) )
+			++uiPriorityGiven;
+	}
+	if ( pBuns != NULL )
+	{
+		++uiPriorityEligible;
+		if ( GiveBestHandGrenade( pBuns ) )
+			++uiPriorityGiven;
+	}
 
 	std::vector<UINT8> counts( mercs.size(), 0 );
 	std::vector<BOOLEAN> blocked( mercs.size(), FALSE );
@@ -1441,8 +1462,8 @@ static void RedistributeSectorGrenades()
 	fCharacterInfoPanelDirty = TRUE;
 
 	ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
-		L"GRN: Matt/Buns %d/2 con la granada mas potente; %d granadas repartidas entre %d mercenarios (max. 4).",
-		uiPriorityGiven, uiDistributed, (UINT32)mercs.size() );
+		L"GRN: Matt/Buns %d/%d con la granada mas potente; %d granadas repartidas entre %d mercenarios (max. 4).",
+		uiPriorityGiven, uiPriorityEligible, uiDistributed, (UINT32)mercs.size() );
 }
 
 // load the background panel graphics for inventory
