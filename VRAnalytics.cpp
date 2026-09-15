@@ -356,6 +356,7 @@ void VRAnalyticsShutdown()
 	fflush( gFile );
 	fclose( gFile );
 	gFile = NULL;
+	gEnabled = false;
 }
 
 unsigned long VRAnalyticsBeginDecision(
