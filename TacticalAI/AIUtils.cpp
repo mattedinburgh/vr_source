@@ -1153,44 +1153,60 @@ INT32 AIStaleContactSearchSpot(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
 	if (!pSoldier || !pOpponent || TileIsOutOfBounds(sKnownSpot))
 		return sKnownSpot;
 
-	INT8 bSearchRadius = 0;
+	UINT8 ubSearchRadius = 0;
 	switch (bKnowledge)
 	{
 	case SEEN_CURRENTLY:
 	case SEEN_THIS_TURN:
-		bSearchRadius = 0;
-		break;
+		return sKnownSpot;
+
 	case SEEN_LAST_TURN:
-		bSearchRadius = 1;
+		ubSearchRadius = 2;
 		break;
+
 	case HEARD_THIS_TURN:
-		bSearchRadius = 2;
+		ubSearchRadius = 3;
 		break;
+
 	case HEARD_LAST_TURN:
-		bSearchRadius = 3;
+		ubSearchRadius = 4;
 		break;
+
+	case SEEN_2_TURNS_AGO:
 	case HEARD_2_TURNS_AGO:
-		bSearchRadius = 4;
+		ubSearchRadius = 5;
 		break;
+
 	default:
-		bSearchRadius = 3;
+		ubSearchRadius = 6;
 		break;
 	}
 
-	if (bSearchRadius <= 0)
-		return sKnownSpot;
+	// Stale information describes an uncertainty area, not a magic destination.
+	// Prefer a covered observation point that can clear the likely sector while
+	// preserving route safety and local support.
+	INT32 sObservation = FindThreatSearchObservationSpot(
+		pSoldier, sKnownSpot, bKnownLevel, ubSearchRadius);
+	if (!TileIsOutOfBounds(sObservation))
+		return sObservation;
 
-	UINT8 ubStartDirection = (UINT8)((pSoldier->ubID + 3 * pOpponent->ubID) % NUM_WORLD_DIRECTIONS);
-	INT8 bPreferredDistance = 1 + (INT8)((pSoldier->ubID + pOpponent->ubID) % bSearchRadius);
+	// Fallback for awkward geometry (roofs, tiny rooms, blocked areas): retain the
+	// old deterministic spread so multiple soldiers still avoid piling onto one tile.
+	UINT8 ubStartDirection =
+		(UINT8)((pSoldier->ubID + 3 * pOpponent->ubID) % NUM_WORLD_DIRECTIONS);
+	INT8 bPreferredDistance =
+		1 + (INT8)((pSoldier->ubID + pOpponent->ubID) % __max((UINT8)1, ubSearchRadius));
 
-	for (UINT8 ubTry = 0; ubTry < NUM_WORLD_DIRECTIONS; ubTry++)
+	for (UINT8 ubTry = 0; ubTry < NUM_WORLD_DIRECTIONS; ++ubTry)
 	{
-		UINT8 ubDirection = (ubStartDirection + ubTry) % NUM_WORLD_DIRECTIONS;
+		UINT8 ubDirection =
+			(ubStartDirection + ubTry) % NUM_WORLD_DIRECTIONS;
 		INT32 sCandidate = sKnownSpot;
 
-		for (INT8 bStep = 0; bStep < bPreferredDistance; bStep++)
+		for (INT8 bStep = 0; bStep < bPreferredDistance; ++bStep)
 		{
-			INT32 sNext = NewGridNo(sCandidate, DirectionInc(ubDirection));
+			INT32 sNext =
+				NewGridNo(sCandidate, DirectionInc(ubDirection));
 			if (sNext == sCandidate || TileIsOutOfBounds(sNext))
 				break;
 			sCandidate = sNext;
@@ -1198,7 +1214,8 @@ INT32 AIStaleContactSearchSpot(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
 
 		if (sCandidate != sKnownSpot &&
 			!TileIsOutOfBounds(sCandidate) &&
-			NewOKDestination(pSoldier, sCandidate, FALSE, bKnownLevel))
+			NewOKDestination(
+				pSoldier, sCandidate, FALSE, bKnownLevel))
 		{
 			return sCandidate;
 		}
