@@ -445,6 +445,10 @@ BOOLEAN ScaleImageNearestForVHD( HIMAGE hImage, UINT8 ubScale )
 			compressed[i].resize( ( scaled.size() * 3 ) + usNewHeight + 16, 0 );
 			STCISubImage tempSub;
 			memset( &tempSub, 0, sizeof(tempSub) );
+			tempSub.sOffsetX = 0;
+			tempSub.sOffsetY = 0;
+			tempSub.usWidth = usNewWidth;
+			tempSub.usHeight = usNewHeight;
 			const UINT32 uiCompressed = ETRLECompressSubImage(
 				&compressed[i][0], (UINT32)compressed[i].size(), &scaled[0],
 				usNewWidth, usNewHeight, &tempSub );
