@@ -1,1 +1,1 @@
-apply renderer diagnostics slice 1
+apply renderer diagnostics source slice 1 retry
