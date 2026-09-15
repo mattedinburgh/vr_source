@@ -9,6 +9,7 @@
 	#include "PathAI.h"
 	#include "Points.h"
 	#include "Soldier Control.h"
+	#include "los.h"
 #endif
 
 #include <string.h>
@@ -35,6 +36,18 @@ typedef struct
 
 static AITASKRESERVATIONSLOT gAITaskReservations[MAX_NUM_SOLDIERS];
 static AISHORTPLANSLOT gAIShortPlans[MAX_NUM_SOLDIERS];
+
+typedef struct
+{
+	BOOLEAN fValid;
+	UINT32 uiUniqueSoldierId;
+	INT32 sLastDecisionGridNo;
+	UINT8 ubLastVisibleContacts;
+	UINT8 ubLastDirectionMask;
+	UINT32 uiLastReactionTurn;
+} AICONTACTTRACKER;
+
+static AICONTACTTRACKER gAIContactTracker[MAX_NUM_SOLDIERS];
 
 static UINT8 AIKnowledgeAgeTurns(INT8 bKnowledge)
 {
@@ -472,10 +485,131 @@ void AICancelShortPlan(SOLDIERTYPE *pSoldier)
 	gAIShortPlans[pSoldier->ubID].Plan.ubTargetID = NOBODY;
 }
 
+static BOOLEAN AIThreatMaskHasWideSeparation(UINT8 ubMask)
+{
+	for (UINT8 a = 0; a < NUM_WORLD_DIRECTIONS; ++a)
+	{
+		if (!(ubMask & (1 << a)))
+			continue;
+
+		for (UINT8 b = a + 1; b < NUM_WORLD_DIRECTIONS; ++b)
+		{
+			if (!(ubMask & (1 << b)))
+				continue;
+
+			UINT8 ubDiff = (UINT8)abs((INT32)a - (INT32)b);
+			ubDiff = __min(ubDiff, (UINT8)(NUM_WORLD_DIRECTIONS - ubDiff));
+			if (ubDiff >= 3)
+				return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+BOOLEAN AIObserveContactChange(SOLDIERTYPE *pSoldier, AICONTACTCHANGE *pChange)
+{
+	if (!pChange)
+		return FALSE;
+
+	memset(pChange, 0, sizeof(AICONTACTCHANGE));
+	pChange->sPreviousGridNo = NOWHERE;
+
+	if (!pSoldier || !AICombatTeam(pSoldier) || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return FALSE;
+
+	UINT8 ubVisible = 0;
+	UINT8 ubMask = 0;
+
+	for (UINT16 i = 0; i < TOTAL_SOLDIERS; ++i)
+	{
+		SOLDIERTYPE *pOpponent = MercPtrs[i];
+		if (!pOpponent || pOpponent == pSoldier ||
+			CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pOpponent->bSide == pSoldier->bSide)
+		{
+			continue;
+		}
+
+		// Surprise is based only on personal, current sight. Public/radio knowledge
+		// can shape normal tactics but cannot create a fake "I just saw them" event.
+		if (PersonalKnowledge(pSoldier, pOpponent->ubID) != SEEN_CURRENTLY)
+			continue;
+		if (LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) <= 0)
+			continue;
+
+		INT32 sKnown = KnownPersonalLocation(pSoldier, pOpponent->ubID);
+		if (TileIsOutOfBounds(sKnown))
+			continue;
+
+		++ubVisible;
+		UINT8 ubDir = AIDirection(pSoldier->sGridNo, sKnown);
+		if (ubDir < NUM_WORLD_DIRECTIONS)
+			ubMask |= (UINT8)(1 << ubDir);
+	}
+
+	AICONTACTTRACKER *pTracker = &gAIContactTracker[pSoldier->ubID];
+
+	if (!pTracker->fValid ||
+		pTracker->uiUniqueSoldierId != pSoldier->uiUniqueSoldierIdValue ||
+		TileIsOutOfBounds(pTracker->sLastDecisionGridNo))
+	{
+		memset(pTracker, 0, sizeof(AICONTACTTRACKER));
+		pTracker->fValid = TRUE;
+		pTracker->uiUniqueSoldierId = pSoldier->uiUniqueSoldierIdValue;
+		pTracker->sLastDecisionGridNo = pSoldier->sGridNo;
+		pTracker->ubLastVisibleContacts = ubVisible;
+		pTracker->ubLastDirectionMask = ubMask;
+		return FALSE;
+	}
+
+	pChange->ubVisibleContacts = ubVisible;
+	pChange->ubDirectionMask = ubMask;
+	pChange->ubNewContacts =
+		(ubVisible > pTracker->ubLastVisibleContacts) ?
+		(ubVisible - pTracker->ubLastVisibleContacts) : 0;
+	pChange->sPreviousGridNo = pTracker->sLastDecisionGridNo;
+	pChange->fMovedSinceLastDecision =
+		(pTracker->sLastDecisionGridNo != pSoldier->sGridNo);
+	pChange->fMultiAngleThreat = AIThreatMaskHasWideSeparation(ubMask);
+	pChange->usCurrentExposure =
+		AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+
+	BOOLEAN fDirectionWorsened =
+		ubMask != pTracker->ubLastDirectionMask &&
+		pChange->fMultiAngleThreat;
+
+	pChange->fSurprise =
+		pChange->fMovedSinceLastDecision &&
+		pChange->ubNewContacts > 0 &&
+		(ubVisible >= 2 || pChange->fMultiAngleThreat ||
+		 pChange->usCurrentExposure >= 140);
+
+	pChange->fEncirclementPressure =
+		ubVisible >= 3 &&
+		pChange->fMultiAngleThreat &&
+		(pChange->fMovedSinceLastDecision || fDirectionWorsened) &&
+		pChange->usCurrentExposure >= 100;
+
+	BOOLEAN fReaction =
+		(pChange->fSurprise || pChange->fEncirclementPressure) &&
+		pTracker->uiLastReactionTurn != guiTurnCnt;
+
+	pTracker->sLastDecisionGridNo = pSoldier->sGridNo;
+	pTracker->ubLastVisibleContacts = ubVisible;
+	pTracker->ubLastDirectionMask = ubMask;
+
+	if (fReaction)
+		pTracker->uiLastReactionTurn = guiTurnCnt;
+
+	return fReaction;
+}
+
 void AIResetTacticalReasoningStateForLoad(void)
 {
 	memset(gAITaskReservations, 0, sizeof(gAITaskReservations));
 	memset(gAIShortPlans, 0, sizeof(gAIShortPlans));
+	memset(gAIContactTracker, 0, sizeof(gAIContactTracker));
 
 	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
 	{
@@ -483,5 +617,6 @@ void AIResetTacticalReasoningStateForLoad(void)
 		gAITaskReservations[i].ubTargetID = NOBODY;
 		gAIShortPlans[i].Plan.sTargetGridNo = NOWHERE;
 		gAIShortPlans[i].Plan.ubTargetID = NOBODY;
+		gAIContactTracker[i].sLastDecisionGridNo = NOWHERE;
 	}
 }
