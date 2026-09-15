@@ -3223,6 +3223,42 @@ else
 				}
 			}
 	}
+
+	// Vengeance: an armed human enemy should never leave absolutely nothing.
+	// Preserve all normal drop-rate rolls. Only when they selected zero items,
+	// make the cheapest eligible carried item droppable as a fallback.
+	if ( SOLDIER_CLASS_ENEMY( bSoldierClass ) && !IsAutoResolveActive() )
+	{
+		BOOLEAN fHasDroppableItem = FALSE;
+		INT32 iFallbackSlot = -1;
+		UINT32 uiFallbackPrice = 0xFFFFFFFF;
+		UINT32 invsize = pp->Inv.size();
+
+		for ( i = 0; i < invsize; ++i )
+		{
+			if ( !pp->Inv[i].exists() )
+				continue;
+			if ( Item[pp->Inv[i].usItem].defaultundroppable )
+				continue;
+			if ( pp->Inv[i].fFlags & OBJECT_NO_OVERWRITE )
+				continue;
+
+			if ( !(pp->Inv[i].fFlags & OBJECT_UNDROPPABLE) )
+			{
+				fHasDroppableItem = TRUE;
+				break;
+			}
+
+			if ( Item[pp->Inv[i].usItem].usPrice < uiFallbackPrice )
+			{
+				uiFallbackPrice = Item[pp->Inv[i].usItem].usPrice;
+				iFallbackSlot = (INT32)i;
+			}
+		}
+
+		if ( !fHasDroppableItem && iFallbackSlot >= 0 )
+			pp->Inv[iFallbackSlot].fFlags &= ~OBJECT_UNDROPPABLE;
+	}
 }
 
 
