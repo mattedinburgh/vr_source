@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/vhd-renderer
+      - engine/vhd-render-instrumentation-2026-09-15
     paths:
       - '.github/workflows/san-mona-c5-preview.yml'
       - 'TileEngine/**'
