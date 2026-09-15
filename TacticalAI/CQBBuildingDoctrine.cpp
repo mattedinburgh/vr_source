@@ -1813,6 +1813,9 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 
 	if (TileIsOutOfBounds(sMoveSpot) || sMoveSpot == pSoldier->sGridNo)
 	{
+		AIRegisterTacticalSetback(
+			pSoldier, AI_SETBACK_ROUTE,
+			sDesiredSpot, 28, 2);
 		AIReleaseTacticalTask(pSoldier);
 		VRCQB_InvalidateSoldierPlan(pSoldier);
 		return VRCQBTraceNoAction(pSoldier, uiDecision, &Assessment,
@@ -1845,6 +1848,9 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 		pSoldier, sMoveSpot, bAction,
 		usPeakIncrease, usUncoveredIncrease, usAverageIncrease))
 	{
+		AIRegisterTacticalSetback(
+			pSoldier, AI_SETBACK_CQB_ENTRY,
+			sMoveSpot, 58, 4);
 		AIReleaseTacticalTask(pSoldier);
 		VRCQB_InvalidateSoldierPlan(pSoldier);
 		return VRCQBTraceNoAction(pSoldier, uiDecision, &Assessment,
