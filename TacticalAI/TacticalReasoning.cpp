@@ -185,8 +185,11 @@ BOOLEAN AIEvaluateTacticalPosition(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 		NumberOfTeamMatesAdjacent(pSoldier, sCandidateSpot);
 	pFeatures->sReactionRisk = (INT16)__min(32767,
 		AIInferredReactionRisk(pSoldier, sCandidateSpot, pSoldier->pathing.bLevel));
-	pFeatures->sPathExposure = (INT16)__min(32767,
-		AIPathExposureCost(pSoldier, sCandidateSpot, usMovementMode));
+	if (usMovementMode != 0)
+	{
+		pFeatures->sPathExposure = (INT16)__min(32767,
+			AIPathExposureCost(pSoldier, sCandidateSpot, usMovementMode));
+	}
 
 	if (!TileIsOutOfBounds(sTargetSpot))
 	{
@@ -291,9 +294,12 @@ INT32 AIScoreTacticalPosition(SOLDIERTYPE *pSoldier, const AITACTICALPOSITIONFEA
 
 	// Route quality is now a first-class spatial consideration. Keep the weight
 	// deliberately bounded so a slightly riskier but much better destination can win.
-	if (pFeatures->sPathExposure >= 10000)
-		return -10000;
-	iScore -= __min((INT32)45, (INT32)pFeatures->sPathExposure / 8);
+	if (pFeatures->sPathExposure > 0)
+	{
+		if (pFeatures->sPathExposure >= 10000)
+			return -10000;
+		iScore -= __min((INT32)45, (INT32)pFeatures->sPathExposure / 8);
+	}
 
 	iScore += AICompetenceUtilityNoise(pSoldier, sCandidateSpot,
 		(UINT32)(sTargetSpot + 173));
@@ -331,7 +337,7 @@ static BOOLEAN AIValidReservationOwner(SOLDIERTYPE *pSoldier, UINT8 ubOwnerID,
 		return FALSE;
 	}
 
-	if (pSoldier->bTeam == ENEMY_TEAM && !AISameFireteam(pSoldier, pOwner))
+	if (AICombatTeam(pSoldier) && !AISameFireteam(pSoldier, pOwner))
 		return FALSE;
 
 	if (pSlot->uiExpiresTurn < guiTurnCnt + 1)
@@ -371,7 +377,7 @@ BOOLEAN AIReserveTacticalTask(SOLDIERTYPE *pSoldier, UINT8 ubTask, INT32 sTarget
 		AISameTaskTarget(pMine, ubTask, sTargetGridNo, ubTargetID) &&
 		pMine->uiExpiresTurn >= guiTurnCnt + 1)
 	{
-		pMine->uiExpiresTurn = guiTurnCnt + 1 + __max((UINT8)1, ubTurns);
+		pMine->uiExpiresTurn = guiTurnCnt + __max((UINT8)1, ubTurns);
 		return TRUE;
 	}
 
@@ -387,7 +393,7 @@ BOOLEAN AIReserveTacticalTask(SOLDIERTYPE *pSoldier, UINT8 ubTask, INT32 sTarget
 	pMine->ubTask = ubTask;
 	pMine->sTargetGridNo = sTargetGridNo;
 	pMine->ubTargetID = ubTargetID;
-	pMine->uiExpiresTurn = guiTurnCnt + 1 + __max((UINT8)1, ubTurns);
+	pMine->uiExpiresTurn = guiTurnCnt + __max((UINT8)1, ubTurns);
 	return TRUE;
 }
 
@@ -418,7 +424,7 @@ BOOLEAN AIBeginShortPlan(SOLDIERTYPE *pSoldier, UINT8 ubPlanType, INT32 sTargetG
 	pSlot->Plan.ubStep = 0;
 	pSlot->Plan.sTargetGridNo = sTargetGridNo;
 	pSlot->Plan.ubTargetID = ubTargetID;
-	pSlot->Plan.uiExpiresTurn = guiTurnCnt + 1 + __max((UINT8)1, ubTurns);
+	pSlot->Plan.uiExpiresTurn = guiTurnCnt + __max((UINT8)1, ubTurns);
 	return TRUE;
 }
 
