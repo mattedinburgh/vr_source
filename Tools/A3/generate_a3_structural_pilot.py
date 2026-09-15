@@ -928,14 +928,18 @@ def generate_family(tilesets_root: Path, out_root: Path, qa_root: Path,
             frame = render_floor(mask, base, family, i, flavour, meta[i])
             label = flavour
         else:
-            frame = render_roof(mask, base, family, i, flavour, meta[i], semantic)
-            label = "slanted-roof" if semantic else flavour
+            if semantic is None:
+                frame = legacy.convert("RGBA")
+                label = "legacy-aux-pass-through"
+            else:
+                frame = render_roof(mask, base, family, i, flavour, meta[i], semantic)
+                label = "slanted-roof"
 
         generated.append(frame)
         labels.append(label)
 
     passthrough_frames = []
-    if kind == "wall":
+    if kind in ("wall", "roof"):
         for i, (legacy, authored) in enumerate(zip(legacy_frames, generated)):
             if i not in semantics:
                 passthrough_frames.append(i)
@@ -1029,7 +1033,7 @@ def main() -> None:
     lines = [
         "A3 STRUCTURAL PILOT - QUARANTINED / NOT ROUTED",
         "Known semantic frames sample legacy RGB: NO",
-        "Unknown auxiliary wall frames: canonical RGBA passthrough REQUIRED",
+        "Unknown auxiliary JSD-backed frames: canonical RGBA passthrough REQUIRED",
         "Legacy contract retained: frame count, dimensions, offsets, alpha footprint",
         "Contract verification: REQUIRED before artifact write",
         f"Production strict mode: {'YES' if ns.strict else 'NO'}",
