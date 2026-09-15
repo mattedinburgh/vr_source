@@ -592,11 +592,13 @@ INT8 GetSightAdjustmentCamouflageOnTerrain( SOLDIERTYPE* pSoldier, const UINT8& 
 
 	INT8 scaler = -(ANIM_STAND + 1 - ubStance); // stand = 7-6 => 10%, crouch = 7-3 => 66%, prone = 7-1 => 100%;
 
-	UINT8 effectiveness = gGameExternalOptions.ubCamouflageEffectiveness;
-	
-	effectiveness += (UINT8)(pSoldier->GetBackgroundValue(BG_PERC_CAMO));
+	INT16 effectiveness = gGameExternalOptions.ubCamouflageEffectiveness;
+	effectiveness += pSoldier->GetBackgroundValue(BG_PERC_CAMO);
+	if ( gGameOptions.fNewTraitSystem && HAS_SKILL_TRAIT( pSoldier, RANGER_NT ) )
+		effectiveness += gSkillTraitValues.ubRACamoEffectivenessBonus * NUM_SKILL_TRAITS( pSoldier, RANGER_NT );
+	effectiveness = max( -100, min( 100, effectiveness ) );
 
-	scaler = effectiveness * scaler / 6;
+	scaler = (INT8)( effectiveness * scaler / 6 );
 
 	switch(ubTerrainType) {
 		case LOW_GRASS:
@@ -632,6 +634,8 @@ static INT8 GetDetailedSightAdjustmentCamouflage(
 
 	INT16 effectiveness = gGameExternalOptions.ubCamouflageEffectiveness;
 	effectiveness += pSoldier->GetBackgroundValue(BG_PERC_CAMO);
+	if ( gGameOptions.fNewTraitSystem && HAS_SKILL_TRAIT( pSoldier, RANGER_NT ) )
+		effectiveness += gSkillTraitValues.ubRACamoEffectivenessBonus * NUM_SKILL_TRAITS( pSoldier, RANGER_NT );
 	effectiveness = max(-100, min(100, effectiveness));
 	scaler = effectiveness * scaler / 6;
 
