@@ -1366,15 +1366,19 @@ void AIRegisterTacticalSetback(SOLDIERTYPE *pSoldier, UINT8 ubType,
 
 		if (!pSlot->fValid ||
 			pSlot->uiOwnerIdentity != pSoldier->uiUniqueSoldierIdValue ||
-			pSlot->uiExpiresTurn < guiTurnCnt)
+			pSlot->uiExpiresTurn < guiTurnCnt ||
+			guiTurnCnt < pSlot->uiRegisteredTurn)
 		{
+			// A turn rewind/quickload invalidates transient future experience.
+			// Replace the slot rather than allowing unsigned age arithmetic.
 			bReplace = (INT8)i;
 			break;
 		}
 
+		INT32 iAge =
+			(INT32)(guiTurnCnt - pSlot->uiRegisteredTurn);
 		INT32 iValue =
-			(INT32)pSlot->ubSeverity -
-			5 * (INT32)(guiTurnCnt - pSlot->uiRegisteredTurn);
+			(INT32)pSlot->ubSeverity - 5 * iAge;
 		if (iValue < iWeakestValue)
 		{
 			iWeakestValue = iValue;
@@ -1432,8 +1436,17 @@ INT32 AITacticalSetbackPenalty(SOLDIERTYPE *pSoldier, INT32 sCandidateGridNo)
 			if (!pSlot->fValid ||
 				pSlot->uiOwnerIdentity != pOwner->uiUniqueSoldierIdValue ||
 				pSlot->uiExpiresTurn < guiTurnCnt ||
+				guiTurnCnt < pSlot->uiRegisteredTurn ||
 				TileIsOutOfBounds(pSlot->sGridNo))
 			{
+				if (pSlot->fValid &&
+					guiTurnCnt < pSlot->uiRegisteredTurn)
+				{
+					// Same-sector quickload/turn rewind: do not inherit a setback
+					// learned in the abandoned future.
+					memset(pSlot, 0, sizeof(AITACTICALSETBACKSLOT));
+					pSlot->sGridNo = NOWHERE;
+				}
 				continue;
 			}
 
