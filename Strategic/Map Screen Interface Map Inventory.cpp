@@ -446,7 +446,11 @@ void ToggleShowMoveItem()
 //   * pools all spare ammo carried by eligible mercs with reachable sector ammo;
 //   * fills carried guns first, preserving a partial load unless a strictly better
 //     penetrator can provide a complete replacement load;
-//   * then gives up to three spare magazines per carried weapon;
+//   * then distributes spare ammo for squad readiness before surplus:
+//       - one weapon in a calibre gets up to 3 spare magazines;
+//       - if one merc carries 2+ weapons of the same calibre, those weapons share
+//         4 guaranteed spare magazines and may receive a 5th only after the whole
+//         squad has received its guaranteed allocation;
 //   * ranks combat ammo from XML data by actual armour penetration, with damage
 //     and combat flags as tie-breakers; pure utility rounds are last;
 //   * requires a weapon-ready magazine/loose-round item; native larger-magazine
@@ -467,6 +471,7 @@ typedef struct
 	UINT8 ubCalibre;
 	UINT16 usMagSize;
 	UINT8 ubWeaponCount;
+	UINT8 ubGuaranteedMags;
 	UINT8 ubMaxMags;
 	UINT8 ubMagsGiven;
 	BOOLEAN fBlocked;
@@ -1174,6 +1179,7 @@ static void CollectSectorAmmoDemands( std::vector<SECTOR_LOADOUT_AMMO_DEMAND> &d
 					demand.ubCalibre = ubCalibre;
 					demand.usMagSize = usMagSize;
 					demand.ubWeaponCount = 1;
+					demand.ubGuaranteedMags = 0;
 					demand.ubMaxMags = 0;
 					demand.ubMagsGiven = 0;
 					demand.fBlocked = FALSE;
@@ -1183,10 +1189,82 @@ static void CollectSectorAmmoDemands( std::vector<SECTOR_LOADOUT_AMMO_DEMAND> &d
 		}
 	}
 
-	// Exactly three spare magazines per carried weapon.
+	// Targets are per merc + calibre. Same-calibre primary/secondary weapons share
+	// a sensible reserve instead of multiplying it by weapon count.
+	std::vector<BOOLEAN> processed( demands.size(), FALSE );
 	for ( UINT32 i = 0; i < demands.size(); ++i )
-		demands[i].ubMaxMags = (UINT8)( 3 * demands[i].ubWeaponCount );
+	{
+		if ( processed[i] )
+			continue;
+
+		std::vector<UINT32> group;
+		UINT32 uiWeaponsInCalibre = 0;
+		for ( UINT32 j = i; j < demands.size(); ++j )
+		{
+			if ( demands[j].pSoldier == demands[i].pSoldier &&
+				 demands[j].ubCalibre == demands[i].ubCalibre )
+			{
+				group.push_back( j );
+				processed[j] = TRUE;
+				uiWeaponsInCalibre += demands[j].ubWeaponCount;
+			}
+		}
+
+		const UINT32 uiGuaranteedTotal = ( uiWeaponsInCalibre > 1 ) ? 4 : 3;
+		UINT32 uiGuaranteedAssigned = 0;
+
+		for ( UINT32 n = 0; n < group.size(); ++n )
+		{
+			SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[group[n]];
+			demand.ubGuaranteedMags = (UINT8)( ( uiGuaranteedTotal * demand.ubWeaponCount ) / uiWeaponsInCalibre );
+			demand.ubMaxMags = demand.ubGuaranteedMags + ( uiWeaponsInCalibre > 1 ? 1 : 0 );
+			uiGuaranteedAssigned += demand.ubGuaranteedMags;
+		}
+
+		// Deterministic remainder: different magazine sizes of the same calibre
+		// still add up to exactly 4 guaranteed magazines (or 3 for a lone weapon).
+		for ( UINT32 n = 0; uiGuaranteedAssigned < uiGuaranteedTotal && !group.empty(); ++n )
+		{
+			SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[group[n % group.size()]];
+			++demand.ubGuaranteedMags;
+			if ( demand.ubMaxMags < demand.ubGuaranteedMags + ( uiWeaponsInCalibre > 1 ? 1 : 0 ) )
+				demand.ubMaxMags = demand.ubGuaranteedMags + ( uiWeaponsInCalibre > 1 ? 1 : 0 );
+			++uiGuaranteedAssigned;
+		}
+	}
 }
+
+static BOOLEAN GiveOneSectorLoadoutMagazine( SECTOR_LOADOUT_AMMO_DEMAND &demand,
+	UINT32 &uiMagazinesGiven, UINT32 &uiRoundsGiven )
+{
+	if ( demand.fBlocked || demand.ubMagsGiven >= demand.ubMaxMags )
+		return FALSE;
+
+	INT16 sAmmoType = FindSectorAmmoTypeForFill( demand.ubCalibre,
+		demand.usMagSize, demand.usMagSize );
+	if ( sAmmoType < 0 )
+		return FALSE;
+
+	UINT32 uiAvailable = CountSectorAmmoRounds( demand.ubCalibre, (UINT8)sAmmoType );
+	if ( uiAvailable == 0 )
+		return FALSE;
+
+	UINT16 usWanted = (UINT16)__min( (UINT32)demand.usMagSize, uiAvailable );
+	UINT16 usMade = BuildAndPlaceSectorMagazine( demand.pSoldier, demand.ubCalibre,
+		demand.usMagSize, (UINT8)sAmmoType, usWanted );
+
+	if ( usMade == 0 )
+	{
+		demand.fBlocked = TRUE;
+		return FALSE;
+	}
+
+	++demand.ubMagsGiven;
+	++uiMagazinesGiven;
+	uiRoundsGiven += usMade;
+	return TRUE;
+}
+
 static void RedistributeSectorAmmo3x()
 {
 	UINT32 uiOldFilter = guiMapInventoryFilter;
@@ -1206,45 +1284,54 @@ static void RedistributeSectorAmmo3x()
 	UINT32 uiMagazinesGiven = 0;
 	UINT32 uiRoundsGiven = 0;
 
-	// Fair pocket-aware allocation: spare #1 for every weapon before spare #2,
-	// then spare #3. If one demand cannot fit another magazine, only that demand
-	// is blocked and the remaining ammo stays available to the others.
-	for ( UINT8 ubWave = 0; ubWave < 3; ++ubWave )
+	// Guaranteed allocation first, globally and one magazine per demand per wave.
+	// This is the key readiness rule: nobody gets a deep reserve while another
+	// compatible merc is still waiting for basic ammunition.
+	for ( UINT8 ubWave = 0; ubWave < 4; ++ubWave )
 	{
 		for ( UINT32 i = 0; i < demands.size(); ++i )
 		{
 			SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[i];
-			if ( demand.fBlocked )
+			if ( demand.ubMagsGiven >= demand.ubGuaranteedMags )
 				continue;
 
-			UINT8 ubWaveTarget = (UINT8)__min( (UINT32)demand.ubMaxMags,
-				(UINT32)( ubWave + 1 ) * demand.ubWeaponCount );
+			GiveOneSectorLoadoutMagazine( demand, uiMagazinesGiven, uiRoundsGiven );
+		}
+	}
 
-			while ( demand.ubMagsGiven < ubWaveTarget )
+	// Optional fifth magazine for same-calibre multi-weapon users. It is attempted
+	// only after all guaranteed allocations, and only one extra is allowed per
+	// merc+calibre group.
+	std::vector<BOOLEAN> surplusProcessed( demands.size(), FALSE );
+	for ( UINT32 i = 0; i < demands.size(); ++i )
+	{
+		if ( surplusProcessed[i] )
+			continue;
+
+		std::vector<UINT32> group;
+		UINT32 uiWeaponsInCalibre = 0;
+		UINT32 uiGiven = 0;
+		for ( UINT32 j = i; j < demands.size(); ++j )
+		{
+			if ( demands[j].pSoldier == demands[i].pSoldier &&
+				 demands[j].ubCalibre == demands[i].ubCalibre )
 			{
-				INT16 sAmmoType = FindSectorAmmoTypeForFill( demand.ubCalibre,
-					demand.usMagSize, demand.usMagSize );
-				if ( sAmmoType < 0 )
-					break;
-
-				UINT32 uiAvailable = CountSectorAmmoRounds( demand.ubCalibre, (UINT8)sAmmoType );
-				if ( uiAvailable == 0 )
-					break;
-
-				UINT16 usWanted = (UINT16)__min( (UINT32)demand.usMagSize, uiAvailable );
-				UINT16 usMade = BuildAndPlaceSectorMagazine( demand.pSoldier, demand.ubCalibre,
-					demand.usMagSize, (UINT8)sAmmoType, usWanted );
-
-				if ( usMade == 0 )
-				{
-					demand.fBlocked = TRUE;
-					break;
-				}
-
-				++demand.ubMagsGiven;
-				++uiMagazinesGiven;
-				uiRoundsGiven += usMade;
+				group.push_back( j );
+				surplusProcessed[j] = TRUE;
+				uiWeaponsInCalibre += demands[j].ubWeaponCount;
+				uiGiven += demands[j].ubMagsGiven;
 			}
+		}
+
+		if ( uiWeaponsInCalibre <= 1 || uiGiven < 4 || uiGiven >= 5 )
+			continue;
+
+		for ( UINT32 n = 0; n < group.size(); ++n )
+		{
+			SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[group[n]];
+			if ( demand.ubMagsGiven < demand.ubMaxMags &&
+				 GiveOneSectorLoadoutMagazine( demand, uiMagazinesGiven, uiRoundsGiven ) )
+				break;
 		}
 	}
 
@@ -1340,6 +1427,146 @@ static void RedistributeSectorSmoke()
 	ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
 		L"SMK: un humo por mercenario: %d de %d equipados.",
 		uiEquipped, (UINT32)mercs.size() );
+}
+
+static BOOLEAN IsHandGrenadeStronger( UINT16 usA, UINT16 usB );
+
+static void PoolSquadLauncherGrenades()
+{
+	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
+		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
+	{
+		SOLDIERTYPE *pSoldier = MercPtrs[id];
+		if ( !IsSectorLoadoutMercEligible( pSoldier ) )
+			continue;
+
+		for ( INT32 bSlot = 0; bSlot < NUM_INV_SLOTS; ++bSlot )
+		{
+			OBJECTTYPE *pObj = &( pSoldier->inv[bSlot] );
+			if ( pObj->exists() && Item[pObj->usItem].glgrenade )
+				PoolObjectForSectorLoadout( pObj );
+		}
+	}
+}
+
+static void GetMercGrenadeLaunchers( SOLDIERTYPE *pSoldier, std::vector<UINT16> &launchers )
+{
+	launchers.clear();
+	if ( pSoldier == NULL )
+		return;
+
+	for ( INT32 bSlot = 0; bSlot < NUM_INV_SLOTS; ++bSlot )
+	{
+		OBJECTTYPE *pObj = &( pSoldier->inv[bSlot] );
+		if ( !pObj->exists() )
+			continue;
+
+		// Integral/standalone grenade launcher.
+		if ( Item[pObj->usItem].grenadelauncher &&
+			 !Item[pObj->usItem].rocketlauncher && !Item[pObj->usItem].mortar &&
+			 std::find( launchers.begin(), launchers.end(), pObj->usItem ) == launchers.end() )
+		{
+			launchers.push_back( pObj->usItem );
+		}
+
+		// Under-barrel GL or rifle-grenade device attached to a carried weapon.
+		UINT16 usAttached = GetAttachedGrenadeLauncher( pObj );
+		if ( usAttached != NONE && usAttached != NOTHING &&
+			 std::find( launchers.begin(), launchers.end(), usAttached ) == launchers.end() )
+		{
+			launchers.push_back( usAttached );
+		}
+	}
+}
+
+static BOOLEAN SectorLauncherGrenadeCompatible( UINT16 usGrenade, const std::vector<UINT16> &launchers )
+{
+	if ( usGrenade >= MAXITEMS || !Item[usGrenade].glgrenade )
+		return FALSE;
+
+	for ( UINT32 i = 0; i < launchers.size(); ++i )
+	{
+		if ( ValidLaunchable( usGrenade, launchers[i] ) )
+			return TRUE;
+	}
+	return FALSE;
+}
+
+static UINT32 CountMercLauncherGrenades( SOLDIERTYPE *pSoldier )
+{
+	if ( pSoldier == NULL )
+		return 0;
+
+	UINT32 uiCount = 0;
+	for ( INT32 bSlot = 0; bSlot < NUM_INV_SLOTS; ++bSlot )
+	{
+		OBJECTTYPE *pObj = &( pSoldier->inv[bSlot] );
+		if ( pObj->exists() && Item[pObj->usItem].glgrenade )
+			uiCount += pObj->ubNumberOfObjects;
+	}
+	return uiCount;
+}
+
+static BOOLEAN SectorHasCompatibleLauncherGrenade( const std::vector<UINT16> &launchers )
+{
+	for ( UINT32 i = 0; i < pInventoryPoolList.size(); ++i )
+	{
+		if ( !IsReachableSectorLoadoutItem( pInventoryPoolList[i] ) )
+			continue;
+
+		OBJECTTYPE *pObj = &( pInventoryPoolList[i].object );
+		if ( pObj->exists() && SectorLauncherGrenadeCompatible( pObj->usItem, launchers ) )
+			return TRUE;
+	}
+	return FALSE;
+}
+
+static BOOLEAN GiveBestLauncherGrenade( SOLDIERTYPE *pSoldier, const std::vector<UINT16> &launchers )
+{
+	if ( pSoldier == NULL || launchers.empty() )
+		return FALSE;
+
+	std::vector<UINT16> rejectedItems;
+	while ( TRUE )
+	{
+		INT32 iBestWorldItem = -1;
+		UINT16 usBestItem = NONE;
+
+		for ( UINT32 i = 0; i < pInventoryPoolList.size(); ++i )
+		{
+			if ( !IsReachableSectorLoadoutItem( pInventoryPoolList[i] ) )
+				continue;
+
+			OBJECTTYPE *pObj = &( pInventoryPoolList[i].object );
+			if ( !pObj->exists() || !SectorLauncherGrenadeCompatible( pObj->usItem, launchers ) )
+				continue;
+			if ( std::find( rejectedItems.begin(), rejectedItems.end(), pObj->usItem ) != rejectedItems.end() )
+				continue;
+
+			if ( iBestWorldItem < 0 || IsHandGrenadeStronger( pObj->usItem, usBestItem ) )
+			{
+				iBestWorldItem = (INT32)i;
+				usBestItem = pObj->usItem;
+			}
+		}
+
+		if ( iBestWorldItem < 0 )
+			return FALSE;
+
+		OBJECTTYPE grenade;
+		OBJECTTYPE *pBest = &( pInventoryPoolList[iBestWorldItem].object );
+		pBest->RemoveObjectAtIndex( 0, &grenade );
+		if ( pBest->ubNumberOfObjects < 1 )
+			DeleteObj( pBest );
+
+		if ( PlaceInAnyPocket( pSoldier, &grenade, FALSE ) && !grenade.exists() )
+			return TRUE;
+
+		if ( grenade.exists() )
+			PoolObjectForSectorLoadout( &grenade );
+
+		rejectedItems.push_back( usBestItem );
+	}
 }
 
 static void PoolSquadHandGrenades()
@@ -1465,13 +1692,15 @@ static void RedistributeSectorGrenades()
 	if ( uiOldFilter != IC_MAPFILTER_ALL )
 		MapInventoryFilterSet( IC_MAPFILTER_ALL );
 
-	// First pool every non-smoke hand grenade. This guarantees Matt and Buns are
-	// reduced to exactly one grenade rather than keeping weaker extras.
+	// Pool all loose launcher grenades and hand grenades. Launcher ammunition is
+	// assigned first to actual grenade-launcher carriers; hand grenades are fallback.
+	PoolSquadLauncherGrenades();
 	PoolSquadHandGrenades();
 
 	SOLDIERTYPE *pMatt = NULL;
 	SOLDIERTYPE *pBuns = NULL;
 	std::vector<SOLDIERTYPE*> mercs;
+	std::vector< std::vector<UINT16> > mercLaunchers;
 
 	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
 		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
@@ -1488,20 +1717,50 @@ static void RedistributeSectorGrenades()
 			mercs.push_back( pSoldier );
 	}
 
-	// Priority reservation: strongest direct-damage grenades go to Matt and Buns
+	// Identify launcher specialists, including integral/standalone GLs and
+	// under-barrel/rifle-grenade launchers. All compatible loose launcher rounds
+	// are routed to these mercs before normal hand grenades are considered.
+	std::vector<SOLDIERTYPE*> allMercs;
+	if ( pMatt != NULL ) allMercs.push_back( pMatt );
+	if ( pBuns != NULL ) allMercs.push_back( pBuns );
+	for ( UINT32 i = 0; i < mercs.size(); ++i ) allMercs.push_back( mercs[i] );
+
+	mercLaunchers.resize( allMercs.size() );
+	for ( UINT32 i = 0; i < allMercs.size(); ++i )
+		GetMercGrenadeLaunchers( allMercs[i], mercLaunchers[i] );
+
+	UINT32 uiLauncherGrenadesGiven = 0;
+	BOOLEAN fLauncherProgress = TRUE;
+	while ( fLauncherProgress )
+	{
+		fLauncherProgress = FALSE;
+		for ( UINT32 i = 0; i < allMercs.size(); ++i )
+		{
+			if ( mercLaunchers[i].empty() || !SectorHasCompatibleLauncherGrenade( mercLaunchers[i] ) )
+				continue;
+
+			if ( GiveBestLauncherGrenade( allMercs[i], mercLaunchers[i] ) )
+			{
+				++uiLauncherGrenadesGiven;
+				fLauncherProgress = TRUE;
+			}
+		}
+	}
+
+	// Priority reservation: strongest direct-damage hand grenades go to Matt and Buns
 	// before anyone else receives a grenade. Each receives at most one.
 	UINT32 uiPriorityEligible = 0;
 	UINT32 uiPriorityGiven = 0;
 	if ( pMatt != NULL )
 	{
 		++uiPriorityEligible;
-		if ( GiveBestHandGrenade( pMatt ) )
+		if ( CountMercLauncherGrenades( pMatt ) < 4 && GiveBestHandGrenade( pMatt ) )
 			++uiPriorityGiven;
 	}
 	if ( pBuns != NULL )
 	{
 		++uiPriorityEligible;
-		if ( GiveBestHandGrenade( pBuns ) )
+		if ( CountMercLauncherGrenades( pBuns ) < 4 && GiveBestHandGrenade( pBuns ) )
 			++uiPriorityGiven;
 	}
 
@@ -1509,19 +1768,21 @@ static void RedistributeSectorGrenades()
 	std::vector<BOOLEAN> blocked( mercs.size(), FALSE );
 	UINT32 uiDistributed = 0;
 
-	// Everybody else is equal: one grenade per merc per pass, max four. Remaining
-	// grenades are still taken strongest-first, but no merc can jump a pass.
+	// Everybody else is equal. A grenadier's launcher rounds count toward the
+	// four-grenade combat reserve: 4+ launcher grenades means no hand grenades;
+	// with fewer than 4, hand grenades only top the merc up to four total.
 	for ( UINT8 ubPass = 0; ubPass < 4; ++ubPass )
 	{
 		BOOLEAN fOutOfGrenades = FALSE;
 
 		for ( UINT32 i = 0; i < mercs.size(); ++i )
 		{
-			if ( blocked[i] || counts[i] > ubPass )
+			UINT32 uiLauncherCount = CountMercLauncherGrenades( mercs[i] );
+			UINT32 uiHandTarget = ( uiLauncherCount >= 4 ) ? 0 : ( 4 - uiLauncherCount );
+
+			if ( blocked[i] || counts[i] >= uiHandTarget || counts[i] > ubPass )
 				continue;
 
-			// If no grenade remains at all, end distribution. Otherwise let the
-			// fit-aware helper try strongest-to-weaker types for this merc.
 			if ( !SectorHasHandGrenade() )
 			{
 				fOutOfGrenades = TRUE;
@@ -1553,8 +1814,8 @@ static void RedistributeSectorGrenades()
 	fCharacterInfoPanelDirty = TRUE;
 
 	ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
-		L"GRN: Matt/Buns %d/%d con la granada mas potente; %d granadas repartidas entre %d mercenarios (max. 4).",
-		uiPriorityGiven, uiPriorityEligible, uiDistributed, (UINT32)mercs.size() );
+		L"GRN: %d granadas de lanzador a granaderos; Matt/Buns %d/%d con granada de mano; %d granadas de mano repartidas como respaldo.",
+		uiLauncherGrenadesGiven, uiPriorityGiven, uiPriorityEligible, uiDistributed );
 }
 
 // load the background panel graphics for inventory
@@ -3056,10 +3317,10 @@ void CreateMapInventoryButtons( void )
 	// 28x13 size and anchored to the right edge of the screen. This keeps them
 	// away from the dense sort/filter toolbar and makes them usable at 1080p+.
 	// Very small legacy resolutions use a reduced fallback to avoid overlap.
-	INT16 sLoadoutButtonW = 56;
-	INT16 sLoadoutButtonH = 26;
-	INT16 sLoadoutButtonGap = 4;
-	INT16 sLoadoutButtonY = INVEN_POOL_Y + 10 + yResOffset;
+	INT16 sLoadoutButtonW = 72;
+	INT16 sLoadoutButtonH = 24;
+	INT16 sLoadoutButtonGap = 5;
+	INT16 sLoadoutButtonY = INVEN_POOL_Y + 8 + yResOffset;
 
 	if ( iResolution < _1024x768 )
 	{
@@ -3071,14 +3332,17 @@ void CreateMapInventoryButtons( void )
 		sLoadoutButtonY = INVEN_POOL_Y + 38 + yResOffset;
 	}
 
+	// Right-align the logistics group in the deliberately unused header space.
+	// Keep a comfortable margin from the screen edge so it reads as part of the
+	// sector-inventory panel rather than as a floating overlay.
 	INT16 sLoadoutButtonX = SCREEN_WIDTH -
-		( sLoadoutButtonW * 3 + sLoadoutButtonGap * 2 ) - 12;
+		( sLoadoutButtonW * 3 + sLoadoutButtonGap * 2 ) - 40;
 
-	guiMapInvenLoadoutButton[0] = CreateTextButton( L"3x MAG", COMPFONT, FONT_MCOLOR_DKWHITE, FONT_BLACK,
+	guiMapInvenLoadoutButton[0] = CreateTextButton( L"AMMO", COMPFONT, FONT_MCOLOR_DKWHITE, FONT_BLACK,
 		BUTTON_USE_DEFAULT, sLoadoutButtonX, sLoadoutButtonY, sLoadoutButtonW, sLoadoutButtonH,
 		BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST, NULL, (GUI_CALLBACK)MapInventoryPoolAmmo3xBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[0],
-		L"3x: cargar armas primero y luego dar 3 cargadores por arma. Municion: penetracion XML primero; si no hay carga completa, se prioriza el cargador mas lleno. Municion utilitaria al final." );
+		L"AMMO: cargar armas primero. 1 arma/calibre: hasta 3 cargadores. 2+ armas del mismo calibre: 4 compartidos garantizados y un 5o solo si sobra. Primero, todos listos para combatir." );
 
 	guiMapInvenLoadoutButton[1] = CreateTextButton( L"HUMO", COMPFONT, FONT_MCOLOR_DKWHITE, FONT_BLACK,
 		BUTTON_USE_DEFAULT, sLoadoutButtonX + sLoadoutButtonW + sLoadoutButtonGap, sLoadoutButtonY,
@@ -3092,7 +3356,7 @@ void CreateMapInventoryButtons( void )
 		sLoadoutButtonW, sLoadoutButtonH, BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST,
 		NULL, (GUI_CALLBACK)MapInventoryPoolGrenadeBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[2],
-		L"GRN: Matt y Buns reciben primero 1 granada cada uno, la de mayor dano; el resto se reparte por igual, max. 4 por mercenario. Humo separado." );
+		L"GRAN: granaderos reciben primero toda municion compatible de lanzador (40 mm, etc.). Con 4+ no reciben granadas de mano; con menos, se completa hasta 4. Matt/Buns conservan prioridad de granada de mano cuando necesitan respaldo." );
 
 	// Match the sector-inventory chrome: muted text at rest, cold highlight on
 	// hover, brighter text while pressed. Generic JA2 button chrome and sounds
