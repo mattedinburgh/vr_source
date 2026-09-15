@@ -5979,7 +5979,7 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 		}
 	}
 	// marke added one 'or' for explosive ammo. variation of: AmmoTypes[this->inv[this->ubAttackingHand ][0]->data.gun.ubGunAmmoType].explosionSize > 1
-	//  extracting attacker´s ammo type
+	//  extracting attackerÂ´s ammo type
 	else if ( Item[ usWeaponIndex ].usItemClass & IC_EXPLOSV || AmmoTypes[MercPtrs[ubAttackerID]->inv[MercPtrs[ubAttackerID]->ubAttackingHand ][0]->data.gun.ubGunAmmoType].explosionSize > 1)
 	{
 		INT8 bDeafValue;
@@ -12854,6 +12854,7 @@ UINT32 SOLDIERTYPE::SoldierDressWound( SOLDIERTYPE *pVictim, INT16 sKitPts, INT1
 	UINT8 ubBelowOKlife = 0, ubPtsLeft = 0;
 	BOOLEAN	fRanOut = FALSE;
 	BOOLEAN	fOnSurgery = FALSE;
+	const BOOLEAN fImprovisedBandage = HasItemFlag( this->inv[HANDPOS].usItem, CAMO_REMOVAL );
 	INT8 bInitialBleeding;
 
 	if ((pVictim->bBleeding < 1 && pVictim->stats.bLife >= OKLIFE) && !(pVictim->iHealableInjury > 0 && this->fDoingSurgery))
@@ -12919,6 +12920,11 @@ UINT32 SOLDIERTYPE::SoldierDressWound( SOLDIERTYPE *pVictim, INT16 sKitPts, INT1
 	{
 		uiPossible += ( uiPossible / 2);			// add extra 50 %
 	}
+
+	// Vengeance: a rag is an emergency stabilisation tool, not a real
+	// first-aid kit.  It can secure wounds, but works at one quarter speed.
+	if ( fImprovisedBandage )
+		uiPossible = max( 1, uiPossible / 4 );
 
 	// when prone, bandaging is harder
 	if ( gAnimControl[ this->usAnimState ].ubEndHeight == ANIM_PRONE )
@@ -12993,12 +12999,27 @@ UINT32 SOLDIERTYPE::SoldierDressWound( SOLDIERTYPE *pVictim, INT16 sKitPts, INT1
 	}
 	else
 	{
-		uiMedcost = uiActual;
-
-		if ( uiMedcost > (UINT32)sKitPts)		// can't afford it
+		if ( fImprovisedBandage )
 		{
-			fRanOut = TRUE;
-			uiMedcost = uiActual = sKitPts;   	// recalc cost AND aid
+			// Four points of rag condition buy one point of useful aid.
+			// A full rag therefore secures about 25 wound points at most.
+			const UINT32 uiRagAidAvailable = ( (UINT32)sKitPts + 3 ) / 4;
+			if ( uiActual > uiRagAidAvailable )
+			{
+				fRanOut = TRUE;
+				uiActual = uiRagAidAvailable;
+			}
+			uiMedcost = min( (UINT32)sKitPts, uiActual * 4 );
+		}
+		else
+		{
+			uiMedcost = uiActual;
+
+			if ( uiMedcost > (UINT32)sKitPts )		// can't afford it
+			{
+				fRanOut = TRUE;
+				uiMedcost = uiActual = sKitPts;   	// recalc cost AND aid
+			}
 		}
 	}
 
