@@ -6,7 +6,7 @@
 #include <string>
 #include <map>
 #include "expat.h"
-#include "types.h"
+#include "Types.h"
 #include "XML.h"
 #include "TopicIDs.h"
 #include "TopicOps.h"
@@ -55,7 +55,7 @@ private:
 public:
 	AbstractXMLLoader(XML_StartElementHandler startHandler, XML_EndElementHandler endHandler, XML_CharacterDataHandler charHandler, ParseDataFactoryFunc parseDataFactF = MakeParseData);
 	~AbstractXMLLoader(void);
-	bool LoadFromFile(const char* directoryName, const char* fileName, CHAR8* errorBuf);
+	bool LoadFromFile(const char* directoryName, const char* fileName);
 	const char* GetFileName();
 	const char* GetDirectoryName();
 	void SetFileName(const char* fileName);

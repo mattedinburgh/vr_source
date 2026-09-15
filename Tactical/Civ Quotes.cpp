@@ -1378,329 +1378,329 @@ void PossiblyStartEnemyTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, UINT32 ui
 }
 
 // VR battlefield communication -------------------------------------------------
-// 22 semantic classes x 10 variants = 220 concise contextual lines.  The text
-// lives here rather than in decision code so AI behaviour and presentation stay
-// independent and later localisation/XML migration is straightforward.
+// 23 semantic classes x 10 variants = 230 concise contextual Spanish lines.
+// Keep presentation independent from AI decisions; C++ universal-character
+// escapes make the text deterministic across legacy Windows compiler code pages.
 static const CHAR16 * const gAICombatLines_CONTACT[] =
 {
-	L"\"Contact!\"",
-	L"\"Enemy spotted!\"",
-	L"\"There! Contact!\"",
-	L"\"Eyes on them!\"",
-	L"\"I see them!\"",
-	L"\"Contact ahead!\"",
-	L"\"They're here!\"",
-	L"\"Movement! Contact!\"",
-	L"\"Enemy in sight!\"",
-	L"\"We've got contact!\""
+	L"\"\u00A1Contacto!\"",
+	L"\"\u00A1Enemigo a la vista!\"",
+	L"\"\u00A1Los veo!\"",
+	L"\"\u00A1Contacto al frente!\"",
+	L"\"\u00A1Ah\u00ED est\u00E1n!\"",
+	L"\"\u00A1Movimiento!\"",
+	L"\"\u00A1Enemigos!\"",
+	L"\"\u00A1Contacto, doce en punto!\"",
+	L"\"\u00A1Objetivo a la vista!\"",
+	L"\"\u00A1Tenemos contacto!\""
 };
 
 static const CHAR16 * const gAICombatLines_ADVANCE[] =
 {
-	L"\"Move up!\"",
-	L"\"Advance!\"",
-	L"\"Push forward!\"",
-	L"\"Keep moving!\"",
-	L"\"Go! Go!\"",
-	L"\"Forward!\"",
-	L"\"Close the distance!\"",
-	L"\"Move on them!\"",
-	L"\"Keep the pressure on!\"",
-	L"\"Up! Move!\""
+	L"\"\u00A1Avancen!\"",
+	L"\"\u00A1Adelante!\"",
+	L"\"\u00A1Empujen!\"",
+	L"\"\u00A1Sigan movi\u00E9ndose!\"",
+	L"\"\u00A1Vamos, vamos!\"",
+	L"\"\u00A1Hacia delante!\"",
+	L"\"\u00A1Acorten distancia!\"",
+	L"\"\u00A1Vayan por ellos!\"",
+	L"\"\u00A1Mantengan la presi\u00F3n!\"",
+	L"\"\u00A1Arriba, mu\u00E9vanse!\""
 };
 
 static const CHAR16 * const gAICombatLines_TAKE_COVER[] =
 {
-	L"\"Take cover!\"",
-	L"\"Get down!\"",
-	L"\"Find cover!\"",
-	L"\"Behind something!\"",
-	L"\"Heads down!\"",
-	L"\"Get under cover!\"",
-	L"\"Move to cover!\"",
-	L"\"Stay low!\"",
-	L"\"Get out of the open!\"",
-	L"\"Cover! Now!\""
+	L"\"\u00A1A cubierto!\"",
+	L"\"\u00A1Al suelo!\"",
+	L"\"\u00A1Busquen cobertura!\"",
+	L"\"\u00A1Detr\u00E1s de algo!\"",
+	L"\"\u00A1Cabezas abajo!\"",
+	L"\"\u00A1Prot\u00E9janse!\"",
+	L"\"\u00A1Mu\u00E9vanse a cubierto!\"",
+	L"\"\u00A1Ag\u00E1chense!\"",
+	L"\"\u00A1Salgan de campo abierto!\"",
+	L"\"\u00A1Cobertura, ya!\""
 };
 
 static const CHAR16 * const gAICombatLines_FLANK_LEFT[] =
 {
-	L"\"Flank left!\"",
-	L"\"Go left!\"",
-	L"\"Around the left!\"",
-	L"\"Left side! Move!\"",
-	L"\"Work around left!\"",
-	L"\"Take their left!\"",
-	L"\"Swing left!\"",
-	L"\"Push the left side!\"",
-	L"\"Get around them left!\"",
-	L"\"Left flank, go!\""
+	L"\"\u00A1Flanco izquierdo!\"",
+	L"\"\u00A1Por la izquierda!\"",
+	L"\"\u00A1Rod\u00E9enlos por la izquierda!\"",
+	L"\"\u00A1Izquierda, mu\u00E9vanse!\"",
+	L"\"\u00A1Giren por la izquierda!\"",
+	L"\"\u00A1Tomen su izquierda!\"",
+	L"\"\u00A1Abran por la izquierda!\"",
+	L"\"\u00A1Empujen el flanco izquierdo!\"",
+	L"\"\u00A1Rodeen por la izquierda!\"",
+	L"\"\u00A1Flanco izquierdo, ya!\""
 };
 
 static const CHAR16 * const gAICombatLines_FLANK_RIGHT[] =
 {
-	L"\"Flank right!\"",
-	L"\"Go right!\"",
-	L"\"Around the right!\"",
-	L"\"Right side! Move!\"",
-	L"\"Work around right!\"",
-	L"\"Take their right!\"",
-	L"\"Swing right!\"",
-	L"\"Push the right side!\"",
-	L"\"Get around them right!\"",
-	L"\"Right flank, go!\""
+	L"\"\u00A1Flanco derecho!\"",
+	L"\"\u00A1Por la derecha!\"",
+	L"\"\u00A1Rod\u00E9enlos por la derecha!\"",
+	L"\"\u00A1Derecha, mu\u00E9vanse!\"",
+	L"\"\u00A1Giren por la derecha!\"",
+	L"\"\u00A1Tomen su derecha!\"",
+	L"\"\u00A1Abran por la derecha!\"",
+	L"\"\u00A1Empujen el flanco derecho!\"",
+	L"\"\u00A1Rodeen por la derecha!\"",
+	L"\"\u00A1Flanco derecho, ya!\""
 };
 
 static const CHAR16 * const gAICombatLines_WITHDRAW[] =
 {
-	L"\"Fall back!\"",
-	L"\"Break contact!\"",
-	L"\"Pull back!\"",
-	L"\"Back! Back!\"",
-	L"\"Give ground!\"",
-	L"\"Get out of there!\"",
-	L"\"Withdraw!\"",
-	L"\"Move back!\"",
-	L"\"Disengage!\"",
-	L"\"Back to cover!\""
+	L"\"\u00A1Retrocedan!\"",
+	L"\"\u00A1Rompan contacto!\"",
+	L"\"\u00A1Atr\u00E1s!\"",
+	L"\"\u00A1Atr\u00E1s, atr\u00E1s!\"",
+	L"\"\u00A1Cedan terreno!\"",
+	L"\"\u00A1Salgan de ah\u00ED!\"",
+	L"\"\u00A1Retirada!\"",
+	L"\"\u00A1Mu\u00E9vanse atr\u00E1s!\"",
+	L"\"\u00A1Desenganchen!\"",
+	L"\"\u00A1Vuelvan a cobertura!\""
 };
 
 static const CHAR16 * const gAICombatLines_REGROUP[] =
 {
-	L"\"Regroup!\"",
-	L"\"Link up!\"",
-	L"\"Stay together!\"",
-	L"\"Back to the group!\"",
-	L"\"Close up!\"",
-	L"\"Get with the others!\"",
-	L"\"Form up!\"",
-	L"\"Don't get isolated!\"",
-	L"\"Join the others!\"",
-	L"\"Pull together!\""
+	L"\"\u00A1Reagr\u00FApense!\"",
+	L"\"\u00A1J\u00FAntense!\"",
+	L"\"\u00A1Mant\u00E9nganse juntos!\"",
+	L"\"\u00A1Vuelvan con el grupo!\"",
+	L"\"\u00A1Cierren filas!\"",
+	L"\"\u00A1Con los dem\u00E1s!\"",
+	L"\"\u00A1Formen!\"",
+	L"\"\u00A1No se a\u00EDslen!\"",
+	L"\"\u00A1\u00DAnanse al grupo!\"",
+	L"\"\u00A1Todos juntos!\""
 };
 
 static const CHAR16 * const gAICombatLines_RALLY[] =
 {
-	L"\"Move! You're fine!\"",
-	L"\"Back in the fight!\"",
-	L"\"Get up and move!\"",
-	L"\"Come on! Move!\"",
-	L"\"Stay with us!\"",
-	L"\"Keep it together!\"",
-	L"\"Get moving!\"",
-	L"\"Up! Up!\"",
-	L"\"Don't freeze!\"",
-	L"\"Move with the group!\""
+	L"\"\u00A1Mu\u00E9vete, est\u00E1s bien!\"",
+	L"\"\u00A1Vuelve a la pelea!\"",
+	L"\"\u00A1Arriba y mu\u00E9vete!\"",
+	L"\"\u00A1Vamos, mu\u00E9vete!\"",
+	L"\"\u00A1Qu\u00E9date con nosotros!\"",
+	L"\"\u00A1Mant\u00E9n la calma!\"",
+	L"\"\u00A1En marcha!\"",
+	L"\"\u00A1Arriba, arriba!\"",
+	L"\"\u00A1No te quedes clavado!\"",
+	L"\"\u00A1Mu\u00E9vete con el grupo!\""
 };
 
 static const CHAR16 * const gAICombatLines_SUPPRESS[] =
 {
-	L"\"Keep them down!\"",
-	L"\"Suppress them!\"",
-	L"\"Fire! Keep them pinned!\"",
-	L"\"Hold them there!\"",
-	L"\"Put fire on them!\"",
-	L"\"Keep firing!\"",
-	L"\"Pin them down!\"",
-	L"\"Covering fire!\"",
-	L"\"Don't let them move!\"",
-	L"\"Fire on that position!\""
+	L"\"\u00A1Mant\u00E9nganlos abajo!\"",
+	L"\"\u00A1Fuego de supresi\u00F3n!\"",
+	L"\"\u00A1Fuego, que no levanten cabeza!\"",
+	L"\"\u00A1Cl\u00E1venlos ah\u00ED!\"",
+	L"\"\u00A1Fuego sobre ellos!\"",
+	L"\"\u00A1Sigan disparando!\"",
+	L"\"\u00A1Que no se muevan!\"",
+	L"\"\u00A1Fuego de cobertura!\"",
+	L"\"\u00A1No los dejen moverse!\"",
+	L"\"\u00A1Fuego sobre esa posici\u00F3n!\""
 };
 
 static const CHAR16 * const gAICombatLines_GRENADE[] =
 {
-	L"\"Grenade!\"",
-	L"\"Grenade out!\"",
-	L"\"Frag out!\"",
-	L"\"Fire in the hole!\"",
-	L"\"Grenade, take cover!\"",
-	L"\"Throwing grenade!\"",
-	L"\"Explosive out!\"",
-	L"\"Get down! Grenade!\"",
-	L"\"Grenade on them!\"",
-	L"\"Watch the blast!\""
+	L"\"\u00A1Granada!\"",
+	L"\"\u00A1Granada fuera!\"",
+	L"\"\u00A1Fragmentaci\u00F3n fuera!\"",
+	L"\"\u00A1Explosivo!\"",
+	L"\"\u00A1Granada, a cubierto!\"",
+	L"\"\u00A1Lanzando granada!\"",
+	L"\"\u00A1Explosivo fuera!\"",
+	L"\"\u00A1Al suelo, granada!\"",
+	L"\"\u00A1Granada sobre ellos!\"",
+	L"\"\u00A1Cuidado con la explosi\u00F3n!\""
 };
 
 static const CHAR16 * const gAICombatLines_SMOKE[] =
 {
-	L"\"Smoke out!\"",
-	L"\"Smoke that position!\"",
-	L"\"Put smoke down!\"",
-	L"\"Smoke! Move!\"",
-	L"\"Cover them with smoke!\"",
-	L"\"Screen that area!\"",
-	L"\"Smoke the approach!\"",
-	L"\"Get smoke in there!\"",
-	L"\"Smoke between us!\"",
-	L"\"Use the smoke!\""
+	L"\"\u00A1Humo fuera!\"",
+	L"\"\u00A1Humo en esa posici\u00F3n!\"",
+	L"\"\u00A1Pongan humo!\"",
+	L"\"\u00A1Humo, mu\u00E9vanse!\"",
+	L"\"\u00A1C\u00FAbranlos con humo!\"",
+	L"\"\u00A1Tapen esa zona!\"",
+	L"\"\u00A1Humo en la aproximaci\u00F3n!\"",
+	L"\"\u00A1Metan humo ah\u00ED!\"",
+	L"\"\u00A1Humo entre nosotros!\"",
+	L"\"\u00A1Usen el humo!\""
 };
 
 static const CHAR16 * const gAICombatLines_HEAVY_WEAPON[] =
 {
-	L"\"Launcher!\"",
-	L"\"Heavy weapon!\"",
-	L"\"RPG!\"",
-	L"\"Launcher firing!\"",
-	L"\"Rocket! Get down!\"",
-	L"\"Heavy shot!\"",
-	L"\"Watch the launcher!\"",
-	L"\"Clear the backblast!\"",
-	L"\"Rocket going out!\"",
-	L"\"Heavy weapon firing!\""
+	L"\"\u00A1Lanzador!\"",
+	L"\"\u00A1Arma pesada!\"",
+	L"\"\u00A1RPG!\"",
+	L"\"\u00A1Dispara el lanzador!\"",
+	L"\"\u00A1Cohete, al suelo!\"",
+	L"\"\u00A1Disparo pesado!\"",
+	L"\"\u00A1Cuidado con el lanzador!\"",
+	L"\"\u00A1Despejen la retaguardia!\"",
+	L"\"\u00A1Cohete fuera!\"",
+	L"\"\u00A1Arma pesada disparando!\""
 };
 
 static const CHAR16 * const gAICombatLines_MEDIC[] =
 {
-	L"\"Medic!\"",
-	L"\"Medic, here!\"",
-	L"\"Get the medic!\"",
-	L"\"He's hit! Medic!\"",
-	L"\"Help him!\"",
-	L"\"Medic, move!\"",
-	L"\"Get over here, medic!\"",
-	L"\"We need aid!\"",
-	L"\"Treat him!\"",
-	L"\"Medic! He's bleeding!\""
+	L"\"\u00A1M\u00E9dico!\"",
+	L"\"\u00A1M\u00E9dico, aqu\u00ED!\"",
+	L"\"\u00A1Traigan al m\u00E9dico!\"",
+	L"\"\u00A1Le dieron, m\u00E9dico!\"",
+	L"\"\u00A1Ay\u00FAdenlo!\"",
+	L"\"\u00A1M\u00E9dico, mu\u00E9vete!\"",
+	L"\"\u00A1Ven aqu\u00ED, m\u00E9dico!\"",
+	L"\"\u00A1Necesitamos ayuda!\"",
+	L"\"\u00A1Ati\u00E9ndelo!\"",
+	L"\"\u00A1M\u00E9dico, est\u00E1 sangrando!\""
 };
 
 static const CHAR16 * const gAICombatLines_RELOAD[] =
 {
-	L"\"Reloading!\"",
-	L"\"Cover me, reloading!\"",
-	L"\"Magazine! Cover me!\"",
-	L"\"Reload!\"",
-	L"\"I'm reloading!\"",
-	L"\"Cover while I reload!\"",
-	L"\"Changing magazine!\"",
-	L"\"Need a second! Reloading!\"",
-	L"\"Reloading, watch me!\"",
-	L"\"Weapon empty, reloading!\""
+	L"\"\u00A1Recargando!\"",
+	L"\"\u00A1C\u00FAbreme, recargando!\"",
+	L"\"\u00A1Cambio cargador, c\u00FAbreme!\"",
+	L"\"\u00A1Recarga!\"",
+	L"\"\u00A1Estoy recargando!\"",
+	L"\"\u00A1C\u00FAbreme mientras recargo!\"",
+	L"\"\u00A1Cambiando cargador!\"",
+	L"\"\u00A1Un segundo, recargando!\"",
+	L"\"\u00A1Recargando, vig\u00EDlame!\"",
+	L"\"\u00A1Arma vac\u00EDa, recargando!\""
 };
 
 static const CHAR16 * const gAICombatLines_OUT_OF_AMMO[] =
 {
-	L"\"Out of ammo!\"",
-	L"\"I'm empty!\"",
-	L"\"No rounds!\"",
-	L"\"Weapon's empty!\"",
-	L"\"Cover me, I'm dry!\"",
-	L"\"I'm out!\"",
-	L"\"No ammo!\"",
-	L"\"Empty! Cover me!\"",
-	L"\"I need ammunition!\"",
-	L"\"Dry!\""
+	L"\"\u00A1Sin munici\u00F3n!\"",
+	L"\"\u00A1Estoy vac\u00EDo!\"",
+	L"\"\u00A1Sin balas!\"",
+	L"\"\u00A1Arma vac\u00EDa!\"",
+	L"\"\u00A1C\u00FAbreme, estoy seco!\"",
+	L"\"\u00A1Se me acab\u00F3!\"",
+	L"\"\u00A1No tengo munici\u00F3n!\"",
+	L"\"\u00A1Vac\u00EDo, c\u00FAbreme!\"",
+	L"\"\u00A1Necesito munici\u00F3n!\"",
+	L"\"\u00A1Seco!\""
 };
 
 static const CHAR16 * const gAICombatLines_CASUALTY[] =
 {
-	L"\"I'm hit!\"",
-	L"\"Man hit!\"",
-	L"\"I've been hit!\"",
-	L"\"Hit!\"",
-	L"\"I'm wounded!\"",
-	L"\"Taking fire! I'm hit!\"",
-	L"\"They got me!\"",
-	L"\"Wounded here!\"",
-	L"\"I'm hurt!\"",
-	L"\"Hit over here!\""
+	L"\"\u00A1Me dieron!\"",
+	L"\"\u00A1Hombre herido!\"",
+	L"\"\u00A1Me han dado!\"",
+	L"\"\u00A1Impacto!\"",
+	L"\"\u00A1Estoy herido!\"",
+	L"\"\u00A1Bajo fuego, me dieron!\"",
+	L"\"\u00A1Me alcanzaron!\"",
+	L"\"\u00A1Herido aqu\u00ED!\"",
+	L"\"\u00A1Estoy lastimado!\"",
+	L"\"\u00A1Herido por aqu\u00ED!\""
 };
 
 static const CHAR16 * const gAICombatLines_INCOMING[] =
 {
-	L"\"Incoming!\"",
-	L"\"Down, now!\"",
-	L"\"Shots incoming!\"",
-	L"\"Take cover! Incoming!\"",
-	L"\"We're taking fire!\"",
-	L"\"Down! Down!\"",
-	L"\"Fire coming in!\"",
-	L"\"Watch it!\"",
-	L"\"They're firing on us!\"",
-	L"\"Incoming fire!\""
+	L"\"\u00A1Fuego entrante!\"",
+	L"\"\u00A1Al suelo, ya!\"",
+	L"\"\u00A1Disparos entrantes!\"",
+	L"\"\u00A1A cubierto, fuego entrante!\"",
+	L"\"\u00A1Nos disparan!\"",
+	L"\"\u00A1Abajo, abajo!\"",
+	L"\"\u00A1Nos cae fuego!\"",
+	L"\"\u00A1Cuidado!\"",
+	L"\"\u00A1Est\u00E1n disparando sobre nosotros!\"",
+	L"\"\u00A1Fuego enemigo!\""
 };
 
 static const CHAR16 * const gAICombatLines_SEARCH[] =
 {
-	L"\"Check that noise!\"",
-	L"\"Search there!\"",
-	L"\"Look around!\"",
-	L"\"Check it out!\"",
-	L"\"Something's there!\"",
-	L"\"Watch that area!\"",
-	L"\"Search that position!\"",
-	L"\"Go check it!\"",
-	L"\"Eyes open!\"",
-	L"\"Find out what that was!\""
+	L"\"\u00A1Revisen ese ruido!\"",
+	L"\"\u00A1Busquen ah\u00ED!\"",
+	L"\"\u00A1Miren alrededor!\"",
+	L"\"\u00A1Vayan a revisar!\"",
+	L"\"\u00A1Hay algo ah\u00ED!\"",
+	L"\"\u00A1Vigilen esa zona!\"",
+	L"\"\u00A1Registren esa posici\u00F3n!\"",
+	L"\"\u00A1Comprueben eso!\"",
+	L"\"\u00A1Ojos abiertos!\"",
+	L"\"\u00A1Averig\u00FCen qu\u00E9 fue eso!\""
 };
 
 static const CHAR16 * const gAICombatLines_REINFORCE[] =
 {
-	L"\"Tell the others!\"",
-	L"\"Call it in!\"",
-	L"\"Alert everyone!\"",
-	L"\"Get the others here!\"",
-	L"\"Contact! Call for support!\"",
-	L"\"Radio it in!\"",
-	L"\"Tell the squad!\"",
-	L"\"Get help over here!\"",
-	L"\"Call the others!\"",
-	L"\"Report contact!\""
+	L"\"\u00A1Av\u00EDsen a los dem\u00E1s!\"",
+	L"\"\u00A1Rep\u00F3rtenlo!\"",
+	L"\"\u00A1Alerta a todos!\"",
+	L"\"\u00A1Traigan a los dem\u00E1s!\"",
+	L"\"\u00A1Contacto, pidan apoyo!\"",
+	L"\"\u00A1Por radio, ya!\"",
+	L"\"\u00A1Av\u00EDsen al pelot\u00F3n!\"",
+	L"\"\u00A1Necesitamos apoyo aqu\u00ED!\"",
+	L"\"\u00A1Llamen a los otros!\"",
+	L"\"\u00A1Reporten contacto!\""
 };
 
 static const CHAR16 * const gAICombatLines_VEHICLE[] =
 {
-	L"\"Vehicle!\"",
-	L"\"Armored vehicle!\"",
-	L"\"Tank!\"",
-	L"\"Tank! Take cover!\"",
-	L"\"Armor ahead!\"",
-	L"\"Watch the vehicle!\"",
-	L"\"Heavy vehicle!\"",
-	L"\"Tank in sight!\"",
-	L"\"Armor! Get down!\"",
-	L"\"Vehicle contact!\""
+	L"\"\u00A1Veh\u00EDculo!\"",
+	L"\"\u00A1Veh\u00EDculo blindado!\"",
+	L"\"\u00A1Tanque!\"",
+	L"\"\u00A1Tanque, a cubierto!\"",
+	L"\"\u00A1Blindado al frente!\"",
+	L"\"\u00A1Cuidado con el veh\u00EDculo!\"",
+	L"\"\u00A1Veh\u00EDculo pesado!\"",
+	L"\"\u00A1Tanque a la vista!\"",
+	L"\"\u00A1Blindado, al suelo!\"",
+	L"\"\u00A1Contacto con veh\u00EDculo!\""
 };
 
 static const CHAR16 * const gAICombatLines_CIVILIAN[] =
 {
-	L"\"Civilian! Watch your fire!\"",
-	L"\"Civilians near the target!\"",
-	L"\"Watch the civilians!\"",
-	L"\"Noncombatant! Check your fire!\"",
-	L"\"Civilian in the line!\"",
-	L"\"Careful! Civilian!\"",
-	L"\"Watch your shots! Civilian!\"",
-	L"\"Civilian close!\"",
-	L"\"Check fire! Civilian nearby!\"",
-	L"\"Mind the civilians!\""
+	L"\"\u00A1Civil, cuidado con el fuego!\"",
+	L"\"\u00A1Civiles cerca del objetivo!\"",
+	L"\"\u00A1Cuidado con los civiles!\"",
+	L"\"\u00A1No combatiente, controlen el fuego!\"",
+	L"\"\u00A1Civil en la l\u00EDnea de tiro!\"",
+	L"\"\u00A1Cuidado, civil!\"",
+	L"\"\u00A1Cuiden los disparos, civil!\"",
+	L"\"\u00A1Civil cerca!\"",
+	L"\"\u00A1Alto el fuego, civil cerca!\"",
+	L"\"\u00A1Ojo con los civiles!\""
 };
 
 static const CHAR16 * const gAICombatLines_HOLD[] =
 {
-	L"\"Hold!\"",
-	L"\"Hold here!\"",
-	L"\"Stay put!\"",
-	L"\"Keep this position!\"",
-	L"\"Hold the line!\"",
-	L"\"Don't move yet!\"",
-	L"\"Stay ready!\"",
-	L"\"Wait for it!\"",
-	L"\"Hold position!\"",
-	L"\"Keep your ground!\""
+	L"\"\u00A1Alto!\"",
+	L"\"\u00A1Mantengan aqu\u00ED!\"",
+	L"\"\u00A1Quietos!\"",
+	L"\"\u00A1Mantengan esta posici\u00F3n!\"",
+	L"\"\u00A1Mantengan la l\u00EDnea!\"",
+	L"\"\u00A1No se muevan todav\u00EDa!\"",
+	L"\"\u00A1Listos!\"",
+	L"\"\u00A1Esperen!\"",
+	L"\"\u00A1Mantengan posici\u00F3n!\"",
+	L"\"\u00A1No cedan terreno!\""
 };
 
 static const CHAR16 * const gAICombatLines_TARGET_DOWN[] =
 {
-	L"\"Target down!\"",
-	L"\"He's down!\"",
-	L"\"Got one!\"",
-	L"\"Enemy down!\"",
-	L"\"One down!\"",
-	L"\"Dropped him!\"",
-	L"\"Target's down!\"",
-	L"\"He's out!\"",
-	L"\"That one's down!\"",
-	L"\"Enemy hit and down!\""
+	L"\"\u00A1Objetivo abatido!\"",
+	L"\"\u00A1Cay\u00F3!\"",
+	L"\"\u00A1Uno menos!\"",
+	L"\"\u00A1Enemigo abatido!\"",
+	L"\"\u00A1Uno abajo!\"",
+	L"\"\u00A1Lo tumb\u00E9!\"",
+	L"\"\u00A1Objetivo fuera!\"",
+	L"\"\u00A1Est\u00E1 fuera!\"",
+	L"\"\u00A1Ese cay\u00F3!\"",
+	L"\"\u00A1Enemigo herido y abatido!\""
 };
 
 static BOOLEAN BuildAICombatCalloutText( AI_BATTLE_CALLOUT ubCallout, STR16 zText )
@@ -2268,26 +2268,13 @@ void StartEnemyTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTar
 	if ( ubSemanticCallout != AI_BATTLE_CALL_NONE )
 		QueueAICombatCallout( pCiv, ubSemanticCallout );
 
-	// sevenfm: audio and visual combat communication are independent. Audio keeps
-	// the original Vengeance voice bank; semantic text goes through the priority
-	// queue so important calls are not lost behind an existing bubble.
-	if( gGameExternalOptions.fVoiceTaunts )		
-	{		
-		PlayVoiceTaunt( pCiv, iTauntType, pTarget );
-
-		AI_BATTLE_CALLOUT ubVoiceCallout = AICombatCalloutFromTaunt( pCiv, iTauntType, pTarget );
-		if ( ubVoiceCallout != AI_BATTLE_CALL_NONE &&
-			gTauntsSettings.fTauntShowInLog == TRUE &&
-			( gbPublicOpplist[gbPlayerNum][pCiv->ubID] == SEEN_CURRENTLY || gTauntsSettings.fTauntAlwaysShowInLog == TRUE ) )
-		{
-			CHAR16 zVoiceLog[320];
-			if ( BuildAICombatCalloutText( ubVoiceCallout, zVoiceLog ) )
-				ScreenMsg( FONT_GRAY2, MSG_INTERFACE, L"%s: %s", pCiv->GetName(), zVoiceLog );
-		}
-
-		uiTauntFinishTimes[pCiv->ubID] = GetJA2Clock() + min( gTauntsSettings.sMaxDelay,
-			max( gTauntsSettings.sMinDelay, FindDelayForString( L"You're the disease and I'm the cure!" ) + gTauntsSettings.sModDelay ) );
-		return;
+	// Audio/noise and visual text are independent channels.  Voice taunts may
+	// scream/play immediately, but must never suppress the Spanish popup path.
+	BOOLEAN fVoiceTauntAttempted = gGameExternalOptions.fVoiceTaunts;
+	BOOLEAN fVoiceTauntHandled = FALSE;
+	if ( fVoiceTauntAttempted )
+	{
+		fVoiceTauntHandled = PlayVoiceTaunt( pCiv, iTauntType, pTarget );
 	}
 
 	// anv: check all taunts, and remember those applicable
@@ -2925,28 +2912,43 @@ void StartEnemyTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTar
 		// block this enemy from taunting for a time being
 		uiTauntFinishTimes[pCiv->ubID] = GetJA2Clock() + min( gTauntsSettings.sMaxDelay , max( gTauntsSettings.sMinDelay, FindDelayForString( gzTauntQuote ) + gTauntsSettings.sModDelay ) ); 
 
-		if( gTauntsSettings.fTauntMakeNoise == TRUE )
-			MakeNoise( pCiv->ubID, pCiv->sGridNo, pCiv->pathing.bLevel, pCiv->bOverTerrainType, (UINT8)gTauntsSettings.sVolume, NOISE_VOICE, gzTauntQuote );
-		else
+		// PlayVoiceTaunt() already emits NOISE_VOICE when fTauntMakeNoise is on.
+		// Only fall back to textual noise if no voice file/reaction was handled.
+		if ( gTauntsSettings.fTauntMakeNoise == TRUE && !fVoiceTauntHandled )
 		{
-			if(gTauntsSettings.fTauntShowPopupBox == TRUE)
-			{	
-				if( gbPublicOpplist[gbPlayerNum][pCiv->ubID] == SEEN_CURRENTLY || gTauntsSettings.fTauntAlwaysShowPopupBox == TRUE )
-				{
-					ShowTauntPopupBox( pCiv, gzTauntQuote );
-				}
-			}
-			if(gTauntsSettings.fTauntShowInLog == TRUE)
+			MakeNoise( pCiv->ubID, pCiv->sGridNo, pCiv->pathing.bLevel,
+				pCiv->bOverTerrainType, (UINT8)gTauntsSettings.sVolume, NOISE_VOICE, gzTauntQuote );
+		}
+
+		// Visual feedback is deliberately independent from sound/noise.  A scream,
+		// spoken taunt or propagated voice noise can coexist with the popup.
+		if ( gTauntsSettings.fTauntShowPopupBox == TRUE )
+		{
+			if ( gbPublicOpplist[gbPlayerNum][pCiv->ubID] == SEEN_CURRENTLY ||
+				gTauntsSettings.fTauntAlwaysShowPopupBox == TRUE )
 			{
-				if( gbPublicOpplist[gbPlayerNum][pCiv->ubID] == SEEN_CURRENTLY || gTauntsSettings.fTauntAlwaysShowInLog == TRUE )
-				{
-					ScreenMsg( FONT_GRAY2, MSG_INTERFACE, L"%s: %s", pCiv->GetName(), gzTauntQuote );
-				}
+				ShowTauntPopupBox( pCiv, gzTauntQuote );
+			}
+		}
+
+		if ( gTauntsSettings.fTauntShowInLog == TRUE )
+		{
+			if ( gbPublicOpplist[gbPlayerNum][pCiv->ubID] == SEEN_CURRENTLY ||
+				gTauntsSettings.fTauntAlwaysShowInLog == TRUE )
+			{
+				ScreenMsg( FONT_GRAY2, MSG_INTERFACE, L"%s: %s", pCiv->GetName(), gzTauntQuote );
 			}
 		}
 	}
 	else
 	{
+		// Preserve the old anti-spam behaviour if voice was attempted but this
+		// event had no applicable text entry.
+		if ( fVoiceTauntAttempted )
+		{
+			uiTauntFinishTimes[pCiv->ubID] = GetJA2Clock() + min( gTauntsSettings.sMaxDelay,
+				max( gTauntsSettings.sMinDelay, FindDelayForString( L"You're the disease and I'm the cure!" ) + gTauntsSettings.sModDelay ) );
+		}
 		return;
 	}
 

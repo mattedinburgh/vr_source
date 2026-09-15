@@ -49,6 +49,8 @@
 	#include "Map Information.h"// anv: VR
 #endif
 
+#include "Campaign Tactical Telemetry.h"
+
 #ifdef JA2UB
 #include "Ja25_Tactical.h"
 #include "Ja25 Strategic Ai.h"
@@ -610,6 +612,7 @@ BOOLEAN SpecialOrderArtilleryStrike( UINT32 usSectorNr, UINT8 bTeam )
 void BeginTeamTurn( UINT8 ubTeam )
 {
 	DebugMsg (TOPIC_JA2INTERRUPT,DBG_LEVEL_3,"BeginTeamTurn");
+	VR_TacticalTelemetryTurnStart( ubTeam );
 	INT32 cnt;
 	UINT8	ubID;
 	SOLDIERTYPE		*pSoldier;

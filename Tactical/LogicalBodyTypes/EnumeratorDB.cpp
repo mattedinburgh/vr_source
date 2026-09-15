@@ -20,9 +20,6 @@ void EnumeratorDB::AddEnum(std::string enumName, int num, char* strEnumerators, 
 	// TODO: remove output to cout Log this event somehow not just do the assertion!
 	if (numSemiColons + 1 != num) {
 		std::cout << enumName << " expected " << num << " got " << numSemiColons + 1 << std::endl;
-		delete[] str;
-		assert(numSemiColons + 1 == num);
-		return;
 	}
 	assert(numSemiColons + 1 == num);
 
@@ -34,18 +31,12 @@ void EnumeratorDB::AddEnum(std::string enumName, int num, char* strEnumerators, 
 	va_list vl;
 	va_start(vl, strEnumerators);
 	for (int i = 0; i < num; i++) {
-		if (token == NULL) {
-			std::cout << enumName << " tokenization failed at enumerator " << i << " of " << num << std::endl;
-			enumerations.erase(enumName);
-			assert(token != NULL);
-			break;
-		}
 		enumerations[enumName][token] = va_arg(vl, int);
 		token = strtok(NULL, ", ");
 	}
 
 	va_end(vl);
-	delete[] str;
+	delete str;
 }
 
 bool EnumeratorDB::GetEnumeratorStr(const char* enumeration, int enumerator, std::string& str) {

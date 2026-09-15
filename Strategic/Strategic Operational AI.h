@@ -3,11 +3,12 @@
 
 #include "types.h"
 
-// Persistent formation state is active, but operational decision consumers remain
-// disabled until their information, movement and save/load interactions are integrated.
-#define VR_OPERATIONAL_STATE_FOUNDATION_ENABLED 1
-#define VR_OPERATIONAL_DECISION_LOOP_ENABLED    0
-#define VR_OPERATIONAL_STRENGTH_UNKNOWN          0xff
+// Experimental branch-only decision gate. Master is unaffected because this file does not exist there.
+#define VR_OPERATIONAL_GARRISON_REASSIGNMENT_ENABLED 1
+#define VR_OPERATIONAL_PERSISTENT_RESERVES_ENABLED     1
+// Keep the new reserve decision loop observational until campaign validation is complete.
+#define VR_OPERATIONAL_DECISION_LOOP_ENABLED            0
+#define VR_OPERATIONAL_STRENGTH_UNKNOWN                 0xff
 
 struct GROUP;
 
@@ -27,8 +28,7 @@ enum VR_OPERATIONAL_MISSION
 	VR_OPMISSION_SUPPLY,
 	VR_OPMISSION_RETREAT,
 	VR_OPMISSION_REGROUP,
-	VR_OPMISSION_RESERVE,
-	VR_OPMISSION_COUNT
+	VR_OPMISSION_RESERVE
 };
 
 enum VR_OPERATIONAL_RESERVE_ROLE
@@ -36,8 +36,7 @@ enum VR_OPERATIONAL_RESERVE_ROLE
 	VR_RESERVE_NONE = 0,
 	VR_RESERVE_LOCAL,
 	VR_RESERVE_REGIONAL,
-	VR_RESERVE_CENTRAL,
-	VR_RESERVE_COUNT
+	VR_RESERVE_CENTRAL
 };
 
 enum VR_OPERATIONAL_DECISION_REASON
@@ -52,23 +51,20 @@ enum VR_OPERATIONAL_DECISION_REASON
 	VR_OPREASON_LOW_SUPPLY,
 	VR_OPREASON_RESUPPLIED,
 	VR_OPREASON_CONTACT,
-	VR_OPREASON_INTEL_DECAY,
-	VR_OPREASON_RESERVE_POSTURE,
-	VR_OPREASON_TARGET_RECOMMENDATION
+	VR_OPREASON_INTEL_DECAY
 };
 
 enum VR_OPERATIONAL_FLAGS
 {
-	VR_OPFLAG_SUPPLY_LOW      = 0x0001,
-	VR_OPFLAG_SUPPLY_CRITICAL = 0x0002,
-	VR_OPFLAG_RECENT_CONTACT  = 0x0004,
-	VR_OPFLAG_RETREATED_ONCE  = 0x0008,
-	VR_OPFLAG_REGROUPING      = 0x0010
+	VR_OPFLAG_SUPPLY_LOW        = 0x0001,
+	VR_OPFLAG_SUPPLY_CRITICAL   = 0x0002,
+	VR_OPFLAG_RECENT_CONTACT    = 0x0004,
+	VR_OPFLAG_RETREATED_ONCE    = 0x0008,
+	VR_OPFLAG_REGROUPING        = 0x0010
 };
 
 typedef struct VR_OPERATIONAL_SCORE
 {
-	INT32 iTotal;
 	INT32 iBasePriority;
 	INT32 iOwnershipValue;
 	INT32 iTownValue;
@@ -78,34 +74,41 @@ typedef struct VR_OPERATIONAL_SCORE
 	INT32 iMilitiaRisk;
 	INT32 iDistanceCost;
 	INT32 iSupplyRisk;
+	INT32 iTotal;
 } VR_OPERATIONAL_SCORE;
 
-BOOLEAN VR_FormationStateIsInitialized( const GROUP *pGroup );
 void VR_EnsureEnemyFormationState( GROUP *pGroup );
 void VR_EnsureAllEnemyFormationStates();
-void VR_SyncFormationMissionFromLegacy( GROUP *pGroup );
-void VR_RecordLegacyAssignment( GROUP *pGroup, UINT8 ubTargetSectorID, UINT8 ubLegacyIntention );
-void VR_RecordOperationalContact( GROUP *pObserver, UINT8 ubSectorID,
-	UINT8 ubObservedPlayerStrength, UINT8 ubObservedMilitiaStrength, UINT8 ubConfidence );
+
+void VR_OnEnemyGroupAssigned( GROUP *pGroup, UINT8 ubTargetSectorID, UINT8 ubLegacyIntention );
+void VR_OnEnemyGroupArrived( GROUP *pGroup );
+void VR_OnEnemyGroupRetreated( GROUP *pGroup );
+void VR_HourlyOperationalUpdate();
 void VR_DecayOperationalIntelHourly();
 void VR_UpdateOperationalReadinessHourly();
 void VR_TraceOperationalRecommendationsHourly();
-BOOLEAN VR_IsReadyOperationalReserve( GROUP *pGroup );
-GROUP *VR_FindReadyOperationalReserveForSector( UINT8 ubTargetSectorID );
-void VR_RecordFormationRetreat( GROUP *pGroup, UINT8 ubSourceSectorID, UINT8 ubDestinationSectorID );
-void VR_RecordFormationArrival( GROUP *pGroup );
-BOOLEAN VR_RegisterTacticalRetreatSoldier( UINT8 ubSourceX, UINT8 ubSourceY,
-	UINT8 ubDestinationX, UINT8 ubDestinationY,
-	UINT8 ubAdmins, UINT8 ubTroops, UINT8 ubElites );
-void VR_CompleteRetreatInSector( UINT8 ubSectorX, UINT8 ubSectorY );
+void VR_ReportOperationalIntel( UINT8 ubSectorID, UINT8 ubConfidence );
+void VR_RecordOperationalContact( GROUP *pGroup, UINT8 ubSectorID, UINT8 ubPlayerStrength, UINT8 ubMilitiaStrength, UINT8 ubConfidence );
+
 INT32 VR_ScoreOperationalTarget( GROUP *pGroup, UINT8 ubSectorID, VR_OPERATIONAL_SCORE *pBreakdown );
 UINT8 VR_FindBestOperationalTarget( GROUP *pGroup, INT32 *piBestScore );
 
-UINT16 VR_GetFormationID( GROUP *pGroup );
-UINT8 VR_GetFormationMission( GROUP *pGroup );
-UINT8 VR_GetFormationReserveRole( GROUP *pGroup );
+void VR_SetFormationMission( GROUP *pGroup, UINT8 ubMission, UINT8 ubReason );
+void VR_SetFormationReserveRole( GROUP *pGroup, UINT8 ubReserveRole, UINT8 ubReason );
+BOOLEAN VR_HoldFormationAsReserve( GROUP *pGroup, UINT8 ubReserveRole );
+GROUP *VR_FindReadyOperationalReserve();
+GROUP *VR_FindReadyOperationalReserveForSector( UINT8 ubTargetSectorID );
+BOOLEAN VR_IsReadyOperationalReserve( GROUP *pGroup );
+
+void VR_RecordLegacyAssignment( GROUP *pGroup, UINT8 ubTargetSectorID, UINT8 ubLegacyIntention );
+void VR_RecordFormationArrival( GROUP *pGroup );
+void VR_CompleteRetreatInSector( UINT8 ubSectorX, UINT8 ubSectorY );
+BOOLEAN VR_RegisterTacticalRetreatSoldier( UINT8 ubSourceX, UINT8 ubSourceY, UINT8 ubDestX, UINT8 ubDestY, UINT8 ubAdmins, UINT8 ubTroops, UINT8 ubElites );
 
 const CHAR8 *VR_OperationalMissionName( UINT8 ubMission );
 const CHAR8 *VR_OperationalReserveRoleName( UINT8 ubRole );
+const CHAR8 *VR_OperationalReasonName( UINT8 ubReason );
+
+void VR_LogOperationalDecision( GROUP *pGroup, const CHAR8 *szEvent, const VR_OPERATIONAL_SCORE *pScore );
 
 #endif

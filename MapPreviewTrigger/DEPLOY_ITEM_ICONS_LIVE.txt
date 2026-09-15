@@ -1,0 +1,5 @@
+Deploy vr_gamedir/master 20-item in-game icon pilot to the live Vengeance install and launch the game on the secondary display.
+
+Requested: 2026-09-15
+Expected game root: C:\VENGENCE\Jagged Alliance 2
+Expected data branch: vr_gamedir/master
