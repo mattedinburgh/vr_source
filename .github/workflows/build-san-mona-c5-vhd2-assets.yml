@@ -28,6 +28,199 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 1
 
+      - name: Locate Git on render PC
+        id: git
+        shell: powershell
+        run: |
+          $git=$null
+          $cmd=Get-Command git.exe -ErrorAction SilentlyContinue
+          if($cmd){$git=$cmd.Source}
+          if(-not $git){
+            $git=Get-ChildItem "$env:LOCALAPPDATA\GitHubDesktop" -Recurse -Filter git.exe -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\resources\\app\\git\\cmd\\git\.exe
+        shell: powershell
+        run: |
+          Get-ChildItem $env:GITHUB_WORKSPACE -Recurse -Filter '*.vcxproj' -File | ForEach-Object {
+            $p=$_.FullName
+            $t=[IO.File]::ReadAllText($p)
+            $n=$t.Replace('<PlatformToolset>v120_xp</PlatformToolset>','<PlatformToolset>v120</PlatformToolset>')
+            if($n-ne$t){[IO.File]::WriteAllText($p,$n,(New-Object Text.UTF8Encoding($false)))}
+          }
+
+      - name: Find MSBuild
+        id: msbuild
+        shell: powershell
+        run: |
+          $candidates=@(
+            'C:\Program Files (x86)\MSBuild\12.0\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe'
+          )
+          $m=$candidates|Where-Object{Test-Path $_}|Select-Object -First 1
+          if(-not $m){$cmd=Get-Command msbuild.exe -ErrorAction SilentlyContinue;if($cmd){$m=$cmd.Source}}
+          if(-not $m){throw 'MSBuild not found.'}
+          "path=$m"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Build ja2export
+        shell: powershell
+        run: |
+          # Build through the solution target so ja2export dependencies (VFS, 7z,
+          # libpng/zlib) are linked first. Building the project directly fails on
+          # a clean runner because VFS.lib does not exist yet.
+          & '${{ steps.msbuild.outputs.path }}' '.\ja2_VS2013.sln' /m /t:ja2export /p:Configuration=Release /p:Platform=Win32
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $exe=Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\Release\ja2export.exe'
+          if(-not(Test-Path $exe)){throw "ja2export missing: $exe"}
+
+      - name: Extract C5 structural contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $game='C:\VENGENCE\Jagged Alliance 2'
+          $canonicalPack=Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir\Data-Maps-Tiles\Tilesets\18'
+          $exporter=Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\Release\ja2export.exe'
+          $out=Join-Path $env:GITHUB_WORKSPACE 'C5Contracts'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          # First VHD2 pilot batch from the Codex handoff:
+          # road/ground -> masonry -> roof. Small props remain legacy/reusable.
+          $targets=@(
+            'Cobble_Road.sti',
+            'Cobble_Road_Pieces.sti',
+            'Pave_b.sti',
+            'build_24.sti',
+            'slant_12.sti'
+          )
+
+          $slfs=@(Get-ChildItem -LiteralPath $game -Recurse -File -Filter '*.slf' -ErrorAction SilentlyContinue)
+          Write-Host "SLF archives found: $($slfs.Count)"
+          $manifest=@()
+
+          foreach($target in $targets){
+            $stem=[IO.Path]::GetFileNameWithoutExtension($target).ToUpperInvariant()
+            $targetOut=Join-Path $out $stem
+            Remove-Item -LiteralPath $targetOut -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Force -Path $targetOut | Out-Null
+            $found=$false
+            $source=''
+
+            # Prefer the canonical vr_gamedir file so contract extraction is
+            # reproducible and independent of whatever happens to be installed live.
+            $loose=Get-ChildItem -LiteralPath $canonicalPack -File -Filter $target -ErrorAction SilentlyContinue | Select-Object -First 1
+            if(-not $loose){
+              $loose=Get-ChildItem -LiteralPath $game -Recurse -File -Filter $target -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -notmatch '\\JA2_RENDER_SANDBOX_' } |
+                Select-Object -First 1
+            }
+            if($loose){
+              Write-Host "Loose contract source: $target <- $($loose.FullName)"
+              & $exporter sti -unpack -offsets -rgba -create_dst $loose.FullName $targetOut | Out-Host
+              $source=$loose.FullName
+              $found=@(Get-ChildItem -LiteralPath $targetOut -Recurse -File -Filter '*.png' -ErrorAction SilentlyContinue).Count -gt 0
+            }
+
+            if(-not $found){
+              foreach($slf in $slfs){
+                Remove-Item -LiteralPath $targetOut -Recurse -Force -ErrorAction SilentlyContinue
+                New-Item -ItemType Directory -Force -Path $targetOut | Out-Null
+                & $exporter sti -unpack -offsets -rgba -create_dst -lib $slf.FullName $target $targetOut | Out-Null
+                $pngs=@(Get-ChildItem -LiteralPath $targetOut -Recurse -File -Filter '*.png' -ErrorAction SilentlyContinue)
+                if($pngs.Count -gt 0){
+                  $found=$true
+                  $source=$slf.FullName
+                  Write-Host "SLF contract source: $target <- $source"
+                  break
+                }
+              }
+            }
+
+            $frames=@(Get-ChildItem -LiteralPath $targetOut -Recurse -File -Filter '*.png' -ErrorAction SilentlyContinue)
+            $manifest += [pscustomobject]@{
+              target=$target
+              family=$stem
+              found=[bool]$found
+              source=$source
+              frame_count=$frames.Count
+            }
+            if(-not $found){ throw "Could not extract required C5 structural contract: $target" }
+            Write-Host "Contract $stem: $($frames.Count) frame(s)"
+          }
+
+          $manifest | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 (Join-Path $out 'contract_manifest.json')
+
+      - name: Find Python and install Pillow
+        id: python
+        shell: powershell
+        run: |
+          $py=$null
+          $cmd=Get-Command py.exe -ErrorAction SilentlyContinue
+          if($cmd){$py="$($cmd.Source) -3"}
+          if(-not $py){
+            $cmd=Get-Command python.exe -ErrorAction SilentlyContinue
+            if($cmd){$py=$cmd.Source}
+          }
+          if(-not $py){throw 'Python 3 not found on render PC.'}
+          "cmd=$py"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          if($py -match ' -3$'){
+            & ($py -replace ' -3$','') -3 -m pip install --user Pillow
+          } else {
+            & $py -m pip install --user Pillow
+          }
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+
+      - name: Generate scratch-authored native VHD2 pixels
+        shell: powershell
+        run: |
+          $py='${{ steps.python.outputs.cmd }}'
+          $script=Join-Path $env:GITHUB_WORKSPACE 'Tools\SanMonaC5\generate_vhd2_c5_pilot.py'
+          $contracts=Join-Path $env:GITHUB_WORKSPACE 'C5Contracts'
+          $out=Join-Path $env:GITHUB_WORKSPACE 'C5VHD2'
+          if($py -match ' -3$'){
+            $exe=$py -replace ' -3$',''
+            & $exe -3 $script --extract-root $contracts --out-root $out
+          } else {
+            & $py $script --extract-root $contracts --out-root $out
+          }
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+
+          $assets=@(Get-ChildItem -LiteralPath (Join-Path $out 'VHD2\TILESETS\18') -Filter '*.b1tc' -File)
+          if($assets.Count -lt 5){throw "Expected five native VHD2 structural assets, generated $($assets.Count)."}
+          Write-Host "Generated native VHD2 assets: $($assets.Name -join ', ')"
+
+      - name: Upload native VHD2 pilot pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: san-mona-c5-vhd2-scratch-pilot
+          path: |
+            C5VHD2/
+            C5Contracts/contract_manifest.json
+          if-no-files-found: error
+          retention-days: 14
+ } |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if(-not $git){throw 'Git not found on render PC.'}
+          "path=$git"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Fetch canonical C5 tile contracts from vr_gamedir
+        shell: powershell
+        run: |
+          $git='${{ steps.git.outputs.path }}'
+          $gamedir=Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
+          if(Test-Path $gamedir){Remove-Item -Recurse -Force $gamedir}
+          & $git -c core.longpaths=true clone --depth 1 --single-branch --branch feature/vhd-renderer-test --filter=blob:none --no-checkout https://github.com/mattedinburgh/vr_gamedir.git $gamedir
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          & $git -C $gamedir sparse-checkout init --cone
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          & $git -C $gamedir sparse-checkout set Data-Maps-Tiles/Tilesets/18
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          & $git -C $gamedir checkout feature/vhd-renderer-test
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $pack=Join-Path $gamedir 'Data-Maps-Tiles\Tilesets\18'
+          if(-not(Test-Path $pack)){throw "Canonical C5 tileset missing: $pack"}
+
       - name: Retarget exporter to v120
         shell: powershell
         run: |
