@@ -9708,7 +9708,12 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		INT32 sFlankingSpot = NOWHERE;
 		INT8 bAction = AI_ACTION_NONE;
 
-		// decide flanking direction
+		// Decide flank side from the shared battlefield geometry first, then use
+		// existing commitment/body-count deconfliction as a constraint rather than
+		// as the tactical brain. Random left/right tie-breaking is deliberately gone.
+		const INT8 bGeometryPreference =
+			AIPreferredFlankAction(pSoldier, sClosestDisturbance);
+
 		if (fLeftFlankPossible && !fRightFlankPossible)
 		{
 			bAction = AI_ACTION_FLANK_LEFT;
@@ -9719,9 +9724,18 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		}
 		else if (fLeftFlankPossible && fRightFlankPossible)
 		{
-			// Deconflict flank commitments first. If both sides are equally committed,
-			// prefer the side with fewer friendly bodies already occupying that arc.
-			if (ubActiveLeftFlankers < ubActiveRightFlankers)
+			// A side already carrying materially more committed flankers should normally
+			// be avoided, even if geometry alone would prefer it.
+			if (ubActiveLeftFlankers + 1 < ubActiveRightFlankers)
+				bAction = AI_ACTION_FLANK_LEFT;
+			else if (ubActiveRightFlankers + 1 < ubActiveLeftFlankers)
+				bAction = AI_ACTION_FLANK_RIGHT;
+			else if (bGeometryPreference == AI_ACTION_FLANK_LEFT ||
+				bGeometryPreference == AI_ACTION_FLANK_RIGHT)
+			{
+				bAction = bGeometryPreference;
+			}
+			else if (ubActiveLeftFlankers < ubActiveRightFlankers)
 				bAction = AI_ACTION_FLANK_LEFT;
 			else if (ubActiveRightFlankers < ubActiveLeftFlankers)
 				bAction = AI_ACTION_FLANK_RIGHT;
@@ -9729,18 +9743,76 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 				bAction = AI_ACTION_FLANK_LEFT;
 			else if (ubFriendsRight < ubFriendsLeft)
 				bAction = AI_ACTION_FLANK_RIGHT;
-			else if (Random(6) < 3)
-				bAction = AI_ACTION_FLANK_LEFT;
 			else
-				bAction = AI_ACTION_FLANK_RIGHT;
+			{
+				// True tie: compare the actual reachable left/right positions through
+				// the common utility model instead of flipping a coin.
+				INT32 sLeftSpot = FindFlankingSpot(
+					pSoldier, sClosestDisturbance, AI_ACTION_FLANK_LEFT);
+				INT32 sRightSpot = FindFlankingSpot(
+					pSoldier, sClosestDisturbance, AI_ACTION_FLANK_RIGHT);
+
+				BOOLEAN fLeftRoute =
+					!TileIsOutOfBounds(sLeftSpot) &&
+					AITacticalRouteExposureAcceptable(
+						pSoldier, sLeftSpot, AI_ACTION_FLANK_LEFT);
+				BOOLEAN fRightRoute =
+					!TileIsOutOfBounds(sRightSpot) &&
+					AITacticalRouteExposureAcceptable(
+						pSoldier, sRightSpot, AI_ACTION_FLANK_RIGHT);
+
+				INT32 iLeftScore = fLeftRoute ?
+					AIUtilityPositionScore(
+						pSoldier, sLeftSpot, sClosestDisturbance,
+						AI_INTENT_FLANK, AI_ROLE_FLANKER) : -10000;
+				INT32 iRightScore = fRightRoute ?
+					AIUtilityPositionScore(
+						pSoldier, sRightSpot, sClosestDisturbance,
+						AI_INTENT_FLANK, AI_ROLE_FLANKER) : -10000;
+
+				if (fLeftRoute)
+					VRPlannerTraceCandidate(pSoldier, uiTraceDecision, "flank",
+						AI_ACTION_FLANK_LEFT, sLeftSpot, iLeftScore,
+						AIPathExposureCost(pSoldier, sLeftSpot,
+							DetermineMovementMode(pSoldier, AI_ACTION_FLANK_LEFT)),
+						CountNearbyFriends(pSoldier, sLeftSpot, DAY_VISION_RANGE / 3),
+						AICrossfirePositionScore(pSoldier, sLeftSpot, sClosestDisturbance),
+						"left flank geometry");
+				if (fRightRoute)
+					VRPlannerTraceCandidate(pSoldier, uiTraceDecision, "flank",
+						AI_ACTION_FLANK_RIGHT, sRightSpot, iRightScore,
+						AIPathExposureCost(pSoldier, sRightSpot,
+							DetermineMovementMode(pSoldier, AI_ACTION_FLANK_RIGHT)),
+						CountNearbyFriends(pSoldier, sRightSpot, DAY_VISION_RANGE / 3),
+						AICrossfirePositionScore(pSoldier, sRightSpot, sClosestDisturbance),
+						"right flank geometry");
+
+				if (iLeftScore > iRightScore && fLeftRoute)
+				{
+					bAction = AI_ACTION_FLANK_LEFT;
+					sFlankingSpot = sLeftSpot;
+				}
+				else if (fRightRoute)
+				{
+					bAction = AI_ACTION_FLANK_RIGHT;
+					sFlankingSpot = sRightSpot;
+				}
+				else if (fLeftRoute)
+				{
+					bAction = AI_ACTION_FLANK_LEFT;
+					sFlankingSpot = sLeftSpot;
+				}
+			}
 		}
 
 		// If left or right flanking is possible, search for a flank whose route does
 		// not cross a substantially worse known fire lane.
 		if (bAction != AI_ACTION_NONE)
 		{
-			pSoldier->aiData.usActionData = FindFlankingSpot(
-				pSoldier, sClosestDisturbance, bAction);
+			pSoldier->aiData.usActionData =
+				!TileIsOutOfBounds(sFlankingSpot) ?
+				sFlankingSpot :
+				FindFlankingSpot(pSoldier, sClosestDisturbance, bAction);
 
 			if (!TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
 				!AITacticalRouteExposureAcceptable(
