@@ -6,7 +6,6 @@ on:
       - feature/vhd-renderer
       - engine/vhd-render-instrumentation-2026-09-15
       - engine/vhd-modernization-2026
-      - engine/vhd-occlusion-parity-2026
     paths:
       - '.github/workflows/san-mona-c5-preview.yml'
       - 'TileEngine/**'
