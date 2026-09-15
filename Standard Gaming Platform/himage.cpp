@@ -868,9 +868,12 @@ static BOOLEAN LoadB1TCFileToImage( HIMAGE hImage, UINT16 fContents )
 		const UINT16 usHeight = B1TCReadU16( pEntry + 6 );
 		const UINT32 uiSourceOffset = B1TCReadU32( pEntry + 8 );
 		const UINT32 uiDataLength = B1TCReadU32( pEntry + 12 );
-		const UINT32 uiExpectedLength = (UINT32)usWidth * (UINT32)usHeight * 4;
+		const unsigned __int64 uiExpectedLength64 =
+			(unsigned __int64)usWidth * (unsigned __int64)usHeight * 4ui64;
 
-		if( usWidth == 0 || usHeight == 0 || uiDataLength != uiExpectedLength ||
+		if( usWidth == 0 || usHeight == 0 ||
+			uiExpectedLength64 == 0 || uiExpectedLength64 > 0xFFFFFFFFui64 ||
+			uiDataLength != (UINT32)uiExpectedLength64 ||
 			uiSourceOffset < uiDirectorySize || uiSourceOffset > uiFileSize ||
 			uiDataLength > uiFileSize - uiSourceOffset )
 		{
