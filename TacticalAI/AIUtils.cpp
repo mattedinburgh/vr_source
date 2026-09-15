@@ -5855,6 +5855,7 @@ BOOLEAN AIBuildTacticalDecisionContext(SOLDIERTYPE *pSoldier, AITACTICALDECISION
 	memset(pContext, 0, sizeof(AITACTICALDECISIONCONTEXT));
 	pContext->sPrimaryThreat = NOWHERE;
 	pContext->bBattleSituation = AI_BATTLE_UNKNOWN;
+	pContext->ubPrimaryThreatAge = 255;
 
 	if (!AICombatTeam(pSoldier))
 		return FALSE;
@@ -5876,6 +5877,16 @@ BOOLEAN AIBuildTacticalDecisionContext(SOLDIERTYPE *pSoldier, AITACTICALDECISION
 		pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
 	pContext->ubNearbyOperationalFriends = AICountNearbyOperationalFriends(
 		pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4);
+
+	AICONTACTBELIEF PrimaryBelief;
+	if (AIBuildPrimaryContactBelief(pSoldier, pContext->sPrimaryThreat, &PrimaryBelief))
+	{
+		pContext->ubPrimaryThreatConfidence = PrimaryBelief.ubConfidence;
+		pContext->ubPrimaryThreatAge = PrimaryBelief.ubAgeTurns;
+		pContext->fPrimaryThreatPersonal =
+			(PrimaryBelief.ubSource == AI_BELIEF_SOURCE_PERSONAL);
+	}
+
 	pContext->fHasCover = AnyCoverAtSpot(pSoldier, pSoldier->sGridNo);
 	pContext->fUnderFire = pSoldier->aiData.bUnderFire;
 	pContext->fIsolated = (pContext->ubNearbyOperationalFriends == 0);
@@ -13740,6 +13751,7 @@ void AIResetTacticalPlannerStateForLoad(void)
 {
 	// Planner state is intentionally transient and is not serialized. Same-sector
 	// quickloads must not inherit intent/role decisions from the abandoned future.
+	AIResetTacticalReasoningStateForLoad();
 	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
 	{
 		gbAITacticalIntentPlan[i] = AI_INTENT_HOLD;
@@ -14002,6 +14014,33 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	// One extra turn of persistence prevents oscillation between equally plausible
 	// plans. Emergencies above can still override this immediately.
 	guiAITacticalPlanUntil[ubID] = uiNow + 1;
+
+	UINT8 ubShortPlan = AI_SHORT_PLAN_NONE;
+	switch (bIntent)
+	{
+	case AI_INTENT_FLANK: ubShortPlan = AI_SHORT_PLAN_FLANK; break;
+	case AI_INTENT_FALLBACK: ubShortPlan = AI_SHORT_PLAN_FALLBACK; break;
+	case AI_INTENT_DISENGAGE: ubShortPlan = AI_SHORT_PLAN_DISENGAGE; break;
+	case AI_INTENT_RESCUE: ubShortPlan = AI_SHORT_PLAN_RESCUE; break;
+	default: break;
+	}
+
+	if (ubShortPlan != AI_SHORT_PLAN_NONE)
+	{
+		AISHORTPLANSTATE ExistingPlan;
+		BOOLEAN fKeepPlan = AIGetShortPlan(pSoldier, &ExistingPlan) &&
+			ExistingPlan.ubType == ubShortPlan &&
+			((TileIsOutOfBounds(sTargetSpot) && TileIsOutOfBounds(ExistingPlan.sTargetGridNo)) ||
+			 (!TileIsOutOfBounds(sTargetSpot) && !TileIsOutOfBounds(ExistingPlan.sTargetGridNo) &&
+			  PythSpacesAway(sTargetSpot, ExistingPlan.sTargetGridNo) <= 3));
+		if (!fKeepPlan)
+			AIBeginShortPlan(pSoldier, ubShortPlan, sTargetSpot, NOBODY, 2);
+	}
+	else
+	{
+		AICancelShortPlan(pSoldier);
+	}
+
 	return bIntent;
 }
 
@@ -14060,6 +14099,30 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		bRole = AI_ROLE_SUPPORT;
 	}
 
+	// Convert implicit role-count coordination into an explicit, fireteam-local task
+	// claim. This prevents independent sequential decisions from duplicating the same
+	// flank/maneuver/screen responsibility without creating a sector-wide hive mind.
+	BOOLEAN fTaskReserved = TRUE;
+	if (bRole == AI_ROLE_FLANKER)
+		fTaskReserved = AIReserveTacticalTask(
+			pSoldier, AI_TASK_FLANK, sTargetSpot, NOBODY, 2, 2);
+	else if (bRole == AI_ROLE_MANEUVER)
+		fTaskReserved = AIReserveTacticalTask(
+			pSoldier, AI_TASK_MANEUVER, sTargetSpot, NOBODY, 2, 2);
+	else if (bRole == AI_ROLE_SCREEN)
+		fTaskReserved = AIReserveTacticalTask(
+			pSoldier, AI_TASK_SCREEN, sTargetSpot, NOBODY, 2, 2);
+	else
+		AIReleaseTacticalTask(pSoldier);
+
+	if (!fTaskReserved)
+	{
+		// Another capable teammate already owns this local responsibility. Fall back
+		// to support rather than creating duplicate movers or rear guards.
+		bRole = AI_ROLE_SUPPORT;
+		AIReleaseTacticalTask(pSoldier);
+	}
+
 	gbAITacticalRolePlan[ubID] = bRole;
 	guiAITacticalRoleUntil[ubID] = uiNow + 1;
 	return bRole;
@@ -14078,96 +14141,24 @@ INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 	if (bRole < AI_ROLE_SUPPORT || bRole > AI_ROLE_RESERVE)
 		bRole = AITacticalRole(pSoldier, sTargetSpot);
 
-	INT32 iScore = 0;
-	UINT16 usCurrentExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
-	UINT16 usCandidateExposure = AIKnownThreatExposure(pSoldier, sCandidateSpot, pSoldier->pathing.bLevel);
-	INT32 iExposureDelta = (INT32)usCurrentExposure - (INT32)usCandidateExposure;
-	iScore += __max(-70, __min(70, iExposureDelta / 3));
+	INT8 bMoveAction = AI_ACTION_GET_CLOSER;
+	if (bIntent == AI_INTENT_FALLBACK || bIntent == AI_INTENT_DISENGAGE)
+		bMoveAction = AI_ACTION_WITHDRAW;
+	else if (bIntent == AI_INTENT_FLANK)
+		bMoveAction = AI_ACTION_FLANK_LEFT;
+	else if (bIntent == AI_INTENT_HOLD)
+		bMoveAction = AI_ACTION_TAKE_COVER;
 
-	BOOLEAN fCover = AnyCoverAtSpot(pSoldier, sCandidateSpot);
-	BOOLEAN fSightCover = SightCoverAtSpot(pSoldier, sCandidateSpot, FALSE);
-	BOOLEAN fProneCover = ProneSightCoverAtSpot(pSoldier, sCandidateSpot, FALSE);
-	if (fCover) iScore += 22;
-	if (fSightCover) iScore += 18;
-	if (fProneCover) iScore += 8;
-	if (!fCover && usCandidateExposure > 0) iScore -= 28;
-
-	UINT8 ubSupport = CountNearbyFriends(pSoldier, sCandidateSpot, DAY_VISION_RANGE / 3);
-	UINT8 ubAdjacent = NumberOfTeamMatesAdjacent(pSoldier, sCandidateSpot);
-	iScore += 6 * __min((UINT8)3, ubSupport);
-	if (ubSupport == 0) iScore -= 14;
-	if (ubAdjacent > 1) iScore -= 12 * (ubAdjacent - 1);
-
-	if (!TileIsOutOfBounds(sTargetSpot))
+	AITACTICALPOSITIONFEATURES Features;
+	if (!AIEvaluateTacticalPosition(
+		pSoldier, sCandidateSpot, sTargetSpot,
+		DetermineMovementMode(pSoldier, bMoveAction), &Features))
 	{
-		INT32 iCurrentDistance = PythSpacesAway(pSoldier->sGridNo, sTargetSpot);
-		INT32 iCandidateDistance = PythSpacesAway(sCandidateSpot, sTargetSpot);
-		INT32 iClosing = iCurrentDistance - iCandidateDistance;
-
-		switch (bIntent)
-		{
-		case AI_INTENT_PRESS:
-			iScore += __max(-30, __min(30, 5 * iClosing));
-			break;
-		case AI_INTENT_FLANK:
-			iScore += __max(-15, __min(18, 3 * iClosing));
-			break;
-		case AI_INTENT_FALLBACK:
-		case AI_INTENT_DISENGAGE:
-			iScore += __max(-30, __min(35, -5 * iClosing));
-			break;
-		default:
-			break;
-		}
-
-		// Basic troops understand cover and danger but do not reliably solve crossfire
-		// geometry. Regulars/elites use the richer planner when execution friction permits.
-		if (AICompetenceTier(pSoldier) >= AI_COMPETENCE_REGULAR &&
-			AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED, (UINT32)(sCandidateSpot + 31)))
-		{
-			INT32 iCrossfire = AICrossfirePositionScore(pSoldier, sCandidateSpot, sTargetSpot);
-			if (bRole == AI_ROLE_FLANKER)
-				iScore += 2 * iCrossfire;
-			else if (bRole == AI_ROLE_MANEUVER)
-				iScore += iCrossfire;
-			else if (bRole == AI_ROLE_SUPPORT && iCrossfire < 0)
-				iScore += iCrossfire / 2;
-		}
-
-		if (AICheckHasGun(pSoldier))
-		{
-			INT32 iGunRange = __max(1, (INT32)AIGunRange(pSoldier) / CELL_X_SIZE);
-			INT32 iIdealRange = iGunRange / 2;
-			if (bRole == AI_ROLE_SUPPORT || bRole == AI_ROLE_SCREEN)
-				iIdealRange = __max(2, (3 * iGunRange) / 4);
-			else if (AICheckShortWeaponRange(pSoldier))
-				iIdealRange = __max(2, iGunRange / 3);
-
-			INT32 iRangeError = abs(iCandidateDistance - iIdealRange);
-			iScore -= __min((INT32)24, iRangeError * 2);
-		}
+		return -10000;
 	}
 
-	if (InSmoke(sCandidateSpot, pSoldier->pathing.bLevel))
-	{
-		if (bIntent == AI_INTENT_FALLBACK || bIntent == AI_INTENT_DISENGAGE || pSoldier->aiData.bUnderFire)
-			iScore += 14;
-		else if (bRole == AI_ROLE_SUPPORT)
-			iScore -= 6;
-	}
-
-	if (pSoldier->aiData.bUnderFire && usCandidateExposure < usCurrentExposure)
-		iScore += 12;
-
-	// Competence now changes actual decision quality instead of merely scaling every
-	// candidate by the same percentage (which preserved the same ranking). Low-quality
-	// troops make noisier choices; elites remain close to the utility optimum.
-	INT32 iReactionRisk = AIInferredReactionRisk(pSoldier, sCandidateSpot, pSoldier->pathing.bLevel);
-	iScore -= iReactionRisk / 3;
-	iScore += AICompetenceUtilityNoise(pSoldier, sCandidateSpot,
-		(UINT32)(sTargetSpot + 173));
-
-	return __max(-250, __min(250, iScore));
+	return AIScoreTacticalPosition(
+		pSoldier, &Features, sCandidateSpot, sTargetSpot, bIntent, bRole);
 }
 
 INT32 AIPathExposureCost(SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMovementMode)
