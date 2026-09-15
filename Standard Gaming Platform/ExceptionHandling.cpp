@@ -1047,6 +1047,8 @@ DWORD BlackBoxOperationBegin( const char *subsystem, const char *name )
 	LONG token;
 	LONG slot;
 	BLACKBOX_OPERATION_STATE *op;
+	CHAR8 checkpointSubsystem[BLACKBOX_OPERATION_SUBSYSTEM_CHARS];
+	CHAR8 checkpointName[BLACKBOX_OPERATION_NAME_CHARS];
 
 	if( !gBlackBoxInitialized )
 		return 0;
@@ -1058,6 +1060,11 @@ DWORD BlackBoxOperationBegin( const char *subsystem, const char *name )
 		token = 1;
 	}
 	slot = ( token - 1 ) % BLACKBOX_OPERATION_SLOTS;
+
+	// Slot publication is serialized with the normal recorder lock. Without
+	// this, token N could finish while token N+64 was reusing the same slot and
+	// the older end call could overwrite the newer operation.
+	EnterCriticalSection( &gBlackBoxLock );
 	op = &gBlackBoxOperations[slot];
 	InterlockedExchange( &op->committedToken, 0 );
 	op->token = (DWORD)token;
@@ -1067,8 +1074,12 @@ DWORD BlackBoxOperationBegin( const char *subsystem, const char *name )
 	lstrcpynA( op->subsystem, ( subsystem && subsystem[0] ) ? subsystem : "?", BLACKBOX_OPERATION_SUBSYSTEM_CHARS );
 	lstrcpynA( op->name, ( name && name[0] ) ? name : "?", BLACKBOX_OPERATION_NAME_CHARS );
 	op->result[0] = 0;
+	lstrcpynA( checkpointSubsystem, op->subsystem, BLACKBOX_OPERATION_SUBSYSTEM_CHARS );
+	lstrcpynA( checkpointName, op->name, BLACKBOX_OPERATION_NAME_CHARS );
 	InterlockedExchange( &op->committedToken, token );
-	BlackBoxCheckpoint( op->subsystem, "operation token=%ld phase=BEGIN name=%s", token, op->name );
+	LeaveCriticalSection( &gBlackBoxLock );
+
+	BlackBoxCheckpoint( checkpointSubsystem, "operation token=%ld phase=BEGIN name=%s", token, checkpointName );
 	return (DWORD)token;
 }
 
@@ -1085,9 +1096,14 @@ void BlackBoxOperationEnd( DWORD token, const char *result )
 		return;
 
 	slot = ( (LONG)token - 1 ) % BLACKBOX_OPERATION_SLOTS;
+
+	EnterCriticalSection( &gBlackBoxLock );
 	op = &gBlackBoxOperations[slot];
 	if( op->committedToken != (LONG)token || op->token != token )
+	{
+		LeaveCriticalSection( &gBlackBoxLock );
 		return;
+	}
 
 	lstrcpynA( subsystem, op->subsystem, BLACKBOX_OPERATION_SUBSYSTEM_CHARS );
 	lstrcpynA( name, op->name, BLACKBOX_OPERATION_NAME_CHARS );
@@ -1098,6 +1114,7 @@ void BlackBoxOperationEnd( DWORD token, const char *result )
 	op->endTick = BlackBoxUptimeMs();
 	lstrcpynA( op->result, outcome, BLACKBOX_OPERATION_RESULT_CHARS );
 	InterlockedExchange( &op->committedToken, (LONG)token );
+	LeaveCriticalSection( &gBlackBoxLock );
 
 	BlackBoxCheckpoint( subsystem, "operation token=%lu phase=END name=%s result=%s elapsedMs=%lu",
 		token, name, outcome, elapsed );
