@@ -5851,6 +5851,15 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 			fInterfacePanelDirty = DIRTYLEVEL2;
 		}
 		sBreathLoss += APBPConstants[BP_GET_HIT];
+
+		// Selective modern 1.13 port: ammunition can scale breath/stun damage.
+		// Use the attacking weapon's ammo type, matching the surrounding legacy
+		// Vengeance hit logic. Existing ammo defaults to 1.0.
+		UINT8 ubHitAmmoType = MercPtrs[ubAttackerID]->inv[MercPtrs[ubAttackerID]->ubAttackingHand][0]->data.gun.ubGunAmmoType;
+		FLOAT fBreathModifier = AmmoTypes[ubHitAmmoType].dDamageModifierBreath;
+		INT32 iModifiedBreathLoss = (INT32)(sBreathLoss * fBreathModifier);
+		sBreathLoss = (INT16)min( (INT32)32767, max( (INT32)0, iModifiedBreathLoss ) );
+
 		ubReason = TAKE_DAMAGE_GUNFIRE;
 	}
 	else if ( Item[ usWeaponIndex ].usItemClass & IC_BLADE )
@@ -5979,7 +5988,7 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 		}
 	}
 	// marke added one 'or' for explosive ammo. variation of: AmmoTypes[this->inv[this->ubAttackingHand ][0]->data.gun.ubGunAmmoType].explosionSize > 1
-	//  extracting attacker´s ammo type
+	//  extracting attackerÂ´s ammo type
 	else if ( Item[ usWeaponIndex ].usItemClass & IC_EXPLOSV || AmmoTypes[MercPtrs[ubAttackerID]->inv[MercPtrs[ubAttackerID]->ubAttackingHand ][0]->data.gun.ubGunAmmoType].explosionSize > 1)
 	{
 		INT8 bDeafValue;
