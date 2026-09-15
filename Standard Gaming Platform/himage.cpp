@@ -330,33 +330,51 @@ static BOOLEAN VHDUnpackETRLERegion( HIMAGE hImage, UINT16 usIndex, std::vector<
 
 	const UINT8 *pSrc = hImage->pPixData8 + pRegion->uiDataOffset;
 	const UINT8 *pEnd = pSrc + pRegion->uiDataLength;
-	UINT32 uiPos = 0;
 
-	while ( uiPos < uiPixelCount && pSrc < pEnd )
+	// ETRLE is scanline based. Code 0 terminates a row and old JA2 assets may
+	// omit an explicit transparent run for the rest of that row. The previous
+	// VHD scaler flattened the stream and required exactly width*height encoded
+	// pixels, rejecting valid authored STI frames with implicit transparent tails.
+	for ( UINT16 y = 0; y < pRegion->usHeight; ++y )
 	{
-		const UINT8 ubCode = *pSrc++;
-		const UINT8 ubCount = ubCode & 0x7F;
+		UINT16 x = 0;
+		BOOLEAN fEndOfLine = FALSE;
 
-		if ( ubCode & 0x80 )
+		while ( pSrc < pEnd )
 		{
-			if ( uiPos + ubCount > uiPixelCount )
+			const UINT8 ubCode = *pSrc++;
+			if ( ubCode == 0 )
+			{
+				fEndOfLine = TRUE;
+				break;
+			}
+
+			const UINT8 ubCount = ubCode & 0x7F;
+			if ( ubCount == 0 || (UINT32)x + ubCount > pRegion->usWidth )
 				return FALSE;
-			uiPos += ubCount;
+
+			if ( ubCode & 0x80 )
+			{
+				// Transparent run: output is already zero-filled.
+				x = (UINT16)( x + ubCount );
+			}
+			else
+			{
+				if ( pSrc + ubCount > pEnd )
+					return FALSE;
+				memcpy( &out[ (UINT32)y * pRegion->usWidth + x ], pSrc, ubCount );
+				pSrc += ubCount;
+				x = (UINT16)( x + ubCount );
+			}
 		}
-		else
-		{
-			// A zero-length opaque run is the ETRLE end-of-line marker.
-			if ( ubCount == 0 )
-				continue;
-			if ( uiPos + ubCount > uiPixelCount || pSrc + ubCount > pEnd )
-				return FALSE;
-			memcpy( &out[ uiPos ], pSrc, ubCount );
-			pSrc += ubCount;
-			uiPos += ubCount;
-		}
+
+		if ( !fEndOfLine )
+			return FALSE;
+
+		// x may be less than width: the unencoded tail is transparent by design.
 	}
 
-	return uiPos == uiPixelCount;
+	return TRUE;
 }
 
 BOOLEAN ScaleImageNearestForVHD( HIMAGE hImage, UINT8 ubScale )
