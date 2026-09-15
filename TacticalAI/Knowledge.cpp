@@ -280,7 +280,8 @@ INT32 MostImportantNoiseHeard( SOLDIERTYPE *pSoldier, INT32 *piRetValue, BOOLEAN
 			iNoiseValue += iMemoryRelevance;
 			AIRegisterThreatNoiseEvidence(
 				pSoldier, pSoldier->aiData.sNoiseGridno,
-				pSoldier->bNoiseLevel, iMemoryRelevance, FALSE);
+				pSoldier->bNoiseLevel, iMemoryRelevance,
+				pSoldier->aiData.ubNoiseVolume, FALSE);
 
 			if (iNoiseValue > iBestValue)
 			{
@@ -314,7 +315,7 @@ INT32 MostImportantNoiseHeard( SOLDIERTYPE *pSoldier, INT32 *piRetValue, BOOLEAN
 				iNoiseValue += iMemoryRelevance;
 				AIRegisterThreatNoiseEvidence(
 					pSoldier, *psNoiseGridNo, *pbNoiseLevel,
-					iMemoryRelevance, TRUE);
+					iMemoryRelevance, *pubNoiseVolume, TRUE);
 
 				if (iNoiseValue > iBestValue)
 				{
