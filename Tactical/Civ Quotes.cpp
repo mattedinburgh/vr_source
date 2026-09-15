@@ -1703,82 +1703,135 @@ static const CHAR16 * const gAICombatLines_TARGET_DOWN[] =
 	L"\"\u00A1Enemigo herido y abatido!\""
 };
 
-static BOOLEAN BuildAICombatCalloutText( AI_BATTLE_CALLOUT ubCallout, STR16 zText )
+enum AI_BATTLE_EMOTION
+{
+	AI_BATTLE_EMOTION_CONTROLLED = 0,
+	AI_BATTLE_EMOTION_ANGRY,
+	AI_BATTLE_EMOTION_DISTRESSED,
+	AI_BATTLE_EMOTION_PANICKED,
+	AI_BATTLE_EMOTION_MAX
+};
+
+static AI_BATTLE_EMOTION AICombatEmotion( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout )
+{
+	if ( !pCiv )
+		return AI_BATTLE_EMOTION_CONTROLLED;
+
+	INT32 iLifePercent = 100;
+	if ( pCiv->stats.bLifeMax > 0 )
+		iLifePercent = (100 * pCiv->stats.bLife) / pCiv->stats.bLifeMax;
+	// Pain/help events deliberately bias toward distress; severity and morale
+	// determine whether that becomes outright panic.
+	if ( ubCallout == AI_BATTLE_CALL_CASUALTY || ubCallout == AI_BATTLE_CALL_MEDIC )
+	{
+		if ( iLifePercent <= 25 || pCiv->aiData.bAIMorale == MORALE_HOPELESS )
+			return AI_BATTLE_EMOTION_PANICKED;
+		if ( iLifePercent <= 60 || pCiv->bBleeding > 15 || pCiv->aiData.bAIMorale == MORALE_WORRIED )
+			return AI_BATTLE_EMOTION_DISTRESSED;
+		if ( pCiv->aiData.bAttitude == AGGRESSIVE )
+			return AI_BATTLE_EMOTION_ANGRY;
+		return AI_BATTLE_EMOTION_DISTRESSED;
+	}
+
+	if ( pCiv->aiData.bAIMorale == MORALE_HOPELESS &&
+		(ubCallout == AI_BATTLE_CALL_WITHDRAW || ubCallout == AI_BATTLE_CALL_INCOMING ||
+		 ubCallout == AI_BATTLE_CALL_OUT_OF_AMMO || ubCallout == AI_BATTLE_CALL_TAKE_COVER) )
+		return AI_BATTLE_EMOTION_PANICKED;
+
+	if ( pCiv->aiData.bAIMorale == MORALE_WORRIED &&
+		(ubCallout == AI_BATTLE_CALL_WITHDRAW || ubCallout == AI_BATTLE_CALL_INCOMING ||
+		 ubCallout == AI_BATTLE_CALL_OUT_OF_AMMO || ubCallout == AI_BATTLE_CALL_TAKE_COVER) )
+		return AI_BATTLE_EMOTION_DISTRESSED;
+
+	if ( pCiv->aiData.bAttitude == AGGRESSIVE )
+		return AI_BATTLE_EMOTION_ANGRY;
+
+	return AI_BATTLE_EMOTION_CONTROLLED;
+}
+static BOOLEAN BuildAICombatCalloutText( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout, STR16 zText )
 {
 	if ( zText == NULL )
 		return FALSE;
 
+	AI_BATTLE_EMOTION ubEmotion = AICombatEmotion( pCiv, ubCallout );
 	switch ( ubCallout )
 	{
 		case AI_BATTLE_CALL_CONTACT:
-			wcscpy( zText, gAICombatLines_CONTACT[ Random( sizeof(gAICombatLines_CONTACT) / sizeof(gAICombatLines_CONTACT[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, Random(2) ? L"\"Contact!\"" : L"\"Enemy spotted!\"" ); return TRUE;
 		case AI_BATTLE_CALL_ADVANCE:
-			wcscpy( zText, gAICombatLines_ADVANCE[ Random( sizeof(gAICombatLines_ADVANCE) / sizeof(gAICombatLines_ADVANCE[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, ubEmotion == AI_BATTLE_EMOTION_ANGRY ? L"\"Push them!\"" : L"\"Move up!\"" ); return TRUE;
 		case AI_BATTLE_CALL_TAKE_COVER:
-			wcscpy( zText, gAICombatLines_TAKE_COVER[ Random( sizeof(gAICombatLines_TAKE_COVER) / sizeof(gAICombatLines_TAKE_COVER[0]) ) ] );
+			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED ) wcscpy( zText, L"\"Get down!\"" );
+			else if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ) wcscpy( zText, L"\"We need cover!\"" );
+			else wcscpy( zText, L"\"Take cover!\"" );
 			return TRUE;
 		case AI_BATTLE_CALL_FLANK_LEFT:
-			wcscpy( zText, gAICombatLines_FLANK_LEFT[ Random( sizeof(gAICombatLines_FLANK_LEFT) / sizeof(gAICombatLines_FLANK_LEFT[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Flank left!\"" ); return TRUE;
 		case AI_BATTLE_CALL_FLANK_RIGHT:
-			wcscpy( zText, gAICombatLines_FLANK_RIGHT[ Random( sizeof(gAICombatLines_FLANK_RIGHT) / sizeof(gAICombatLines_FLANK_RIGHT[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Flank right!\"" ); return TRUE;
 		case AI_BATTLE_CALL_WITHDRAW:
-			wcscpy( zText, gAICombatLines_WITHDRAW[ Random( sizeof(gAICombatLines_WITHDRAW) / sizeof(gAICombatLines_WITHDRAW[0]) ) ] );
+			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED ) wcscpy( zText, Random(2) ? L"\"Get me out of here!\"" : L"\"We're being overrun!\"" );
+			else if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ) wcscpy( zText, L"\"Fall back, now!\"" );
+			else if ( ubEmotion == AI_BATTLE_EMOTION_ANGRY ) wcscpy( zText, L"\"Back! Move!\"" );
+			else wcscpy( zText, L"\"Fall back!\"" );
 			return TRUE;
 		case AI_BATTLE_CALL_REGROUP:
-			wcscpy( zText, gAICombatLines_REGROUP[ Random( sizeof(gAICombatLines_REGROUP) / sizeof(gAICombatLines_REGROUP[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Regroup!\"" ); return TRUE;
 		case AI_BATTLE_CALL_RALLY:
-			wcscpy( zText, gAICombatLines_RALLY[ Random( sizeof(gAICombatLines_RALLY) / sizeof(gAICombatLines_RALLY[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ? L"\"Stay with us!\"" : L"\"Keep it together!\"" ); return TRUE;
 		case AI_BATTLE_CALL_SUPPRESS:
-			wcscpy( zText, gAICombatLines_SUPPRESS[ Random( sizeof(gAICombatLines_SUPPRESS) / sizeof(gAICombatLines_SUPPRESS[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, ubEmotion == AI_BATTLE_EMOTION_ANGRY ? L"\"Keep their heads down!\"" : L"\"Suppressing fire!\"" ); return TRUE;
 		case AI_BATTLE_CALL_GRENADE:
-			wcscpy( zText, gAICombatLines_GRENADE[ Random( sizeof(gAICombatLines_GRENADE) / sizeof(gAICombatLines_GRENADE[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Grenade!\"" ); return TRUE;
 		case AI_BATTLE_CALL_SMOKE:
-			wcscpy( zText, gAICombatLines_SMOKE[ Random( sizeof(gAICombatLines_SMOKE) / sizeof(gAICombatLines_SMOKE[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Smoke out!\"" ); return TRUE;
 		case AI_BATTLE_CALL_HEAVY_WEAPON:
-			wcscpy( zText, gAICombatLines_HEAVY_WEAPON[ Random( sizeof(gAICombatLines_HEAVY_WEAPON) / sizeof(gAICombatLines_HEAVY_WEAPON[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, Random(2) ? L"\"Heavy weapon!\"" : L"\"Launcher!\"" ); return TRUE;
 		case AI_BATTLE_CALL_MEDIC:
-			wcscpy( zText, gAICombatLines_MEDIC[ Random( sizeof(gAICombatLines_MEDIC) / sizeof(gAICombatLines_MEDIC[0]) ) ] );
+			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED ) wcscpy( zText, Random(3) == 0 ? L"\"Please help me!\"" : (Random(2) ? L"\"Don't leave me!\"" : L"\"Medic! Please!\"" ) );
+			else if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ) wcscpy( zText, Random(2) ? L"\"Help me!\"" : L"\"I need a medic!\"" );
+			else if ( ubEmotion == AI_BATTLE_EMOTION_ANGRY ) wcscpy( zText, L"\"Medic, now!\"" );
+			else wcscpy( zText, L"\"Medic!\"" );
 			return TRUE;
 		case AI_BATTLE_CALL_RELOAD:
-			wcscpy( zText, gAICombatLines_RELOAD[ Random( sizeof(gAICombatLines_RELOAD) / sizeof(gAICombatLines_RELOAD[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Reloading!\"" ); return TRUE;
 		case AI_BATTLE_CALL_OUT_OF_AMMO:
-			wcscpy( zText, gAICombatLines_OUT_OF_AMMO[ Random( sizeof(gAICombatLines_OUT_OF_AMMO) / sizeof(gAICombatLines_OUT_OF_AMMO[0]) ) ] );
+			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED ) wcscpy( zText, L"\"I'm out! Cover me!\"" );
+			else wcscpy( zText, Random(2) ? L"\"Out of ammo!\"" : L"\"I'm dry!\"" );
 			return TRUE;
 		case AI_BATTLE_CALL_CASUALTY:
-			wcscpy( zText, gAICombatLines_CASUALTY[ Random( sizeof(gAICombatLines_CASUALTY) / sizeof(gAICombatLines_CASUALTY[0]) ) ] );
+			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED )
+			{
+				UINT8 ubPick = Random(4);
+				if ( ubPick == 0 ) wcscpy( zText, L"\"Oh God!\"" );
+				else if ( ubPick == 1 ) wcscpy( zText, L"\"Please help me!\"" );
+				else if ( ubPick == 2 ) wcscpy( zText, L"\"I don't want to die!\"" );
+				else wcscpy( zText, L"\"Mother!\"" );
+			}
+			else if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED )
+				wcscpy( zText, Random(2) ? L"\"I'm hit!\"" : L"\"Help me!\"" );
+			else if ( ubEmotion == AI_BATTLE_EMOTION_ANGRY )
+				wcscpy( zText, L"\"Damn it, I'm hit!\"" );
+			else
+				wcscpy( zText, L"\"I'm wounded!\"" );
 			return TRUE;
 		case AI_BATTLE_CALL_INCOMING:
-			wcscpy( zText, gAICombatLines_INCOMING[ Random( sizeof(gAICombatLines_INCOMING) / sizeof(gAICombatLines_INCOMING[0]) ) ] );
+			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED ) wcscpy( zText, L"\"They're all over us!\"" );
+			else if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ) wcscpy( zText, L"\"We're taking fire!\"" );
+			else wcscpy( zText, L"\"Incoming fire!\"" );
 			return TRUE;
 		case AI_BATTLE_CALL_SEARCH:
-			wcscpy( zText, gAICombatLines_SEARCH[ Random( sizeof(gAICombatLines_SEARCH) / sizeof(gAICombatLines_SEARCH[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Check that noise!\"" ); return TRUE;
 		case AI_BATTLE_CALL_REINFORCE:
-			wcscpy( zText, gAICombatLines_REINFORCE[ Random( sizeof(gAICombatLines_REINFORCE) / sizeof(gAICombatLines_REINFORCE[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Call for support!\"" ); return TRUE;
 		case AI_BATTLE_CALL_VEHICLE:
-			wcscpy( zText, gAICombatLines_VEHICLE[ Random( sizeof(gAICombatLines_VEHICLE) / sizeof(gAICombatLines_VEHICLE[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, Random(2) ? L"\"Armored vehicle!\"" : L"\"Vehicle!\"" ); return TRUE;
 		case AI_BATTLE_CALL_CIVILIAN:
-			wcscpy( zText, gAICombatLines_CIVILIAN[ Random( sizeof(gAICombatLines_CIVILIAN) / sizeof(gAICombatLines_CIVILIAN[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Civilian! Watch your fire!\"" ); return TRUE;
 		case AI_BATTLE_CALL_HOLD:
-			wcscpy( zText, gAICombatLines_HOLD[ Random( sizeof(gAICombatLines_HOLD) / sizeof(gAICombatLines_HOLD[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Hold position!\"" ); return TRUE;
 		case AI_BATTLE_CALL_TARGET_DOWN:
-			wcscpy( zText, gAICombatLines_TARGET_DOWN[ Random( sizeof(gAICombatLines_TARGET_DOWN) / sizeof(gAICombatLines_TARGET_DOWN[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, ubEmotion == AI_BATTLE_EMOTION_ANGRY ? L"\"Got one!\"" : L"\"Target down!\"" ); return TRUE;
 		default:
 			return FALSE;
 	}
@@ -1899,9 +1952,9 @@ static BOOLEAN AICombatCalloutSpeakerValid( SOLDIERTYPE *pCiv )
 {
 	return pCiv &&
 		pCiv->bActive && pCiv->bInSector &&
-		(pCiv->bTeam == ENEMY_TEAM || pCiv->bTeam == MILITIA_TEAM) &&
+		(pCiv->bTeam == ENEMY_TEAM || pCiv->bTeam == MILITIA_TEAM || pCiv->bTeam == gbPlayerNum) &&
 		pCiv->bVisible != -1 &&
-		pCiv->stats.bLife >= OKLIFE &&
+		pCiv->stats.bLife >= CONSCIOUSNESS &&
 		!pCiv->bCollapsed && !pCiv->bBreathCollapsed &&
 		!pCiv->IsZombie();
 }
@@ -1943,7 +1996,7 @@ static const CHAR8 * AICombatCalloutName( AI_BATTLE_CALLOUT ubCallout )
 static void ShowAICombatCalloutNow( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout )
 {
 	CHAR16 zText[320];
-	if ( !AICombatCalloutSpeakerValid( pCiv ) || !BuildAICombatCalloutText( ubCallout, zText ) )
+	if ( !AICombatCalloutSpeakerValid( pCiv ) || !BuildAICombatCalloutText( pCiv, ubCallout, zText ) )
 		return;
 
 	ShowTauntPopupBox( pCiv, zText );
@@ -1991,6 +2044,14 @@ void QueueAICombatCallout( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout )
 	UINT8 ubChance = AICombatCalloutChance( ubCallout );
 	if ( ubChance == 0 )
 		return;
+
+	// Player distress feedback is explicit UI information, not ambient AI chatter.
+	// If the event was important enough to request a medic/casualty popup, show it.
+	if ( pCiv->bTeam == gbPlayerNum &&
+		(ubCallout == AI_BATTLE_CALL_MEDIC || ubCallout == AI_BATTLE_CALL_CASUALTY) )
+	{
+		ubChance = 100;
+	}
 
 	// Orders are more often voiced by soldiers with command presence, while
 	// inexperienced troops still call urgent hazards at the normal rate.

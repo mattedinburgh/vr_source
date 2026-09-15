@@ -11791,13 +11791,18 @@ static void MaybePlayBattlefieldCasualtyAudio( SOLDIERTYPE *pCasualty, INT8 bOld
 	UINT32 uiNow = GetJA2Clock();
 	BOOLEAN fMedicCalled = FALSE;
 
-	// Named player characters keep their own recorded voice.
+	// Combat-language rule: named player mercs keep their original personality
+	// voice for normal dialogue, but serious-wound reactions are Spanish with an
+	// English semantic popup.
 	if ( pCasualty->ubProfile != NO_PROFILE && pCasualty->bTeam == gbPlayerNum )
 	{
 		if ( pCasualty->stats.bLife >= CONSCIOUSNESS && !pCasualty->flags.fDyingComment )
 		{
-			TacticalCharacterDialogue( pCasualty, QUOTE_SERIOUSLY_WOUNDED );
+			fMedicCalled = pCasualty->DoMercBattleSound( BATTLE_SOUND_MEDIC );
+			QueueAICombatCallout( pCasualty, AI_BATTLE_CALL_MEDIC );
 			pCasualty->flags.fDyingComment = TRUE;
+			if ( fMedicCalled )
+				guiLastBattlefieldMedicCall = uiNow;
 		}
 	}
 	else if ( pCasualty->ubProfile == NO_PROFILE &&
@@ -11831,7 +11836,7 @@ static void MaybePlayBattlefieldCasualtyAudio( SOLDIERTYPE *pCasualty, INT8 bOld
 	// Nonfatal agony reuses DYING/BADx_DIE but does not consume the real death cue.
 	// A short battlefield-wide spacing prevents several casualties from groaning on
 	// the exact same impact frame while retaining the much longer medic-call cooldown.
-	if ( ( uiNow - guiLastBattlefieldAgonyCall ) > 1500 && Random( 100 ) < 70 )
+	if ( !fMedicCalled && ( uiNow - guiLastBattlefieldAgonyCall ) > 1500 && Random( 100 ) < 70 )
 	{
 		if ( pCasualty->DoMercBattleSound( BATTLE_SOUND_AGONY ) )
 		{
@@ -12583,6 +12588,95 @@ UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPo
 extern BOOLEAN IsMercSayingDialogue( UINT8 ubProfileID );
 
 
+// VR: combat pain/distress reactions for named player mercs use the existing
+// Spanish voice-taunt bank. Normal personality dialogue/acknowledgements remain
+// profile-specific and unchanged.
+static BOOLEAN IsSpanishMercCombatReactionSound( UINT8 ubBattleSoundID )
+{
+	switch ( ubBattleSoundID )
+	{
+		case BATTLE_SOUND_HIT1:
+		case BATTLE_SOUND_HIT2:
+		case BATTLE_SOUND_DIE1:
+		case BATTLE_SOUND_DIE2:
+		case BATTLE_SOUND_AGONY:
+		case BATTLE_SOUND_MEDIC:
+			return TRUE;
+		default:
+			return FALSE;
+	}
+}
+
+static BOOLEAN PlaySpanishMercCombatReaction( SOLDIERTYPE *pSoldier, UINT8 ubBattleSoundID )
+{
+	if ( !pSoldier || (pSoldier->bTeam != gbPlayerNum && pSoldier->bTeam != MILITIA_TEAM) )
+		return FALSE;
+
+	const CHAR8 *zReaction = "GOT_HIT_GUNFIRE";
+	if ( ubBattleSoundID == BATTLE_SOUND_HIT2 )
+		zReaction = "GOT_HIT";
+	else if ( ubBattleSoundID == BATTLE_SOUND_DIE1 ||
+		ubBattleSoundID == BATTLE_SOUND_DIE2 ||
+		ubBattleSoundID == BATTLE_SOUND_AGONY ||
+		ubBattleSoundID == BATTLE_SOUND_MEDIC ||
+		pSoldier->stats.bLife < OKLIFE ||
+		pSoldier->bBleeding > 15 )
+	{
+		zReaction = "GOT_HIT_BLOODLOSS";
+	}
+
+	const BOOLEAN fFemale = ( pSoldier->ubBodyType == REGFEMALE );
+	CHAR8 zFilename[260];
+
+	if ( pSoldier->bTeam == MILITIA_TEAM )
+	{
+		const CHAR8 *zRank = "Green";
+		if ( pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA )
+			zRank = "Elite";
+		else if ( pSoldier->ubSoldierClass == SOLDIER_CLASS_REG_MILITIA )
+			zRank = "Regular";
+
+		// Voice 01 exists for every militia gender/rank reaction bank.
+		sprintf( zFilename, "Voice\\Militia\\%s\\%s\\01\\%s.ogg",
+			fFemale ? "Female" : "Male", zRank, zReaction );
+	}
+	else
+	{
+		const UINT8 ubVoiceCount = fFemale ? 2 : 9;
+		const UINT8 ubVoiceSeed = (pSoldier->ubProfile == NO_PROFILE) ? pSoldier->ubID : pSoldier->ubProfile;
+		const UINT8 ubVoice = 1 + ( ubVoiceSeed % ubVoiceCount );
+		sprintf( zFilename, "Voice\\Army\\%s\\Regular\\%02d\\%s.ogg",
+			fFemale ? "Female" : "Male", ubVoice, zReaction );
+	}
+
+	// Keep the language invariant: never fall through to English BATTLESNDS for
+	// a combat reaction. Player mercs can safely fall back to Spanish voice 01.
+	if ( !FileExists( zFilename ) && pSoldier->bTeam == gbPlayerNum )
+	{
+		sprintf( zFilename, "Voice\\Army\\%s\\Regular\\01\\%s.ogg",
+			fFemale ? "Female" : "Male", zReaction );
+	}
+
+	if ( !FileExists( zFilename ) )
+		return FALSE;
+
+	UINT32 uiSoundID = PlayJA2SampleFromFile( zFilename, RATE_11025,
+		(guiCurrentScreen == GAME_SCREEN) ?
+			SoundVolume( (UINT8)CalculateSpeechVolume( HIGHVOLUME ), pSoldier->sGridNo ) :
+			(UINT8)CalculateSpeechVolume( HIGHVOLUME ),
+		1, (guiCurrentScreen == GAME_SCREEN) ? SoundDir( pSoldier->sGridNo ) : MIDDLEPAN );
+
+	if ( uiSoundID == SOUND_ERROR )
+		return FALSE;
+
+	pSoldier->uiBattleSoundID = uiSoundID;
+	if ( pSoldier->iFaceIndex != -1 )
+		ExternSetFaceTalking( pSoldier->iFaceIndex, uiSoundID );
+
+	return TRUE;
+}
+
+
 BOOLEAN SOLDIERTYPE::InternalDoMercBattleSound( UINT8 ubBattleSoundID, INT8 bSpecialCode )
 {
 	//in this function, pSoldier stands in for the this pointer, since
@@ -12854,6 +12948,16 @@ BOOLEAN SOLDIERTYPE::InternalDoMercBattleSound( UINT8 ubBattleSoundID, INT8 bSpe
 		//else a speech sound is to be played
 		else
 			fSpeechSound = TRUE;
+	}
+
+	// Player merc and militia combat screams/reactions are Spanish. If the
+	// Spanish bank is unexpectedly incomplete, suppress the English profile
+	// fallback rather than breaking the language rule for combat reactions.
+	if ( (pSoldier->bTeam == gbPlayerNum || pSoldier->bTeam == MILITIA_TEAM) &&
+		IsSpanishMercCombatReactionSound( ubSoundID ) )
+	{
+		PlaySpanishMercCombatReaction( pSoldier, ubSoundID );
+		return( TRUE );
 	}
 
 	// Randomize between sounds, if appropriate
@@ -21512,7 +21616,15 @@ INT32 CheckBleeding( SOLDIERTYPE *pSoldier )
 							 // if he's conscious, and he hasn't already, say his "dying quote"
 							 if ( ( pSoldier->stats.bLife >= CONSCIOUSNESS ) && !pSoldier->flags.fDyingComment )
 							 {
-								 TacticalCharacterDialogue( pSoldier, QUOTE_SERIOUSLY_WOUNDED );
+								 if ( (gTacticalStatus.uiFlags & INCOMBAT) && pSoldier->bTeam == gbPlayerNum )
+								{
+									pSoldier->DoMercBattleSound( BATTLE_SOUND_MEDIC );
+									QueueAICombatCallout( pSoldier, AI_BATTLE_CALL_MEDIC );
+								}
+								else
+								{
+									TacticalCharacterDialogue( pSoldier, QUOTE_SERIOUSLY_WOUNDED );
+								}
 
 								 pSoldier->flags.fDyingComment = TRUE;
 							 }
