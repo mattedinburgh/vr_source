@@ -119,11 +119,11 @@ $failed = $false
 $rows = @()
 foreach ($case in $cases) {
     $dir = Join-Path $ScratchDir $case.Name
-    $args = @(
-        '-NoProfile','-ExecutionPolicy','Bypass','-File',$qa,
-        '-PreviewDir',$dir,'-Maps','A3'
-    )
-    $proc = Start-Process -FilePath 'powershell.exe' -ArgumentList $args -Wait -PassThru -WindowStyle Hidden
+    $stdout = Join-Path $dir 'regression_stdout.txt'
+    $stderr = Join-Path $dir 'regression_stderr.txt'
+    $argLine = "-NoProfile -ExecutionPolicy Bypass -File `"$qa`" -PreviewDir `"$dir`" -Maps A3"
+    $proc = Start-Process -FilePath 'powershell.exe' -ArgumentList $argLine -Wait -PassThru -WindowStyle Hidden `
+        -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     $actualFail = $proc.ExitCode -ne 0
     $ok = $actualFail -eq $case.ExpectedFail
     if (-not $ok) { $failed = $true }
