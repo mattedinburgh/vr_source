@@ -128,6 +128,7 @@ $ownedDefinitions = [ordered]@{
     "AIBuildPrimaryContactBelief"       = "TacticalReasoning.cpp"
     "AIBuildThreatMemoryCue"            = "TacticalReasoning.cpp"
     "AIMemoryNoiseRelevance"            = "TacticalReasoning.cpp"
+    "AIRegisterThreatNoiseEvidence"      = "TacticalReasoning.cpp"
     "AIBuildTacticalGeometry"           = "TacticalReasoning.cpp"
     "AIGeometryPositionScore"           = "TacticalReasoning.cpp"
     "AIPreferredFlankAction"            = "TacticalReasoning.cpp"
