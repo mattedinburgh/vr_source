@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "canonical_branch": "install/all-2026-09-12",
-  "policy": "Archived AI branches are frozen. If a pinned branch tip changes, review and forward-port any unique work into canonical before updating this registry.",
+  "policy": "Archived AI branches are frozen. Active workstreams must be registered and pinned. If a pinned branch tip changes, review and forward-port or deliberately update this registry before canonical integration.",
   "branches": [
     {
       "name": "ai/ap-budgeting",
@@ -177,6 +177,16 @@
       "name": "validation/cqb-live-2026-09-14",
       "pinned_sha": "693dda2c5bd081e3f92a8cad3ade789551371eed",
       "classification": "validation-only"
+    },
+    {
+      "name": "ai/cqb-doctrine-2026",
+      "pinned_sha": "4e9e99af41c85df2d38852221303ba08f12d2543",
+      "classification": "active-workstream"
+    },
+    {
+      "name": "strategic/campaign-modernization-2026",
+      "pinned_sha": "0783850d88215ef10d3e5c21a6e82e4c97d5fc71",
+      "classification": "active-workstream"
     }
   ]
 }
