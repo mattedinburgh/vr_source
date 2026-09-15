@@ -38,7 +38,23 @@ jobs:
           if($LASTEXITCODE-ne0){throw 'Could not enumerate source tree for cache fingerprint.'}
           $relevant=$treeLines | Where-Object {
             $_ -notmatch '^[^\t]+\t\.github/' -and
-            $_ -notmatch '^[^\t]+\tMapPreviewTrigger/'
+            $_ -notmatch '^[^\t]+\tMapPreviewTrigger/' -and
+            $_ -notmatch '^[^\t]+\tTools/' -and
+            $_ -notmatch '^[^\t]+\tdocs/' -and
+            $_ -notmatch '\.md
+          $joined=($relevant -join "`n")
+          $sha=[System.Security.Cryptography.SHA256]::Create()
+          try {
+            $bytes=[Text.Encoding]::UTF8.GetBytes($joined)
+            $fingerprint=([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant()
+          } finally { $sha.Dispose() }
+
+          $cache='C:\VENGENCE\VHD_RENDER_CACHE'
+          New-Item -ItemType Directory -Force -Path $cache | Out-Null
+          Copy-Item -LiteralPath $exe -Destination (Join-Path $cache 'MapEditor_EN_Release.exe') -Force
+          [IO.File]::WriteAllText((Join-Path $cache 'source_fingerprint.txt'),$fingerprint,(New-Object Text.UTF8Encoding($false)))
+          Write-Host "Cached MapEditor fingerprint: $fingerprint"
+
           }
           $joined=($relevant -join "`n")
           $sha=[System.Security.Cryptography.SHA256]::Create()
