@@ -371,8 +371,9 @@ jobs:
           $previewDir = Join-Path $sandbox 'MAP_PREVIEWS'
           $statusFile = Join-Path $previewDir 'mapshot_status.txt'
           $visualLog = Join-Path $sandbox 'C5_visual_load.log'
+          $blackBoxLog = Join-Path $sandbox 'BlackBox_LastRun.log'
           $expectedBmp = Join-Path $previewDir 'c5_overview.bmp'
-          Remove-Item -Force -ErrorAction SilentlyContinue $statusFile,$visualLog,$expectedBmp
+          Remove-Item -Force -ErrorAction SilentlyContinue $statusFile,$visualLog,$blackBoxLog,$expectedBmp
 
           . (Join-Path $env:GITHUB_WORKSPACE 'Tools\VRMapDisplayRouting.ps1')
 
@@ -380,7 +381,9 @@ jobs:
           # The environment override is authoritative even if an editor-specific
           # config path does not load the same Ja2_Options.INI stack as normal play.
           $env:VR_VHD_RENDER_SCALE = '2'
+          $env:VR_VHD_RENDER_DIAGNOSTICS = '1'
           Write-Host "VHD render scale override: $env:VR_VHD_RENDER_SCALE"
+          Write-Host "VHD render diagnostics: $env:VR_VHD_RENDER_DIAGNOSTICS"
           Write-Host "Launching unchanged C5 through VHD Vengeance MapEditor from isolated VFS working directory: $sandbox"
           $p = Start-VRProcessOnSecondary -FilePath $editor -ArgumentList "-MAPSHOT=c5.dat" -WorkingDirectory $sandbox -RequireSecondary
           $deadline = (Get-Date).AddSeconds(240)
@@ -422,6 +425,13 @@ jobs:
           $finalStatus = (Get-Content $statusFile -Raw).Trim()
           if ($finalStatus -notmatch 'DONE success') { throw "C5 MAPSHOT did not report success: $finalStatus" }
           if (-not (Test-Path $visualLog)) { throw 'C5 visual/JSD diagnostic log was not produced.' }
+          if (-not (Test-Path $blackBoxLog)) { throw 'C5 renderer BlackBox log was not produced.' }
+          $renderDiagnostics = @(Get-Content $blackBoxLog | Where-Object { $_ -match '\[VHD_RENDER\]' })
+          if ($renderDiagnostics.Count -lt 1) {
+            throw 'VHD renderer diagnostics were enabled but no VHD_RENDER frame sample was emitted.'
+          }
+          Write-Host "VHD renderer diagnostics samples: $($renderDiagnostics.Count)"
+          $renderDiagnostics | Select-Object -First 5 | ForEach-Object { Write-Host $_ }
 
           $log = Get-Content $visualLog
           $trueColor = @($log | Where-Object { $_ -match '^(IMAGE_TRUECOLOR|IMAGE_VHD_NATIVE) ' })
@@ -463,6 +473,7 @@ jobs:
           Copy-Item -Force $expectedBmp (Join-Path $outDir 'C5_overview.bmp')
           Copy-Item -Force $statusFile (Join-Path $outDir 'C5_mapshot_status.txt')
           Copy-Item -Force $visualLog (Join-Path $outDir 'C5_visual_load.log')
+          Copy-Item -Force $blackBoxLog (Join-Path $outDir 'C5_BlackBox_Render.log')
 
           Add-Type -AssemblyName System.Drawing
           $img = [System.Drawing.Image]::FromFile($expectedBmp)
