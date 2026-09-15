@@ -1,0 +1,35 @@
+name: Apply VHD occlusion parity self-test
+
+on:
+  push:
+    branches:
+      - engine/vhd-occlusion-parity-2026
+    paths:
+      - '.automation/vhd-occlusion-parity-selftest.trigger'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out parity branch
+        uses: actions/checkout@v4
+        with:
+          ref: engine/vhd-occlusion-parity-2026
+          fetch-depth: 20
+
+      - name: Apply parity self-test
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check --whitespace=nowarn .automation/vhd-occlusion-parity-selftest.patch
+          git apply --whitespace=nowarn .automation/vhd-occlusion-parity-selftest.patch
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/scripts/vhd-runtime-smoke.ps1 Init.cpp TileEngine/renderworld.cpp TileEngine/renderworld.h
+          git rm .automation/vhd-occlusion-parity-selftest.patch
+          git rm .automation/vhd-occlusion-parity-selftest.trigger
+          git commit -m "VHD occlusion: add mask parity startup self-test"
+          git push origin HEAD:engine/vhd-occlusion-parity-2026
