@@ -8,8 +8,8 @@ Vengeance is a **single playable product**. There is no supported alternative ga
 
 Current cleanup state:
 - `install/all-2026-09-12` was the de-facto integration branch.
-- `reconcile/streamline-2026-09-15` is the temporary cleanup branch used to preserve unique work and remove historical divergence.
-- `install/all-2026-09-12` has been content-reconciled with the cleanup line; its previous divergent tip is preserved at `archive/install-all-pre-reconcile-2026-09-15`.
+- The temporary `reconcile/streamline-2026-09-15` cleanup branch has been retired after its content was folded into `install/all-2026-09-12`.
+- `install/all-2026-09-12` is now the single integration spine pending final `master` cutover; its pre-reconciliation tip is preserved at `archive/install-all-pre-reconcile-2026-09-15`.
 - **Target after validation: `master` becomes the only canonical playable branch** in both `vr_source` and `vr_gamedir`.
 - Temporary experimental branches are allowed only when unfinished work is unsafe to put in the playable build. They must have a named port/exit task and must not become alternative game versions.
 
@@ -40,16 +40,16 @@ These snapshots preserve the pre-cleanup all-in-one baseline.
 | NCTH / recoil / optics / bursts / grenade aiming | IN CANONICAL, NEEDS PLAYTEST | Keep one current implementation; no parallel shooting branch. |
 | Enemy loadouts / progression | IN CANONICAL | Newer canonical logistics implementation supersedes old `final/all-work` regional-supply commits. |
 | Ammo pooling / 3 mags / grenade distribution | RECONCILED, NEEDS BUILD+PLAYTEST | Current master-only logic was selectively ported into cleanup branch. Weapons load first; penetration priority is XML/data-driven; grenade button preserved. |
-| Modern 1.13 ammo types / target damage modifiers | RECONCILED, NEEDS BUILD+PLAYTEST | Source fields/parsing plus required XML/magazine/item data preserved. |
+| Modern 1.13 ammo types / target damage modifiers | RECONCILED, NEEDS BUILD+PLAYTEST | Source fields/parsing plus required XML/magazine/item data preserved. The gamedir integration XML gate is green on the reconciled critical files and required ammo item definitions. |
 | Black Box | RECONCILED, NEEDS PLAY DATA | Telemetry-link fix, compact hang dumps, correct heartbeat thread, and item-description breadcrumbs preserved. |
 | Campaign Companion | PARTLY CANONICAL / STRATEGIC EXPERIMENT NOT MERGED | Do not merge old strategic-modernization branches wholesale. Re-evaluate only specific missing telemetry after current AI sessions. |
 | Strategic / Campaign modernization | ACTIVE CURRENT-BASE WORKSTREAM | `strategic/campaign-modernization-2026` preserves the unique standalone strategic modernization, operational-AI, transport, ASD and campaign-telemetry modules on the reconciled base. Old modifications to shared Strategic/Tactical files are not merged wholesale; adapt them selectively against current code. |
 | CQB building doctrine | ACTIVE CURRENT-BASE WORKSTREAM | `ai/cqb-doctrine-2026` preserves the standalone CQB doctrine implementation and design documents on the reconciled base. It is not yet wired into the current project/build; integration must be adapted and validated. |
 | Weather modernization | ACTIVE DESIGN WORKSTREAM | `world/weather-modernization-2026` preserves the weather modernization design on the reconciled base. Old shared-file implementation patches remain quarantined until selectively reimplemented against current source. |
 | Visible equipment / armour | CODE PRESENT, DEFECT OPEN | Old LOBOT/visible-equipment branches are contained by canonical history, but armour is still not visible in-game. Fix on canonical code; do not revive old branches wholesale. |
-| VHD / HD renderer | ACTIVE EXPERIMENT | Single temporary line: `exp/vhd`. Newer Black Box renderer instrumentation + cache/memory modernization are consolidated there. |
+| VHD / HD renderer | ACTIVE EXPERIMENT + CI | Single temporary line: `exp/vhd`. Black Box renderer instrumentation, cache/memory modernization and one-pass indexed occlusion are consolidated there. VHD build/smoke workflows now run directly on `exp/vhd`. |
 | VHD occlusion compositor | CONSOLIDATED ON EXPERIMENT | One-pass indexed compositor has been ported to `exp/vhd` and adapted to current Black Box frame telemetry (`onepass`, masked-pixel counters). Old CSV-diagnostics implementation is now historical. |
-| Maps / Latin visual overhaul | ACTIVE CURRENT-BASE WORKSTREAM | `maps/visual-overhaul-2026` is the current-base map lane. Map Factory docs/art direction/authoring tools are preserved there. Old `map-factory-v1` and `a3/hand-authored-v2` engine patches remain source material until `worlddef`/`MapUtility` changes are selectively ported. Graphics only: preserve map geometry/gameplay properties unless deliberately approved. |
+| Maps / Latin visual overhaul | ACTIVE CURRENT-BASE WORKSTREAM | `maps/visual-overhaul-2026` is the current-base map lane. Map Factory docs/art direction/authoring tools are preserved there. Audit of the old `worlddef`/`MapUtility` implementation found automatic sector dressing/baking that conflicts with the graphics-only rule, so that methodology is rejected rather than merged. The safe forced-shade-cache guard was ported to the current map lane. Preserve map geometry/gameplay properties unless deliberately approved. |
 | Item icons | REJECTED PILOT / REDESIGN OPEN | Earlier 20-icon pilot is superseded by `save23`; bulk `art/all-inventory-icons-ai` is separate. None is accepted canonical art. Keep source material until redesign is complete. |
 | Cold UI | DORMANT / REDESIGN OPEN | Source-side harmonisation exists; pilot art remains non-final. Do not force old pilot visuals into canonical build. |
 | Spanish battle popups + screams | OPEN | Popups should be Spanish and allowed concurrently with screams. Verify implementation in live battle. |
@@ -91,7 +91,7 @@ While repository cleanup is happening, the local game installation does not need
 ## Definition of done for cleanup
 
 Cleanup is complete when:
-1. required unique source/game-data work is present on the reconciliation line;
+1. required unique source/game-data work is present on the integration line;
 2. unfinished work is explicitly listed here;
 3. experimental VHD work exists on only `exp/vhd`;
 4. map/icon work has a single surviving source-of-truth workstream or an explicit preservation task;
