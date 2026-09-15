@@ -197,7 +197,7 @@ UINT32 guiMapInvenSortButtonImage[4];
 UINT32 guiMapInvenSortButton[4];
 
 // Vengeance: squad logistics shortcuts in sector inventory.
-UINT32 guiMapInvenLoadoutButton[2];
+UINT32 guiMapInvenLoadoutButton[3];
 
 UINT32 guiMapInvenFilterButtonImage[MAP_INVENTORY_FILTER_BUTTONS];
 UINT32 guiMapInvenFilterButton[MAP_INVENTORY_FILTER_BUTTONS];
@@ -285,11 +285,13 @@ void MapInventoryPoolStackAndMergeBtn( GUI_BUTTON *btn, INT32 reason );
 void MapInventoryPoolSortAmmoBtn( GUI_BUTTON *btn, INT32 reason );
 void MapInventoryPoolSortAttachmentsBtn( GUI_BUTTON *btn, INT32 reason );
 void MapInventoryPoolEjectAmmoBtn( GUI_BUTTON *btn, INT32 reason );
-// Vengeance: 3-mag ammo redistribution and one-smoke-per-merc shortcuts.
+// Vengeance: sector loadout shortcuts.
 void MapInventoryPoolAmmo3xBtn( GUI_BUTTON *btn, INT32 reason );
 void MapInventoryPoolSmokeBtn( GUI_BUTTON *btn, INT32 reason );
+void MapInventoryPoolGrenadeBtn( GUI_BUTTON *btn, INT32 reason );
 static void RedistributeSectorAmmo3x();
 static void RedistributeSectorSmoke();
+static void RedistributeSectorGrenades();
 // Vengeance: redistribute all spare squad/sector ammo into up to three mags per carried gun.
 void MapInventoryPoolAmmo3xBtn( GUI_BUTTON *btn, INT32 reason )
 {
@@ -320,6 +322,23 @@ void MapInventoryPoolSmokeBtn( GUI_BUTTON *btn, INT32 reason )
 		{
 			btn->uiFlags &=~ BUTTON_CLICKED_ON;
 			RedistributeSectorSmoke();
+		}
+	}
+}
+
+// Vengeance: evenly redistribute non-smoke hand grenades, max four each.
+void MapInventoryPoolGrenadeBtn( GUI_BUTTON *btn, INT32 reason )
+{
+	if ( reason & MSYS_CALLBACK_REASON_LBUTTON_DWN )
+	{
+		btn->uiFlags |= BUTTON_CLICKED_ON;
+	}
+	else if ( reason & MSYS_CALLBACK_REASON_LBUTTON_UP )
+	{
+		if ( btn->uiFlags & BUTTON_CLICKED_ON )
+		{
+			btn->uiFlags &=~ BUTTON_CLICKED_ON;
+			RedistributeSectorGrenades();
 		}
 	}
 }
@@ -540,6 +559,35 @@ static BOOLEAN IsHandThrownSmokeGrenade( UINT16 usItem )
 		return FALSE;
 
 	return ( Explosive[ Item[usItem].ubClassIndex ].ubType == EXPLOSV_SMOKE );
+}
+
+static BOOLEAN IsHandThrownNonSmokeGrenade( UINT16 usItem )
+{
+	if ( usItem >= MAXITEMS )
+		return FALSE;
+
+	if ( Item[usItem].usItemClass != IC_GRENADE )
+		return FALSE;
+
+	if ( Item[usItem].glgrenade || Item[usItem].ubCursor != TOSSCURS )
+		return FALSE;
+
+	UINT8 ubType = Explosive[ Item[usItem].ubClassIndex ].ubType;
+	return ( ubType != EXPLOSV_SMOKE && ubType != EXPLOSV_SIGNAL_SMOKE );
+}
+
+static BOOLEAN IsGrenadeRecipientExcluded( SOLDIERTYPE *pSoldier )
+{
+	if ( pSoldier == NULL )
+		return TRUE;
+
+	// Buns is profile 17 in Vengeance MercProfiles.xml.
+	if ( pSoldier->ubProfile == 17 )
+		return TRUE;
+
+	// Matt is the custom IMP; identify him by the displayed merc name rather
+	// than assuming a particular IMP profile slot.
+	return ( wcscmp( pSoldier->name, L"Matt" ) == 0 );
 }
 
 static void PoolSquadSpareAmmo()
@@ -1165,6 +1213,123 @@ static void RedistributeSectorSmoke()
 	ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
 		L"SMK: un humo por mercenario: %d de %d equipados.",
 		uiEquipped, (UINT32)mercs.size() );
+}
+
+static void PoolSquadHandGrenades()
+{
+	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
+		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
+	{
+		SOLDIERTYPE *pSoldier = MercPtrs[id];
+		if ( !IsSectorLoadoutMercEligible( pSoldier ) )
+			continue;
+
+		for ( INT32 bSlot = 0; bSlot < NUM_INV_SLOTS; ++bSlot )
+		{
+			OBJECTTYPE *pObj = &( pSoldier->inv[bSlot] );
+			if ( pObj->exists() && IsHandThrownNonSmokeGrenade( pObj->usItem ) )
+				PoolObjectForSectorLoadout( pObj );
+		}
+	}
+}
+
+static BOOLEAN TakeOneHandGrenadeFromSector( OBJECTTYPE *pOut )
+{
+	if ( pOut == NULL )
+		return FALSE;
+
+	for ( UINT32 i = 0; i < pInventoryPoolList.size(); ++i )
+	{
+		if ( !IsReachableSectorLoadoutItem( pInventoryPoolList[i] ) )
+			continue;
+
+		OBJECTTYPE *pObj = &( pInventoryPoolList[i].object );
+		if ( !IsHandThrownNonSmokeGrenade( pObj->usItem ) )
+			continue;
+
+		pObj->RemoveObjectAtIndex( 0, pOut );
+		if ( pObj->ubNumberOfObjects < 1 )
+			DeleteObj( pObj );
+
+		return pOut->exists();
+	}
+
+	return FALSE;
+}
+
+static void RedistributeSectorGrenades()
+{
+	UINT32 uiOldFilter = guiMapInventoryFilter;
+	if ( uiOldFilter != IC_MAPFILTER_ALL )
+		MapInventoryFilterSet( IC_MAPFILTER_ALL );
+
+	// Everyone in the sector contributes non-smoke hand grenades to the pool,
+	// including Matt and Buns. They are excluded only when handing them back out.
+	PoolSquadHandGrenades();
+
+	std::vector<SOLDIERTYPE*> mercs;
+	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
+		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
+	{
+		SOLDIERTYPE *pSoldier = MercPtrs[id];
+		if ( IsSectorLoadoutMercEligible( pSoldier ) &&
+			 !IsGrenadeRecipientExcluded( pSoldier ) )
+		{
+			mercs.push_back( pSoldier );
+		}
+	}
+
+	std::vector<UINT8> counts( mercs.size(), 0 );
+	std::vector<BOOLEAN> blocked( mercs.size(), FALSE );
+	UINT32 uiDistributed = 0;
+
+	// Four round-robin passes: everyone gets a chance at grenade #1 before
+	// anyone gets #2, and so on. Full inventories are skipped thereafter.
+	for ( UINT8 ubPass = 0; ubPass < 4; ++ubPass )
+	{
+		BOOLEAN fOutOfGrenades = FALSE;
+
+		for ( UINT32 i = 0; i < mercs.size(); ++i )
+		{
+			if ( blocked[i] || counts[i] > ubPass )
+				continue;
+
+			OBJECTTYPE grenade;
+			if ( !TakeOneHandGrenadeFromSector( &grenade ) )
+			{
+				fOutOfGrenades = TRUE;
+				break;
+			}
+
+			if ( PlaceInAnyPocket( mercs[i], &grenade, FALSE ) && !grenade.exists() )
+			{
+				++counts[i];
+				++uiDistributed;
+			}
+			else
+			{
+				if ( grenade.exists() )
+					PoolObjectForSectorLoadout( &grenade );
+				blocked[i] = TRUE;
+			}
+		}
+
+		if ( fOutOfGrenades )
+			break;
+	}
+
+	SortSectorInventoryStackAndMerge( false );
+
+	if ( uiOldFilter != IC_MAPFILTER_ALL )
+		MapInventoryFilterSet( uiOldFilter );
+
+	fMapPanelDirty = TRUE;
+	fTeamPanelDirty = TRUE;
+	fCharacterInfoPanelDirty = TRUE;
+
+	ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
+		L"GRN: %d granadas repartidas entre %d mercenarios (max. 4; Matt y Buns excluidos).",
+		uiDistributed, (UINT32)mercs.size() );
 }
 
 // load the background panel graphics for inventory
@@ -2683,6 +2848,12 @@ void CreateMapInventoryButtons( void )
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[1],
 		L"SMK: dar una granada de humo de mano a cada mercenario del sector." );
 
+	guiMapInvenLoadoutButton[2] = CreateTextButton( L"GRN", SMALLCOMPFONT, FONT_WHITE, DEFAULT_SHADOW,
+		BUTTON_USE_DEFAULT, sLoadoutButtonX + 60, INVEN_POOL_Y + 24 + yResOffset, 28, 13,
+		BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST, NULL, (GUI_CALLBACK)MapInventoryPoolGrenadeBtn );
+	SetButtonFastHelpText( guiMapInvenLoadoutButton[2],
+		L"GRN: reunir granadas de mano (sin humo) y repartirlas por igual; max. 4 por mercenario. Matt y Buns no reciben." );
+
 	//reset the current inventory page to be the first page
 	iCurrentInventoryPoolPage = 0;
 
@@ -2720,6 +2891,7 @@ void DestroyMapInventoryButtons( void )
 	// Vengeance: squad logistics text buttons own no external image resource.
 	RemoveButton( guiMapInvenLoadoutButton[0] );
 	RemoveButton( guiMapInvenLoadoutButton[1] );
+	RemoveButton( guiMapInvenLoadoutButton[2] );
 
 	// HEADROCK HAM 5: Filter button
 	for (INT32 iCounter = 0; iCounter < MAP_INVENTORY_FILTER_BUTTONS; iCounter++)
@@ -4102,6 +4274,7 @@ void HandleButtonStatesWhileMapInventoryActive( void )
 		DisableButton( guiMapInvenSortButton[ 3 ] );
 		DisableButton( guiMapInvenLoadoutButton[0] );
 		DisableButton( guiMapInvenLoadoutButton[1] );
+		DisableButton( guiMapInvenLoadoutButton[2] );
 	}
 	else
 	{
@@ -4112,6 +4285,7 @@ void HandleButtonStatesWhileMapInventoryActive( void )
 		EnableButton( guiMapInvenSortButton[ 3 ] );
 		EnableButton( guiMapInvenLoadoutButton[0] );
 		EnableButton( guiMapInvenLoadoutButton[1] );
+		EnableButton( guiMapInvenLoadoutButton[2] );
 	}
 
 	// Selected Merc is in sector? Or is in combat?
@@ -4127,6 +4301,7 @@ void HandleButtonStatesWhileMapInventoryActive( void )
 		DisableButton( guiMapInvenSortButton[ 3 ] );
 		DisableButton( guiMapInvenLoadoutButton[0] );
 		DisableButton( guiMapInvenLoadoutButton[1] );
+		DisableButton( guiMapInvenLoadoutButton[2] );
 	}
 }
 
