@@ -1,0 +1,98 @@
+name: canonical-unified-ai-compile
+
+on:
+  push:
+    branches:
+      - integration/final-all-2026-09-12
+    paths:
+      - "TacticalAI/**"
+      - "Tactical/**"
+      - "Strategic/**"
+      - "TileEngine/**"
+      - "Tools/Telemetry/**"
+      - ".github/workflows/canonical-unified-ai-compile.yml"
+  workflow_dispatch:
+
+jobs:
+  compile:
+    runs-on: [self-hosted, Windows]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout canonical branch
+        uses: actions/checkout@v4
+
+      - name: Locate MSBuild
+        id: msbuild
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $msbuild = $null
+          $toolset = $null
+
+          if (Test-Path $vswhere) {
+            $msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
+            $vsMajor = & $vswhere -latest -property catalog_productLineVersion
+            if ($vsMajor -eq "2022") { $toolset = "v143" }
+            elseif ($vsMajor -eq "2019") { $toolset = "v142" }
+            elseif ($vsMajor -eq "2017") { $toolset = "v141" }
+          }
+
+          if (-not $msbuild) {
+            $cmd = Get-Command msbuild.exe -ErrorAction SilentlyContinue
+            if ($cmd) { $msbuild = $cmd.Source }
+          }
+
+          if (-not $msbuild) { throw "MSBuild was not found." }
+
+          "path=$msbuild" >> $env:GITHUB_OUTPUT
+          "toolset=$toolset" >> $env:GITHUB_OUTPUT
+          Write-Host "MSBuild: $msbuild"
+          Write-Host "Toolset: $toolset"
+
+      - name: Compile impacted projects
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $msbuild = "${{ steps.msbuild.outputs.path }}"
+          $toolset = "${{ steps.msbuild.outputs.toolset }}"
+          $projects = @(
+            "TacticalAI\TacticalAI_VS2013.vcxproj",
+            "Strategic\Strategic_VS2013.vcxproj",
+            "TileEngine\TileEngine_VS2013.vcxproj",
+            "Tactical\Tactical_VS2013.vcxproj"
+          )
+
+          foreach ($project in $projects) {
+            Write-Host ""
+            Write-Host "==== Compiling $project ===="
+            $args = @(
+              $project,
+              "/m",
+              "/p:Configuration=Release",
+              "/p:Platform=Win32"
+            )
+            if ($toolset) {
+              $args += "/p:PlatformToolset=$toolset"
+            }
+            & $msbuild @args
+            if ($LASTEXITCODE -ne 0) {
+              throw "$project failed with exit code $LASTEXITCODE."
+            }
+          }
+
+      - name: Parse telemetry agent PowerShell
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $path = "Tools\Telemetry\VR_TelemetryAgent.ps1"
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path $path), [ref]$tokens, [ref]$errors)
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw "Telemetry agent PowerShell syntax validation failed."
+          }
+          Write-Host "Telemetry agent PowerShell syntax OK."

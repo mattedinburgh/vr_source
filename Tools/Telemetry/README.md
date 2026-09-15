@@ -13,10 +13,15 @@ The telemetry agent removes the manual "send me the Black Box / Companion files"
   - `Campaign AI Black Box.tsv`
   - `Campaign AI Companion.txt`
   - `session.json`
-- pushes the session to `telemetry/companion-sessions`;
+- creates/uses a dedicated private GitHub repository named `vr-ai-telemetry`;
+- pushes each session to that private repository, with `sessions/LATEST.txt` and `sessions/index.tsv` for fast daily review;
 - if offline/auth fails, keeps the session locally and retries automatically later.
 
-No credentials are stored in these scripts. Git uses the credentials already configured on the PC.
+No credentials are stored in these scripts. The agent uses GitHub CLI/Git authentication already configured on the PC.
+
+If GitHub CLI is unavailable, unauthenticated, offline, or a private destination cannot be verified, **nothing is uploaded**. The session remains in the local queue and is retried later.
+
+The source repository may be public; the uploader deliberately refuses to send gameplay telemetry to a non-private telemetry repository.
 
 ## Install
 
@@ -27,6 +32,8 @@ Run:
 once.
 
 The installer uses the current-user Windows Run key, so administrator rights should not normally be required.
+
+On first setup it attempts to create `<your GitHub user>/vr-ai-telemetry` as a **private** repository. If that cannot be done safely, automatic upload remains disabled while local collection continues.
 
 ## Local queue
 
