@@ -624,7 +624,7 @@ def validate_runtime_alias_table() -> dict:
     actual = {
         (canonical.upper(), visual.replace("\\\\", "\\").upper())
         for canonical, visual in re.findall(
-            r'\\{\\s*"([^"]+)"\\s*,\\s*"([^"]+)"\\s*,\\s*(?:TRUE|FALSE)\\s*\\}',
+            r'\{\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*(?:TRUE|FALSE)\s*\}',
             block,
         )
     }
