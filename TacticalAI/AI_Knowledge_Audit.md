@@ -29,6 +29,41 @@ Prefer:
 
 `Knowledge` already selects the more useful/recent personal or public information using the engine's knowledge-value table. This matches current 1.13 behaviour.
 
+## Shared belief layer
+
+New tactical reasoning should consume the explicit `AICONTACTBELIEF` representation in
+`TacticalReasoning.cpp` when it needs contact confidence, age, or source rather than
+reinterpreting raw opponent lists independently.
+
+A contact belief contains only:
+- opponent ID;
+- legal last-known grid/level;
+- selected JA2 knowledge state;
+- whether personal or public knowledge supplied it;
+- confidence derived from the existing `ThreatPercent` table;
+- coarse age in tactical turns;
+- whether the opponent is personally and freshly visible.
+
+The belief layer never estimates hidden current health, AP, stance, weapon, movement, or exact
+current position. It is a normalized view over the existing JA2 information model, not a second
+perception system.
+
+## Surprise / encirclement fairness
+
+A contact-surprise event is permitted only when a combatant gains **personal current sight** of
+opponents after a prior decision snapshot. The current implementation additionally validates
+fresh LOS before counting a contact as newly revealed.
+
+The surprise tracker may remember:
+- the soldier's own previous decision grid;
+- how many opponents were personally visible;
+- coarse directions of those personally visible contacts;
+- legal known-threat exposure at the soldier's own position.
+
+It may not use hidden enemies to decide that a soldier is surrounded. Multi-angle or encirclement
+pressure is derived only from personally visible opponents. Public/radio knowledge can still affect
+ordinary tactical planning, but cannot manufacture a surprise reaction.
+
 ## Hard anti-cheat rules
 
 New AI must not:
@@ -109,7 +144,7 @@ Chunk 3 makes backward movement a normal positional decision before morale colla
 - RED and BLACK combat AI can now concede ground before reaching hopeless morale.
 - Chunk 2 survivor-position exposure checks were switched to the same knowledge-bound exposure helper.
 
-Performance rule: no second pathfinder was added. `FindFlankingSpot(..., AI_ACTION_WITHDRAW)` remains the single bounded path search, and the more expensive known-contact exposure check is run only on the current position and the selected final fallback candidate.
+Performance/quality rule: tactical quality now takes precedence over minimizing path queries on the target hardware. The shared spatial evaluator may run additional full-route analyses for serious candidate positions. Those analyses use `FindBestPath(..., NO_COPYROUTE, ...)`, so they can inspect the generated route without overwriting the soldier's prepared execution path. Route scoring still uses only legal known-threat exposure, smoke, cover, hazards and inferred reaction risk.
 
 ## Chunk 4: disengagement
 
