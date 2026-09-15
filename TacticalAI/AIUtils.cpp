@@ -14331,6 +14331,13 @@ INT32 AIPathExposureCost(SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMov
 		{
 			iExposedStreak = 0;
 		}
+
+		// Battle-local experience also applies to the route itself. A destination
+		// can be attractive while the direct path crosses the corner/doorway where
+		// this fireteam was just surprised or had an approach rejected.
+		iCost += __min(
+			(INT32)18,
+			AITacticalSetbackPenalty(pSoldier, sPathSpot) / 4);
 	}
 
 	return __min((INT32)700, iCost);

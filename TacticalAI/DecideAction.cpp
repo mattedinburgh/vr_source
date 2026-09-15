@@ -115,6 +115,8 @@ static void VRPlannerTraceCandidate(SOLDIERTYPE *pSoldier, UINT32 uiDecision,
 	VRAnalyticsStateInt(uiDecision, "candidate_route_cost", iRouteCost);
 	VRAnalyticsStateInt(uiDecision, "candidate_support", iSupport);
 	VRAnalyticsStateInt(uiDecision, "candidate_crossfire", iCrossfire);
+	VRAnalyticsStateInt(uiDecision, "candidate_setback_penalty",
+		pSoldier ? AITacticalSetbackPenalty(pSoldier, sGrid) : 0);
 	VRAnalyticsCandidate(uiDecision, pSource, sGrid, iScore, iScore - iRouteCost, true, pReason);
 }
 
@@ -570,6 +572,17 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 	AICONTACTCHANGE Change;
 	if (!AIObserveContactChange(pSoldier, &Change))
 		return AI_ACTION_NONE;
+
+	// Remember the tile where a movement plan unexpectedly broke down. This is
+	// transient experience, not extra enemy knowledge: it is created only after
+	// personally visible contacts made the geometry materially worse.
+	UINT8 ubSetbackSeverity = (UINT8)__min(
+		(INT32)85,
+		40 + 10 * __min((UINT8)3, Change.ubNewContacts) +
+		(Change.fEncirclementPressure ? 15 : 0));
+	AIRegisterTacticalSetback(
+		pSoldier, AI_SETBACK_SURPRISE,
+		pSoldier->sGridNo, ubSetbackSeverity, 5);
 
 	// Existing hard break-contact state already owns movement once committed.
 	if (AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier))
@@ -2250,64 +2263,104 @@ static INT8 DecideThreatHypothesisSearch(
 		return -1;
 	}
 
+	const INT32 sHypothesisAnchor = Cue.sGridNo;
 	INT32 sFocus = Cue.sGridNo;
+	INT8 bFocusLevel = Cue.bLevel;
 	INT32 iNoiseRelevance = 0;
-	BOOLEAN fCorroborated = Cue.fNoiseCorroborated;
+
+	BOOLEAN fCorroborated =
+		Cue.fNoiseCorroborated &&
+		!TileIsOutOfBounds(Cue.sCorroboratingGridNo) &&
+		Cue.ubCorroborationStrength >= 10 &&
+		Cue.ubCorroborationAge <= 4;
+
+	// A caller may pass MostImportantNoiseHeard()'s result. That result can itself
+	// be the memory fallback, so the grid argument is NOT proof of a fresh sound.
+	// Only a registered age-zero evidence slot can upgrade this decision as a new cue.
+	BOOLEAN fFreshCorroboration =
+		fCorroborated &&
+		Cue.ubCorroborationAge == 0;
 
 	if (!TileIsOutOfBounds(sEvidenceSpot))
 	{
 		iNoiseRelevance = AIMemoryNoiseRelevance(
 			pSoldier, sEvidenceSpot, bEvidenceLevel);
 
-		UINT8 ubEvidenceDir =
-			AIDirection(pSoldier->sGridNo, sEvidenceSpot);
-		UINT8 ubMemoryDir =
-			AIDirection(pSoldier->sGridNo, Cue.sGridNo);
-
-		UINT8 ubDirDelta = NUM_WORLD_DIRECTIONS;
-		if (ubEvidenceDir < NUM_WORLD_DIRECTIONS &&
-			ubMemoryDir < NUM_WORLD_DIRECTIONS)
+		BOOLEAN fEvidenceMatchesRegisteredCue = FALSE;
+		if (fFreshCorroboration &&
+			bEvidenceLevel == Cue.bCorroboratingLevel &&
+			PythSpacesAway(
+				sEvidenceSpot, Cue.sCorroboratingGridNo) <= 3)
 		{
-			ubDirDelta = (UINT8)abs(
-				(INT32)ubEvidenceDir - (INT32)ubMemoryDir);
-			ubDirDelta = __min(
-				ubDirDelta,
-				(UINT8)(NUM_WORLD_DIRECTIONS - ubDirDelta));
+			fEvidenceMatchesRegisteredCue = TRUE;
 		}
 
-		// An unrelated new sound remains ordinary YELLOW evidence. Only fuse it
-		// into the remembered-threat search when direction/distance support the hypothesis.
-		if (iNoiseRelevance >= 10 ||
-			ubDirDelta <= 1 ||
-			PythSpacesAway(sEvidenceSpot, Cue.sGridNo) <=
-				__max(4, TACTICAL_RANGE / 3))
+		if (fEvidenceMatchesRegisteredCue && iNoiseRelevance >= 10)
 		{
-			sFocus = sEvidenceSpot;
-			fCorroborated = TRUE;
+			// Follow the fresh anonymous evidence, not the stale exact memory tile.
+			// This redirects search without claiming the unseen opponent is exactly here.
+			sFocus = Cue.sCorroboratingGridNo;
+			bFocusLevel = Cue.bCorroboratingLevel;
 		}
 		else
 		{
-			return -1;
+			// If the supplied grid is simply the memory fallback, continue as a
+			// memory-only search. An unrelated real noise belongs to normal YELLOW AI.
+			const BOOLEAN fLooksLikeMemoryFallback =
+				bEvidenceLevel == Cue.bLevel &&
+				PythSpacesAway(sEvidenceSpot, Cue.sGridNo) <= 1;
+			if (!fLooksLikeMemoryFallback)
+				return -1;
 		}
 	}
+	else if (fCorroborated)
+	{
+		// A still-recent corroborating cue can keep the search oriented toward its
+		// sector for a few turns, with strength decaying in TacticalReasoning.
+		sFocus = Cue.sCorroboratingGridNo;
+		bFocusLevel = Cue.bCorroboratingLevel;
+	}
+
+	INT32 iEffectiveConfidence = (INT32)Cue.ubConfidence;
+	if (fCorroborated)
+	{
+		iEffectiveConfidence += (INT32)Cue.ubCorroborationStrength / 3;
+		iEffectiveConfidence +=
+			4 * __min((UINT8)2, Cue.ubCorroboratedCues);
+	}
+	iEffectiveConfidence +=
+		3 * __min((UINT8)2, Cue.ubMatchedMemories);
+	iEffectiveConfidence = __max(0, __min(100, iEffectiveConfidence));
 
 	UINT8 ubSearchers = 1;
 	if (AICompetenceTier(pSoldier) >= AI_COMPETENCE_REGULAR &&
 		AIFireteamCombatReadyCount(pSoldier) >= 4 &&
-		(fCorroborated || Cue.ubConfidence >= 50))
+		(iEffectiveConfidence >= 60 ||
+		 (fFreshCorroboration && Cue.ubCorroborationStrength >= 35)))
 	{
 		ubSearchers = 2;
 	}
 
-	// One hypothesis has a bounded number of investigators. Other members secure
-	// the sector instead of forming a conga line toward the same remembered tile.
+	// Reserve against the underlying remembered hypothesis, not the latest sound
+	// coordinate. Otherwise a moving/noisy contact can create several nominally
+	// different search tasks and pull the whole element forward.
 	if (!AIReserveTacticalTask(
-		pSoldier, AI_TASK_SEARCH, sFocus,
+		pSoldier, AI_TASK_SEARCH, sHypothesisAnchor,
 		NOBODY, ubSearchers, 1))
 	{
-		AIReserveTacticalTask(
-			pSoldier, AI_TASK_SEARCH_SUPPORT, sFocus,
-			NOBODY, 3, 1);
+		UINT8 ubExistingSupport = AICountTacticalTaskReservations(
+			pSoldier, AI_TASK_SEARCH_SUPPORT,
+			sHypothesisAnchor, NOBODY);
+
+		if (!AIReserveTacticalTask(
+			pSoldier, AI_TASK_SEARCH_SUPPORT, sHypothesisAnchor,
+			NOBODY, 3, 1))
+		{
+			// The investigation element is already fully staffed. Do not fall
+			// through to legacy seek-noise and recreate the conga line we just capped.
+			AIReleaseTacticalTask(pSoldier);
+			return AI_ACTION_NONE;
+		}
 
 		UINT32 uiDecision = VRPlannerTraceBeginDecision(
 			pSoldier, "memory_search_support",
@@ -2315,13 +2368,40 @@ static INT8 DecideThreatHypothesisSearch(
 		if (uiDecision)
 		{
 			VRAnalyticsStateInt(uiDecision, "memory_confidence", Cue.ubConfidence);
+			VRAnalyticsStateInt(uiDecision, "memory_effective_confidence", iEffectiveConfidence);
 			VRAnalyticsStateInt(uiDecision, "memory_age", Cue.ubAgeTurns);
 			VRAnalyticsStateInt(uiDecision, "memory_matches", Cue.ubMatchedMemories);
 			VRAnalyticsStateInt(uiDecision, "memory_corroborated", fCorroborated ? 1 : 0);
+			VRAnalyticsStateInt(uiDecision, "corroboration_strength", Cue.ubCorroborationStrength);
+			VRAnalyticsStateInt(uiDecision, "corroboration_cues", Cue.ubCorroboratedCues);
+			VRAnalyticsStateInt(uiDecision, "corroboration_age", Cue.ubCorroborationAge);
+			VRAnalyticsStateInt(uiDecision, "hypothesis_anchor", sHypothesisAnchor);
+			VRAnalyticsStateInt(uiDecision, "search_focus", sFocus);
 		}
 
 		UINT8 ubFocusDir =
 			AIDirection(pSoldier->sGridNo, sFocus);
+
+		// Spread up to three support soldiers across centre/left/right watch arcs.
+		// They secure the uncertain sector instead of all aiming at one remembered tile.
+		if (ubFocusDir < NUM_WORLD_DIRECTIONS)
+		{
+			INT8 bWatchOffset = 0;
+			switch (ubExistingSupport % 3)
+			{
+			case 1: bWatchOffset = -1; break;
+			case 2: bWatchOffset = 1; break;
+			default: break;
+			}
+
+			INT32 iWatchDir =
+				((INT32)ubFocusDir + (INT32)bWatchOffset) %
+				NUM_WORLD_DIRECTIONS;
+			if (iWatchDir < 0)
+				iWatchDir += NUM_WORLD_DIRECTIONS;
+			ubFocusDir = (UINT8)iWatchDir;
+		}
+
 		if (ubFocusDir < NUM_WORLD_DIRECTIONS &&
 			pSoldier->ubDirection != ubFocusDir &&
 			(!gfTurnBasedAI ||
@@ -2335,7 +2415,7 @@ static INT8 DecideThreatHypothesisSearch(
 				pSoldier, uiDecision, "memory_search_support",
 				AI_ACTION_CHANGE_FACING, pSoldier->sGridNo,
 				0, 0, FALSE,
-				"support watches unresolved contact sector");
+				"support covers a deconflicted unresolved-contact arc");
 			return AI_ACTION_CHANGE_FACING;
 		}
 
@@ -2354,7 +2434,7 @@ static INT8 DecideThreatHypothesisSearch(
 				pSoldier, uiDecision, "memory_search_support",
 				AI_ACTION_RAISE_GUN, pSoldier->sGridNo,
 				0, 0, FALSE,
-				"support prepares weapon on likely sector");
+				"support prepares weapon on unresolved contact sector");
 			return AI_ACTION_RAISE_GUN;
 		}
 
@@ -2362,18 +2442,29 @@ static INT8 DecideThreatHypothesisSearch(
 			pSoldier, uiDecision, "memory_search_support",
 			AI_ACTION_NONE, pSoldier->sGridNo,
 			0, 0, FALSE,
-			"support holds while investigators clear hypothesis");
+			"support holds while bounded investigators clear hypothesis");
 		return AI_ACTION_NONE;
 	}
 
+	// Uncertainty comes from both memory age and confidence. Genuine corroborating
+	// evidence narrows the sector, but never to a zero-radius exact target claim.
+	INT32 iUncertainty =
+		3 +
+		(INT32)Cue.ubAgeTurns / 2 +
+		__max(0, 50 - (INT32)Cue.ubConfidence) / 15;
+
+	if (fCorroborated)
+	{
+		iUncertainty -= (INT32)Cue.ubCorroborationStrength / 30;
+		if (fFreshCorroboration)
+			--iUncertainty;
+	}
+
 	UINT8 ubUncertainty =
-		(UINT8)__max(3, __min(7,
-			3 + (INT32)Cue.ubAgeTurns / 2));
-	if (fCorroborated && ubUncertainty > 3)
-		--ubUncertainty;
+		(UINT8)__max(2, __min(8, iUncertainty));
 
 	INT32 sObservation = FindThreatSearchObservationSpot(
-		pSoldier, sFocus, bEvidenceLevel, ubUncertainty);
+		pSoldier, sFocus, bFocusLevel, ubUncertainty);
 	if (TileIsOutOfBounds(sObservation))
 	{
 		AIReleaseTacticalTask(pSoldier);
@@ -2387,9 +2478,16 @@ static INT8 DecideThreatHypothesisSearch(
 	{
 		VRAnalyticsStateInt(uiDecision, "memory_grid", Cue.sGridNo);
 		VRAnalyticsStateInt(uiDecision, "memory_confidence", Cue.ubConfidence);
+		VRAnalyticsStateInt(uiDecision, "memory_effective_confidence", iEffectiveConfidence);
 		VRAnalyticsStateInt(uiDecision, "memory_age", Cue.ubAgeTurns);
 		VRAnalyticsStateInt(uiDecision, "memory_matches", Cue.ubMatchedMemories);
 		VRAnalyticsStateInt(uiDecision, "memory_corroborated", fCorroborated ? 1 : 0);
+		VRAnalyticsStateInt(uiDecision, "corroboration_strength", Cue.ubCorroborationStrength);
+		VRAnalyticsStateInt(uiDecision, "corroboration_cues", Cue.ubCorroboratedCues);
+		VRAnalyticsStateInt(uiDecision, "corroboration_age", Cue.ubCorroborationAge);
+		VRAnalyticsStateInt(uiDecision, "hypothesis_anchor", sHypothesisAnchor);
+		VRAnalyticsStateInt(uiDecision, "search_focus", sFocus);
+		VRAnalyticsStateInt(uiDecision, "search_focus_level", bFocusLevel);
 		VRAnalyticsStateInt(uiDecision, "search_uncertainty_radius", ubUncertainty);
 	}
 
@@ -2407,7 +2505,7 @@ static INT8 DecideThreatHypothesisSearch(
 				pSoldier, uiDecision, "memory_search",
 				AI_ACTION_CHANGE_FACING, pSoldier->sGridNo,
 				0, 0, FALSE,
-				"investigator observes hypothesis from current position");
+				"investigator observes unresolved evidence sector");
 			return AI_ACTION_CHANGE_FACING;
 		}
 
@@ -2419,12 +2517,12 @@ static INT8 DecideThreatHypothesisSearch(
 		return AI_ACTION_NONE;
 	}
 
-	INT8 bReserveAP =
-		(INT8)(GetAPsCrouch(pSoldier, TRUE) +
+	INT16 sReserveAP =
+		(INT16)(GetAPsCrouch(pSoldier, TRUE) +
 			GetAPsToLook(pSoldier));
 
 	INT32 sMoveSpot = InternalGoAsFarAsPossibleTowards(
-		pSoldier, sObservation, bReserveAP,
+		pSoldier, sObservation, sReserveAP,
 		AI_ACTION_SEEK_NOISE, FLAG_CAUTIOUS);
 
 	if (TileIsOutOfBounds(sMoveSpot))
@@ -2452,12 +2550,12 @@ static INT8 DecideThreatHypothesisSearch(
 			pSoldier, sMoveSpot, DAY_VISION_RANGE / 3),
 		AICrossfirePositionScore(
 			pSoldier, sMoveSpot, sFocus),
-		"covered observation approach to unresolved contact sector");
+		"covered observation approach to unresolved evidence sector");
 	VRPlannerTraceSelect(
 		pSoldier, uiDecision, "memory_search",
 		AI_ACTION_SEEK_NOISE, sMoveSpot,
 		iScore, 0, FALSE,
-		"investigator advances to observation position");
+		"investigator advances to a bounded observation position");
 
 	return AI_ACTION_SEEK_NOISE;
 }
