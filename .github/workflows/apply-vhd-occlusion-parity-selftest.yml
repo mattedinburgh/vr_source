@@ -24,8 +24,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git apply --check --whitespace=nowarn .automation/vhd-occlusion-parity-selftest.patch
-          git apply --whitespace=nowarn .automation/vhd-occlusion-parity-selftest.patch
+          git apply --check --whitespace=nowarn --exclude=TileEngine/renderworld.h .automation/vhd-occlusion-parity-selftest.patch
+          git apply --whitespace=nowarn --exclude=TileEngine/renderworld.h .automation/vhd-occlusion-parity-selftest.patch
+
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("TileEngine/renderworld.h")
+          data = p.read_bytes()
+          for eol in (b"\r\n", b"\n"):
+              anchor = b"BOOLEAN Blt8BPPDataTo16BPPBufferTransZIncClip( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion);" + eol
+              if anchor in data:
+                  decl = b"BOOLEAN RunVHDOcclusionMaskParitySelfTest( void );" + eol
+                  if decl not in data:
+                      data = data.replace(anchor, anchor + decl, 1)
+                  p.write_bytes(data)
+                  break
+          else:
+              raise SystemExit("renderworld.h declaration anchor not found")
+          PY
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .github/scripts/vhd-runtime-smoke.ps1 Init.cpp TileEngine/renderworld.cpp TileEngine/renderworld.h
