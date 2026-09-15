@@ -34,6 +34,7 @@
 	#include "Encyclopedia_new.h"	//update encyclopedia item visibility when viewing that item
 #endif
 
+#include "InterfaceItemImages.h"
 #include "Cheats.h"
 #include "connect.h"
 #include "fresh_header.h"
