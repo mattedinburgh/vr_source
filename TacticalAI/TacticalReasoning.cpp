@@ -261,6 +261,7 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 		{
 			iPressure += 20;
 			++pGeometry->ubVisibleContacts;
+			pGeometry->ubVisibleDirectionMask |= (UINT8)(1 << ubDir);
 		}
 
 		if (Belief.bLevel == pSoldier->pathing.bLevel)
@@ -384,10 +385,30 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 	pGeometry->sRearSafety = (INT16)__max(-100, __min(100,
 		70 - iRearThreat / 5 + iRearSupport / 8));
 
+	UINT8 ubVisibleSectors = 0;
+	BOOLEAN fVisibleWideSeparation = FALSE;
+	for (UINT8 ubA = 0; ubA < NUM_WORLD_DIRECTIONS; ++ubA)
+	{
+		if (!(pGeometry->ubVisibleDirectionMask & (1 << ubA)))
+			continue;
+
+		++ubVisibleSectors;
+		for (UINT8 ubB = ubA + 1; ubB < NUM_WORLD_DIRECTIONS; ++ubB)
+		{
+			if (!(pGeometry->ubVisibleDirectionMask & (1 << ubB)))
+				continue;
+
+			if (AIGeometryDirectionDelta(ubA, ubB) >= 3)
+				fVisibleWideSeparation = TRUE;
+		}
+	}
+
+	// Remembered/heard contacts may make a soldier cautious, but the stronger
+	// "I am being enveloped" conclusion needs personally visible geometry.
 	pGeometry->fEncirclementPressure =
-		(ubStrongThreatSectors >= 3 && pGeometry->fMultiAngleThreat) ||
-		(pGeometry->usThreatPressure[ubOpposite] >= 35 &&
-		 pGeometry->usThreatPressure[pGeometry->ubPrimaryThreatDir] >= 35);
+		fVisibleWideSeparation &&
+		((ubVisibleSectors >= 3) ||
+		 (ubVisibleSectors >= 2 && ubStrongThreatSectors >= 3));
 
 	const UINT8 ubLeft =
 		AIGeometryRotate(pGeometry->ubPrimaryThreatDir, -2);
