@@ -121,19 +121,6 @@ def masked_base(mask: Image.Image, base: tuple[int, int, int], seed: int,
     return out
 
 
-def alpha_clip(layer: Image.Image, mask: Image.Image) -> Image.Image:
-    layer = layer.convert("RGBA")
-    la = layer.getchannel("A")
-    # Keep source alpha as the absolute silhouette contract.
-    layer.putalpha(Image.eval(Image.fromarray(
-        __import__("numpy").minimum(
-            __import__("numpy").array(la),
-            __import__("numpy").array(mask)
-        ).astype("uint8")
-    ), lambda p: p))
-    return layer
-
-
 def composite_shape(out: Image.Image, mask: Image.Image, draw_fn) -> None:
     layer = Image.new("RGBA", out.size, (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
