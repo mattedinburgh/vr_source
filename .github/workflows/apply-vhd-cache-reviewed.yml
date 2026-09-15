@@ -47,18 +47,89 @@ jobs:
 
           python - <<'PY'
           from pathlib import Path
+
           p = Path("TileEngine/Tile Cache.cpp")
           s = p.read_text(encoding="utf-8")
-          old = "if ( ulBudgetMB > 1024 ) ulBudgetMB = 1024;"
-          new = "if ( ulBudgetMB > 512 ) ulBudgetMB = 512; // Win32/non-LAA: preserve address-space headroom."
-          if old not in s:
-              raise SystemExit("Expected VHD cache budget clamp not found")
-          p.write_text(s.replace(old, new, 1), encoding="utf-8")
+
+          old_budget = """static void InitTileCacheBudget( )
+          {
+          \tconst CHAR8 *pBudgetMB = getenv( "VR_VHD_TILE_CACHE_MB" );
+          \tif ( pBudgetMB != NULL && pBudgetMB[0] != 0 )
+          \t{
+          \t\tunsigned long ulBudgetMB = strtoul( pBudgetMB, NULL, 10 );
+          \t\tif ( ulBudgetMB < 16 ) ulBudgetMB = 16;
+          \t\tif ( ulBudgetMB > 1024 ) ulBudgetMB = 1024;
+          \t\tguiTileCacheBudgetBytes = (UINT32)ulBudgetMB * 1024u * 1024u;
+          \t}
+          }
+          """
+          new_budget = """static void InitTileCacheBudget( )
+          {
+          \tconst UINT32 uiDefaultBudgetMB = 128u;
+          \tconst UINT32 uiMinBudgetMB = 16u;
+          \tconst UINT32 uiMaxBudgetMB = 512u; // Win32/non-LAA: preserve process address-space headroom.
+          \tUINT32 uiBudgetMB = uiDefaultBudgetMB;
+
+          \tconst CHAR8 *pBudgetMB = getenv( "VR_VHD_TILE_CACHE_MB" );
+          \tif ( pBudgetMB != NULL && pBudgetMB[0] != 0 )
+          \t{
+          \t\tCHAR8 *pEnd = NULL;
+          \t\tconst unsigned long ulParsed = strtoul( pBudgetMB, &pEnd, 10 );
+          \t\tif ( pEnd != pBudgetMB && pEnd != NULL && *pEnd == 0 )
+          \t\t{
+          \t\t\tif ( ulParsed < uiMinBudgetMB )
+          \t\t\t\tuiBudgetMB = uiMinBudgetMB;
+          \t\t\telse if ( ulParsed > uiMaxBudgetMB )
+          \t\t\t\tuiBudgetMB = uiMaxBudgetMB;
+          \t\t\telse
+          \t\t\t\tuiBudgetMB = (UINT32)ulParsed;
+          \t\t}
+          \t}
+          \tguiTileCacheBudgetBytes = uiBudgetMB * 1024u * 1024u;
+          }
+          """
+          if old_budget not in s:
+              raise SystemExit("Expected original tile-cache budget block not found")
+          s = s.replace(old_budget, new_budget, 1)
+
+          old_cleanup = """\t\tMemFree( gpTileCache );
+          \t}
+
+          \tif ( gpTileCacheStructInfo != NULL )
+          \t{
+          \t\tMemFree( gpTileCacheStructInfo );
+          \t}
+
+          \tguiCurTileCacheSize = 0;
+          \tguiTileCacheResidentBytes = 0;
+          \tguiTileCachePeakBytes = 0;
+          """
+          new_cleanup = """\t\tMemFree( gpTileCache );
+          \t\tgpTileCache = NULL;
+          \t}
+
+          \tif ( gpTileCacheStructInfo != NULL )
+          \t{
+          \t\tMemFree( gpTileCacheStructInfo );
+          \t\tgpTileCacheStructInfo = NULL;
+          \t}
+
+          \tguiCurTileCacheSize = 0;
+          \tguiNumTileCacheStructs = 0;
+          \tgiDefaultStructIndex = -1;
+          \tguiTileCacheResidentBytes = 0;
+          \tguiTileCachePeakBytes = 0;
+          """
+          if old_cleanup not in s:
+              raise SystemExit("Expected tile-cache shutdown block not found")
+          s = s.replace(old_cleanup, new_cleanup, 1)
+
+          p.write_text(s, encoding="utf-8")
           PY
 
           git add "TileEngine/Tile Cache.cpp"
           git diff --cached --check
-          git commit -m "VHD cache: cap override for Win32 address space"
+          git commit -m "VHD cache: harden Win32 budget and shutdown state"
 
           git rm .automation/vhd-cache-reviewed.trigger
           git commit -m "Automation: clear reviewed VHD cache trigger"
