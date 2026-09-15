@@ -385,6 +385,15 @@ enum
 	AI_SHORT_PLAN_CQB
 };
 
+enum
+{
+	AI_SETBACK_NONE = 0,
+	AI_SETBACK_SURPRISE,
+	AI_SETBACK_EXPOSURE,
+	AI_SETBACK_CQB_ENTRY,
+	AI_SETBACK_ROUTE
+};
+
 struct AICONTACTBELIEF
 {
 	UINT8 ubOpponentID;
@@ -459,6 +468,7 @@ struct AITACTICALPOSITIONFEATURES
 	INT16 sReactionRisk;
 	INT16 sPathExposure;
 	INT16 sGeometryScore;
+	INT16 sSetbackPenalty;
 };
 
 struct AISHORTPLANSTATE
@@ -511,6 +521,9 @@ void AIAdvanceShortPlan(SOLDIERTYPE *pSoldier);
 void AICancelShortPlan(SOLDIERTYPE *pSoldier);
 void AIResetTacticalReasoningStateForLoad(void);
 BOOLEAN AIObserveContactChange(SOLDIERTYPE *pSoldier, AICONTACTCHANGE *pChange);
+void AIRegisterTacticalSetback(SOLDIERTYPE *pSoldier, UINT8 ubType,
+	INT32 sGridNo, UINT8 ubSeverity, UINT8 ubTurns);
+INT32 AITacticalSetbackPenalty(SOLDIERTYPE *pSoldier, INT32 sCandidateGridNo);
 
 // Functional command hierarchy. The visible rank ladder mirrors 1.13 EnemyRank.xml
 // (experience levels 1-10); GENERAL is reserved for exceptional explicit commanders.
