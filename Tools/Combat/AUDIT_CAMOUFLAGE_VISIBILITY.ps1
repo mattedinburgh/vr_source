@@ -125,9 +125,9 @@ foreach ($file in (Get-ChildItem -LiteralPath $MetadataRoot -Filter *.xml -File 
             MaxEffectiveness = $maxEffectiveness
             SinglePerfectCamoAdj = $single
             MixedPerfectCamoAdj = $mixed
-            SightPercentInitial = [Math]::Max(0, 100 + $mixed)
-            SightPercentAfter1Watch = [Math]::Max(0, 100 + $tracked1)
-            SightPercentAfterMaxWatch = [Math]::Max(0, 100 + $trackedMax)
+            NominalSightPercentInitial = [Math]::Max(0, 100 + $mixed)
+            NominalSightPercentAfter1Watch = [Math]::Max(0, 100 + $tracked1)
+            NominalSightPercentAfterMaxWatch = [Math]::Max(0, 100 + $trackedMax)
             InitialMinus100 = ($mixed -le -100)
             StillMinus100After1Watch = ($tracked1 -le -100)
         })
@@ -138,7 +138,7 @@ $csv = Join-Path $OutputDirectory "camouflage_visibility_matrix.csv"
 $rows | Export-Csv -LiteralPath $csv -NoTypeInformation -Encoding UTF8
 
 $worstInitial = $rows | Sort-Object MixedPerfectCamoAdj | Select-Object -First 1
-$worstTracked = $rows | Sort-Object SightPercentAfter1Watch | Select-Object -First 1
+$worstTracked = $rows | Sort-Object NominalSightPercentAfter1Watch | Select-Object -First 1
 $initialMinus100 = @($rows | Where-Object InitialMinus100)
 $trackedMinus100 = @($rows | Where-Object StillMinus100After1Watch)
 
@@ -159,10 +159,10 @@ $summary = [pscustomobject]@{
     WorstInitialTile = $worstInitial.Tile
     WorstInitialStance = $worstInitial.Stance
     WorstInitialAdjustment = $worstInitial.MixedPerfectCamoAdj
-    WorstInitialSightPercent = $worstInitial.SightPercentInitial
+    WorstInitialNominalSightPercent = $worstInitial.NominalSightPercentInitial
     WorstAfterOneWatchTile = $worstTracked.Tile
     WorstAfterOneWatchStance = $worstTracked.Stance
-    WorstAfterOneWatchSightPercent = $worstTracked.SightPercentAfter1Watch
+    WorstAfterOneWatchNominalSightPercent = $worstTracked.NominalSightPercentAfter1Watch
     MatrixCsv = $csv
 }
 
@@ -176,3 +176,4 @@ if ($trackedMinus100.Count -gt 0) {
 }
 
 Write-Host "PASS: one watched-location point prevents absolute camouflage disappearance in the audited matrix."
+Write-Host "Note: nominal 0% still has the engine minimum one-tile LOS floor."
