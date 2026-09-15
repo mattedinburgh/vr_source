@@ -111,5 +111,3 @@ Each patch must:
 4. Port cache improvements second.
 5. Port compositor changes only after visual/Z regression checks.
 6. Revisit native 32-bit framebuffer only after the true-colour pipeline is proven stable.
-
-[executed on device: MSI (e4de0d4a-2679-4f35-acaf-b6552e7ec980)]
