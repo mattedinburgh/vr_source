@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/san-mona-c5-preview.yml'
       - 'TileEngine/**'
+      - 'Standard Gaming Platform/**'
       - 'sgp/**'
       - 'Utils/**'
       - 'Tools/VRMapDisplayRouting.ps1'
@@ -421,9 +422,20 @@ jobs:
 
           $log = Get-Content $visualLog
           $trueColor = @($log | Where-Object { $_ -match '^(IMAGE_TRUECOLOR|IMAGE_VHD_NATIVE) ' })
+          $vhdFallback = @($log | Where-Object { $_ -match '^IMAGE_VHD_FALLBACK ' })
+          $legacyAt2x = @($log | Where-Object { $_ -match '^IMAGE_LEGACY ' })
           Write-Host "Native/true-colour tile surfaces loaded: $($trueColor.Count)"
+          Write-Host "Scaled legacy VHD fallback surfaces loaded: $($vhdFallback.Count)"
+          Write-Host "Unscaled legacy surfaces while forcing VHD2: $($legacyAt2x.Count)"
           if ($trueColor.Count -lt 4) {
             throw "Expected C5 native VHD2/B1TC visual replacements were not active (only $($trueColor.Count) native/true-colour surfaces)."
+          }
+          if ($legacyAt2x.Count -gt 0) {
+            $examples = ($legacyAt2x | Select-Object -First 6) -join '; '
+            throw "VHD2 fallback invariant failed: $($legacyAt2x.Count) traced C5 surfaces remained unscaled. Examples: $examples"
+          }
+          if ($vhdFallback.Count -lt 8) {
+            throw "VHD2 fallback invariant failed: expected scaled legacy fallback assets, found only $($vhdFallback.Count)."
           }
 
           $structural = @(

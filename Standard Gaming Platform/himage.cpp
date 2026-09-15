@@ -331,10 +331,12 @@ static BOOLEAN VHDUnpackETRLERegion( HIMAGE hImage, UINT16 usIndex, std::vector<
 	const UINT8 *pSrc = hImage->pPixData8 + pRegion->uiDataOffset;
 	const UINT8 *pEnd = pSrc + pRegion->uiDataLength;
 
-	// ETRLE is scanline based. Code 0 terminates a row and old JA2 assets may
-	// omit an explicit transparent run for the rest of that row. The previous
-	// VHD scaler flattened the stream and required exactly width*height encoded
-	// pixels, rejecting valid authored STI frames with implicit transparent tails.
+	// ETRLE is encoded per scanline.  A zero code terminates the current row;
+	// old STI assets are allowed to end a row before x reaches usWidth, with the
+	// unmentioned tail implicitly transparent.  The previous VHD decoder treated
+	// the stream as one flat width*height run and therefore rejected virtually
+	// every sprite containing a short transparent row.  Decode row-by-row so the
+	// legacy fallback can be enlarged without changing its authored alpha shape.
 	for ( UINT16 y = 0; y < pRegion->usHeight; ++y )
 	{
 		UINT16 x = 0;
@@ -343,19 +345,23 @@ static BOOLEAN VHDUnpackETRLERegion( HIMAGE hImage, UINT16 usIndex, std::vector<
 		while ( pSrc < pEnd )
 		{
 			const UINT8 ubCode = *pSrc++;
+			const UINT8 ubCount = ubCode & 0x7F;
+
 			if ( ubCode == 0 )
 			{
 				fEndOfLine = TRUE;
 				break;
 			}
 
-			const UINT8 ubCount = ubCode & 0x7F;
-			if ( ubCount == 0 || (UINT32)x + ubCount > pRegion->usWidth )
+			if ( ubCount == 0 )
+				return FALSE;
+
+			if ( (UINT32)x + ubCount > pRegion->usWidth )
 				return FALSE;
 
 			if ( ubCode & 0x80 )
 			{
-				// Transparent run: output is already zero-filled.
+				// Transparent run; output was pre-cleared to palette index 0.
 				x = (UINT16)( x + ubCount );
 			}
 			else
@@ -370,8 +376,6 @@ static BOOLEAN VHDUnpackETRLERegion( HIMAGE hImage, UINT16 usIndex, std::vector<
 
 		if ( !fEndOfLine )
 			return FALSE;
-
-		// x may be less than width: the unencoded tail is transparent by design.
 	}
 
 	return TRUE;

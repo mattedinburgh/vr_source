@@ -42,7 +42,6 @@ static void TraceSanMonaC5VisualAsset( const STR8 pStage, const STR8 pFilename, 
 	fclose( pTrace );
 }
 
-
 static HIMAGE CreateCanonicalSTIImage( const STR8 pFilename, UINT16 fContents )
 {
 	if ( pFilename == NULL )
