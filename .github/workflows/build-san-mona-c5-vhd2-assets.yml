@@ -19,7 +19,7 @@ concurrency:
 jobs:
   build-c5-vhd2-assets:
     runs-on: windows-2022
-    timeout-minutes: 60
+    timeout-minutes: 20
 
     steps:
       - name: Check out VHD source
@@ -27,27 +27,6 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 1
-
-      - name: Set up MSBuild
-        uses: microsoft/setup-msbuild@v2
-
-      - name: Build ja2export with dependencies
-        shell: powershell
-        run: |
-          $projects=@(
-            '.\ext\libpng\projects\visualc71\zlib_VS2013.vcxproj',
-            '.\ext\libpng\projects\visualc71\libpng_VS2013.vcxproj',
-            '.\ext\VFS\build\7z_VS2013.vcxproj',
-            '.\ext\VFS\build\VFS_VS2013.vcxproj',
-            '.\ext\export\ja2export_VS2013.vcxproj'
-          )
-          foreach($project in $projects){
-            Write-Host "Building dependency: $project"
-            msbuild $project /m /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143
-            if($LASTEXITCODE-ne0){throw "Build failed for $project with exit code $LASTEXITCODE"}
-          }
-          $exe=Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\Release\ja2export.exe'
-          if(-not(Test-Path $exe)){throw "ja2export missing: $exe"}
 
       - name: Fetch canonical C5 structural STI contracts
         shell: powershell
@@ -76,95 +55,30 @@ jobs:
             Write-Host "Canonical contract: $target ($((Get-Item $dst).Length) bytes)"
           }
 
-      - name: Extract frame geometry and offsets
+      - name: Install Pillow
         shell: powershell
         run: |
-          $ErrorActionPreference='Stop'
-          $exporter=Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\Release\ja2export.exe'
-          $source=Join-Path $env:GITHUB_WORKSPACE 'C5Canonical'
-          $out=Join-Path $env:GITHUB_WORKSPACE 'C5Contracts'
-          New-Item -ItemType Directory -Force -Path $out | Out-Null
-
-          $targets=@(
-            'Cobble_Road.sti',
-            'Cobble_Road_Pieces.sti',
-            'Pave_b.sti',
-            'build_24.sti',
-            'slant_12.sti'
-          )
-
-          $manifest=@()
-          foreach($target in $targets){
-            $stem=[IO.Path]::GetFileNameWithoutExtension($target).ToUpperInvariant()
-            $src=Join-Path $source $target
-            $targetOut=Join-Path $out $stem
-            Remove-Item -LiteralPath $targetOut -Recurse -Force -ErrorAction SilentlyContinue
-            New-Item -ItemType Directory -Force -Path $targetOut | Out-Null
-
-            & $exporter sti -unpack -offsets -rgba -create_dst $src $targetOut | Out-Host
-            if($LASTEXITCODE-ne0){throw "ja2export failed for $target with exit code $LASTEXITCODE"}
-
-            $frames=@(Get-ChildItem -LiteralPath $targetOut -Recurse -File -Filter '*.png' -ErrorAction SilentlyContinue)
-            if($frames.Count -eq 0){throw "No frames extracted for $target"}
-
-            $manifest += [pscustomobject]@{
-              target=$target
-              family=$stem
-              source='mattedinburgh/vr_gamedir@feature/vhd-renderer-test'
-              frame_count=$frames.Count
-            }
-            Write-Host "Contract $stem: $($frames.Count) frame(s)"
-          }
-
-          $manifest | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 (Join-Path $out 'contract_manifest.json')
-
-      - name: Find Python and install Pillow
-        id: python
-        shell: powershell
-        run: |
-          $py=$null
-          $cmd=Get-Command py.exe -ErrorAction SilentlyContinue
-          if($cmd){$py="$($cmd.Source) -3"}
-          if(-not $py){
-            $cmd=Get-Command python.exe -ErrorAction SilentlyContinue
-            if($cmd){$py=$cmd.Source}
-          }
-          if(-not $py){throw 'Python 3 not found on render PC.'}
-          "cmd=$py"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
-
-          if($py -match ' -3$'){
-            & ($py -replace ' -3$','') -3 -m pip install --user Pillow
-          } else {
-            & $py -m pip install --user Pillow
-          }
+          py -3 -m pip install --disable-pip-version-check Pillow
           if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
 
       - name: Generate scratch-authored native VHD2 pixels
         shell: powershell
         run: |
-          $py='${{ steps.python.outputs.cmd }}'
           $script=Join-Path $env:GITHUB_WORKSPACE 'Tools\SanMonaC5\generate_vhd2_c5_pilot.py'
-          $contracts=Join-Path $env:GITHUB_WORKSPACE 'C5Contracts'
+          $source=Join-Path $env:GITHUB_WORKSPACE 'C5Canonical'
           $out=Join-Path $env:GITHUB_WORKSPACE 'C5VHD2'
 
-          if($py -match ' -3$'){
-            $exe=$py -replace ' -3$',''
-            & $exe -3 $script --extract-root $contracts --out-root $out
-          } else {
-            & $py $script --extract-root $contracts --out-root $out
-          }
+          py -3 $script --sti-root $source --out-root $out
           if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
 
           $assets=@(Get-ChildItem -LiteralPath (Join-Path $out 'VHD2\TILESETS\18') -Filter '*.b1tc' -File)
-          if($assets.Count -lt 5){throw "Expected five native VHD2 structural assets, generated $($assets.Count)."}
+          if($assets.Count -ne 5){throw "Expected exactly five native VHD2 structural assets, generated $($assets.Count)."}
           Write-Host "Generated native VHD2 assets: $($assets.Name -join ', ')"
 
       - name: Upload native VHD2 pilot pack
         uses: actions/upload-artifact@v4
         with:
           name: san-mona-c5-vhd2-scratch-pilot
-          path: |
-            C5VHD2/
-            C5Contracts/contract_manifest.json
+          path: C5VHD2/
           if-no-files-found: error
           retention-days: 14
