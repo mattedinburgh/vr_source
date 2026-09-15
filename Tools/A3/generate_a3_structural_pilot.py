@@ -31,6 +31,7 @@ import argparse
 import hashlib
 import math
 import random
+import re
 import struct
 import sys
 from pathlib import Path
@@ -604,6 +605,52 @@ def render_roof(
     return out
 
 
+def validate_runtime_alias_table() -> dict:
+    """Keep the source-side factory and TileEngine A3 alias table in lockstep."""
+    repo_root = Path(__file__).resolve().parents[2]
+    tile_surface = repo_root / "TileEngine" / "Tile Surface.cpp"
+    if not tile_surface.is_file():
+        raise FileNotFoundError(f"A3 runtime alias source not found: {tile_surface}")
+
+    text = tile_surface.read_text(encoding="utf-8", errors="replace")
+    start = text.find("static const A3_VISUAL_ALIAS gAliases[]")
+    if start < 0:
+        raise ValueError("A3 runtime alias table not found in Tile Surface.cpp")
+    end = text.find("};", start)
+    if end < 0:
+        raise ValueError("A3 runtime alias table is unterminated")
+    block = text[start:end]
+
+    actual = {
+        (canonical.upper(), visual.replace("\\\\", "\\").upper())
+        for canonical, visual in re.findall(
+            r'\\{\\s*"([^"]+)"\\s*,\\s*"([^"]+)"\\s*,\\s*(?:TRUE|FALSE)\\s*\\}',
+            block,
+        )
+    }
+    declared = {}
+    for family, (filename, _base, _flavour) in {**WALLS, **FLOORS, **ROOFS}.items():
+        declared[family] = (
+            filename.upper(),
+            f"TILESETS\\38\\VR_A3_{family}.STI".upper(),
+        )
+    expected = set(declared.values())
+
+    missing = sorted(expected - actual)
+    extra = sorted(actual - expected)
+    if missing or extra:
+        raise ValueError(
+            "A3 factory/runtime alias drift: "
+            f"missing={missing or 'none'} extra={extra or 'none'}"
+        )
+
+    return {
+        "engine_source": str(tile_surface),
+        "aliases": len(expected),
+        "alias_sha256": hashlib.sha256(block.encode("utf-8")).hexdigest(),
+    }
+
+
 def validate_generated_contract(
     family: str,
     source: Path,
@@ -809,6 +856,7 @@ def main() -> None:
     ns = ap.parse_args()
 
     qa_root = ns.qa_root or (ns.out_root / "_qa")
+    alias_audit = validate_runtime_alias_table() if ns.strict else None
     results = []
     missing = []
 
@@ -839,6 +887,13 @@ def main() -> None:
         "Legacy contract retained: frame count, dimensions, offsets, alpha footprint",
         "Contract verification: REQUIRED before artifact write",
         f"Production strict mode: {'YES' if ns.strict else 'NO'}",
+        *(
+            [
+                f"Runtime aliases verified: {alias_audit['aliases']}",
+                f"Runtime alias table hash: {alias_audit['alias_sha256'][:16]}",
+            ]
+            if alias_audit else []
+        ),
         "",
     ]
     for r in results:
@@ -862,6 +917,8 @@ def main() -> None:
         )
 
     print(f"generated {len(results)} structural families; skipped {len(missing)}")
+    if alias_audit:
+        print(f"runtime alias verification: PASS ({alias_audit['aliases']} aliases)")
     print("contract verification: PASS")
     print(f"manifest: {manifest}")
     print(f"QA sheets: {qa_root}")
