@@ -443,15 +443,15 @@ void ToggleShowMoveItem()
 // Vengeance sector-inventory squad logistics.
 //
 // 3x ammo:
-//   * leaves ammunition already loaded in weapons untouched;
-//   * pools all spare ammo carried by mercs in the selected sector together with
-//     reachable sector ammo;
-//   * normally gives up to three spare magazines for a weapon;
-//   * if one merc carries 2+ weapons using the same calibre, those weapons share
-//     a hard cap of four spare magazines total;
-//   * ammo preference: AP -> standard -> other -> HP/blue -> Glaser;
-//   * shortages are distributed fairly between merc/calibre demands;
-//   * magazines are placed in LBE-backed inventory pockets first.
+//   * pools all spare ammo carried by eligible mercs with reachable sector ammo;
+//   * fills carried guns first, preserving a partial load unless a strictly better
+//     penetrator can provide a complete replacement load;
+//   * then gives up to three spare magazines per carried weapon;
+//   * ranks combat ammo from XML data by actual armour penetration, with damage
+//     and combat flags as tie-breakers; pure utility rounds are last;
+//   * requires a real gun-sized magazine/loose-round item for automated loadout;
+//   * shortages are distributed in fair per-weapon waves and surplus stays pooled;
+//   * magazines are placed through the normal NIV/LBE pocket-placement logic.
 //
 // SMK:
 //   * pools hand-thrown smoke grenades from the squad and reachable sector stash;
@@ -713,12 +713,33 @@ static INT32 CompareSectorLoadoutRatio( INT32 iNumA, INT32 iDenA, INT32 iNumB, I
 	return 0;
 }
 
+static BOOLEAN SectorLoadoutAmmoIsUtility( UINT8 ubAmmoType )
+{
+	AMMOTYPE &ammo = AmmoTypes[ubAmmoType];
+
+	// Zero-damage ammunition (for example pepper spray) is utility by definition.
+	if ( ammo.beforeArmourDamageMultiplier <= 0 || ammo.afterArmourDamageMultiplier <= 0 )
+		return TRUE;
+
+	// Keep dedicated lock-busting ammunition out of normal combat priority when
+	// it offers neither improved armour penetration nor improved post-armour damage.
+	// This deliberately does NOT demote combat-capable breaching rounds such as
+	// CAWS/AP Beowulf variants whose XML gives them genuine penetration advantages.
+	if ( ammo.lockBustingPower > 0 && ammo.highExplosive == 0 && !ammo.antiTank &&
+		 CompareSectorLoadoutRatio( ammo.armourImpactReductionMultiplier, ammo.armourImpactReductionDivisor, 1, 1 ) >= 0 &&
+		 CompareSectorLoadoutRatio( ammo.afterArmourDamageMultiplier, ammo.afterArmourDamageDivisor, 1, 1 ) <= 0 )
+		return TRUE;
+
+	return FALSE;
+}
+
 static BOOLEAN SectorLoadoutAmmoHasDamagePotential( UINT8 ubAmmoType )
 {
 	AMMOTYPE &ammo = AmmoTypes[ubAmmoType];
 
-	// Prevent special zero-damage utility ammunition from accidentally sorting
-	// ahead of real combat ammunition merely because its armour multiplier is 0.
+	if ( SectorLoadoutAmmoIsUtility( ubAmmoType ) )
+		return FALSE;
+
 	return ( ( ammo.beforeArmourDamageMultiplier > 0 &&
 			   ammo.afterArmourDamageMultiplier > 0 ) ||
 			 ammo.highExplosive != 0 ||
@@ -779,6 +800,42 @@ static BOOLEAN SectorLoadoutAmmoTypeLess( UINT8 a, UINT8 b )
 	return a < b;
 }
 
+// Automated sector loadout should create ammunition the weapon can actually carry
+// as its ready magazine/loose rounds. 1.13's FindReplacementMagazine() deliberately
+// permits a larger same-type fallback for recovery/conversion cases; that is useful
+// elsewhere, but a 100-round box or oversized belt is not a valid "spare magazine".
+static UINT16 FindExactSectorLoadoutAmmoItem( UINT8 ubCalibre, UINT16 usMagSize, UINT8 ubAmmoType )
+{
+	UINT16 usBestItem = NOTHING;
+	UINT8 ubBestMagType = 255;
+
+	for ( UINT16 usMagIndex = 0; Magazine[usMagIndex].ubCalibre != NOAMMO; ++usMagIndex )
+	{
+		MAGTYPE &mag = Magazine[usMagIndex];
+		if ( mag.ubCalibre != ubCalibre || mag.ubMagSize != usMagSize || mag.ubAmmoType != ubAmmoType )
+			continue;
+
+		// Boxes/crates are bulk containers.  Only magazines and loose-round entries
+		// may become weapon-ready ammo in the automated loadout.
+		if ( mag.ubMagType >= AMMO_BOX )
+			continue;
+
+		UINT16 usItem = MagazineClassIndexToItemType( usMagIndex );
+		if ( usItem == NOTHING )
+			continue;
+
+		// Prefer a normal magazine over a loose-round representation when both exist;
+		// otherwise keep the first deterministic exact match.
+		if ( usBestItem == NOTHING || mag.ubMagType < ubBestMagType )
+		{
+			usBestItem = usItem;
+			ubBestMagType = mag.ubMagType;
+		}
+	}
+
+	return usBestItem;
+}
+
 static void GetCompatibleSectorAmmoTypes( UINT8 ubCalibre, UINT16 usMagSize, std::vector<UINT8> &types )
 {
 	types.clear();
@@ -796,7 +853,7 @@ static void GetCompatibleSectorAmmoTypes( UINT8 ubCalibre, UINT16 usMagSize, std
 		if ( mag.ubCalibre != ubCalibre )
 			continue;
 
-		if ( FindReplacementMagazine( ubCalibre, usMagSize, mag.ubAmmoType ) == 0 )
+		if ( FindExactSectorLoadoutAmmoItem( ubCalibre, usMagSize, mag.ubAmmoType ) == NOTHING )
 			continue;
 
 		if ( std::find( types.begin(), types.end(), mag.ubAmmoType ) == types.end() )
@@ -820,15 +877,22 @@ static INT16 FindSectorAmmoTypeForFill( UINT8 ubCalibre, UINT16 usMagSize, UINT3
 			return (INT16)types[i];
 	}
 
-	// Only when no compatible type can make the requested full load do we accept
-	// a partial one; penetration remains the ordering here as well.
+	// If no type can make a full load, prefer the type that fills the magazine
+	// most. Penetration order is retained as the tie-breaker because 'types' is
+	// already sorted strongest-first and we only replace on a strictly larger count.
+	INT16 sBestType = -1;
+	UINT32 uiBestRounds = 0;
 	for ( UINT32 i = 0; i < types.size(); ++i )
 	{
-		if ( CountSectorAmmoRounds( ubCalibre, types[i] ) > 0 )
-			return (INT16)types[i];
+		UINT32 uiAvailable = CountSectorAmmoRounds( ubCalibre, types[i] );
+		if ( uiAvailable > uiBestRounds )
+		{
+			uiBestRounds = uiAvailable;
+			sBestType = (INT16)types[i];
+		}
 	}
 
-	return -1;
+	return sBestType;
 }
 
 static UINT32 CountAllCompatibleSectorAmmoRounds( UINT8 ubCalibre, UINT16 usMagSize )
@@ -851,8 +915,8 @@ static UINT16 BuildSectorAmmoObject( UINT8 ubCalibre, UINT16 usMagSize,
 	if ( pOut == NULL || usWantedRounds == 0 )
 		return 0;
 
-	UINT16 usMagItem = FindReplacementMagazine( ubCalibre, usMagSize, ubAmmoType );
-	if ( usMagItem == 0 )
+	UINT16 usMagItem = FindExactSectorLoadoutAmmoItem( ubCalibre, usMagSize, ubAmmoType );
+	if ( usMagItem == NOTHING )
 		return 0;
 
 	if ( !CreateAmmo( usMagItem, pOut, 0 ) )
@@ -926,7 +990,7 @@ static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject )
 		else
 		{
 			// Otherwise preserve the current ammo type and top it up if possible.
-			if ( FindReplacementMagazine( ubCalibre, usMagSize, ubCurrentType ) == 0 ||
+			if ( FindExactSectorLoadoutAmmoItem( ubCalibre, usMagSize, ubCurrentType ) == NOTHING ||
 				 CountSectorAmmoRounds( ubCalibre, ubCurrentType ) == 0 )
 				return 0;
 
@@ -3003,7 +3067,7 @@ void CreateMapInventoryButtons( void )
 		BUTTON_USE_DEFAULT, sLoadoutButtonX, sLoadoutButtonY, sLoadoutButtonW, sLoadoutButtonH,
 		BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST, NULL, (GUI_CALLBACK)MapInventoryPoolAmmo3xBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[0],
-		L"3x: cargar armas primero y luego dar 3 cargadores por arma. Municion: mayor penetracion de blindaje primero, segun valores XML; reparto equilibrado segun espacio." );
+		L"3x: cargar armas primero y luego dar 3 cargadores por arma. Municion: penetracion XML primero; si no hay carga completa, se prioriza el cargador mas lleno. Municion utilitaria al final." );
 
 	guiMapInvenLoadoutButton[1] = CreateTextButton( L"HUMO", COMPFONT, FONT_MCOLOR_DKWHITE, FONT_BLACK,
 		BUTTON_USE_DEFAULT, sLoadoutButtonX + sLoadoutButtonW + sLoadoutButtonGap, sLoadoutButtonY,
