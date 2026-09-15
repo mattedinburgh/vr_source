@@ -341,10 +341,10 @@ jobs:
           if (-not (Test-Path $visualLog)) { throw 'C5 visual/JSD diagnostic log was not produced.' }
 
           $log = Get-Content $visualLog
-          $trueColor = @($log | Where-Object { $_ -match '^IMAGE_TRUECOLOR ' })
-          Write-Host "True-colour tile surfaces loaded: $($trueColor.Count)"
+          $trueColor = @($log | Where-Object { $_ -match '^(IMAGE_TRUECOLOR|IMAGE_VHD_NATIVE) ' })
+          Write-Host "Native/true-colour tile surfaces loaded: $($trueColor.Count)"
           if ($trueColor.Count -lt 4) {
-            throw "Expected C5 B1TC visual replacements were not active (only $($trueColor.Count) true-colour surfaces)."
+            throw "Expected C5 native VHD2/B1TC visual replacements were not active (only $($trueColor.Count) native/true-colour surfaces)."
           }
 
           $structural = @(
