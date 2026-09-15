@@ -6163,6 +6163,3 @@ BOOLEAN MAPTRANSLATION::SetTrnPar(INT32 iFromRows, INT32 iFromCols, INT32 iToRow
 		fTrn = FALSE;
 	return(fTrn);
 }
-
-
-[executed on device: MSI (e4de0d4a-2679-4f35-acaf-b6552e7ec980)]
