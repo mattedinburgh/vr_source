@@ -18,6 +18,8 @@
 	#include "fileman.h"
 #endif
 
+#include "ExceptionHandling.h"
+
 
 UINT32	guiNumTileCacheStructs = 0;
 UINT32 guiMaxTileCacheSize		= 50;
@@ -27,6 +29,191 @@ INT32	giDefaultStructIndex	= -1;
 TILE_CACHE_ELEMENT		*gpTileCache = NULL;
 TILE_CACHE_STRUCT			*gpTileCacheStructInfo = NULL;
 
+// VHD-aware cache accounting.  The original cache treated every tile as equal and
+// could evict an actively referenced tile when all 50 slots were occupied.  HD art
+// breaks that assumption: resident cost varies dramatically with scale and format.
+static UINT32 guiTileCacheAccessTick = 0;
+static UINT32 guiTileCacheResidentBytes = 0;
+static UINT32 guiTileCachePeakBytes = 0;
+static UINT32 guiTileCacheHitCount = 0;
+static UINT32 guiTileCacheMissCount = 0;
+static UINT32 guiTileCacheEvictionCount = 0;
+static UINT32 guiTileCacheBudgetBytes = 128u * 1024u * 1024u;
+
+static UINT32 TileCacheSaturatingAdd( UINT32 a, UINT32 b )
+{
+	return ( 0xFFFFFFFFu - a < b ) ? 0xFFFFFFFFu : a + b;
+}
+
+static UINT32 TileCacheSaturatingMul( UINT32 a, UINT32 b )
+{
+	if ( a == 0 || b == 0 )
+		return 0;
+	return ( a > 0xFFFFFFFFu / b ) ? 0xFFFFFFFFu : a * b;
+}
+
+static BOOLEAN TileCacheDiagnosticsEnabled( )
+{
+	const CHAR8 *pEnabled = getenv( "VR_VHD_TILE_CACHE_DIAGNOSTICS" );
+	return pEnabled != NULL && strcmp( pEnabled, "1" ) == 0;
+}
+
+static void InitTileCacheBudget( )
+{
+	const CHAR8 *pBudgetMB = getenv( "VR_VHD_TILE_CACHE_MB" );
+	if ( pBudgetMB != NULL && pBudgetMB[0] != 0 )
+	{
+		unsigned long ulBudgetMB = strtoul( pBudgetMB, NULL, 10 );
+		if ( ulBudgetMB < 16 ) ulBudgetMB = 16;
+		if ( ulBudgetMB > 1024 ) ulBudgetMB = 1024;
+		guiTileCacheBudgetBytes = (UINT32)ulBudgetMB * 1024u * 1024u;
+	}
+}
+
+static UINT32 EstimateTileImageryResidentBytes( PTILE_IMAGERY pImagery )
+{
+	if ( pImagery == NULL )
+		return 0;
+
+	UINT32 uiBytes = (UINT32)sizeof( TILE_IMAGERY );
+	HVOBJECT hVObject = pImagery->vo;
+	if ( hVObject == NULL )
+		return uiBytes;
+
+	uiBytes = TileCacheSaturatingAdd( uiBytes, (UINT32)sizeof( *hVObject ) );
+	uiBytes = TileCacheSaturatingAdd( uiBytes, hVObject->uiSizePixData );
+	uiBytes = TileCacheSaturatingAdd( uiBytes,
+		TileCacheSaturatingMul( (UINT32)hVObject->usNumberOfObjects, (UINT32)sizeof( ETRLEObject ) ) );
+
+	if ( hVObject->pPaletteEntry != NULL )
+		uiBytes = TileCacheSaturatingAdd( uiBytes, 256u * (UINT32)sizeof( SGPPaletteEntry ) );
+	if ( hVObject->p16BPPPalette != NULL )
+		uiBytes = TileCacheSaturatingAdd( uiBytes, 256u * (UINT32)sizeof( UINT16 ) );
+
+	if ( hVObject->p16BPPObject != NULL && hVObject->usNumberOf16BPPObjects > 0 )
+	{
+		uiBytes = TileCacheSaturatingAdd( uiBytes,
+			TileCacheSaturatingMul( (UINT32)hVObject->usNumberOf16BPPObjects,
+				(UINT32)sizeof( SixteenBPPObjectInfo ) ) );
+		for ( UINT16 usObject = 0; usObject < hVObject->usNumberOf16BPPObjects; ++usObject )
+		{
+			const SixteenBPPObjectInfo *pObject = &hVObject->p16BPPObject[ usObject ];
+			if ( pObject->p16BPPData != NULL )
+			{
+				UINT32 uiPixels = TileCacheSaturatingMul( (UINT32)pObject->usWidth, (UINT32)pObject->usHeight );
+				uiBytes = TileCacheSaturatingAdd( uiBytes, TileCacheSaturatingMul( uiPixels, 2u ) );
+			}
+		}
+	}
+
+	return uiBytes;
+}
+
+static void TouchTileCacheEntry( UINT32 uiIndex )
+{
+	if ( uiIndex >= guiMaxTileCacheSize )
+		return;
+	++guiTileCacheAccessTick;
+	if ( guiTileCacheAccessTick == 0 )
+		guiTileCacheAccessTick = 1;
+	gpTileCache[ uiIndex ].uiLastAccessTick = guiTileCacheAccessTick;
+}
+
+static INT32 FindLRUUnreferencedTile( INT32 iProtectedIndex )
+{
+	INT32 iCandidate = -1;
+	UINT32 uiOldestTick = 0xFFFFFFFFu;
+	for ( UINT32 uiIndex = 0; uiIndex < guiCurTileCacheSize; ++uiIndex )
+	{
+		if ( (INT32)uiIndex == iProtectedIndex || gpTileCache[ uiIndex ].pImagery == NULL ||
+			 gpTileCache[ uiIndex ].sHits > 0 )
+			continue;
+		if ( iCandidate == -1 || gpTileCache[ uiIndex ].uiLastAccessTick < uiOldestTick )
+		{
+			iCandidate = (INT32)uiIndex;
+			uiOldestTick = gpTileCache[ uiIndex ].uiLastAccessTick;
+		}
+	}
+	return iCandidate;
+}
+
+static void EvictTileCacheEntry( UINT32 uiIndex, const STR8 pReason )
+{
+	if ( uiIndex >= guiMaxTileCacheSize || gpTileCache[ uiIndex ].pImagery == NULL )
+		return;
+
+	if ( TileCacheDiagnosticsEnabled( ) )
+	{
+		BlackBoxEvent( "VHD_CACHE",
+			"evict index=%u file=%s refs=%d bytes=%u reason=%s resident=%u budget=%u",
+			uiIndex, gpTileCache[ uiIndex ].zName, gpTileCache[ uiIndex ].sHits,
+			gpTileCache[ uiIndex ].uiResidentBytes, pReason != NULL ? pReason : "unknown",
+			guiTileCacheResidentBytes, guiTileCacheBudgetBytes );
+	}
+
+	if ( gpTileCache[ uiIndex ].uiResidentBytes <= guiTileCacheResidentBytes )
+		guiTileCacheResidentBytes -= gpTileCache[ uiIndex ].uiResidentBytes;
+	else
+		guiTileCacheResidentBytes = 0;
+
+	DeleteTileSurface( gpTileCache[ uiIndex ].pImagery );
+	gpTileCache[ uiIndex ].pImagery = NULL;
+	gpTileCache[ uiIndex ].sHits = 0;
+	gpTileCache[ uiIndex ].ubNumFrames = 0;
+	gpTileCache[ uiIndex ].sStructRefID = -1;
+	gpTileCache[ uiIndex ].uiLastAccessTick = 0;
+	gpTileCache[ uiIndex ].uiResidentBytes = 0;
+	gpTileCache[ uiIndex ].zName[0] = 0;
+	gpTileCache[ uiIndex ].zRootName[0] = 0;
+	++guiTileCacheEvictionCount;
+
+	while ( guiCurTileCacheSize > 0 && gpTileCache[ guiCurTileCacheSize - 1 ].pImagery == NULL )
+		--guiCurTileCacheSize;
+}
+
+static void TrimTileCacheToBudget( INT32 iProtectedIndex )
+{
+	while ( guiTileCacheResidentBytes > guiTileCacheBudgetBytes )
+	{
+		const INT32 iVictim = FindLRUUnreferencedTile( iProtectedIndex );
+		if ( iVictim < 0 )
+		{
+			if ( TileCacheDiagnosticsEnabled( ) )
+				BlackBoxEvent( "VHD_CACHE",
+					"budget pressure resident=%u budget=%u but all resident tiles are referenced",
+					guiTileCacheResidentBytes, guiTileCacheBudgetBytes );
+			break;
+		}
+		EvictTileCacheEntry( (UINT32)iVictim, "byte-budget" );
+	}
+}
+
+static BOOLEAN GrowTileCache( )
+{
+	const UINT32 uiOldMax = guiMaxTileCacheSize;
+	const UINT32 uiGrowBy = 25;
+	const UINT32 uiHardMax = 200;
+	if ( uiOldMax >= uiHardMax )
+		return FALSE;
+
+	const UINT32 uiNewMax = __min( uiOldMax + uiGrowBy, uiHardMax );
+	TILE_CACHE_ELEMENT *pNewCache = (TILE_CACHE_ELEMENT *)MemRealloc(
+		gpTileCache, sizeof( TILE_CACHE_ELEMENT ) * uiNewMax );
+	if ( pNewCache == NULL )
+		return FALSE;
+
+	gpTileCache = pNewCache;
+	memset( &gpTileCache[ uiOldMax ], 0, sizeof( TILE_CACHE_ELEMENT ) * ( uiNewMax - uiOldMax ) );
+	for ( UINT32 uiIndex = uiOldMax; uiIndex < uiNewMax; ++uiIndex )
+		gpTileCache[ uiIndex ].sStructRefID = -1;
+	guiMaxTileCacheSize = uiNewMax;
+
+	BlackBoxEvent( "VHD_CACHE",
+		"expanded slot table old=%u new=%u because all previous slots were actively referenced",
+		uiOldMax, uiNewMax );
+	return TRUE;
+}
+
 
 
 BOOLEAN InitTileCache(	)
@@ -35,16 +222,25 @@ BOOLEAN InitTileCache(	)
 	GETFILESTRUCT FileInfo;
 	INT16					sFiles = 0;
 
+	InitTileCacheBudget( );
 	gpTileCache = (TILE_CACHE_ELEMENT *)MemAlloc( sizeof( TILE_CACHE_ELEMENT ) * guiMaxTileCacheSize );
+	if ( gpTileCache == NULL )
+		return FALSE;
 
-	// Zero entries
+	memset( gpTileCache, 0, sizeof( TILE_CACHE_ELEMENT ) * guiMaxTileCacheSize );
 	for ( cnt = 0; cnt < guiMaxTileCacheSize; cnt++ )
-	{
-		gpTileCache[ cnt ].pImagery = NULL;
 		gpTileCache[ cnt ].sStructRefID = -1;
-	}
 
 	guiCurTileCacheSize = 0;
+	guiTileCacheAccessTick = 0;
+	guiTileCacheResidentBytes = 0;
+	guiTileCachePeakBytes = 0;
+	guiTileCacheHitCount = 0;
+	guiTileCacheMissCount = 0;
+	guiTileCacheEvictionCount = 0;
+
+	if ( TileCacheDiagnosticsEnabled( ) )
+		BlackBoxEvent( "VHD_CACHE", "init slots=%u budget=%u", guiMaxTileCacheSize, guiTileCacheBudgetBytes );
 
 
 	// OK, look for JSD files in the tile cache directory and
@@ -104,6 +300,14 @@ void DeleteTileCache( )
 {
 	UINT32 cnt;
 
+	if ( TileCacheDiagnosticsEnabled( ) )
+	{
+		BlackBoxEvent( "VHD_CACHE",
+			"shutdown resident=%u peak=%u hits=%u misses=%u evictions=%u slots=%u",
+			guiTileCacheResidentBytes, guiTileCachePeakBytes, guiTileCacheHitCount,
+			guiTileCacheMissCount, guiTileCacheEvictionCount, guiMaxTileCacheSize );
+	}
+
 	// Allocate entries
 	if ( gpTileCache != NULL )
 	{
@@ -124,6 +328,8 @@ void DeleteTileCache( )
 	}
 
 	guiCurTileCacheSize = 0;
+	guiTileCacheResidentBytes = 0;
+	guiTileCachePeakBytes = 0;
 }
 
 INT16 FindCacheStructDataIndex( STR8 cFilename )
@@ -143,127 +349,119 @@ INT16 FindCacheStructDataIndex( STR8 cFilename )
 
 INT32 GetCachedTile( const STR8 cFilename )
 {
-	UINT32			cnt;
-	UINT32			ubLowestIndex = 0;
-	INT16		sMostHits = (INT16)15000;
+	UINT32 cnt;
 
-	// Check to see if surface exists already
+	// Reuse resident imagery even if its active reference count dropped to zero.
 	for ( cnt = 0; cnt < guiCurTileCacheSize; cnt++ )
 	{
-		if ( gpTileCache[ cnt ].pImagery != NULL )
+		if ( gpTileCache[ cnt ].pImagery != NULL &&
+			 _stricmp( gpTileCache[ cnt ].zName, cFilename ) == 0 )
 		{
-			if ( _stricmp( gpTileCache[ cnt ].zName, cFilename ) == 0 )
-			{
-				// Found surface, return
+			if ( gpTileCache[ cnt ].sHits < 32767 )
 				gpTileCache[ cnt ].sHits++;
-				return( (INT32)cnt );
-			}
+			TouchTileCacheEntry( cnt );
+			++guiTileCacheHitCount;
+			return (INT32)cnt;
 		}
 	}
 
-	// Check if max size has been reached
-	if ( guiCurTileCacheSize == guiMaxTileCacheSize )
-	{
-		// cache out least used file
-		for ( cnt = 0; cnt < guiCurTileCacheSize; cnt++ )
-		{
-			if ( gpTileCache[ cnt ].sHits < sMostHits )
-			{
-					sMostHits = gpTileCache[ cnt ].sHits;
-					ubLowestIndex = cnt;
-			}
-		}
+	++guiTileCacheMissCount;
 
-		// Bump off lowest index
-		DeleteTileSurface( gpTileCache[ ubLowestIndex ].pImagery );
-
-		// Decrement
-		gpTileCache[ ubLowestIndex ].sHits = 0;
-		gpTileCache[ ubLowestIndex ].pImagery = NULL;
-		gpTileCache[ ubLowestIndex ].sStructRefID = -1;
-	}
-
-	// If here, Insert at an empty slot
-	// Find an empty slot
+	INT32 iSlot = -1;
 	for ( cnt = 0; cnt < guiMaxTileCacheSize; cnt++ )
 	{
 		if ( gpTileCache[ cnt ].pImagery == NULL )
 		{
-			// Insert here
-			gpTileCache[ cnt ].pImagery = LoadTileSurface( cFilename );
-
-			if ( gpTileCache[ cnt ].pImagery == NULL )
-			{
-				return( -1 );
-			}
-
-			strcpy( gpTileCache[ cnt ].zName, cFilename );
-			gpTileCache[ cnt ].sHits = 1;
-
-			// Get root name
-			GetRootName( gpTileCache[ cnt ].zRootName, cFilename );
-
-			gpTileCache[ cnt ].sStructRefID = FindCacheStructDataIndex( gpTileCache[ cnt ].zRootName );
-
-			// ATE: Add z-strip info
-			if ( gpTileCache[ cnt ].sStructRefID != -1 )
-			{
-				AddZStripInfoToVObject( gpTileCache[ cnt ].pImagery->vo, gpTileCacheStructInfo[	gpTileCache[ cnt ].sStructRefID ].pStructureFileRef, TRUE, 0 );
-			}
-
-			if ( gpTileCache[ cnt ].pImagery->pAuxData != NULL )
-			{
-				gpTileCache[ cnt ].ubNumFrames = gpTileCache[ cnt ].pImagery->	pAuxData->ubNumberOfFrames;
-			}
-			else
-			{
-				gpTileCache[ cnt ].ubNumFrames = 1;
-			}
-
-			// Has our cache size increased?
-			if ( cnt >= guiCurTileCacheSize )
-			{
-				guiCurTileCacheSize = cnt + 1;;
-			}
-
-			return( cnt );
+			iSlot = (INT32)cnt;
+			break;
 		}
 	}
 
-	// Can't find one!
-	return( -1 );
-}
+	// Prefer a genuinely unused LRU entry. Never discard an actively referenced
+	// tile merely because the legacy 50-slot table is full.
+	if ( iSlot < 0 )
+	{
+		iSlot = FindLRUUnreferencedTile( -1 );
+		if ( iSlot >= 0 )
+			EvictTileCacheEntry( (UINT32)iSlot, "slot-pressure" );
+		else if ( GrowTileCache( ) )
+		{
+			iSlot = (INT32)cnt; // cnt is the old size; first newly allocated slot.
+		}
+		else
+		{
+			BlackBoxEvent( "VHD_CACHE",
+				"load refused: all %u slots are actively referenced file=%s resident=%u",
+				guiMaxTileCacheSize, cFilename, guiTileCacheResidentBytes );
+			return -1;
+		}
+	}
 
+	const UINT32 uiSlot = (UINT32)iSlot;
+	gpTileCache[ uiSlot ].pImagery = LoadTileSurface( cFilename );
+	if ( gpTileCache[ uiSlot ].pImagery == NULL )
+		return -1;
+
+	strcpy( gpTileCache[ uiSlot ].zName, cFilename );
+	gpTileCache[ uiSlot ].sHits = 1;
+	GetRootName( gpTileCache[ uiSlot ].zRootName, cFilename );
+	gpTileCache[ uiSlot ].sStructRefID = FindCacheStructDataIndex( gpTileCache[ uiSlot ].zRootName );
+
+	if ( gpTileCache[ uiSlot ].sStructRefID != -1 )
+	{
+		AddZStripInfoToVObject( gpTileCache[ uiSlot ].pImagery->vo,
+			gpTileCacheStructInfo[ gpTileCache[ uiSlot ].sStructRefID ].pStructureFileRef, TRUE, 0 );
+	}
+
+	if ( gpTileCache[ uiSlot ].pImagery->pAuxData != NULL )
+		gpTileCache[ uiSlot ].ubNumFrames = gpTileCache[ uiSlot ].pImagery->pAuxData->ubNumberOfFrames;
+	else
+		gpTileCache[ uiSlot ].ubNumFrames = 1;
+
+	gpTileCache[ uiSlot ].uiResidentBytes = EstimateTileImageryResidentBytes( gpTileCache[ uiSlot ].pImagery );
+	guiTileCacheResidentBytes = TileCacheSaturatingAdd(
+		guiTileCacheResidentBytes, gpTileCache[ uiSlot ].uiResidentBytes );
+	guiTileCachePeakBytes = __max( guiTileCachePeakBytes, guiTileCacheResidentBytes );
+	TouchTileCacheEntry( uiSlot );
+
+	if ( uiSlot >= guiCurTileCacheSize )
+		guiCurTileCacheSize = uiSlot + 1;
+
+	if ( TileCacheDiagnosticsEnabled( ) )
+	{
+		BlackBoxEvent( "VHD_CACHE",
+			"load index=%u file=%s bytes=%u resident=%u peak=%u hits=%u misses=%u scale=%u",
+			uiSlot, cFilename, gpTileCache[ uiSlot ].uiResidentBytes,
+			guiTileCacheResidentBytes, guiTileCachePeakBytes, guiTileCacheHitCount,
+			guiTileCacheMissCount, gpTileCache[ uiSlot ].pImagery->vo != NULL ?
+			gpTileCache[ uiSlot ].pImagery->vo->ubVHDAssetScale : 1 );
+	}
+
+	TrimTileCacheToBudget( (INT32)uiSlot );
+	return (INT32)uiSlot;
+}
 
 BOOLEAN RemoveCachedTile( INT32 iCachedTile )
 {
-	UINT32			cnt;
+	if ( iCachedTile < 0 || (UINT32)iCachedTile >= guiCurTileCacheSize )
+		return FALSE;
 
-	// Find tile
-	for ( cnt = 0; cnt < guiCurTileCacheSize; cnt++ )
-	{
-		if ( gpTileCache[ cnt ].pImagery != NULL )
-		{
-			if ( cnt == (UINT32)iCachedTile )
-			{
-				// Found surface, decrement hits
-				gpTileCache[ cnt ].sHits--;
+	TILE_CACHE_ELEMENT *pEntry = &gpTileCache[ iCachedTile ];
+	if ( pEntry->pImagery == NULL )
+		return FALSE;
 
-				// Are we at zero?
-				if ( gpTileCache[ cnt ].sHits == 0 )
-				{
-						DeleteTileSurface( gpTileCache[ cnt ].pImagery );
-						gpTileCache[ cnt ].pImagery = NULL;
-						gpTileCache[ cnt ].sStructRefID = -1;
-						return( TRUE );;
-				}
-			}
-		}
-	}
+	if ( pEntry->sHits > 0 )
+		pEntry->sHits--;
+	TouchTileCacheEntry( (UINT32)iCachedTile );
 
-	return( FALSE );
+	// A zero reference count now means reusable, not immediately destroyed. This
+	// turns the old reference table into a real cache and lets short-lived animation
+	// tiles avoid repeated HD decode/scale work. Byte pressure still trims promptly.
+	if ( pEntry->sHits == 0 )
+		TrimTileCacheToBudget( -1 );
+
+	return TRUE;
 }
-
 
 HVOBJECT GetCachedTileVideoObject( INT32 iIndex )
 {
