@@ -115,36 +115,25 @@ BOOLEAN Blt32BPPTo16BPPTransClip(UINT16 *pDest, UINT32 uiDestPitch, UINT32 *pSrc
 	Assert(pSrc != NULL);
 	Assert(clipregion != NULL);
 
-	if (iDestXPos < clipregion->iLeft) 
-	{
-		INT32 diff = clipregion->iLeft - iDestXPos;
-		uiWidth -= diff;
-		iSrcXPos += diff;
-		iDestXPos = clipregion->iLeft;
-	}
+	// SGPRect right/bottom are exclusive, matching the legacy ETRLE blitters.
+	// Compute the intersection in signed space first so a sprite that is fully
+	// off the left/top edge cannot underflow the unsigned width/height.
+	const INT32 iDestRight = iDestXPos + (INT32)uiWidth;
+	const INT32 iDestBottom = iDestYPos + (INT32)uiHeight;
+	const INT32 iDrawLeft = __max( iDestXPos, clipregion->iLeft );
+	const INT32 iDrawTop = __max( iDestYPos, clipregion->iTop );
+	const INT32 iDrawRight = __min( iDestRight, clipregion->iRight );
+	const INT32 iDrawBottom = __min( iDestBottom, clipregion->iBottom );
 
-	if (iDestYPos < clipregion->iTop) 
-	{
-		INT32 diff = clipregion->iTop - iDestYPos;
-		uiHeight -= diff;
-		iSrcYPos += diff;
-		iDestYPos = clipregion->iTop;
-	}
+	if ( iDrawLeft >= iDrawRight || iDrawTop >= iDrawBottom )
+		return TRUE;
 
-	if (iDestXPos + uiWidth > clipregion->iRight + 1) 
-	{
-		uiWidth = clipregion->iRight - iDestXPos + 1;
-	}
-
-	if (iDestYPos + uiHeight > clipregion->iBottom + 1) 
-	{
-		uiHeight = clipregion->iBottom - iDestYPos + 1;
-	}
-
-	if (uiWidth <= 0 || uiHeight <= 0) 
-	{
-		return FALSE;
-	}
+	iSrcXPos += iDrawLeft - iDestXPos;
+	iSrcYPos += iDrawTop - iDestYPos;
+	iDestXPos = iDrawLeft;
+	iDestYPos = iDrawTop;
+	uiWidth = (UINT32)( iDrawRight - iDrawLeft );
+	uiHeight = (UINT32)( iDrawBottom - iDrawTop );
 
 	pSrcPtr = (UINT32 *)((UINT8 *)pSrc + (iSrcYPos * uiSrcPitch) + (iSrcXPos * 4));
 	uiLineSkipSrc = uiSrcPitch - (uiWidth * 4);
@@ -300,8 +289,8 @@ BOOLEAN BltTrueColorDataTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, 
 
 	INT32 iDrawLeft = __max(iDestLeft, iClipLeft);
 	INT32 iDrawTop = __max(iDestTop, iClipTop);
-	INT32 iDrawRight = __min(iDestLeft + (INT32)pObject->usWidth, iClipRight + 1);
-	INT32 iDrawBottom = __min(iDestTop + (INT32)pObject->usHeight, iClipBottom + 1);
+	INT32 iDrawRight = __min(iDestLeft + (INT32)pObject->usWidth, iClipRight);
+	INT32 iDrawBottom = __min(iDestTop + (INT32)pObject->usHeight, iClipBottom);
 
 	if(iDrawLeft >= iDrawRight || iDrawTop >= iDrawBottom)
 		return TRUE;
@@ -477,8 +466,8 @@ BOOLEAN BltTrueColorDataTo16BPPBufferZStrip(UINT16 *pBuffer, UINT32 uiDestPitchB
 
 	INT32 iDrawLeft = __max(iDestLeft, iClipLeft);
 	INT32 iDrawTop = __max(iDestTop, iClipTop);
-	INT32 iDrawRight = __min(iDestLeft + (INT32)pObject->usWidth, iClipRight + 1);
-	INT32 iDrawBottom = __min(iDestTop + (INT32)pObject->usHeight, iClipBottom + 1);
+	INT32 iDrawRight = __min(iDestLeft + (INT32)pObject->usWidth, iClipRight);
+	INT32 iDrawBottom = __min(iDestTop + (INT32)pObject->usHeight, iClipBottom);
 
 	if(iDrawLeft >= iDrawRight || iDrawTop >= iDrawBottom)
 		return TRUE;
@@ -595,8 +584,8 @@ BOOLEAN BltTrueColorMaskTo16BPPBuffer(UINT16 *pBuffer, UINT32 uiDestPitchBYTES, 
 
 	INT32 iDrawLeft = __max(iDestLeft, iClipLeft);
 	INT32 iDrawTop = __max(iDestTop, iClipTop);
-	INT32 iDrawRight = __min(iDestLeft + (INT32)pObject->usWidth, iClipRight + 1);
-	INT32 iDrawBottom = __min(iDestTop + (INT32)pObject->usHeight, iClipBottom + 1);
+	INT32 iDrawRight = __min(iDestLeft + (INT32)pObject->usWidth, iClipRight);
+	INT32 iDrawBottom = __min(iDestTop + (INT32)pObject->usHeight, iClipBottom);
 
 	if(iDrawLeft >= iDrawRight || iDrawTop >= iDrawBottom)
 		return TRUE;
