@@ -248,6 +248,59 @@ Keep the list compact. Avoid turning the engine into a materials laboratory.
 - sand / earth
 - sandbag construction
 
+## Distance and projectile energy
+
+Distance **must** matter to penetration.
+
+Current Vengeance already approximates this, but in an indirect way:
+
+- `BulletImpactReducedByRange()` is currently disabled/commented out.
+- `StructureResistanceIncreasedByRange()` increases effective barrier resistance with distance relative to the weapon's nominal range.
+- current constant: `PERCENT_BULLET_SLOWED_BY_RANGE = 25`.
+
+This produces distance-sensitive penetration, but conceptually it makes the **wall stronger** instead of making the **projectile weaker**.
+
+### 2026 design target
+
+Use one coherent concept:
+
+```
+remaining_projectile_energy(distance, previous_barriers)
+```
+
+Then barrier interaction becomes:
+
+```
+energy_before_barrier
+ - resistance(material, thickness, geometry, ammo/material interaction)
+ = energy_after_barrier
+```
+
+Distance loss should be calculated **before** the barrier interaction, and the projectile should keep the reduced residual energy afterward.
+
+This matters especially for:
+
+- a barrier close to the shooter vs the same barrier near maximum range
+- multiple barriers in sequence
+- a target standing immediately behind a penetrated wall
+- long-range AP vs FMJ comparison
+- short-barrel vs full-length weapon variants where projectile performance/range differs
+
+### Migration safety
+
+Do not simply enable the old `BulletImpactReducedByRange()` formula. It was disabled for historical gameplay/AI reasons.
+
+Instead:
+
+1. capture current damage/penetration baselines
+2. identify how damage falloff and weapon impact are currently calculated elsewhere
+3. define a single energy-decay function
+4. tune it so normal in-range shots do not lose excessive lethality
+5. remove/neutralise duplicate distance penalties once the new model is authoritative
+6. keep CTGT prediction and actual bullet resolution mathematically aligned
+
+The key rule is: **distance should reduce projectile capability once, not be double-counted through both energy loss and inflated structure resistance.**
+
 ## Ammo interaction
 
 Retain the existing externalised ammo structure modifiers.
@@ -269,22 +322,109 @@ Examples:
 
 This should be implemented through data where possible, not hard-coded special cases.
 
+## Precomputed structure penetration table
+
+Do not recalculate static structure geometry from scratch for every bullet.
+
+At map/content load time, build or load a **penetration profile table for every unique structure definition/state** and let placed map tiles reference it.
+
+Preferred key is the **structure definition/state**, not raw map grid number, because hundreds of placed tiles can share the same DB structure. This avoids duplicating identical data.
+
+Candidate record:
+
+```
+StructurePenetrationProfile
+{
+    structure_id
+    state_id / partner state
+    material
+    density
+    flags / archetype
+    orientation
+    occupied_shape[5][5][4]
+    geometric_depth_by_direction
+    inferred_thickness_class
+    inference_confidence
+    static_resistance_components
+}
+```
+
+### What should be precomputed
+
+For every unique static structure/state:
+
+- material family
+- current material resistance
+- density / porosity
+- 5 x 5 x 4 occupied geometry
+- wall/object orientation
+- archetype/flags
+- multi-tile footprint
+- thickness estimate from geometry
+- representative path depths by direction/angle bins
+- inferred construction class where explicit metadata is absent
+- confidence/source of the inference
+
+### What remains runtime
+
+Runtime calculation should only combine the cached structure profile with shot-specific variables:
+
+- exact projectile direction / sub-cell path
+- impact location and height
+- projectile remaining energy
+- distance already travelled
+- weapon/ammo
+- ammo-vs-material modifier
+- current structure state if changed/damaged/opened
+- previous barriers already crossed
+
+Doors/openables/destruction partners and any structure whose geometry/state changes must resolve to the appropriate cached state or be recalculated when state changes.
+
+### Optional generated audit table
+
+Generate a developer-facing table (CSV/debug dump) containing one row per unique structure state so we can inspect and tune the whole game systematically rather than guessing object-by-object.
+
+Suggested columns:
+
+```
+structure_id
+source tileset/file
+state
+archetype
+material
+density
+flags
+orientation
+occupied_volume
+min_path_depth
+median_path_depth
+max_path_depth
+inferred_thickness
+inference_source
+confidence
+legacy_resistance
+```
+
+This table can be regenerated whenever structure data changes. The runtime should use compact cached data, not repeatedly parse a CSV.
+
 ## Geometry plan
 
 For each projectile/structure encounter:
 
 1. retain current structure intersection test
 2. determine material
-3. measure/estimate occupied path length through the structure profile
-4. use wall/object orientation already available
-5. resolve effective thickness:
+3. retrieve the precomputed structure penetration profile/state
+4. measure/refine the exact occupied path length for this shot using the cached geometry
+5. use wall/object orientation already available
+6. resolve effective thickness:
    - use explicit class if available
    - otherwise infer from measured geometry + archetype + material prior
    - use legacy-equivalent fallback only if inference is impossible
-6. apply ammo-specific structure modifier
-7. subtract energy from projectile
-8. allow projectile to continue with residual impact if > 0
-9. accumulate multiple barriers naturally
+7. apply distance-dependent projectile energy state
+8. apply ammo-specific structure modifier
+9. subtract barrier energy loss from the projectile
+10. allow projectile to continue with residual impact if > 0
+11. accumulate multiple barriers naturally
 
 This should make oblique paths and multiple layers matter without inventing a separate arbitrary "angle bonus".
 
@@ -292,7 +432,8 @@ This should make oblique paths and multiple layers matter without inventing a se
 
 ### Phase 0 — baseline capture
 - no gameplay changes
-- record current penetration outcomes for representative barriers/ammo
+- record current penetration outcomes for representative barriers/ammo/distances
+- generate the first structure-profile audit table
 - create reproducible test sector / harness
 
 ### Phase 1 — material audit
@@ -304,6 +445,12 @@ This should make oblique paths and multiple layers matter without inventing a se
 - reduce protection of thin/light everyday objects
 - do not globally buff all guns
 - keep concrete/rock/heavy cover stable until measured
+
+### Phase 2.5 — cached structure-profile table
+- precompute one profile per unique structure definition/state
+- map placed tiles/objects to that profile
+- dump an auditable CSV/debug table for tuning
+- recalculate only dynamic states as required
 
 ### Phase 3 — effective-thickness resolver
 - add `THICKNESS_UNKNOWN` as "not explicitly tagged", **not** as "no thickness"
@@ -319,6 +466,12 @@ This should make oblique paths and multiple layers matter without inventing a se
 - verify no duplicate resistance is charged for the same physical wall crossing
 - explicitly tag only a small pilot set where semantics clearly add information
 - compare explicit vs inferred thickness outcomes
+
+### Phase 4.5 — projectile energy / distance audit
+- compare current structure-resistance-with-range approximation against actual projectile-energy decay
+- ensure damage and penetration use compatible energy assumptions
+- avoid double-counting distance
+- align actual bullet resolution and CTGT prediction
 
 ### Phase 5 — ammo/material calibration
 - use externalised ammo values
