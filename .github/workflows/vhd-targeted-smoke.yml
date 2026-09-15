@@ -3,6 +3,7 @@ name: Vengeance HD targeted renderer build
 on:
   push:
     branches:
+      - exp/vhd
       - feature/vhd-renderer
       - 'engine/vhd-*'
     paths:
