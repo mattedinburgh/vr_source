@@ -417,9 +417,11 @@ BOOLEAN LoadExternalGameplayData(STR directoryName)
 	// 1.13 Logical Body Types: visible tactical armour overlays.
 	// Keep the entire subsystem optional. A deployed marker proves files were
 	// downloaded, but XML parsing can still fail; no LOBOT parse failure is allowed
-	// to abort Vengeance startup.
+	// to abort Vengeance startup. Accept the legacy deployment marker as well so
+	// installs made by DEPLOY_LOBOT_EQUIPMENT.ps1 remain usable.
 	gfVisibleEquipmentRuntimeReady = FALSE;
-	if ( FileExists( "Anims\\LOBOT\\VR_EQUIPMENT.READY" ) )
+	if ( FileExists( "Anims\\LOBOT\\VR_EQUIPMENT.READY" ) ||
+		 FileExists( "TableData\\LogicalBodyTypes\\.vr_lobot_source_commit.txt" ) )
 	{
 		using namespace LogicalBodyTypes;
 		CHAR8 errorBuf[512] = "Failed loading LogicalBodyTypes external data!";
