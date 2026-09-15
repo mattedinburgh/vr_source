@@ -102,3 +102,29 @@ jobs:
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash
           Write-Host "Build OK: $exe"
           Write-Host "SHA256: $hash"
+
+
+  hosted-compile:
+    runs-on: windows-2022
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out integrated source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Generate VR build info
+        shell: powershell
+        run: |
+          & '.\\GENERATE_VR_BUILD_INFO.ps1' -RepoRoot '.' -OutputPath '.\\.generated\\VRBuildInfo.generated.h' -Configuration 'Release' -Platform 'Win32' -TargetName 'JA2_EN_Release.exe'
+
+      - name: Compile integration translation units
+        shell: powershell
+        run: |
+          msbuild '.\\ja2_VS2013.vcxproj' /m /t:ClCompile /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
