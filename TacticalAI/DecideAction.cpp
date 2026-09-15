@@ -3059,6 +3059,18 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 					!GuySawEnemy(pSoldier, SEEN_LAST_TURN) &&
 					!pSoldier->aiData.bUnderFire;
 
+				if (fUnconfirmedInvestigation)
+				{
+					INT8 bMemorySearchAction =
+						DecideThreatHypothesisSearch(
+							pSoldier,
+							pSoldier->bActionPoints >= MinPtsToMove(pSoldier),
+							sNoiseGridNo,
+							pSoldier->pathing.bLevel);
+					if (bMemorySearchAction != -1)
+						return bMemorySearchAction;
+				}
+
 				// Investigation is not an assault. A soldier responding to a reported
 				// contact that he has not personally confirmed should establish a covered
 				// perimeter/observation position instead of collapsing onto the exact
