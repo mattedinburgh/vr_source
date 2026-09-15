@@ -11,7 +11,7 @@ implemented in several places or on several permanent branches.
 | --- | --- | --- |
 | Public AI interface | `TacticalAI/ai.h` | Declarations only; no second public AI header |
 | Shared evaluation/state | `TacticalAI/AIUtils.cpp` | Doctrine, command, fireteams, risk, battle state, route exposure, compatibility utility wrapper |
-| Shared tactical reasoning | `TacticalAI/TacticalReasoning.cpp` | Legal contact beliefs, 8-sector local battlefield geometry, spatial feature evaluation/scoring, task reservations, short plans, contact-change/surprise tracking |
+| Shared tactical reasoning | `TacticalAI/TacticalReasoning.cpp` | Legal contact beliefs, decaying visual memory, anonymous sound corroboration, 8-sector local battlefield geometry, spatial feature evaluation/scoring, task reservations, short plans, contact-change/surprise tracking |
 | Decision orchestration | `TacticalAI/DecideAction.cpp` | Alert-state entry points, planner priority, suppression/contact-surprise responses, planner analytics adapters |
 | Casualty/medical AI | `TacticalAI/Medical.cpp` | Evacuation, medic rescue, buddy aid, self-aid |
 | Attack evaluation/execution helpers | `TacticalAI/Attacks.cpp` | Attack candidates and weapon-use execution support |
@@ -34,7 +34,8 @@ A behaviour may call helpers from several files, but it has exactly one orchestr
 | Fireteam identity/cohesion | `AIUtils.cpp` |
 | Tactical intent / role | `AIUtils.cpp` (persistent posture/role) + `TacticalReasoning.cpp` (short-plan/task state) |
 | Contact belief / uncertainty | `TacticalReasoning.cpp` |
-| Local battlefield geometry | `TacticalReasoning.cpp` (threat/friendly sectors, open flanks, safest direction, encirclement) |
+| Contact memory / sound evidence fusion | `TacticalReasoning.cpp`; `Knowledge.cpp` supplies only legitimate personal/public noise observations |
+| Local battlefield geometry | `TacticalReasoning.cpp` (threat/friendly sectors, remembered/corroborated danger, open flanks, safest direction, encirclement) |
 | Geometry-aware breakout search | `FindLocations.cpp::FindGeometryBreakoutSpot` |
 | Position utility / spatial features | `TacticalReasoning.cpp`; `AIUtils.cpp::AIUtilityPositionScore` is the compatibility wrapper |
 | Task reservations | `TacticalReasoning.cpp` |
