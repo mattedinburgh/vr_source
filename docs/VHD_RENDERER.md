@@ -35,12 +35,13 @@ Neither branch is merged into its canonical/main branch.
 
 ## Compile validation status
 
-- hosted MSVC Win32 full source compilation: PASS
-- hosted SGP / TileEngine / Tactical targeted build: PASS
+- hosted MSVC Win32 full source compilation/link: PASS
+- hosted SGP / TileEngine / Tactical / Editor targeted build: PASS
 - hosted root `ja2` compile-only check: PASS
-- hosted full link: pending legacy RakNet CRT compatibility validation
-- VS2013/v120 compatibility build: pending self-hosted runner availability
-- in-game 2x validation: pending executable build
+- legacy RakNet CRT link compatibility: PASS in hosted CI via `legacy_stdio_definitions.lib`
+- VS2013/v120 Release Win32 compatibility build: PASS on the self-hosted runner
+- isolated VHD 2x startup smoke: PASS
+- sector-by-sector visual/mechanical QA: ongoing during native VHD2 map production
 
 ## Current implementation
 
