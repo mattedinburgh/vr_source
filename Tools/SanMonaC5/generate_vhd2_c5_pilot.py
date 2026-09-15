@@ -40,7 +40,7 @@ FAMILY_BASE = {
     "BUILD_21": (78, 132, 132),      # oxidised/faded turquoise
     "BUILD_01": (171, 109, 92),      # dusty salmon
     "BUILD_06": (183, 174, 142),     # dirty cream
-    "SLANT_12": (113, 86, 67),       # aged corrugated roofing
+    "SLANT_12": (126, 118, 103),      # sun-dulled galvanised corrugated roofing
     "FLAT_R1": (103, 91, 76),
     "FLAT_R2": (109, 91, 74),
     "FLAT_R3": (97, 86, 74),
@@ -211,7 +211,8 @@ def render_wall(src: Image.Image, family: str, index: int) -> Image.Image:
 
     # One or two contiguous plaster-failure patches on selected frames.
     # Patch placement is broad enough to read as history, not red confetti.
-    patch_count = 1 + (1 if (frame_seed & 7) == 0 and w2 > 24 else 0)
+    brick_mode = (frame_seed % 7) in (1, 4, 6)
+    patch_count = (1 + (1 if (frame_seed & 31) == 0 and w2 > 34 else 0)) if brick_mode else 0
     for pidx in range(patch_count):
         ps = fast_hash32(frame_seed ^ (pidx * 0xA511E9B3))
         rx = max(4, w2 // (5 + (ps & 1)))
@@ -247,6 +248,23 @@ def render_wall(src: Image.Image, family: str, index: int) -> Image.Image:
                     )
                 bp[x, y] = (*c, pm[x, y])
         out.alpha_composite(brick)
+
+    # Some walls were patched rather than left with exposed masonry.  Use a
+    # broad, irregular cement/plaster repair on a different subset of frames so
+    # the whole wall family does not look stamped from one damage decal.
+    if not brick_mode and (frame_seed % 5) in (0, 2) and w2 > 14 and h2 > 14:
+        rs = fast_hash32(frame_seed ^ 0x6A09E667)
+        rrx = max(4, w2 // 6)
+        rry = max(5, h2 // 6)
+        rcx = rrx + ((rs >> 5) % max(1, w2 - 2 * rrx))
+        rcy = max(rry, int(h2 * 0.35)) + ((rs >> 13) % max(1, h2 - max(rry, int(h2 * 0.35)) - rry))
+        repair_mask = jagged_ellipse_mask((w2, h2), rcx, rcy, rrx, rry, rs, 0.13)
+        repair_mask = ImageChops.multiply(repair_mask, alpha)
+        repair_mask = ImageChops.subtract(repair_mask, dark)
+        repair_colour = (170, 164, 148) if (rs & 1) else (154, 149, 135)
+        repair = Image.new("RGBA", out.size, (*repair_colour, 0))
+        repair.putalpha(repair_mask.point(lambda q: int(q * 0.74)))
+        out.alpha_composite(repair)
 
     # Sparse *continuous* cracks: short hairline paths rather than speckles.
     draw_layer = Image.new("RGBA", out.size, (0, 0, 0, 0))
@@ -379,6 +397,17 @@ def render_pave(src: Image.Image, family: str, index: int) -> Image.Image:
                 c = mix(c, (121, 101, 73), 0.18)
             p[x, y] = (*c, 255)
 
+    # Broad faded/stained zone on selected slabs.  This breaks the repeated
+    # "perfect diamond with a cross" look while keeping seams and footprint exact.
+    if (fs & 7) in (1, 5) and w2 > 12 and h2 > 8:
+        pcx = max(4, min(w2 - 4, int(w2 * (0.35 + ((fs >> 8) & 15) / 60.0))))
+        pcy = max(3, min(h2 - 3, int(h2 * (0.38 + ((fs >> 16) & 7) / 40.0))))
+        pmask = jagged_ellipse_mask((w2, h2), pcx, pcy, max(4, w2 // 6), max(3, h2 // 5), fs ^ 0xBB67AE85, 0.10)
+        pmask = ImageChops.multiply(pmask, alpha)
+        stain = Image.new("RGBA", out.size, (91, 82, 68, 0))
+        stain.putalpha(pmask.point(lambda q: int(q * 0.24)))
+        out.alpha_composite(stain)
+
     # One hairline crack or cement repair, not a cross on every tile.
     dl = Image.new("RGBA", out.size, (0, 0, 0, 0))
     d = ImageDraw.Draw(dl)
@@ -429,6 +458,16 @@ def render_roof(src: Image.Image, family: str, index: int) -> Image.Image:
             panel_seed = fast_hash32(family_seed ^ panel * 0x85EBCA6B)
             age = ((panel_seed >> 8) & 31) - 15
             c = tuple(clamp(v + age // 2) for v in base)
+
+            # Real patched roofs mix sheet ages: some panels retain zinc-grey,
+            # some are oxidised, and only a minority are heavily rusted.
+            panel_age = (panel_seed >> 20) & 7
+            if panel_age in (0, 1):
+                c = mix(c, (151, 148, 135), 0.34)
+            elif panel_age == 2:
+                c = mix(c, (99, 105, 101), 0.22)
+            elif panel_age == 3:
+                c = mix(c, (137, 76, 48), 0.24)
 
             # Directional sheet ribbing in screen space.
             rib = (x + 2 * y + (family_seed & 7)) % corr_pitch
