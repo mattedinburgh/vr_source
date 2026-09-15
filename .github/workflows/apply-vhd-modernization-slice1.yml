@@ -1,0 +1,40 @@
+name: Apply VHD modernization slice
+
+on:
+  push:
+    branches:
+      - engine/vhd-modernization-2026
+    paths:
+      - '.automation/vhd-modernization-slice1.patch'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-vhd-modernization-slice1
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out modernization branch
+        uses: actions/checkout@v4
+        with:
+          ref: engine/vhd-modernization-2026
+          fetch-depth: 20
+
+      - name: Apply verified diagnostics patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check .automation/vhd-modernization-slice1.patch
+          git apply .automation/vhd-modernization-slice1.patch
+          git rm .automation/vhd-modernization-slice1.patch
+          git rm .github/workflows/apply-vhd-modernization-slice1.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add TileEngine/renderworld.cpp .github/workflows/san-mona-c5-preview.yml
+          git diff --cached --check
+          git commit -m "VHD modernization: integrate renderer diagnostics"
+          git push origin HEAD:engine/vhd-modernization-2026
