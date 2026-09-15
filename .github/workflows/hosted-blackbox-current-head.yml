@@ -1,0 +1,56 @@
+name: Hosted Black Box current-head compile
+
+on:
+  push:
+    branches:
+      - validation/blackbox-current-head-2026-09-14
+  workflow_dispatch:
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out validation head
+        uses: actions/checkout@v4
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Retarget legacy projects to hosted toolset
+        shell: powershell
+        run: |
+          Get-ChildItem $env:GITHUB_WORKSPACE -Recurse -Filter '*.vcxproj' -File | ForEach-Object {
+            $path = $_.FullName
+            $text = [System.IO.File]::ReadAllText($path)
+            $newText = $text.Replace(
+              '<PlatformToolset>v120_xp</PlatformToolset>',
+              '<PlatformToolset>v143</PlatformToolset>'
+            ).Replace(
+              '<PlatformToolset>v120</PlatformToolset>',
+              '<PlatformToolset>v143</PlatformToolset>'
+            )
+            if ($newText -ne $text) {
+              [System.IO.File]::WriteAllText(
+                $path,
+                $newText,
+                (New-Object System.Text.UTF8Encoding($false))
+              )
+            }
+          }
+
+      - name: Build Vengeance Release Win32
+        shell: powershell
+        run: |
+          msbuild '.\ja2_VS2013.sln' /m /t:ja2 /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $exe = Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\JA2_EN_Release.exe'
+          if (-not (Test-Path $exe)) {
+            throw "Expected executable was not built: $exe"
+          }
+
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash
+          Write-Host "Hosted build OK: $exe"
+          Write-Host "SHA256: $hash"
