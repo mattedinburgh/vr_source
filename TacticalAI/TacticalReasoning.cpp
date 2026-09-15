@@ -44,6 +44,7 @@ typedef struct
 	INT32 sLastDecisionGridNo;
 	UINT8 ubLastVisibleContacts;
 	UINT8 ubLastDirectionMask;
+	UINT16 usLastExposure;
 	UINT32 uiLastReactionTurn;
 } AICONTACTTRACKER;
 
@@ -560,6 +561,9 @@ BOOLEAN AIObserveContactChange(SOLDIERTYPE *pSoldier, AICONTACTCHANGE *pChange)
 		pTracker->sLastDecisionGridNo = pSoldier->sGridNo;
 		pTracker->ubLastVisibleContacts = ubVisible;
 		pTracker->ubLastDirectionMask = ubMask;
+		pTracker->usLastExposure =
+			AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+		pTracker->uiLastReactionTurn = 0xFFFFFFFF;
 		return FALSE;
 	}
 
@@ -578,6 +582,8 @@ BOOLEAN AIObserveContactChange(SOLDIERTYPE *pSoldier, AICONTACTCHANGE *pChange)
 	BOOLEAN fDirectionWorsened =
 		ubMask != pTracker->ubLastDirectionMask &&
 		pChange->fMultiAngleThreat;
+	BOOLEAN fExposureWorsened =
+		pChange->usCurrentExposure >= pTracker->usLastExposure + 40;
 
 	pChange->fSurprise =
 		pChange->fMovedSinceLastDecision &&
@@ -588,7 +594,7 @@ BOOLEAN AIObserveContactChange(SOLDIERTYPE *pSoldier, AICONTACTCHANGE *pChange)
 	pChange->fEncirclementPressure =
 		ubVisible >= 3 &&
 		pChange->fMultiAngleThreat &&
-		(pChange->fMovedSinceLastDecision || fDirectionWorsened) &&
+		(pChange->fMovedSinceLastDecision || fDirectionWorsened || fExposureWorsened) &&
 		pChange->usCurrentExposure >= 100;
 
 	BOOLEAN fReaction =
@@ -598,6 +604,7 @@ BOOLEAN AIObserveContactChange(SOLDIERTYPE *pSoldier, AICONTACTCHANGE *pChange)
 	pTracker->sLastDecisionGridNo = pSoldier->sGridNo;
 	pTracker->ubLastVisibleContacts = ubVisible;
 	pTracker->ubLastDirectionMask = ubMask;
+	pTracker->usLastExposure = pChange->usCurrentExposure;
 
 	if (fReaction)
 		pTracker->uiLastReactionTurn = guiTurnCnt;
