@@ -7656,77 +7656,70 @@ BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier)
 		return FALSE;
 	}
 
-	INT32 sThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
-	if (TileIsOutOfBounds(sThreat))
+	AITACTICALDECISIONCONTEXT Context;
+	if (!AIBuildTacticalDecisionContext(pSoldier, &Context) ||
+		TileIsOutOfBounds(Context.sPrimaryThreat))
+	{
 		return FALSE;
+	}
 
 	// Do not shuffle a soldier who is currently succeeding from a sound position.
-	if (!pSoldier->aiData.bUnderFire &&
-		AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) &&
+	if (!Context.fUnderFire &&
+		Context.fHasCover &&
 		(pSoldier->LastAttackHit() ||
 		 (pSoldier->usSoldierFlagMask2 & SOLDIER_SUCCESSFUL_ATTACK)) &&
-		AILocalStress(pSoldier) < 25 &&
-		AIEngagementRangeModifier(pSoldier, sThreat) >= 0)
+		Context.iStress < 25 &&
+		!Context.fBadRange)
 	{
 		return FALSE;
 	}
 
 	// A soldier with a live personal contact from a defensible firing position
 	// should normally exploit that position before making a generic fallback move.
-	// This prevents the higher-level pressure model from pre-empting a good shot
-	// simply because the wider local fight is deteriorating.
-	if (pSoldier->aiData.bOppCnt > 0 &&
-		!pSoldier->aiData.bUnderFire &&
-		AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) &&
-		AILocalStress(pSoldier) < 30 &&
-		AIPersonalRisk(pSoldier) + 10 < AIPersonalRiskTolerance(pSoldier) &&
-		AIEngagementRangeModifier(pSoldier, sThreat) >= 0)
+	if (Context.fHasLivePersonalContact &&
+		!Context.fUnderFire &&
+		Context.fHasCover &&
+		Context.iStress < 30 &&
+		Context.iPersonalRisk + 10 < Context.iRiskTolerance &&
+		!Context.fBadRange)
 	{
 		return FALSE;
 	}
 
 	INT32 iPressure = 0;
-	INT8 bSituation = AIBattleSituation(pSoldier);
-	BOOLEAN fExposed = !AnyCoverAtSpot(pSoldier, pSoldier->sGridNo);
-	INT32 iPersonalRisk = AIPersonalRisk(pSoldier);
-	INT32 iRiskTolerance = AIPersonalRiskTolerance(pSoldier);
-	INT32 iStress = AILocalStress(pSoldier);
-	BOOLEAN fBadRange = AIEngagementRangeModifier(pSoldier, sThreat) < 0;
-	BOOLEAN fIsolated =
-		AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0;
 
 	// Ordinary contact pressure is not, by itself, a reason to step backwards.
 	// The soldier should normally keep attacking/advancing unless his own position
 	// has a concrete tactical problem that a fallback can actually solve.
-	if (bSituation == AI_BATTLE_LOSING)
+	if (Context.bBattleSituation == AI_BATTLE_LOSING)
 		iPressure += 1;
-	if (pSoldier->aiData.bUnderFire)
+	if (Context.fUnderFire)
 		iPressure += 1;
-	if (fExposed)
+	if (!Context.fHasCover)
 		iPressure += 2;
-	if (iPersonalRisk >= iRiskTolerance + 10)
+	if (Context.iPersonalRisk >= Context.iRiskTolerance + 10)
 		iPressure += 2;
-	else if (iPersonalRisk >= iRiskTolerance)
+	else if (Context.iPersonalRisk >= Context.iRiskTolerance)
 		iPressure += 1;
-	if (iStress >= 45)
+	if (Context.iStress >= 45)
 		iPressure += 1;
-	if (fBadRange)
+	if (Context.fBadRange)
 		iPressure += 1;
-	if (fIsolated)
+	if (Context.fIsolated)
 		iPressure += 1;
 
-	BOOLEAN fConcreteFallbackNeed =
-		fExposed ||
-		iPersonalRisk >= iRiskTolerance ||
-		iStress >= 45 ||
-		fBadRange ||
-		fIsolated;
+	const BOOLEAN fConcreteFallbackNeed =
+		!Context.fHasCover ||
+		Context.iPersonalRisk >= Context.iRiskTolerance ||
+		Context.iStress >= 45 ||
+		Context.fBadRange ||
+		Context.fIsolated;
 	if (!fConcreteFallbackNeed)
 		return FALSE;
 
 	// Balanced fallback gate: normal troops keep fighting from workable positions,
 	// while combined exposure/risk can still justify one positional concession.
-	INT32 iThreshold = (bSituation == AI_BATTLE_WINNING) ? 5 : 4;
+	INT32 iThreshold = (Context.bBattleSituation == AI_BATTLE_WINNING) ? 5 : 4;
 	if (pSoldier->aiData.bAttitude == AGGRESSIVE ||
 		pSoldier->aiData.bAttitude == ATTACKSLAYONLY)
 	{
@@ -7737,7 +7730,7 @@ BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier)
 	// fallback only when the soldier is currently safe; exposed/high-risk seekers
 	// must still be allowed to make their single sensible bound back to cover.
 	if (pSoldier->aiData.bOrders == SEEKENEMY &&
-		!fExposed && iPersonalRisk < iRiskTolerance)
+		Context.fHasCover && Context.iPersonalRisk < Context.iRiskTolerance)
 	{
 		++iThreshold;
 	}
