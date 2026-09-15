@@ -4,7 +4,13 @@ param(
 
     [string[]]$Maps = @('A3','A8','A12','b13','f15'),
 
-    [int]$SampleStep = 8
+    [int]$SampleStep = 8,
+
+    [int]$PatchSize = 64,
+
+    [double]$SevereDarkGrowth = 32.0,
+
+    [double]$SevereEdgeGrowth = 18.0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -90,6 +96,103 @@ function Measure-MapImage {
     }
 }
 
+
+function Measure-Region {
+    param(
+        [Parameter(Mandatory=$true)][System.Drawing.Bitmap]$Bmp,
+        [int]$X0, [int]$Y0, [int]$Width, [int]$Height
+    )
+
+    [double]$sumLuma = 0
+    [double]$sumSat = 0
+    [double]$sumEdge = 0
+    [long]$dark = 0
+    [long]$count = 0
+    [long]$edgeCount = 0
+
+    $step = [Math]::Max(1, [Math]::Min(4, $SampleStep))
+    $x1 = [Math]::Min($Bmp.Width, $X0 + $Width)
+    $y1 = [Math]::Min($Bmp.Height, $Y0 + $Height)
+
+    for ($y = $Y0; $y -lt $y1; $y += $step) {
+        for ($x = $X0; $x -lt $x1; $x += $step) {
+            $c = $Bmp.GetPixel($x, $y)
+            $r = [int]$c.R; $g = [int]$c.G; $b = [int]$c.B
+            $l = ($r * 30.0 + $g * 59.0 + $b * 11.0) / 100.0
+            $maxc = [Math]::Max($r, [Math]::Max($g, $b))
+            $minc = [Math]::Min($r, [Math]::Min($g, $b))
+            $sat = if ($maxc -gt 0) { (($maxc - $minc) * 100.0 / $maxc) } else { 0.0 }
+
+            $sumLuma += $l
+            $sumSat += $sat
+            if ($l -lt 46.0) { $dark++ }
+            $count++
+
+            $nx = [Math]::Min($Bmp.Width - 1, $x + $step)
+            $ny = [Math]::Min($Bmp.Height - 1, $y + $step)
+            if ($nx -ne $x -or $ny -ne $y) {
+                $cr = $Bmp.GetPixel($nx, $y)
+                $cd = $Bmp.GetPixel($x, $ny)
+                $lr = ($cr.R * 30.0 + $cr.G * 59.0 + $cr.B * 11.0) / 100.0
+                $ld = ($cd.R * 30.0 + $cd.G * 59.0 + $cd.B * 11.0) / 100.0
+                $sumEdge += ([Math]::Abs($l - $lr) + [Math]::Abs($l - $ld)) / 2.0
+                $edgeCount++
+            }
+        }
+    }
+
+    [pscustomobject]@{
+        Luma = if ($count) { $sumLuma / $count } else { 0.0 }
+        Saturation = if ($count) { $sumSat / $count } else { 0.0 }
+        DarkPct = if ($count) { 100.0 * $dark / $count } else { 0.0 }
+        Edge = if ($edgeCount) { $sumEdge / $edgeCount } else { 0.0 }
+    }
+}
+
+function Find-LocalHotspots {
+    param(
+        [Parameter(Mandatory=$true)][string]$PristinePath,
+        [Parameter(Mandatory=$true)][string]$RemasterPath
+    )
+
+    $p = [System.Drawing.Bitmap]::FromFile($PristinePath)
+    $r = [System.Drawing.Bitmap]::FromFile($RemasterPath)
+    try {
+        if ($p.Width -ne $r.Width -or $p.Height -ne $r.Height) {
+            throw "Visual-QA pair dimensions differ: $PristinePath vs $RemasterPath"
+        }
+
+        $hits = @()
+        $patch = [Math]::Max(24, $PatchSize)
+        for ($y = 0; $y -lt $p.Height; $y += $patch) {
+            for ($x = 0; $x -lt $p.Width; $x += $patch) {
+                $ps = Measure-Region -Bmp $p -X0 $x -Y0 $y -Width $patch -Height $patch
+                $rs = Measure-Region -Bmp $r -X0 $x -Y0 $y -Width $patch -Height $patch
+                $dDark = $rs.DarkPct - $ps.DarkPct
+                $dEdge = $rs.Edge - $ps.Edge
+
+                # Local artifact oracle: a previously quiet patch acquiring both a
+                # large dark mass and much stronger edges is not a harmless palette
+                # change. It requires review even when global averages look healthy.
+                if ($dDark -ge $SevereDarkGrowth -and $dEdge -ge $SevereEdgeGrowth) {
+                    $hits += [pscustomobject]@{
+                        X = $x; Y = $y
+                        DeltaDark = [Math]::Round($dDark, 2)
+                        DeltaEdge = [Math]::Round($dEdge, 2)
+                        PristineDark = [Math]::Round($ps.DarkPct, 2)
+                        RemasterDark = [Math]::Round($rs.DarkPct, 2)
+                    }
+                }
+            }
+        }
+        return $hits
+    }
+    finally {
+        $p.Dispose()
+        $r.Dispose()
+    }
+}
+
 $results = @()
 $failed = $false
 
@@ -107,9 +210,12 @@ foreach ($map in $Maps) {
 
         $p = Measure-MapImage -Path $pristine
         $r = Measure-MapImage -Path $remaster
+        $hotspots = @(Find-LocalHotspots -PristinePath $pristine -RemasterPath $remaster)
         $pairs += [pscustomobject]@{
             Pristine = $p
             Remaster = $r
+            Hotspots = $hotspots
+            HotspotCount = $hotspots.Count
         }
     }
 
@@ -137,8 +243,12 @@ foreach ($map in $Maps) {
     $dSat = $rSat - $pSat
     $dGreen = $rGreen - $pGreen
     $dDark = $rDark - $pDark
+    $localHotspots = @($pairs | ForEach-Object { $_.Hotspots })
+    $localHotspotCount = ($pairs | Measure-Object -Property HotspotCount -Sum).Sum
 
-    # Acceptance gates learned from the successful-but-visually-poor #99 pilot.
+    # Global gates catch palette drift; local hotspots catch concentrated artifacts
+    # that global averages can completely hide (e.g. an invented freestanding
+    # structural sprite in otherwise unchanged open ground).
     # Dark sectors may not get darker, global saturation must stay controlled,
     # and no sector may acquire a blanket emerald cast.
     $darkMapReadable = ($pLuma -ge 55.0) -or ($dLuma -ge -0.5)
@@ -146,7 +256,8 @@ foreach ($map in $Maps) {
     $greenControlled = $dGreen -le 8.0
     $darkAreaControlled = $dDark -le 4.0
 
-    $pass = $darkMapReadable -and $saturationControlled -and $greenControlled -and $darkAreaControlled
+    $localStructureReadable = ($localHotspotCount -eq 0)
+    $pass = $darkMapReadable -and $saturationControlled -and $greenControlled -and $darkAreaControlled -and $localStructureReadable
     if (-not $pass) { $failed = $true }
 
     $reason = @()
@@ -154,6 +265,7 @@ foreach ($map in $Maps) {
     if (-not $saturationControlled) { $reason += 'excess saturation increase' }
     if (-not $greenControlled) { $reason += 'excess green cast' }
     if (-not $darkAreaControlled) { $reason += 'too much dark-area growth' }
+    if (-not $localStructureReadable) { $reason += "local contrast/structure hotspots=$localHotspotCount" }
 
     $results += [pscustomobject]@{
         Map = $map
@@ -170,6 +282,10 @@ foreach ($map in $Maps) {
         PristineDarkPct = [Math]::Round($pDark, 2)
         RemasterDarkPct = [Math]::Round($rDark, 2)
         DeltaDarkPct = [Math]::Round($dDark, 2)
+        LocalHotspots = $localHotspotCount
+        HotspotPreview = (($localHotspots | Select-Object -First 8 | ForEach-Object {
+            "($($_.X),$($_.Y)) dark+$($_.DeltaDark) edge+$($_.DeltaEdge)"
+        }) -join ' ')
         Verdict = if ($pass) { 'PASS' } else { 'FAIL' }
         Reason = if ($pass) { 'balanced visual change' } else { ($reason -join '; ') }
     }
