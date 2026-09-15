@@ -40,6 +40,8 @@ INT32 GetCachedTile( const STR8 cFilename );
 
 BOOLEAN RemoveCachedTile( INT32 iCachedTile );
 
+BOOLEAN RunVHDTileCacheSelfTest( const STR8 cFilename );
+
 STRUCTURE_FILE_REF *GetCachedTileStructureRefFromFilename( const STR8 cFilename );
 
 HVOBJECT						GetCachedTileVideoObject( INT32 iIndex );
