@@ -347,6 +347,96 @@ enum
 	AI_PLAN_ADVANCED
 };
 
+// Professor architecture: explicit belief, spatial-evaluation, task-reservation and
+// short-plan primitives. These are transient reasoning structures only; none are
+// serialized into SOLDIERTYPE or the savegame.
+enum
+{
+	AI_BELIEF_SOURCE_NONE = 0,
+	AI_BELIEF_SOURCE_PERSONAL,
+	AI_BELIEF_SOURCE_PUBLIC
+};
+
+enum
+{
+	AI_TASK_NONE = 0,
+	AI_TASK_SUPPRESS,
+	AI_TASK_FLANK,
+	AI_TASK_MANEUVER,
+	AI_TASK_SCREEN,
+	AI_TASK_RESCUE,
+	AI_TASK_SMOKE,
+	AI_TASK_ENTRY_POINT,
+	AI_TASK_ENTRY_SUPPORT
+};
+
+enum
+{
+	AI_SHORT_PLAN_NONE = 0,
+	AI_SHORT_PLAN_FLANK,
+	AI_SHORT_PLAN_FALLBACK,
+	AI_SHORT_PLAN_DISENGAGE,
+	AI_SHORT_PLAN_RESCUE,
+	AI_SHORT_PLAN_CQB
+};
+
+struct AICONTACTBELIEF
+{
+	UINT8 ubOpponentID;
+	INT32 sGridNo;
+	INT8 bLevel;
+	INT8 bKnowledge;
+	UINT8 ubSource;
+	UINT8 ubConfidence;
+	UINT8 ubAgeTurns;
+	BOOLEAN fDirectlyVisible;
+};
+
+struct AITACTICALPOSITIONFEATURES
+{
+	UINT16 usCurrentExposure;
+	UINT16 usCandidateExposure;
+	INT16 sExposureDelta;
+	UINT8 ubSupport;
+	UINT8 ubAdjacentFriends;
+	BOOLEAN fCover;
+	BOOLEAN fSightCover;
+	BOOLEAN fProneCover;
+	BOOLEAN fSmoke;
+	INT16 sMissionProgress;
+	INT16 sCrossfire;
+	INT16 sRangeError;
+	INT16 sReactionRisk;
+	INT16 sPathExposure;
+};
+
+struct AISHORTPLANSTATE
+{
+	UINT8 ubType;
+	UINT8 ubStep;
+	INT32 sTargetGridNo;
+	UINT8 ubTargetID;
+	UINT32 uiExpiresTurn;
+};
+
+BOOLEAN AIBuildContactBelief(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID, AICONTACTBELIEF *pBelief);
+BOOLEAN AIBuildPrimaryContactBelief(SOLDIERTYPE *pSoldier, INT32 sPreferredGridNo, AICONTACTBELIEF *pBelief);
+BOOLEAN AIEvaluateTacticalPosition(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
+	INT32 sTargetSpot, UINT16 usMovementMode, AITACTICALPOSITIONFEATURES *pFeatures);
+INT32 AIScoreTacticalPosition(SOLDIERTYPE *pSoldier, const AITACTICALPOSITIONFEATURES *pFeatures,
+	INT32 sCandidateSpot, INT32 sTargetSpot, INT8 bIntent, INT8 bRole);
+BOOLEAN AIReserveTacticalTask(SOLDIERTYPE *pSoldier, UINT8 ubTask, INT32 sTargetGridNo,
+	UINT8 ubTargetID, UINT8 ubMaxOwners, UINT8 ubTurns);
+UINT8 AICountTacticalTaskReservations(SOLDIERTYPE *pSoldier, UINT8 ubTask,
+	INT32 sTargetGridNo, UINT8 ubTargetID);
+void AIReleaseTacticalTask(SOLDIERTYPE *pSoldier);
+BOOLEAN AIBeginShortPlan(SOLDIERTYPE *pSoldier, UINT8 ubPlanType, INT32 sTargetGridNo,
+	UINT8 ubTargetID, UINT8 ubTurns);
+BOOLEAN AIGetShortPlan(SOLDIERTYPE *pSoldier, AISHORTPLANSTATE *pPlan);
+void AIAdvanceShortPlan(SOLDIERTYPE *pSoldier);
+void AICancelShortPlan(SOLDIERTYPE *pSoldier);
+void AIResetTacticalReasoningStateForLoad(void);
+
 // Functional command hierarchy. The visible rank ladder mirrors 1.13 EnemyRank.xml
 // (experience levels 1-10); GENERAL is reserved for exceptional explicit commanders.
 // Rank changes command/cohesion behaviour only - never CTH, AP or weapon performance.
@@ -400,6 +490,9 @@ struct AITACTICALDECISIONCONTEXT
 	INT32 iRiskTolerance;
 	UINT16 usKnownThreatExposure;
 	UINT8 ubNearbyOperationalFriends;
+	UINT8 ubPrimaryThreatConfidence;
+	UINT8 ubPrimaryThreatAge;
+	BOOLEAN fPrimaryThreatPersonal;
 	BOOLEAN fHasCover;
 	BOOLEAN fUnderFire;
 	BOOLEAN fBadRange;
