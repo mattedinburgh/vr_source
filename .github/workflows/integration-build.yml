@@ -5,6 +5,7 @@ on:
     branches:
       - install/all-2026-09-12
       - 'blackbox/**'
+      - 'combat/**'
     paths:
       - '**/*.c'
       - '**/*.cc'
