@@ -196,7 +196,7 @@ void ConcealAllWalls(void);
 BOOLEAN ApplyScrolling( INT16 sTempRenderCenterX, INT16 sTempRenderCenterY, BOOLEAN fForceAdjust, BOOLEAN fCheckOnly );
 
 BOOLEAN Blt8BPPDataTo16BPPBufferTransZIncClip( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion);
-// Env-gated startup proof: new one-pass wall mask must match the legacy cutaway pixel-for-pixel.
+// Env-gated startup proof: one-pass wall cutaway must match legacy mask, RGB565 output and Z buffer.
 BOOLEAN RunVHDOcclusionMaskParitySelfTest( void );
 
 void RenderStaticWorldRect(INT16, INT16, INT16, INT16, BOOLEAN );
