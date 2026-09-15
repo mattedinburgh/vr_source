@@ -7816,6 +7816,22 @@ void SetWatchedLocAsUsed( UINT8 ubID, INT32 sGridNo, INT8 bLevel )
 		bPoint = FindWatchedLocWithLessThanXPointsLeft( ubID, 1 );
 	}
 
+	// If all slots hold stronger old memories, current direct visual contact is
+	// still more important than a stale watched area. Replace the weakest slot
+	// so a tracked mover cannot lose continuity merely by crossing >1 tile.
+	if (bPoint == -1)
+	{
+		UINT8 ubLowestPoints = 255;
+		for (INT8 bLoop = 0; bLoop < NUM_WATCHED_LOCS; ++bLoop)
+		{
+			if (gubWatchedLocPoints[ ubID ][ bLoop ] < ubLowestPoints)
+			{
+				ubLowestPoints = gubWatchedLocPoints[ ubID ][ bLoop ];
+				bPoint = bLoop;
+			}
+		}
+	}
+
 	if (bPoint != -1)
 	{
 		gsWatchedLoc[ ubID ][ bPoint ] = sGridNo;
