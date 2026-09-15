@@ -870,7 +870,7 @@ def contact_sheet(
 
 def generate_family(tilesets_root: Path, out_root: Path, qa_root: Path,
                     family: str, filename: str, base: tuple[int, int, int],
-                    flavour: str, kind: str) -> dict:
+                    flavour: str, kind: str, *, strict: bool = False) -> dict:
     source = resolve_source(tilesets_root, filename)
     legacy_frames, meta, _ = decode_sti(source)
     if not legacy_frames:
@@ -891,7 +891,7 @@ def generate_family(tilesets_root: Path, out_root: Path, qa_root: Path,
         index for index, semantic in semantics.items()
         if int(semantic.get("flags", 0)) & STRUCTURE_ANYDOOR
     )
-    if ns.strict and door_frames:
+    if strict and door_frames:
         raise RuntimeError(
             f"{family}: unsupported door semantics in frame(s) {door_frames}; "
             "dedicated door handling is required before production deployment"
@@ -986,7 +986,7 @@ def main() -> None:
         try:
             results.append(generate_family(
                 ns.tilesets_root, ns.out_root, qa_root,
-                family, filename, base, flavour, kind
+                family, filename, base, flavour, kind, strict=ns.strict
             ))
         except FileNotFoundError as exc:
             # A few Ja2Set entries are inherited from legacy libraries that are
