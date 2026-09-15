@@ -3334,6 +3334,8 @@ INT32 HandleBulletStructureInteraction( BULLET * pBullet, STRUCTURE * pStructure
 	*pfHit = FALSE;
 
 	BOOLEAN fIsLightVegetation = pStructure->pDBStructureRef->pDBStructure->ubArmour == MATERIAL_LIGHT_VEGETATION;
+	const UINT8 ubMaterial = pStructure->pDBStructureRef->pDBStructure->ubArmour;
+	const UINT8 ubDensity = pStructure->pDBStructureRef->pDBStructure->ubDensity;
 
 	if ((pBullet->usFlags & BULLET_FLAG_KNIFE && (!fIsLightVegetation || gGameExternalOptions.fLightVegetationStopsKnives)) || 
 		(pBullet->usFlags & BULLET_FLAG_MISSILE && (!fIsLightVegetation || gGameExternalOptions.fLightVegetationStopsMissiles)) || 
@@ -3447,6 +3449,8 @@ INT32 HandleBulletStructureInteraction( BULLET * pBullet, STRUCTURE * pStructure
 
 		iImpactReduction = (INT32) (iImpactReduction * AmmoTypes[ubAmmoType].structureImpactReductionMultiplier / max(1,AmmoTypes[ubAmmoType].structureImpactReductionDivisor));
 
+		DebugMsg(TOPIC_JA2, DBG_LEVEL_3, String("VR_PEN contact bullet=%d grid=%d structure=%d material=%d density=%d ammo=%d impact=%d accumulatedBefore=%d appliedResistance=%d range=%d distance=%d", pBullet->iBullet, pStructure->sGridNo, pStructure->usStructureID, ubMaterial, ubDensity, ubAmmoType, iCurrImpact, pBullet->iImpactReduction, iImpactReduction, pBullet->iRange, pBullet->iLoop));
+
 		//switch (pBullet->pFirer->inv[ pBullet->pFirer->ubAttackingHand ][0]->data.gun.ubGunAmmoType)
 		//{
 		//	case AMMO_HP:
@@ -3464,6 +3468,8 @@ INT32 HandleBulletStructureInteraction( BULLET * pBullet, STRUCTURE * pStructure
 		//}
 
 		pBullet->iImpactReduction += iImpactReduction;
+
+		DebugMsg(TOPIC_JA2, DBG_LEVEL_3, String("VR_PEN result bullet=%d grid=%d structure=%d material=%d ammo=%d impact=%d accumulatedAfter=%d remaining=%d", pBullet->iBullet, pStructure->sGridNo, pStructure->usStructureID, ubMaterial, ubAmmoType, iCurrImpact, pBullet->iImpactReduction, iCurrImpact - pBullet->iImpactReduction));
 
 		// really weak stuff like grass should never *stop* a bullet, maybe slow it though
 		if ( pStructure->pDBStructureRef->pDBStructure->ubArmour == MATERIAL_LIGHT_VEGETATION )
