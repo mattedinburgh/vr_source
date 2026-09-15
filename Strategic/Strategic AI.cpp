@@ -39,6 +39,7 @@
 
 // Lion Paratroops
 #include "Strategic Town Loyalty.h"
+#include "VRAnalytics.h"
 // End Lion
 
 #define SAI_VERSION		29
@@ -2139,6 +2140,13 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Strategic5");
 			{
 				pSector = &SectorInfo[ SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ) ];
 
+				VRAnalyticsStrategicGroupArrived(
+					GetWorldTotalMin(),
+					pGroup->ubGroupID,
+					SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ),
+					pGroup->ubGroupSize,
+					"garrison_reinforcement" );
+
 				if( gGarrisonGroup[ i ].ubSectorID != SECTOR( gModSettings.ubSAISpawnSectorX, gModSettings.ubSAISpawnSectorY ) )
 				{
 					EliminateSurplusTroopsForGarrison( pGroup, pSector );
@@ -2211,6 +2219,13 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Strategic5");
 			if( gPatrolGroup[ i ].ubSectorID[ 1 ] == SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ) &&
 					gPatrolGroup[ i ].ubPendingGroupID == pGroup->ubGroupID )
 			{
+				VRAnalyticsStrategicGroupArrived(
+					GetWorldTotalMin(),
+					pGroup->ubGroupID,
+					SECTOR( pGroup->ubSectorX, pGroup->ubSectorY ),
+					pGroup->ubGroupSize,
+					"patrol_reinforcement" );
+
 				gPatrolGroup[ i ].ubPendingGroupID = 0;
 				if( gPatrolGroup[ i ].ubGroupID && gPatrolGroup[ i ].ubGroupID != pGroup->ubGroupID )
 				{ //cheat, and warp our reinforcements to them!
@@ -2691,7 +2706,7 @@ void RecalculatePatrolWeight( INT32 iPatrolID )
 		if( iNeedPopulation < 0 )
 		{
 			gPatrolGroup[ iPatrolID ].bWeight = 0;
-			ValidateWeights( 27 );
+	ValidateWeights( 27 );
 			return;
 		}
 	}
@@ -3264,6 +3279,15 @@ void EvaluateQueenSituation()
 	INT32 iApplicablePatrols = 0;
 	INT32 iApplicablePatrolIds[ MAX_PATROL_GROUPS ];
 
+	unsigned long uiAnalyticsDecision = VRAnalyticsBeginDecision(
+		VR_ANALYTICS_STRATEGIC, "queen", 0, "evaluate_reinforcements" );
+	VRAnalyticsStateInt( uiAnalyticsDecision, "world_minutes", GetWorldTotalMin() );
+	VRAnalyticsStateInt( uiAnalyticsDecision, "request_points", giRequestPoints );
+	VRAnalyticsStateInt( uiAnalyticsDecision, "reinforcement_points", giReinforcementPoints );
+	VRAnalyticsStateInt( uiAnalyticsDecision, "reinforcement_pool", giReinforcementPool );
+	VRAnalyticsStateInt( uiAnalyticsDecision, "difficulty", gGameOptions.ubDifficultyLevel );
+	VRAnalyticsStateInt( uiAnalyticsDecision, "player_progress", CurrentPlayerProgressPercentage() );
+
 	ValidateWeights( 26 );
 
 	// figure out how long it shall be before we call this again
@@ -3295,6 +3319,10 @@ void EvaluateQueenSituation()
 		uiOffset *= 10;
 		giReinforcementPool += (gGameExternalOptions.guiBaseQueenPoolIncrement * gGameOptions.ubDifficultyLevel) * (100 + CurrentPlayerProgressPercentage()) / 100;
 		AddStrategicEvent(EVENT_EVALUATE_QUEEN_SITUATION, GetWorldTotalMin() + uiOffset, 0);
+		VRAnalyticsCommitDecision( uiAnalyticsDecision, "recruit_pool", -1, giReinforcementPool,
+			"reinforcement_pool_below_recruitment_threshold" );
+		VRAnalyticsOutcome( uiAnalyticsDecision, "scheduled", "next_evaluation_minutes", uiOffset,
+			"reinforcement_pool", giReinforcementPool, "recruitment_cycle_started" );
 		return;
 	}
 
@@ -3304,6 +3332,7 @@ void EvaluateQueenSituation()
 	// if the queen hasn't been alerted to player's presence yet
 	if( !gfQueenAIAwake )
 	{ //no decisions can be made yet.
+		VRAnalyticsCommitDecision( uiAnalyticsDecision, "no_action", -1, 0, "queen_ai_asleep" );
 		return;
 	}
 
@@ -3315,6 +3344,8 @@ void EvaluateQueenSituation()
 
 	if( ( giRequestPoints <= 0 ) || ( ( giReinforcementPoints <= 0 ) && ( giReinforcementPool <= 0 ) ) )
 	{ //we either have no reinforcements or request for reinforcements.
+		VRAnalyticsCommitDecision( uiAnalyticsDecision, "no_action", -1, 0,
+			"no_requests_or_no_reinforcement_resources" );
 		return;
 	}
 
@@ -3335,6 +3366,9 @@ void EvaluateQueenSituation()
 			{
 				if( ReinforcementsApproved( i, &usDefencePoints ) )
 				{
+					VRAnalyticsCandidate( uiAnalyticsDecision, "garrison_reinforcement",
+						gGarrisonGroup[ i ].ubSectorID,
+						iWeight, iWeight, true, "eligible_and_approved" );
 					iApplicableGarrisonIds[iApplicableGarrisons] = i;
 					iApplicableGarrisons++;
 					iApplicableRequestPoints += gGarrisonGroup[ i ].bWeight;
@@ -3350,6 +3384,9 @@ void EvaluateQueenSituation()
 		{
 			if( !gPatrolGroup[ i ].ubPendingGroupID && PatrolRequestingMinimumReinforcements( i ) )
 			{
+				VRAnalyticsCandidate( uiAnalyticsDecision, "patrol_reinforcement",
+					gPatrolGroup[ i ].ubSectorID[ 1 ],
+					iWeight, iWeight, true, "eligible" );
 				iApplicablePatrolIds[iApplicablePatrols] = i;
 				iApplicablePatrols++;
 				iApplicableRequestPoints += gPatrolGroup[ i ].bWeight;
@@ -3359,6 +3396,8 @@ void EvaluateQueenSituation()
 
 	if( !iApplicableRequestPoints )
 	{
+		VRAnalyticsCommitDecision( uiAnalyticsDecision, "no_action", -1, 0,
+			"no_applicable_reinforcement_candidates" );
 		return;
 	}
 
@@ -3376,6 +3415,9 @@ void EvaluateQueenSituation()
 		iWeight = gGarrisonGroup[ iApplicableGarrisonIds[i] ].bWeight;
 		if( iRandom < iWeight )
 		{ //This is the group that gets the reinforcements!
+			VRAnalyticsCommitDecision( uiAnalyticsDecision, "reinforce_garrison",
+				gGarrisonGroup[ iApplicableGarrisonIds[i] ].ubSectorID,
+				iWeight, "weighted_selection" );
 			SendReinforcementsForGarrison( iApplicableGarrisonIds[i] , usDefencePoints, NULL );
 			return;
 		}
@@ -3389,12 +3431,20 @@ void EvaluateQueenSituation()
 		iWeight = gPatrolGroup[ iApplicablePatrolIds[i] ].bWeight;
 		if( iRandom < iWeight )
 		{ //This is the group that gets the reinforcements!
+			VRAnalyticsCommitDecision( uiAnalyticsDecision, "reinforce_patrol",
+				gPatrolGroup[ iApplicablePatrolIds[i] ].ubSectorID[ 1 ],
+				iWeight, "weighted_selection" );
 			SendReinforcementsForPatrol( iApplicablePatrolIds[i], NULL );
 			return;
 		}
 		iRandom -= iWeight;
 	}
 
+	VRAnalyticsDiagnostic( VR_ANALYTICS_STRATEGIC, "queen", 0,
+		"reinforcement_selection_fallthrough", "weighted selection exhausted without choosing a candidate" );
+	VRAnalyticsOutcome( uiAnalyticsDecision, "failed", "applicable_request_points",
+		iApplicableRequestPoints, "request_points", giRequestPoints,
+		"reinforcement_selection_fallthrough" );
 	ValidateWeights( 27 );
 }
 
@@ -6484,6 +6534,15 @@ void MoveSAIGroupToSector( GROUP **pGroup, UINT8 ubSectorID, UINT32 uiMoveCode, 
 
 	ubDstSectorX = (UINT8)SECTORX( ubSectorID );
 	ubDstSectorY = (UINT8)SECTORY( ubSectorID );
+
+	VRAnalyticsStrategicMoveOrdered(
+		GetWorldTotalMin(),
+		(*pGroup)->ubGroupID,
+		SECTOR( (*pGroup)->ubSectorX, (*pGroup)->ubSectorY ),
+		ubSectorID,
+		(*pGroup)->ubGroupSize,
+		uiMoveCode,
+		ubIntention );
 
 	if( (*pGroup)->fBetweenSectors )
 	{

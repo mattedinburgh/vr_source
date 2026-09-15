@@ -1,0 +1,858 @@
+#!/usr/bin/env python3
+"""Vengeance Reloaded Campaign Companion.
+
+Consumes VR_BlackBox.jsonl and produces a refinement report.
+
+The Black Box is forensic: it records what the engine considered, selected and
+what happened afterwards.  The Companion is analytical: it aggregates those
+traces, compares builds/sessions and highlights likely refinement targets.
+
+Usage:
+    python tools/vr_companion_analyze.py VR_BlackBox.jsonl
+    python tools/vr_companion_analyze.py VR_BlackBox.jsonl --baseline previous.jsonl
+    python tools/vr_companion_analyze.py VR_BlackBox.jsonl -o VR_Companion_Report.md
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import statistics
+from collections import Counter, defaultdict
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+
+def load_events(path: Path) -> List[Dict[str, Any]]:
+    events: List[Dict[str, Any]] = []
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        for line_no, raw in enumerate(handle, 1):
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                event = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise SystemExit(f"{path}:{line_no}: invalid JSONL: {exc}")
+            if event.get("schema") != "vr-blackbox-1":
+                continue
+            events.append(event)
+    return events
+
+
+def parse_detail(detail: Any) -> Dict[str, str]:
+    if not isinstance(detail, str):
+        return {}
+    result: Dict[str, str] = {}
+    for item in detail.split(";"):
+        if "=" not in item:
+            continue
+        key, value = item.split("=", 1)
+        result[key.strip()] = value.strip()
+    return result
+
+
+def build_decisions(events: Iterable[Dict[str, Any]]) -> Dict[Tuple[Any, int], Dict[str, Any]]:
+    decisions: Dict[Tuple[Any, int], Dict[str, Any]] = {}
+    for event in events:
+        decision_id = event.get("decision_id")
+        if not isinstance(decision_id, int):
+            continue
+
+        key = (event.get("session"), decision_id)
+        record = decisions.setdefault(
+            key,
+            {
+                "id": decision_id,
+                "session": event.get("session"),
+                "layer": event.get("layer"),
+                "begin": None,
+                "states": {},
+                "candidates": [],
+                "commits": [],
+                "outcomes": [],
+            },
+        )
+        record["layer"] = record.get("layer") or event.get("layer")
+        kind = event.get("kind")
+        if kind == "decision_begin":
+            record["begin"] = event
+            record["layer"] = event.get("layer")
+        elif kind == "state":
+            record["states"][event.get("key")] = event.get("value")
+        elif kind == "candidate":
+            record["candidates"].append(event)
+        elif kind == "decision_commit":
+            record["commits"].append(event)
+        elif kind == "outcome":
+            record["outcomes"].append(event)
+    return decisions
+
+
+def safe_mean(values: Iterable[float]) -> Optional[float]:
+    seq = [float(v) for v in values]
+    return statistics.mean(seq) if seq else None
+
+
+def pct(numerator: float, denominator: float) -> float:
+    return 100.0 * numerator / denominator if denominator else 0.0
+
+
+def tactical_summary(
+    events: List[Dict[str, Any]], decisions: Dict[Tuple[Any, int], Dict[str, Any]]
+) -> Dict[str, Any]:
+    tactical = [d for d in decisions.values() if d.get("layer") == "tactical"]
+    commits = [c for d in tactical for c in d["commits"] if "action" in c]
+    outcomes = [o for d in tactical for o in d["outcomes"]]
+
+    status = Counter(o.get("status", "unknown") for o in outcomes)
+    actions = Counter(str(c.get("action")) for c in commits)
+
+    ap_spent: List[float] = []
+    grid_delta: List[float] = []
+    last_attack_hit_flags = 0
+    completed_action_samples = 0
+
+    for outcome in outcomes:
+        if outcome.get("metric_a") == "grid_delta":
+            grid_delta.append(abs(float(outcome.get("value_a", 0))))
+        if outcome.get("metric_b") == "ap_spent":
+            ap_spent.append(float(outcome.get("value_b", 0)))
+        detail = parse_detail(outcome.get("detail"))
+        if "last_attack_hit" in detail:
+            completed_action_samples += 1
+            last_attack_hit_flags += 1 if detail["last_attack_hit"] == "1" else 0
+
+    attack_cover_pairs = 0
+    defense_wins = 0
+    offense_wins = 0
+    ties = 0
+    score_gaps: List[float] = []
+    for decision in tactical:
+        attack = None
+        cover = None
+        for candidate in decision["candidates"]:
+            if candidate.get("candidate") == "attack_option":
+                attack = candidate
+            elif candidate.get("candidate") == "cover_option":
+                cover = candidate
+        if attack and cover:
+            attack_cover_pairs += 1
+            a = float(attack.get("adjusted_score", 0))
+            c = float(cover.get("adjusted_score", 0))
+            score_gaps.append(c - a)
+            if c > a:
+                defense_wins += 1
+            elif a > c:
+                offense_wins += 1
+            else:
+                ties += 1
+
+    diagnostics = Counter(
+        event.get("code", "unknown")
+        for event in events
+        if event.get("layer") == "tactical" and event.get("kind") == "diagnostic"
+    )
+
+    total_outcomes = sum(status.values())
+    return {
+        "decisions": len(tactical),
+        "commits": len(commits),
+        "outcomes": total_outcomes,
+        "completed": status.get("completed", 0),
+        "rejected": status.get("rejected", 0),
+        "superseded": status.get("superseded", 0),
+        "completed_rate": pct(status.get("completed", 0), total_outcomes),
+        "rejected_rate": pct(status.get("rejected", 0), total_outcomes),
+        "superseded_rate": pct(status.get("superseded", 0), total_outcomes),
+        "avg_ap_spent": safe_mean(ap_spent),
+        "avg_abs_grid_delta": safe_mean(grid_delta),
+        "last_attack_hit_flag_rate": pct(last_attack_hit_flags, completed_action_samples),
+        "completed_action_samples": completed_action_samples,
+        "action_counts": dict(actions.most_common()),
+        "attack_cover_pairs": attack_cover_pairs,
+        "defense_wins": defense_wins,
+        "offense_wins": offense_wins,
+        "ties": ties,
+        "avg_cover_minus_attack_score": safe_mean(score_gaps),
+        "diagnostics": dict(diagnostics.most_common()),
+    }
+
+
+def battle_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    starts = {
+        (event.get("session"), event.get("battle_id")): event
+        for event in events
+        if event.get("kind") == "battle_start" and isinstance(event.get("battle_id"), int)
+    }
+    ends = [
+        event
+        for event in events
+        if event.get("kind") == "battle_end" and isinstance(event.get("battle_id"), int)
+    ]
+
+    results = Counter(event.get("result", "unknown") for event in ends)
+    resolved_ids = {(event.get("session"), event.get("battle_id")) for event in ends}
+    unresolved_keys = sorted(
+        (session, battle_id)
+        for session, battle_id in starts
+        if (session, battle_id) not in resolved_ids
+    )
+    unresolved_ids = [f"{session}:{battle_id}" for session, battle_id in unresolved_keys]
+
+    decision_counts = Counter(
+        (event.get("session"), event.get("battle_id"))
+        for event in events
+        if event.get("layer") == "tactical"
+        and event.get("kind") == "decision_begin"
+        and isinstance(event.get("battle_id"), int)
+    )
+
+    durations: List[float] = []
+    for event in ends:
+        start = starts.get((event.get("session"), event.get("battle_id")))
+        if not start:
+            continue
+        start_minute = start.get("world_minutes")
+        end_minute = event.get("world_minutes")
+        if isinstance(start_minute, (int, float)) and isinstance(end_minute, (int, float)):
+            durations.append(max(0.0, float(end_minute) - float(start_minute)))
+
+    player_deltas = [
+        float(event.get("player_count_delta", 0))
+        for event in ends
+        if isinstance(event.get("player_count_delta"), (int, float))
+    ]
+    enemy_deltas = [
+        float(event.get("enemy_count_delta", 0))
+        for event in ends
+        if isinstance(event.get("enemy_count_delta"), (int, float))
+    ]
+    militia_deltas = [
+        float(event.get("militia_count_delta", 0))
+        for event in ends
+        if isinstance(event.get("militia_count_delta"), (int, float))
+    ]
+
+    player_successes = results.get("victory", 0) + results.get("enemy_retreat", 0)
+    resolved = len(ends)
+
+    return {
+        "starts": len(starts),
+        "resolved": resolved,
+        "unresolved": len(unresolved_ids),
+        "unresolved_ids": unresolved_ids,
+        "results": dict(results.most_common()),
+        "player_success_rate": pct(player_successes, resolved),
+        "avg_player_count_delta": safe_mean(player_deltas),
+        "avg_enemy_count_delta": safe_mean(enemy_deltas),
+        "avg_militia_count_delta": safe_mean(militia_deltas),
+        "avg_duration_minutes": safe_mean(durations),
+        "avg_tactical_decisions": safe_mean(decision_counts.values()),
+    }
+
+
+def interaction_summary(
+    events: List[Dict[str, Any]], lookback_minutes: int = 48 * 60
+) -> Dict[str, Any]:
+    starts = {
+        (event.get("session"), event.get("battle_id")): event
+        for event in events
+        if event.get("kind") == "battle_start"
+        and isinstance(event.get("battle_id"), int)
+    }
+    ends = {
+        (event.get("session"), event.get("battle_id")): event
+        for event in events
+        if event.get("kind") == "battle_end"
+        and isinstance(event.get("battle_id"), int)
+    }
+    arrivals = [
+        event for event in events if event.get("kind") == "strategic_group_arrived"
+    ]
+
+    reinforced_results = Counter()
+    unreinforced_results = Counter()
+    reinforced_battles = 0
+    unreinforced_battles = 0
+    reinforcement_sizes: List[float] = []
+    reinforced_decisions: List[float] = []
+    unreinforced_decisions: List[float] = []
+    decision_counts = Counter(
+        (event.get("session"), event.get("battle_id"))
+        for event in events
+        if event.get("layer") == "tactical"
+        and event.get("kind") == "decision_begin"
+        and isinstance(event.get("battle_id"), int)
+    )
+    records: List[Dict[str, Any]] = []
+
+    for key, start in starts.items():
+        end = ends.get(key)
+        world_minutes = start.get("world_minutes")
+        x = start.get("sector_x")
+        y = start.get("sector_y")
+        if not isinstance(world_minutes, (int, float)):
+            continue
+        if not isinstance(x, int) or not isinstance(y, int):
+            continue
+
+        # Strategic AI sector IDs are 0-based over the 16x16 playable grid.
+        sector_id = (y - 1) * 16 + (x - 1)
+        recent = [
+            event
+            for event in arrivals
+            if event.get("session") == start.get("session")
+            and event.get("sector") == sector_id
+            and isinstance(event.get("world_minutes"), (int, float))
+            and 0
+            <= float(world_minutes) - float(event.get("world_minutes"))
+            <= lookback_minutes
+        ]
+        reinforced = bool(recent)
+        arrived_troops = sum(
+            float(event.get("group_size", 0))
+            for event in recent
+            if isinstance(event.get("group_size"), (int, float))
+        )
+
+        tactical_decisions = float(decision_counts.get(key, 0))
+        if reinforced:
+            reinforced_battles += 1
+            reinforcement_sizes.append(arrived_troops)
+            reinforced_decisions.append(tactical_decisions)
+        else:
+            unreinforced_battles += 1
+            unreinforced_decisions.append(tactical_decisions)
+
+        result = end.get("result") if end else None
+        if result:
+            if reinforced:
+                reinforced_results[result] += 1
+            else:
+                unreinforced_results[result] += 1
+
+        records.append(
+            {
+                "session": start.get("session"),
+                "battle_id": start.get("battle_id"),
+                "sector_id": sector_id,
+                "world_minutes": world_minutes,
+                "recent_reinforcement_groups": len(recent),
+                "recent_reinforcement_troops": arrived_troops,
+                "tactical_decisions": tactical_decisions,
+                "result": result,
+            }
+        )
+
+    reinforced_resolved = sum(reinforced_results.values())
+    unreinforced_resolved = sum(unreinforced_results.values())
+    reinforced_player_success = (
+        reinforced_results.get("victory", 0)
+        + reinforced_results.get("enemy_retreat", 0)
+    )
+    unreinforced_player_success = (
+        unreinforced_results.get("victory", 0)
+        + unreinforced_results.get("enemy_retreat", 0)
+    )
+
+    return {
+        "lookback_minutes": lookback_minutes,
+        "reinforced_battles": reinforced_battles,
+        "unreinforced_battles": unreinforced_battles,
+        "avg_recent_reinforcement_troops": safe_mean(reinforcement_sizes),
+        "avg_tactical_decisions_reinforced": safe_mean(reinforced_decisions),
+        "avg_tactical_decisions_unreinforced": safe_mean(unreinforced_decisions),
+        "reinforced_player_success_rate": pct(
+            reinforced_player_success, reinforced_resolved
+        ),
+        "unreinforced_player_success_rate": pct(
+            unreinforced_player_success, unreinforced_resolved
+        ),
+        "reinforced_resolved": reinforced_resolved,
+        "unreinforced_resolved": unreinforced_resolved,
+        "battle_records": records,
+    }
+
+
+def strategic_mobility_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    orders = [
+        event for event in events if event.get("kind") == "strategic_move_order"
+    ]
+    arrivals = [
+        event for event in events if event.get("kind") == "strategic_group_arrived"
+    ]
+
+    # Pair an arrival with the latest preceding order for the same group and
+    # session whose target matches the arrival sector. This handles redirects.
+    orders_by_group: Dict[Tuple[Any, Any], List[Dict[str, Any]]] = defaultdict(list)
+    for order in orders:
+        orders_by_group[(order.get("session"), order.get("group_id"))].append(order)
+    for seq in orders_by_group.values():
+        seq.sort(key=lambda event: int(event.get("seq", 0)))
+
+    matched = 0
+    travel_minutes: List[float] = []
+    unmatched_arrivals = 0
+    assignments = Counter()
+
+    for arrival in arrivals:
+        assignments[arrival.get("assignment", "unknown")] += 1
+        candidates = orders_by_group.get(
+            (arrival.get("session"), arrival.get("group_id")), []
+        )
+        prior = [
+            order
+            for order in candidates
+            if int(order.get("seq", 0)) < int(arrival.get("seq", 0))
+            and order.get("target_sector") == arrival.get("sector")
+        ]
+        if not prior:
+            unmatched_arrivals += 1
+            continue
+        order = prior[-1]
+        matched += 1
+        start = order.get("world_minutes")
+        end = arrival.get("world_minutes")
+        if isinstance(start, (int, float)) and isinstance(end, (int, float)):
+            travel_minutes.append(max(0.0, float(end) - float(start)))
+
+    ordered_groups = {
+        (event.get("session"), event.get("group_id"), event.get("target_sector"))
+        for event in orders
+    }
+    arrived_groups = {
+        (event.get("session"), event.get("group_id"), event.get("sector"))
+        for event in arrivals
+    }
+    outstanding = len(ordered_groups - arrived_groups)
+
+    return {
+        "orders": len(orders),
+        "arrivals": len(arrivals),
+        "matched_arrivals": matched,
+        "unmatched_arrivals": unmatched_arrivals,
+        "outstanding_order_keys": outstanding,
+        "arrival_match_rate": pct(matched, len(arrivals)),
+        "avg_travel_minutes": safe_mean(travel_minutes),
+        "assignments": dict(assignments.most_common()),
+    }
+
+
+def strategic_summary(
+    events: List[Dict[str, Any]], decisions: Dict[Tuple[Any, int], Dict[str, Any]]
+) -> Dict[str, Any]:
+    strategic = [d for d in decisions.values() if d.get("layer") == "strategic"]
+    commits = [c for d in strategic for c in d["commits"]]
+    selections = Counter(c.get("selection", "unknown") for c in commits)
+    reasons = Counter(c.get("reason", "unknown") for c in commits)
+    candidates = [c for d in strategic for c in d["candidates"]]
+
+    candidate_types = Counter(c.get("candidate", "unknown") for c in candidates)
+    eligible_scores = [
+        float(c.get("adjusted_score", 0)) for c in candidates if c.get("eligible")
+    ]
+
+    no_action = selections.get("no_action", 0)
+    diagnostics = Counter(
+        event.get("code", "unknown")
+        for event in events
+        if event.get("layer") == "strategic" and event.get("kind") == "diagnostic"
+    )
+
+    state_samples: Dict[str, List[float]] = defaultdict(list)
+    for decision in strategic:
+        for key, value in decision["states"].items():
+            if isinstance(value, (int, float)):
+                state_samples[str(key)].append(float(value))
+
+    return {
+        "decisions": len(strategic),
+        "commits": len(commits),
+        "no_action": no_action,
+        "no_action_rate": pct(no_action, len(commits)),
+        "selections": dict(selections.most_common()),
+        "reasons": dict(reasons.most_common()),
+        "candidate_types": dict(candidate_types.most_common()),
+        "avg_candidate_score": safe_mean(eligible_scores),
+        "avg_candidates_per_decision": (
+            float(len(candidates)) / len(strategic) if strategic else 0.0
+        ),
+        "state_means": {
+            key: safe_mean(values) for key, values in sorted(state_samples.items())
+        },
+        "diagnostics": dict(diagnostics.most_common()),
+    }
+
+
+def session_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    starts = [e for e in events if e.get("kind") == "session_start"]
+    sessions = sorted({e.get("session") for e in events if e.get("session") is not None})
+    return {
+        "events": len(events),
+        "sessions": sessions,
+        "builds": [
+            {
+                "session": e.get("session"),
+                "build_date": e.get("build_date"),
+                "build_time": e.get("build_time"),
+                "experiment_tag": e.get("experiment_tag", "unlabeled"),
+            }
+            for e in starts
+        ],
+    }
+
+
+def summarize(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    decisions = build_decisions(events)
+    return {
+        "session": session_summary(events),
+        "battle": battle_summary(events),
+        "tactical": tactical_summary(events, decisions),
+        "interaction": interaction_summary(events),
+        "strategic_mobility": strategic_mobility_summary(events),
+        "strategic": strategic_summary(events, decisions),
+    }
+
+
+def fmt(value: Any, digits: int = 1) -> str:
+    if value is None:
+        return "n/a"
+    if isinstance(value, float):
+        if math.isnan(value):
+            return "n/a"
+        return f"{value:.{digits}f}"
+    return str(value)
+
+
+def comparison_rows(current: Dict[str, Any], baseline: Dict[str, Any]) -> List[Tuple[str, float, float, float]]:
+    paths = [
+        ("Tactical completion rate %", "tactical", "completed_rate"),
+        ("Tactical rejected rate %", "tactical", "rejected_rate"),
+        ("Tactical superseded rate %", "tactical", "superseded_rate"),
+        ("Tactical average AP spent", "tactical", "avg_ap_spent"),
+        ("Completed actions with last-attack-hit flag %", "tactical", "last_attack_hit_flag_rate"),
+        ("Battle player success rate %", "battle", "player_success_rate"),
+        ("Battle average player-count delta", "battle", "avg_player_count_delta"),
+        ("Battle average enemy-count delta", "battle", "avg_enemy_count_delta"),
+        ("Battle average duration minutes", "battle", "avg_duration_minutes"),
+        ("Battle average tactical decisions", "battle", "avg_tactical_decisions"),
+        ("Player success after recent enemy reinforcement %", "interaction", "reinforced_player_success_rate"),
+        ("Player success without recent enemy reinforcement %", "interaction", "unreinforced_player_success_rate"),
+        ("Cover - attack adjusted score", "tactical", "avg_cover_minus_attack_score"),
+        ("Strategic move arrival match rate %", "strategic_mobility", "arrival_match_rate"),
+        ("Strategic average travel minutes", "strategic_mobility", "avg_travel_minutes"),
+        ("Strategic no-action rate %", "strategic", "no_action_rate"),
+        ("Strategic candidates / decision", "strategic", "avg_candidates_per_decision"),
+        ("Strategic average candidate score", "strategic", "avg_candidate_score"),
+    ]
+    rows: List[Tuple[str, float, float, float]] = []
+    for label, section, key in paths:
+        cur = current[section].get(key)
+        base = baseline[section].get(key)
+        if cur is None or base is None:
+            continue
+        rows.append((label, float(base), float(cur), float(cur) - float(base)))
+    return rows
+
+
+def recommendations(summary: Dict[str, Any], baseline: Optional[Dict[str, Any]]) -> List[str]:
+    findings: List[str] = []
+    battle = summary["battle"]
+    interaction = summary["interaction"]
+    tac = summary["tactical"]
+    mobility = summary["strategic_mobility"]
+    strat = summary["strategic"]
+
+    if (
+        interaction["reinforced_resolved"] >= 3
+        and interaction["unreinforced_resolved"] >= 3
+        and interaction["reinforced_player_success_rate"]
+        > interaction["unreinforced_player_success_rate"] + 20.0
+    ):
+        findings.append(
+            "Cross-layer anomaly: player success is materially higher in battles that followed recent enemy reinforcement arrivals. "
+            "Inspect reinforcement composition, arrival timing, and whether fresh groups are entering disadvantageous tactical states."
+        )
+    if battle["unresolved"]:
+        findings.append(
+            f"Battle lifecycle telemetry has {battle['unresolved']} unresolved battle(s). "
+            "Use the Black Box battle IDs to determine whether the session ended mid-battle or an end condition bypassed instrumentation."
+        )
+    if battle["resolved"] >= 5 and battle["player_success_rate"] > 90.0:
+        findings.append(
+            f"Across {battle['resolved']} resolved battles, player success is {battle['player_success_rate']:.1f}%. "
+            "Do not tune difficulty from this alone, but inspect whether strategic pressure and tactical survival are both underperforming."
+        )
+    if tac["rejected_rate"] > 5.0:
+        findings.append(
+            f"Tactical planning/execution mismatch: {tac['rejected_rate']:.1f}% of recorded outcomes were rejected. "
+            "Inspect affordability/AP checks and any candidate scoring that ignores execution cost."
+        )
+    if tac["superseded_rate"] > 3.0:
+        findings.append(
+            f"Tactical action lifecycle instability: {tac['superseded_rate']:.1f}% of outcomes were superseded before closure. "
+            "Use the Black Box decision IDs to locate the actions being replaced."
+        )
+    if tac["diagnostics"]:
+        top = next(iter(tac["diagnostics"].items()))
+        findings.append(
+            f"Tactical troubleshooting signal: most common diagnostic is '{top[0]}' ({top[1]} occurrences)."
+        )
+    if tac["attack_cover_pairs"] >= 10:
+        gap = tac["avg_cover_minus_attack_score"]
+        if gap is not None and gap > 10:
+            findings.append(
+                f"Battle AI is strongly cover-weighted in measured attack-vs-cover decisions "
+                f"(average adjusted cover advantage {gap:.1f}). Check whether this is producing excessive passivity."
+            )
+        elif gap is not None and gap < -10:
+            findings.append(
+                f"Battle AI is strongly attack-weighted in measured attack-vs-cover decisions "
+                f"(average adjusted attack advantage {-gap:.1f}). Check exposure and casualty outcomes."
+            )
+
+    if mobility["unmatched_arrivals"]:
+        findings.append(
+            f"Strategic execution trace has {mobility['unmatched_arrivals']} arrival(s) without a matching move order. "
+            "Treat this as a Black Box coverage or group-redirection issue before drawing balance conclusions."
+        )
+    if mobility["outstanding_order_keys"] >= 3:
+        findings.append(
+            f"There are {mobility['outstanding_order_keys']} strategic move target(s) without a recorded arrival. "
+            "Some may still be in transit; use world_minutes and group IDs to separate delay from pathing/reassignment failures."
+        )
+    if strat["no_action_rate"] > 50.0 and strat["commits"] >= 5:
+        findings.append(
+            f"Strategic AI selected no action in {strat['no_action_rate']:.1f}% of recorded decisions. "
+            "Separate legitimate inactivity from reinforcement starvation using the recorded reasons and state values."
+        )
+    if strat["diagnostics"].get("reinforcement_selection_fallthrough", 0):
+        findings.append(
+            "Strategic reinforcement selection reached an impossible fallthrough at least once. "
+            "Treat this as a Black Box troubleshooting issue before tuning weights."
+        )
+
+    if baseline:
+        base_battle = baseline["battle"]
+        base_tac = baseline["tactical"]
+        base_strat = baseline["strategic"]
+        if battle["resolved"] >= 3 and base_battle["resolved"] >= 3:
+            if battle["player_success_rate"] > base_battle["player_success_rate"] + 15.0:
+                findings.append(
+                    "Change-impact signal: player battle success increased by more than 15 percentage points versus baseline. "
+                    "Inspect tactical and strategic causal chains before attributing this to any single change."
+                )
+        if tac["rejected_rate"] > base_tac["rejected_rate"] + 3.0:
+            findings.append(
+                "Regression versus baseline: tactical rejected-action rate increased by more than 3 percentage points."
+            )
+        if strat["no_action_rate"] > base_strat["no_action_rate"] + 10.0:
+            findings.append(
+                "Regression versus baseline: strategic no-action rate increased by more than 10 percentage points."
+            )
+
+    if not findings:
+        findings.append(
+            "No high-confidence refinement warning crossed the current thresholds. "
+            "Continue collecting sessions; the report is intentionally conservative rather than inventing causality from small samples."
+        )
+    return findings
+
+
+def render_markdown(
+    source: Path,
+    summary: Dict[str, Any],
+    baseline_source: Optional[Path],
+    baseline: Optional[Dict[str, Any]],
+) -> str:
+    battle = summary["battle"]
+    interaction = summary["interaction"]
+    tac = summary["tactical"]
+    mobility = summary["strategic_mobility"]
+    strat = summary["strategic"]
+
+    lines: List[str] = [
+        "# Vengeance Reloaded Campaign Companion",
+        "",
+        f"Source: `{source}`",
+        "",
+        "Experiments: " + ", ".join(
+            sorted(
+                {
+                    str(item.get("experiment_tag", "unlabeled"))
+                    for item in summary["session"]["builds"]
+                }
+            )
+        ),
+        "",
+        "## Tactical refinement subsystem",
+        "",
+        "| Metric | Result |",
+        "|---|---:|",
+        f"| Decisions | {tac['decisions']} |",
+        f"| Completed outcomes | {tac['completed']} ({tac['completed_rate']:.1f}%) |",
+        f"| Rejected outcomes | {tac['rejected']} ({tac['rejected_rate']:.1f}%) |",
+        f"| Superseded outcomes | {tac['superseded']} ({tac['superseded_rate']:.1f}%) |",
+        f"| Average AP spent | {fmt(tac['avg_ap_spent'])} |",
+        f"| Average absolute movement | {fmt(tac['avg_abs_grid_delta'])} grids |",
+        f"| Completed actions with last-attack-hit flag | {tac['last_attack_hit_flag_rate']:.1f}% ({tac['completed_action_samples']} completed-action samples) |",
+        f"| Attack-vs-cover comparisons | {tac['attack_cover_pairs']} |",
+        f"| Cover wins / attack wins / ties | {tac['defense_wins']} / {tac['offense_wins']} / {tac['ties']} |",
+        f"| Mean cover-minus-attack adjusted score | {fmt(tac['avg_cover_minus_attack_score'])} |",
+        "",
+        "### Battle outcomes",
+        "",
+        "| Metric | Result |",
+        "|---|---:|",
+        f"| Battles started | {battle['starts']} |",
+        f"| Battles resolved | {battle['resolved']} |",
+        f"| Unresolved battle IDs | {', '.join(map(str, battle['unresolved_ids'])) if battle['unresolved_ids'] else 'none'} |",
+        f"| Player success rate | {battle['player_success_rate']:.1f}% |",
+        f"| Mean player-count delta | {fmt(battle['avg_player_count_delta'])} |",
+        f"| Mean enemy-count delta | {fmt(battle['avg_enemy_count_delta'])} |",
+        f"| Mean militia-count delta | {fmt(battle['avg_militia_count_delta'])} |",
+        f"| Mean battle duration | {fmt(battle['avg_duration_minutes'])} campaign minutes |",
+        f"| Mean tactical decisions / battle | {fmt(battle['avg_tactical_decisions'])} |",
+        "",
+        "#### Results",
+        "",
+    ]
+
+    if battle["results"]:
+        lines += ["| Result | Count |", "|---|---:|"]
+        for result, count in battle["results"].items():
+            lines.append(f"| {result} | {count} |")
+    else:
+        lines.append("No completed battles recorded.")
+
+    lines += [
+        "",
+        "### Tactical action mix",
+        "",
+    ]
+
+    if tac["action_counts"]:
+        lines += ["| Action ID | Count |", "|---:|---:|"]
+        for action, count in list(tac["action_counts"].items())[:20]:
+            lines.append(f"| {action} | {count} |")
+    else:
+        lines.append("No tactical action commits recorded.")
+
+    lines += [
+        "",
+        "## Cross-layer interaction analysis",
+        "",
+        f"Window: {interaction['lookback_minutes']} campaign minutes before battle start.",
+        "",
+        "| Metric | Result |",
+        "|---|---:|",
+        f"| Battles after recent enemy reinforcement | {interaction['reinforced_battles']} |",
+        f"| Battles without recent enemy reinforcement | {interaction['unreinforced_battles']} |",
+        f"| Mean recently arrived enemy troops | {fmt(interaction['avg_recent_reinforcement_troops'])} |",
+        f"| Mean tactical decisions after reinforcement | {fmt(interaction['avg_tactical_decisions_reinforced'])} |",
+        f"| Mean tactical decisions without reinforcement | {fmt(interaction['avg_tactical_decisions_unreinforced'])} |",
+        f"| Player success after recent reinforcement | {interaction['reinforced_player_success_rate']:.1f}% ({interaction['reinforced_resolved']} resolved) |",
+        f"| Player success without recent reinforcement | {interaction['unreinforced_player_success_rate']:.1f}% ({interaction['unreinforced_resolved']} resolved) |",
+        "",
+        "This comparison is a causal lead, not proof: use the Black Box group IDs, timestamps and battle records to inspect the actual chain.",
+        "",
+        "## Strategic refinement subsystem",
+        "",
+        "| Metric | Result |",
+        "|---|---:|",
+        f"| Decisions | {strat['decisions']} |",
+        f"| Commits | {strat['commits']} |",
+        f"| No-action selections | {strat['no_action']} ({strat['no_action_rate']:.1f}%) |",
+        f"| Candidates / decision | {strat['avg_candidates_per_decision']:.2f} |",
+        f"| Mean eligible candidate score | {fmt(strat['avg_candidate_score'])} |",
+        "",
+        "### Strategic movement execution",
+        "",
+        "| Metric | Result |",
+        "|---|---:|",
+        f"| Move orders | {mobility['orders']} |",
+        f"| Arrivals | {mobility['arrivals']} |",
+        f"| Matched arrivals | {mobility['matched_arrivals']} ({mobility['arrival_match_rate']:.1f}%) |",
+        f"| Unmatched arrivals | {mobility['unmatched_arrivals']} |",
+        f"| Outstanding move targets | {mobility['outstanding_order_keys']} |",
+        f"| Mean matched travel time | {fmt(mobility['avg_travel_minutes'])} campaign minutes |",
+        "",
+        "### Strategic selections",
+        "",
+    ]
+
+    if strat["selections"]:
+        lines += ["| Selection | Count |", "|---|---:|"]
+        for name, count in strat["selections"].items():
+            lines.append(f"| {name} | {count} |")
+    else:
+        lines.append("No strategic commits recorded.")
+
+    lines += ["", "## Black Box troubleshooting signals", ""]
+    diagnostics = []
+    for layer in ("tactical", "strategic"):
+        for code, count in summary[layer]["diagnostics"].items():
+            diagnostics.append((layer, code, count))
+    if diagnostics:
+        lines += ["| Layer | Diagnostic | Count |", "|---|---|---:|"]
+        for layer, code, count in sorted(diagnostics, key=lambda x: (-x[2], x[0], x[1])):
+            lines.append(f"| {layer} | {code} | {count} |")
+    else:
+        lines.append("No diagnostics recorded.")
+
+    if baseline is not None and baseline_source is not None:
+        lines += [
+            "",
+            "## Change-impact comparison",
+            "",
+            f"Baseline: `{baseline_source}`",
+            "",
+            "| Metric | Baseline | Current | Delta |",
+            "|---|---:|---:|---:|",
+        ]
+        for label, base, cur, delta in comparison_rows(summary, baseline):
+            lines.append(f"| {label} | {base:.2f} | {cur:.2f} | {delta:+.2f} |")
+
+    lines += ["", "## Refinement findings", ""]
+    for item in recommendations(summary, baseline):
+        lines.append(f"- {item}")
+
+    lines += [
+        "",
+        "## Interpretation rule",
+        "",
+        "The Companion treats correlations as hypotheses, not proof. Use the Black Box decision IDs to inspect the underlying chain before changing AI weights or mechanics.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Analyze Vengeance Reloaded Black Box telemetry.")
+    parser.add_argument("log", type=Path, help="Current VR_BlackBox.jsonl")
+    parser.add_argument("--baseline", type=Path, help="Earlier Black Box log for before/after comparison")
+    parser.add_argument("-o", "--output", type=Path, default=Path("VR_Companion_Report.md"))
+    parser.add_argument("--json-output", type=Path, default=Path("VR_Companion_Summary.json"))
+    args = parser.parse_args()
+
+    current_events = load_events(args.log)
+    current = summarize(current_events)
+
+    baseline = None
+    if args.baseline:
+        baseline = summarize(load_events(args.baseline))
+
+    report = render_markdown(args.log, current, args.baseline, baseline)
+    args.output.write_text(report, encoding="utf-8")
+    args.json_output.write_text(
+        json.dumps(current, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+    print(f"Wrote {args.output}")
+    print(f"Wrote {args.json_output}")
+
+
+if __name__ == "__main__":
+    main()

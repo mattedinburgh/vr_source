@@ -114,6 +114,7 @@
 #include "Creature Spreading.h"			// added by Flugente forResetCreatureAttackVariables()
 #endif
 #include "connect.h"
+#include "VRAnalytics.h"
 
 #include "Luaglobal.h"
 #include "LuaInitNPCs.h"
@@ -5888,6 +5889,14 @@ void CommonEnterCombatModeCode( )
     gTacticalStatus.fLastBattleWon      = FALSE;
     gTacticalStatus.fItemsSeenOnAttack  = FALSE;
 
+    VRAnalyticsBattleStarted(
+        gWorldSectorX,
+        gWorldSectorY,
+        gbWorldSectorZ,
+        gTacticalStatus.Team[ gbPlayerNum ].bMenInSector,
+        gTacticalStatus.Team[ ENEMY_TEAM ].bMenInSector,
+        gTacticalStatus.Team[ MILITIA_TEAM ].bMenInSector );
+
     gTacticalStatus.ubInterruptPending  = DISABLED_INTERRUPT;
 
 	gTacticalStatus.ubDisablePlayerInterrupts = FALSE;
@@ -7146,6 +7155,16 @@ BOOLEAN CheckForEndOfBattle( BOOLEAN fAnEnemyRetreated )
         if (is_networked && is_server)
             game_over();
 
+        VRAnalyticsBattleEnded(
+            fDefeat ? "defeat" : "withdrawal",
+            gWorldSectorX,
+            gWorldSectorY,
+            gbWorldSectorZ,
+            gTacticalStatus.Team[ gbPlayerNum ].bMenInSector,
+            gTacticalStatus.Team[ ENEMY_TEAM ].bMenInSector,
+            gTacticalStatus.Team[ MILITIA_TEAM ].bMenInSector,
+            false );
+
         return( TRUE );
     }
 
@@ -7432,6 +7451,16 @@ BOOLEAN CheckForEndOfBattle( BOOLEAN fAnEnemyRetreated )
         // hence if we get here the game is over for all clients and we should report it
         if (is_networked && is_server)
             game_over();
+
+        VRAnalyticsBattleEnded(
+            fAnEnemyRetreated ? "enemy_retreat" : "victory",
+            gWorldSectorX,
+            gWorldSectorY,
+            gbWorldSectorZ,
+            gTacticalStatus.Team[ gbPlayerNum ].bMenInSector,
+            gTacticalStatus.Team[ ENEMY_TEAM ].bMenInSector,
+            gTacticalStatus.Team[ MILITIA_TEAM ].bMenInSector,
+            fAnEnemyRetreated ? true : false );
 
         return( TRUE );
     }
