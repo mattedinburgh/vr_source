@@ -84,7 +84,7 @@ static void VR_TacticalEnsureHeaders()
 		if( iLength == 0 )
 		{
 			fprintf( fp,
-				"schema_version\tframework_version\tsession_id\tbattle_id\tevent_seq\tworld_min\tday\thour\tminute\tsector_x\tsector_y\tsector_z\tturn\tevent\tactor_team\tactor_id\tactor_profile\tactor_grid\ttarget_team\ttarget_id\ttarget_profile\ttarget_grid\titem\tvalue1\tvalue2\tvalue3\tactor_life\tactor_ap\tactor_breath\tactor_shock\treason\n" );
+				"session_id\tbattle_id\tevent_seq\tworld_min\tday\thour\tminute\tsector_x\tsector_y\tsector_z\tturn\tevent\tactor_team\tactor_id\tactor_profile\tactor_grid\ttarget_team\ttarget_id\ttarget_profile\ttarget_grid\titem\tvalue1\tvalue2\tvalue3\tactor_life\tactor_ap\tactor_breath\tactor_shock\treason\n" );
 		}
 		fclose( fp );
 	}
@@ -97,8 +97,7 @@ static void VR_TacticalEnsureHeaders()
 		if( iLength == 0 )
 		{
 			fprintf( fp, "VENGEANCE CAMPAIGN AI COMPANION\n" );
-			fprintf( fp, "Framework: %s | Schema: %u\n", VR_AI_FRAMEWORK_VERSION, VR_AI_COMPANION_SCHEMA_VERSION );
-			fprintf( fp, "Strategic decisions, AI reasoning and tactical battle telemetry.\n\n" );
+			fprintf( fp, "Strategic decisions and tactical battle telemetry.\n\n" );
 		}
 		fclose( fp );
 	}
@@ -139,9 +138,7 @@ static void VR_TacticalWrite(
 	if( fp )
 	{
 		fprintf( fp,
-			"%u\t%s\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%d\t%d\t%d\t%u\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%u\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
-			VR_AI_COMPANION_SCHEMA_VERSION,
-			VR_AI_FRAMEWORK_VERSION,
+			"%u\t%u\t%u\t%u\t%u\t%u\t%u\t%d\t%d\t%d\t%u\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%u\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
 			guiVRTacticalSessionID,
 			guiVRTacticalBattleSerial,
 			guiVRTacticalEventSerial,
@@ -220,22 +217,6 @@ static void VR_TacticalLogParticipant( SOLDIERTYPE *pSoldier, const CHAR8 *pEven
 BOOLEAN VR_TacticalTelemetryBattleActive()
 {
 	return gfVRTacticalBattleActive;
-}
-
-UINT32 VR_TacticalTelemetrySessionID()
-{
-	VR_TacticalEnsureSession();
-	return guiVRTacticalSessionID;
-}
-
-UINT32 VR_TacticalTelemetryBattleID()
-{
-	return guiVRTacticalBattleSerial;
-}
-
-UINT32 VR_TacticalTelemetryTurnID()
-{
-	return guiVRTacticalTurnSerial;
 }
 
 void VR_TacticalTelemetryBattleStart( UINT8 ubStartingTeam )

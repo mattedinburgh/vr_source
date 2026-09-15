@@ -3,9 +3,6 @@
 
 #include "types.h"
 
-#define VR_AI_COMPANION_SCHEMA_VERSION 3
-#define VR_AI_FRAMEWORK_VERSION "unified-ai-2026-09-14"
-
 class SOLDIERTYPE;
 
 void VR_TacticalTelemetryBattleStart( UINT8 ubStartingTeam );
@@ -24,8 +21,5 @@ void VR_TacticalTelemetryExplosion( UINT8 ubOwner, INT32 sGridNo, UINT16 usItem,
 void VR_TacticalTelemetrySmoke( UINT8 ubOwner, INT32 sGridNo, UINT16 usItem, INT8 bLevel );
 
 BOOLEAN VR_TacticalTelemetryBattleActive();
-UINT32 VR_TacticalTelemetrySessionID();
-UINT32 VR_TacticalTelemetryBattleID();
-UINT32 VR_TacticalTelemetryTurnID();
 
 #endif
