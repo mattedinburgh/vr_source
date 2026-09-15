@@ -85,6 +85,7 @@ typedef struct
 
 typedef struct
 {
+	volatile LONG committed;
 	CHAR8 name[BLACKBOX_COUNTER_NAME_CHARS];
 	volatile LONG value;
 } BLACKBOX_COUNTER_STATE;
@@ -1006,8 +1007,10 @@ LONG BlackBoxCounterAdd( const char *name, LONG delta )
 	if( slot < 0 )
 	{
 		slot = empty >= 0 ? empty : 0;
+		InterlockedExchange( &gBlackBoxCounters[slot].committed, 0 );
 		lstrcpynA( gBlackBoxCounters[slot].name, safeName, BLACKBOX_COUNTER_NAME_CHARS );
 		InterlockedExchange( &gBlackBoxCounters[slot].value, 0 );
+		InterlockedExchange( &gBlackBoxCounters[slot].committed, 1 );
 	}
 	value = InterlockedExchangeAdd( &gBlackBoxCounters[slot].value, delta ) + delta;
 	LeaveCriticalSection( &gBlackBoxLock );
@@ -1454,13 +1457,28 @@ static void BlackBoxDumpToCrashReport( HWFILE hFile, const EXCEPTION_RECORD *pRe
 		{
 			LONG exceptionSlot = ( exceptionSequence - 1 ) % BLACKBOX_EXCEPTION_SLOTS;
 			BLACKBOX_EXCEPTION_EVENT *event = &gBlackBoxExceptions[exceptionSlot];
-			if( event->committedSequence != exceptionSequence )
+			LONG committedBefore = InterlockedCompareExchange(
+				&event->committedSequence, 0, 0 );
+			if( committedBefore != exceptionSequence )
+				continue;
+
+			DWORD tick = event->tick;
+			DWORD threadId = event->threadId;
+			DWORD code = event->code;
+			PVOID address = event->address;
+			DWORD parameterCount = event->parameterCount;
+			ULONG_PTR info0 = event->info0;
+			ULONG_PTR info1 = event->info1;
+			LONG committedAfter = InterlockedCompareExchange(
+				&event->committedSequence, 0, 0 );
+
+			if( committedAfter != committedBefore )
 				continue;
 
 			ErrorLog( hFile,
 				"  seq=%ld uptimeMs=%lu tid=%lu code=0x%08lx address=0x%08x params=%lu info0=0x%08x info1=0x%08x\r\n",
-				exceptionSequence, event->tick, event->threadId, event->code, event->address,
-				event->parameterCount, event->info0, event->info1 );
+				exceptionSequence, tick, threadId, code, address,
+				parameterCount, info0, info1 );
 		}
 	}
 
@@ -1530,8 +1548,22 @@ static void BlackBoxDumpToCrashReport( HWFILE hFile, const EXCEPTION_RECORD *pRe
 	ErrorLog( hFile, "\r\nNamed counters:\r\n" );
 	for( i = 0; i < BLACKBOX_COUNTER_SLOTS; ++i )
 	{
-		if( gBlackBoxCounters[i].name[0] != 0 )
-			ErrorLog( hFile, "  %-24s = %ld\r\n", gBlackBoxCounters[i].name, gBlackBoxCounters[i].value );
+		LONG committedBefore = InterlockedCompareExchange(
+			&gBlackBoxCounters[i].committed, 0, 0 );
+		if( committedBefore != 0 )
+		{
+			CHAR8 name[BLACKBOX_COUNTER_NAME_CHARS];
+			LONG value;
+			LONG committedAfter;
+
+			lstrcpynA( name, gBlackBoxCounters[i].name, BLACKBOX_COUNTER_NAME_CHARS );
+			value = InterlockedCompareExchange( &gBlackBoxCounters[i].value, 0, 0 );
+			committedAfter = InterlockedCompareExchange(
+				&gBlackBoxCounters[i].committed, 0, 0 );
+
+			if( committedAfter == committedBefore && name[0] != 0 )
+				ErrorLog( hFile, "  %-24s = %ld\r\n", name, value );
+		}
 	}
 
 	ErrorLog( hFile, "\r\nRecent/active timed operations:\r\n" );
