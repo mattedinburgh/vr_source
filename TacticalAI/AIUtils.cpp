@@ -5809,19 +5809,11 @@ UINT16 AIPerceivedEnemyStrength(SOLDIERTYPE *pSoldier)
 	return (UINT16)__min((UINT32)65535, uiStrength);
 }
 
-INT8 AIBattleSituation(SOLDIERTYPE *pSoldier)
+static INT8 AIBattleSituationFromSnapshot(UINT32 uiFriends, UINT32 uiEnemies, UINT8 ubCasualties)
 {
-	if (!AICombatTeam(pSoldier))
-		return AI_BATTLE_UNKNOWN;
-
-	UINT32 uiFriends = AIPerceivedFriendlyStrength(pSoldier);
-	UINT32 uiEnemies = AIPerceivedEnemyStrength(pSoldier);
-
 	// With no legitimate opponent knowledge there is no force-ratio assessment.
 	if (uiEnemies == 0)
 		return AI_BATTLE_UNKNOWN;
-
-	UINT8 ubCasualties = AIFriendlyCasualtyPercent(pSoldier);
 
 	// Historical losses matter, but they must not override the force that is still
 	// standing in front of the player. A formation that retains superior current
@@ -5844,6 +5836,17 @@ INT8 AIBattleSituation(SOLDIERTYPE *pSoldier)
 	return AI_BATTLE_EVEN;
 }
 
+INT8 AIBattleSituation(SOLDIERTYPE *pSoldier)
+{
+	if (!AICombatTeam(pSoldier))
+		return AI_BATTLE_UNKNOWN;
+
+	return AIBattleSituationFromSnapshot(
+		AIPerceivedFriendlyStrength(pSoldier),
+		AIPerceivedEnemyStrength(pSoldier),
+		AIFriendlyCasualtyPercent(pSoldier));
+}
+
 BOOLEAN AIBuildTacticalDecisionContext(SOLDIERTYPE *pSoldier, AITACTICALDECISIONCONTEXT *pContext)
 {
 	if (!pContext)
@@ -5856,8 +5859,16 @@ BOOLEAN AIBuildTacticalDecisionContext(SOLDIERTYPE *pSoldier, AITACTICALDECISION
 	if (!AICombatTeam(pSoldier))
 		return FALSE;
 
+	// Build one knowledge-safe snapshot so higher-level reasoners do not independently
+	// rescan and reinterpret the same battlefield state during a single decision.
 	pContext->sPrimaryThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
-	pContext->bBattleSituation = AIBattleSituation(pSoldier);
+	pContext->usPerceivedFriendlyStrength = AIPerceivedFriendlyStrength(pSoldier);
+	pContext->usPerceivedEnemyStrength = AIPerceivedEnemyStrength(pSoldier);
+	pContext->ubFriendlyCasualtyPercent = AIFriendlyCasualtyPercent(pSoldier);
+	pContext->bBattleSituation = AIBattleSituationFromSnapshot(
+		pContext->usPerceivedFriendlyStrength,
+		pContext->usPerceivedEnemyStrength,
+		pContext->ubFriendlyCasualtyPercent);
 	pContext->iStress = AILocalStress(pSoldier);
 	pContext->iPersonalRisk = AIPersonalRisk(pSoldier);
 	pContext->iRiskTolerance = AIPersonalRiskTolerance(pSoldier);
@@ -5869,6 +5880,8 @@ BOOLEAN AIBuildTacticalDecisionContext(SOLDIERTYPE *pSoldier, AITACTICALDECISION
 	pContext->fUnderFire = pSoldier->aiData.bUnderFire;
 	pContext->fIsolated = (pContext->ubNearbyOperationalFriends == 0);
 	pContext->fHasLivePersonalContact = (pSoldier->aiData.bOppCnt > 0);
+	pContext->fDisengaging = AIDisengagementActive(pSoldier);
+	pContext->fEscaping = AIEscapeActive(pSoldier);
 
 	if (!TileIsOutOfBounds(pContext->sPrimaryThreat))
 	{
@@ -13721,6 +13734,22 @@ static INT8 gbAITacticalRolePlan[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAITacticalPlanUntil[MAX_NUM_SOLDIERS] = { 0 };
 static INT32 gsAITacticalPlanTarget[MAX_NUM_SOLDIERS] = { 0 };
 static UINT32 guiAITacticalRoleUntil[MAX_NUM_SOLDIERS] = { 0 };
+static UINT32 guiAITacticalPlanIdentity[MAX_NUM_SOLDIERS] = { 0 };
+
+void AIResetTacticalPlannerStateForLoad(void)
+{
+	// Planner state is intentionally transient and is not serialized. Same-sector
+	// quickloads must not inherit intent/role decisions from the abandoned future.
+	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
+	{
+		gbAITacticalIntentPlan[i] = AI_INTENT_HOLD;
+		gbAITacticalRolePlan[i] = AI_ROLE_RESERVE;
+		guiAITacticalPlanUntil[i] = 0;
+		gsAITacticalPlanTarget[i] = NOWHERE;
+		guiAITacticalRoleUntil[i] = 0;
+		guiAITacticalPlanIdentity[i] = 0;
+	}
+}
 
 static BOOLEAN AITacticalTargetChanged(UINT8 ubID, INT32 sTargetSpot)
 {
@@ -13855,6 +13884,18 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	UINT8 ubID = pSoldier->ubID;
 	if (ubID >= MAX_NUM_SOLDIERS)
 		return AI_INTENT_HOLD;
+
+	// Soldier slots are recycled by JA2. Never let a newly created actor inherit a
+	// short-lived plan that belonged to the previous occupant of the same slot.
+	if (guiAITacticalPlanIdentity[ubID] != pSoldier->uiUniqueSoldierIdValue)
+	{
+		gbAITacticalIntentPlan[ubID] = AI_INTENT_HOLD;
+		gbAITacticalRolePlan[ubID] = AI_ROLE_RESERVE;
+		guiAITacticalPlanUntil[ubID] = 0;
+		gsAITacticalPlanTarget[ubID] = NOWHERE;
+		guiAITacticalRoleUntil[ubID] = 0;
+		guiAITacticalPlanIdentity[ubID] = pSoldier->uiUniqueSoldierIdValue;
+	}
 
 	if (TileIsOutOfBounds(sTargetSpot))
 		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
