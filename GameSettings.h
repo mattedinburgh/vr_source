@@ -1735,7 +1735,7 @@ typedef struct
 	UINT8 ubRAMaxBonusesToTravelSpeed;
 	UINT8 ubRABreathForTravellingReduction;
 	UINT8 ubRAWeatherPenaltiesReduction;
-	//UINT8 ubRACamoEffectivenessBonus;
+	UINT8 ubRACamoEffectivenessBonus;
 	UINT8 ubRACamoWornountSpeedReduction;
 	UINT8 ubRAFiringSpeedBonusShotguns;
 	UINT8 ubRAAimClicksAdded;
