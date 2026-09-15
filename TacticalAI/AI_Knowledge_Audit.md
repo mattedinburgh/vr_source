@@ -60,9 +60,11 @@ The surprise tracker may remember:
 - coarse directions of those personally visible contacts;
 - legal known-threat exposure at the soldier's own position.
 
-It may not use hidden enemies to decide that a soldier is surrounded. Multi-angle or encirclement
-pressure is derived only from personally visible opponents. Public/radio knowledge can still affect
-ordinary tactical planning, but cannot manufacture a surprise reaction.
+It may not use hidden enemies to decide that a soldier is surrounded. The shared 8-sector geometry
+may use stale/heard/public contacts as lower-confidence pressure for ordinary caution, route choice,
+and flank evaluation, but **encirclement pressure requires personally visible multi-angle geometry**.
+Public/radio knowledge can therefore influence where a soldier prefers to move without manufacturing
+a false "I can see that I am surrounded" conclusion.
 
 ## Hard anti-cheat rules
 
@@ -97,6 +99,26 @@ Prefer existing JA2 concepts:
 - known-opponent distances
 
 Movement goals should select a better tactical position, not a hard-coded number of tiles backward.
+
+## Shared local battlefield geometry
+
+`AIBuildTacticalGeometry` converts legal contact beliefs and local friendly positions into an
+eight-direction tactical picture around the deciding soldier. It records pressure by direction,
+the primary/secondary known threat axes, strongest local friendly sector, left/right flank
+opportunity, rear safety, and the currently safest breakout direction.
+
+Opponent-sector pressure is confidence-weighted by the existing JA2 knowledge model. Friendly
+pressure for combat teams is fireteam-local, preventing sector-wide perfect coordination.
+
+The geometry layer may guide:
+- flank-side choice;
+- flank/fallback tile scoring;
+- CQB position utility;
+- surprise reassessment;
+- weakest-sector breakout under multi-angle pressure.
+
+A remembered contact may make a direction less attractive. It may not, by itself, create an
+encirclement state. That stronger conclusion requires personally visible, separated threat sectors.
 
 ## Implication for later chunks
 
