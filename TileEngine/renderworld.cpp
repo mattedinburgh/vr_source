@@ -6,6 +6,7 @@
 	#include "math.h"
 	#include <stdio.h>
 	#include <errno.h>
+	#include <stdlib.h>
 
 	#include "worlddef.h"
 	#include "renderworld.h"
@@ -105,6 +106,103 @@ extern	BOOLEAN	gfTopMessageDirty;
 // Shared by both the true-colour and legacy multi-Z tile paths. Keep this in
 // file-wide scope: RenderTiles() now needs it before the legacy blitter section.
 #define	Z_STRIP_DELTA_Y					( Z_SUBLAYERS * 10 )
+
+typedef struct
+{
+	UINT32 uiFrames;
+	UINT32 uiFullFrames;
+	UINT32 uiBubbleFrames;
+	UINT32 uiFrameMsTotal;
+	UINT32 uiFrameMsMax;
+	UINT32 uiMultiZCalls;
+	UINT32 uiMultiZPixelsDecoded;
+	UINT32 uiMultiZPixelsDrawn;
+	UINT32 uiMultiZPixelsClipped;
+	UINT32 uiMultiZPixelsZRejected;
+	UINT32 uiOcclusionCalls;
+	UINT32 uiOcclusionOuterClipRects;
+	UINT32 uiBubbleReclassifications;
+} VHD_RENDER_DIAGNOSTICS;
+
+static VHD_RENDER_DIAGNOSTICS gVHDRenderDiagnostics = { 0 };
+static UINT32 guiVHDRenderDiagnosticSample = 0;
+static INT8 gbVHDRenderDiagnosticsEnabled = -1;
+
+static BOOLEAN VHDRenderDiagnosticsEnabled( )
+{
+	if ( gbVHDRenderDiagnosticsEnabled < 0 )
+	{
+		const CHAR8 *pEnabled = getenv( "VR_VHD_RENDER_DIAGNOSTICS" );
+		gbVHDRenderDiagnosticsEnabled =
+			( pEnabled != NULL && strcmp( pEnabled, "1" ) == 0 ) ? 1 : 0;
+	}
+	return gbVHDRenderDiagnosticsEnabled == 1;
+}
+
+static void VHDRenderDiagnosticsOcclusionCall( UINT8 ubOuterClipRects )
+{
+	if ( !VHDRenderDiagnosticsEnabled( ) )
+		return;
+	++gVHDRenderDiagnostics.uiOcclusionCalls;
+	gVHDRenderDiagnostics.uiOcclusionOuterClipRects +=
+		(UINT32)ubOuterClipRects;
+}
+
+static void VHDRenderDiagnosticsEndFrame( UINT32 uiFrameStart, BOOLEAN fFullFrame, BOOLEAN fBubbleActive )
+{
+	if ( !VHDRenderDiagnosticsEnabled( ) )
+		return;
+
+	const UINT32 uiElapsed = GetJA2NoPauseClock() - uiFrameStart;
+	++gVHDRenderDiagnostics.uiFrames;
+	gVHDRenderDiagnostics.uiFrameMsTotal +=
+		uiElapsed;
+	gVHDRenderDiagnostics.uiFrameMsMax =
+		__max( gVHDRenderDiagnostics.uiFrameMsMax, uiElapsed );
+	if ( fFullFrame )
+		++gVHDRenderDiagnostics.uiFullFrames;
+	if ( fBubbleActive )
+		++gVHDRenderDiagnostics.uiBubbleFrames;
+
+	if ( gVHDRenderDiagnostics.uiFrames < 120 )
+		return;
+
+	FILE *pStats = fopen( "vhd-render-stats.csv",
+		guiVHDRenderDiagnosticSample == 0 ? "w" : "a" );
+	if ( pStats != NULL )
+	{
+		if ( guiVHDRenderDiagnosticSample == 0 )
+		{
+			fprintf( pStats,
+				"sample,scale,frames,full_frames,bubble_frames,frame_ms_total,frame_ms_avg,frame_ms_max,multiz_calls,multiz_decoded,multiz_drawn,multiz_clipped,multiz_zrejected,occlusion_calls,occlusion_outer_clip_rects,bubble_reclassifications\n" );
+		}
+
+		const double dAverageFrameMs =
+			gVHDRenderDiagnostics.uiFrames > 0 ?
+			(double)gVHDRenderDiagnostics.uiFrameMsTotal /
+				(double)gVHDRenderDiagnostics.uiFrames : 0.0;
+		fprintf( pStats,
+			"%u,%u,%u,%u,%u,%u,%.3f,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
+			guiVHDRenderDiagnosticSample, (UINT32)GetVHDRenderScale(),
+			gVHDRenderDiagnostics.uiFrames,
+			gVHDRenderDiagnostics.uiFullFrames,
+			gVHDRenderDiagnostics.uiBubbleFrames,
+			gVHDRenderDiagnostics.uiFrameMsTotal, dAverageFrameMs,
+			gVHDRenderDiagnostics.uiFrameMsMax,
+			gVHDRenderDiagnostics.uiMultiZCalls,
+			gVHDRenderDiagnostics.uiMultiZPixelsDecoded,
+			gVHDRenderDiagnostics.uiMultiZPixelsDrawn,
+			gVHDRenderDiagnostics.uiMultiZPixelsClipped,
+			gVHDRenderDiagnostics.uiMultiZPixelsZRejected,
+			gVHDRenderDiagnostics.uiOcclusionCalls,
+			gVHDRenderDiagnostics.uiOcclusionOuterClipRects,
+			gVHDRenderDiagnostics.uiBubbleReclassifications );
+		fclose( pStats );
+	}
+
+	++guiVHDRenderDiagnosticSample;
+	memset( &gVHDRenderDiagnostics, 0, sizeof( gVHDRenderDiagnostics ) );
+}
 
 // Forward declarations for Fallout-style multi-Z wall cutaway helpers.
 // Definitions live later in this translation unit; RenderTiles() calls them first.
@@ -3572,6 +3670,14 @@ static void BlitOcclusionBubble8BitWallZStrip(
 		OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y,
 		ClipRects, OCCLUSION_BUBBLE_MAX_CLIP_RECTS );
 
+	VHDRenderDiagnosticsOcclusionCall( ubCount );
+
+	VHDRenderDiagnosticsOcclusionCall( ubCount );
+
+	VHDRenderDiagnosticsOcclusionCall( ubCount );
+
+	VHDRenderDiagnosticsOcclusionCall( ubCount );
+
 	for ( UINT8 ubRect = 0; ubRect < ubCount; ++ubRect )
 	{
 		Blt8BPPDataTo16BPPBufferTransZIncClipZSameZBurnsThrough(
@@ -4013,6 +4119,9 @@ static void UpdateSelectedMercOcclusionBubble( )
 		return;
 	}
 
+	if ( VHDRenderDiagnosticsEnabled( ) )
+		++gVHDRenderDiagnostics.uiBubbleReclassifications;
+
 	BOOLEAN fChanged = ClearSelectedMercOcclusionBubble( );
 
 	if ( fShouldBeActive )
@@ -4120,6 +4229,8 @@ static void UpdateSelectedMercOcclusionBubble( )
 
 void RenderWorld( )
 {
+	const UINT32 uiVHDRenderDiagnosticStart =
+		VHDRenderDiagnosticsEnabled( ) ? GetJA2NoPauseClock() : 0;
 TILE_ELEMENT					*TileElem;
 TILE_ANIMATION_DATA		*pAnimData;
 UINT32 cnt = 0;
@@ -4309,6 +4420,8 @@ UINT32 cnt = 0;
 
 		UnLockVideoSurface(guiRENDERBUFFER);
 	}
+
+	VHDRenderDiagnosticsEndFrame( uiVHDRenderDiagnosticStart, gfRenderFullThisFrame, gfOcclusionBubbleActive );
 
 }
 
@@ -5841,6 +5954,10 @@ static BOOLEAN VHDIndexedMultiZBlit(
 	if ( ubAssetScale == 1 )
 		return FALSE;
 
+	const BOOLEAN fVHDRenderDiagnostics = VHDRenderDiagnosticsEnabled( );
+	if ( fVHDRenderDiagnostics )
+		++gVHDRenderDiagnostics.uiMultiZCalls;
+
 	const ETRLEObject *pRegion = &hSrcVObject->pETRLEObject[usIndex];
 	ZStripInfo *pZInfo = hSrcVObject->ppZStripInfo[sZIndex];
 
@@ -5890,12 +6007,18 @@ static BOOLEAN VHDIndexedMultiZBlit(
 			for ( UINT8 ubRunPixel = 0; ubRunPixel < ubCount; ++ubRunPixel, ++usSourceX )
 			{
 				const UINT8 ubPaletteIndex = *pSrc++;
+				if ( fVHDRenderDiagnostics )
+					++gVHDRenderDiagnostics.uiMultiZPixelsDecoded;
 				const INT32 iDestX = iDestLeft + usSourceX;
 				const INT32 iDestY = iDestTop + usSourceY;
 
 				if ( iDestX < iClipLeft || iDestX >= iClipRight ||
 					 iDestY < iClipTop || iDestY >= iClipBottom )
+				{
+					if ( fVHDRenderDiagnostics )
+						++gVHDRenderDiagnostics.uiMultiZPixelsClipped;
 					continue;
+				}
 
 				UINT16 *pDest = (UINT16*)((UINT8*)pBuffer +
 					((UINT32)iDestY * uiDestPitchBYTES)) + iDestX;
@@ -5920,7 +6043,14 @@ static BOOLEAN VHDIndexedMultiZBlit(
 				fDrawPixel = ( *pZ < usPixelZ );
 
 				if ( !fDrawPixel )
+				{
+					if ( fVHDRenderDiagnostics )
+						++gVHDRenderDiagnostics.uiMultiZPixelsZRejected;
 					continue;
+				}
+
+				if ( fVHDRenderDiagnostics )
+					++gVHDRenderDiagnostics.uiMultiZPixelsDrawn;
 
 				*pZ = usPixelZ;
 
