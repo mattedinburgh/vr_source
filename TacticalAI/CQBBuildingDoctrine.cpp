@@ -796,6 +796,48 @@ static INT32 VRCQBScorePositionInternal(SOLDIERTYPE *pSoldier, const VRCQB_CONTE
 		iScore += 8;
 	}
 
+	if (fDetailed)
+	{
+		AITACTICALGEOMETRY Geometry;
+		if (AIBuildTacticalGeometry(
+			pSoldier, pSoldier->sGridNo, &Geometry))
+		{
+			INT8 bIntent = AI_INTENT_HOLD;
+			INT8 bRole = AI_ROLE_SUPPORT;
+
+			if (eState == VRCQB_STATE_ASSAULT ||
+				eState == VRCQB_STATE_COUNTERATTACK)
+				bIntent = AI_INTENT_PRESS;
+			else if (eState == VRCQB_STATE_DELAY_FALLBACK)
+				bIntent = AI_INTENT_FALLBACK;
+
+			switch (eRole)
+			{
+			case VRCQB_ROLE_POINT:
+				bRole = AI_ROLE_MANEUVER;
+				break;
+			case VRCQB_ROLE_SECURITY:
+			case VRCQB_ROLE_HOLD:
+				bRole = AI_ROLE_SCREEN;
+				break;
+			case VRCQB_ROLE_RESERVE:
+				bRole = AI_ROLE_RESERVE;
+				break;
+			default:
+				bRole = AI_ROLE_SUPPORT;
+				break;
+			}
+
+			const INT32 iGeometry = AIGeometryPositionScore(
+				pSoldier, &Geometry, sCandidateGridNo,
+				pContext->sPrimaryKnownThreat, bIntent, bRole);
+
+			// CQB has additional doorway/room geometry of its own, so shared
+			// battlefield geometry is influential but not allowed to dominate it.
+			iScore += (3 * iGeometry) / 4;
+		}
+	}
+
 	iScore -= PythSpacesAway(pSoldier->sGridNo, sCandidateGridNo);
 
 	// Preserve believable imperfection using the existing deterministic competence
@@ -1531,6 +1573,47 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 		bAction = AI_ACTION_TAKE_COVER;
 	}
 
+	if (bAction != AI_ACTION_NONE && !TileIsOutOfBounds(sDesiredSpot))
+	{
+		// CQB now participates in the same fireteam-local task board as outdoor
+		// maneuver. Entering the building plan supersedes a previous generic role claim.
+		AIReleaseTacticalTask(pSoldier);
+
+		const INT32 sTaskTarget =
+			!TileIsOutOfBounds(Assessment.sEntryGridNo) ?
+			Assessment.sEntryGridNo : sDesiredSpot;
+
+		if (fAggressiveCQB && eMovementRole == VRCQB_ROLE_POINT)
+		{
+			if (!AIReserveTacticalTask(
+				pSoldier, AI_TASK_ENTRY_POINT,
+				sTaskTarget, NOBODY, 1, 1))
+			{
+				// Another point man already owns this threshold. Become the support
+				// element instead of forming a doorway queue.
+				eMovementState = VRCQB_STATE_HOLD;
+				eMovementRole = VRCQB_ROLE_SUPPORT;
+				sDesiredSpot = VRCQBFindBestLocalPosition(
+					pSoldier, &Context, &Model,
+					eMovementState, eMovementRole);
+				bAction = AI_ACTION_TAKE_COVER;
+				pActionReason = "CQB entry claimed: establish support";
+				AIReserveTacticalTask(
+					pSoldier, AI_TASK_ENTRY_SUPPORT,
+					sTaskTarget, NOBODY, 2, 1);
+			}
+		}
+		else if (fAggressiveCQB ||
+			eMovementRole == VRCQB_ROLE_SUPPORT ||
+			eMovementRole == VRCQB_ROLE_COVER ||
+			eMovementRole == VRCQB_ROLE_SECURITY)
+		{
+			AIReserveTacticalTask(
+				pSoldier, AI_TASK_ENTRY_SUPPORT,
+				sTaskTarget, NOBODY, 2, 1);
+		}
+	}
+
 	if (bAction == AI_ACTION_NONE ||
 		TileIsOutOfBounds(sDesiredSpot) ||
 		sDesiredSpot == pSoldier->sGridNo)
@@ -1578,6 +1661,7 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 
 	if (TileIsOutOfBounds(sMoveSpot) || sMoveSpot == pSoldier->sGridNo)
 	{
+		AIReleaseTacticalTask(pSoldier);
 		VRCQB_InvalidateSoldierPlan(pSoldier);
 		return VRCQBTraceNoAction(pSoldier, uiDecision, &Assessment,
 			pSoldier->sGridNo, iCurrentScore,
@@ -1609,6 +1693,7 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 		pSoldier, sMoveSpot, bAction,
 		usPeakIncrease, usUncoveredIncrease, usAverageIncrease))
 	{
+		AIReleaseTacticalTask(pSoldier);
 		VRCQB_InvalidateSoldierPlan(pSoldier);
 		return VRCQBTraceNoAction(pSoldier, uiDecision, &Assessment,
 			pSoldier->sGridNo, iCurrentScore,
@@ -1618,6 +1703,13 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 	pSoldier->aiData.usActionData = sMoveSpot;
 	if (bAction == AI_ACTION_SEEK_OPPONENT)
 		pSoldier->sAbsoluteFinalDestination = sDesiredSpot;
+
+	// The CQB module keeps its rich room/entry assessment, while the common short-plan
+	// layer now owns the generic "continue this tactical commitment unless invalidated"
+	// semantics used by the rest of the AI.
+	AIBeginShortPlan(
+		pSoldier, AI_SHORT_PLAN_CQB,
+		sDesiredSpot, NOBODY, 2);
 
 	if (uiDecision)
 	{
