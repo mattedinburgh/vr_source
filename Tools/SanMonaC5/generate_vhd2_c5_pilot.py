@@ -256,7 +256,8 @@ def main():
             continue
 
         source_frames = [Image.open(p).convert("RGBA") for p in pngs]
-        offsets = parse_offsets(folder / "appdata.xml", len(source_frames))
+        appdata = next(folder.rglob("appdata.xml"), folder / "appdata.xml")
+        offsets = parse_offsets(appdata, len(source_frames))
         new_frames = [paint_frame(im, family, i) for i, im in enumerate(source_frames)]
 
         dst = out_root / "VHD2" / "TILESETS" / "18" / f"{family}.b1tc"
