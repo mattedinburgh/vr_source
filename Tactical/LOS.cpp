@@ -752,17 +752,43 @@ INT16 GetSightAdjustment(SOLDIERTYPE* pStartSoldier, SOLDIERTYPE* pEndSoldier, I
 		iSightAdjustment += iSightAdjustmentCamouflageOnTerrain;
 	}
 	
+	INT16 iSightAdjustmentWatchedLocation = 0;
+
 	if (UsingNewVisionSystem())
 	{
 		// watched location can compensate stance/camo/stealth penalty
 		if (pStartSoldier)
-			iSightAdjustment += 25 * GetWatchedLocPoints(pStartSoldier->ubID, sGridNo, bLevel);
+		{
+			iSightAdjustmentWatchedLocation = 25 * GetWatchedLocPoints(pStartSoldier->ubID, sGridNo, bLevel);
+			iSightAdjustment += iSightAdjustmentWatchedLocation;
+		}
 
 		// no vision bonus from LBE/movement/watched location
 		iSightAdjustment = min(0, iSightAdjustment);
 	}
 
-	return MINMAX100N(iSightAdjustment);
+	INT16 iSightAdjustmentFinal = MINMAX100N(iSightAdjustment);
+
+	DebugMsg(TOPIC_JA2, DBG_LEVEL_3, String(
+		"VR_VIS_ADJ observer=%d target=%d grid=%d level=%d stance=%d terrain=%d light=%d brightness=%d moved=%d stanceAdj=%d lbeAdj=%d moveAdj=%d stealthAdj=%d camoAdj=%d watchedAdj=%d finalAdj=%d",
+		pStartSoldier ? pStartSoldier->ubID : -1,
+		pEndSoldier->ubID,
+		sGridNo,
+		bLevel,
+		bStance,
+		ubTerrainType,
+		ubLightLevel,
+		GetBrightness(ubLightLevel),
+		pEndSoldier->bTilesMoved,
+		iSightAdjustmentThroughStance,
+		iSightAdjustmentBasedOnLBE,
+		iSightAdjustmentThroughMovement,
+		iSightAdjustmentStealthAtLightLevel,
+		iSightAdjustmentCamouflageOnTerrain,
+		iSightAdjustmentWatchedLocation,
+		iSightAdjustmentFinal));
+
+	return iSightAdjustmentFinal;
 }
 
 BOOLEAN ResolveHitOnWall( STRUCTURE * pStructure, INT32 iGridNo, INT8 bLOSIndexX, INT8 bLOSIndexY, DOUBLE ddHorizAngle )
@@ -1645,7 +1671,15 @@ INT32 LineOfSightTest( FLOAT dStartX, FLOAT dStartY, FLOAT dStartZ, FLOAT dEndX,
 										if (pStructure->fFlags & STRUCTURE_TREE)
 										{
 											INT8 adjustment = GetSightAdjustmentBehindStructure( iLoop, pStructure, iCurrCubesAboveLevelZ+1 );
+											INT32 iSightLimitBeforeVegetation = iAdjSightLimit;
 											iAdjSightLimit = iAdjSightLimit + iAdjSightLimit * adjustment/100;
+											DebugMsg(TOPIC_JA2, DBG_LEVEL_3, String(
+												"VR_VIS_COVER rangeStep=%d heightLevel=%d treeAdj=%d sightBefore=%d sightAfter=%d",
+												iLoop,
+												iCurrCubesAboveLevelZ + 1,
+												adjustment,
+												iSightLimitBeforeVegetation,
+												iAdjSightLimit));
 
 #ifdef LOS_DEBUG
 												gLOSTestResults.ubTreeSpotsHit++;
@@ -2197,6 +2231,15 @@ INT32 SoldierToSoldierLineOfSightTest( SOLDIERTYPE * pStartSoldier, SOLDIERTYPE 
 	{
 		iTileSightLimit = max(min(1, iTileSightLimit), iTileSightLimit + iTileSightLimit * GetSightAdjustment(pStartSoldier, pEndSoldier) / 100);
 	}
+
+	DebugMsg(TOPIC_JA2, DBG_LEVEL_3, String(
+		"VR_VIS_RANGE observer=%d target=%d targetDistance=%d effectiveTileSightLimit=%d aware=%d cthCalc=%d",
+		pStartSoldier->ubID,
+		pEndSoldier->ubID,
+		PythSpacesAway(pStartSoldier->sGridNo, pEndSoldier->sGridNo),
+		iTileSightLimit,
+		bAware,
+		cthCalc ? 1 : 0));
 
 	// anv: special check for vehicles - since they're no longer transparent, we need to check for visibility 
 	// of all substructures, also vehicle will be noticed even if just part of it is sticking around the corner
