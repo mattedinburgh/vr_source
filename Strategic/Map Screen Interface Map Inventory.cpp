@@ -718,8 +718,10 @@ static BOOLEAN SectorLoadoutAmmoIsUtility( UINT8 ubAmmoType )
 {
 	AMMOTYPE &ammo = AmmoTypes[ubAmmoType];
 
-	// Zero-damage ammunition (for example pepper spray) is utility by definition.
-	if ( ammo.beforeArmourDamageMultiplier <= 0 || ammo.afterArmourDamageMultiplier <= 0 )
+	// Zero direct-bullet damage is utility unless the round's real payload is an
+	// explosive/anti-tank effect. This keeps pepper spray last without demoting HE.
+	if ( ( ammo.beforeArmourDamageMultiplier <= 0 || ammo.afterArmourDamageMultiplier <= 0 ) &&
+		 ammo.highExplosive == 0 && !ammo.antiTank )
 		return TRUE;
 
 	// Keep dedicated lock-busting ammunition out of normal combat priority when
