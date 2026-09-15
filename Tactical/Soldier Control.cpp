@@ -11791,13 +11791,17 @@ static void MaybePlayBattlefieldCasualtyAudio( SOLDIERTYPE *pCasualty, INT8 bOld
 	UINT32 uiNow = GetJA2Clock();
 	BOOLEAN fMedicCalled = FALSE;
 
-	// Named player characters keep their own recorded voice.
+	// Professional player mercs keep their profile voice in combat: normally
+	// English, with any established character-specific language mix preserved by
+	// that merc's own recorded assets.
 	if ( pCasualty->ubProfile != NO_PROFILE && pCasualty->bTeam == gbPlayerNum )
 	{
 		if ( pCasualty->stats.bLife >= CONSCIOUSNESS && !pCasualty->flags.fDyingComment )
 		{
-			TacticalCharacterDialogue( pCasualty, QUOTE_SERIOUSLY_WOUNDED );
+			fMedicCalled = TacticalCharacterDialogue( pCasualty, QUOTE_SERIOUSLY_WOUNDED );
 			pCasualty->flags.fDyingComment = TRUE;
+			if ( fMedicCalled )
+				guiLastBattlefieldMedicCall = uiNow;
 		}
 	}
 	else if ( pCasualty->ubProfile == NO_PROFILE &&
@@ -11805,10 +11809,10 @@ static void MaybePlayBattlefieldCasualtyAudio( SOLDIERTYPE *pCasualty, INT8 bOld
 		pCasualty->stats.bLife >= CONSCIOUSNESS &&
 		( uiNow - guiLastBattlefieldMedicCall ) > 6000 && Random( 100 ) < 55 )
 	{
-		// Shared English casualty callouts are allied-only. Enemy Army voices
-		// remain Spanish and use the Army voice-taunt bank. The same sector-wide
-		// cooldown is used whether the wounded soldier or a nearby teammate calls,
-		// so a burst hitting several allies cannot produce a stack of "Medic!" lines.
+		// Language follows the speaker: generic player-side professionals use the
+		// shared English call, while militia are intercepted below into their
+		// Spanish bank. Enemy Army remains on its separate Spanish taunt path.
+		// The sector-wide cooldown prevents a burst from stacking "Medic!" calls.
 		fMedicCalled = pCasualty->DoMercBattleSound( BATTLE_SOUND_MEDIC );
 		if ( fMedicCalled )
 			guiLastBattlefieldMedicCall = uiNow;
@@ -11831,7 +11835,7 @@ static void MaybePlayBattlefieldCasualtyAudio( SOLDIERTYPE *pCasualty, INT8 bOld
 	// Nonfatal agony reuses DYING/BADx_DIE but does not consume the real death cue.
 	// A short battlefield-wide spacing prevents several casualties from groaning on
 	// the exact same impact frame while retaining the much longer medic-call cooldown.
-	if ( ( uiNow - guiLastBattlefieldAgonyCall ) > 1500 && Random( 100 ) < 70 )
+	if ( !fMedicCalled && ( uiNow - guiLastBattlefieldAgonyCall ) > 1500 && Random( 100 ) < 70 )
 	{
 		if ( pCasualty->DoMercBattleSound( BATTLE_SOUND_AGONY ) )
 		{
@@ -12583,6 +12587,50 @@ UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPo
 extern BOOLEAN IsMercSayingDialogue( UINT8 ubProfileID );
 
 
+// VR: local militia combat pain/distress stays Spanish. Player mercs are
+// professionals using their profile battle voice (normally English, with any
+// character-specific bilingual/custom material preserved).
+static BOOLEAN IsSpanishMilitiaCombatReactionSound( UINT8 ubBattleSoundID )
+{
+	switch ( ubBattleSoundID )
+	{
+		case BATTLE_SOUND_HIT1:
+		case BATTLE_SOUND_HIT2:
+		case BATTLE_SOUND_DIE1:
+		case BATTLE_SOUND_DIE2:
+		case BATTLE_SOUND_AGONY:
+		case BATTLE_SOUND_MEDIC:
+			return TRUE;
+		default:
+			return FALSE;
+	}
+}
+
+static BOOLEAN PlaySpanishMilitiaCombatReaction( SOLDIERTYPE *pSoldier, UINT8 ubBattleSoundID )
+{
+	if ( !pSoldier || pSoldier->bTeam != MILITIA_TEAM )
+		return FALSE;
+
+	TAUNTTYPE iTauntType = TAUNT_GOT_HIT_GUNFIRE;
+	if ( ubBattleSoundID == BATTLE_SOUND_HIT2 )
+		iTauntType = TAUNT_GOT_HIT;
+	else if ( ubBattleSoundID == BATTLE_SOUND_DIE1 ||
+		ubBattleSoundID == BATTLE_SOUND_DIE2 ||
+		ubBattleSoundID == BATTLE_SOUND_AGONY ||
+		ubBattleSoundID == BATTLE_SOUND_MEDIC ||
+		pSoldier->stats.bLife < OKLIFE ||
+		pSoldier->bBleeding > 15 )
+	{
+		iTauntType = TAUNT_GOT_HIT_BLOODLOSS;
+	}
+
+	// Route through the same per-voice selector used by normal militia speech.
+	// This preserves Spanish actor identity and enables controlled/distressed/
+	// panicked recordings without a second casualty-only audio system.
+	return PlayVoiceTaunt( pSoldier, iTauntType, NULL );
+}
+
+
 BOOLEAN SOLDIERTYPE::InternalDoMercBattleSound( UINT8 ubBattleSoundID, INT8 bSpecialCode )
 {
 	//in this function, pSoldier stands in for the this pointer, since
@@ -12854,6 +12902,16 @@ BOOLEAN SOLDIERTYPE::InternalDoMercBattleSound( UINT8 ubBattleSoundID, INT8 bSpe
 		//else a speech sound is to be played
 		else
 			fSpeechSound = TRUE;
+	}
+
+	// Local militia use Spanish combat reactions. Player mercs intentionally
+	// fall through to their profile-specific BATTLESNDS: normally English, while
+	// preserving any established character-specific bilingual/custom material.
+	if ( pSoldier->bTeam == MILITIA_TEAM &&
+		IsSpanishMilitiaCombatReactionSound( ubSoundID ) )
+	{
+		PlaySpanishMilitiaCombatReaction( pSoldier, ubSoundID );
+		return( TRUE );
 	}
 
 	// Randomize between sounds, if appropriate
@@ -21512,7 +21570,10 @@ INT32 CheckBleeding( SOLDIERTYPE *pSoldier )
 							 // if he's conscious, and he hasn't already, say his "dying quote"
 							 if ( ( pSoldier->stats.bLife >= CONSCIOUSNESS ) && !pSoldier->flags.fDyingComment )
 							 {
-								 TacticalCharacterDialogue( pSoldier, QUOTE_SERIOUSLY_WOUNDED );
+								 // Keep the merc's established profile voice here. This is
+							 // normally English; custom bilingual/native-language material,
+							 // if recorded for that character, remains intact.
+							 TacticalCharacterDialogue( pSoldier, QUOTE_SERIOUSLY_WOUNDED );
 
 								 pSoldier->flags.fDyingComment = TRUE;
 							 }
