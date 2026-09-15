@@ -108,9 +108,11 @@ jobs:
             Copy-Item -LiteralPath $cachedExe -Destination (Join-Path $bin 'MapEditor_EN_Release.exe') -Force
             Write-Host "MapEditor cache HIT: $fingerprint"
             "hit=true"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "fingerprint=$fingerprint"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
           } else {
             Write-Host "MapEditor cache MISS: $fingerprint"
             "hit=false"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "fingerprint=$fingerprint"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
           }
 
       - name: Fetch only map assets from vr_gamedir
@@ -189,6 +191,23 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $editor = Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\MapEditor_EN_Release.exe'
           if (-not (Test-Path $editor)) { throw "Expected MapEditor was not built: $editor" }
+
+      - name: Refresh persistent MapEditor cache after rebuild
+        if: steps.editor_cache.outputs.hit != 'true' && success()
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\MapEditor_EN_Release.exe'
+          if(-not(Test-Path $exe)){throw "MapEditor cache refresh missing binary: $exe"}
+          $cache='C:\VENGENCE\VHD_RENDER_CACHE'
+          New-Item -ItemType Directory -Force -Path $cache | Out-Null
+          Copy-Item -LiteralPath $exe -Destination (Join-Path $cache 'MapEditor_EN_Release.exe') -Force
+          [IO.File]::WriteAllText(
+            (Join-Path $cache 'source_fingerprint.txt'),
+            '${{ steps.editor_cache.outputs.fingerprint }}',
+            (New-Object Text.UTF8Encoding($false))
+          )
+          Write-Host "Refreshed persistent MapEditor cache: ${{ steps.editor_cache.outputs.fingerprint }}"
 
       - name: Prepare Vengeance render sandbox
         shell: powershell
