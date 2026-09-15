@@ -57,6 +57,22 @@ def h32(*parts: object) -> int:
     s = "|".join(map(str, parts)).encode("utf-8")
     return int.from_bytes(hashlib.sha256(s).digest()[:4], "little")
 
+def fast_hash32(v: int) -> int:
+    v &= 0xFFFFFFFF
+    v ^= v >> 16
+    v = (v * 0x7FEB352D) & 0xFFFFFFFF
+    v ^= v >> 15
+    v = (v * 0x846CA68B) & 0xFFFFFFFF
+    v ^= v >> 16
+    return v & 0xFFFFFFFF
+
+def pixel_hash(seed: int, x: int, y: int) -> int:
+    return fast_hash32(
+        seed
+        ^ ((x * 0x045D9F3B) & 0xFFFFFFFF)
+        ^ ((y * 0x119DE1F3) & 0xFFFFFFFF)
+    )
+
 def clamp(v: int) -> int:
     return 0 if v < 0 else 255 if v > 255 else v
 
@@ -90,7 +106,7 @@ def paint_frame(src: Image.Image, family: str, kind: str, index: int) -> Image.I
             if a < 128:
                 continue
 
-            n = h32(seed, x // 2, y // 2)
+            n = pixel_hash(seed, x // 2, y // 2)
             fine = ((n >> 8) & 31) - 15
             c = base
 
