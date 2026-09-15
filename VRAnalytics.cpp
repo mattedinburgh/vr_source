@@ -343,6 +343,21 @@ bool VRAnalyticsIsEnabled()
 	return gEnabled;
 }
 
+void VRAnalyticsShutdown()
+{
+	if( !gInitialized || gFile == NULL )
+		return;
+
+	++gSequence;
+	fprintf( gFile,
+		"{\"schema\":\"vr-blackbox-1\",\"seq\":%lu,\"session\":%lu,"
+		"\"layer\":\"system\",\"kind\":\"session_end\"}\n",
+		gSequence, gSessionId );
+	fflush( gFile );
+	fclose( gFile );
+	gFile = NULL;
+}
+
 unsigned long VRAnalyticsBeginDecision(
 	VRAnalyticsLayer layer,
 	const char* actorType,
