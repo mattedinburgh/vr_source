@@ -187,15 +187,21 @@ def render_wall(src: Image.Image, family: str, index: int) -> Image.Image:
                 continue
 
             n = pixel_hash(family_seed, x // 3, y // 3)
-            c = material_noise(base, family_seed, x, y, 7)
+            coarse = pixel_hash(family_seed ^ 0x9E3779B9, x // 10, y // 9)
+            c = material_noise(base, family_seed, x, y, 5)
 
-            # Sun bleaching on exposed upper plaster.
-            bleach = max(0.0, 0.16 - (y / max(1.0, h2)) * 0.07)
+            # Broad sun-fading / repaint history.  Use low-frequency fields so the
+            # facade reads as old plaster, not procedural pixel noise.
+            bleach = max(0.0, 0.14 - (y / max(1.0, h2)) * 0.06)
             c = mix(c, (211, 198, 169), bleach)
+            if ((coarse >> 11) & 7) in (0, 1):
+                c = mix(c, (205, 188, 153), 0.07)
 
-            # A faint earlier paint layer survives near the lower facade.
-            if y >= band_y and ((n >> 21) & 7) < 5:
-                c = mix(c, old_paint, 0.10)
+            # A previous turquoise/salmon/green coat survives in broad peeling
+            # islands near the lower half of the facade.
+            oldfield = pixel_hash(family_seed ^ 0xA24BAED5, x // 9, y // 8)
+            if y >= band_y and ((oldfield >> 18) & 15) < 5:
+                c = mix(c, old_paint, 0.16)
 
             # Lower-wall dust / splashback / street grime is broad and continuous.
             if y > int(h2 * 0.73):
@@ -207,6 +213,13 @@ def render_wall(src: Image.Image, family: str, index: int) -> Image.Image:
             if d_px[x, y] > 128:
                 c = mix(c, (38, 45, 43), 0.72)
 
+            # Sparse vertical rain/utility streaks.  Long, low-opacity marks are
+            # more believable than random dark flecks and match the period-LATAM
+            # wall references used for San Mona.
+            streak_key = pixel_hash(family_seed ^ 0xC13FA9A9, x // 3, 0)
+            if ((streak_key >> 20) & 63) in (2, 17, 41) and y > h2 // 5:
+                c = mix(c, (72, 70, 57), 0.09 + min(0.09, y / max(1.0, h2) * 0.07))
+
             px[x, y] = (*c, 255)
 
     # One or two contiguous plaster-failure patches on selected frames.
@@ -215,10 +228,16 @@ def render_wall(src: Image.Image, family: str, index: int) -> Image.Image:
     patch_count = (1 + (1 if (frame_seed & 31) == 0 and w2 > 34 else 0)) if brick_mode else 0
     for pidx in range(patch_count):
         ps = fast_hash32(frame_seed ^ (pidx * 0xA511E9B3))
-        rx = max(4, w2 // (5 + (ps & 1)))
-        ry = max(5, h2 // (5 + ((ps >> 2) & 1)))
-        cx = rx + ((ps >> 6) % max(1, w2 - 2 * rx))
-        cy_min = max(ry, int(h2 * 0.34))
+        rx = max(3, w2 // (7 + (ps & 1)))
+        ry = max(4, h2 // (7 + ((ps >> 2) & 1)))
+        edge_mode = (ps >> 4) & 3
+        if edge_mode == 0:
+            cx = max(1, rx // 2)
+        elif edge_mode == 1:
+            cx = max(1, w2 - max(1, rx // 2) - 1)
+        else:
+            cx = rx + ((ps >> 6) % max(1, w2 - 2 * rx))
+        cy_min = max(ry, int(h2 * 0.48))
         cy = cy_min + ((ps >> 14) % max(1, h2 - cy_min - ry))
         patch = jagged_ellipse_mask((w2, h2), cx, cy, rx, ry, ps)
         patch = ImageChops.multiply(patch, alpha)
@@ -261,9 +280,9 @@ def render_wall(src: Image.Image, family: str, index: int) -> Image.Image:
         repair_mask = jagged_ellipse_mask((w2, h2), rcx, rcy, rrx, rry, rs, 0.13)
         repair_mask = ImageChops.multiply(repair_mask, alpha)
         repair_mask = ImageChops.subtract(repair_mask, dark)
-        repair_colour = (170, 164, 148) if (rs & 1) else (154, 149, 135)
+        repair_colour = mix(base, (169, 164, 151), 0.58 if (rs & 1) else 0.42)
         repair = Image.new("RGBA", out.size, (*repair_colour, 0))
-        repair.putalpha(repair_mask.point(lambda q: int(q * 0.74)))
+        repair.putalpha(repair_mask.point(lambda q: int(q * 0.36)))
         out.alpha_composite(repair)
 
     # Sparse *continuous* cracks: short hairline paths rather than speckles.
@@ -386,12 +405,13 @@ def render_pave(src: Image.Image, family: str, index: int) -> Image.Image:
         for x in range(w2):
             if a[x, y] < 128:
                 continue
-            c = material_noise(base, seed, x, y, 6)
-            if (x % sx) <= 1 or (y % sy) <= 1:
-                c = mix(c, (80, 76, 68), 0.32)
+            c = material_noise(base, seed, x, y, 5)
             n = pixel_hash(seed ^ 0x85EBCA6B, x // 2, y // 2)
-            if (n & 511) < 10:
-                c = mix(c, (84, 77, 65), 0.26)
+            coarse = pixel_hash(seed ^ 0x243F6A88, x // 9, y // 7)
+            if ((coarse >> 16) & 7) == 0:
+                c = mix(c, (124, 112, 94), 0.10)
+            if (n & 511) < 8:
+                c = mix(c, (84, 77, 65), 0.20)
             edge = min(x, y, w2 - 1 - x, h2 - 1 - y)
             if edge < 3:
                 c = mix(c, (121, 101, 73), 0.18)
@@ -441,7 +461,7 @@ def render_roof(src: Image.Image, family: str, index: int) -> Image.Image:
     # Broad sheet panels.  Corrugation is fine-scale detail within those sheets;
     # rust concentrates at seams/fasteners rather than appearing as random dots.
     panel_w = max(16, min(28, w2 // 3 if w2 >= 48 else 18))
-    corr_pitch = 7
+    corr_pitch = 9
 
     patch_x = int(w2 * (0.18 + ((fs >> 8) & 31) / 90.0))
     patch_y = int(h2 * (0.20 + ((fs >> 15) & 15) / 75.0))
@@ -472,22 +492,28 @@ def render_roof(src: Image.Image, family: str, index: int) -> Image.Image:
             # Directional sheet ribbing in screen space.
             rib = (x + 2 * y + (family_seed & 7)) % corr_pitch
             if rib == 0:
-                c = mix(c, (52, 50, 47), 0.35)
+                c = mix(c, (58, 56, 52), 0.18)
             elif rib == 1:
-                c = mix(c, (191, 172, 143), 0.10)
+                c = mix(c, (194, 183, 160), 0.06)
 
             # Panel seam: darker with rust bleed.
             seam = x % panel_w
             if seam <= 1:
-                c = mix(c, (73, 53, 43), 0.48)
+                c = mix(c, (73, 58, 49), 0.30)
             elif seam <= 3:
-                c = mix(c, (150, 69, 39), 0.23)
+                c = mix(c, (150, 75, 44), 0.15)
 
             # Rust streaks descend from sparse fastener lines.
             fastener_col = (panel * panel_w + panel_w // 2)
             dist = abs(x - fastener_col)
             if dist <= 1 and y > (panel_seed % max(1, h2 // 2)):
-                c = mix(c, (139, 61, 36), 0.30)
+                c = mix(c, (139, 67, 38), 0.20)
+
+            # Low-frequency oxidation blooms vary whole sheet areas, avoiding the
+            # striped "barcode roof" look of the previous pilot.
+            oxide = pixel_hash(panel_seed ^ 0x3C6EF372, x // 11, y // 9)
+            if ((oxide >> 17) & 15) in (0, 1):
+                c = mix(c, (136, 79, 52), 0.10)
 
             # Mismatched replacement sheet is a coherent rectangle, not noise.
             if patch_on and patch_x <= x < patch_x + patch_w and patch_y <= y < patch_y + patch_h:
