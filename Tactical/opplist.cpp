@@ -7823,6 +7823,31 @@ void SetWatchedLocAsUsed( UINT8 ubID, INT32 sGridNo, INT8 bLevel )
 	if (bPoint != -1)
 	{
 		gfWatchedLocReset[ ubID ][ bPoint ] = FALSE;
+		return;
+	}
+
+	// VR visibility continuity: if an opponent is still visible this turn but has
+	// moved outside the radius of the previously watched location, remember the
+	// new position locally instead of allowing camouflage to erase that visual
+	// continuity. This deliberately does not call CommunicateWatchedLoc(): it is
+	// the observer's own tracking memory, not extra team/AI knowledge.
+	bPoint = FindUnusedWatchedLoc( ubID );
+	if (bPoint == -1)
+	{
+		bPoint = FindWatchedLocWithLessThanXPointsLeft( ubID, 1 );
+	}
+
+	if (bPoint != -1)
+	{
+		gsWatchedLoc[ ubID ][ bPoint ] = sGridNo;
+		gbWatchedLocLevel[ ubID ][ bPoint ] = bLevel;
+		gubWatchedLocPoints[ ubID ][ bPoint ] = 1;
+		gfWatchedLocReset[ ubID ][ bPoint ] = FALSE;
+		gfWatchedLocHasBeenIncremented[ ubID ][ bPoint ] = TRUE;
+
+		DebugMsg(TOPIC_JA2, DBG_LEVEL_3, String(
+			"VR_VIS_WATCH_RELOC observer=%d grid=%d level=%d slot=%d points=1",
+			ubID, sGridNo, bLevel, bPoint));
 	}
 }
 
