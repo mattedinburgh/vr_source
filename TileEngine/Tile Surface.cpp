@@ -20,6 +20,7 @@
 #include "Isometric Utils.h"
 #include "GameSettings.h"
 #include "STCI.h"
+#include "tiledef.h"
 
 
 TILE_IMAGERY				*gTileSurfaceArray[ NUMBEROFTILETYPES ];
@@ -402,6 +403,8 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 	HVOBJECT		hVObject;
 	HIMAGE				hImage;
 	SGPFILENAME						cStructureFilename;
+	SGPFILENAME cAdditionalPropertiesFilename;
+	SGPFILENAME cCommonAdditionalPropertiesFilename;
 	STR										cEndOfName;
 	STRUCTURE_FILE_REF *	pStructureFileRef;
 	BOOLEAN								fOk;
@@ -595,6 +598,51 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 		pStructureFileRef = NULL;
 	}
 
+	// Optional 1.13-style per-tile camouflage properties. These are gameplay
+	// metadata only; VHD/native artwork never changes which metadata file is used.
+	memset(&zAdditionalTileCamoProperties, 0, sizeof(zAdditionalTileCamoProperties));
+	strcpy(cAdditionalPropertiesFilename, cFilename);
+	cEndOfName = strchr(cAdditionalPropertiesFilename, '.');
+	if (cEndOfName != NULL)
+	{
+		cEndOfName++;
+		*cEndOfName = '\0';
+	}
+	else
+	{
+		strcat(cAdditionalPropertiesFilename, ".");
+	}
+	strcat(cAdditionalPropertiesFilename, ADDITIONAL_TILE_PROPERTIES_EXTENSION);
+
+	BOOLEAN fLoadedTileCamoProperties = FALSE;
+	if (FileExists(cAdditionalPropertiesFilename))
+	{
+		fLoadedTileCamoProperties = ReadInAdditionalTileCamoProperties(cAdditionalPropertiesFilename);
+	}
+	else
+	{
+		const CHAR8 *pLeafWithSlash = strrchr(cAdditionalPropertiesFilename, '\\');
+		if (pLeafWithSlash != NULL)
+			sprintf(cCommonAdditionalPropertiesFilename, "TILESETS\\ADDITIONALPROPERTIES%s", pLeafWithSlash);
+		else
+			sprintf(cCommonAdditionalPropertiesFilename, "TILESETS\\ADDITIONALPROPERTIES\\%s", cAdditionalPropertiesFilename);
+
+		if (FileExists(cCommonAdditionalPropertiesFilename))
+			fLoadedTileCamoProperties = ReadInAdditionalTileCamoProperties(cCommonAdditionalPropertiesFilename);
+	}
+
+	if (fLoadedTileCamoProperties)
+	{
+		DebugMsg(TOPIC_JA2, DBG_LEVEL_3, String(
+			"VR_CAMO_TILE file=%s wood=%d desert=%d urban=%d snow=%d stance=%d",
+			cFilename,
+			zAdditionalTileCamoProperties.bWoodCamoAffinity,
+			zAdditionalTileCamoProperties.bDesertCamoAffinity,
+			zAdditionalTileCamoProperties.bUrbanCamoAffinity,
+			zAdditionalTileCamoProperties.bSnowCamoAffinity,
+			zAdditionalTileCamoProperties.bCamoStanceModifer));
+	}
+
 	pTileSurf = (PTILE_IMAGERY) MemAlloc( sizeof( TILE_IMAGERY ) );
 
 	// Set all values to zero
@@ -602,6 +650,11 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 
 	pTileSurf->vo									= hVObject;
 	pTileSurf->pStructureFileRef	= pStructureFileRef;
+	pTileSurf->bWoodCamoAffinity = zAdditionalTileCamoProperties.bWoodCamoAffinity;
+	pTileSurf->bDesertCamoAffinity = zAdditionalTileCamoProperties.bDesertCamoAffinity;
+	pTileSurf->bUrbanCamoAffinity = zAdditionalTileCamoProperties.bUrbanCamoAffinity;
+	pTileSurf->bSnowCamoAffinity = zAdditionalTileCamoProperties.bSnowCamoAffinity;
+	pTileSurf->bCamoStanceModifer = zAdditionalTileCamoProperties.bCamoStanceModifer;
 
 	if (pStructureFileRef && pStructureFileRef->pAuxData != NULL)
 	{
