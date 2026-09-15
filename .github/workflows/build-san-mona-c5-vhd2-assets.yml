@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build-c5-vhd2-assets:
-    runs-on: [self-hosted, Windows, X64, ja2-render]
+    runs-on: windows-2022
     timeout-minutes: 60
 
     steps:
@@ -28,35 +28,13 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 1
 
-      - name: Retarget exporter to v120
-        shell: powershell
-        run: |
-          Get-ChildItem $env:GITHUB_WORKSPACE -Recurse -Filter '*.vcxproj' -File | ForEach-Object {
-            $p=$_.FullName
-            $t=[IO.File]::ReadAllText($p)
-            $n=$t.Replace('<PlatformToolset>v120_xp</PlatformToolset>','<PlatformToolset>v120</PlatformToolset>')
-            if($n-ne$t){[IO.File]::WriteAllText($p,$n,(New-Object Text.UTF8Encoding($false)))}
-          }
-
-      - name: Find MSBuild
-        id: msbuild
-        shell: powershell
-        run: |
-          $candidates=@(
-            'C:\Program Files (x86)\MSBuild\12.0\Bin\MSBuild.exe',
-            'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe',
-            'C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe',
-            'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe'
-          )
-          $m=$candidates|Where-Object{Test-Path $_}|Select-Object -First 1
-          if(-not $m){$cmd=Get-Command msbuild.exe -ErrorAction SilentlyContinue;if($cmd){$m=$cmd.Source}}
-          if(-not $m){throw 'MSBuild not found.'}
-          "path=$m"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
 
       - name: Build ja2export with dependencies
         shell: powershell
         run: |
-          & '${{ steps.msbuild.outputs.path }}' '.\ja2_VS2013.sln' /m /t:ja2export /p:Configuration=Release /p:Platform=Win32
+          msbuild '.\ja2_VS2013.sln' /m /t:ja2export /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143
           if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
           $exe=Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\Release\ja2export.exe'
           if(-not(Test-Path $exe)){throw "ja2export missing: $exe"}
