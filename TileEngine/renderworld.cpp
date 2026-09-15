@@ -5799,8 +5799,16 @@ static UINT16 VHDIndexedZStripLevel(
 	INT32 iLevel = (INT32)usBaseZ +
 		( (INT32)pZInfo->bInitialZChange * (INT32)Z_STRIP_DELTA_Y );
 
+	// Mirror the legacy multi-Z blitters exactly: every authored JSD strip
+	// transition changes depth by Z_STRIP_DELTA_Y, not the broader world
+	// Z_SUBLAYERS spacing constant.
 	for ( INT32 i = 0; i < iChanges; ++i )
-		iLevel += (INT32)pZInfo->pbZChange[i] * (INT32)Z_SUBLAYERS;
+		iLevel += (INT32)pZInfo->pbZChange[i] * (INT32)Z_STRIP_DELTA_Y;
+
+	if ( iLevel < 0 )
+		iLevel = 0;
+	else if ( iLevel > 65535 )
+		iLevel = 65535;
 
 	return (UINT16)iLevel;
 }
