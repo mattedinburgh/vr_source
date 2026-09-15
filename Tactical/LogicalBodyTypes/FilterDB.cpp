@@ -87,6 +87,7 @@ namespace LogicalBodyTypes {
 				data->criterionType |= Filter::_TYPE_ENUM;
 			}
 			else if (strcmp(name, "FILTER") == 0) {
+				data->criterionType = ord;
 				data->criterionType |= Filter::_TYPE_FILTER;
 			}
 			else throw XMLParseException("Unexpected element (unknown criterion)!", name, data->pParser);
@@ -125,9 +126,9 @@ namespace LogicalBodyTypes {
 			else {
 				data->criterionType |= Filter::_REQ_EQ;
 			}
-			XML_Char const* notOp = GetAttribute("not", atts);
-			if (notOp != NULL) {
-				if (strcmp(notOp, "") != 0) throw XMLParseException("Not attribute must not have a value assigned!", name, data->pParser);
+			XML_Char const* not = GetAttribute("not", atts);
+			if (not != NULL) {
+				if (strcmp(not, "") != 0) throw XMLParseException("Not attribute must not have a value assigned!", name, data->pParser);
 				data->criterionType |= Filter::_REQ_NOT;
 			}
 			break;
@@ -270,7 +271,7 @@ namespace LogicalBodyTypes {
 		/*****************************************
 		  Filter enum criterion types
 		******************************************/
-		LOGBT_ENUMDB_ADD("IntegerFilterCriterionTypes", 47,
+		LOGBT_ENUMDB_ADD("IntegerFilterCriterionTypes", 33,
 			Filter::REQ_HELMETPOS,
 			Filter::REQ_VESTPOS,
 			Filter::REQ_LEGPOS,
@@ -299,38 +300,23 @@ namespace LogicalBodyTypes {
 			Filter::REQ_FACEINDEX,
 			Filter::REQ_WEAPON_IN_HAND,
 			Filter::REQ_CALIBRE,
-			Filter::REQ_WEAPON_TWOHANDED,
-			Filter::REQ_LEFT_WEAPON_TWOHANDED,
 			Filter::REQ_VEST_AMOR_PROTECTION,
 			Filter::REQ_VEST_AMOR_COVERAGE,
 			Filter::REQ_HELMET_AMOR_PROTECTION,
 			Filter::REQ_HELMET_AMOR_COVERAGE,
-			Filter::REQ_WEARING_BACKPACK,
-			Filter::REQ_HELMETPOSATTACHMENT0,
-			Filter::REQ_HELMETPOSATTACHMENT1,
-			Filter::REQ_HELMETPOSATTACHMENT2,
-			Filter::REQ_HELMETPOSATTACHMENT3,
-			Filter::REQ_LEGPOSATTACHMENT0,
-			Filter::REQ_LEGPOSATTACHMENT1,
-			Filter::REQ_LEGPOSATTACHMENT2,
-			Filter::REQ_LEGPOSATTACHMENT3,
-			Filter::REQ_VESTPOSATTACHMENT0,
-			Filter::REQ_VESTPOSATTACHMENT1,
-			Filter::REQ_VESTPOSATTACHMENT2,
-			Filter::REQ_VESTPOSATTACHMENT3
+			Filter::REQ_WEARING_BACKPACK
 		);
 
 		/*****************************************
 		  Filter enum criterion types
 		******************************************/
-		LOGBT_ENUMDB_ADD("EnumFilterCriterionTypes", 9,
+		LOGBT_ENUMDB_ADD("EnumFilterCriterionTypes", 8,
 			Filter::REQ_SEX,
 			Filter::REQ_MERC_TYPE,
 			Filter::REQ_SOLDIER_CLASS,
 			Filter::REQ_CIVILIANGROUP,
 			Filter::REQ_BODYTYPE,
 			Filter::REQ_WEAPON_CLASS,
-			Filter::REQ_LEFT_WEAPON_CLASS,
 			Filter::REQ_WEAPON_TYPE,
 			Filter::REQ_LEFT_WEAPON_TYPE
 		);
@@ -351,7 +337,7 @@ namespace LogicalBodyTypes {
 		/*****************************************
 		  SOLDIER_CLASS
 		******************************************/
-	LOGBT_ENUMDB_ADD("SOLDIER_CLASS", SOLDIER_CLASS_MAX,
+	LOGBT_ENUMDB_ADD("SOLDIER_CLASS", 10,
 			SOLDIER_CLASS_NONE,
 			SOLDIER_CLASS_ADMINISTRATOR,
 			SOLDIER_CLASS_ELITE,
@@ -375,7 +361,7 @@ namespace LogicalBodyTypes {
 		/*****************************************
 		  SoldierBodyTypes
 		******************************************/
-		LOGBT_ENUMDB_ADD("BODYTYPE", TOTALBODYTYPES,
+		LOGBT_ENUMDB_ADD("BODYTYPE", 28,
 			REGMALE,
 			BIGMALE,
 			STOCKYMALE,
@@ -409,7 +395,7 @@ namespace LogicalBodyTypes {
 		/*****************************************
 		  Civilian Groups
 		******************************************/
-		LOGBT_ENUMDB_ADD("CIVILIANGROUP", NUM_CIV_GROUPS,
+		LOGBT_ENUMDB_ADD("CIVILIANGROUP", 242,
 			NON_CIV_GROUP,
 			REBEL_CIV_GROUP,
 			KINGPIN_CIV_GROUP,
@@ -434,20 +420,7 @@ namespace LogicalBodyTypes {
 			POW_PRISON_CIV_GROUP,
 			UNNAMED_CIV_GROUP_22,
 			UNNAMED_CIV_GROUP_23,
-			UNNAMED_CIV_GROUP_24,
-			UNNAMED_CIV_GROUP_25,
-			UNNAMED_CIV_GROUP_26,
-			UNNAMED_CIV_GROUP_27,
-			UNNAMED_CIV_GROUP_28,
-			UNNAMED_CIV_GROUP_29,
-			UNNAMED_CIV_GROUP_30,
-			CIA_OPERATIVES_GROUP,
-			TRACONA_OPERATIVES_GROUP,
-			COCKEYE_THUGS,
-			CIA_STANLEY_GROUP,
-			TRACONA_DRAGON_GROUP,
 			UNNAMED_CIV_GROUP_36,
-			KINGPIN_FORT_CIV_GROUP,
 			UNNAMED_CIV_GROUP_38,
 			UNNAMED_CIV_GROUP_39,
 			UNNAMED_CIV_GROUP_40,
@@ -670,18 +643,7 @@ namespace LogicalBodyTypes {
 		/*****************************************
 		  Weapon Class
 		******************************************/
-		LOGBT_ENUMDB_ADD("WEAPON_CLASS", NUM_WEAPON_CLASSES,
-			NOGUNCLASS,
-			HANDGUNCLASS,
-			SMGCLASS,
-			RIFLECLASS,
-			MGCLASS,
-			SHOTGUNCLASS,
-			KNIFECLASS,
-			MONSTERCLASS
-		);
-
-		LOGBT_ENUMDB_ADD("LEFT_WEAPON_CLASS", NUM_WEAPON_CLASSES,
+		LOGBT_ENUMDB_ADD("WEAPON_CLASS", 8,
 			NOGUNCLASS,
 			HANDGUNCLASS,
 			SMGCLASS,
@@ -695,7 +657,7 @@ namespace LogicalBodyTypes {
 		/*****************************************
 		  Weapon Type
 		******************************************/
-		LOGBT_ENUMDB_ADD("WEAPON_TYPE", 9,
+	LOGBT_ENUMDB_ADD("WEAPON_TYPE", 9,
 			NOT_GUN,
 			GUN_PISTOL,
 			GUN_M_PISTOL,
@@ -707,17 +669,6 @@ namespace LogicalBodyTypes {
 			GUN_SHOTGUN
 		);
 
-		LOGBT_ENUMDB_ADD("LEFT_WEAPON_TYPE", 9,
-			NOT_GUN,
-			GUN_PISTOL,
-			GUN_M_PISTOL,
-			GUN_SMG,
-			GUN_RIFLE,
-			GUN_SN_RIFLE,
-			GUN_AS_RIFLE,
-			GUN_LMG,
-			GUN_SHOTGUN
-		);
 	};
 
 }

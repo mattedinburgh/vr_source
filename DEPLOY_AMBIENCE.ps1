@@ -192,7 +192,7 @@ function Test-DeployedAmbience {
     $current = ""
 
     foreach ($line in $lines) {
-        if ($line -match '^\s*\[(.+?)\]\s*) {
+        if ($line -match '^\s*\[(.+?)\]\s*$') {
             $current = $Matches[1]
             $sections[$current] = $true
         }
@@ -204,18 +204,18 @@ function Test-DeployedAmbience {
     $current = ""
 
     foreach ($line in $lines) {
-        if ($line -match '^\s*\[(.+?)\]\s*) {
+        if ($line -match '^\s*\[(.+?)\]\s*$') {
             $current = $Matches[1]
             continue
         }
 
-        if ($line -notmatch '^\s*([^;][^=]*?)\s*=\s*(.*?)\s*) { continue }
+        if ($line -notmatch '^\s*([^;][^=]*?)\s*=\s*(.*?)\s*$') { continue }
 
         $key = $Matches[1].Trim()
         $value = $Matches[2].Trim()
         if (-not $value) { continue }
 
-        if ($key -match '_(LOOP|SOUND_\d+)) {
+        if ($key -match '_(LOOP|SOUND_\d+)$') {
             $assetRefs++
             $relative = $value -replace '/', '\'
             if ($relative -match '^(?i)(Sounds|AMBIENT)\\') {

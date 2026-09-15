@@ -302,4 +302,15 @@ void VRAnalyticsTacticalDamageApplied(
 	int bleedoutStateAfter,
 	int bleedoutTurns );
 
+
+// Compatibility emitters used by low-level tactical/static-library hooks.
+// Keep these primitive parameter types exact: the VS2013 linker resolves
+// their C++-mangled names across Tactical.lib / TileEngine.lib boundaries.
+void VR_TacticalTelemetryTurnStart( unsigned char team );
+void VR_TacticalTelemetrySmoke(
+	unsigned char owner,
+	int gridNo,
+	unsigned short item,
+	signed char level );
+
 #endif // VR_ANALYTICS_H

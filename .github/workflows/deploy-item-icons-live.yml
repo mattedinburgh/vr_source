@@ -1,0 +1,171 @@
+name: Deploy 20-item icon pilot and launch Vengeance
+
+on:
+  push:
+    branches:
+      - install/all-2026-09-12
+    paths:
+      - 'MapPreviewTrigger/DEPLOY_ITEM_ICONS_LIVE.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ja2-render-shared
+  cancel-in-progress: false
+
+jobs:
+  deploy-and-launch:
+    runs-on: [self-hosted, Windows, X64, ja2-render]
+    timeout-minutes: 20
+
+    steps:
+      - name: Put GitHub Desktop Git on PATH
+        id: bootstrap_git
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $git = $null
+          $cmd = Get-Command git.exe -ErrorAction SilentlyContinue
+          if ($cmd) { $git = $cmd.Source }
+          if (-not $git) {
+            $git = Get-ChildItem "$env:LOCALAPPDATA\GitHubDesktop" -Recurse -Filter git.exe -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\resources\\app\\git\\cmd\\git\.exe$' } |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $git -or -not (Test-Path $git)) { throw 'Git could not be found.' }
+          Split-Path $git -Parent | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "path=$git" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          & $git --version
+
+      - name: Check out canonical source
+        uses: actions/checkout@v4
+        with:
+          ref: install/all-2026-09-12
+          fetch-depth: 1
+
+      - name: Fetch current game-data master icon sheets
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $git = '${{ steps.bootstrap_git.outputs.path }}'
+          $gamedir = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
+          if (Test-Path $gamedir) { Remove-Item -Recurse -Force $gamedir }
+
+          & $git clone --depth 1 --single-branch --branch master --filter=blob:none --no-checkout https://github.com/mattedinburgh/vr_gamedir.git $gamedir
+          if ($LASTEXITCODE -ne 0) { throw "vr_gamedir clone failed: $LASTEXITCODE" }
+
+          & $git -C $gamedir sparse-checkout init --cone
+          & $git -C $gamedir sparse-checkout set Data-AIMv53/Interface Data-AIMv53/tilesets/0
+          & $git -C $gamedir checkout master
+          if ($LASTEXITCODE -ne 0) { throw "vr_gamedir sparse checkout failed: $LASTEXITCODE" }
+
+          $expected = @(
+            'Data-AIMv53\Interface\MDGUNS.sti',
+            'Data-AIMv53\Interface\MDP4ITEMS.sti',
+            'Data-AIMv53\Interface\MDP6ITEMS.STI',
+            'Data-AIMv53\tilesets\0\smguns.sti',
+            'Data-AIMv53\tilesets\0\SMP4ITEMS.STI',
+            'Data-AIMv53\tilesets\0\SMP6ITEMS.STI'
+          )
+          foreach ($rel in $expected) {
+            $p = Join-Path $gamedir $rel
+            if (-not (Test-Path $p)) { throw "Missing icon sheet: $p" }
+          }
+
+      - name: Incrementally deploy six changed icon sheets
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $gameRoot = 'C:\VENGENCE\Jagged Alliance 2'
+          $srcRoot = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
+          if (-not (Test-Path $gameRoot)) { throw "Live game root missing: $gameRoot" }
+
+          Get-Process -Name 'JA2_EN_Release' -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "Stopping existing JA2 process PID=$($_.Id)"
+            Stop-Process -Id $_.Id -Force
+          }
+          Start-Sleep -Seconds 1
+
+          $files = @(
+            'Data-AIMv53\Interface\MDGUNS.sti',
+            'Data-AIMv53\Interface\MDP4ITEMS.sti',
+            'Data-AIMv53\Interface\MDP6ITEMS.STI',
+            'Data-AIMv53\tilesets\0\smguns.sti',
+            'Data-AIMv53\tilesets\0\SMP4ITEMS.STI',
+            'Data-AIMv53\tilesets\0\SMP6ITEMS.STI'
+          )
+
+          $changed = 0
+          foreach ($rel in $files) {
+            $src = Join-Path $srcRoot $rel
+            $dst = Join-Path $gameRoot $rel
+            New-Item -ItemType Directory -Force -Path (Split-Path $dst -Parent) | Out-Null
+            $copy = $true
+            if (Test-Path $dst) {
+              $copy = (Get-FileHash $src -Algorithm SHA256).Hash -ne (Get-FileHash $dst -Algorithm SHA256).Hash
+            }
+            if ($copy) {
+              Copy-Item -LiteralPath $src -Destination $dst -Force
+              $changed++
+              Write-Host "Updated $rel"
+            } else {
+              Write-Host "Unchanged $rel"
+            }
+          }
+
+          @(
+            'Vengeance 20-item icon pilot live deployment',
+            ('UTC=' + (Get-Date).ToUniversalTime().ToString('o')),
+            ('vr_source=' + '${{ github.sha }}'),
+            ('vr_gamedir_master=' + (& '${{ steps.bootstrap_git.outputs.path }}' -C $srcRoot rev-parse HEAD)),
+            ('changed_sheets=' + $changed),
+            'ai_marker=red top-right on every changed pilot sprite'
+          ) | Set-Content -Encoding UTF8 (Join-Path $gameRoot 'ITEM_ICON_PILOT_20_ACTIVE.txt')
+
+      - name: Launch Vengeance in logged-in desktop session on secondary display
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $gameRoot = 'C:\VENGENCE\Jagged Alliance 2'
+          $exe = Join-Path $gameRoot 'JA2_EN_Release.exe'
+          if (-not (Test-Path $exe)) { throw "Game executable missing: $exe" }
+
+          $interactiveUser = (Get-CimInstance Win32_ComputerSystem).UserName
+          if (-not $interactiveUser) {
+            throw 'No logged-in interactive Windows user detected; refusing hidden service-desktop launch.'
+          }
+          Write-Host "Interactive user: $interactiveUser"
+
+          $helperRoot = Join-Path $gameRoot '.chatgpt'
+          New-Item -ItemType Directory -Force -Path $helperRoot | Out-Null
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Tools\VRMapDisplayRouting.ps1') (Join-Path $helperRoot 'VRMapDisplayRouting.ps1') -Force
+
+          $launcher = Join-Path $helperRoot 'LaunchVengeanceSecondary.ps1'
+          @'
+          $ErrorActionPreference = 'Stop'
+          $gameRoot = 'C:\VENGENCE\Jagged Alliance 2'
+          . (Join-Path $gameRoot '.chatgpt\VRMapDisplayRouting.ps1')
+          $exe = Join-Path $gameRoot 'JA2_EN_Release.exe'
+          $p = Start-VRProcessOnSecondary -FilePath $exe -WorkingDirectory $gameRoot -RequireSecondary -InitialRouteSeconds 20
+          $p.Refresh()
+          if ($p.HasExited) { throw "Vengeance exited immediately with code $($p.ExitCode)." }
+          '@ | Set-Content -Encoding UTF8 $launcher
+
+          $taskName = 'VR_ChatGPT_Launch'
+          Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+          $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \`"$launcher\`""
+          $principal = New-ScheduledTaskPrincipal -UserId $interactiveUser -LogonType InteractiveToken -RunLevel Highest
+          $task = New-ScheduledTask -Action $action -Principal $principal
+          Register-ScheduledTask -TaskName $taskName -InputObject $task -Force | Out-Null
+          Start-ScheduledTask -TaskName $taskName
+
+          Start-Sleep -Seconds 8
+          $p = Get-Process -Name 'JA2_EN_Release' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $p) {
+            $info = Get-ScheduledTaskInfo -TaskName $taskName
+            throw "Vengeance did not stay running. Scheduled task result=$($info.LastTaskResult)"
+          }
+          Write-Host "Vengeance launched. PID=$($p.Id)"

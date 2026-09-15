@@ -968,7 +968,11 @@ static BOOLEAN RenderHybridLogicalMercModel(
 	// Do not switch to the layered renderer unless the core body for this exact
 	// animation frame is coherent. This is what keeps special Vengeance-only
 	// animations from producing detached/floating equipment.
-	const char *requiredBodyLayers[] = { "legs", "body", "head", "arms" };
+	// Layer names must match TableData\\LogicalBodyTypes\\Layers.xml exactly.
+	// 1.13 calls the arm/hand body layer "hands"; using the non-existent
+	// "arms" name makes GetLogicalMercSurface() fail and forces the legacy
+	// renderer for every merc, which also suppresses all visible armour.
+	const char *requiredBodyLayers[] = { "legs", "body", "head", "hands" };
 	UINT32 i;
 	for ( i = 0; i < sizeof( requiredBodyLayers ) / sizeof( requiredBodyLayers[ 0 ] ); ++i )
 	{
