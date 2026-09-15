@@ -49,6 +49,40 @@ jobs:
             throw 'PowerShell syntax errors in COLLECT_BLACKBOX.ps1'
           }
 
+      - name: Smoke-test Black Box evidence collector
+        shell: pwsh
+        run: |
+          $game = Join-Path $env:RUNNER_TEMP 'blackbox-collector-game'
+          $out = Join-Path $env:RUNNER_TEMP 'blackbox-collector-out'
+          $expanded = Join-Path $env:RUNNER_TEMP 'blackbox-collector-expanded'
+          Remove-Item $game, $out, $expanded -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $game, $out | Out-Null
+          @(
+            '[00:00:01.000] [ENGINE] synthetic smoke test',
+            '[00:00:02.000] [ENGINE] Clean shutdown'
+          ) | Set-Content -LiteralPath (Join-Path $game 'BlackBox_LastRun.log') -Encoding UTF8
+          '{"schema":"vr-blackbox-1","session":1,"seq":1,"kind":"session_start"}' |
+            Set-Content -LiteralPath (Join-Path $game 'VR_BlackBox.jsonl') -Encoding UTF8
+
+          & (Join-Path $env:GITHUB_WORKSPACE 'COLLECT_BLACKBOX.ps1') -GameRoot $game -OutputDirectory $out
+
+          $zip = Get-ChildItem -LiteralPath $out -Filter 'Vengeance_BlackBox_*.zip' -File |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $zip) { throw 'Collector did not create a ZIP.' }
+
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $expanded -Force
+          foreach ($required in @('manifest.csv', 'environment.txt', 'BlackBox_LastRun.log', 'VR_BlackBox.jsonl')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $expanded $required) -PathType Leaf)) {
+              throw "Collector ZIP is missing required file: $required"
+            }
+          }
+
+          $manifest = Import-Csv -LiteralPath (Join-Path $expanded 'manifest.csv')
+          if (-not ($manifest.RelativePath -contains 'BlackBox_LastRun.log')) {
+            throw 'Manifest does not contain BlackBox_LastRun.log.'
+          }
+
       - name: Compile logger as C++03
         run: g++ -std=c++03 -Wall -Wextra -pedantic -c VRAnalytics.cpp -o /tmp/VRAnalytics.o
 
