@@ -15,38 +15,68 @@ this framework, never merged wholesale.
    - JA2 personal/public knowledge, sight, noise and legitimate radio reports only.
    - No hidden AP, exact unseen position, hidden equipment, or raw sector-strength cheats.
 
-2. **Competence / friction**
-   - Administrators and green militia use simple, noisy plans.
+2. **Explicit contact beliefs**
+   - `AICONTACTBELIEF` normalizes legal last-known position, source, age and confidence.
+   - Beliefs represent uncertainty; they never reveal hidden live opponent state.
+   - Surprise is created by genuinely new personal sight, not by omniscient prediction.
+
+3. **Competence / friction**
+   - Administrators and green militia use simpler/noisier reasoning.
    - Regular army and militia use coordinated tactics inconsistently.
-   - Elites can reliably use the full planner.
+   - Elites can reliably exploit deeper candidate evaluation.
    - Competence changes reasoning and execution, never CTH/AP.
 
-3. **Battle state**
+4. **Battle state**
    - casualties, perceived force balance, stress, risk, morale, isolation and rout pressure.
 
-4. **Persistent local intent**
+5. **Persistent local intent**
    - HOLD, PRESS, FLANK, FALLBACK, DISENGAGE, RESCUE.
 
-5. **Dynamic fireteam role**
+6. **Dynamic fireteam role**
    - SUPPORT, MANEUVER, FLANKER, SCREEN, RESERVE.
 
-6. **Local fire plan**
-   - target saturation, covering fire, fire superiority, alternate-arc preservation.
+7. **Local task reservations**
+   - fireteam-scoped claims prevent duplicate flank, maneuver and screen responsibilities.
+   - reservations are transient, identity-bound and expire quickly.
+   - coordination never grants extra opponent knowledge.
 
-7. **Action utility**
-   - legacy Vengeance / 1.13 behaviours remain the execution library.
-   - the planner decides when those behaviours are appropriate.
+8. **Interruptible short plans**
+   - 1–3 step tactical commitments preserve useful intent without becoming rigid scripts.
+   - FLANK, FALLBACK, DISENGAGE, RESCUE and CQB-style sequences can persist briefly.
+   - plans are revalidated against fresh risk/battle state and are cancelled by emergencies/new information.
 
-8. **Position / route utility**
-   - cover, known-threat exposure, crossfire, useful weapon range, support, crowding,
-     smoke, route exposure and inferred reaction-fire risk.
+9. **Shared spatial intelligence**
+   - candidate evaluation uses reusable features: cover, sight/prone cover, known-threat exposure,
+     support, crowding, crossfire, range fit, smoke, mission progress, route exposure and inferred reaction risk.
+   - full route analysis is allowed when it materially improves the decision.
+   - analysis uses non-destructive path queries so evaluation does not corrupt execution state.
 
-9. **Execution friction**
-   - lower-quality troops may fall back to a simpler legal action instead of executing
-     the mathematically best complex plan.
+10. **Contact-surprise / encirclement reassessment**
+    - movement that unexpectedly reveals new personal contacts invalidates the old movement commitment.
+    - the soldier can hold, return to the last decision tile, seek cover, withdraw or make a lateral/backward move.
+    - multi-angle visible pressure can also trigger repositioning when the geometry worsens.
+    - the response is scored rather than hard-scripted; if no candidate is materially better, the soldier fights where he is.
 
-10. **Outcome feedback**
-    - Black Box records raw facts; Companion records plans, reasons and outcomes.
+11. **Local fire plan**
+    - target saturation, covering fire, fire superiority, alternate-arc preservation.
+
+12. **Action utility**
+    - legacy Vengeance / 1.13 behaviours remain the execution library.
+    - the planner decides when those behaviours are appropriate.
+
+13. **Execution friction**
+    - lower-quality troops may fall back to a simpler legal action instead of executing
+      the mathematically best complex plan.
+
+14. **Outcome feedback**
+    - Black Box records raw facts, candidate scores and selections; Companion reconstructs plans,
+      reasons and outcomes.
+
+### Performance policy
+
+The target machine has enough CPU headroom for deeper tactical search. Prefer better decisions over
+micro-optimizing away useful route/candidate analysis. Avoid large persistent caches when recalculation
+is cheap enough; tactical state should remain small, transient and identity-bound.
 
 ## Branch policy
 
@@ -54,7 +84,7 @@ this framework, never merged wholesale.
 - Strategic modernization and diagnostics are ported onto this line.
 - No AI feature branch may become a second permanent integration branch.
 - Experimental features branch from this line and return through reviewed commits.
-- Old branches stay available for archaeology until all unique behaviours are catalogued.
+- Historical branches are deleted once uniqueness is disproved; reference branches are retained only while they contain documented, genuinely unported work.
 - A behaviour is considered integrated only when:
   1. its code is present here;
   2. it compiles;
@@ -62,21 +92,22 @@ this framework, never merged wholesale.
   4. its interactions with morale, smoke, suppression, movement and retreat are tested.
 
 
-## Consolidation status — 2026-09-14
+## Consolidation status — 2026-09-15
 
-Integrated onto the unified line:
+The unified line now includes the professor-architecture foundation:
 
-- persistent sector-local enemy fireteams with coherent reserve release and remnant absorption;
-- Deidranna doctrine profiles that limit initiative/complexity without granting combat-stat bonuses;
-- doctrine-aware crossfire, bounding, independent flanking, proactive support/smoke and mission anchoring;
-- doctrine/fireteam fields in the tactical decision stream for Companion analysis.
+- explicit legal contact beliefs with confidence/source/age;
+- shared spatial feature evaluation and utility scoring;
+- safe full-route exposure/reaction-risk analysis via `NO_COPYROUTE`;
+- fireteam-local task reservations;
+- identity-bound interruptible short plans;
+- contact-surprise and encirclement reassessment that can stop/reverse a bad advance;
+- Black Box candidate/selection telemetry for surprise repositioning;
+- quickload/reset hardening for all new transient reasoning state.
 
-Divergent branches are not merged wholesale:
-
-- `ai/team-coordination` is superseded by the newer utility planner and is reference-only;
-- `ai/shared-enemy-militia-brain` has no unique planner interface worth restoring independently;
-- `ai/legacy-core-modernization` remains archaeology until each unique helper is proven to add behaviour not already represented by the unified planner;
-- strategic Companion/Black Box work remains a separate port because it touches a wider strategic/tactical surface.
+The older tactical feature branches whose unique behavior was already represented on canonical were
+deleted after function-level review. Strategic reference branches remain only where the staging manifest
+still records genuinely unported strategic concepts.
 
 ## Legacy + modern coexistence
 
