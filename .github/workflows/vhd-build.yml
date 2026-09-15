@@ -1,6 +1,4 @@
 name: Vengeance HD branch build
-# modernization validation trigger: 2026-09-15
-
 on:
   push:
     branches:
