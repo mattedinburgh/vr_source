@@ -1446,7 +1446,7 @@ void GetArrowsBackground( )
 			// Setup blt rect
 			gsUpArrowX = sMercScreenX - VHDScaleScreenValue( 10 );
 			gsUpArrowY = sMercScreenY - VHDScaleScreenValue( 70 );
-			sArrowHeight = 3 * ARROWS_HEIGHT;
+			sArrowHeight = (UINT16)( 3 * VHDScaleScreenValue( ARROWS_HEIGHT ) );
 		}
 
 		if ( guiShowUPDownArrows & ARROWS_SHOW_UP_ABOVE_CLIMB )
@@ -1454,7 +1454,7 @@ void GetArrowsBackground( )
 			// Setup blt rect
 			gsUpArrowX = sMercScreenX - VHDScaleScreenValue( 10 );
 			gsUpArrowY = sMercScreenY - VHDScaleScreenValue( 70 );
-			sArrowHeight = 2 * ARROWS_HEIGHT;
+			sArrowHeight = (UINT16)( 2 * VHDScaleScreenValue( ARROWS_HEIGHT ) );
 		}
 
 		if ( guiShowUPDownArrows & ARROWS_SHOW_UP_ABOVE_CLIMB2 )
@@ -1462,7 +1462,7 @@ void GetArrowsBackground( )
 			// Setup blt rect
 			gsUpArrowX = sMercScreenX - VHDScaleScreenValue( 10 );
 			gsUpArrowY = sMercScreenY - VHDScaleScreenValue( 80 );
-			sArrowHeight = 3 * ARROWS_HEIGHT;
+			sArrowHeight = (UINT16)( 3 * VHDScaleScreenValue( ARROWS_HEIGHT ) );
 		}
 
 		if ( guiShowUPDownArrows & ARROWS_SHOW_UP_ABOVE_CLIMB3 )
@@ -1470,7 +1470,7 @@ void GetArrowsBackground( )
 			// Setup blt rect
 			gsUpArrowX = sMercScreenX - VHDScaleScreenValue( 10 );
 			gsUpArrowY = sMercScreenY - VHDScaleScreenValue( 900 );
-			sArrowHeight = 5 * ARROWS_HEIGHT;
+			sArrowHeight = (UINT16)( 5 * VHDScaleScreenValue( ARROWS_HEIGHT ) );
 		}
 
 
@@ -1490,14 +1490,14 @@ void GetArrowsBackground( )
 		{
 			gsDownArrowX = sMercScreenX - VHDScaleScreenValue( 10 );
 			gsDownArrowY = sMercScreenY + VHDScaleScreenValue( 10 );
-			sArrowHeight = 3 * ARROWS_HEIGHT;
+			sArrowHeight = (UINT16)( 3 * VHDScaleScreenValue( ARROWS_HEIGHT ) );
 		}
 
 		if ( guiShowUPDownArrows & ARROWS_SHOW_DOWN_BELOW_YG || guiShowUPDownArrows & ARROWS_SHOW_DOWN_BELOW_GG || guiShowUPDownArrows & ARROWS_SHOW_DOWN_BELOW_YY )
 		{
 			gsDownArrowX = sMercScreenX - VHDScaleScreenValue( 10 );
 			gsDownArrowY = sMercScreenY + VHDScaleScreenValue( 10 );
-			sArrowHeight = 3 * ARROWS_HEIGHT;
+			sArrowHeight = (UINT16)( 3 * VHDScaleScreenValue( ARROWS_HEIGHT ) );
 		}
 
 		// Adjust arrows based on level
