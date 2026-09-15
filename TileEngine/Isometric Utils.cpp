@@ -1352,7 +1352,8 @@ BOOLEAN GridNoOnVisibleWorldTile( INT32 sGridNo )
 #if 0//dnl ch53 151009
 	if ( sWorldX > 0 && sWorldX < ( gsTRX - gsTLX - 20 ) && sWorldY > 20 && sWorldY < ( gsBLY - gsTLY - 20 ) )
 #else
-	if ( sWorldX >= 30 && sWorldX <= (gsTRX - gsTLX - 30) && sWorldY >= 20 && sWorldY <= (gsBLY - gsTLY - 10) )
+	if ( sWorldX >= VHDScaleScreenValue( 30 ) && sWorldX <= ( gsTRX - gsTLX - VHDScaleScreenValue( 30 ) ) &&
+		sWorldY >= VHDScaleScreenValue( 20 ) && sWorldY <= ( gsBLY - gsTLY - VHDScaleScreenValue( 10 ) ) )
 #endif
 	{
 		return( TRUE );
