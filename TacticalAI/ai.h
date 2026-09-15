@@ -259,6 +259,8 @@ INT16 WhatIKnowThatPublicDont(SOLDIERTYPE *pSoldier, UINT8 ubInSightOnly);
 INT32 FindClosestClimbPoint (SOLDIERTYPE *pSoldier, BOOLEAN fClimbUp );
 INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction );
 INT32 FindGeometryBreakoutSpot(SOLDIERTYPE *pSoldier, INT32 sThreatSpot);
+INT32 FindThreatSearchObservationSpot(SOLDIERTYPE *pSoldier, INT32 sEvidenceSpot,
+	INT8 bEvidenceLevel, UINT8 ubUncertaintyRadius);
 BOOLEAN CanClimbFromHere (SOLDIERTYPE * pSoldier, BOOLEAN fUp );
 
 // HEADROCK HAM 3.6: Adding includes for A* cover calculations
@@ -368,7 +370,9 @@ enum
 	AI_TASK_RESCUE,
 	AI_TASK_SMOKE,
 	AI_TASK_ENTRY_POINT,
-	AI_TASK_ENTRY_SUPPORT
+	AI_TASK_ENTRY_SUPPORT,
+	AI_TASK_SEARCH,
+	AI_TASK_SEARCH_SUPPORT
 };
 
 enum
