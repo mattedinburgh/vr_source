@@ -26,6 +26,7 @@ TILE_ELEMENT		gTileDatabase[ NUMBEROFTILES ];
 UINT16					gTileDatabaseSize;
 UINT16					gusNumAnimatedTiles = 0;
 UINT16					gusAnimatedTiles[ MAX_ANIMATED_TILES ];
+ADDITIONAL_TILE_CAMO_VALUES zAdditionalTileCamoProperties;
 
 
 
@@ -713,6 +714,11 @@ void CreateTileDatabase( )
 
 				TileElement.fType							= (UINT16)TileSurf->fType;
 				TileElement.ubTerrainID				= TileSurf->ubTerrainID;
+				TileElement.bWoodCamoAffinity		= TileSurf->bWoodCamoAffinity;
+				TileElement.bDesertCamoAffinity	= TileSurf->bDesertCamoAffinity;
+				TileElement.bUrbanCamoAffinity		= TileSurf->bUrbanCamoAffinity;
+				TileElement.bSnowCamoAffinity		= TileSurf->bSnowCamoAffinity;
+				TileElement.bCamoStanceModifer		= TileSurf->bCamoStanceModifer;
 				TileElement.usWallOrientation = NO_ORIENTATION;
 
 				if (TileSurf->pAuxData != NULL)
