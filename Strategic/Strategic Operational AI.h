@@ -6,6 +6,9 @@
 // Experimental branch-only decision gate. Master is unaffected because this file does not exist there.
 #define VR_OPERATIONAL_GARRISON_REASSIGNMENT_ENABLED 1
 #define VR_OPERATIONAL_PERSISTENT_RESERVES_ENABLED     1
+// Keep the new reserve decision loop observational until campaign validation is complete.
+#define VR_OPERATIONAL_DECISION_LOOP_ENABLED            0
+#define VR_OPERATIONAL_STRENGTH_UNKNOWN                 0xff
 
 struct GROUP;
 
@@ -81,7 +84,11 @@ void VR_OnEnemyGroupAssigned( GROUP *pGroup, UINT8 ubTargetSectorID, UINT8 ubLeg
 void VR_OnEnemyGroupArrived( GROUP *pGroup );
 void VR_OnEnemyGroupRetreated( GROUP *pGroup );
 void VR_HourlyOperationalUpdate();
+void VR_DecayOperationalIntelHourly();
+void VR_UpdateOperationalReadinessHourly();
+void VR_TraceOperationalRecommendationsHourly();
 void VR_ReportOperationalIntel( UINT8 ubSectorID, UINT8 ubConfidence );
+void VR_RecordOperationalContact( GROUP *pGroup, UINT8 ubSectorID, UINT8 ubPlayerStrength, UINT8 ubMilitiaStrength, UINT8 ubConfidence );
 
 INT32 VR_ScoreOperationalTarget( GROUP *pGroup, UINT8 ubSectorID, VR_OPERATIONAL_SCORE *pBreakdown );
 UINT8 VR_FindBestOperationalTarget( GROUP *pGroup, INT32 *piBestScore );
@@ -90,7 +97,13 @@ void VR_SetFormationMission( GROUP *pGroup, UINT8 ubMission, UINT8 ubReason );
 void VR_SetFormationReserveRole( GROUP *pGroup, UINT8 ubReserveRole, UINT8 ubReason );
 BOOLEAN VR_HoldFormationAsReserve( GROUP *pGroup, UINT8 ubReserveRole );
 GROUP *VR_FindReadyOperationalReserve();
+GROUP *VR_FindReadyOperationalReserveForSector( UINT8 ubTargetSectorID );
 BOOLEAN VR_IsReadyOperationalReserve( GROUP *pGroup );
+
+void VR_RecordLegacyAssignment( GROUP *pGroup, UINT8 ubTargetSectorID, UINT8 ubLegacyIntention );
+void VR_RecordFormationArrival( GROUP *pGroup );
+void VR_CompleteRetreatInSector( UINT8 ubSectorX, UINT8 ubSectorY );
+BOOLEAN VR_RegisterTacticalRetreatSoldier( UINT8 ubSourceX, UINT8 ubSourceY, UINT8 ubDestX, UINT8 ubDestY, UINT8 ubAdmins, UINT8 ubTroops, UINT8 ubElites );
 
 const CHAR8 *VR_OperationalMissionName( UINT8 ubMission );
 const CHAR8 *VR_OperationalReserveRoleName( UINT8 ubRole );
