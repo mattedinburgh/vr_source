@@ -1,1 +1,1 @@
-apply VHD occlusion parity startup self-test
+apply VHD occlusion parity startup self-test retry
