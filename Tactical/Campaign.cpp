@@ -160,12 +160,14 @@ void ProfileStatChange(MERCPROFILESTRUCT *pProfile, UINT8 ubStat, UINT16 usNumCh
 
 // VR competence-based stat growth curve.
 // Return value is in hundredths of a percent: 10000 = 100.00% of the normal JA2
-// learning probability. The normal JA2 rule already slows improvement as the current
-// rating rises; this multiplier adds only the extra diminishing returns appropriate
-// to advanced expertise and mastery.
+// learning probability. Values above 10000 provide a modest novice catch-up bonus.
+// The normal JA2 rule already slows improvement as current ability rises; this curve
+// accelerates only the basics, then adds diminishing returns for expertise and mastery.
 //
 // Methodology:
-//   - <= 70: no additional mastery penalty; competent mercs should still learn visibly.
+//   - <= 30: 125% novice catch-up; basic competence should be learned quickly.
+//   - 30-60: smoothly taper the catch-up bonus back to the normal JA2 pace.
+//   - 60-70: normal JA2 progression, with no extra modifier.
 //   - 70-85: gentle diminishing returns.
 //   - 85-95: increasingly difficult expert progression.
 //   - 95-99: mastery progression becomes deliberately rare.
@@ -175,6 +177,14 @@ void ProfileStatChange(MERCPROFILESTRUCT *pProfile, UINT8 ubStat, UINT16 usNumCh
 //     separate JA2 progression curve.
 static UINT16 StatGrowthMasteryMultiplier(UINT16 usRating)
 {
+	if (usRating <= 30)
+		return 12500;
+	if (usRating <= 40)
+		return (UINT16)(12500 - ((usRating - 30) * 1000) / 10); // 125% -> 115%
+	if (usRating <= 50)
+		return (UINT16)(11500 - ((usRating - 40) * 1000) / 10); // 115% -> 105%
+	if (usRating <= 60)
+		return (UINT16)(10500 - ((usRating - 50) * 500) / 10);  // 105% -> 100%
 	if (usRating <= 70)
 		return 10000;
 	if (usRating <= 75)
