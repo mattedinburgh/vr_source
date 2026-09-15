@@ -631,6 +631,8 @@ BOOLEAN VRCQB_BuildContext(SOLDIERTYPE *pSoldier, VRCQB_CONTEXT *pContext)
 
 	memset(pContext, 0, sizeof(VRCQB_CONTEXT));
 	pContext->sPrimaryKnownThreat = NOWHERE;
+	pContext->sMemoryThreat = NOWHERE;
+	pContext->bMemoryThreatLevel = pSoldier->pathing.bLevel;
 	pContext->sPreferredEntry = NOWHERE;
 	pContext->sPreferredFoothold = NOWHERE;
 	pContext->sPreferredFallback = NOWHERE;
@@ -661,6 +663,36 @@ BOOLEAN VRCQB_BuildContext(SOLDIERTYPE *pSoldier, VRCQB_CONTEXT *pContext)
 	}
 
 	VRCQBKnownThreatSummary(pSoldier, pContext);
+
+	// Once exact JA2 knowledge decays, retain only a weaker building-search
+	// hypothesis. It can sustain SECURE/HOLD behaviour but never authorize an
+	// assault, attack or counterattack against an unseen remembered opponent.
+	AITHREATMEMORYCUE MemoryCue;
+	if (AIBuildThreatMemoryCue(pSoldier, &MemoryCue) &&
+		MemoryCue.ubConfidence >= 30 &&
+		!TileIsOutOfBounds(MemoryCue.sGridNo))
+	{
+		pContext->sMemoryThreat = MemoryCue.sGridNo;
+		pContext->bMemoryThreatLevel = MemoryCue.bLevel;
+		pContext->ubMemoryThreatConfidence = MemoryCue.ubConfidence;
+
+		UINT16 usMemoryRoom = NO_ROOM;
+		const BOOLEAN fMemoryIndoor =
+			VRCQBGetRoom(MemoryCue.sGridNo, &usMemoryRoom);
+		const UINT8 ubMemoryBuilding =
+			VRCQBGetBuildingId(MemoryCue.sGridNo);
+
+		pContext->fMemoryThreatInSameRoom =
+			pContext->fInsideRoom &&
+			fMemoryIndoor &&
+			MemoryCue.bLevel == pSoldier->pathing.bLevel &&
+			usMemoryRoom == pContext->usRoomNo;
+
+		pContext->fMemoryThreatInSameBuilding =
+			pContext->ubBuildingID != NO_BUILDING &&
+			ubMemoryBuilding != NO_BUILDING &&
+			ubMemoryBuilding == pContext->ubBuildingID;
+	}
 
 	const UINT16 usCurrentExposure = AIKnownThreatExposure(
 		pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
@@ -778,6 +810,33 @@ static INT32 VRCQBScorePositionInternal(SOLDIERTYPE *pSoldier, const VRCQB_CONTE
 		}
 	}
 
+	else if (!TileIsOutOfBounds(pContext->sMemoryThreat) &&
+		(pContext->fMemoryThreatInSameRoom ||
+		 pContext->fMemoryThreatInSameBuilding) &&
+		(eState == VRCQB_STATE_HOLD ||
+		 eState == VRCQB_STATE_SECURE))
+	{
+		const INT32 iMemoryDistance =
+			PythSpacesAway(sCandidateGridNo, pContext->sMemoryThreat);
+
+		// Secure/search positions observe the remembered area from a short
+		// standoff rather than marching onto the old exact tile.
+		iScore += __max((INT32)0,
+			22 - 4 * abs(iMemoryDistance - 4));
+
+		if (fDetailed &&
+			LocationToLocationLineOfSightTest(
+				sCandidateGridNo, pSoldier->pathing.bLevel,
+				pContext->sMemoryThreat, pContext->bMemoryThreatLevel,
+				TRUE, CALC_FROM_ALL_DIRS))
+		{
+			iScore += 12;
+		}
+
+		if (iMemoryDistance <= 1)
+			iScore -= 24;
+	}
+
 	if ((eState == VRCQB_STATE_HOLD ||
 		 eState == VRCQB_STATE_SECURE ||
 		 eState == VRCQB_STATE_DELAY_FALLBACK) &&
@@ -828,9 +887,14 @@ static INT32 VRCQBScorePositionInternal(SOLDIERTYPE *pSoldier, const VRCQB_CONTE
 				break;
 			}
 
+			const INT32 sGeometryThreat =
+				!TileIsOutOfBounds(pContext->sPrimaryKnownThreat) ?
+				pContext->sPrimaryKnownThreat :
+				pContext->sMemoryThreat;
+
 			const INT32 iGeometry = AIGeometryPositionScore(
 				pSoldier, &Geometry, sCandidateGridNo,
-				pContext->sPrimaryKnownThreat, bIntent, bRole);
+				sGeometryThreat, bIntent, bRole);
 
 			// CQB has additional doorway/room geometry of its own, so shared
 			// battlefield geometry is influential but not allowed to dominate it.
@@ -1043,6 +1107,13 @@ BOOLEAN VRCQB_Assess(SOLDIERTYPE *pSoldier, const VRCQB_CONTEXT *pContext,
 			pAssessment->eReason = VRCQB_REASON_APPROACH_INDOOR_THREAT;
 		}
 	}
+	else if ((pContext->fMemoryThreatInSameRoom ||
+			  pContext->fMemoryThreatInSameBuilding) &&
+			 pContext->ubMemoryThreatConfidence >= 30)
+	{
+		pAssessment->eState = VRCQB_STATE_SECURE;
+		pAssessment->eReason = VRCQB_REASON_UNRESOLVED_CONTACT_MEMORY;
+	}
 	else if (pContext->fInsideRoom || pContext->ubBuildingID != NO_BUILDING)
 	{
 		const VRCQB_STATE ePrevious = VRCQBPreviousState(pSoldier);
@@ -1120,6 +1191,15 @@ BOOLEAN VRCQB_Assess(SOLDIERTYPE *pSoldier, const VRCQB_CONTEXT *pContext,
 	pAssessment->ubConfidence = VRCQBClampU8(
 		((INT32)pAssessment->ubEffectiveSkill + (INT32)Model.ubReplanSkill) / 2 -
 		(pContext->fEntryExposed ? Model.ubThresholdMistakeChance / 4 : 0));
+
+	if (pAssessment->eReason == VRCQB_REASON_UNRESOLVED_CONTACT_MEMORY)
+	{
+		// Training determines execution quality, but weak memory cannot magically
+		// become high-confidence knowledge merely because the soldier is elite.
+		pAssessment->ubConfidence = (UINT8)__min(
+			(INT32)pAssessment->ubConfidence,
+			30 + (INT32)pContext->ubMemoryThreatConfidence / 2);
+	}
 
 	VRCQBRememberAssessment(pSoldier, pContext, pAssessment);
 	return pAssessment->eState != VRCQB_STATE_NONE;
@@ -1792,7 +1872,8 @@ const CHAR8 *VRCQB_ReasonName(VRCQB_REASON eReason)
 		"local_counterattack",
 		"security_refuses_complex_assault",
 		"insufficient_entry_support",
-		"assault_hesitation"
+		"assault_hesitation",
+		"unresolved_contact_memory"
 	};
 	return (eReason >= 0 && eReason < VRCQB_REASON_MAX) ?
 		pNames[eReason] : "unknown";
