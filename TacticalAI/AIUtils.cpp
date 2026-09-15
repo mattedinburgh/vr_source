@@ -13860,11 +13860,15 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
 
 	UINT32 uiNow = guiTurnCnt + 1;
-	INT8 bSituation = AIBattleSituation(pSoldier);
-	INT32 iStress = AILocalStress(pSoldier);
-	INT32 iRisk = AIPersonalRisk(pSoldier);
-	INT32 iTolerance = AIPersonalRiskTolerance(pSoldier);
-	UINT16 usExposure = AIKnownThreatExposure(pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
+	AITACTICALDECISIONCONTEXT Context;
+	if (!AIBuildTacticalDecisionContext(pSoldier, &Context))
+		return AI_INTENT_HOLD;
+
+	INT8 bSituation = Context.bBattleSituation;
+	INT32 iStress = Context.iStress;
+	INT32 iRisk = Context.iPersonalRisk;
+	INT32 iTolerance = Context.iRiskTolerance;
+	UINT16 usExposure = Context.usKnownThreatExposure;
 
 	// Hard tactical emergencies immediately replace any previous plan.
 	INT8 bEmergencyIntent = -1;
