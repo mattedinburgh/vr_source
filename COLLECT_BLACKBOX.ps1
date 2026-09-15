@@ -54,6 +54,10 @@ try {
 # Core recorder evidence. Preserve current and rotated runs.
 @(
     'VR_BlackBox.jsonl',
+    'VR_BlackBox_Previous.jsonl',
+    'VR_BlackBox_Previous_2.jsonl',
+    'VR_BlackBox_Previous_3.jsonl',
+    'VR_BlackBox_RotatePending.jsonl',
     'VR_Companion_Report.md',
     'VR_Companion_Summary.json',
     'VR_Analytics_Experiment.txt',
