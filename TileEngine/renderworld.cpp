@@ -135,7 +135,8 @@ static void VHDRenderDiagnosticsEndFrame( )
 
 	const UINT32 uiTotalMS = GetJA2Clock( ) - gVHDRenderFrameStats.uiFrameStartMS;
 	const BOOLEAN fSlowFrame = uiTotalMS >= 33;
-	const BOOLEAN fPeriodicSample = ( gVHDRenderFrameStats.uiFrameSerial % 120u ) == 0;
+	const BOOLEAN fPeriodicSample = gVHDRenderFrameStats.uiFrameSerial == 1 ||
+		( gVHDRenderFrameStats.uiFrameSerial % 120u ) == 0;
 	if ( fSlowFrame || fPeriodicSample )
 	{
 		BlackBoxEvent( "VHD_RENDER",
