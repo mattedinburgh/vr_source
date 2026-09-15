@@ -184,15 +184,24 @@ class CompanionAnalysisTests(unittest.TestCase):
         self.assertEqual(1, len(result["overrange_records"]))
 
 
-    def test_session_summary_marks_clean_and_unclean_sessions(self):
+    def test_session_summary_marks_clean_unclean_and_legacy_sessions(self):
         events = [
-            {"schema": "vr-blackbox-1", "session": 10, "seq": 1, "kind": "session_start"},
+            {
+                "schema": "vr-blackbox-1", "session": 10, "seq": 1,
+                "kind": "session_start", "journal_lifecycle_version": 1,
+            },
             {"schema": "vr-blackbox-1", "session": 10, "seq": 2, "kind": "session_end"},
-            {"schema": "vr-blackbox-1", "session": 11, "seq": 1, "kind": "session_start"},
+            {
+                "schema": "vr-blackbox-1", "session": 11, "seq": 1,
+                "kind": "session_start", "journal_lifecycle_version": 1,
+            },
+            {"schema": "vr-blackbox-1", "session": 12, "seq": 1, "kind": "session_start"},
         ]
         summary = companion.session_summary(events)
         self.assertEqual([10], summary["ended_sessions"])
+        self.assertEqual([10, 11], summary["lifecycle_sessions"])
         self.assertEqual([11], summary["unclean_sessions"])
+        self.assertEqual([12], summary["legacy_sessions"])
 
     def test_truncated_final_jsonl_record_is_recovered(self):
         with tempfile.TemporaryDirectory() as tmp:
