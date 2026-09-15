@@ -548,19 +548,22 @@ static void BlackBoxWriteHangEvidence( DWORD elapsedMs, LONG heartbeatSequence, 
 		DWORD dumpError = ERROR_SUCCESS;
 		if( hDump != INVALID_HANDLE_VALUE )
 		{
+			// Compact hang dump: thread stacks/contexts + module list are what we
+			// need for a freeze.  MiniDumpWithDataSegs made these dumps hundreds
+			// of MB and is unnecessary for first-pass hang diagnosis.
 			MINIDUMP_TYPE dumpType = (MINIDUMP_TYPE)( MiniDumpNormal |
-				MiniDumpWithDataSegs | MiniDumpWithHandleData | MiniDumpWithThreadInfo );
+				MiniDumpWithThreadInfo );
 			dumpOk = MiniDumpWriteDump( GetCurrentProcess(), GetCurrentProcessId(), hDump,
 				dumpType, NULL, NULL, NULL );
 			if( !dumpOk )
 			{
 				dumpError = GetLastError();
-				// Older dbghelp.dll builds may reject newer dump flags. Retry with
-				// a conservative baseline instead of losing the hang snapshot.
+				// Older dbghelp.dll builds may reject MiniDumpWithThreadInfo.
+				// Retry with the smallest standard dump instead of losing evidence.
 				SetFilePointer( hDump, 0, NULL, FILE_BEGIN );
 				SetEndOfFile( hDump );
 				dumpOk = MiniDumpWriteDump( GetCurrentProcess(), GetCurrentProcessId(), hDump,
-					(MINIDUMP_TYPE)( MiniDumpNormal | MiniDumpWithDataSegs ), NULL, NULL, NULL );
+					MiniDumpNormal, NULL, NULL, NULL );
 				if( dumpOk )
 					dumpError = ERROR_SUCCESS;
 				else
@@ -574,7 +577,7 @@ static void BlackBoxWriteHangEvidence( DWORD elapsedMs, LONG heartbeatSequence, 
 		}
 
 		_snprintf( line, sizeof( line ) - 1,
-			"  HANG_MINIDUMP file=BlackBox_Hang_LastRun.dmp status=%s error=%lu\r\n",
+			"  HANG_MINIDUMP file=BlackBox_Hang_LastRun.dmp mode=compact status=%s error=%lu\r\n",
 			dumpOk ? "ok" : "failed", dumpError );
 		line[ sizeof( line ) - 1 ] = 0;
 		length = (DWORD)strlen( line );
@@ -1149,6 +1152,7 @@ void BlackBoxFramePhase( DWORD phase )
 void BlackBoxHeartbeat( DWORD currentScreen )
 {
 	DWORD now;
+	DWORD heartbeatThreadId;
 	DWORD previousTick;
 	DWORD gapMs;
 	DWORD handles = 0;
@@ -1159,6 +1163,13 @@ void BlackBoxHeartbeat( DWORD currentScreen )
 
 	if( !gBlackBoxInitialized )
 		return;
+
+	// The recorder can be initialized on a bootstrap/window thread.  The
+	// authoritative game-loop thread is whichever thread advances the heartbeat.
+	// Refresh this every frame so watchdog context capture follows the thread that
+	// can actually hang, rather than the thread that happened to call Initialize.
+	heartbeatThreadId = GetCurrentThreadId();
+	gBlackBoxMainThreadId = heartbeatThreadId;
 
 	now = GetTickCount();
 	previousTick = (DWORD)InterlockedExchange( &gBlackBoxHeartbeatTick, (LONG)now );
