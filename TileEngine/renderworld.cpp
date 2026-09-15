@@ -1139,13 +1139,30 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 										}
 									}
 
+									// Vengeance: Fallout-style wall occlusion bubble. Keep wall/door/window
+									// detail intact by routing nearby walls through the obscured blitter.
+									BOOLEAN fFalloutOcclusion = FALSE;
+									if ( !gfEditMode &&
+										( uiRowFlags & ( TILES_STATIC_STRUCTURES | TILES_DYNAMIC_STRUCTURES ) ) &&
+										fUseTileElem && ( uiTileElemFlags & WALL_TILE ) &&
+										gusSelectedSoldier != NOBODY && MercPtrs[ gusSelectedSoldier ] &&
+										MercPtrs[ gusSelectedSoldier ]->bActive &&
+										MercPtrs[ gusSelectedSoldier ]->bInSector &&
+										MercPtrs[ gusSelectedSoldier ]->pathing.bLevel == 0 )
+									{
+										const INT32 sMercGrid = MercPtrs[ gusSelectedSoldier ]->sGridNo;
+										const INT32 sDX = abs( ( uiTileIndex % WORLD_COLS ) - ( sMercGrid % WORLD_COLS ) );
+										const INT32 sDY = abs( ( uiTileIndex / WORLD_COLS ) - ( sMercGrid / WORLD_COLS ) );
+										fFalloutOcclusion = ( sDX <= 2 && sDY <= 2 );
+									}
+
 									// OK, ATE, CHECK FOR AN OBSCURED TILE AND MAKE SURE IF LEVELNODE IS SET
 									// WE DON'T RENDER UNLESS WE HAVE THE RENDER FLAG SET!
 									if ( fObscured )
 									{
 										if ( ( uiFlags & TILES_OBSCURED ) )
 										{
-											  if ( uiLevelNodeFlags & LEVELNODE_SHOW_THROUGH )
+											  if ( ( uiLevelNodeFlags & LEVELNODE_SHOW_THROUGH ) || fFalloutOcclusion )
 												{
 													fObscuredBlitter = TRUE;
 
@@ -1164,7 +1181,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 										}
 										else
 										{
-											 if ( uiLevelNodeFlags & LEVELNODE_SHOW_THROUGH )
+											 if ( ( uiLevelNodeFlags & LEVELNODE_SHOW_THROUGH ) || fFalloutOcclusion )
 											 {
 													fRenderTile = FALSE;
 
