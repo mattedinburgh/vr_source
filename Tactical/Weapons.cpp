@@ -4841,7 +4841,10 @@ void StructureHit( INT32 iBullet, UINT16 usWeaponIndex, INT16 bWeaponStatus, UIN
 		pStructure = FindStructureByID( sGridNo, usStructureID );
 
 		//DamageStructure( pStructure, (UINT8)iImpact, STRUCTURE_DAMAGE_GUNFIRE, sGridNo, sXPos, sYPos, ubAttackerID );
-		DamageStructure(pStructure, (UINT8)iImpact, STRUCTURE_DAMAGE_GUNFIRE, sGridNo, sXPos, sYPos, ubAttackerID, max(0, pBullet->iImpact - pBullet->iImpactReduction));
+		// Modern 1.13 behavior: normal bullets still interact with cover, but the
+		// special total-destruction damage path is reserved for anti-materiel ammo.
+		DamageStructure(pStructure, (UINT8)iImpact, STRUCTURE_DAMAGE_GUNFIRE, sGridNo, sXPos, sYPos, ubAttackerID,
+			(pBullet->usFlags & BULLET_FLAG_ANTIMATERIEL) ? max(0, pBullet->iImpact - pBullet->iImpactReduction) : 0);
 	}
 
 	// HEADROCK HAM 5: Fragments are not fired from guns, so they need a special case.
@@ -8813,10 +8816,37 @@ INT32 BulletImpact( SOLDIERTYPE *pFirer, BULLET *pBullet, SOLDIERTYPE * pTarget,
 	{
 		if ( !AmmoTypes[ubAmmoType].antiTank )
 		{
-			// ping!
+			// Preserve Vengeance's hard tank immunity for ammunition not explicitly
+			// marked anti-tank. Target modifiers refine damage after this gate.
 			return( 0 );
 		}
 	}
+
+	// Selective modern 1.13 port: ammo may scale its base damage by target class.
+	// Legacy Vengeance XML defaults every modifier to 1.0, so existing ammo is
+	// unchanged unless its XML explicitly opts in.
+	FLOAT fAmmoDamageModifier = AmmoTypes[ubAmmoType].dDamageModifierLife;
+	if ( pTarget->IsZombie() )
+	{
+		fAmmoDamageModifier *= AmmoTypes[ubAmmoType].dDamageModifierZombie;
+	}
+	else if ( TANK( pTarget ) )
+	{
+		fAmmoDamageModifier *= AmmoTypes[ubAmmoType].dDamageModifierTank;
+	}
+	else if ( AM_A_ROBOT( pTarget ) )
+	{
+		fAmmoDamageModifier *= AmmoTypes[ubAmmoType].dDamageModifierArmouredVehicle;
+	}
+	else if ( pTarget->flags.uiStatusFlags & SOLDIER_VEHICLE )
+	{
+		fAmmoDamageModifier *= AmmoTypes[ubAmmoType].dDamageModifierCivilianVehicle;
+	}
+
+	if ( fAmmoDamageModifier <= 0.0f )
+		return 0;
+
+	iOrigImpact = (INT32)( iOrigImpact * fAmmoDamageModifier );
 
 	// plus/minus up to 25% due to "random" factors (major organs hit or missed,
 	// lucky lighter in breast pocket, divine intervention on behalf of "Rev"...)
