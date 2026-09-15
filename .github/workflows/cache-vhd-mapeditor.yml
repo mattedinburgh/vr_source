@@ -1,0 +1,54 @@
+name: Cache VHD MapEditor from render PC
+
+on:
+  push:
+    branches:
+      - feature/vhd-renderer
+    paths:
+      - '.github/workflows/cache-vhd-mapeditor.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  cache-mapeditor:
+    runs-on: [self-hosted, Windows, X64, ja2-render]
+    timeout-minutes: 5
+    steps:
+      - name: Persist last successful MapEditor build
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $workspace='C:\actions-runner-ja2\_work\vr_source\vr_source'
+          $exe=Join-Path $workspace 'bin\VS2013\MapEditor_EN_Release.exe'
+          if(-not(Test-Path $exe)){throw "No previous MapEditor binary to cache: $exe"}
+
+          $git=$null
+          $cmd=Get-Command git.exe -ErrorAction SilentlyContinue
+          if($cmd){$git=$cmd.Source}
+          if(-not $git){
+            $git=Get-ChildItem "$env:LOCALAPPDATA\GitHubDesktop" -Recurse -Filter git.exe -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\resources\\app\\git\\cmd\\git\.exe$' } |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if(-not $git){throw 'Git not found.'}
+
+          $treeLines=& $git -C $workspace ls-tree -r HEAD
+          if($LASTEXITCODE-ne0){throw 'Could not enumerate source tree for cache fingerprint.'}
+          $relevant=$treeLines | Where-Object {
+            $_ -notmatch '^[^\t]+\t\.github/' -and
+            $_ -notmatch '^[^\t]+\tMapPreviewTrigger/'
+          }
+          $joined=($relevant -join "`n")
+          $sha=[System.Security.Cryptography.SHA256]::Create()
+          try {
+            $bytes=[Text.Encoding]::UTF8.GetBytes($joined)
+            $fingerprint=([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant()
+          } finally { $sha.Dispose() }
+
+          $cache='C:\VENGENCE\VHD_RENDER_CACHE'
+          New-Item -ItemType Directory -Force -Path $cache | Out-Null
+          Copy-Item -LiteralPath $exe -Destination (Join-Path $cache 'MapEditor_EN_Release.exe') -Force
+          [IO.File]::WriteAllText((Join-Path $cache 'source_fingerprint.txt'),$fingerprint,(New-Object Text.UTF8Encoding($false)))
+          Write-Host "Cached MapEditor fingerprint: $fingerprint"
