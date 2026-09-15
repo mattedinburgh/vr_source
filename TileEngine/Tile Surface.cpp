@@ -41,6 +41,198 @@ static void TraceSanMonaC5VisualAsset( const STR8 pStage, const STR8 pFilename, 
 	fclose( pTrace );
 }
 
+
+static BOOLEAN ValidateAndCanonicalizeNativeVHDImage(
+	HIMAGE hNativeImage, STR8 pCanonicalFilename, UINT8 ubScale, HIMAGE *phCanonicalFallback )
+{
+	if ( phCanonicalFallback != NULL )
+		*phCanonicalFallback = NULL;
+
+	if ( hNativeImage == NULL || pCanonicalFilename == NULL ||
+		 ( ubScale != 2 && ubScale != 4 ) )
+		return FALSE;
+
+	// Native VHD packages replace pixels only.  Load the ordinary logical asset
+	// independently and use it as the contract for frame identity/geometry and
+	// auxiliary gameplay metadata.  This keeps map/JSD semantics at legacy scale.
+	HIMAGE hCanonicalImage = CreateImage(
+		pCanonicalFilename, IMAGE_ALLDATA, ImageFileType::DEFAULT );
+	if ( hCanonicalImage == NULL )
+	{
+		BlackBoxEvent( "VHD",
+			"native validation cannot load canonical file=%s native=%s scale=%u",
+			pCanonicalFilename,
+			hNativeImage->ImageFile,
+			ubScale );
+		return FALSE;
+	}
+
+	BOOLEAN fValid = TRUE;
+
+	if ( hNativeImage->pImageData == NULL ||
+		 hCanonicalImage->pImageData == NULL ||
+		 hNativeImage->pETRLEObject == NULL ||
+		 hCanonicalImage->pETRLEObject == NULL ||
+		 hNativeImage->usNumberOfObjects == 0 ||
+		 hCanonicalImage->usNumberOfObjects == 0 )
+	{
+		BlackBoxEvent( "VHD",
+			"native validation rejected malformed image canonical=%s native=%s",
+			pCanonicalFilename, hNativeImage->ImageFile );
+		fValid = FALSE;
+	}
+	else if ( hNativeImage->usNumberOfObjects != hCanonicalImage->usNumberOfObjects )
+	{
+		BlackBoxEvent( "VHD",
+			"native validation rejected frame count canonical=%s native=%s expected=%u got=%u",
+			pCanonicalFilename,
+			hNativeImage->ImageFile,
+			hCanonicalImage->usNumberOfObjects,
+			hNativeImage->usNumberOfObjects );
+		fValid = FALSE;
+	}
+
+	if ( fValid )
+	{
+		for ( UINT16 usFrame = 0; usFrame < hCanonicalImage->usNumberOfObjects; ++usFrame )
+		{
+			const ETRLEObject *pCanonical = &hCanonicalImage->pETRLEObject[ usFrame ];
+			const ETRLEObject *pNative = &hNativeImage->pETRLEObject[ usFrame ];
+
+			const UINT32 uiExpectedWidth = (UINT32)pCanonical->usWidth * ubScale;
+			const UINT32 uiExpectedHeight = (UINT32)pCanonical->usHeight * ubScale;
+			const INT32 iExpectedOffsetX = (INT32)pCanonical->sOffsetX * ubScale;
+			const INT32 iExpectedOffsetY = (INT32)pCanonical->sOffsetY * ubScale;
+
+			if ( uiExpectedWidth == 0 || uiExpectedHeight == 0 ||
+				 uiExpectedWidth > 65535 || uiExpectedHeight > 65535 ||
+				 iExpectedOffsetX < -32768 || iExpectedOffsetX > 32767 ||
+				 iExpectedOffsetY < -32768 || iExpectedOffsetY > 32767 )
+			{
+				BlackBoxEvent( "VHD",
+					"native validation rejected canonical overflow file=%s frame=%u scale=%u",
+					pCanonicalFilename, usFrame, ubScale );
+				fValid = FALSE;
+				break;
+			}
+
+			if ( pNative->usWidth != (UINT16)uiExpectedWidth ||
+				 pNative->usHeight != (UINT16)uiExpectedHeight ||
+				 pNative->sOffsetX != (INT16)iExpectedOffsetX ||
+				 pNative->sOffsetY != (INT16)iExpectedOffsetY )
+			{
+				BlackBoxEvent( "VHD",
+					"native validation rejected geometry file=%s native=%s frame=%u expected=%ux%u@%d,%d got=%ux%u@%d,%d",
+					pCanonicalFilename,
+					hNativeImage->ImageFile,
+					usFrame,
+					(UINT16)uiExpectedWidth,
+					(UINT16)uiExpectedHeight,
+					(INT16)iExpectedOffsetX,
+					(INT16)iExpectedOffsetY,
+					pNative->usWidth,
+					pNative->usHeight,
+					pNative->sOffsetX,
+					pNative->sOffsetY );
+				fValid = FALSE;
+				break;
+			}
+		}
+	}
+
+	// IMAGE_APPDATA can affect animation/interaction behavior, so an HD visual
+	// package must never silently replace it.  Canonicalize native metadata to
+	// the logical asset after geometry has passed.
+	const BOOLEAN fCanonicalAppDataConsistent =
+		( hCanonicalImage->uiAppDataSize == 0 && hCanonicalImage->pAppData == NULL ) ||
+		( hCanonicalImage->uiAppDataSize > 0 &&
+		  hCanonicalImage->pAppData != NULL &&
+		  ( hCanonicalImage->fFlags & IMAGE_APPDATA ) );
+
+	const BOOLEAN fNativeAppDataConsistent =
+		( hNativeImage->uiAppDataSize == 0 && hNativeImage->pAppData == NULL ) ||
+		( hNativeImage->uiAppDataSize > 0 &&
+		  hNativeImage->pAppData != NULL &&
+		  ( hNativeImage->fFlags & IMAGE_APPDATA ) );
+
+	if ( fValid && ( !fCanonicalAppDataConsistent || !fNativeAppDataConsistent ) )
+	{
+		BlackBoxEvent( "VHD",
+			"native validation rejected inconsistent appdata canonical=%s native=%s",
+			pCanonicalFilename, hNativeImage->ImageFile );
+		fValid = FALSE;
+	}
+
+	if ( fValid )
+	{
+		const BOOLEAN fAppDataDiffers =
+			hNativeImage->uiAppDataSize != hCanonicalImage->uiAppDataSize ||
+			( hCanonicalImage->uiAppDataSize > 0 &&
+			  memcmp( hNativeImage->pAppData,
+					  hCanonicalImage->pAppData,
+					  hCanonicalImage->uiAppDataSize ) != 0 );
+
+		if ( fAppDataDiffers )
+		{
+			if ( hNativeImage->fFlags & IMAGE_APPDATA )
+				ReleaseImageData( hNativeImage, IMAGE_APPDATA );
+
+			hNativeImage->pAppData = NULL;
+			hNativeImage->uiAppDataSize = 0;
+			hNativeImage->fFlags &= ~IMAGE_APPDATA;
+
+			if ( hCanonicalImage->uiAppDataSize > 0 )
+			{
+				hNativeImage->pAppData =
+					(UINT8 *)MemAlloc( hCanonicalImage->uiAppDataSize );
+				if ( hNativeImage->pAppData == NULL )
+				{
+					BlackBoxEvent( "VHD",
+						"native validation appdata allocation failed file=%s bytes=%u",
+						pCanonicalFilename, hCanonicalImage->uiAppDataSize );
+					fValid = FALSE;
+				}
+				else
+				{
+					memcpy( hNativeImage->pAppData,
+							hCanonicalImage->pAppData,
+							hCanonicalImage->uiAppDataSize );
+					hNativeImage->uiAppDataSize = hCanonicalImage->uiAppDataSize;
+					hNativeImage->fFlags |= IMAGE_APPDATA;
+					BlackBoxEvent( "VHD",
+						"native metadata canonicalized file=%s bytes=%u",
+						pCanonicalFilename, hCanonicalImage->uiAppDataSize );
+				}
+			}
+			else
+			{
+				BlackBoxEvent( "VHD",
+					"native noncanonical appdata removed file=%s",
+					pCanonicalFilename );
+			}
+		}
+	}
+
+	if ( fValid )
+	{
+		BlackBoxEvent( "VHD",
+			"native validation accepted file=%s native=%s frames=%u scale=%u",
+			pCanonicalFilename,
+			hNativeImage->ImageFile,
+			hNativeImage->usNumberOfObjects,
+			ubScale );
+		DestroyImage( hCanonicalImage );
+		return TRUE;
+	}
+
+	if ( phCanonicalFallback != NULL )
+		*phCanonicalFallback = hCanonicalImage;
+	else
+		DestroyImage( hCanonicalImage );
+
+	return FALSE;
+}
+
 TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 {
 	// Add tile surface
@@ -116,8 +308,21 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 				hImage = CreateImage( cVHDVisualFilename, IMAGE_ALLDATA, ImageFileType::PNG );
 			if ( hImage != NULL )
 			{
-				ubLoadedVHDScale = ubRequestedVHDScale;
-				fLoadedNativeVHD = TRUE;
+				HIMAGE hCanonicalFallback = NULL;
+				if ( ValidateAndCanonicalizeNativeVHDImage(
+						hImage, cVisualFilename, ubRequestedVHDScale, &hCanonicalFallback ) )
+				{
+					ubLoadedVHDScale = ubRequestedVHDScale;
+					fLoadedNativeVHD = TRUE;
+				}
+				else
+				{
+					BlackBoxEvent( "VHD",
+						"native asset rejected; using canonical fallback file=%s native=%s scale=%u",
+						cVisualFilename, hImage->ImageFile, ubRequestedVHDScale );
+					DestroyImage( hImage );
+					hImage = hCanonicalFallback;
+				}
 			}
 		}
 	}
