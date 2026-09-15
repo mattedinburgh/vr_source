@@ -9951,8 +9951,17 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 
 	UINT32 uiTraceDecision = VRPlannerTraceBeginDecision(pSoldier, "flank",
 		sClosestDisturbance, bPlanIntent, bPlanRole);
-	if (!AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED,
-		(UINT32)(sClosestDisturbance + 701)))
+	BOOLEAN fBasicFireteamManeuver =
+		AIBasicFireteamManeuverReady(pSoldier, sClosestDisturbance);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "fireteam_effective_fire_support",
+		(long)AIFireteamEffectiveFireSupport(pSoldier, sClosestDisturbance));
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "shared_approach_pressure",
+		(long)AISharedApproachPressure(pSoldier, sClosestDisturbance));
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "basic_fireteam_maneuver",
+		fBasicFireteamManeuver ? 1L : 0L);
+	if (!fBasicFireteamManeuver &&
+		!AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED,
+			(UINT32)(sClosestDisturbance + 701)))
 	{
 		VRPlannerTraceReject(pSoldier, uiTraceDecision, "flank", AI_ACTION_NONE,
 			pSoldier->sGridNo, "competence/doctrine friction rejected coordinated flank");
@@ -9988,10 +9997,11 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		pSoldier->bActionPoints >= APBPConstants[AP_MINIMUM] &&
 		pSoldier->CheckInitialAP() &&
 		(pSoldier->aiData.bAttitude == CUNNINGAID || pSoldier->aiData.bAttitude == CUNNINGSOLO ||
-		(pSoldier->aiData.bAttitude == BRAVESOLO || pSoldier->aiData.bAttitude == BRAVEAID) && ubNearbyFireteamClose > 2) &&
+		((pSoldier->aiData.bAttitude == BRAVESOLO || pSoldier->aiData.bAttitude == BRAVEAID) && ubNearbyFireteamClose > 2) ||
+		fBasicFireteamManeuver) &&
 		AICombatTeam(pSoldier) &&
 		!AIShouldAvoidAdvance(pSoldier) &&
-		AIAllowsIndependentFlank(pSoldier) &&
+		(fBasicFireteamManeuver || AIAllowsIndependentFlank(pSoldier)) &&
 		pSoldier->ubSoldierClass != SOLDIER_CLASS_ADMINISTRATOR &&
 		!AICheckSpecialRole(pSoldier) &&		
 		gAnimControl[pSoldier->usAnimState].ubHeight != ANIM_PRONE &&
@@ -12710,6 +12720,14 @@ INT8 DecideSuppressionResponse(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		VRPlannerTraceSelect(pSoldier, uiSuppressionDecision, "suppression_response",
 			bBestAction, sBestSpot, iBestScore, iCurrentScore, FALSE,
 			"safer response exceeded required utility gain");
+
+		// A real suppression-driven displacement is useful fireteam experience:
+		// nearby teammates should remember that this approach just proved costly.
+		UINT8 ubExposureSetback = (UINT8)__min((INT32)80,
+			28 + iShock / 2 + (INT32)usCurrentExposure / 10);
+		AIRegisterTacticalSetback(pSoldier, AI_SETBACK_EXPOSURE,
+			pSoldier->sGridNo, ubExposureSetback, 4);
+
 		pSoldier->aiData.usActionData = sBestSpot;
 		return bBestAction;
 	}
@@ -12814,6 +12832,17 @@ INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		pSoldier, sFallback, AI_ACTION_WITHDRAW, 180, 90, 115))
 	{
 		return AI_ACTION_NONE;
+	}
+
+	// If the fallback was forced by local pressure, record the abandoned position
+	// as an exposure setback so this fireteam does not feed the next soldier down
+	// the same approach as though nothing happened.
+	if (pSoldier->aiData.bUnderFire || AILocalStress(pSoldier) >= 40 || usCurrentExposure >= 120)
+	{
+		UINT8 ubExposureSetback = (UINT8)__min((INT32)80,
+			30 + AILocalStress(pSoldier) / 2 + (INT32)usCurrentExposure / 12);
+		AIRegisterTacticalSetback(pSoldier, AI_SETBACK_EXPOSURE,
+			pSoldier->sGridNo, ubExposureSetback, 4);
 	}
 
 	pSoldier->aiData.usActionData = sFallback;

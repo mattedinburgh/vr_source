@@ -1047,6 +1047,92 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 			++pGeometry->ubCorroboratedCues;
 	}
 
+	// Very-local fireteam callouts. A nearby teammate may communicate only a coarse
+	// direction ("contact right/front"), never an exact hidden grid. Personal visual
+	// knowledge remains owned by the observer; the receiver gets short-lived,
+	// smeared directional pressure for geometry/plan choice only.
+	INT32 iSharedContactPressure[NUM_WORLD_DIRECTIONS] = { 0 };
+	for (UINT8 ubFriendID = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		ubFriendID <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++ubFriendID)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[ubFriendID];
+		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			!AISameFireteam(pSoldier, pFriend))
+		{
+			continue;
+		}
+
+		INT32 iFriendDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
+		if (iFriendDistance > __max(6, DAY_VISION_RANGE / 2))
+			continue;
+
+		for (UINT16 uiOpponent = 0; uiOpponent < TOTAL_SOLDIERS; ++uiOpponent)
+		{
+			SOLDIERTYPE *pOpponent = MercPtrs[uiOpponent];
+			if (!pOpponent || CONSIDERED_NEUTRAL(pFriend, pOpponent) ||
+				pFriend->bSide == pOpponent->bSide)
+			{
+				continue;
+			}
+
+			INT8 bFriendKnowledge = PersonalKnowledge(pFriend, (UINT8)uiOpponent);
+			INT32 iCalloutStrength = 0;
+			if (bFriendKnowledge == SEEN_CURRENTLY)
+				iCalloutStrength = 45;
+			else if (bFriendKnowledge == SEEN_THIS_TURN)
+				iCalloutStrength = 34;
+			else if (bFriendKnowledge == SEEN_LAST_TURN)
+				iCalloutStrength = 22;
+			else
+				continue;
+
+			INT32 sFriendKnown = KnownPersonalLocation(pFriend, (UINT8)uiOpponent);
+			if (TileIsOutOfBounds(sFriendKnown))
+				continue;
+
+			UINT8 ubDir = AIDirection(sAnchorGridNo, sFriendKnown);
+			if (ubDir >= NUM_WORLD_DIRECTIONS)
+				continue;
+
+			// Voice/gesture callouts lose precision with separation and across levels.
+			iCalloutStrength -= __min((INT32)18, iFriendDistance * 2);
+			if (KnownPersonalLevel(pFriend, (UINT8)uiOpponent) != pSoldier->pathing.bLevel)
+				iCalloutStrength /= 2;
+			if (iCalloutStrength <= 0)
+				continue;
+
+			// Use the strongest report in a direction rather than summing several
+			// soldiers who may all be reporting the same opponent.
+			iSharedContactPressure[ubDir] = __max(
+				iSharedContactPressure[ubDir], iCalloutStrength);
+		}
+	}
+
+	for (UINT8 ubDir = 0; ubDir < NUM_WORLD_DIRECTIONS; ++ubDir)
+	{
+		INT32 iPressure = iSharedContactPressure[ubDir];
+		if (iPressure <= 0)
+			continue;
+
+		UINT8 ubCW = AIGeometryRotate(ubDir, 1);
+		UINT8 ubCCW = AIGeometryRotate(ubDir, -1);
+		pGeometry->usThreatPressure[ubDir] = (UINT16)__min(
+			65535, (INT32)pGeometry->usThreatPressure[ubDir] + iPressure);
+		if (ubCW < NUM_WORLD_DIRECTIONS)
+			pGeometry->usThreatPressure[ubCW] = (UINT16)__min(
+				65535, (INT32)pGeometry->usThreatPressure[ubCW] + iPressure / 2);
+		if (ubCCW < NUM_WORLD_DIRECTIONS)
+			pGeometry->usThreatPressure[ubCCW] = (UINT16)__min(
+				65535, (INT32)pGeometry->usThreatPressure[ubCCW] + iPressure / 2);
+
+		pGeometry->ubCorroboratedDirectionMask |= (UINT8)(1 << ubDir);
+		if (pGeometry->ubCorroboratedCues < 255)
+			++pGeometry->ubCorroboratedCues;
+	}
+
 	// Friendly geometry is intentionally local. Combat teams coordinate only with
 	// their fireteam so this does not become a sector-wide hive mind.
 	for (UINT8 ubID = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
@@ -1474,6 +1560,88 @@ INT32 AITacticalSetbackPenalty(SOLDIERTYPE *pSoldier, INT32 sCandidateGridNo)
 	}
 
 	return __min((INT32)70, iPenalty);
+}
+
+// Fireteam-local memory of an approach that recently produced a real tactical
+// setback.  This is deliberately directional and coarse: teammates learn
+// "that axis is costly", not who is hidden there or an exact unseen target grid.
+INT32 AISharedApproachPressure(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
+{
+	AIValidateContactMemorySector();
+
+	if (!pSoldier || !AICombatTeam(pSoldier) ||
+		TileIsOutOfBounds(sTargetSpot))
+	{
+		return 0;
+	}
+
+	UINT8 ubApproachDir = AIDirection(sTargetSpot, pSoldier->sGridNo);
+	if (ubApproachDir >= NUM_WORLD_DIRECTIONS)
+		return 0;
+
+	INT32 iSoldierDistance = PythSpacesAway(pSoldier->sGridNo, sTargetSpot);
+	INT32 iPressure = 0;
+
+	for (UINT16 uiOwner = 0; uiOwner < MAX_NUM_SOLDIERS; ++uiOwner)
+	{
+		SOLDIERTYPE *pOwner = MercPtrs[uiOwner];
+		if (!pOwner || !pOwner->bActive || !pOwner->bInSector ||
+			pOwner->bTeam != pSoldier->bTeam ||
+			pOwner->stats.bLife < OKLIFE || pOwner->bCollapsed ||
+			(uiOwner != pSoldier->ubID &&
+			 (!AISameFireteam(pSoldier, pOwner) ||
+			  PythSpacesAway(pSoldier->sGridNo, pOwner->sGridNo) >
+			  __max(6, DAY_VISION_RANGE / 2))))
+		{
+			continue;
+		}
+
+		for (UINT8 i = 0; i < AI_TACTICAL_SETBACK_SLOTS; ++i)
+		{
+			AITACTICALSETBACKSLOT *pSlot = &gAITacticalSetbacks[uiOwner][i];
+			if (!pSlot->fValid ||
+				pSlot->uiOwnerIdentity != pOwner->uiUniqueSoldierIdValue ||
+				pSlot->uiExpiresTurn < guiTurnCnt ||
+				guiTurnCnt < pSlot->uiRegisteredTurn ||
+				TileIsOutOfBounds(pSlot->sGridNo))
+			{
+				continue;
+			}
+
+			UINT8 ubSetbackDir = AIDirection(sTargetSpot, pSlot->sGridNo);
+			if (ubSetbackDir >= NUM_WORLD_DIRECTIONS)
+				continue;
+
+			UINT8 ubDelta = AIGeometryDirectionDelta(ubApproachDir, ubSetbackDir);
+			if (ubDelta > 1)
+				continue;
+
+			// A setback well behind the current soldier is history from another part
+			// of the map, not evidence that the present route into this contact is bad.
+			INT32 iSetbackDistance = PythSpacesAway(pSlot->sGridNo, sTargetSpot);
+			if (iSetbackDistance > iSoldierDistance + 4)
+				continue;
+
+			INT32 iAge = (INT32)(guiTurnCnt - pSlot->uiRegisteredTurn);
+			INT32 iEffective = __max(0, (INT32)pSlot->ubSeverity - 7 * iAge);
+			if (uiOwner != pSoldier->ubID)
+				iEffective = (3 * iEffective) / 4;
+			if (ubDelta == 1)
+				iEffective /= 2;
+
+			// Exposure/surprise are the clearest evidence that an attack axis is
+			// costly. Route/CQB failures still matter, but more weakly.
+			if (pSlot->ubType == AI_SETBACK_ROUTE ||
+				pSlot->ubType == AI_SETBACK_CQB_ENTRY)
+			{
+				iEffective = (2 * iEffective) / 3;
+			}
+
+			iPressure += iEffective;
+		}
+	}
+
+	return __min((INT32)100, iPressure);
 }
 
 

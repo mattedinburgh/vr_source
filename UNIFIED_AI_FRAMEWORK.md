@@ -72,12 +72,19 @@ this framework, never merged wholesale.
     - legacy Vengeance / 1.13 behaviours remain the execution library.
     - the planner decides when those behaviours are appropriate.
 
-13. **Execution friction**
+13. **Battle-local setback memory**
+    - genuinely bad tactical outcomes create short-lived local memory of the affected ground.
+    - surprise/encirclement tiles and exposure-rejected CQB approaches are remembered briefly.
+    - destination and route scoring penalize those areas while the memory decays.
+    - nearby members of the same fireteam may use the lesson at reduced strength; there is no sector-wide danger map.
+    - setback state is transient, identity/sector-bound, reset on load/rewind, and never creates opponent knowledge.
+
+14. **Execution friction**
     - lower-quality troops may fall back to a simpler legal action instead of executing
       the mathematically best complex plan.
 
-14. **Outcome feedback**
-    - Black Box records raw facts, candidate scores and selections; Companion reconstructs plans,
+15. **Outcome feedback**
+    - Black Box records raw facts, candidate scores, setback penalties and selections; Companion reconstructs plans,
       reasons and outcomes.
 
 ### Performance policy
@@ -113,7 +120,8 @@ The unified line now includes the professor-architecture foundation:
 - identity-bound interruptible short plans, including a CQB wrapper owned/invalidation-controlled by the CQB planner;
 - contact-surprise and visible-encirclement reassessment that can stop/reverse a bad advance or break through the safer sector;
 - Black Box candidate/selection telemetry for surprise repositioning;
-- quickload/reset hardening for all new transient reasoning state.
+- short-lived fireteam-local setback memory so ambush tiles and rejected CQB approaches are not mechanically retried;
+- quickload/turn-rewind/reset hardening for all new transient reasoning state.
 
 The older tactical feature branches whose unique behavior was already represented on canonical were
 deleted after function-level review. Strategic reference branches remain only where the staging manifest

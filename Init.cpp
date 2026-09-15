@@ -1618,7 +1618,24 @@ UINT32 InitializeJA2(void)
 		return( ERROR_SCREEN );
 	}
 
-	InitTileCache( );
+	if ( !InitTileCache( ) )
+	{
+		SET_ERROR( "Could not initialize tile cache" );
+		return( ERROR_SCREEN );
+	}
+
+	CHAR8 zVHDTileCacheFixture[] = "TILESETS\\0\\sgrass1.sti";
+	if ( !RunVHDTileCacheSelfTest( zVHDTileCacheFixture ) )
+	{
+		SET_ERROR( "VHD tile cache self-test failed: %s", zVHDTileCacheFixture );
+		return( ERROR_SCREEN );
+	}
+
+	if ( !RunVHDOcclusionMaskParitySelfTest( ) )
+	{
+		SET_ERROR( "VHD occlusion mask parity self-test failed" );
+		return( ERROR_SCREEN );
+	}
 
 	InitMercPopupBox( );
 
@@ -1797,8 +1814,6 @@ void ShutdownJA2(void)
 	ShutdownOverhead( );
 
 	DeinitializeWorld( );
-
-	DeleteTileCache( );
 
 	ShutdownJA2Clock( );
 

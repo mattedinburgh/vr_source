@@ -8495,9 +8495,20 @@ INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 		if (AICheckWeOutnumberLocal(pSoldier, sTargetSpot))
 			iModifier += 1;
+
+		// Actual effective fire is more valuable than merely having friends nearby.
+		// In sequential JA2 turns the shooter may already have spent his AP, but a
+		// hit/suppression still creates the movement window the next teammate exploits.
+		UINT8 ubEffectiveFire = AIFireteamEffectiveFireSupport(pSoldier, sTargetSpot);
+		if (ubEffectiveFire == 1)
+			iModifier += 2;
+		else if (ubEffectiveFire == 2)
+			iModifier += 3;
+		else if (ubEffectiveFire >= 3)
+			iModifier += 4;
 	}
 
-	return (INT8)__max(-3, __min(3, iModifier));
+	return (INT8)__max(-3, __min(6, iModifier));
 }
 
 BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT32 sTargetSpot, INT8 bTargetLevel)
@@ -8520,20 +8531,22 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 	INT32 iAdvanceDist = PythSpacesAway(sAdvanceSpot, sTargetSpot);
 	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
 	BOOLEAN fComplexDoctrine = AIAllowsComplexManeuver(pSoldier);
+	UINT8 ubEffectiveFire = AIFireteamEffectiveFireSupport(pSoldier, sTargetSpot);
 
 	// Lower-quality formations can still make sensible covered advances, but do not
 	// independently solve exposed manoeuvre problems like a professional fireteam.
 	if (AICombatTeam(pSoldier) && !fComplexDoctrine && iAdvanceDist + 2 < iCurrentDist)
 	{
 		if (ubDoctrine == AI_DOCTRINE_SECURITY &&
-			(!fAdvanceCover || usAdvanceExposure > usCurrentExposure + 25))
+			((!fAdvanceCover && ubEffectiveFire == 0) ||
+			 usAdvanceExposure > usCurrentExposure + (ubEffectiveFire > 0 ? 55 : 25)))
 		{
 			return FALSE;
 		}
 
 		if (ubDoctrine == AI_DOCTRINE_LINE &&
-			((!fAdvanceCover && usAdvanceExposure >= usCurrentExposure) ||
-			 usAdvanceExposure > usCurrentExposure + 80))
+			((!fAdvanceCover && usAdvanceExposure >= usCurrentExposure && ubEffectiveFire == 0) ||
+			 usAdvanceExposure > usCurrentExposure + (ubEffectiveFire >= 2 ? 120 : 80)))
 		{
 			return FALSE;
 		}
@@ -8747,14 +8760,18 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 			break;
 	}
 
+	UINT8 ubSupportValue = (UINT8)__min((INT32)4,
+		(INT32)ubSupporters + (INT32)ubEffectiveFire);
 	BOOLEAN fSeverelyExposed =
 		(usAdvanceExposure > usCurrentExposure + 150) ||
 		(!fAdvanceCover && usAdvanceExposure >= 200);
 
+	// Effective suppression can open a bound, but it never erases severe exposure:
+	// open-ground moves still need more combined support than covered ones.
 	if (fSeverelyExposed)
-		return fAdvanceCover ? (ubSupporters >= 1) : (ubSupporters >= 2);
+		return fAdvanceCover ? (ubSupportValue >= 1) : (ubSupportValue >= 2);
 
-	if (ubSupporters >= 1)
+	if (ubSupportValue >= 1)
 		return TRUE;
 
 	// Unsupported improvisation belongs to experienced/mobile troops. Security and
@@ -9011,6 +9028,111 @@ UINT8 AITargetSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	}
 
 	return __min((UINT8)3, ubSaturation);
+}
+
+// Count fireteam members whose recent fire actually affected the same target
+// area. This is the missing mover-side half of fire-and-manoeuvre: a hit,
+// suppression or collapse creates a short tactical movement window for nearby
+// teammates without revealing any information they do not otherwise possess.
+UINT8 AIFireteamEffectiveFireSupport(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
+{
+	if (!pSoldier || !AICombatTeam(pSoldier))
+		return 0;
+
+	if (TileIsOutOfBounds(sTargetSpot))
+		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	if (TileIsOutOfBounds(sTargetSpot))
+		return 0;
+
+	UINT8 ubSupport = 0;
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			!AISameFireteam(pSoldier, pFriend) ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend) ||
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > __max(6, DAY_VISION_RANGE / 2))
+		{
+			continue;
+		}
+
+		BOOLEAN fRecentFire =
+			pFriend->bActionPoints < pFriend->bInitialActionPoints &&
+			(pFriend->aiData.bAction == AI_ACTION_FIRE_GUN ||
+			 pFriend->aiData.bLastAction == AI_ACTION_FIRE_GUN);
+		if (!fRecentFire || TileIsOutOfBounds(pFriend->sLastTarget) ||
+			PythSpacesAway(pFriend->sLastTarget, sTargetSpot) > 3)
+		{
+			continue;
+		}
+
+		BOOLEAN fSuppressed = pFriend->LastTargetSuppressed();
+		BOOLEAN fEffective = fSuppressed || pFriend->LastAttackHit() ||
+			pFriend->LastTargetCollapsed();
+		if (!fEffective)
+			continue;
+
+		// Suppression is the strongest movement-enabling result; ordinary hits still
+		// matter, but several weak hits cannot create an unlimited bravery bonus.
+		ubSupport = (UINT8)__min((INT32)3,
+			(INT32)ubSupport + (fSuppressed ? 2 : 1));
+		if (ubSupport >= 3)
+			break;
+	}
+
+	return ubSupport;
+}
+
+// Basic fire-and-manoeuvre is ordinary unit behaviour, not an elite trick. The
+// sophisticated parts (deep flank, exposed improvisation, breach doctrine) remain
+// competence-gated; this helper only authorizes a local covered manoeuvre when the
+// fireteam has a credible reason to act together.
+BOOLEAN AIBasicFireteamManeuverReady(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
+{
+	if (!pSoldier || !AICombatTeam(pSoldier) ||
+		AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier) ||
+		AIFireteamCombatReadyCount(pSoldier) < 3)
+	{
+		return FALSE;
+	}
+
+	if (TileIsOutOfBounds(sTargetSpot))
+		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	if (TileIsOutOfBounds(sTargetSpot))
+		return FALSE;
+
+	if (AILocalStress(pSoldier) >= 60 ||
+		AIPersonalRisk(pSoldier) > AIPersonalRiskTolerance(pSoldier) + 10)
+	{
+		return FALSE;
+	}
+
+	AITACTICALGEOMETRY Geometry;
+	if (!AIBuildTacticalGeometry(pSoldier, pSoldier->sGridNo, &Geometry) ||
+		__max((INT32)Geometry.sLeftFlankOpportunity,
+			(INT32)Geometry.sRightFlankOpportunity) < 5)
+	{
+		return FALSE;
+	}
+
+	UINT8 ubEffectiveFire = AIFireteamEffectiveFireSupport(pSoldier, sTargetSpot);
+	INT32 iApproachPressure = AISharedApproachPressure(pSoldier, sTargetSpot);
+	BOOLEAN fCommandSupport = AIHasLocalCommandSupport(pSoldier);
+
+	// Security troops without leadership do not improvise an offensive flank merely
+	// because geometry permits one. They can still exploit actual covering fire.
+	if (pSoldier->bTeam == ENEMY_TEAM &&
+		AIGetDoctrineProfile(pSoldier) == AI_DOCTRINE_SECURITY &&
+		!fCommandSupport && ubEffectiveFire == 0)
+	{
+		return FALSE;
+	}
+
+	return ubEffectiveFire > 0 || iApproachPressure >= 30 || fCommandSupport;
 }
 
 // Check whether this target is directly threatening a nearby ally who needs
@@ -13939,6 +14061,12 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	INT32 iRisk = Context.iPersonalRisk;
 	INT32 iTolerance = Context.iRiskTolerance;
 	UINT16 usExposure = Context.usKnownThreatExposure;
+	UINT8 ubEffectiveFireSupport = TileIsOutOfBounds(sTargetSpot) ? 0 :
+		AIFireteamEffectiveFireSupport(pSoldier, sTargetSpot);
+	INT32 iSharedApproachPressure = TileIsOutOfBounds(sTargetSpot) ? 0 :
+		AISharedApproachPressure(pSoldier, sTargetSpot);
+	BOOLEAN fBasicFireteamManeuver = TileIsOutOfBounds(sTargetSpot) ? FALSE :
+		AIBasicFireteamManeuverReady(pSoldier, sTargetSpot);
 
 	// Hard tactical emergencies immediately replace any previous plan.
 	INT8 bEmergencyIntent = -1;
@@ -14053,24 +14181,32 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		BOOLEAN fLocalAdvantage = AICheckWeOutnumberLocal(pSoldier, sTargetSpot) ||
 			bSituation == AI_BATTLE_WINNING;
 		BOOLEAN fCanPress = !AIShouldAvoidAdvance(pSoldier) &&
-			iStress < 55 && iRisk <= iTolerance + 5 &&
+			iStress < (ubEffectiveFireSupport > 0 ? 60 : 55) &&
+			iRisk <= iTolerance + (ubEffectiveFireSupport > 0 ? 10 : 5) &&
 			(ubNearbyFriends > 0 || fLocalAdvantage);
 
 		if (fCanPress && fLocalAdvantage)
 		{
 			BOOLEAN fCunning = pSoldier->aiData.bAttitude == CUNNINGSOLO ||
 				pSoldier->aiData.bAttitude == CUNNINGAID;
-		if (fCunning && !pSoldier->aiData.bUnderFire &&
-			AIManeuverRoleScore(pSoldier, sTargetSpot) > AISupportRoleScore(pSoldier, sTargetSpot) + 5 &&
-			AIActiveManeuverCount(pSoldier, sTargetSpot) < 2 &&
-			AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED, (UINT32)(sTargetSpot + 211)))
-		{
-			bIntent = AI_INTENT_FLANK;
-		}
-		else
-		{
-			bIntent = AI_INTENT_PRESS;
-		}
+			BOOLEAN fAdvancedFlank = fCunning &&
+				AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED,
+					(UINT32)(sTargetSpot + 211));
+			BOOLEAN fBasicFlank = fBasicFireteamManeuver &&
+				(iSharedApproachPressure >= 30 || ubEffectiveFireSupport > 0) &&
+				AIPreferredFlankAction(pSoldier, sTargetSpot) != AI_ACTION_NONE;
+
+			if (!pSoldier->aiData.bUnderFire &&
+				AIManeuverRoleScore(pSoldier, sTargetSpot) >= AISupportRoleScore(pSoldier, sTargetSpot) - 5 &&
+				AIActiveManeuverCount(pSoldier, sTargetSpot) < 2 &&
+				(fAdvancedFlank || fBasicFlank))
+			{
+				bIntent = AI_INTENT_FLANK;
+			}
+			else
+			{
+				bIntent = AI_INTENT_PRESS;
+			}
 		}
 		else if (fCanPress && bSituation == AI_BATTLE_EVEN && ubNearbyFriends >= 2)
 		{
@@ -14099,6 +14235,7 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 			// nearby soldiers found a sophisticated plan. HOLD/PRESS remain simple; FLANK
 			// requires the competence layer to accept coordinated execution.
 			if (bSharedIntent != AI_INTENT_FLANK ||
+				fBasicFireteamManeuver ||
 				AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED, (UINT32)(sTargetSpot + 307)))
 			{
 				bIntent = bSharedIntent;
@@ -14158,6 +14295,9 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	UINT8 ubPlannedFlankers = AIPlannedRoleCount(pSoldier, sTargetSpot, AI_ROLE_FLANKER, uiNow);
 	UINT8 ubPlannedMovers = ubPlannedFlankers + AIPlannedRoleCount(pSoldier, sTargetSpot, AI_ROLE_MANEUVER, uiNow);
 	UINT8 ubPlannedScreens = AIPlannedRoleCount(pSoldier, sTargetSpot, AI_ROLE_SCREEN, uiNow);
+	UINT8 ubPlannedSupports = AIPlannedRoleCount(pSoldier, sTargetSpot, AI_ROLE_SUPPORT, uiNow) + ubPlannedScreens;
+	UINT8 ubEffectiveFireSupport = AIFireteamEffectiveFireSupport(pSoldier, sTargetSpot);
+	BOOLEAN fBasicFireteamManeuver = AIBasicFireteamManeuverReady(pSoldier, sTargetSpot);
 
 	if (bIntent == AI_INTENT_RESCUE)
 	{
@@ -14178,10 +14318,22 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	{
 		bRole = AI_ROLE_SUPPORT;
 	}
-	else if (bIntent == AI_INTENT_FLANK && iManeuver > iSupport &&
+	else if ((bIntent == AI_INTENT_PRESS || bIntent == AI_INTENT_FLANK) &&
+		AIFireteamCombatReadyCount(pSoldier) >= 3 &&
+		ubPlannedSupports == 0 && ubEffectiveFireSupport == 0 &&
+		AICheckHasGun(pSoldier) && iSupport >= iManeuver - 8)
+	{
+		// Establish a base of fire before assigning another mover. Sequential JA2
+		// turns otherwise tend to send the first two reasonable soldiers forward
+		// before anyone has actually created a covering-fire window.
+		bRole = AI_ROLE_SUPPORT;
+	}
+	else if (bIntent == AI_INTENT_FLANK &&
+		(fBasicFireteamManeuver ? (iManeuver >= iSupport - 5) : (iManeuver > iSupport)) &&
 		ubPlannedFlankers < 2 &&
 		AIActiveManeuverCount(pSoldier, sTargetSpot) + ubPlannedMovers < 3 &&
-		AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED, (UINT32)(sTargetSpot + 503)))
+		(fBasicFireteamManeuver ||
+		 AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED, (UINT32)(sTargetSpot + 503))))
 	{
 		bRole = AI_ROLE_FLANKER;
 	}
@@ -14331,6 +14483,13 @@ INT32 AIPathExposureCost(SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMov
 		{
 			iExposedStreak = 0;
 		}
+
+		// Battle-local experience also applies to the route itself. A destination
+		// can be attractive while the direct path crosses the corner/doorway where
+		// this fireteam was just surprised or had an approach rejected.
+		iCost += __min(
+			(INT32)18,
+			AITacticalSetbackPenalty(pSoldier, sPathSpot) / 4);
 	}
 
 	return __min((INT32)700, iCost);

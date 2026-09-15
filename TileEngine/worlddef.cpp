@@ -39,6 +39,7 @@
 	#include "Soldier Init List.h"
 	#include "Exit Grids.h"
 	#include "tile surface.h"
+	#include "tile cache.h"
 	#include "rotting corpses.h"
 	#include "Keys.h"
 	#include "Map Information.h"
@@ -397,6 +398,9 @@ void DeinitializeWorld()
 	if(gpDirtyData)
 		MemFree(gpDirtyData);
 	DestroyTileSurfaces();
+	// Cached tile imagery can own STRUCTURE_FILE_REF data registered in the
+	// master structure list. Destroy it while those references are still valid.
+	DeleteTileCache();
 	FreeAllStructureFiles();
 	DeallocateTileDatabase();
 	ShutdownRoomDatabase();
