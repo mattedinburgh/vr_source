@@ -1399,6 +1399,10 @@ static UINT32 VRCQBTraceBegin(SOLDIERTYPE *pSoldier,
 		VRAnalyticsStateInt(uiDecision, "cqb_geometry_left_flank", Geometry.sLeftFlankOpportunity);
 		VRAnalyticsStateInt(uiDecision, "cqb_geometry_right_flank", Geometry.sRightFlankOpportunity);
 		VRAnalyticsStateInt(uiDecision, "cqb_geometry_rear_safety", Geometry.sRearSafety);
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_remembered_contacts", Geometry.ubRememberedContacts);
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_memory_sector_mask", Geometry.ubMemoryDirectionMask);
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_corroborated_cues", Geometry.ubCorroboratedCues);
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_corroborated_sector_mask", Geometry.ubCorroboratedDirectionMask);
 		VRAnalyticsStateInt(uiDecision, "cqb_geometry_encirclement", Geometry.fEncirclementPressure ? 1 : 0);
 	}
 

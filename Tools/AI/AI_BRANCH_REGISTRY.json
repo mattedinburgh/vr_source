@@ -187,6 +187,11 @@
       "name": "strategic/campaign-modernization-2026",
       "pinned_sha": "0783850d88215ef10d3e5c21a6e82e4c97d5fc71",
       "classification": "active-workstream"
+    },
+    {
+      "name": "archive/master-pre-ai-playtest-2026-09-15",
+      "pinned_sha": "739eac2bacbc8174dc1d81137aa440a3bacd5468",
+      "classification": "safety-archive"
     }
   ]
 }

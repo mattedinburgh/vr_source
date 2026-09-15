@@ -420,6 +420,8 @@ struct AITACTICALGEOMETRY
 	UINT8 ubVisibleContacts;
 	UINT8 ubRememberedContacts;
 	UINT8 ubMemoryDirectionMask;
+	UINT8 ubCorroboratedCues;
+	UINT8 ubCorroboratedDirectionMask;
 	UINT8 ubPrimaryThreatDir;
 	UINT8 ubSecondaryThreatDir;
 	UINT8 ubSafestDirection;
@@ -476,6 +478,8 @@ BOOLEAN AIBuildContactBelief(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID, AICONTAC
 BOOLEAN AIBuildPrimaryContactBelief(SOLDIERTYPE *pSoldier, INT32 sPreferredGridNo, AICONTACTBELIEF *pBelief);
 BOOLEAN AIBuildThreatMemoryCue(SOLDIERTYPE *pSoldier, AITHREATMEMORYCUE *pCue);
 INT32 AIMemoryNoiseRelevance(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo, INT8 bNoiseLevel);
+void AIRegisterThreatNoiseEvidence(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo,
+	INT8 bNoiseLevel, INT32 iRelevance, UINT8 ubNoiseVolume, BOOLEAN fPublic);
 BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 	AITACTICALGEOMETRY *pGeometry);
 INT32 AIGeometryPositionScore(SOLDIERTYPE *pSoldier,

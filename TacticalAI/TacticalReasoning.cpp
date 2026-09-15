@@ -69,6 +69,24 @@ typedef struct
 static AICONTACTMEMORYSLOT
 	gAIContactMemory[MAX_NUM_SOLDIERS][MAX_NUM_SOLDIERS];
 
+#define AI_THREAT_NOISE_EVIDENCE_SLOTS 3
+#define AI_THREAT_NOISE_EVIDENCE_MAX_TURNS 4
+
+typedef struct
+{
+	BOOLEAN fValid;
+	UINT32 uiObserverIdentity;
+	INT32 sGridNo;
+	INT8 bLevel;
+	UINT8 ubStrength;
+	UINT8 ubObservedVolume;
+	BOOLEAN fPublic;
+	UINT32 uiEvidenceTurn;
+} AITHREATNOISEEVIDENCESLOT;
+
+static AITHREATNOISEEVIDENCESLOT
+	gAIThreatNoiseEvidence[MAX_NUM_SOLDIERS][AI_THREAT_NOISE_EVIDENCE_SLOTS];
+
 static INT16 gsAIContactMemorySectorX = -1;
 static INT16 gsAIContactMemorySectorY = -1;
 static INT8 gbAIContactMemorySectorZ = -1;
@@ -83,10 +101,13 @@ static void AIValidateContactMemorySector(void)
 	}
 
 	memset(gAIContactMemory, 0, sizeof(gAIContactMemory));
+	memset(gAIThreatNoiseEvidence, 0, sizeof(gAIThreatNoiseEvidence));
 	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
 	{
 		for (UINT16 j = 0; j < MAX_NUM_SOLDIERS; ++j)
 			gAIContactMemory[i][j].sLastKnownGridNo = NOWHERE;
+		for (UINT8 j = 0; j < AI_THREAT_NOISE_EVIDENCE_SLOTS; ++j)
+			gAIThreatNoiseEvidence[i][j].sGridNo = NOWHERE;
 	}
 
 	gsAIContactMemorySectorX = gWorldSectorX;
@@ -96,6 +117,8 @@ static void AIValidateContactMemorySector(void)
 
 static void AIRecordContactMemory(
 	SOLDIERTYPE *pSoldier, const AICONTACTBELIEF *pBelief);
+static BOOLEAN AIThreatMemoryNoiseCorroborated(
+	SOLDIERTYPE *pSoldier, UINT8 ubMemoryDirection);
 
 static UINT8 AIKnowledgeAgeTurns(INT8 bKnowledge)
 {
@@ -493,6 +516,9 @@ BOOLEAN AIBuildThreatMemoryCue(
 	if (ubBestOpponent == NOBODY || TileIsOutOfBounds(pCue->sGridNo))
 		return FALSE;
 
+	pCue->fNoiseCorroborated =
+		AIThreatMemoryNoiseCorroborated(pSoldier, pCue->ubDirection);
+
 	// Count other remembered contacts supporting roughly the same sector. This is
 	// evidence of an area of concern, not evidence that those opponents are there now.
 	for (UINT16 i = 0; i < TOTAL_SOLDIERS && i < MAX_NUM_SOLDIERS; ++i)
@@ -589,6 +615,152 @@ INT32 AIMemoryNoiseRelevance(
 	// Corroboration should materially affect investigation priority without turning
 	// a noise into precise opponent knowledge.
 	return __min(60, iBest);
+}
+
+void AIRegisterThreatNoiseEvidence(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo,
+	INT8 bNoiseLevel, INT32 iRelevance, UINT8 ubNoiseVolume, BOOLEAN fPublic)
+{
+	AIValidateContactMemorySector();
+
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS ||
+		TileIsOutOfBounds(sNoiseGridNo) || iRelevance < 10)
+	{
+		return;
+	}
+
+	AITHREATNOISEEVIDENCESLOT *pMatched = NULL;
+	AITHREATNOISEEVIDENCESLOT *pFree = NULL;
+	AITHREATNOISEEVIDENCESLOT *pWeakest = NULL;
+	INT32 iWeakestStrength = 1000000;
+
+	for (UINT8 i = 0; i < AI_THREAT_NOISE_EVIDENCE_SLOTS; ++i)
+	{
+		AITHREATNOISEEVIDENCESLOT *pSlot =
+			&gAIThreatNoiseEvidence[pSoldier->ubID][i];
+
+		if (!pSlot->fValid ||
+			pSlot->uiObserverIdentity != pSoldier->uiUniqueSoldierIdValue ||
+			guiTurnCnt < pSlot->uiEvidenceTurn ||
+			guiTurnCnt - pSlot->uiEvidenceTurn > AI_THREAT_NOISE_EVIDENCE_MAX_TURNS)
+		{
+			if (!pFree)
+				pFree = pSlot;
+			continue;
+		}
+
+		UINT8 ubExistingDir = AIDirection(pSoldier->sGridNo, pSlot->sGridNo);
+		UINT8 ubNoiseDir = AIDirection(pSoldier->sGridNo, sNoiseGridNo);
+		if (pSlot->bLevel == bNoiseLevel &&
+			ubExistingDir < NUM_WORLD_DIRECTIONS &&
+			ubNoiseDir < NUM_WORLD_DIRECTIONS &&
+			AIGeometryDirectionDelta(ubExistingDir, ubNoiseDir) <= 1 &&
+			PythSpacesAway(pSlot->sGridNo, sNoiseGridNo) <=
+				__max(4, TACTICAL_RANGE / 3))
+		{
+			pMatched = pSlot;
+			break;
+		}
+
+		INT32 iAge = (INT32)(guiTurnCnt - pSlot->uiEvidenceTurn);
+		INT32 iEffective =
+			(INT32)pSlot->ubStrength - 14 * iAge;
+		if (iEffective < iWeakestStrength)
+		{
+			iWeakestStrength = iEffective;
+			pWeakest = pSlot;
+		}
+	}
+
+	AITHREATNOISEEVIDENCESLOT *pBest =
+		pMatched ? pMatched : (pFree ? pFree : pWeakest);
+	if (!pBest)
+		return;
+
+	// MostImportantNoiseHeard() can reconsider the same stored JA2 noise many times.
+	// A decaying/re-read cue is not a new event and must not refresh our evidence age.
+	// A louder renewed cue, a moved cue, or personal evidence upgrading a public report
+	// is considered genuinely new information.
+	if (pMatched &&
+		pBest->fValid &&
+		pBest->uiObserverIdentity == pSoldier->uiUniqueSoldierIdValue)
+	{
+		BOOLEAN fSameLocation =
+			pBest->bLevel == bNoiseLevel &&
+			pBest->sGridNo == sNoiseGridNo;
+		BOOLEAN fSourceUpgrade =
+			pBest->fPublic && !fPublic;
+
+		if (fSameLocation &&
+			!fSourceUpgrade &&
+			ubNoiseVolume <= pBest->ubObservedVolume)
+		{
+			pBest->ubObservedVolume = ubNoiseVolume;
+			return;
+		}
+	}
+
+	INT32 iVolumeWeight = __min(25, (INT32)ubNoiseVolume / 2);
+	INT32 iStrength = __min(90, 10 + iRelevance + iVolumeWeight);
+	if (fPublic)
+		iStrength = (3 * iStrength) / 4;
+
+	if (pMatched &&
+		pBest->fValid &&
+		pBest->uiObserverIdentity == pSoldier->uiUniqueSoldierIdValue &&
+		guiTurnCnt >= pBest->uiEvidenceTurn &&
+		guiTurnCnt - pBest->uiEvidenceTurn <= AI_THREAT_NOISE_EVIDENCE_MAX_TURNS)
+	{
+		iStrength = __max(iStrength, (INT32)pBest->ubStrength);
+	}
+
+	memset(pBest, 0, sizeof(AITHREATNOISEEVIDENCESLOT));
+	pBest->fValid = TRUE;
+	pBest->uiObserverIdentity = pSoldier->uiUniqueSoldierIdValue;
+	pBest->sGridNo = sNoiseGridNo;
+	pBest->bLevel = bNoiseLevel;
+	pBest->ubStrength = (UINT8)__max(1, __min(100, iStrength));
+	pBest->ubObservedVolume = ubNoiseVolume;
+	pBest->fPublic = fPublic;
+	pBest->uiEvidenceTurn = guiTurnCnt;
+}
+
+static BOOLEAN AIThreatMemoryNoiseCorroborated(
+	SOLDIERTYPE *pSoldier, UINT8 ubMemoryDirection)
+{
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS ||
+		ubMemoryDirection >= NUM_WORLD_DIRECTIONS)
+	{
+		return FALSE;
+	}
+
+	for (UINT8 i = 0; i < AI_THREAT_NOISE_EVIDENCE_SLOTS; ++i)
+	{
+		AITHREATNOISEEVIDENCESLOT *pSlot =
+			&gAIThreatNoiseEvidence[pSoldier->ubID][i];
+		if (!pSlot->fValid ||
+			pSlot->uiObserverIdentity != pSoldier->uiUniqueSoldierIdValue ||
+			TileIsOutOfBounds(pSlot->sGridNo) ||
+			guiTurnCnt < pSlot->uiEvidenceTurn ||
+			guiTurnCnt - pSlot->uiEvidenceTurn > AI_THREAT_NOISE_EVIDENCE_MAX_TURNS)
+		{
+			continue;
+		}
+
+		UINT32 uiAge = guiTurnCnt - pSlot->uiEvidenceTurn;
+		INT32 iEffectiveStrength =
+			(INT32)pSlot->ubStrength - 14 * (INT32)uiAge;
+		if (iEffectiveStrength <= 0)
+			continue;
+
+		UINT8 ubNoiseDir = AIDirection(pSoldier->sGridNo, pSlot->sGridNo);
+		if (ubNoiseDir < NUM_WORLD_DIRECTIONS &&
+			AIGeometryDirectionDelta(ubMemoryDirection, ubNoiseDir) <= 1)
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
 }
 
 static INT32 AIGeometryDirectionalThreat(const AITACTICALGEOMETRY *pGeometry, UINT8 ubDirection)
@@ -704,6 +876,57 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 			++pGeometry->ubRememberedContacts;
 	}
 
+	// Fresh sounds that corroborate an old visual sector become anonymous directional
+	// evidence. They strengthen caution/search geometry briefly without identifying a
+	// shooter or restoring an exact opponent location. Pressure is deliberately smeared
+	// into adjacent sectors to model auditory uncertainty.
+	for (UINT8 i = 0; i < AI_THREAT_NOISE_EVIDENCE_SLOTS; ++i)
+	{
+		AITHREATNOISEEVIDENCESLOT *pSlot =
+			&gAIThreatNoiseEvidence[pSoldier->ubID][i];
+
+		if (!pSlot->fValid ||
+			pSlot->uiObserverIdentity != pSoldier->uiUniqueSoldierIdValue ||
+			TileIsOutOfBounds(pSlot->sGridNo) ||
+			guiTurnCnt < pSlot->uiEvidenceTurn)
+		{
+			continue;
+		}
+
+		UINT32 uiAge = guiTurnCnt - pSlot->uiEvidenceTurn;
+		if (uiAge > AI_THREAT_NOISE_EVIDENCE_MAX_TURNS)
+			continue;
+
+		UINT8 ubDir = AIDirection(sAnchorGridNo, pSlot->sGridNo);
+		if (ubDir >= NUM_WORLD_DIRECTIONS)
+			continue;
+
+		INT32 iStrength =
+			(INT32)pSlot->ubStrength - 14 * (INT32)uiAge;
+		if (iStrength <= 0)
+			continue;
+
+		if (pSlot->bLevel != pSoldier->pathing.bLevel)
+			iStrength /= 2;
+
+		UINT8 ubCW = AIGeometryRotate(ubDir, 1);
+		UINT8 ubCCW = AIGeometryRotate(ubDir, -1);
+
+		pGeometry->usThreatPressure[ubDir] = (UINT16)__min(
+			65535, (INT32)pGeometry->usThreatPressure[ubDir] + iStrength);
+
+		if (ubCW < NUM_WORLD_DIRECTIONS)
+			pGeometry->usThreatPressure[ubCW] = (UINT16)__min(
+				65535, (INT32)pGeometry->usThreatPressure[ubCW] + iStrength / 2);
+		if (ubCCW < NUM_WORLD_DIRECTIONS)
+			pGeometry->usThreatPressure[ubCCW] = (UINT16)__min(
+				65535, (INT32)pGeometry->usThreatPressure[ubCCW] + iStrength / 2);
+
+		pGeometry->ubCorroboratedDirectionMask |= (UINT8)(1 << ubDir);
+		if (pGeometry->ubCorroboratedCues < 255)
+			++pGeometry->ubCorroboratedCues;
+	}
+
 	// Friendly geometry is intentionally local. Combat teams coordinate only with
 	// their fireteam so this does not become a sector-wide hive mind.
 	for (UINT8 ubID = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
@@ -781,7 +1004,8 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 	}
 
 	if ((pGeometry->ubKnownContacts == 0 &&
-		 pGeometry->ubRememberedContacts == 0) ||
+		 pGeometry->ubRememberedContacts == 0 &&
+		 pGeometry->ubCorroboratedCues == 0) ||
 		iPrimary <= 0)
 	{
 		pGeometry->ubPrimaryThreatDir = DIRECTION_IRRELEVANT;
@@ -1450,6 +1674,7 @@ void AIResetTacticalReasoningStateForLoad(void)
 	memset(gAIShortPlans, 0, sizeof(gAIShortPlans));
 	memset(gAIContactTracker, 0, sizeof(gAIContactTracker));
 	memset(gAIContactMemory, 0, sizeof(gAIContactMemory));
+	memset(gAIThreatNoiseEvidence, 0, sizeof(gAIThreatNoiseEvidence));
 	gsAIContactMemorySectorX = gWorldSectorX;
 	gsAIContactMemorySectorY = gWorldSectorY;
 	gbAIContactMemorySectorZ = gbWorldSectorZ;
@@ -1463,5 +1688,7 @@ void AIResetTacticalReasoningStateForLoad(void)
 		gAIContactTracker[i].sLastDecisionGridNo = NOWHERE;
 		for (UINT16 j = 0; j < MAX_NUM_SOLDIERS; ++j)
 			gAIContactMemory[i][j].sLastKnownGridNo = NOWHERE;
+		for (UINT8 j = 0; j < AI_THREAT_NOISE_EVIDENCE_SLOTS; ++j)
+			gAIThreatNoiseEvidence[i][j].sGridNo = NOWHERE;
 	}
 }

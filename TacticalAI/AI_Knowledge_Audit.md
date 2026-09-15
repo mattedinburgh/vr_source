@@ -63,11 +63,23 @@ Rules:
 
 Fresh legitimate miscellaneous noise is compared with remembered sectors. A sound from the same
 or adjacent direction, especially near the last-known area, receives a bounded investigation-priority
-boost. This is **evidence fusion**, not identification: the AI may think "that direction is credible
-again" but does not learn which unseen opponent made the sound or their exact current tile.
+boost. Matching evidence also creates a **short-lived anonymous directional threat cue**: up to three
+independent cues per observer, retained for at most four tactical turns. Cue strength is weighted by
+the volume actually heard, reduced for public/team-reported noise, and smeared into adjacent sectors
+when tactical geometry is rebuilt. This lets loud gunfire reinforce a remembered danger sector more
+than weak incidental noise without pretending the listener knows the shooter.
+
+This is **evidence fusion, not identification**. A corroborated cue:
+- may affect search priority, facing, route choice, flank side, fallback direction and CQB geometry;
+- may keep an unresolved remembered sector salient for a short time;
+- never assigns the sound to a specific unseen opponent;
+- never moves an old contact memory to the noise tile;
+- never authorizes aimed fire, grenades or exact unseen targeting;
+- never creates encirclement by itself, because encirclement still requires personal visible geometry.
 
 If no normal heard/public/noise cue remains, combatants may briefly investigate a sufficiently
-confident last-known visual area. Any fresh evidence always outranks this fallback memory.
+confident last-known visual area. A recently corroborated memory receives a small salience bonus,
+but fresh legal evidence always outranks this fallback memory.
 
 ## Surprise / encirclement fairness
 
