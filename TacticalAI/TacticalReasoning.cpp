@@ -628,10 +628,10 @@ void AIRegisterThreatNoiseEvidence(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo,
 		return;
 	}
 
-	AITHREATNOISEEVIDENCESLOT *pBest = NULL;
+	AITHREATNOISEEVIDENCESLOT *pMatched = NULL;
+	AITHREATNOISEEVIDENCESLOT *pFree = NULL;
 	AITHREATNOISEEVIDENCESLOT *pWeakest = NULL;
 	INT32 iWeakestStrength = 1000000;
-	BOOLEAN fMatchedExisting = FALSE;
 
 	for (UINT8 i = 0; i < AI_THREAT_NOISE_EVIDENCE_SLOTS; ++i)
 	{
@@ -643,8 +643,9 @@ void AIRegisterThreatNoiseEvidence(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo,
 			guiTurnCnt < pSlot->uiEvidenceTurn ||
 			guiTurnCnt - pSlot->uiEvidenceTurn > AI_THREAT_NOISE_EVIDENCE_MAX_TURNS)
 		{
-			pBest = pSlot;
-			break;
+			if (!pFree)
+				pFree = pSlot;
+			continue;
 		}
 
 		UINT8 ubExistingDir = AIDirection(pSoldier->sGridNo, pSlot->sGridNo);
@@ -656,8 +657,7 @@ void AIRegisterThreatNoiseEvidence(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo,
 			PythSpacesAway(pSlot->sGridNo, sNoiseGridNo) <=
 				__max(4, TACTICAL_RANGE / 3))
 		{
-			pBest = pSlot;
-			fMatchedExisting = TRUE;
+			pMatched = pSlot;
 			break;
 		}
 
@@ -671,8 +671,8 @@ void AIRegisterThreatNoiseEvidence(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo,
 		}
 	}
 
-	if (!pBest)
-		pBest = pWeakest;
+	AITHREATNOISEEVIDENCESLOT *pBest =
+		pMatched ? pMatched : (pFree ? pFree : pWeakest);
 	if (!pBest)
 		return;
 
@@ -680,7 +680,7 @@ void AIRegisterThreatNoiseEvidence(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo,
 	// A decaying/re-read cue is not a new event and must not refresh our evidence age.
 	// A louder renewed cue, a moved cue, or personal evidence upgrading a public report
 	// is considered genuinely new information.
-	if (fMatchedExisting &&
+	if (pMatched &&
 		pBest->fValid &&
 		pBest->uiObserverIdentity == pSoldier->uiUniqueSoldierIdValue)
 	{
@@ -704,7 +704,7 @@ void AIRegisterThreatNoiseEvidence(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo,
 	if (fPublic)
 		iStrength = (3 * iStrength) / 4;
 
-	if (fMatchedExisting &&
+	if (pMatched &&
 		pBest->fValid &&
 		pBest->uiObserverIdentity == pSoldier->uiUniqueSoldierIdValue &&
 		guiTurnCnt >= pBest->uiEvidenceTurn &&
