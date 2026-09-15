@@ -42,6 +42,24 @@ static void TraceSanMonaC5VisualAsset( const STR8 pStage, const STR8 pFilename, 
 	fclose( pTrace );
 }
 
+static void TraceA3VisualAsset( const STR8 pStage, const STR8 pFilename, UINT16 usObjects, UINT8 ubBitDepth, const STR8 pJsd, UINT16 usStructures )
+{
+	FILE *pTrace = fopen( "A3_visual_load.log", "a" );
+	if ( pTrace != NULL )
+	{
+		fprintf( pTrace, "%s file=%s objects=%u bitDepth=%u jsd=%s structures=%u\n",
+			pStage != NULL ? pStage : "", pFilename != NULL ? pFilename : "", usObjects,
+			ubBitDepth, pJsd != NULL ? pJsd : "", usStructures );
+		fflush( pTrace );
+		fclose( pTrace );
+	}
+
+	BlackBoxEvent( "A3VIS", "%s file=%s objects=%u bitDepth=%u jsd=%s structures=%u",
+		pStage != NULL ? pStage : "", pFilename != NULL ? pFilename : "", usObjects,
+		ubBitDepth, pJsd != NULL ? pJsd : "", usStructures );
+}
+
+
 static HIMAGE CreateCanonicalSTIImage( const STR8 pFilename, UINT16 fContents )
 {
 	if ( pFilename == NULL )
