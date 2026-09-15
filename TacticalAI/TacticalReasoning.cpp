@@ -616,7 +616,7 @@ INT32 AIMemoryNoiseRelevance(
 }
 
 void AIRegisterThreatNoiseEvidence(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo,
-	INT8 bNoiseLevel, INT32 iRelevance, BOOLEAN fPublic)
+	INT8 bNoiseLevel, INT32 iRelevance, UINT8 ubNoiseVolume, BOOLEAN fPublic)
 {
 	AIValidateContactMemorySector();
 
@@ -672,7 +672,8 @@ void AIRegisterThreatNoiseEvidence(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo,
 	if (!pBest)
 		return;
 
-	INT32 iStrength = __min(80, 20 + iRelevance);
+	INT32 iVolumeWeight = __min(25, (INT32)ubNoiseVolume / 2);
+	INT32 iStrength = __min(90, 10 + iRelevance + iVolumeWeight);
 	if (fPublic)
 		iStrength = (3 * iStrength) / 4;
 
