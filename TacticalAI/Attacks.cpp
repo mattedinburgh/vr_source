@@ -2166,7 +2166,7 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 
 				// Select aim time. Direct-fire explosive weapons keep their existing gun-aim
 				// logic. Hand-thrown grenades compare 0..4 deliberate aim levels using
-				// the same AP cost and diminishing-return CTH model as the player.
+				// the same explicit AP cost and modern 1.13 linear CTH progression as the player.
 				sSelectedAimAPCost = 0;
 				DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"calcbestthrow: checking chance to hit");
 				if ( EXPLOSIVE_GUN( usInHand ) )
