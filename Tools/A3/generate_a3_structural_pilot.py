@@ -145,33 +145,158 @@ def resolve_source(tilesets_root: Path, filename: str) -> Path:
     return tactical[0][2]
 
 
-def masked_base(mask: Image.Image, base: tuple[int, int, int], seed: int,
-                vertical_weather: bool = True) -> Image.Image:
+def fast_hash32(v: int) -> int:
+    v &= 0xFFFFFFFF
+    v ^= v >> 16
+    v = (v * 0x7FEB352D) & 0xFFFFFFFF
+    v ^= v >> 15
+    v = (v * 0x846CA68B) & 0xFFFFFFFF
+    v ^= v >> 16
+    return v & 0xFFFFFFFF
+
+
+def pixel_hash(seed: int, x: int, y: int) -> int:
+    return fast_hash32(
+        seed
+        ^ ((x & 0xFFFF) * 0x9E3779B1)
+        ^ ((y & 0xFFFF) * 0x85EBCA77)
+    )
+
+
+def mix(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tuple[int, int, int]:
+    t = max(0.0, min(1.0, t))
+    return tuple(clamp(round(x * (1.0 - t) + y * t)) for x, y in zip(a, b))
+
+
+def find_jsd_sibling(source: Path) -> Path | None:
+    target = source.stem.lower()
+    for p in source.parent.iterdir():
+        if p.is_file() and p.stem.lower() == target and p.suffix.lower() == ".jsd":
+            return p
+    return None
+
+
+def parse_jsd_semantics(path: Path | None) -> dict[int, dict]:
+    """Return frame-indexed gameplay semantics without consulting artwork RGB."""
+    if path is None or not path.is_file():
+        return {}
+
+    raw = path.read_bytes()
+    if len(raw) < 16:
+        raise ValueError(f"{path}: truncated JSD header")
+
+    ident, n_images, n_stored, structure_size, file_flags, _, n_locs = struct.unpack_from(
+        "<4sHHHB3sH", raw, 0
+    )
+    if ident != b"J2SD":
+        raise ValueError(f"{path}: invalid JSD magic {ident!r}")
+
+    off = 16
+    if file_flags & 0x01:
+        off += 16 * n_images
+        off += 2 * n_locs
+
+    result: dict[int, dict] = {}
+    if not (file_flags & 0x02):
+        return result
+
+    structure_end = off + structure_size
+    if structure_end > len(raw):
+        raise ValueError(f"{path}: structure block exceeds file length")
+
+    for _ in range(n_stored):
+        if off + 16 > structure_end:
+            raise ValueError(f"{path}: truncated DB_STRUCTURE record")
+        (
+            armour, hit_points, density, tile_count, flags, number,
+            orientation, destruction_partner, partner_delta,
+            z_x, z_y, _unused
+        ) = struct.unpack_from("<BBBBIH B b b b b B", raw, off)
+        off += 16
+
+        tiles = []
+        for _tile in range(tile_count):
+            if off + 32 > structure_end:
+                raise ValueError(f"{path}: truncated DB_STRUCTURE_TILE record")
+            s_pos, rel_x, rel_y = struct.unpack_from("<hbb", raw, off)
+            shape = raw[off + 4:off + 29]
+            tile_flags = raw[off + 29]
+            tiles.append({
+                "s_pos": s_pos,
+                "rel_x": rel_x,
+                "rel_y": rel_y,
+                "occupied_profile_cells": sum(v != 0 for v in shape),
+                "profile_sum": sum(shape),
+                "flags": tile_flags,
+            })
+            off += 32
+
+        result[number] = {
+            "flags": flags,
+            "orientation": orientation,
+            "tile_count": tile_count,
+            "destruction_partner": destruction_partner,
+            "partner_delta": partner_delta,
+            "armour": armour,
+            "hit_points": hit_points,
+            "density": density,
+            "tiles": tiles,
+        }
+
+    return result
+
+
+def coherent_material(
+    mask: Image.Image,
+    base: tuple[int, int, int],
+    family_seed: int,
+    offset_x: int,
+    offset_y: int,
+    *,
+    vertical_weather: bool,
+    face_bias: int = 0,
+    frame_phase: int = 0,
+) -> Image.Image:
+    """Family-level material field anchored to frame geometry, not legacy RGB."""
     w, h = mask.size
-    rng = random.Random(seed)
     out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    px = out.load()
+    op = out.load()
     mp = mask.load()
 
-    coarse = {}
+    old_paints = (
+        (92, 125, 116),   # desaturated green
+        (147, 103, 84),   # old salmon undercoat
+        (119, 125, 91),   # olive repaint
+        (165, 151, 120),  # faded cream
+    )
+    old_paint = old_paints[(family_seed >> 7) & 3]
+
     for y in range(h):
         for x in range(w):
-            a = mp[x, y]
-            if not a:
+            alpha = mp[x, y]
+            if not alpha:
                 continue
-            cell = (x // 5, y // 5)
-            if cell not in coarse:
-                coarse[cell] = rng.randint(-8, 8)
-            fine = ((x * 17 + y * 31 + seed) & 7) - 3
-            light = int((h - 1 - y) * 5 / max(1, h - 1)) if vertical_weather else 0
-            damp = -int(max(0, y - h * 0.72) * 14 / max(1.0, h * 0.28)) if vertical_weather else 0
-            d = coarse[cell] + fine + light + damp
-            px[x, y] = (
-                clamp(base[0] + d),
-                clamp(base[1] + d),
-                clamp(base[2] + d),
-                a,
-            )
+
+            wx = x + offset_x
+            wy = y + offset_y
+            coarse = ((pixel_hash(family_seed, wx // 4, wy // 4) >> 9) & 15) - 7
+            fine = ((pixel_hash(family_seed ^ frame_phase, wx, wy) >> 19) & 7) - 3
+            delta = coarse + fine // 2 + face_bias
+            colour = tuple(clamp(v + delta) for v in base)
+
+            if vertical_weather:
+                rel = y / max(1.0, h - 1.0)
+                # Humid tropical building: sun-faded top, splashback and algae/dirt
+                # at the bottom. The bands are consistent across the whole family.
+                colour = mix(colour, (216, 207, 181), max(0.0, 0.11 - rel * 0.08))
+                if rel > 0.58:
+                    colour = mix(colour, old_paint, 0.045)
+                if rel > 0.76:
+                    t = (rel - 0.76) / 0.24
+                    colour = mix(colour, (67, 72, 58), 0.07 + 0.15 * t)
+
+            op[x, y] = (*colour, alpha)
+
     return out
 
 
@@ -179,7 +304,6 @@ def composite_shape(out: Image.Image, mask: Image.Image, draw_fn) -> None:
     layer = Image.new("RGBA", out.size, (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
     draw_fn(d)
-    # Avoid numpy dependency: multiply alpha values manually.
     la = layer.getchannel("A")
     clipped = Image.new("L", out.size, 0)
     cp, lp, mp = clipped.load(), la.load(), mask.load()
@@ -190,128 +314,269 @@ def composite_shape(out: Image.Image, mask: Image.Image, draw_fn) -> None:
     out.alpha_composite(layer)
 
 
-def render_wall(mask: Image.Image, base: tuple[int, int, int], family: str,
-                index: int, flavour: str) -> Image.Image:
-    seed = seed32("a3-wall", family, index)
-    rng = random.Random(seed)
+def add_contract_edges(out: Image.Image, mask: Image.Image) -> None:
+    """Give alpha geometry readable sun/shadow edges without legacy-pixel cues."""
     w, h = mask.size
-    out = masked_base(mask, base, seed, True)
+    mp = mask.load()
+    layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    lp = layer.load()
+    for y in range(h):
+        for x in range(w):
+            if not mp[x, y]:
+                continue
+            left_open = x == 0 or not mp[x - 1, y]
+            up_open = y == 0 or not mp[x, y - 1]
+            right_open = x == w - 1 or not mp[x + 1, y]
+            down_open = y == h - 1 or not mp[x, y + 1]
+            if left_open or up_open:
+                lp[x, y] = (226, 216, 190, min(54, mp[x, y]))
+            elif right_open or down_open:
+                lp[x, y] = (45, 45, 40, min(58, mp[x, y]))
+    out.alpha_composite(layer)
 
-    # Broad failed-render patch: contiguous, purposeful construction history.
-    if w >= 8 and h >= 8 and index % 3 != 1:
-        cx = int(w * (0.30 + 0.35 * rng.random()))
-        cy = int(h * (0.48 + 0.25 * rng.random()))
-        rx = max(2, int(w * (0.12 + 0.07 * rng.random())))
-        ry = max(2, int(h * (0.11 + 0.09 * rng.random())))
 
-        def plaster_failure(d: ImageDraw.ImageDraw) -> None:
-            d.ellipse((cx-rx, cy-ry, cx+rx, cy+ry), fill=(111, 74, 53, 205))
-            # Newly drawn masonry courses; they are not inferred from old RGB.
-            brick_h = max(2, ry // 2)
-            for yy in range(cy-ry+1, cy+ry, brick_h):
-                d.line((cx-rx, yy, cx+rx, yy), fill=(65, 49, 40, 150), width=1)
-                shift = brick_h if ((yy // brick_h) & 1) else 0
-                for xx in range(cx-rx+shift, cx+rx, max(3, brick_h * 2)):
-                    d.line((xx, yy, xx, min(cy+ry, yy+brick_h)),
-                           fill=(68, 50, 40, 130), width=1)
+STRUCTURE_OPEN = 0x00000002
+STRUCTURE_WALL = 0x00010000
+STRUCTURE_WALLNWINDOW = 0x00020000
 
-        composite_shape(out, mask, plaster_failure)
 
-    # Sparse cracks, biased from edges/bottom rather than wallpaper noise.
-    def cracks(d: ImageDraw.ImageDraw) -> None:
-        count = max(1, min(4, (w * h) // 900))
-        for k in range(count):
-            x = rng.randrange(max(1, w // 8), max(2, w - max(1, w // 8)))
-            y = rng.randrange(max(1, h // 4), max(2, h - 1))
-            pts = [(x, y)]
-            for _ in range(rng.randint(2, 4)):
-                x += rng.randint(-3, 3)
-                y += rng.randint(2, 5)
-                pts.append((x, min(h - 1, y)))
-            d.line(pts, fill=(72, 65, 56, 105), width=1)
-
-    composite_shape(out, mask, cracks)
-
-    # Damp/splash staining at the base is common in the humid farm environment.
-    def damp_band(d: ImageDraw.ImageDraw) -> None:
-        y0 = int(h * 0.76)
-        d.rectangle((0, y0, w, h), fill=(58, 69, 55, 32))
-        for _ in range(max(2, w // 12)):
-            x = rng.randrange(0, max(1, w))
-            d.ellipse((x-2, y0-2, x+3, min(h, y0+rng.randint(2, 7))),
-                      fill=(50, 64, 51, rng.randint(18, 42)))
-
-    composite_shape(out, mask, damp_band)
+def render_wall_aux(mask: Image.Image, family: str, index: int) -> Image.Image:
+    """Non-JSD wall-family frames are auxiliary/shadow shapes, not facades."""
+    seed = seed32("a3-wall-aux", family)
+    w, h = mask.size
+    out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    op, mp = out.load(), mask.load()
+    for y in range(h):
+        for x in range(w):
+            a = mp[x, y]
+            if not a:
+                continue
+            n = ((pixel_hash(seed, x // 3, y // 3) >> 14) & 7) - 3
+            # Neutral, slightly warm shadow/intensity art. No old pixel colour.
+            c = clamp(54 + n)
+            op[x, y] = (c, clamp(c - 2), clamp(c - 7), a)
+    out.putalpha(mask.copy())
     return out
 
 
-def render_floor(mask: Image.Image, base: tuple[int, int, int], family: str,
-                 index: int, flavour: str) -> Image.Image:
-    seed = seed32("a3-floor", family, index)
-    rng = random.Random(seed)
+def draw_window(
+    out: Image.Image,
+    mask: Image.Image,
+    orientation: int,
+    is_open: bool,
+    family_seed: int,
+) -> None:
     w, h = mask.size
-    out = masked_base(mask, base, seed, False)
+    if w < 12 or h < 24:
+        return
 
-    def wear(d: ImageDraw.ImageDraw) -> None:
-        # A few large worn patches and hairline joints: legible material, no confetti.
-        for _ in range(max(1, (w * h) // 1000)):
-            cx = rng.randrange(0, max(1, w))
-            cy = rng.randrange(0, max(1, h))
-            rx = max(2, rng.randrange(2, max(3, w // 5 + 1)))
-            ry = max(1, rng.randrange(1, max(2, h // 5 + 1)))
-            d.ellipse((cx-rx, cy-ry, cx+rx, cy+ry), fill=(76, 69, 58, 45))
+    x0, x1 = int(w * 0.23), int(w * 0.77)
+    y0, y1 = int(h * 0.29), int(h * 0.64)
+    skew = max(1, w // 12)
 
-        if flavour == "terracotta":
-            step = max(5, min(w, h) // 3)
-            for x in range(-h, w + h, step):
-                d.line((x, 0, x + h, h), fill=(89, 66, 54, 70), width=1)
-                d.line((x + step // 2, h, x + h + step // 2, 0),
-                       fill=(89, 66, 54, 55), width=1)
-        else:
-            if index % 4 == 0:
-                d.line((w // 5, h - 2, w // 2, h // 2, w * 4 // 5, h // 3),
-                       fill=(69, 65, 58, 80), width=1)
+    if orientation in (2, 4):
+        poly = [(x0 + skew, y0), (x1, y0 + 2), (x1 - skew, y1), (x0, y1 - 2)]
+    else:
+        poly = [(x0, y0 + 2), (x1 - skew, y0), (x1, y1 - 2), (x0 + skew, y1)]
 
-    composite_shape(out, mask, wear)
+    frame_colour = (77, 67, 52, 235)
+    sill_colour = (183, 170, 140, 175)
+    interior = (22, 27, 25, 245) if is_open else (44, 67, 67, 225)
+
+    def window_layer(d: ImageDraw.ImageDraw) -> None:
+        d.polygon(poly, fill=interior)
+        d.line(poly + [poly[0]], fill=frame_colour, width=2)
+        # A mid-century rural frame: simple mullion and sill, not ornate trim.
+        mx = sum(p[0] for p in poly) // 4
+        my0 = (poly[0][1] + poly[1][1]) // 2 + 2
+        my1 = (poly[2][1] + poly[3][1]) // 2 - 1
+        if not is_open:
+            d.line((mx, my0, mx, my1), fill=(112, 103, 82, 190), width=1)
+            # Muted sky reflection is newly authored and intentionally subtle.
+            d.line((poly[0][0] + 2, poly[0][1] + 3,
+                    poly[1][0] - 2, poly[1][1] + 4),
+                   fill=(128, 154, 149, 85), width=1)
+        d.line((poly[3][0], poly[3][1] + 1,
+                poly[2][0], poly[2][1] + 1),
+               fill=sill_colour, width=1)
+
+    composite_shape(out, mask, window_layer)
+
+
+def render_wall(
+    mask: Image.Image,
+    base: tuple[int, int, int],
+    family: str,
+    index: int,
+    flavour: str,
+    meta: dict,
+    semantic: dict | None,
+) -> Image.Image:
+    if semantic is None:
+        return render_wall_aux(mask, family, index)
+
+    orientation = int(semantic.get("orientation", 0))
+    # Soft directional separation only; JA2's actual light/shade system remains
+    # authoritative. This just prevents every facade orientation looking flat.
+    face_bias = {1: 3, 2: -4, 3: -1, 4: 4}.get(orientation, 0)
+    family_seed = seed32("a3-wall-family", family)
+
+    out = coherent_material(
+        mask, base, family_seed,
+        int(meta["offset_x"]), int(meta["offset_y"]),
+        vertical_weather=True,
+        face_bias=face_bias,
+        frame_phase=0,
+    )
+
+    flags = int(semantic.get("flags", 0))
+    if flags & STRUCTURE_WALLNWINDOW:
+        draw_window(
+            out, mask, orientation,
+            bool(flags & STRUCTURE_OPEN),
+            family_seed,
+        )
+
+    if int(semantic.get("tile_count", 1)) > 1:
+        # Multi-tile wall/corner pieces need a readable construction seam.
+        w, h = mask.size
+        x = int(w * (0.63 if orientation in (1, 4) else 0.37))
+
+        def corner_seam(d: ImageDraw.ImageDraw) -> None:
+            d.line((x, max(1, h // 12), x, h - 2), fill=(50, 48, 42, 72), width=1)
+            if x + 1 < w:
+                d.line((x + 1, max(1, h // 12), x + 1, h - 2),
+                       fill=(219, 205, 174, 45), width=1)
+
+        composite_shape(out, mask, corner_seam)
+
+    add_contract_edges(out, mask)
+    out.putalpha(mask.copy())
     return out
 
 
-def render_roof(mask: Image.Image, base: tuple[int, int, int], family: str,
-                index: int, flavour: str) -> Image.Image:
-    seed = seed32("a3-roof", family, index)
-    rng = random.Random(seed)
+def render_floor(
+    mask: Image.Image,
+    base: tuple[int, int, int],
+    family: str,
+    index: int,
+    flavour: str,
+    meta: dict,
+) -> Image.Image:
+    family_seed = seed32("a3-floor-family", family)
+    phase = fast_hash32(family_seed ^ index) & 0xFFFF
+    out = coherent_material(
+        mask, base, family_seed,
+        int(meta["offset_x"]), int(meta["offset_y"]),
+        vertical_weather=False,
+        frame_phase=phase,
+    )
+
     w, h = mask.size
-    out = masked_base(mask, base, seed, False)
+    ox, oy = int(meta["offset_x"]), int(meta["offset_y"])
+    layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    lp, mp = layer.load(), mask.load()
 
-    def roof_detail(d: ImageDraw.ImageDraw) -> None:
-        if flavour in ("corrugated", "patched"):
-            pitch = max(3, min(7, max(3, w // 12)))
-            for x in range(-h, w + h, pitch):
-                d.line((x, h, x + h, 0), fill=(65, 66, 62, 75), width=1)
-                d.line((x + 1, h, x + h + 1, 0), fill=(188, 177, 150, 34), width=1)
-            # A small replacement sheet on some frames: practical repair.
-            if index % 4 == 0 and w > 10 and h > 8:
-                x0 = int(w * 0.47)
-                y0 = int(h * 0.38)
-                d.polygon(
-                    [(x0, y0), (min(w-1, x0+w//4), max(0, y0-h//7)),
-                     (min(w-1, x0+w//4+h//6), min(h-1, y0+h//5)),
-                     (min(w-1, x0+h//6), min(h-1, y0+h//4))],
-                    fill=(93, 104, 98, 130),
-                )
-        else:  # aged clay tile language
-            row = max(3, h // 7)
-            for y in range(row, h, row):
-                d.line((0, y, w, y), fill=(91, 61, 49, 85), width=1)
-                off = (y // row) & 1
-                for x in range((row // 2) if off else 0, w, max(4, row)):
-                    d.line((x, max(0, y-row), x, y), fill=(91, 61, 49, 55), width=1)
+    for y in range(h):
+        for x in range(w):
+            if not mp[x, y]:
+                continue
+            wx, wy = x + ox, y + oy
+            if flavour == "terracotta":
+                # Isometric ceramic/terracotta joints, geometry-anchored.
+                mortar = ((wx + 2 * wy) % 10 == 0) or ((2 * wx - wy) % 18 == 0)
+                if mortar:
+                    lp[x, y] = (78, 62, 51, 62)
+            else:
+                # Broad concrete trowel/joint traces. Very low contrast so floors
+                # stay readable under items and mercs.
+                joint = ((wx + 2 * wy) % 29 == 0)
+                if joint:
+                    lp[x, y] = (72, 69, 61, 34)
 
-        # Sun bleaching and grime accumulation.
-        d.line((0, max(0, h // 6), w, max(0, h // 6)),
-               fill=(220, 205, 169, 26), width=max(1, h // 12))
+    layer.putalpha(Image.eval(layer.getchannel("A"), lambda a: a))
+    # Clip overlay alpha to the original floor silhouette.
+    la = layer.getchannel("A")
+    cp = Image.new("L", (w, h), 0)
+    cpp, lap, mpp = cp.load(), la.load(), mask.load()
+    for y in range(h):
+        for x in range(w):
+            cpp[x, y] = (lap[x, y] * mpp[x, y]) // 255
+    layer.putalpha(cp)
+    out.alpha_composite(layer)
 
-    composite_shape(out, mask, roof_detail)
+    add_contract_edges(out, mask)
+    out.putalpha(mask.copy())
+    return out
+
+
+def render_roof(
+    mask: Image.Image,
+    base: tuple[int, int, int],
+    family: str,
+    index: int,
+    flavour: str,
+    meta: dict,
+    semantic: dict | None,
+) -> Image.Image:
+    family_seed = seed32("a3-roof-family", family)
+    out = coherent_material(
+        mask, base, family_seed,
+        int(meta["offset_x"]), int(meta["offset_y"]),
+        vertical_weather=False,
+        frame_phase=0,
+    )
+
+    w, h = mask.size
+    ox, oy = int(meta["offset_x"]), int(meta["offset_y"])
+    layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    lp, mp = layer.load(), mask.load()
+
+    for y in range(h):
+        for x in range(w):
+            if not mp[x, y]:
+                continue
+            wx, wy = x + ox, y + oy
+
+            if flavour == "tile":
+                # Sun-aged clay tile courses. Both axes are screen-isometric so
+                # the pattern follows the slanted roof rather than the sprite box.
+                course = (wy % 7 == 0)
+                joint = ((wx + 2 * wy) % 12 == 0)
+                if course:
+                    lp[x, y] = (91, 58, 45, 72)
+                elif joint:
+                    lp[x, y] = (105, 66, 49, 42)
+            else:
+                # Galvanised/corrugated farm roofing. Ribs and broad sheet seams
+                # are geometry-anchored and therefore stable across all frames.
+                rib = (wx + 2 * wy) % 6
+                seam = (wx + 2 * wy) % 30
+                if seam in (0, 1):
+                    lp[x, y] = (87, 61, 48, 92)
+                elif rib == 0:
+                    lp[x, y] = (54, 57, 54, 82)
+                elif rib == 1:
+                    lp[x, y] = (193, 183, 157, 36)
+
+    la = layer.getchannel("A")
+    cp = Image.new("L", (w, h), 0)
+    cpp, lap, mpp = cp.load(), la.load(), mask.load()
+    for y in range(h):
+        for x in range(w):
+            cpp[x, y] = (lap[x, y] * mpp[x, y]) // 255
+    layer.putalpha(cp)
+    out.alpha_composite(layer)
+
+    # Sun bleaching along the upper-facing roof edge is family-wide, not a
+    # per-frame repair decal.
+    def roof_edge(d: ImageDraw.ImageDraw) -> None:
+        y = max(0, h // 8)
+        d.line((0, y, w, y), fill=(224, 207, 170, 34), width=max(1, h // 32))
+
+    composite_shape(out, mask, roof_edge)
+    add_contract_edges(out, mask)
+    out.putalpha(mask.copy())
     return out
 
 
