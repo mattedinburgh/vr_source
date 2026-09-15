@@ -73,9 +73,10 @@ Real ballistic standards define test threats by specific projectile/ammunition t
 1. recalibrate obviously over-protective light barriers
 2. split a few overly broad material families where needed
 3. introduce a **provisional effective-thickness concept**
-4. make thickness optional/fallback-safe because old maps do not contain exact physical dimensions
+4. resolve an **effective thickness for every projectile/structure encounter**, even when no explicit thickness metadata exists
 5. use actual projectile path through occupied structure geometry wherever possible
-6. preserve residual energy after penetration
+6. treat explicit thickness metadata as an override/refinement, not a prerequisite
+7. preserve residual energy after penetration
 
 ## Provisional thickness model — MAYBE / experimental
 
@@ -92,37 +93,96 @@ THICKNESS_THICK
 THICKNESS_MASSIVE
 ```
 
-Important default:
+### Revised meaning of THICKNESS_UNKNOWN
+
+`THICKNESS_UNKNOWN` does **not** mean "ignore thickness" and does **not** immediately collapse to a fixed 1.0 multiplier.
+
+It means:
+
+> **No explicit construction-thickness metadata is available, so resolve thickness from the other information the engine already has.**
+
+Every projectile/structure encounter should therefore produce a **resolved effective thickness**, whether or not the structure was manually tagged.
+
+Resolution hierarchy:
 
 ```
-THICKNESS_UNKNOWN -> legacy-equivalent multiplier (1.0)
+1. explicit thickness metadata, if trustworthy
+2. measured projectile path through occupied structure geometry
+3. structure archetype / flags / orientation
+4. material-family prior
+5. conservative legacy-equivalent fallback only if all inference fails
 ```
 
-This guarantees that unmapped structures keep current behaviour.
+The fallback exists solely as a safety net. It is not the normal behaviour for old maps.
+
+Important distinction:
+
+```
+declared_thickness_class   = optional metadata
+resolved_effective_thickness = calculated for every actual shot
+```
+
+Thus old Vengeance maps can benefit from the new system without requiring every structure to be manually retagged first.
 
 Candidate conceptual use:
 
 ```
 effective_resistance =
     material_resistance
-  * path_depth_factor
-  * nominal_thickness_factor
+  * resolved_effective_thickness
   * ammo_material_factor
   * range_factor
 ```
 
 The exact multipliers are **not frozen yet**. They must be calibrated in a controlled test sector.
 
-### Why "path depth" and "nominal thickness" are separate
+### How thickness is resolved
 
-The existing 5 x 5 x 4 structure profile can tell us how much occupied geometry the projectile crosses and therefore capture some angle / depth effects.
+The existing 5 x 5 x 4 structure profile can tell us how much occupied geometry the projectile crosses and therefore capture meaningful path-depth and angle effects.
 
-But it cannot tell us whether a visually thin steel object represents 1 mm sheet metal or a heavy plate.
+That geometric result is the primary evidence when explicit metadata is absent.
 
-So:
+However, geometry alone cannot always tell us whether a visually thin steel object represents sheet metal or a heavy plate. Therefore the resolver can refine the geometric estimate using structure semantics.
 
-- **path depth** = what the engine can measure from geometry
-- **nominal thickness class** = semantic construction information supplied only where justified
+Use:
+
+- **measured path depth** = occupied distance actually crossed by the projectile
+- **structure semantics** = wall, door, fence, furniture, vehicle-like object, tree, etc. where available
+- **material family** = a prior/range, not a substitute for geometry
+- **declared thickness class** = optional semantic correction when the map/object definition genuinely knows more than geometry
+- **resolved effective thickness** = final per-shot value used by penetration
+
+Do **not** infer thickness from sprite artwork alone.
+
+Do **not** use density as a direct synonym for thickness. Density/porosity can affect whether solid material is encountered; thickness describes how much material is crossed once it is encountered.
+
+### Proposed resolver
+
+Conceptually:
+
+```
+ResolveEffectiveThickness(projectile, structure):
+    path = MeasureOccupiedPath(projectile, structure)
+
+    if structure has trustworthy explicit thickness:
+        semantic = ExplicitThickness(structure)
+    else:
+        semantic = InferThicknessFromArchetypeAndMaterial(structure)
+
+    return Combine(path, semantic, confidence)
+```
+
+The combination should be conservative: geometry remains the anchor, while semantic thickness prevents a thin sheet-metal object and a heavy steel door from becoming identical merely because both occupy a similar coarse structure profile.
+
+For `THICKNESS_UNKNOWN`, the resolver should still return a usable value plus a confidence level, for example:
+
+```
+resolvedThickness = 0.72
+confidence = MEDIUM
+source = GEOMETRY + ARCHETYPE + MATERIAL_PRIOR
+```
+
+Exact scale and multipliers remain experimental and must be calibrated against the penetration test matrix.
 
 ## Material-family audit
 
@@ -217,7 +277,10 @@ For each projectile/structure encounter:
 2. determine material
 3. measure/estimate occupied path length through the structure profile
 4. use wall/object orientation already available
-5. apply optional nominal thickness class only when mapped
+5. resolve effective thickness:
+   - use explicit class if available
+   - otherwise infer from measured geometry + archetype + material prior
+   - use legacy-equivalent fallback only if inference is impossible
 6. apply ammo-specific structure modifier
 7. subtract energy from projectile
 8. allow projectile to continue with residual impact if > 0
@@ -242,15 +305,20 @@ This should make oblique paths and multiple layers matter without inventing a se
 - do not globally buff all guns
 - keep concrete/rock/heavy cover stable until measured
 
-### Phase 3 — optional thickness metadata
-- add `THICKNESS_UNKNOWN` default
-- explicitly tag a small pilot set only
+### Phase 3 — effective-thickness resolver
+- add `THICKNESS_UNKNOWN` as "not explicitly tagged", **not** as "no thickness"
+- calculate a resolved thickness for every encounter
+- use geometry first, then archetype/material priors
+- return inference source/confidence for diagnostics
+- preserve a legacy-equivalent fallback only for unresolved edge cases
 - no inference from sprite artwork alone
 
-### Phase 4 — geometric path-depth prototype
-- derive a path-depth factor from existing 5 x 5 x 4 occupied structure profile
+### Phase 4 — geometric path-depth prototype + explicit metadata pilot
+- derive path depth from existing 5 x 5 x 4 occupied structure profile
 - compare perpendicular vs oblique shots
 - verify no duplicate resistance is charged for the same physical wall crossing
+- explicitly tag only a small pilot set where semantics clearly add information
+- compare explicit vs inferred thickness outcomes
 
 ### Phase 5 — ammo/material calibration
 - use externalised ammo values
@@ -311,8 +379,10 @@ Record:
 - residual impact
 - downstream damage proxy
 - number of structures crossed
-- path-depth factor
-- nominal thickness class
+- measured path depth
+- declared thickness class (if any)
+- resolved effective thickness
+- thickness inference source/confidence
 - material
 - ammo type
 
@@ -341,7 +411,8 @@ Again: **this branch does not modify AI behaviour**.
 Do not merge penetration changes merely because they "feel realistic".
 
 A change is mergeable only when:
-- legacy fallback remains safe
+- `THICKNESS_UNKNOWN` still resolves from other variables rather than disabling thickness
+- legacy fallback remains safe for genuinely unresolved edge cases
 - representative barriers behave intuitively
 - rifles do not turn the map into paper
 - ordinary furniture/doors are not unrealistically tanky
