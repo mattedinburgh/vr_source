@@ -94,7 +94,11 @@ static UINT32 VRPlannerTraceBeginDecision(SOLDIERTYPE *pSoldier, const CHAR8 *pS
 			VRAnalyticsStateInt(uiDecision, "geometry_rear_safety", Geometry.sRearSafety);
 			VRAnalyticsStateInt(uiDecision, "geometry_known_contacts", Geometry.ubKnownContacts);
 			VRAnalyticsStateInt(uiDecision, "geometry_visible_contacts", Geometry.ubVisibleContacts);
+			VRAnalyticsStateInt(uiDecision, "geometry_remembered_contacts", Geometry.ubRememberedContacts);
 			VRAnalyticsStateInt(uiDecision, "geometry_visible_sector_mask", Geometry.ubVisibleDirectionMask);
+			VRAnalyticsStateInt(uiDecision, "geometry_memory_sector_mask", Geometry.ubMemoryDirectionMask);
+			VRAnalyticsStateInt(uiDecision, "geometry_corroborated_cues", Geometry.ubCorroboratedCues);
+			VRAnalyticsStateInt(uiDecision, "geometry_corroborated_sector_mask", Geometry.ubCorroboratedDirectionMask);
 			VRAnalyticsStateInt(uiDecision, "geometry_multi_angle", Geometry.fMultiAngleThreat ? 1 : 0);
 			VRAnalyticsStateInt(uiDecision, "geometry_encirclement", Geometry.fEncirclementPressure ? 1 : 0);
 		}
