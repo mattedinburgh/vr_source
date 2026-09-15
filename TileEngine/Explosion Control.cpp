@@ -2497,10 +2497,9 @@ BOOLEAN ExpAffect( INT32 sBombGridNo, INT32 sGridNo, UINT32 uiDist, UINT16 usIte
 
 			pSoldier = MercPtrs[ ubPerson ];	// someone is here, and they're gonna get hurt
 
-			// silversurfer: Gas now only has an effect when the container had time to emit some. Initially it will do nothing.
-			// This prevents the problem that we have to suffer two times without a chance to react (1st when the grenade hits our position, 2nd when our turn starts)
-			// sevenfm: re-enable instant damage for fire
-			if ( sSubsequent > 0 || pExplosive->ubType == 8 )
+			// Modern 1.13: gas/smoke damage begins only after the cloud actually exists
+			// on this tile. This avoids impact-time double hits and stale/no-cloud damage.
+			if ( sSubsequent > 0 && (gpWorldLevelData[sGridNo].ubExtFlags[bLevel] & ANY_SMOKE_EFFECT) )
 				fRecompileMovementCosts = DishOutGasDamage( pSoldier, pExplosive, sSubsequent, fRecompileMovementCosts, sWoundAmt, sBreathAmt, ubOwner );
 			/*
 			if (!pSoldier->bActive || !pSoldier->bInSector || !pSoldier->stats.bLife || AM_A_ROBOT( pSoldier ) )
