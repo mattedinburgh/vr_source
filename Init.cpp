@@ -1631,6 +1631,12 @@ UINT32 InitializeJA2(void)
 		return( ERROR_SCREEN );
 	}
 
+	if ( !RunVHDOcclusionMaskParitySelfTest( ) )
+	{
+		SET_ERROR( "VHD occlusion mask parity self-test failed" );
+		return( ERROR_SCREEN );
+	}
+
 	InitMercPopupBox( );
 
 	// Set global volume

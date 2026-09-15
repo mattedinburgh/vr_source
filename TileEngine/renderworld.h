@@ -196,6 +196,7 @@ void ConcealAllWalls(void);
 BOOLEAN ApplyScrolling( INT16 sTempRenderCenterX, INT16 sTempRenderCenterY, BOOLEAN fForceAdjust, BOOLEAN fCheckOnly );
 
 BOOLEAN Blt8BPPDataTo16BPPBufferTransZIncClip( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion);
+BOOLEAN RunVHDOcclusionMaskParitySelfTest( void );
 
 void RenderStaticWorldRect(INT16, INT16, INT16, INT16, BOOLEAN );
 void RenderMarkedWorld(void);
