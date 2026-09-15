@@ -81,6 +81,23 @@ static UINT32 VRPlannerTraceBeginDecision(SOLDIERTYPE *pSoldier, const CHAR8 *pS
 		VRAnalyticsStateInt(uiDecision, "shock", ShockLevelPercent(pSoldier));
 		VRAnalyticsStateInt(uiDecision, "competence", AICompetenceTier(pSoldier));
 		VRAnalyticsStateInt(uiDecision, "planner_reliability", AIPlannerReliability(pSoldier));
+
+		AITACTICALGEOMETRY Geometry;
+		if (AIBuildTacticalGeometry(pSoldier, pSoldier->sGridNo, &Geometry))
+		{
+			VRAnalyticsStateInt(uiDecision, "geometry_primary_threat_dir", Geometry.ubPrimaryThreatDir);
+			VRAnalyticsStateInt(uiDecision, "geometry_secondary_threat_dir", Geometry.ubSecondaryThreatDir);
+			VRAnalyticsStateInt(uiDecision, "geometry_safest_dir", Geometry.ubSafestDirection);
+			VRAnalyticsStateInt(uiDecision, "geometry_friendly_base_dir", Geometry.ubStrongestFriendlyDir);
+			VRAnalyticsStateInt(uiDecision, "geometry_left_flank", Geometry.sLeftFlankOpportunity);
+			VRAnalyticsStateInt(uiDecision, "geometry_right_flank", Geometry.sRightFlankOpportunity);
+			VRAnalyticsStateInt(uiDecision, "geometry_rear_safety", Geometry.sRearSafety);
+			VRAnalyticsStateInt(uiDecision, "geometry_known_contacts", Geometry.ubKnownContacts);
+			VRAnalyticsStateInt(uiDecision, "geometry_visible_contacts", Geometry.ubVisibleContacts);
+			VRAnalyticsStateInt(uiDecision, "geometry_visible_sector_mask", Geometry.ubVisibleDirectionMask);
+			VRAnalyticsStateInt(uiDecision, "geometry_multi_angle", Geometry.fMultiAngleThreat ? 1 : 0);
+			VRAnalyticsStateInt(uiDecision, "geometry_encirclement", Geometry.fEncirclementPressure ? 1 : 0);
+		}
 	}
 	return uiDecision;
 }
