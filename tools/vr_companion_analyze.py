@@ -888,11 +888,22 @@ def session_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     ended_sessions = {
         e.get("session") for e in ends if e.get("session") is not None
     }
+    lifecycle_sessions = {
+        e.get("session")
+        for e in starts
+        if e.get("session") is not None
+        and int(e.get("journal_lifecycle_version", 0) or 0) >= 1
+    }
     return {
         "events": len(events),
         "sessions": sessions,
         "ended_sessions": sorted(ended_sessions),
-        "unclean_sessions": [session for session in sessions if session not in ended_sessions],
+        "lifecycle_sessions": sorted(lifecycle_sessions),
+        "legacy_sessions": [session for session in sessions if session not in lifecycle_sessions],
+        "unclean_sessions": [
+            session for session in sorted(lifecycle_sessions)
+            if session not in ended_sessions
+        ],
         "builds": [
             {
                 "session": e.get("session"),
@@ -1196,8 +1207,10 @@ def render_markdown(
         "|---|---:|",
         f"| Loaded events | {summary['session']['events']} |",
         f"| Sessions | {len(summary['session']['sessions'])} |",
-        f"| Cleanly closed sessions | {len(summary['session'].get('ended_sessions', []))} |",
-        f"| Sessions without session_end | {len(summary['session'].get('unclean_sessions', []))} |",
+        f"| Lifecycle-aware sessions | {len(summary['session'].get('lifecycle_sessions', []))} |",
+        f"| Cleanly closed lifecycle sessions | {len([s for s in summary['session'].get('ended_sessions', []) if s in set(summary['session'].get('lifecycle_sessions', []))])} |",
+        f"| Lifecycle sessions without session_end | {len(summary['session'].get('unclean_sessions', []))} |",
+        f"| Legacy sessions without lifecycle marker | {len(summary['session'].get('legacy_sessions', []))} |",
         f"| Truncated tail records recovered | {ingestion.get('skipped_truncated_tail', 0)} |",
         f"| Foreign/unsupported records skipped | {ingestion.get('foreign_schema_lines', 0)} |",
         f"| Duplicate sequence IDs | {integrity.get('duplicate_sequence_ids', 0)} |",
