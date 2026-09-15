@@ -1,11 +1,6 @@
 name: A3 tile art inspection
 
 on:
-  push:
-    branches:
-      - install/all-2026-09-12
-    paths:
-      - '.github/workflows/a3-tile-art-inspection.yml'
   workflow_dispatch:
 
 concurrency:
@@ -46,11 +41,11 @@ jobs:
           $git = '${{ steps.git.outputs.path }}'
           $gamedir = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
           if (Test-Path $gamedir) { Remove-Item -Recurse -Force $gamedir }
-          & $git -c core.longpaths=true clone --depth 1 --single-branch --branch install/all-2026-09-12 --filter=blob:none --no-checkout https://github.com/mattedinburgh/vr_gamedir.git $gamedir
+          & $git -c core.longpaths=true clone --depth 1 --single-branch --branch maps/visual-overhaul-2026 --filter=blob:none --no-checkout https://github.com/mattedinburgh/vr_gamedir.git $gamedir
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $git -C $gamedir sparse-checkout init --cone
           & $git -C $gamedir sparse-checkout set Data-Maps-Tiles/Tilesets/38
-          & $git -C $gamedir checkout install/all-2026-09-12
+          & $git -C $gamedir checkout maps/visual-overhaul-2026
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Decode A3 B1TC families to contact sheets
