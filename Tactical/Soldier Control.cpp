@@ -12625,22 +12625,58 @@ static BOOLEAN PlaySpanishMilitiaCombatReaction( SOLDIERTYPE *pSoldier, UINT8 ub
 	}
 
 	const BOOLEAN fFemale = ( pSoldier->ubBodyType == REGFEMALE );
-	CHAR8 zFilename[260];
-
 	const CHAR8 *zRank = "Green";
 	if ( pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA )
 		zRank = "Elite";
 	else if ( pSoldier->ubSoldierClass == SOLDIER_CLASS_REG_MILITIA )
 		zRank = "Regular";
 
-	// Voice 01 exists for every militia gender/rank reaction bank.
-	sprintf( zFilename, "Voice\\Militia\\%s\\%s\\01\\%s.ogg",
-		fFemale ? "Female" : "Male", zRank, zReaction );
-
-	// Never fall through to English BATTLESNDS for local militia reactions.
-	if ( !FileExists( zFilename ) )
+	// Keep one stable voice identity per militia soldier, matching the normal
+	// voice-taunt system, but use all available alternate takes for that voice.
+	UINT8 ubVoiceCount = 0;
+	CHAR8 zProbe[260];
+	for ( UINT8 ubVoice = 1; ubVoice < 100; ++ubVoice )
+	{
+		sprintf( zProbe, "Voice\\Militia\\%s\\%s\\%02d\\ALERT.ogg",
+			fFemale ? "Female" : "Male", zRank, ubVoice );
+		if ( !FileExists( zProbe ) )
+			break;
+		ubVoiceCount = ubVoice;
+	}
+	if ( ubVoiceCount == 0 )
 		return FALSE;
 
+	UINT8 ubPreferredVoice = 1 + (pSoldier->ubID % ubVoiceCount);
+	CHAR8 zCandidates[24][260];
+	UINT8 ubCandidateCount = 0;
+
+	// Prefer the soldier's stable voice. If that specific bank lacks this
+	// reaction, walk the other voices only as a compatibility fallback.
+	for ( UINT8 ubVoiceOffset = 0; ubVoiceOffset < ubVoiceCount && ubCandidateCount == 0; ++ubVoiceOffset )
+	{
+		UINT8 ubVoice = 1 + ((ubPreferredVoice - 1 + ubVoiceOffset) % ubVoiceCount);
+		CHAR8 zBase[260];
+		sprintf( zBase, "Voice\\Militia\\%s\\%s\\%02d\\%s",
+			fFemale ? "Female" : "Male", zRank, ubVoice, zReaction );
+
+		CHAR8 zFilename[260];
+		sprintf( zFilename, "%s.ogg", zBase );
+		if ( FileExists( zFilename ) && ubCandidateCount < 24 )
+			strcpy( zCandidates[ubCandidateCount++], zFilename );
+
+		for ( UINT8 ubExtra = 0; ubExtra < 16 && ubCandidateCount < 24; ++ubExtra )
+		{
+			sprintf( zFilename, "%s %d.ogg", zBase, ubExtra );
+			if ( FileExists( zFilename ) )
+				strcpy( zCandidates[ubCandidateCount++], zFilename );
+		}
+	}
+
+	// Never fall through to English BATTLESNDS for local militia reactions.
+	if ( ubCandidateCount == 0 )
+		return FALSE;
+
+	const CHAR8 *zFilename = zCandidates[ Random( ubCandidateCount ) ];
 	UINT32 uiSoundID = PlayJA2SampleFromFile( zFilename, RATE_11025,
 		(guiCurrentScreen == GAME_SCREEN) ?
 			SoundVolume( (UINT8)CalculateSpeechVolume( HIGHVOLUME ), pSoldier->sGridNo ) :
