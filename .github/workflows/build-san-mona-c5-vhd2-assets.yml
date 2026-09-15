@@ -44,15 +44,13 @@ jobs:
           )
 
           $headers=@{'User-Agent'='JA2-Vengeance-C5-VHD2'}
+          $gamedirSha='9b6418e68b0eb8323be3ff69d73b84b611cd33ee'
           foreach($target in $targets){
-            $apiName=[Uri]::EscapeDataString($target)
-            $api="https://api.github.com/repos/mattedinburgh/vr_gamedir/contents/Data-Maps-Tiles/Tilesets/18/$apiName?ref=feature%2Fvhd-renderer-test"
-            $meta=Invoke-RestMethod -Uri $api -Headers $headers
-            if(-not $meta.download_url){throw "No download URL returned for $target"}
+            $url="https://raw.githubusercontent.com/mattedinburgh/vr_gamedir/$gamedirSha/Data-Maps-Tiles/Tilesets/18/$target"
             $dst=Join-Path $source $target
-            Invoke-WebRequest -Uri $meta.download_url -Headers $headers -OutFile $dst -UseBasicParsing
+            Invoke-WebRequest -Uri $url -Headers $headers -OutFile $dst -UseBasicParsing
             if(-not(Test-Path $dst)){throw "Failed to download $target"}
-            Write-Host "Canonical contract: $target ($((Get-Item $dst).Length) bytes)"
+            Write-Host "Canonical contract: $target ($((Get-Item $dst).Length) bytes) from $gamedirSha"
           }
 
       - name: Install Pillow
