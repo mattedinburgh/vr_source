@@ -60,14 +60,27 @@ static BOOLEAN TileCacheDiagnosticsEnabled( )
 
 static void InitTileCacheBudget( )
 {
+	const UINT32 uiDefaultBudgetMB = 128u;
+	const UINT32 uiMinBudgetMB = 16u;
+	const UINT32 uiMaxBudgetMB = 512u; // Win32/non-LAA: preserve process address-space headroom.
+	UINT32 uiBudgetMB = uiDefaultBudgetMB;
+
 	const CHAR8 *pBudgetMB = getenv( "VR_VHD_TILE_CACHE_MB" );
 	if ( pBudgetMB != NULL && pBudgetMB[0] != 0 )
 	{
-		unsigned long ulBudgetMB = strtoul( pBudgetMB, NULL, 10 );
-		if ( ulBudgetMB < 16 ) ulBudgetMB = 16;
-		if ( ulBudgetMB > 1024 ) ulBudgetMB = 1024;
-		guiTileCacheBudgetBytes = (UINT32)ulBudgetMB * 1024u * 1024u;
+		CHAR8 *pEnd = NULL;
+		const unsigned long ulParsed = strtoul( pBudgetMB, &pEnd, 10 );
+		if ( pEnd != pBudgetMB && pEnd != NULL && *pEnd == 0 )
+		{
+			if ( ulParsed < uiMinBudgetMB )
+				uiBudgetMB = uiMinBudgetMB;
+			else if ( ulParsed > uiMaxBudgetMB )
+				uiBudgetMB = uiMaxBudgetMB;
+			else
+				uiBudgetMB = (UINT32)ulParsed;
+		}
 	}
+	guiTileCacheBudgetBytes = uiBudgetMB * 1024u * 1024u;
 }
 
 static UINT32 EstimateTileImageryResidentBytes( PTILE_IMAGERY pImagery )
@@ -335,14 +348,18 @@ void DeleteTileCache( )
 			}
 		}
 		MemFree( gpTileCache );
+		gpTileCache = NULL;
 	}
 
 	if ( gpTileCacheStructInfo != NULL )
 	{
 		MemFree( gpTileCacheStructInfo );
+		gpTileCacheStructInfo = NULL;
 	}
 
 	guiCurTileCacheSize = 0;
+	guiNumTileCacheStructs = 0;
+	giDefaultStructIndex = -1;
 	guiTileCacheResidentBytes = 0;
 	guiTileCachePeakBytes = 0;
 }
