@@ -124,6 +124,16 @@ $ownedDefinitions = [ordered]@{
     "AITacticalRole"                    = "AIUtils.cpp"
     "AIUtilityPositionScore"            = "AIUtils.cpp"
     "AIKnownRouteExposureAcceptable"    = "AIUtils.cpp"
+    "AIBuildContactBelief"              = "TacticalReasoning.cpp"
+    "AIBuildPrimaryContactBelief"       = "TacticalReasoning.cpp"
+    "AIEvaluateTacticalPosition"        = "TacticalReasoning.cpp"
+    "AIScoreTacticalPosition"           = "TacticalReasoning.cpp"
+    "AIReserveTacticalTask"             = "TacticalReasoning.cpp"
+    "AICountTacticalTaskReservations"   = "TacticalReasoning.cpp"
+    "AIBeginShortPlan"                  = "TacticalReasoning.cpp"
+    "AIGetShortPlan"                    = "TacticalReasoning.cpp"
+    "AIObserveContactChange"            = "TacticalReasoning.cpp"
+    "AIResetTacticalReasoningStateForLoad" = "TacticalReasoning.cpp"
     "DecideFireteamCohesionAction"      = "AIUtils.cpp"
     "DecideDisengagementAction"         = "DecideAction.cpp"
     "DecideSuppressionResponse"         = "DecideAction.cpp"
@@ -217,6 +227,9 @@ if (-not $decideText.Contains('#include "CQBBuildingDoctrine.h"')) {
 }
 if (-not $cqbProjectText.Contains('ClCompile Include="CQBBuildingDoctrine.cpp"')) {
     Fail "CQBBuildingDoctrine.cpp is not compiled by TacticalAI_VS2013.vcxproj."
+}
+if (-not $cqbProjectText.Contains('ClCompile Include="TacticalReasoning.cpp"')) {
+    Fail "TacticalReasoning.cpp is not compiled by TacticalAI_VS2013.vcxproj."
 }
 if (-not $cqbProjectText.Contains('ClInclude Include="CQBBuildingDoctrine.h"')) {
     Fail "CQBBuildingDoctrine.h is not registered in TacticalAI_VS2013.vcxproj."
