@@ -5438,7 +5438,7 @@ BOOLEAN ApplyScrolling( INT16 sTempRenderCenterX, INT16 sTempRenderCenterY, BOOL
 
 	// Adjust for offset position on screen
 	sScreenCenterX -= 0;
-	sScreenCenterY -= 10;
+	sScreenCenterY -= VHDScaleScreenValue( 10 );
 
 
 	// Get corners in screen coords
