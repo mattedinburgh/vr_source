@@ -95,6 +95,7 @@ Current reliability changes:
   then atomically replace the prior report;
 - regression tests cover truncated-tail recovery, strict parsing, sequence integrity and
   atomic output replacement.
+- watchdog shutdown now keeps its synchronization handles alive when the watchdog is still finishing a hang dump, preventing an invalid-handle spin during process teardown.
 
 This deliberately does not weaken the in-engine crash recorder. The next engine-side work
 should focus on bounded I/O and shutdown/watchdog race hardening only after the Companion
