@@ -95,6 +95,7 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 	STRUCTURE_FILE_REF *	pStructureFileRef;
 	BOOLEAN								fOk;
 	UINT8 ubLoadedVHDScale = 1;
+	BOOLEAN fLoadedNativeVHD = FALSE;
 
 	// Vengeance HD overlay.  Keep map/JSD filenames untouched and only replace
 	// the visual package.  A 2x game looks under VHD2\..., a 4x game under
@@ -114,7 +115,10 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 			if ( hImage == NULL )
 				hImage = CreateImage( cVHDVisualFilename, IMAGE_ALLDATA, ImageFileType::PNG );
 			if ( hImage != NULL )
+			{
 				ubLoadedVHDScale = ubRequestedVHDScale;
+				fLoadedNativeVHD = TRUE;
+			}
 		}
 	}
 
@@ -154,8 +158,9 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 		return( NULL );
 	}
 	if ( fTraceC5Asset )
-		TraceSanMonaC5VisualAsset( ubLoadedVHDScale > 1 ? "IMAGE_VHD_NATIVE" :
-			( hImage->ubBitDepth == 32 ? "IMAGE_TRUECOLOR" : "IMAGE_LEGACY" ),
+		TraceSanMonaC5VisualAsset( fLoadedNativeVHD ? "IMAGE_VHD_NATIVE" :
+			( ubLoadedVHDScale > 1 ? "IMAGE_VHD_FALLBACK" :
+			  ( hImage->ubBitDepth == 32 ? "IMAGE_TRUECOLOR" : "IMAGE_LEGACY" ) ),
 			hImage->ImageFile, hImage->usNumberOfObjects, hImage->ubBitDepth, "", 0 );
 	if ( fTraceB1Asset )
 	{
