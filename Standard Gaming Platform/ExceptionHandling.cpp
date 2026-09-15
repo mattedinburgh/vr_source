@@ -49,6 +49,7 @@
 #define BLACKBOX_OPERATION_NAME_CHARS 128
 #define BLACKBOX_OPERATION_RESULT_CHARS 64
 #define BLACKBOX_SLOW_OPERATION_MS 2000
+#define BLACKBOX_WATCHDOG_SHUTDOWN_WAIT_MS 5000
 
 typedef struct
 {
@@ -633,10 +634,10 @@ void BlackBoxInitialize( void )
 		}
 	}
 #ifdef _DEBUG
-	BlackBoxEvent( "ENGINE", "buildDate=%s buildTime=%s config=Debug pointerBits=%u recorderVersion=4 eventSlots=%u checkpointSlots=%u exceptionSlots=%u",
+	BlackBoxEvent( "ENGINE", "buildDate=%s buildTime=%s config=Debug pointerBits=%u recorderVersion=5 eventSlots=%u checkpointSlots=%u exceptionSlots=%u",
 		__DATE__, __TIME__, (UINT32)(sizeof(void*) * 8), (UINT32)BLACKBOX_EVENT_SLOTS, (UINT32)BLACKBOX_CHECKPOINT_SLOTS, (UINT32)BLACKBOX_EXCEPTION_SLOTS );
 #else
-	BlackBoxEvent( "ENGINE", "buildDate=%s buildTime=%s config=Release pointerBits=%u recorderVersion=4 eventSlots=%u checkpointSlots=%u exceptionSlots=%u",
+	BlackBoxEvent( "ENGINE", "buildDate=%s buildTime=%s config=Release pointerBits=%u recorderVersion=5 eventSlots=%u checkpointSlots=%u exceptionSlots=%u",
 		__DATE__, __TIME__, (UINT32)(sizeof(void*) * 8), (UINT32)BLACKBOX_EVENT_SLOTS, (UINT32)BLACKBOX_CHECKPOINT_SLOTS, (UINT32)BLACKBOX_EXCEPTION_SLOTS );
 #endif
 
@@ -669,11 +670,27 @@ void BlackBoxShutdown( void )
 		SetEvent( gBlackBoxWatchdogStopEvent );
 	if( gBlackBoxWatchdogThread != NULL )
 	{
-		WaitForSingleObject( gBlackBoxWatchdogThread, 2000 );
-		CloseHandle( gBlackBoxWatchdogThread );
-		gBlackBoxWatchdogThread = NULL;
+		DWORD watchdogWait = WaitForSingleObject(
+			gBlackBoxWatchdogThread, BLACKBOX_WATCHDOG_SHUTDOWN_WAIT_MS );
+		if( watchdogWait == WAIT_OBJECT_0 )
+		{
+			CloseHandle( gBlackBoxWatchdogThread );
+			gBlackBoxWatchdogThread = NULL;
+		}
+		else
+		{
+			DWORD waitError = ( watchdogWait == WAIT_FAILED ) ? GetLastError() : ERROR_TIMEOUT;
+			BlackBoxEvent( "WATCHDOG",
+				"shutdown wait did not complete result=%lu error=%lu; retaining watchdog handles until process exit",
+				watchdogWait, waitError );
+		}
 	}
-	if( gBlackBoxWatchdogStopEvent != NULL )
+
+	// Never close the stop-event out from under a watchdog that may still be
+	// finishing MiniDumpWriteDump().  A leaked pair of handles during process
+	// teardown is harmless; an invalid wait handle can otherwise make the
+	// watchdog spin in WAIT_FAILED while shutdown continues.
+	if( gBlackBoxWatchdogThread == NULL && gBlackBoxWatchdogStopEvent != NULL )
 	{
 		CloseHandle( gBlackBoxWatchdogStopEvent );
 		gBlackBoxWatchdogStopEvent = NULL;
