@@ -136,6 +136,10 @@
 #include "ExceptionHandling.h"
 
 #include "Map Screen Interface Map Inventory.h"	// added by Flugente
+#include "Handle Items.h"
+#include "Items.h"
+#include "Item Types.h"
+#include "World Items.h"
 
 #include <vector>
 
@@ -3267,6 +3271,84 @@ extern void SetLastTimePlayerWasInSector();
 //Moa: 09/14/2013 this function modifies uiTimeCurrentSectorWasLastLoaded and the various decay of items in that sector as well
 // @calls HandleSectorCooldownFunctions
 // @calls SetLastTimePlayerWasInSector
+static BOOLEAN CitySectorHasGroundShovel()
+{
+	for ( UINT32 uiIndex = 0; uiIndex < guiNumWorldItems; ++uiIndex )
+	{
+		if ( gWorldItems[ uiIndex ].fExists &&
+			 gWorldItems[ uiIndex ].object.exists() &&
+			 HasItemFlag( gWorldItems[ uiIndex ].object.usItem, SHOVEL ) )
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+static INT32 FindCityShovelDropGridNo()
+{
+	const INT32 sCandidates[] =
+	{
+		gMapInformation.sCenterGridNo,
+		gMapInformation.sNorthGridNo,
+		gMapInformation.sEastGridNo,
+		gMapInformation.sSouthGridNo,
+		gMapInformation.sWestGridNo,
+		12880
+	};
+
+	for ( UINT32 uiIndex = 0; uiIndex < sizeof( sCandidates ) / sizeof( sCandidates[ 0 ] ); ++uiIndex )
+	{
+		if ( TileIsOutOfBounds( sCandidates[ uiIndex ] ) )
+			continue;
+
+		INT32 sGridNo = FindNearestAvailableGridNoForItem( sCandidates[ uiIndex ], 5 );
+		if ( TileIsOutOfBounds( sGridNo ) )
+			sGridNo = FindNearestAvailableGridNoForItem( sCandidates[ uiIndex ], 15 );
+
+		if ( !TileIsOutOfBounds( sGridNo ) )
+			return sGridNo;
+	}
+
+	return NOWHERE;
+}
+
+static void SeedCityShovelIfNeeded( INT16 sSectorX, INT16 sSectorY, INT8 bSectorZ )
+{
+	// Surface city maps only. This is deliberately isolated from strategic AI/campaign force logic.
+	if ( bSectorZ != 0 || GetTownIdForSector( sSectorX, sSectorY ) == BLANK_SECTOR )
+		return;
+
+	if ( GetSectorFlagStatus( sSectorX, sSectorY, bSectorZ, SF_CITY_SHOVEL_SEEDED ) )
+		return;
+
+	// Respect hand-authored maps that already contain a shovel.
+	if ( CitySectorHasGroundShovel() )
+	{
+		SetSectorFlag( sSectorX, sSectorY, bSectorZ, SF_CITY_SHOVEL_SEEDED );
+		return;
+	}
+
+	UINT16 usShovelItem = 0;
+	if ( !GetFirstItemWithFlag( &usShovelItem, SHOVEL ) || usShovelItem == 0 )
+		return;
+
+	const INT32 sGridNo = FindCityShovelDropGridNo();
+	if ( TileIsOutOfBounds( sGridNo ) )
+		return;
+
+	OBJECTTYPE Shovel;
+	CreateItem( usShovelItem, 100, &Shovel );
+
+	// bRenderZHeightAboveLevel = -1 forces the object onto the ground.
+	if ( AddItemToPool( sGridNo, &Shovel, VISIBLE, 0, WORLD_ITEM_REACHABLE, -1 ) != NULL )
+	{
+		SetSectorFlag( sSectorX, sSectorY, bSectorZ, SF_CITY_SHOVEL_SEEDED );
+	}
+}
+
+
 BOOLEAN EnterSector( INT16 sSectorX, INT16 sSectorY , INT8 bSectorZ )
 {
 	INT32 i;
@@ -3387,6 +3469,10 @@ BOOLEAN EnterSector( INT16 sSectorX, INT16 sSectorY , INT8 bSectorZ )
 		}
 		if ( fTraceB1Remaster )
 			TraceB1RemasterLoad( "TEMP RESTORE OK", "" );
+
+		// Vengeance 2026: ensure every surface city sector has one accessible shovel on the ground.
+		// The marker persists in the save, so taking the shovel does not cause it to respawn.
+		SeedCityShovelIfNeeded( sSectorX, sSectorY, bSectorZ );
 	}
 
 	RemoveLoadingScreenProgressBar();

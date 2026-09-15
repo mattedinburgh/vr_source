@@ -81,6 +81,22 @@ If no normal heard/public/noise cue remains, combatants may briefly investigate 
 confident last-known visual area. A recently corroborated memory receives a small salience bonus,
 but fresh legal evidence always outranks this fallback memory.
 
+## Memory-driven search doctrine
+
+Expired contact knowledge may sustain a **search hypothesis**, never a firing solution.
+
+When a last-known contact remains unresolved:
+- the remembered grid defines an uncertainty area rather than an exact destination;
+- `FindThreatSearchObservationSpot` selects reachable covered positions that can observe/clear that area;
+- route exposure, cover, friendly support, crowding, doorway funnels, lighting and battlefield geometry all influence the observation point;
+- one investigator is normal; a second is permitted only for a sufficiently capable, supported fireteam and stronger/corroborated evidence;
+- other fireteam members reserve `AI_TASK_SEARCH_SUPPORT`, face the likely sector and preserve overwatch instead of following the investigators;
+- a compatible fresh sound can move the shared search focus and reduce uncertainty, but it remains anonymous directional evidence;
+- seeing the remembered area empty decays/clears the hypothesis;
+- CQB may use unresolved memory only for SECURE/HOLD/search positioning. It cannot promote stale memory into ASSAULT, COUNTERATTACK or an attack against an unseen opponent.
+
+Fresh ordinary JA2 sight/hearing knowledge always supersedes this weaker memory layer.
+
 ## Surprise / encirclement fairness
 
 A contact-surprise event is permitted only when a combatant gains **personal current sight** of

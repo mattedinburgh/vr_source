@@ -141,6 +141,7 @@ $ownedDefinitions = [ordered]@{
     "AIObserveContactChange"            = "TacticalReasoning.cpp"
     "AIResetTacticalReasoningStateForLoad" = "TacticalReasoning.cpp"
     "FindGeometryBreakoutSpot"          = "FindLocations.cpp"
+    "FindThreatSearchObservationSpot"   = "FindLocations.cpp"
     "DecideFireteamCohesionAction"      = "AIUtils.cpp"
     "DecideDisengagementAction"         = "DecideAction.cpp"
     "DecideSuppressionResponse"         = "DecideAction.cpp"
