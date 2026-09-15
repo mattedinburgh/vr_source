@@ -6,6 +6,7 @@
 	#include "math.h"
 	#include <stdio.h>
 	#include <errno.h>
+	#include <windows.h>
 
 	#include "worlddef.h"
 	#include "renderworld.h"
@@ -80,11 +81,11 @@ BOOLEAN gfTagAnimatedTiles		= TRUE;
 typedef struct
 {
 	UINT32 uiFrameSerial;
-	UINT32 uiFrameStartMS;
+	LONGLONG iFrameStartTicks;
 	UINT32 uiRenderFlags;
-	UINT32 uiOcclusionUpdateMS;
-	UINT32 uiStaticMS;
-	UINT32 uiDynamicMS;
+	UINT32 uiOcclusionUpdateUS;
+	UINT32 uiStaticUS;
+	UINT32 uiDynamicUS;
 	UINT32 uiIndexedMultiZCalls;
 	UINT32 uiIndexedSourcePixels;
 	UINT32 uiTrueColorCalls;
@@ -96,6 +97,9 @@ typedef struct
 static VHD_RENDER_FRAME_STATS gVHDRenderFrameStats;
 static BOOLEAN gfVHDRenderDiagnosticsFrameActive = FALSE;
 static UINT32 guiVHDRenderDiagnosticsFrameSerial = 0;
+static BOOLEAN gfVHDRenderDiagnosticsEnvChecked = FALSE;
+static BOOLEAN gfVHDRenderDiagnosticsEnvEnabled = FALSE;
+static LARGE_INTEGER gVHDRenderPerfFrequency = { 0 };
 
 static UINT32 VHDRenderSaturatingAdd( UINT32 a, UINT32 b )
 {
@@ -104,13 +108,69 @@ static UINT32 VHDRenderSaturatingAdd( UINT32 a, UINT32 b )
 
 static BOOLEAN VHDRenderDiagnosticsEnabled( )
 {
-	const CHAR8 *pEnabled = getenv( "VR_VHD_RENDER_DIAGNOSTICS" );
-	return pEnabled != NULL && strcmp( pEnabled, "1" ) == 0;
+	if ( !gfVHDRenderDiagnosticsEnvChecked )
+	{
+		const CHAR8 *pEnabled = getenv( "VR_VHD_RENDER_DIAGNOSTICS" );
+		gfVHDRenderDiagnosticsEnvEnabled =
+			( pEnabled != NULL && strcmp( pEnabled, "1" ) == 0 );
+		gfVHDRenderDiagnosticsEnvChecked = TRUE;
+	}
+	return gfVHDRenderDiagnosticsEnvEnabled;
+}
+
+static BOOLEAN VHDRenderDiagnosticsEnsurePerfClock( )
+{
+	if ( gVHDRenderPerfFrequency.QuadPart > 0 )
+		return TRUE;
+
+	if ( !QueryPerformanceFrequency( &gVHDRenderPerfFrequency ) ||
+		 gVHDRenderPerfFrequency.QuadPart <= 0 )
+	{
+		gVHDRenderPerfFrequency.QuadPart = 0;
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static LONGLONG VHDRenderDiagnosticsNowTicks( )
+{
+	if ( !gfVHDRenderDiagnosticsFrameActive )
+		return 0;
+
+	LARGE_INTEGER Current;
+	if ( !QueryPerformanceCounter( &Current ) )
+		return 0;
+	return Current.QuadPart;
+}
+
+static UINT32 VHDRenderDiagnosticsTicksToUS( LONGLONG iTicks )
+{
+	if ( iTicks <= 0 || gVHDRenderPerfFrequency.QuadPart <= 0 )
+		return 0;
+
+	const double dUS =
+		( (double)iTicks * 1000000.0 ) / (double)gVHDRenderPerfFrequency.QuadPart;
+	if ( dUS >= 4294967295.0 )
+		return 0xFFFFFFFFu;
+	return (UINT32)( dUS + 0.5 );
+}
+
+static UINT32 VHDRenderDiagnosticsElapsedUS( LONGLONG iStartTicks )
+{
+	if ( !gfVHDRenderDiagnosticsFrameActive || iStartTicks <= 0 )
+		return 0;
+
+	const LONGLONG iNowTicks = VHDRenderDiagnosticsNowTicks( );
+	if ( iNowTicks <= iStartTicks )
+		return 0;
+	return VHDRenderDiagnosticsTicksToUS( iNowTicks - iStartTicks );
 }
 
 static void VHDRenderDiagnosticsBeginFrame( UINT32 uiRenderFlags )
 {
-	gfVHDRenderDiagnosticsFrameActive = VHDRenderDiagnosticsEnabled( );
+	gfVHDRenderDiagnosticsFrameActive =
+		VHDRenderDiagnosticsEnabled( ) && VHDRenderDiagnosticsEnsurePerfClock( );
 	if ( !gfVHDRenderDiagnosticsFrameActive )
 		return;
 
@@ -119,13 +179,8 @@ static void VHDRenderDiagnosticsBeginFrame( UINT32 uiRenderFlags )
 	if ( guiVHDRenderDiagnosticsFrameSerial == 0 )
 		guiVHDRenderDiagnosticsFrameSerial = 1;
 	gVHDRenderFrameStats.uiFrameSerial = guiVHDRenderDiagnosticsFrameSerial;
-	gVHDRenderFrameStats.uiFrameStartMS = GetJA2Clock( );
+	gVHDRenderFrameStats.iFrameStartTicks = VHDRenderDiagnosticsNowTicks( );
 	gVHDRenderFrameStats.uiRenderFlags = uiRenderFlags;
-}
-
-static UINT32 VHDRenderDiagnosticsNow( )
-{
-	return gfVHDRenderDiagnosticsFrameActive ? GetJA2Clock( ) : 0;
 }
 
 static void VHDRenderDiagnosticsEndFrame( )
@@ -133,17 +188,18 @@ static void VHDRenderDiagnosticsEndFrame( )
 	if ( !gfVHDRenderDiagnosticsFrameActive )
 		return;
 
-	const UINT32 uiTotalMS = GetJA2Clock( ) - gVHDRenderFrameStats.uiFrameStartMS;
-	const BOOLEAN fSlowFrame = uiTotalMS >= 33;
+	const UINT32 uiTotalUS =
+		VHDRenderDiagnosticsElapsedUS( gVHDRenderFrameStats.iFrameStartTicks );
+	const BOOLEAN fSlowFrame = uiTotalUS >= 33000u;
 	const BOOLEAN fPeriodicSample = gVHDRenderFrameStats.uiFrameSerial == 1 ||
 		( gVHDRenderFrameStats.uiFrameSerial % 120u ) == 0;
 	if ( fSlowFrame || fPeriodicSample )
 	{
 		BlackBoxEvent( "VHD_RENDER",
-			"frame=%u total_ms=%u occlusion_ms=%u static_ms=%u dynamic_ms=%u flags=0x%08x scale=%u indexed_calls=%u indexed_pixels=%u truecolor_calls=%u truecolor_pixels=%u occlusion_masks=%u outer_rects=%u slow=%u",
-			gVHDRenderFrameStats.uiFrameSerial, uiTotalMS,
-			gVHDRenderFrameStats.uiOcclusionUpdateMS, gVHDRenderFrameStats.uiStaticMS,
-			gVHDRenderFrameStats.uiDynamicMS, gVHDRenderFrameStats.uiRenderFlags,
+			"frame=%u total_us=%u occlusion_us=%u static_us=%u dynamic_us=%u flags=0x%08x scale=%u indexed_calls=%u indexed_pixels=%u truecolor_calls=%u truecolor_pixels=%u occlusion_masks=%u outer_rects=%u slow=%u",
+			gVHDRenderFrameStats.uiFrameSerial, uiTotalUS,
+			gVHDRenderFrameStats.uiOcclusionUpdateUS, gVHDRenderFrameStats.uiStaticUS,
+			gVHDRenderFrameStats.uiDynamicUS, gVHDRenderFrameStats.uiRenderFlags,
 			GetVHDRenderScale( ), gVHDRenderFrameStats.uiIndexedMultiZCalls,
 			gVHDRenderFrameStats.uiIndexedSourcePixels, gVHDRenderFrameStats.uiTrueColorCalls,
 			gVHDRenderFrameStats.uiTrueColorSourcePixels, gVHDRenderFrameStats.uiOcclusionMaskCalls,
@@ -4235,7 +4291,7 @@ TILE_ANIMATION_DATA		*pAnimData;
 UINT32 cnt = 0;
 
 	VHDRenderDiagnosticsBeginFrame( gRenderFlags );
-	const UINT32 uiOcclusionStartMS = VHDRenderDiagnosticsNow( );
+	const LONGLONG iOcclusionStartTicks = VHDRenderDiagnosticsNowTicks( );
 
 	gfRenderFullThisFrame = FALSE;
 
@@ -4244,7 +4300,7 @@ UINT32 cnt = 0;
 	UpdateSelectedMercOcclusionBubble( );
 	if ( gfVHDRenderDiagnosticsFrameActive )
 	{
-		gVHDRenderFrameStats.uiOcclusionUpdateMS = GetJA2Clock( ) - uiOcclusionStartMS;
+		gVHDRenderFrameStats.uiOcclusionUpdateUS = VHDRenderDiagnosticsElapsedUS( iOcclusionStartTicks );
 		gVHDRenderFrameStats.uiRenderFlags = gRenderFlags;
 	}
 
@@ -4317,7 +4373,7 @@ UINT32 cnt = 0;
 
 	if(gRenderFlags&RENDER_FLAG_FULL)
 	{
-		const UINT32 uiStaticStartMS = VHDRenderDiagnosticsNow( );
+		const LONGLONG iStaticStartTicks = VHDRenderDiagnosticsNowTicks( );
 		gfRenderFullThisFrame = TRUE;
 
 		gfTopMessageDirty = TRUE;
@@ -4345,27 +4401,33 @@ UINT32 cnt = 0;
 			UpdateSaveBuffer();
 
 		if ( gfVHDRenderDiagnosticsFrameActive )
-			gVHDRenderFrameStats.uiStaticMS += GetJA2Clock( ) - uiStaticStartMS;
+			gVHDRenderFrameStats.uiStaticUS = VHDRenderSaturatingAdd(
+				gVHDRenderFrameStats.uiStaticUS,
+				VHDRenderDiagnosticsElapsedUS( iStaticStartTicks ) );
 
 	}
 	else if(gRenderFlags&RENDER_FLAG_MARKED)
 	{
-		const UINT32 uiStaticStartMS = VHDRenderDiagnosticsNow( );
+		const LONGLONG iStaticStartTicks = VHDRenderDiagnosticsNowTicks( );
 		ResetLayerOptimizing();
 		RenderMarkedWorld();
 		if(!(gRenderFlags&RENDER_FLAG_SAVEOFF))
 			UpdateSaveBuffer();
 		if ( gfVHDRenderDiagnosticsFrameActive )
-			gVHDRenderFrameStats.uiStaticMS += GetJA2Clock( ) - uiStaticStartMS;
+			gVHDRenderFrameStats.uiStaticUS = VHDRenderSaturatingAdd(
+				gVHDRenderFrameStats.uiStaticUS,
+				VHDRenderDiagnosticsElapsedUS( iStaticStartTicks ) );
 
 	}
 
 	if ( gfScrollInertia == FALSE || (gRenderFlags&RENDER_FLAG_NOZ ) || (gRenderFlags&RENDER_FLAG_FULL ) || (gRenderFlags&RENDER_FLAG_MARKED ) )
 	{
-		const UINT32 uiDynamicStartMS = VHDRenderDiagnosticsNow( );
+		const LONGLONG iDynamicStartTicks = VHDRenderDiagnosticsNowTicks( );
 		RenderDynamicWorld( );
 		if ( gfVHDRenderDiagnosticsFrameActive )
-			gVHDRenderFrameStats.uiDynamicMS += GetJA2Clock( ) - uiDynamicStartMS;
+			gVHDRenderFrameStats.uiDynamicUS = VHDRenderSaturatingAdd(
+				gVHDRenderFrameStats.uiDynamicUS,
+				VHDRenderDiagnosticsElapsedUS( iDynamicStartTicks ) );
 
 ///////////////////////////////////////////////////////////
 
