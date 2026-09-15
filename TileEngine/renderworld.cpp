@@ -85,11 +85,22 @@ typedef struct
 	UINT32 uiOcclusionUpdateMS;
 	UINT32 uiStaticMS;
 	UINT32 uiDynamicMS;
+	UINT32 uiIndexedMultiZCalls;
+	UINT32 uiIndexedSourcePixels;
+	UINT32 uiTrueColorCalls;
+	UINT32 uiTrueColorSourcePixels;
+	UINT32 uiOcclusionMaskCalls;
+	UINT32 uiOcclusionOuterRects;
 } VHD_RENDER_FRAME_STATS;
 
 static VHD_RENDER_FRAME_STATS gVHDRenderFrameStats;
 static BOOLEAN gfVHDRenderDiagnosticsFrameActive = FALSE;
 static UINT32 guiVHDRenderDiagnosticsFrameSerial = 0;
+
+static UINT32 VHDRenderSaturatingAdd( UINT32 a, UINT32 b )
+{
+	return ( 0xFFFFFFFFu - a < b ) ? 0xFFFFFFFFu : a + b;
+}
 
 static BOOLEAN VHDRenderDiagnosticsEnabled( )
 {
@@ -128,11 +139,14 @@ static void VHDRenderDiagnosticsEndFrame( )
 	if ( fSlowFrame || fPeriodicSample )
 	{
 		BlackBoxEvent( "VHD_RENDER",
-			"frame=%u total_ms=%u occlusion_ms=%u static_ms=%u dynamic_ms=%u flags=0x%08x scale=%u slow=%u",
+			"frame=%u total_ms=%u occlusion_ms=%u static_ms=%u dynamic_ms=%u flags=0x%08x scale=%u indexed_calls=%u indexed_pixels=%u truecolor_calls=%u truecolor_pixels=%u occlusion_masks=%u outer_rects=%u slow=%u",
 			gVHDRenderFrameStats.uiFrameSerial, uiTotalMS,
 			gVHDRenderFrameStats.uiOcclusionUpdateMS, gVHDRenderFrameStats.uiStaticMS,
 			gVHDRenderFrameStats.uiDynamicMS, gVHDRenderFrameStats.uiRenderFlags,
-			GetVHDRenderScale( ), fSlowFrame ? 1 : 0 );
+			GetVHDRenderScale( ), gVHDRenderFrameStats.uiIndexedMultiZCalls,
+			gVHDRenderFrameStats.uiIndexedSourcePixels, gVHDRenderFrameStats.uiTrueColorCalls,
+			gVHDRenderFrameStats.uiTrueColorSourcePixels, gVHDRenderFrameStats.uiOcclusionMaskCalls,
+			gVHDRenderFrameStats.uiOcclusionOuterRects, fSlowFrame ? 1 : 0 );
 	}
 	gfVHDRenderDiagnosticsFrameActive = FALSE;
 }
@@ -2508,6 +2522,15 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 								{
 									if(gbPixelDepth==16 && (hVObject->ubBitDepth == 16 || hVObject->ubBitDepth == 32))
 									{
+										if ( gfVHDRenderDiagnosticsFrameActive && hVObject->ubVHDAssetScale > 1 &&
+											 hVObject->pETRLEObject != NULL && usImageIndex < hVObject->usNumberOfObjects )
+										{
+											const ETRLEObject *pDiagRegion = &hVObject->pETRLEObject[ usImageIndex ];
+											++gVHDRenderFrameStats.uiTrueColorCalls;
+											gVHDRenderFrameStats.uiTrueColorSourcePixels = VHDRenderSaturatingAdd(
+												gVHDRenderFrameStats.uiTrueColorSourcePixels,
+												(UINT32)pDiagRegion->usWidth * (UINT32)pDiagRegion->usHeight );
+										}
 										// True-colour map imagery keeps the existing 16-bit framebuffer/Z-buffer.
 										// Multi-tile structures use the same JSD-derived Z strips as legacy ETRLE.
 										if(fMultiZBlitter && fZBlitter)
@@ -3627,12 +3650,17 @@ static void BlitOcclusionBubble8BitWallZStrip(
 	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
 	UINT16 usImageIndex, INT16 sZStripIndex )
 {
+	if ( gfVHDRenderDiagnosticsFrameActive )
+		++gVHDRenderFrameStats.uiOcclusionMaskCalls;
 	// Zone 1: wall remains fully opaque outside the outer ellipse.
 	SGPRect ClipRects[ OCCLUSION_BUBBLE_MAX_CLIP_RECTS ];
 	const UINT8 ubCount = BuildOcclusionBubbleOutsideEllipseClipRects(
 		hVObject, sXPos, sYPos, usImageIndex,
 		OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y,
 		ClipRects, OCCLUSION_BUBBLE_MAX_CLIP_RECTS );
+	if ( gfVHDRenderDiagnosticsFrameActive )
+		gVHDRenderFrameStats.uiOcclusionOuterRects = VHDRenderSaturatingAdd(
+			gVHDRenderFrameStats.uiOcclusionOuterRects, ubCount );
 
 	for ( UINT8 ubRect = 0; ubRect < ubCount; ++ubRect )
 	{
@@ -3759,11 +3787,16 @@ static void BlitOcclusionBubbleTrueColorWallZStrip(
 	UINT16 usImageIndex, UINT8 ubShadeLevel, INT16 sZStripIndex,
 	BOOLEAN fSameZBurnsThrough, UINT8 ubViewSoftening )
 {
+	if ( gfVHDRenderDiagnosticsFrameActive )
+		++gVHDRenderFrameStats.uiOcclusionMaskCalls;
 	SGPRect ClipRects[ OCCLUSION_BUBBLE_MAX_CLIP_RECTS ];
 	const UINT8 ubCount = BuildOcclusionBubbleOutsideEllipseClipRects(
 		hVObject, sXPos, sYPos, usImageIndex,
 		OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y,
 		ClipRects, OCCLUSION_BUBBLE_MAX_CLIP_RECTS );
+	if ( gfVHDRenderDiagnosticsFrameActive )
+		gVHDRenderFrameStats.uiOcclusionOuterRects = VHDRenderSaturatingAdd(
+			gVHDRenderFrameStats.uiOcclusionOuterRects, ubCount );
 
 	for ( UINT8 ubRect = 0; ubRect < ubCount; ++ubRect )
 	{
@@ -3897,12 +3930,17 @@ static void BlitOcclusionBubble8BitWallFadeZStrip(
 	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
 	UINT16 usImageIndex, INT16 sZStripIndex )
 {
+	if ( gfVHDRenderDiagnosticsFrameActive )
+		++gVHDRenderFrameStats.uiOcclusionMaskCalls;
 	// Preserve the door/window/corner sprite at full strength outside the bubble.
 	SGPRect ClipRects[ OCCLUSION_BUBBLE_MAX_CLIP_RECTS ];
 	const UINT8 ubCount = BuildOcclusionBubbleOutsideEllipseClipRects(
 		hVObject, sXPos, sYPos, usImageIndex,
 		OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y,
 		ClipRects, OCCLUSION_BUBBLE_MAX_CLIP_RECTS );
+	if ( gfVHDRenderDiagnosticsFrameActive )
+		gVHDRenderFrameStats.uiOcclusionOuterRects = VHDRenderSaturatingAdd(
+			gVHDRenderFrameStats.uiOcclusionOuterRects, ubCount );
 
 	for ( UINT8 ubRect = 0; ubRect < ubCount; ++ubRect )
 	{
@@ -3964,11 +4002,16 @@ static void BlitOcclusionBubbleTrueColorWallFadeZStrip(
 	UINT16 usImageIndex, UINT8 ubShadeLevel, INT16 sZStripIndex,
 	BOOLEAN fSameZBurnsThrough, UINT8 ubViewSoftening )
 {
+	if ( gfVHDRenderDiagnosticsFrameActive )
+		++gVHDRenderFrameStats.uiOcclusionMaskCalls;
 	SGPRect ClipRects[ OCCLUSION_BUBBLE_MAX_CLIP_RECTS ];
 	const UINT8 ubCount = BuildOcclusionBubbleOutsideEllipseClipRects(
 		hVObject, sXPos, sYPos, usImageIndex,
 		OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y,
 		ClipRects, OCCLUSION_BUBBLE_MAX_CLIP_RECTS );
+	if ( gfVHDRenderDiagnosticsFrameActive )
+		gVHDRenderFrameStats.uiOcclusionOuterRects = VHDRenderSaturatingAdd(
+			gVHDRenderFrameStats.uiOcclusionOuterRects, ubCount );
 
 	for ( UINT8 ubRect = 0; ubRect < ubCount; ++ubRect )
 	{
@@ -5924,6 +5967,14 @@ static BOOLEAN VHDIndexedMultiZBlit(
 
 	const ETRLEObject *pRegion = &hSrcVObject->pETRLEObject[usIndex];
 	ZStripInfo *pZInfo = hSrcVObject->ppZStripInfo[sZIndex];
+
+	if ( gfVHDRenderDiagnosticsFrameActive )
+	{
+		++gVHDRenderFrameStats.uiIndexedMultiZCalls;
+		gVHDRenderFrameStats.uiIndexedSourcePixels = VHDRenderSaturatingAdd(
+			gVHDRenderFrameStats.uiIndexedSourcePixels,
+			(UINT32)pRegion->usWidth * (UINT32)pRegion->usHeight );
+	}
 
 	const INT32 iDestLeft = iX + pRegion->sOffsetX;
 	const INT32 iDestTop = iY + pRegion->sOffsetY;
