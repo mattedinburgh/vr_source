@@ -3,6 +3,7 @@ name: Vengeance HD hosted smoke build
 on:
   push:
     branches:
+      - exp/vhd
       - feature/vhd-renderer
       - 'engine/vhd-*'
     paths:
