@@ -69,6 +69,31 @@ typedef struct
 static AICONTACTMEMORYSLOT
 	gAIContactMemory[MAX_NUM_SOLDIERS][MAX_NUM_SOLDIERS];
 
+static INT16 gsAIContactMemorySectorX = -1;
+static INT16 gsAIContactMemorySectorY = -1;
+static INT8 gbAIContactMemorySectorZ = -1;
+
+static void AIValidateContactMemorySector(void)
+{
+	if (gsAIContactMemorySectorX == gWorldSectorX &&
+		gsAIContactMemorySectorY == gWorldSectorY &&
+		gbAIContactMemorySectorZ == gbWorldSectorZ)
+	{
+		return;
+	}
+
+	memset(gAIContactMemory, 0, sizeof(gAIContactMemory));
+	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
+	{
+		for (UINT16 j = 0; j < MAX_NUM_SOLDIERS; ++j)
+			gAIContactMemory[i][j].sLastKnownGridNo = NOWHERE;
+	}
+
+	gsAIContactMemorySectorX = gWorldSectorX;
+	gsAIContactMemorySectorY = gWorldSectorY;
+	gbAIContactMemorySectorZ = gbWorldSectorZ;
+}
+
 static void AIRecordContactMemory(
 	SOLDIERTYPE *pSoldier, const AICONTACTBELIEF *pBelief);
 
@@ -254,6 +279,8 @@ static UINT8 AIContactMemoryConfidence(const AICONTACTMEMORYSLOT *pSlot)
 static void AIRecordContactMemory(
 	SOLDIERTYPE *pSoldier, const AICONTACTBELIEF *pBelief)
 {
+	AIValidateContactMemorySector();
+
 	if (!pSoldier || !pBelief ||
 		pSoldier->ubID >= MAX_NUM_SOLDIERS ||
 		pBelief->ubOpponentID == NOBODY ||
@@ -297,6 +324,8 @@ static void AIRecordContactMemory(
 
 static void AIRefreshThreatMemoryFromKnowledge(SOLDIERTYPE *pSoldier)
 {
+	AIValidateContactMemorySector();
+
 	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
 		return;
 
@@ -1411,6 +1440,9 @@ void AIResetTacticalReasoningStateForLoad(void)
 	memset(gAIShortPlans, 0, sizeof(gAIShortPlans));
 	memset(gAIContactTracker, 0, sizeof(gAIContactTracker));
 	memset(gAIContactMemory, 0, sizeof(gAIContactMemory));
+	gsAIContactMemorySectorX = gWorldSectorX;
+	gsAIContactMemorySectorY = gWorldSectorY;
+	gbAIContactMemorySectorZ = gbWorldSectorZ;
 
 	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
 	{
