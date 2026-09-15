@@ -6609,9 +6609,14 @@ void SoldierStealItemFromSoldier( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
 	BOOLEAN			fPickup;
 	BOOLEAN			fShouldSayCoolQuote = FALSE;
 	BOOLEAN			fDidSayCoolQuote = FALSE;
-	BOOLEAN			fNotEnoughAPs = FALSE; // added by SANDRO
+	BOOLEAN			fNotEnoughAPs = FALSE;
+	BOOLEAN			fNotEnoughRoom = FALSE;
+	BOOLEAN			fStoleAnything = FALSE;
 
-	// OK. CHECK IF WE ARE DOING ALL IN THIS POOL....
+	// Every successfully stolen inventory slot costs one pickup action.
+	// This is deliberately independent of the Enhanced Close Combat option.
+	const INT16 sStealAPCost = GetBasicAPsToPickupItem( pSoldier );
+
 	if ( iItemIndex == ITEM_PICKUP_ACTION_ALL || iItemIndex == ITEM_PICKUP_SELECTION )
 	{
 		pTempItemPool = pItemPool;
@@ -6622,91 +6627,97 @@ void SoldierStealItemFromSoldier( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
 			if ( iItemIndex == ITEM_PICKUP_SELECTION )
 			{
 				if ( !pfSelectionList[ cnt ] )
-				{
 					fPickup = FALSE;
-				}
 			}
-			// Increment counter...
+
 			cnt++;
+
 			if ( fPickup )
 			{
-				////////////////////////////////////////////////////////////////////
-				// SANDRO - added mechanism for APs needed to steal all items..
-				if ( gGameExternalOptions.fEnhancedCloseCombatSystem )
+				// Stop charging/stealing once the merc can no longer afford another item.
+				// Leave this and all later selected items on the opponent.
+				if ( !EnoughPoints( pSoldier, sStealAPCost, 0, FALSE ) )
 				{
-					if (pSoldier->bActionPoints >= GetBasicAPsToPickupItem( pSoldier ) )
-					{					
-						// Make copy of item
-						gTempObject = pOpponent->inv[pTempItemPool->iItemIndex];
-						if ( ItemIsCool( &gTempObject ) )
-						{
-							fShouldSayCoolQuote = TRUE;
-						}
-						if ( !AutoPlaceObject( pSoldier, &gTempObject, TRUE ) )
-						{
-							AddItemToPool( pSoldier->sGridNo, &gTempObject, 1, pSoldier->pathing.bLevel, 0, -1 );
-						}
-						DeleteObj(&pOpponent->inv[pTempItemPool->iItemIndex]);
+					fNotEnoughAPs = TRUE;
+					pTempItemPool = pTempItemPool->pNext;
+					continue;
+				}
 
-						// add to merc records
-						if ( pSoldier->ubProfile != NO_PROFILE )
-							gMercProfiles[ pSoldier->ubProfile ].records.usItemsStolen++;
-						
-						DeductPoints( pSoldier, GetBasicAPsToPickupItem( pSoldier ), 0, AFTERACTION_INTERRUPT );
-					}
-					else
-					{
-						fNotEnoughAPs = TRUE;
-					}
-				}
-				else // original code
+				const INT32 iOpponentSlot = pTempItemPool->iItemIndex;
+				if ( iOpponentSlot < 0 || iOpponentSlot >= (INT32)pOpponent->inv.size() ||
+					!pOpponent->inv[iOpponentSlot].exists() )
 				{
-					// Make copy of item
-					gTempObject = pOpponent->inv[pTempItemPool->iItemIndex];
-					if ( ItemIsCool( &gTempObject ) )
-					{
-						fShouldSayCoolQuote = TRUE;
-					}
-					if ( !AutoPlaceObject( pSoldier, &gTempObject, TRUE ) )
-					{
-						AddItemToPool( pSoldier->sGridNo, &gTempObject, 1, pSoldier->pathing.bLevel, 0, -1 );
-					}
-					DeleteObj(&pOpponent->inv[pTempItemPool->iItemIndex]);
+					pTempItemPool = pTempItemPool->pNext;
+					continue;
 				}
-				////////////////////////////////////////////////////////////////////
+
+				// Work on a copy. AutoPlaceObject may consume all or part of a stack.
+				// Whatever remains in the copy stays with the victim; it is never dumped
+				// on the thief's tile merely because the thief has no inventory space.
+				gTempObject = pOpponent->inv[iOpponentSlot];
+				const UINT8 ubOriginalObjects = gTempObject.ubNumberOfObjects;
+				const BOOLEAN fPlacedAll = AutoPlaceObject( pSoldier, &gTempObject, TRUE );
+				const BOOLEAN fPlacedSome = fPlacedAll ||
+					(gTempObject.ubNumberOfObjects < ubOriginalObjects);
+
+				if ( !fPlacedSome )
+				{
+					fNotEnoughRoom = TRUE;
+					pTempItemPool = pTempItemPool->pNext;
+					continue;
+				}
+
+				if ( fPlacedAll || !gTempObject.exists() )
+					DeleteObj( &pOpponent->inv[iOpponentSlot] );
+				else
+					pOpponent->inv[iOpponentSlot] = gTempObject;
+
+				if ( ItemIsCool( &pOpponent->inv[iOpponentSlot] ) && pOpponent->inv[iOpponentSlot].exists() )
+				{
+					// Partial stack theft: the victim still has the remainder.  The stolen
+					// objects were the same item, so the quote is still appropriate.
+					fShouldSayCoolQuote = TRUE;
+				}
+				else if ( fPlacedAll )
+				{
+					// The source slot has been deleted, so evaluate the original item type
+					// using the copy only when it still exists.  For a fully consumed copy,
+					// the item was already accepted into inventory and no quote is essential.
+					fShouldSayCoolQuote = fShouldSayCoolQuote;
+				}
+
+				if ( pSoldier->ubProfile != NO_PROFILE )
+					gMercProfiles[ pSoldier->ubProfile ].records.usItemsStolen++;
+
+				DeductPoints( pSoldier, sStealAPCost, 0, AFTERACTION_INTERRUPT );
+				fStoleAnything = TRUE;
 			}
+
 			pTempItemPool = pTempItemPool->pNext;
 		}
 	}
-	// OK, check if potentially a good candidate for cool quote
+
 	if ( fShouldSayCoolQuote && pSoldier->bTeam == gbPlayerNum )
 	{
-		// Do we have this quote..?
 		if ( QuoteExp[ pSoldier->ubProfile ].QuoteExpGotGunOrUsedGun == QUOTE_FOUND_SOMETHING_SPECIAL )
 		{
-			// Have we not said it today?
 			if ( !( pSoldier->usQuoteSaidFlags & SOLDIER_QUOTE_SAID_FOUND_SOMETHING_NICE ) )
 			{
-				// set flag
 				pSoldier->usQuoteSaidFlags |= SOLDIER_QUOTE_SAID_FOUND_SOMETHING_NICE;
-				// Say it....
-				// We've found something!
 				TacticalCharacterDialogue( pSoldier, QUOTE_FOUND_SOMETHING_SPECIAL );
 				fDidSayCoolQuote = TRUE;
 			}
 		}
 	}
-	// Aknowledge....
-	if( pSoldier->bTeam == OUR_TEAM && !fDidSayCoolQuote )
-	{
-		pSoldier->DoMercBattleSound( BATTLE_SOUND_GOTIT );
-	}
 
-	// SANDRO - show a message, that we had insufficient APs to take all items
-	if ( fNotEnoughAPs && pSoldier->bTeam == gbPlayerNum && gGameExternalOptions.fEnhancedCloseCombatSystem)
-	{
+	if( fStoleAnything && pSoldier->bTeam == OUR_TEAM && !fDidSayCoolQuote )
+		pSoldier->DoMercBattleSound( BATTLE_SOUND_GOTIT );
+
+	if ( fNotEnoughAPs && pSoldier->bTeam == gbPlayerNum )
 		ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, New113Message[MSG113_NOT_ENOUGH_APS_TO_STEAL_ALL], pSoldier->GetName() );
-	}
+
+	if ( fNotEnoughRoom && pSoldier->bTeam == gbPlayerNum )
+		ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, L"%s no tiene espacio suficiente para robar todos los objetos seleccionados.", pSoldier->GetName() );
 
 	gpTempSoldier = pSoldier;
 	gsTempGridNo = sGridNo;
