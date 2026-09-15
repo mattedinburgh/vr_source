@@ -36,21 +36,25 @@ jobs:
           New-Item -ItemType Directory -Force -Path $source | Out-Null
 
           $targets=@(
-            'Cobble_Road.sti',
-            'Cobble_Road_Pieces.sti',
-            'Pave_b.sti',
-            'build_24.sti',
-            'slant_12.sti'
+            @{name='Cobble_Road.sti'; path='Data-Maps-Tiles/Tilesets/18/Cobble_Road.sti'},
+            @{name='Cobble_Road_Pieces.sti'; path='Data-Maps-Tiles/Tilesets/18/Cobble_Road_Pieces.sti'},
+            @{name='Pave_b.sti'; path='Data-Maps-Tiles/Tilesets/18/Pave_b.sti'},
+            # C5 inherits these two generic structural families. The canonical
+            # gamedir copies in tilesets 51/55 are byte-identical to each other.
+            @{name='build_24.sti'; path='Data-Maps-Tiles/Tilesets/51/BUILD_24.STI'},
+            @{name='slant_12.sti'; path='Data-Maps-Tiles/Tilesets/51/SLANT_12.STI'}
           )
 
           $headers=@{'User-Agent'='JA2-Vengeance-C5-VHD2'}
           $gamedirSha='9b6418e68b0eb8323be3ff69d73b84b611cd33ee'
-          foreach($target in $targets){
-            $url="https://raw.githubusercontent.com/mattedinburgh/vr_gamedir/$gamedirSha/Data-Maps-Tiles/Tilesets/18/$target"
+          foreach($entry in $targets){
+            $target=$entry.name
+            $repoPath=$entry.path
+            $url="https://raw.githubusercontent.com/mattedinburgh/vr_gamedir/$gamedirSha/$repoPath"
             $dst=Join-Path $source $target
             Invoke-WebRequest -Uri $url -Headers $headers -OutFile $dst -UseBasicParsing
             if(-not(Test-Path $dst)){throw "Failed to download $target"}
-            Write-Host "Canonical contract: $target ($((Get-Item $dst).Length) bytes) from $gamedirSha"
+            Write-Host "Canonical contract: $target <- $repoPath ($((Get-Item $dst).Length) bytes)"
           }
 
       - name: Install Pillow
