@@ -1316,39 +1316,19 @@ static BOOLEAN IsHandGrenadeStronger( UINT16 usA, UINT16 usB )
 	return usA < usB;
 }
 
-static BOOLEAN TakeBestHandGrenadeFromSector( OBJECTTYPE *pOut )
+static BOOLEAN SectorHasHandGrenade()
 {
-	if ( pOut == NULL )
-		return FALSE;
-
-	INT32 iBestWorldItem = -1;
-	UINT16 usBestItem = NONE;
-
 	for ( UINT32 i = 0; i < pInventoryPoolList.size(); ++i )
 	{
 		if ( !IsReachableSectorLoadoutItem( pInventoryPoolList[i] ) )
 			continue;
 
 		OBJECTTYPE *pObj = &( pInventoryPoolList[i].object );
-		if ( !IsHandThrownNonSmokeGrenade( pObj->usItem ) )
-			continue;
-
-		if ( iBestWorldItem < 0 || IsHandGrenadeStronger( pObj->usItem, usBestItem ) )
-		{
-			iBestWorldItem = (INT32)i;
-			usBestItem = pObj->usItem;
-		}
+		if ( IsHandThrownNonSmokeGrenade( pObj->usItem ) )
+			return TRUE;
 	}
 
-	if ( iBestWorldItem < 0 )
-		return FALSE;
-
-	OBJECTTYPE *pBest = &( pInventoryPoolList[iBestWorldItem].object );
-	pBest->RemoveObjectAtIndex( 0, pOut );
-	if ( pBest->ubNumberOfObjects < 1 )
-		DeleteObj( pBest );
-
-	return pOut->exists();
+	return FALSE;
 }
 
 static BOOLEAN GiveBestHandGrenade( SOLDIERTYPE *pSoldier )
@@ -1467,14 +1447,11 @@ static void RedistributeSectorGrenades()
 
 			// If no grenade remains at all, end distribution. Otherwise let the
 			// fit-aware helper try strongest-to-weaker types for this merc.
-			OBJECTTYPE probe;
-			if ( !TakeBestHandGrenadeFromSector( &probe ) )
+			if ( !SectorHasHandGrenade() )
 			{
 				fOutOfGrenades = TRUE;
 				break;
 			}
-			if ( probe.exists() )
-				PoolObjectForSectorLoadout( &probe );
 
 			if ( GiveBestHandGrenade( mercs[i] ) )
 			{
@@ -3016,7 +2993,7 @@ void CreateMapInventoryButtons( void )
 		sLoadoutButtonW = 28;
 		sLoadoutButtonH = 13;
 		sLoadoutButtonGap = 2;
-		sLoadoutButtonY = INVEN_POOL_Y + 39 + yResOffset;
+		sLoadoutButtonY = INVEN_POOL_Y + 38 + yResOffset;
 	}
 
 	INT16 sLoadoutButtonX = SCREEN_WIDTH -
