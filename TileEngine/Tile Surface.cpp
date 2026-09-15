@@ -631,6 +631,14 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 			fLoadedTileCamoProperties = ReadInAdditionalTileCamoProperties(cCommonAdditionalPropertiesFilename);
 	}
 
+	if (!fLoadedTileCamoProperties)
+	{
+		// Never retain partially parsed affinity values. A missing or malformed
+		// file must be indistinguishable from no detailed metadata so LOS falls
+		// back to the legacy Vengeance terrain mapping.
+		memset(&zAdditionalTileCamoProperties, 0, sizeof(zAdditionalTileCamoProperties));
+	}
+
 	if (fLoadedTileCamoProperties)
 	{
 		DebugMsg(TOPIC_JA2, DBG_LEVEL_3, String(
