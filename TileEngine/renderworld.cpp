@@ -8548,7 +8548,7 @@ void ExamineZBufferForHiddenTiles( INT16 sStartPointX_M, INT16 sStartPointY_M, I
 				}
 
 				sX = sTempPosX_S;
-				sY = sTempPosY_S - gpWorldLevelData[usTileIndex].sHeight;
+				sY = sTempPosY_S - VHDScaleScreenValue( gpWorldLevelData[usTileIndex].sHeight );
 
 				// Adjust for interface level
 				sY += gsRenderHeight;
