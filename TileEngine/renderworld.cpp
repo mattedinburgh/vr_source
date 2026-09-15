@@ -1045,7 +1045,7 @@ static BOOLEAN RenderHybridLogicalMercModel(
 	// Do not switch to the layered renderer unless the core body for this exact
 	// animation frame is coherent. This is what keeps special Vengeance-only
 	// animations from producing detached/floating equipment.
-	const char *requiredBodyLayers[] = { "legs", "body", "head", "arms" };
+	const char *requiredBodyLayers[] = { "legs", "body", "head", "hands" };
 	UINT32 i;
 	for ( i = 0; i < sizeof( requiredBodyLayers ) / sizeof( requiredBodyLayers[ 0 ] ); ++i )
 	{
