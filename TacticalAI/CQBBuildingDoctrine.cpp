@@ -1876,6 +1876,10 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 		VRAnalyticsStateInt(uiDecision, "cqb_desired_move", sDesiredSpot);
 		VRAnalyticsStateInt(uiDecision, "cqb_current_score", iCurrentScore);
 		VRAnalyticsStateInt(uiDecision, "cqb_desired_score", iDesiredScore);
+		VRAnalyticsStateInt(uiDecision, "cqb_current_setback_penalty",
+			AITacticalSetbackPenalty(pSoldier, pSoldier->sGridNo));
+		VRAnalyticsStateInt(uiDecision, "cqb_desired_setback_penalty",
+			AITacticalSetbackPenalty(pSoldier, sDesiredSpot));
 		VRAnalyticsCandidate(uiDecision, "cqb_building", sMoveSpot,
 			iDesiredScore, iDesiredScore, true, pActionReason);
 		VRAnalyticsCommitDecision(uiDecision, "cqb_building",
