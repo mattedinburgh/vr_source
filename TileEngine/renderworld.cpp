@@ -6,6 +6,7 @@
 	#include "math.h"
 	#include <stdio.h>
 	#include <errno.h>
+	#include <windows.h>
 
 	#include "worlddef.h"
 	#include "renderworld.h"
@@ -53,6 +54,8 @@
 #include "TileDat.h"
 #include "LogicalBodyTypes/BodyTypeDB.h"
 #include "LogicalBodyTypes/Layers.h"
+#include "ExceptionHandling.h"
+#include <stdlib.h>
 #include <string>
 #include <cstring>
 
@@ -74,6 +77,147 @@ extern	INT16	gsVIEWPORT_END_X;
 
 UINT16	*gpZBuffer				= NULL;
 BOOLEAN gfTagAnimatedTiles		= TRUE;
+
+typedef struct
+{
+	UINT32 uiFrameSerial;
+	LONGLONG iFrameStartTicks;
+	UINT32 uiRenderFlags;
+	UINT32 uiOcclusionUpdateUS;
+	UINT32 uiStaticUS;
+	UINT32 uiDynamicUS;
+	UINT32 uiIndexedMultiZCalls;
+	UINT32 uiIndexedSourcePixels;
+	UINT32 uiTrueColorCalls;
+	UINT32 uiTrueColorSourcePixels;
+	UINT32 uiOcclusionMaskCalls;
+	UINT32 uiOcclusionOuterRects;
+} VHD_RENDER_FRAME_STATS;
+
+static VHD_RENDER_FRAME_STATS gVHDRenderFrameStats;
+static BOOLEAN gfVHDRenderDiagnosticsFrameActive = FALSE;
+static UINT32 guiVHDRenderDiagnosticsFrameSerial = 0;
+static UINT32 guiVHDRenderDiagnosticsLastSlowLogFrame = 0;
+static BOOLEAN gfVHDRenderDiagnosticsEnvChecked = FALSE;
+static BOOLEAN gfVHDRenderDiagnosticsEnvEnabled = FALSE;
+static LARGE_INTEGER gVHDRenderPerfFrequency = { 0 };
+
+static UINT32 VHDRenderSaturatingAdd( UINT32 a, UINT32 b )
+{
+	return ( 0xFFFFFFFFu - a < b ) ? 0xFFFFFFFFu : a + b;
+}
+
+static BOOLEAN VHDRenderDiagnosticsEnabled( )
+{
+	if ( !gfVHDRenderDiagnosticsEnvChecked )
+	{
+		const CHAR8 *pEnabled = getenv( "VR_VHD_RENDER_DIAGNOSTICS" );
+		gfVHDRenderDiagnosticsEnvEnabled =
+			( pEnabled != NULL && strcmp( pEnabled, "1" ) == 0 );
+		gfVHDRenderDiagnosticsEnvChecked = TRUE;
+	}
+	return gfVHDRenderDiagnosticsEnvEnabled;
+}
+
+static BOOLEAN VHDRenderDiagnosticsEnsurePerfClock( )
+{
+	if ( gVHDRenderPerfFrequency.QuadPart > 0 )
+		return TRUE;
+
+	if ( !QueryPerformanceFrequency( &gVHDRenderPerfFrequency ) ||
+		 gVHDRenderPerfFrequency.QuadPart <= 0 )
+	{
+		gVHDRenderPerfFrequency.QuadPart = 0;
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static LONGLONG VHDRenderDiagnosticsNowTicks( )
+{
+	if ( !gfVHDRenderDiagnosticsFrameActive )
+		return 0;
+
+	LARGE_INTEGER Current;
+	if ( !QueryPerformanceCounter( &Current ) )
+		return 0;
+	return Current.QuadPart;
+}
+
+static UINT32 VHDRenderDiagnosticsTicksToUS( LONGLONG iTicks )
+{
+	if ( iTicks <= 0 || gVHDRenderPerfFrequency.QuadPart <= 0 )
+		return 0;
+
+	const double dUS =
+		( (double)iTicks * 1000000.0 ) / (double)gVHDRenderPerfFrequency.QuadPart;
+	if ( dUS >= 4294967295.0 )
+		return 0xFFFFFFFFu;
+	return (UINT32)( dUS + 0.5 );
+}
+
+static UINT32 VHDRenderDiagnosticsElapsedUS( LONGLONG iStartTicks )
+{
+	if ( !gfVHDRenderDiagnosticsFrameActive || iStartTicks <= 0 )
+		return 0;
+
+	const LONGLONG iNowTicks = VHDRenderDiagnosticsNowTicks( );
+	if ( iNowTicks <= iStartTicks )
+		return 0;
+	return VHDRenderDiagnosticsTicksToUS( iNowTicks - iStartTicks );
+}
+
+static void VHDRenderDiagnosticsBeginFrame( UINT32 uiRenderFlags )
+{
+	gfVHDRenderDiagnosticsFrameActive =
+		VHDRenderDiagnosticsEnabled( ) && VHDRenderDiagnosticsEnsurePerfClock( );
+	if ( !gfVHDRenderDiagnosticsFrameActive )
+		return;
+
+	memset( &gVHDRenderFrameStats, 0, sizeof(gVHDRenderFrameStats) );
+	++guiVHDRenderDiagnosticsFrameSerial;
+	if ( guiVHDRenderDiagnosticsFrameSerial == 0 )
+		guiVHDRenderDiagnosticsFrameSerial = 1;
+	gVHDRenderFrameStats.uiFrameSerial = guiVHDRenderDiagnosticsFrameSerial;
+	gVHDRenderFrameStats.iFrameStartTicks = VHDRenderDiagnosticsNowTicks( );
+	if ( gVHDRenderFrameStats.iFrameStartTicks <= 0 )
+	{
+		gfVHDRenderDiagnosticsFrameActive = FALSE;
+		return;
+	}
+	gVHDRenderFrameStats.uiRenderFlags = uiRenderFlags;
+}
+
+static void VHDRenderDiagnosticsEndFrame( )
+{
+	if ( !gfVHDRenderDiagnosticsFrameActive )
+		return;
+
+	const UINT32 uiTotalUS =
+		VHDRenderDiagnosticsElapsedUS( gVHDRenderFrameStats.iFrameStartTicks );
+	const BOOLEAN fSlowFrame = uiTotalUS >= 33000u;
+	const BOOLEAN fPeriodicSample = gVHDRenderFrameStats.uiFrameSerial == 1 ||
+		( gVHDRenderFrameStats.uiFrameSerial % 120u ) == 0;
+	const BOOLEAN fSlowSample = fSlowFrame &&
+		( guiVHDRenderDiagnosticsLastSlowLogFrame == 0 ||
+		  gVHDRenderFrameStats.uiFrameSerial - guiVHDRenderDiagnosticsLastSlowLogFrame >= 30u );
+	if ( fSlowSample )
+		guiVHDRenderDiagnosticsLastSlowLogFrame = gVHDRenderFrameStats.uiFrameSerial;
+	if ( fSlowSample || fPeriodicSample )
+	{
+		BlackBoxEvent( "VHD_RENDER",
+			"frame=%u total_us=%u occlusion_us=%u static_us=%u dynamic_us=%u flags=0x%08x scale=%u indexed_calls=%u indexed_pixels=%u truecolor_calls=%u truecolor_pixels=%u occlusion_masks=%u outer_rects=%u slow=%u",
+			gVHDRenderFrameStats.uiFrameSerial, uiTotalUS,
+			gVHDRenderFrameStats.uiOcclusionUpdateUS, gVHDRenderFrameStats.uiStaticUS,
+			gVHDRenderFrameStats.uiDynamicUS, gVHDRenderFrameStats.uiRenderFlags,
+			GetVHDRenderScale( ), gVHDRenderFrameStats.uiIndexedMultiZCalls,
+			gVHDRenderFrameStats.uiIndexedSourcePixels, gVHDRenderFrameStats.uiTrueColorCalls,
+			gVHDRenderFrameStats.uiTrueColorSourcePixels, gVHDRenderFrameStats.uiOcclusionMaskCalls,
+			gVHDRenderFrameStats.uiOcclusionOuterRects, fSlowFrame ? 1 : 0 );
+	}
+	gfVHDRenderDiagnosticsFrameActive = FALSE;
+}
 
 INT16	gsCurrentGlowFrame		= 0;
 INT16	gsCurrentItemGlowFrame	= 0;
@@ -2450,6 +2594,15 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 								{
 									if(gbPixelDepth==16 && (hVObject->ubBitDepth == 16 || hVObject->ubBitDepth == 32))
 									{
+										if ( gfVHDRenderDiagnosticsFrameActive && hVObject->ubVHDAssetScale > 1 &&
+											 hVObject->pETRLEObject != NULL && usImageIndex < hVObject->usNumberOfObjects )
+										{
+											const ETRLEObject *pDiagRegion = &hVObject->pETRLEObject[ usImageIndex ];
+											++gVHDRenderFrameStats.uiTrueColorCalls;
+											gVHDRenderFrameStats.uiTrueColorSourcePixels = VHDRenderSaturatingAdd(
+												gVHDRenderFrameStats.uiTrueColorSourcePixels,
+												(UINT32)pDiagRegion->usWidth * (UINT32)pDiagRegion->usHeight );
+										}
 										// True-colour map imagery keeps the existing 16-bit framebuffer/Z-buffer.
 										// Multi-tile structures use the same JSD-derived Z strips as legacy ETRLE.
 										if(fMultiZBlitter && fZBlitter)
@@ -3569,12 +3722,17 @@ static void BlitOcclusionBubble8BitWallZStrip(
 	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
 	UINT16 usImageIndex, INT16 sZStripIndex )
 {
+	if ( gfVHDRenderDiagnosticsFrameActive )
+		++gVHDRenderFrameStats.uiOcclusionMaskCalls;
 	// Zone 1: wall remains fully opaque outside the outer ellipse.
 	SGPRect ClipRects[ OCCLUSION_BUBBLE_MAX_CLIP_RECTS ];
 	const UINT8 ubCount = BuildOcclusionBubbleOutsideEllipseClipRects(
 		hVObject, sXPos, sYPos, usImageIndex,
 		OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y,
 		ClipRects, OCCLUSION_BUBBLE_MAX_CLIP_RECTS );
+	if ( gfVHDRenderDiagnosticsFrameActive )
+		gVHDRenderFrameStats.uiOcclusionOuterRects = VHDRenderSaturatingAdd(
+			gVHDRenderFrameStats.uiOcclusionOuterRects, ubCount );
 
 	for ( UINT8 ubRect = 0; ubRect < ubCount; ++ubRect )
 	{
@@ -3701,11 +3859,16 @@ static void BlitOcclusionBubbleTrueColorWallZStrip(
 	UINT16 usImageIndex, UINT8 ubShadeLevel, INT16 sZStripIndex,
 	BOOLEAN fSameZBurnsThrough, UINT8 ubViewSoftening )
 {
+	if ( gfVHDRenderDiagnosticsFrameActive )
+		++gVHDRenderFrameStats.uiOcclusionMaskCalls;
 	SGPRect ClipRects[ OCCLUSION_BUBBLE_MAX_CLIP_RECTS ];
 	const UINT8 ubCount = BuildOcclusionBubbleOutsideEllipseClipRects(
 		hVObject, sXPos, sYPos, usImageIndex,
 		OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y,
 		ClipRects, OCCLUSION_BUBBLE_MAX_CLIP_RECTS );
+	if ( gfVHDRenderDiagnosticsFrameActive )
+		gVHDRenderFrameStats.uiOcclusionOuterRects = VHDRenderSaturatingAdd(
+			gVHDRenderFrameStats.uiOcclusionOuterRects, ubCount );
 
 	for ( UINT8 ubRect = 0; ubRect < ubCount; ++ubRect )
 	{
@@ -3839,12 +4002,17 @@ static void BlitOcclusionBubble8BitWallFadeZStrip(
 	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
 	UINT16 usImageIndex, INT16 sZStripIndex )
 {
+	if ( gfVHDRenderDiagnosticsFrameActive )
+		++gVHDRenderFrameStats.uiOcclusionMaskCalls;
 	// Preserve the door/window/corner sprite at full strength outside the bubble.
 	SGPRect ClipRects[ OCCLUSION_BUBBLE_MAX_CLIP_RECTS ];
 	const UINT8 ubCount = BuildOcclusionBubbleOutsideEllipseClipRects(
 		hVObject, sXPos, sYPos, usImageIndex,
 		OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y,
 		ClipRects, OCCLUSION_BUBBLE_MAX_CLIP_RECTS );
+	if ( gfVHDRenderDiagnosticsFrameActive )
+		gVHDRenderFrameStats.uiOcclusionOuterRects = VHDRenderSaturatingAdd(
+			gVHDRenderFrameStats.uiOcclusionOuterRects, ubCount );
 
 	for ( UINT8 ubRect = 0; ubRect < ubCount; ++ubRect )
 	{
@@ -3906,11 +4074,16 @@ static void BlitOcclusionBubbleTrueColorWallFadeZStrip(
 	UINT16 usImageIndex, UINT8 ubShadeLevel, INT16 sZStripIndex,
 	BOOLEAN fSameZBurnsThrough, UINT8 ubViewSoftening )
 {
+	if ( gfVHDRenderDiagnosticsFrameActive )
+		++gVHDRenderFrameStats.uiOcclusionMaskCalls;
 	SGPRect ClipRects[ OCCLUSION_BUBBLE_MAX_CLIP_RECTS ];
 	const UINT8 ubCount = BuildOcclusionBubbleOutsideEllipseClipRects(
 		hVObject, sXPos, sYPos, usImageIndex,
 		OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y,
 		ClipRects, OCCLUSION_BUBBLE_MAX_CLIP_RECTS );
+	if ( gfVHDRenderDiagnosticsFrameActive )
+		gVHDRenderFrameStats.uiOcclusionOuterRects = VHDRenderSaturatingAdd(
+			gVHDRenderFrameStats.uiOcclusionOuterRects, ubCount );
 
 	for ( UINT8 ubRect = 0; ubRect < ubCount; ++ubRect )
 	{
@@ -4128,11 +4301,19 @@ TILE_ELEMENT					*TileElem;
 TILE_ANIMATION_DATA		*pAnimData;
 UINT32 cnt = 0;
 
+	VHDRenderDiagnosticsBeginFrame( gRenderFlags );
+	const LONGLONG iOcclusionStartTicks = VHDRenderDiagnosticsNowTicks( );
+
 	gfRenderFullThisFrame = FALSE;
 
 	// Synchronize the Fallout-style visibility bubble before deciding whether
 	// this frame needs a static-world rebuild.
 	UpdateSelectedMercOcclusionBubble( );
+	if ( gfVHDRenderDiagnosticsFrameActive )
+	{
+		gVHDRenderFrameStats.uiOcclusionUpdateUS = VHDRenderDiagnosticsElapsedUS( iOcclusionStartTicks );
+		gVHDRenderFrameStats.uiRenderFlags = gRenderFlags;
+	}
 
 	// If we are testing renderer, set background to pink!
 	if ( gTacticalStatus.uiFlags & DEBUGCLIFFS )
@@ -4203,6 +4384,7 @@ UINT32 cnt = 0;
 
 	if(gRenderFlags&RENDER_FLAG_FULL)
 	{
+		const LONGLONG iStaticStartTicks = VHDRenderDiagnosticsNowTicks( );
 		gfRenderFullThisFrame = TRUE;
 
 		gfTopMessageDirty = TRUE;
@@ -4229,20 +4411,34 @@ UINT32 cnt = 0;
 		if(!(gRenderFlags&RENDER_FLAG_SAVEOFF))
 			UpdateSaveBuffer();
 
+		if ( gfVHDRenderDiagnosticsFrameActive )
+			gVHDRenderFrameStats.uiStaticUS = VHDRenderSaturatingAdd(
+				gVHDRenderFrameStats.uiStaticUS,
+				VHDRenderDiagnosticsElapsedUS( iStaticStartTicks ) );
 
 	}
 	else if(gRenderFlags&RENDER_FLAG_MARKED)
 	{
+		const LONGLONG iStaticStartTicks = VHDRenderDiagnosticsNowTicks( );
 		ResetLayerOptimizing();
 		RenderMarkedWorld();
 		if(!(gRenderFlags&RENDER_FLAG_SAVEOFF))
 			UpdateSaveBuffer();
+		if ( gfVHDRenderDiagnosticsFrameActive )
+			gVHDRenderFrameStats.uiStaticUS = VHDRenderSaturatingAdd(
+				gVHDRenderFrameStats.uiStaticUS,
+				VHDRenderDiagnosticsElapsedUS( iStaticStartTicks ) );
 
 	}
 
 	if ( gfScrollInertia == FALSE || (gRenderFlags&RENDER_FLAG_NOZ ) || (gRenderFlags&RENDER_FLAG_FULL ) || (gRenderFlags&RENDER_FLAG_MARKED ) )
 	{
+		const LONGLONG iDynamicStartTicks = VHDRenderDiagnosticsNowTicks( );
 		RenderDynamicWorld( );
+		if ( gfVHDRenderDiagnosticsFrameActive )
+			gVHDRenderFrameStats.uiDynamicUS = VHDRenderSaturatingAdd(
+				gVHDRenderFrameStats.uiDynamicUS,
+				VHDRenderDiagnosticsElapsedUS( iDynamicStartTicks ) );
 
 ///////////////////////////////////////////////////////////
 
@@ -4313,6 +4509,8 @@ UINT32 cnt = 0;
 
 		UnLockVideoSurface(guiRENDERBUFFER);
 	}
+
+	VHDRenderDiagnosticsEndFrame( );
 
 }
 
@@ -5847,6 +6045,14 @@ static BOOLEAN VHDIndexedMultiZBlit(
 
 	const ETRLEObject *pRegion = &hSrcVObject->pETRLEObject[usIndex];
 	ZStripInfo *pZInfo = hSrcVObject->ppZStripInfo[sZIndex];
+
+	if ( gfVHDRenderDiagnosticsFrameActive )
+	{
+		++gVHDRenderFrameStats.uiIndexedMultiZCalls;
+		gVHDRenderFrameStats.uiIndexedSourcePixels = VHDRenderSaturatingAdd(
+			gVHDRenderFrameStats.uiIndexedSourcePixels,
+			(UINT32)pRegion->usWidth * (UINT32)pRegion->usHeight );
+	}
 
 	const INT32 iDestLeft = iX + pRegion->sOffsetX;
 	const INT32 iDestTop = iY + pRegion->sOffsetY;
