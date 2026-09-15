@@ -279,7 +279,7 @@ namespace
 			JsonString( gFile, recentChanges[i] );
 		}
 		fputc( ']', gFile );
-		fputs( ",\"blackbox_version\":2,\"decision_forensics\":true,\"build_provenance_version\":1", gFile );
+		fputs( ",\"blackbox_version\":2,\"decision_forensics\":true,\"build_provenance_version\":1,\"journal_lifecycle_version\":1", gFile );
 		fputs( "}\n", gFile );
 		fflush( gFile );
 	}
