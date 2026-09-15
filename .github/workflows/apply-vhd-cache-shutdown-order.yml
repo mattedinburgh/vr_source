@@ -1,0 +1,73 @@
+name: Apply VHD cache shutdown ordering fix
+
+on:
+  push:
+    branches:
+      - engine/vhd-modernization-2026
+    paths:
+      - '.automation/vhd-cache-shutdown-order.trigger'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out modernization branch
+        uses: actions/checkout@v4
+        with:
+          ref: engine/vhd-modernization-2026
+          fetch-depth: 20
+
+      - name: Move cache teardown before structure database teardown
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def edit(path, replacements):
+              p = Path(path)
+              data = p.read_bytes()
+              eol = b"\r\n" if b"\r\n" in data else b"\n"
+              text = data.decode("utf-8").replace("\r\n", "\n")
+              for old, new in replacements:
+                  if old not in text:
+                      raise SystemExit(f"Expected anchor missing in {path}: {old!r}")
+                  text = text.replace(old, new, 1)
+              if eol == b"\r\n":
+                  text = text.replace("\n", "\r\n")
+              p.write_bytes(text.encode("utf-8"))
+
+          edit("TileEngine/worlddef.cpp", [
+              (
+                  '#include "tile surface.h"\n',
+                  '#include "tile surface.h"\n\t#include "tile cache.h"\n'
+              ),
+              (
+                  '\tDestroyTileSurfaces();\n\tFreeAllStructureFiles();\n',
+                  '\tDestroyTileSurfaces();\n'
+                  '\t// Cached tile imagery can own STRUCTURE_FILE_REF data registered in the\n'
+                  '\t// master structure list. Destroy it while those references are still valid.\n'
+                  '\tDeleteTileCache();\n'
+                  '\tFreeAllStructureFiles();\n'
+              )
+          ])
+
+          edit("Init.cpp", [
+              (
+                  '\tDeinitializeWorld( );\n\n\tDeleteTileCache( );\n',
+                  '\tDeinitializeWorld( );\n'
+              )
+          ])
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Init.cpp TileEngine/worlddef.cpp
+          git diff --cached --check
+          git commit -m "VHD cache: fix shutdown structure ownership order"
+          git rm .automation/vhd-cache-shutdown-order.trigger
+          git commit -m "Automation: clear VHD cache shutdown trigger"
+          git push origin HEAD:engine/vhd-modernization-2026
