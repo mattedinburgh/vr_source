@@ -1,12 +1,15 @@
-name: San Mona C5 visual QA
+name: VHD San Mona C5 visual QA
 
 on:
   push:
     branches:
-      - install/all-2026-09-12
+      - feature/vhd-renderer
     paths:
-      - 'MapPreviewTrigger/C5_RENDER.txt'
-      - '.github/workflows/autonomous-map-preview.yml'
+      - '.github/workflows/san-mona-c5-preview.yml'
+      - 'TileEngine/**'
+      - 'sgp/**'
+      - 'Utils/**'
+      - 'Tools/VRMapDisplayRouting.ps1'
   workflow_dispatch:
 
 permissions:
@@ -62,7 +65,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $git -C $env:GITHUB_WORKSPACE remote add origin "https://x-access-token:$env:GH_TOKEN@github.com/mattedinburgh/vr_source.git"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $git -C $env:GITHUB_WORKSPACE fetch origin install/all-2026-09-12
+          & $git -C $env:GITHUB_WORKSPACE fetch origin feature/vhd-renderer
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $git -C $env:GITHUB_WORKSPACE clean -fdx
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -76,13 +79,13 @@ jobs:
           $git = '${{ steps.git.outputs.path }}'
           $gamedir = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
           if (Test-Path $gamedir) { Remove-Item -Recurse -Force $gamedir }
-          & $git -c core.longpaths=true clone --depth 1 --single-branch --branch install/all-2026-09-12 --filter=blob:none --no-checkout https://github.com/mattedinburgh/vr_gamedir.git $gamedir
+          & $git -c core.longpaths=true clone --depth 1 --single-branch --branch feature/vhd-renderer-test --filter=blob:none --no-checkout https://github.com/mattedinburgh/vr_gamedir.git $gamedir
           if ($LASTEXITCODE -ne 0) { throw "Partial clone failed with exit code $LASTEXITCODE" }
           & $git -C $gamedir sparse-checkout init --cone
           if ($LASTEXITCODE -ne 0) { throw "sparse-checkout init failed with exit code $LASTEXITCODE" }
           & $git -C $gamedir sparse-checkout set Data-Maps-Tiles
           if ($LASTEXITCODE -ne 0) { throw "sparse-checkout set failed with exit code $LASTEXITCODE" }
-          & $git -C $gamedir checkout install/all-2026-09-12
+          & $git -C $gamedir checkout feature/vhd-renderer-test
           if ($LASTEXITCODE -ne 0) { throw "gamedir checkout failed with exit code $LASTEXITCODE" }
           $sha = (& $git -C $gamedir rev-parse HEAD).Trim()
           $c5 = Join-Path $gamedir 'Data-Maps-Tiles\maps\c5.dat'
@@ -158,19 +161,6 @@ jobs:
             Remove-Item -LiteralPath $Path -Recurse -Force
           }
 
-          # Cancelled self-hosted runs can leave old render sandboxes behind. Since this
-          # workflow is serialized by ja2-render-shared, no other A3 render can be using
-          # one now. Reclaim those stale folders before allocating anything new.
-          Get-ChildItem -LiteralPath 'C:\VENGENCE' -Force -Directory -Filter 'JA2_RENDER_SANDBOX_*' -ErrorAction SilentlyContinue |
-            ForEach-Object {
-              try {
-                Write-Host "Reclaiming stale render sandbox: $($_.FullName)"
-                Remove-SandboxSafely -Path $_.FullName
-              } catch {
-                Write-Warning "Could not fully remove stale sandbox $($_.FullName): $($_.Exception.Message)"
-              }
-            }
-
           Remove-SandboxSafely -Path $sandbox
           New-Item -ItemType Directory -Force -Path $sandbox | Out-Null
 
@@ -227,8 +217,8 @@ jobs:
           }
 
           # Use the freshly fetched vr_gamedir map/tile layer, not the possibly stale
-          # live Data-Maps-Tiles directory. It is disposable, so pass 2 may safely
-          # overlay A3_REMASTERED.dat there without touching the live installation.
+          # live Data-Maps-Tiles directory. The VHD C5 graphics test layer is disposable
+          # and isolated from the live installation.
           $mapLayer = Join-Path $gamedir 'Data-Maps-Tiles'
           if (-not (Test-Path (Join-Path $mapLayer 'maps\c5.dat'))) {
             throw "Fresh vr_gamedir C5 map layer is incomplete: $mapLayer"
@@ -288,7 +278,7 @@ jobs:
 
           $previewDir = Join-Path $sandbox 'MAP_PREVIEWS'
           New-Item -ItemType Directory -Force -Path $previewDir | Out-Null
-          Write-Host 'Vengeance render sandbox ready (junction-backed; live data remains read-only).'
+          Write-Host 'VHD C5 render sandbox ready (private config/profile/map layer; live installation is not modified).'
           Write-Host "Editor: $editor"
           Write-Host "VFS: $vfsIni"
           Write-Host "Map layer: $mapLayer"
@@ -308,7 +298,7 @@ jobs:
 
           . (Join-Path $env:GITHUB_WORKSPACE 'Tools\VRMapDisplayRouting.ps1')
 
-          Write-Host "Launching unchanged C5 through Vengeance MapEditor..."
+          Write-Host "Launching unchanged C5 through VHD Vengeance MapEditor from isolated VFS working directory: $sandbox"
           $p = Start-VRProcessOnSecondary -FilePath $editor -ArgumentList "-MAPSHOT=c5.dat" -WorkingDirectory $sandbox -RequireSecondary
           $deadline = (Get-Date).AddSeconds(240)
           $lastStatus = ''
@@ -351,10 +341,10 @@ jobs:
           if (-not (Test-Path $visualLog)) { throw 'C5 visual/JSD diagnostic log was not produced.' }
 
           $log = Get-Content $visualLog
-          $trueColor = @($log | Where-Object { $_ -match '^IMAGE_TRUECOLOR ' })
-          Write-Host "True-colour tile surfaces loaded: $($trueColor.Count)"
+          $trueColor = @($log | Where-Object { $_ -match '^(IMAGE_TRUECOLOR|IMAGE_VHD_NATIVE) ' })
+          Write-Host "Native/true-colour tile surfaces loaded: $($trueColor.Count)"
           if ($trueColor.Count -lt 4) {
-            throw "Expected C5 B1TC visual replacements were not active (only $($trueColor.Count) true-colour surfaces)."
+            throw "Expected C5 native VHD2/B1TC visual replacements were not active (only $($trueColor.Count) native/true-colour surfaces)."
           }
 
           $structural = @(

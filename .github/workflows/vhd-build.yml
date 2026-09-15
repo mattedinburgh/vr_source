@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: vhd-renderer-build
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

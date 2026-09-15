@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: vhd-hosted-smoke
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

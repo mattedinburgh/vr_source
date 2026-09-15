@@ -386,7 +386,12 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 			(unsigned int)ubRequestedVHDScale, cVisualFilename );
 		if ( iVHDNameLen > 0 && iVHDNameLen < (int)sizeof(cVHDVisualFilename) )
 		{
-			hImage = CreateImage( cVHDVisualFilename, IMAGE_ALLDATA, ImageFileType::JPC );
+			// Native VHD2/VHD4 may be supplied as a same-name B1TC sibling,
+			// JPC archive or PNG. DEFAULT first lets CreateImage resolve
+			// VHD2\\...\\foo.b1tc without requiring a duplicate VHD STI.
+			hImage = CreateImage( cVHDVisualFilename, IMAGE_ALLDATA, ImageFileType::DEFAULT );
+			if ( hImage == NULL )
+				hImage = CreateImage( cVHDVisualFilename, IMAGE_ALLDATA, ImageFileType::JPC );
 			if ( hImage == NULL )
 				hImage = CreateImage( cVHDVisualFilename, IMAGE_ALLDATA, ImageFileType::PNG );
 			if ( hImage != NULL )
