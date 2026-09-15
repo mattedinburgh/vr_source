@@ -719,8 +719,11 @@ static BOOLEAN SectorLoadoutAmmoHasDamagePotential( UINT8 ubAmmoType )
 
 	// Prevent special zero-damage utility ammunition from accidentally sorting
 	// ahead of real combat ammunition merely because its armour multiplier is 0.
-	return ( ammo.beforeArmourDamageMultiplier > 0 &&
-			 ammo.afterArmourDamageMultiplier > 0 );
+	return ( ( ammo.beforeArmourDamageMultiplier > 0 &&
+			   ammo.afterArmourDamageMultiplier > 0 ) ||
+			 ammo.highExplosive != 0 ||
+			 ammo.antiTank ||
+			 ammo.numberOfBullets > 1 );
 }
 
 static BOOLEAN SectorLoadoutAmmoTypeLess( UINT8 a, UINT8 b )
@@ -1353,18 +1356,52 @@ static BOOLEAN GiveBestHandGrenade( SOLDIERTYPE *pSoldier )
 	if ( pSoldier == NULL )
 		return FALSE;
 
-	OBJECTTYPE grenade;
-	if ( !TakeBestHandGrenadeFromSector( &grenade ) )
-		return FALSE;
+	// Grenades can differ in NIV pocket size. If the strongest type will not fit,
+	// try the next-strongest DISTINCT type instead of incorrectly treating the
+	// merc as unable to carry any grenade.
+	std::vector<UINT16> rejectedItems;
 
-	if ( PlaceInAnyPocket( pSoldier, &grenade, FALSE ) && !grenade.exists() )
-		return TRUE;
+	while ( TRUE )
+	{
+		INT32 iBestWorldItem = -1;
+		UINT16 usBestItem = NONE;
 
-	// Full/unsuitable inventory: never delete or overwrite existing equipment.
-	if ( grenade.exists() )
-		PoolObjectForSectorLoadout( &grenade );
+		for ( UINT32 i = 0; i < pInventoryPoolList.size(); ++i )
+		{
+			if ( !IsReachableSectorLoadoutItem( pInventoryPoolList[i] ) )
+				continue;
 
-	return FALSE;
+			OBJECTTYPE *pObj = &( pInventoryPoolList[i].object );
+			if ( !IsHandThrownNonSmokeGrenade( pObj->usItem ) )
+				continue;
+
+			if ( std::find( rejectedItems.begin(), rejectedItems.end(), pObj->usItem ) != rejectedItems.end() )
+				continue;
+
+			if ( iBestWorldItem < 0 || IsHandGrenadeStronger( pObj->usItem, usBestItem ) )
+			{
+				iBestWorldItem = (INT32)i;
+				usBestItem = pObj->usItem;
+			}
+		}
+
+		if ( iBestWorldItem < 0 )
+			return FALSE;
+
+		OBJECTTYPE grenade;
+		OBJECTTYPE *pBest = &( pInventoryPoolList[iBestWorldItem].object );
+		pBest->RemoveObjectAtIndex( 0, &grenade );
+		if ( pBest->ubNumberOfObjects < 1 )
+			DeleteObj( pBest );
+
+		if ( PlaceInAnyPocket( pSoldier, &grenade, FALSE ) && !grenade.exists() )
+			return TRUE;
+
+		if ( grenade.exists() )
+			PoolObjectForSectorLoadout( &grenade );
+
+		rejectedItems.push_back( usBestItem );
+	}
 }
 
 static void RedistributeSectorGrenades()
@@ -1428,22 +1465,24 @@ static void RedistributeSectorGrenades()
 			if ( blocked[i] || counts[i] > ubPass )
 				continue;
 
-			OBJECTTYPE grenade;
-			if ( !TakeBestHandGrenadeFromSector( &grenade ) )
+			// If no grenade remains at all, end distribution. Otherwise let the
+			// fit-aware helper try strongest-to-weaker types for this merc.
+			OBJECTTYPE probe;
+			if ( !TakeBestHandGrenadeFromSector( &probe ) )
 			{
 				fOutOfGrenades = TRUE;
 				break;
 			}
+			if ( probe.exists() )
+				PoolObjectForSectorLoadout( &probe );
 
-			if ( PlaceInAnyPocket( mercs[i], &grenade, FALSE ) && !grenade.exists() )
+			if ( GiveBestHandGrenade( mercs[i] ) )
 			{
 				++counts[i];
 				++uiDistributed;
 			}
 			else
 			{
-				if ( grenade.exists() )
-					PoolObjectForSectorLoadout( &grenade );
 				blocked[i] = TRUE;
 			}
 		}
@@ -2972,8 +3011,10 @@ void CreateMapInventoryButtons( void )
 
 	if ( iResolution < _1024x768 )
 	{
-		sLoadoutButtonW = 42;
-		sLoadoutButtonH = 20;
+		// Legacy layouts simply do not have room for three doubled buttons
+		// without covering the sector-inventory controls/items.
+		sLoadoutButtonW = 28;
+		sLoadoutButtonH = 13;
 		sLoadoutButtonGap = 2;
 		sLoadoutButtonY = INVEN_POOL_Y + 39 + yResOffset;
 	}
