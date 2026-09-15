@@ -491,6 +491,52 @@ static INT8 DecideYellowRemoteRadioSupport(SOLDIERTYPE *pSoldier)
 	return AI_ACTION_NONE;
 }
 
+static INT8 DecidePersonalRiskWithdrawal(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, INT32 sKnownThreat)
+{
+	if (!gfTurnBasedAI ||
+		!AICombatTeam(pSoldier) ||
+		AIHasUsedTacticalFallback(pSoldier) ||
+		!fCanMove ||
+		pSoldier->aiData.bOrders == STATIONARY ||
+		pSoldier->stats.bLife < OKLIFE)
+	{
+		return AI_ACTION_NONE;
+	}
+
+	AITACTICALDECISIONCONTEXT Context;
+	if (!AIBuildTacticalDecisionContext(pSoldier, &Context) ||
+		Context.fDisengaging ||
+		Context.iPersonalRisk < Context.iRiskTolerance + 10 ||
+		(!Context.fUnderFire && Context.iStress < 45) ||
+		(Context.fHasCover && !Context.fIsolated))
+	{
+		return AI_ACTION_NONE;
+	}
+
+	if (TileIsOutOfBounds(sKnownThreat))
+		sKnownThreat = Context.sPrimaryThreat;
+	if (TileIsOutOfBounds(sKnownThreat))
+		return AI_ACTION_NONE;
+
+	pSoldier->aiData.usActionData = FindRetreatSpot(pSoldier);
+	if (TileIsOutOfBounds(pSoldier->aiData.usActionData))
+	{
+		pSoldier->aiData.usActionData =
+			FindFlankingSpot(pSoldier, sKnownThreat, AI_ACTION_WITHDRAW);
+	}
+
+	if (TileIsOutOfBounds(pSoldier->aiData.usActionData) ||
+		!AIKnownRouteExposureAcceptable(
+			pSoldier, pSoldier->aiData.usActionData,
+			AI_ACTION_WITHDRAW, 200, 110, 130))
+	{
+		return AI_ACTION_NONE;
+	}
+
+	AIRegisterTacticalFallback(pSoldier);
+	return AI_ACTION_WITHDRAW;
+}
+
 // global status time counters to determine what takes the most time
 
 #define CENTER_OF_RING 11237//dnl!!!
@@ -3181,33 +3227,10 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 
 	// Tactical self-preservation: withdraw when this soldier's personal danger
 	// exceeds what his personality and morale are willing to tolerate.
-	if (gfTurnBasedAI &&
-		AICombatTeam(pSoldier) &&
-		!AIDisengagementActive(pSoldier) &&
-		!AIHasUsedTacticalFallback(pSoldier) &&
-		ubCanMove &&
-		pSoldier->aiData.bOrders != STATIONARY &&
-		pSoldier->stats.bLife >= OKLIFE &&
-		AIPersonalRisk(pSoldier) >= AIPersonalRiskTolerance(pSoldier) + 10 &&
-		(pSoldier->aiData.bUnderFire || AILocalStress(pSoldier) >= 45) &&
-		(!AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
-		 AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0))
 	{
-		INT32 sWithdrawalThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
-		if (!TileIsOutOfBounds(sWithdrawalThreat))
-		{
-			pSoldier->aiData.usActionData = FindRetreatSpot(pSoldier);
-			if (TileIsOutOfBounds(pSoldier->aiData.usActionData))
-				pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, sWithdrawalThreat, AI_ACTION_WITHDRAW);
-			if (!TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
-	AIKnownRouteExposureAcceptable(
-		pSoldier, pSoldier->aiData.usActionData,
-		AI_ACTION_WITHDRAW, 200, 110, 130))
-{
-				AIRegisterTacticalFallback(pSoldier);
-				return(AI_ACTION_WITHDRAW);
-			}
-		}
+		INT8 bPersonalWithdrawal = DecidePersonalRiskWithdrawal(pSoldier, ubCanMove, NOWHERE);
+		if (bPersonalWithdrawal != AI_ACTION_NONE)
+			return bPersonalWithdrawal;
 	}
 
 
@@ -5659,30 +5682,11 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 
 			// Tactical self-preservation: individual danger can override aggression even
 			// for a healthy soldier if he is badly suppressed, exposed and isolated.
-			if (gfTurnBasedAI &&
-				AICombatTeam(pSoldier) &&
-				!AIDisengagementActive(pSoldier) &&
-				!AIHasUsedTacticalFallback(pSoldier) &&
-				ubCanMove &&
-				pSoldier->aiData.bOrders != STATIONARY &&
-				pSoldier->stats.bLife >= OKLIFE &&
-				AIPersonalRisk(pSoldier) >= AIPersonalRiskTolerance(pSoldier) + 10 &&
-				(pSoldier->aiData.bUnderFire || AILocalStress(pSoldier) >= 45) &&
-				(!AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
-				 AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4) == 0) &&
-				!TileIsOutOfBounds(sClosestOpponent))
 			{
-				pSoldier->aiData.usActionData = FindRetreatSpot(pSoldier);
-				if (TileIsOutOfBounds(pSoldier->aiData.usActionData))
-					pSoldier->aiData.usActionData = FindFlankingSpot(pSoldier, sClosestOpponent, AI_ACTION_WITHDRAW);
-								if (!TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
-					AIKnownRouteExposureAcceptable(
-						pSoldier, pSoldier->aiData.usActionData,
-						AI_ACTION_WITHDRAW, 200, 110, 130))
-				{
-					AIRegisterTacticalFallback(pSoldier);
-					return(AI_ACTION_WITHDRAW);
-				}
+				INT8 bPersonalWithdrawal =
+					DecidePersonalRiskWithdrawal(pSoldier, ubCanMove, sClosestOpponent);
+				if (bPersonalWithdrawal != AI_ACTION_NONE)
+					return bPersonalWithdrawal;
 			}
 
 			// Use the same casualty-response priority as RED so alert-state changes do
@@ -11591,6 +11595,7 @@ void AIResetDecisionCoordinationStateForLoad(void)
 	// DecideAction owns several transient caches that deliberately are not serialized.
 	// Reset all of them explicitly so a same-sector, same-turn quickload cannot inherit
 	// response waves, random tactical biases or militia anchors from the abandoned future.
+	AIResetTacticalPlannerStateForLoad();
 	AIResetEnemyResponseEpisodes();
 	guiAIEnemyResponseLastTurnStamp = 0;
 
