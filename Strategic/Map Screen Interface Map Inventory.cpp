@@ -2635,16 +2635,25 @@ void CreateMapInventoryButtons( void )
 	ButtonList[ guiMapInvenFilterButton[ 9 ] ]->UserData[1] = 0;
 	*/
 
-	// Vengeance: compact squad logistics buttons on the second toolbar row.
-	// Generic text buttons avoid adding another STI dependency.
+	// Vengeance: compact squad logistics buttons.
+	// On 1024+ layouts these sit to the RIGHT of the black header/status panel,
+	// clear of the standard sort/filter toolbar. Keep the compact 28x13 treatment
+	// and 2px inter-button gap so they remain visually consistent with this UI.
+	// Lower resolutions retain safe fallback positions rather than going off-screen.
+	INT16 sLoadoutButtonX = INVEN_POOL_X + 50 + xResOffset;
+	if ( iResolution >= _1024x768 )
+		sLoadoutButtonX = INVEN_POOL_X + 590 + xResOffset;
+	else if ( iResolution >= _800x600 )
+		sLoadoutButtonX = INVEN_POOL_X + 430 + xResOffset;
+
 	guiMapInvenLoadoutButton[0] = CreateTextButton( L"3x", SMALLCOMPFONT, FONT_WHITE, DEFAULT_SHADOW,
-		BUTTON_USE_DEFAULT, INVEN_POOL_X+50 + xResOffset, INVEN_POOL_Y + 24 + yResOffset, 28, 13,
+		BUTTON_USE_DEFAULT, sLoadoutButtonX, INVEN_POOL_Y + 24 + yResOffset, 28, 13,
 		BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST, NULL, (GUI_CALLBACK)MapInventoryPoolAmmo3xBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[0],
 		L"3x: municion. 3 cargadores; con 2+ armas del mismo calibre, max. 4 compartidos. AP > estandar > otras > HP > Glaser." );
 
 	guiMapInvenLoadoutButton[1] = CreateTextButton( L"SMK", SMALLCOMPFONT, FONT_WHITE, DEFAULT_SHADOW,
-		BUTTON_USE_DEFAULT, INVEN_POOL_X+80 + xResOffset, INVEN_POOL_Y + 24 + yResOffset, 28, 13,
+		BUTTON_USE_DEFAULT, sLoadoutButtonX + 30, INVEN_POOL_Y + 24 + yResOffset, 28, 13,
 		BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST, NULL, (GUI_CALLBACK)MapInventoryPoolSmokeBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[1],
 		L"SMK: dar una granada de humo de mano a cada mercenario del sector." );
