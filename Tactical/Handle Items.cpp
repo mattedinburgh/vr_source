@@ -6639,8 +6639,7 @@ void SoldierStealItemFromSoldier( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
 				if ( !EnoughPoints( pSoldier, sStealAPCost, 0, FALSE ) )
 				{
 					fNotEnoughAPs = TRUE;
-					pTempItemPool = pTempItemPool->pNext;
-					continue;
+					break;
 				}
 
 				const INT32 iOpponentSlot = pTempItemPool->iItemIndex;
@@ -6655,6 +6654,7 @@ void SoldierStealItemFromSoldier( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
 				// Whatever remains in the copy stays with the victim; it is never dumped
 				// on the thief's tile merely because the thief has no inventory space.
 				gTempObject = pOpponent->inv[iOpponentSlot];
+				const BOOLEAN fWasCool = ItemIsCool( &gTempObject );
 				const UINT8 ubOriginalObjects = gTempObject.ubNumberOfObjects;
 				const BOOLEAN fPlacedAll = AutoPlaceObject( pSoldier, &gTempObject, TRUE );
 				const BOOLEAN fPlacedSome = fPlacedAll ||
@@ -6672,19 +6672,8 @@ void SoldierStealItemFromSoldier( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
 				else
 					pOpponent->inv[iOpponentSlot] = gTempObject;
 
-				if ( ItemIsCool( &pOpponent->inv[iOpponentSlot] ) && pOpponent->inv[iOpponentSlot].exists() )
-				{
-					// Partial stack theft: the victim still has the remainder.  The stolen
-					// objects were the same item, so the quote is still appropriate.
+				if ( fWasCool )
 					fShouldSayCoolQuote = TRUE;
-				}
-				else if ( fPlacedAll )
-				{
-					// The source slot has been deleted, so evaluate the original item type
-					// using the copy only when it still exists.  For a fully consumed copy,
-					// the item was already accepted into inventory and no quote is essential.
-					fShouldSayCoolQuote = fShouldSayCoolQuote;
-				}
 
 				if ( pSoldier->ubProfile != NO_PROFILE )
 					gMercProfiles[ pSoldier->ubProfile ].records.usItemsStolen++;
