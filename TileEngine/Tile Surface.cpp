@@ -220,6 +220,83 @@ static BOOLEAN ValidateAndCanonicalizeNativeVHDImage(
 	return FALSE;
 }
 
+static BOOLEAN RunVHDNativeContractSelfTest( STR8 pCanonicalFilename )
+{
+	static BOOLEAN fSelfTestComplete = FALSE;
+	if ( fSelfTestComplete )
+		return TRUE;
+
+	const CHAR8 *pSelfTest = getenv( "VR_VHD_NATIVE_CONTRACT_TEST" );
+	if ( pSelfTest == NULL || strcmp( pSelfTest, "1" ) != 0 )
+		return TRUE;
+
+	if ( pCanonicalFilename == NULL )
+		return TRUE;
+
+	// Build the fixture through the production loader and production VHD fallback
+	// scaler. This avoids a second STI/JPC/B1TC parser. If a tile cannot be
+	// scaled, keep the test pending and try the next tile loaded during startup.
+	HIMAGE hSyntheticNative = CreateImage(
+		pCanonicalFilename, IMAGE_ALLDATA, ImageFileType::DEFAULT );
+	if ( hSyntheticNative == NULL )
+		return TRUE;
+
+	if ( !ScaleImageNearestForVHD( hSyntheticNative, 2 ) ||
+		 hSyntheticNative->pETRLEObject == NULL ||
+		 hSyntheticNative->usNumberOfObjects == 0 )
+	{
+		DestroyImage( hSyntheticNative );
+		return TRUE;
+	}
+
+	if ( !ValidateAndCanonicalizeNativeVHDImage(
+			hSyntheticNative, pCanonicalFilename, 2 ) )
+	{
+		BlackBoxEvent( "VHD",
+			"native contract self-test failed valid fixture file=%s",
+			pCanonicalFilename );
+		DestroyImage( hSyntheticNative );
+		return FALSE;
+	}
+
+	// Corrupt one geometry field and require rejection, then restore it before
+	// cleanup so even the synthetic fixture never retains inconsistent state.
+	ETRLEObject *pFrame = &hSyntheticNative->pETRLEObject[ 0 ];
+	const UINT16 usOriginalWidth = pFrame->usWidth;
+	pFrame->usWidth = ( usOriginalWidth > 1 ) ?
+		( UINT16 )( usOriginalWidth - 1 ) : ( UINT16 )( usOriginalWidth + 1 );
+
+	const BOOLEAN fRejectedBadGeometry =
+		!ValidateAndCanonicalizeNativeVHDImage(
+			hSyntheticNative, pCanonicalFilename, 2 );
+	pFrame->usWidth = usOriginalWidth;
+
+	if ( !fRejectedBadGeometry )
+	{
+		BlackBoxEvent( "VHD",
+			"native contract self-test accepted corrupt fixture file=%s",
+			pCanonicalFilename );
+		DestroyImage( hSyntheticNative );
+		return FALSE;
+	}
+
+	DestroyImage( hSyntheticNative );
+
+	FILE *pMarker = fopen( "vhd-native-contract-selftest.ok", "w" );
+	if ( pMarker == NULL )
+	{
+		BlackBoxEvent( "VHD",
+			"native contract self-test could not write marker file=%s",
+			pCanonicalFilename );
+		return FALSE;
+	}
+	fprintf( pMarker, "pass file=%s scale=2\n", pCanonicalFilename );
+	fclose( pMarker );
+
+	fSelfTestComplete = TRUE;
+	return TRUE;
+}
+
 TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 {
 	// Add tile surface
@@ -262,6 +339,12 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 			}
 		}
 	}
+	if ( !RunVHDNativeContractSelfTest( cFilename ) )
+	{
+		SET_ERROR( "VHD native asset contract self-test failed: %s", cFilename );
+		return NULL;
+	}
+
 	const BOOLEAN fTraceB1Asset = ( cFilename != NULL && strstr( cFilename, "B1_" ) != NULL );
 	const BOOLEAN fTraceC5Asset = IsSanMonaC5TilePath( cFilename ) || fC5VisualOverride;
 	if ( fTraceB1Asset )

@@ -98,6 +98,8 @@ if (Test-Path $ddraw) {
 }
 
 $env:VR_VHD_RENDER_SCALE = '2'
+$env:VR_VHD_NATIVE_CONTRACT_TEST = '1'
+$contractMarker = Join-Path $smokeRoot 'vhd-native-contract-selftest.ok'
 
 $exe = Join-Path $smokeRoot 'JA2_EN_Release.exe'
 $started = Get-Date
@@ -120,6 +122,11 @@ try {
             throw "VHD displayed an error dialog during startup: $title"
         }
     }
+    if (-not (Test-Path -LiteralPath $contractMarker)) {
+        throw "VHD native asset contract self-test did not complete during startup."
+    }
+    Write-Host "VHD native asset contract self-test passed."
+
     $survived = $true
     $proc.Refresh()
     Write-Host "VHD remained alive for $SmokeSeconds seconds. MainWindowHandle=$($proc.MainWindowHandle)"
