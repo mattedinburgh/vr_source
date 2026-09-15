@@ -419,6 +419,19 @@ struct AISHORTPLANSTATE
 	UINT32 uiExpiresTurn;
 };
 
+struct AICONTACTCHANGE
+{
+	UINT8 ubVisibleContacts;
+	UINT8 ubNewContacts;
+	UINT8 ubDirectionMask;
+	UINT16 usCurrentExposure;
+	INT32 sPreviousGridNo;
+	BOOLEAN fMovedSinceLastDecision;
+	BOOLEAN fMultiAngleThreat;
+	BOOLEAN fSurprise;
+	BOOLEAN fEncirclementPressure;
+};
+
 BOOLEAN AIBuildContactBelief(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID, AICONTACTBELIEF *pBelief);
 BOOLEAN AIBuildPrimaryContactBelief(SOLDIERTYPE *pSoldier, INT32 sPreferredGridNo, AICONTACTBELIEF *pBelief);
 BOOLEAN AIEvaluateTacticalPosition(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
@@ -436,6 +449,7 @@ BOOLEAN AIGetShortPlan(SOLDIERTYPE *pSoldier, AISHORTPLANSTATE *pPlan);
 void AIAdvanceShortPlan(SOLDIERTYPE *pSoldier);
 void AICancelShortPlan(SOLDIERTYPE *pSoldier);
 void AIResetTacticalReasoningStateForLoad(void);
+BOOLEAN AIObserveContactChange(SOLDIERTYPE *pSoldier, AICONTACTCHANGE *pChange);
 
 // Functional command hierarchy. The visible rank ladder mirrors 1.13 EnemyRank.xml
 // (experience levels 1-10); GENERAL is reserved for exceptional explicit commanders.
