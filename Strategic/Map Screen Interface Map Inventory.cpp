@@ -576,18 +576,15 @@ static BOOLEAN IsHandThrownNonSmokeGrenade( UINT16 usItem )
 	return ( ubType != EXPLOSV_SMOKE && ubType != EXPLOSV_SIGNAL_SMOKE );
 }
 
-static BOOLEAN IsGrenadeRecipientExcluded( SOLDIERTYPE *pSoldier )
+static BOOLEAN IsMattForGrenadeLoadout( SOLDIERTYPE *pSoldier )
 {
-	if ( pSoldier == NULL )
-		return TRUE;
+	return ( pSoldier != NULL && wcscmp( pSoldier->name, L"Matt" ) == 0 );
+}
 
-	// Buns is profile 17 in Vengeance MercProfiles.xml.
-	if ( pSoldier->ubProfile == 17 )
-		return TRUE;
-
-	// Matt is the custom IMP; identify him by the displayed merc name rather
-	// than assuming a particular IMP profile slot.
-	return ( wcscmp( pSoldier->name, L"Matt" ) == 0 );
+static BOOLEAN IsBunsForGrenadeLoadout( SOLDIERTYPE *pSoldier )
+{
+	// Buns is profile 17 in the current Vengeance MercProfiles.xml.
+	return ( pSoldier != NULL && pSoldier->ubProfile == 17 );
 }
 
 static void PoolSquadSpareAmmo()
@@ -696,63 +693,85 @@ static UINT32 CountSectorAmmoRounds( UINT8 ubCalibre, UINT8 ubAmmoType )
 	return uiRounds;
 }
 
-// Data-driven classification keeps this working with Vengeance ammo XML rather
-// than hard-coding specific magazine item ids.
+// Relative, data-driven ammo ordering.
 //
-// 0 = AP, 1 = standard ball, 2 = other, 3 = HP ("blue"), 4 = Glaser.
-static INT8 SectorLoadoutAmmoPriority( UINT8 ubAmmoType )
+// ArmourProtection() in Weapons.cpp applies ammo penetration as:
+//   armour protection * armourImpactReductionMultiplier / armourImpactReductionDivisor
+// so the LOWEST ratio is the strongest penetrator.
+//
+// No ammo names or ids are hard-coded here. Imported 1.13/Vengeance ammo is
+// ranked automatically from its XML values.
+static INT32 CompareSectorLoadoutRatio( INT32 iNumA, INT32 iDenA, INT32 iNumB, INT32 iDenB )
+{
+	const long long iLeft = (long long)iNumA * (long long)__max( 1, iDenB );
+	const long long iRight = (long long)iNumB * (long long)__max( 1, iDenA );
+
+	if ( iLeft < iRight )
+		return -1;
+	if ( iLeft > iRight )
+		return 1;
+	return 0;
+}
+
+static BOOLEAN SectorLoadoutAmmoHasDamagePotential( UINT8 ubAmmoType )
 {
 	AMMOTYPE &ammo = AmmoTypes[ubAmmoType];
 
-	// AP family: standard-issue penetrators (AP/FMJ, SAP, SAP Match). Exotic
-	// penetrators such as AET/DU/cold variants remain in "other".
-	const BOOLEAN fAP =
-		ammo.standardIssue &&
-		ammo.armourImpactReductionMultiplier < ammo.armourImpactReductionDivisor;
-
-	// Glaser and Cold Glaser share extreme armour weakness plus a large
-	// post-armour damage multiplier. Hornet's Nest has the armour weakness but
-	// not the damage multiplier, so it remains "other".
-	const BOOLEAN fGlaser =
-		ammo.armourImpactReductionMultiplier >= ( ammo.armourImpactReductionDivisor * 3 ) &&
-		ammo.afterArmourDamageMultiplier >= ( ammo.afterArmourDamageDivisor * 2 );
-
-	// HP is the user's blue category. More exotic expanding rounds that don't
-	// match this classic HP signature stay in "other".
-	const BOOLEAN fHP =
-		ammo.armourImpactReductionMultiplier > ammo.armourImpactReductionDivisor &&
-		ammo.afterArmourDamageMultiplier > ammo.afterArmourDamageDivisor;
-
-	const BOOLEAN fStandard =
-		ammo.standardIssue &&
-		ammo.armourImpactReductionMultiplier == ammo.armourImpactReductionDivisor &&
-		ammo.beforeArmourDamageMultiplier == ammo.beforeArmourDamageDivisor &&
-		ammo.afterArmourDamageMultiplier == ammo.afterArmourDamageDivisor &&
-		ammo.numberOfBullets == 1 &&
-		ammo.highExplosive == 0 &&
-		!ammo.tracerEffect &&
-		!ammo.dart &&
-		!ammo.knife &&
-		!ammo.monsterSpit;
-
-	if ( fAP )
-		return 0;
-	if ( fStandard )
-		return 1;
-	if ( fGlaser )
-		return 4;
-	if ( fHP )
-		return 3;
-	return 2;
+	// Prevent special zero-damage utility ammunition from accidentally sorting
+	// ahead of real combat ammunition merely because its armour multiplier is 0.
+	return ( ammo.beforeArmourDamageMultiplier > 0 &&
+			 ammo.afterArmourDamageMultiplier > 0 );
 }
 
 static BOOLEAN SectorLoadoutAmmoTypeLess( UINT8 a, UINT8 b )
 {
-	INT8 pa = SectorLoadoutAmmoPriority( a );
-	INT8 pb = SectorLoadoutAmmoPriority( b );
+	AMMOTYPE &ammoA = AmmoTypes[a];
+	AMMOTYPE &ammoB = AmmoTypes[b];
 
-	if ( pa != pb )
-		return pa < pb;
+	const BOOLEAN fCombatA = SectorLoadoutAmmoHasDamagePotential( a );
+	const BOOLEAN fCombatB = SectorLoadoutAmmoHasDamagePotential( b );
+	if ( fCombatA != fCombatB )
+		return fCombatA > fCombatB;
+
+	// Absolute primary key: strongest armour penetration.
+	INT32 iPenCmp = CompareSectorLoadoutRatio(
+		ammoA.armourImpactReductionMultiplier, ammoA.armourImpactReductionDivisor,
+		ammoB.armourImpactReductionMultiplier, ammoB.armourImpactReductionDivisor );
+	if ( iPenCmp != 0 )
+		return iPenCmp < 0;
+
+	// Soft-armour bypass is useful, but it is not universal against plates, so
+	// it only breaks a true penetration tie.
+	if ( ammoA.ignoreArmour != ammoB.ignoreArmour )
+		return ammoA.ignoreArmour > ammoB.ignoreArmour;
+
+	// Anti-tank ammunition is essential against tanks, but remains a tie-break
+	// rather than overriding the requested general armour-penetration ranking.
+	if ( ammoA.antiTank != ammoB.antiTank )
+		return ammoA.antiTank > ammoB.antiTank;
+
+	// If penetration is identical, retain as much damage as possible.
+	INT32 iAfterCmp = CompareSectorLoadoutRatio(
+		ammoA.afterArmourDamageMultiplier, ammoA.afterArmourDamageDivisor,
+		ammoB.afterArmourDamageMultiplier, ammoB.afterArmourDamageDivisor );
+	if ( iAfterCmp != 0 )
+		return iAfterCmp > 0;
+
+	INT32 iBeforeCmp = CompareSectorLoadoutRatio(
+		ammoA.beforeArmourDamageMultiplier, ammoA.beforeArmourDamageDivisor,
+		ammoB.beforeArmourDamageMultiplier, ammoB.beforeArmourDamageDivisor );
+	if ( iBeforeCmp != 0 )
+		return iBeforeCmp > 0;
+
+	if ( ammoA.canGoThrough != ammoB.canGoThrough )
+		return ammoA.canGoThrough > ammoB.canGoThrough;
+
+	// Deterministic final ties: normal service ammo before tracer variants.
+	if ( ammoA.tracerEffect != ammoB.tracerEffect )
+		return ammoA.tracerEffect < ammoB.tracerEffect;
+
+	if ( ammoA.standardIssue != ammoB.standardIssue )
+		return ammoA.standardIssue > ammoB.standardIssue;
 
 	return a < b;
 }
@@ -789,31 +808,24 @@ static INT16 FindSectorAmmoTypeForFill( UINT8 ubCalibre, UINT16 usMagSize, UINT3
 	std::vector<UINT8> types;
 	GetCompatibleSectorAmmoTypes( ubCalibre, usMagSize, types );
 
-	// First preserve the user's ammo preference when a type can fill the desired
-	// magazine amount completely.
+	// Full usable loads first. Because 'types' is already sorted by relative
+	// penetration, this selects the strongest penetrator that can satisfy the
+	// requested load completely.
 	for ( UINT32 i = 0; i < types.size(); ++i )
 	{
 		if ( CountSectorAmmoRounds( ubCalibre, types[i] ) >= uiWantedRounds )
 			return (INT16)types[i];
 	}
 
-	// If no type can fill it, maximize the rounds carried in this magazine.
-	// Preference is only the tiebreaker, so a tiny AP remainder cannot waste most
-	// of a magazine while a larger standard/other remainder is available.
-	INT16 sBestType = -1;
-	UINT32 uiBestRounds = 0;
-
+	// Only when no compatible type can make the requested full load do we accept
+	// a partial one; penetration remains the ordering here as well.
 	for ( UINT32 i = 0; i < types.size(); ++i )
 	{
-		UINT32 uiAvailable = CountSectorAmmoRounds( ubCalibre, types[i] );
-		if ( uiAvailable > uiBestRounds )
-		{
-			uiBestRounds = uiAvailable;
-			sBestType = (INT16)types[i];
-		}
+		if ( CountSectorAmmoRounds( ubCalibre, types[i] ) > 0 )
+			return (INT16)types[i];
 	}
 
-	return sBestType;
+	return -1;
 }
 
 static UINT32 CountAllCompatibleSectorAmmoRounds( UINT8 ubCalibre, UINT16 usMagSize )
@@ -895,11 +907,36 @@ static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject )
 	if ( usCurrent > 0 )
 	{
 		UINT8 ubCurrentType = (*pGun)[ubSubObject]->data.gun.ubGunAmmoType;
-		if ( FindReplacementMagazine( ubCalibre, usMagSize, ubCurrentType ) == 0 ||
-			 CountSectorAmmoRounds( ubCalibre, ubCurrentType ) == 0 )
-			return 0;
+		INT16 sBestFullType = FindSectorAmmoTypeForFill( ubCalibre, usMagSize, usMagSize );
 
-		sAmmoType = (INT16)ubCurrentType;
+		// If a strictly better penetrator can completely refill the gun, return
+		// the old partial magazine to the pool and upgrade the weapon. Never swap
+		// a useful partial magazine for an incomplete "better" load.
+		if ( sBestFullType >= 0 &&
+			 SectorLoadoutAmmoTypeLess( (UINT8)sBestFullType, ubCurrentType ) &&
+			 CountSectorAmmoRounds( ubCalibre, (UINT8)sBestFullType ) >= usMagSize )
+		{
+			UINT16 usOldAmmoItem = (*pGun)[ubSubObject]->data.gun.usGunAmmoItem;
+			if ( usOldAmmoItem != NONE )
+			{
+				OBJECTTYPE oldAmmo;
+				if ( CreateAmmo( usOldAmmoItem, &oldAmmo, usCurrent ) )
+					PoolObjectForSectorLoadout( &oldAmmo );
+			}
+
+			usCurrent = 0;
+			(*pGun)[ubSubObject]->data.gun.ubGunShotsLeft = 0;
+			sAmmoType = sBestFullType;
+		}
+		else
+		{
+			// Otherwise preserve the current ammo type and top it up if possible.
+			if ( FindReplacementMagazine( ubCalibre, usMagSize, ubCurrentType ) == 0 ||
+				 CountSectorAmmoRounds( ubCalibre, ubCurrentType ) == 0 )
+				return 0;
+
+			sAmmoType = (INT16)ubCurrentType;
+		}
 	}
 	else
 	{
@@ -1233,10 +1270,44 @@ static void PoolSquadHandGrenades()
 	}
 }
 
-static BOOLEAN TakeOneHandGrenadeFromSector( OBJECTTYPE *pOut )
+static BOOLEAN IsHandGrenadeStronger( UINT16 usA, UINT16 usB )
+{
+	if ( usB == NONE )
+		return TRUE;
+
+	EXPLOSIVETYPE &a = Explosive[ Item[usA].ubClassIndex ];
+	EXPLOSIVETYPE &b = Explosive[ Item[usB].ubClassIndex ];
+
+	// User rule: direct damage is the primary definition of "strongest".
+	if ( a.ubDamage != b.ubDamage )
+		return a.ubDamage > b.ubDamage;
+
+	// Fragmentation is real additional damage in Explosion Control.cpp, so use
+	// its total potential only as a tie-break behind direct blast damage.
+	UINT32 uiFragA = (UINT32)a.usNumFragments * (UINT32)a.ubFragDamage;
+	UINT32 uiFragB = (UINT32)b.usNumFragments * (UINT32)b.ubFragDamage;
+	if ( uiFragA != uiFragB )
+		return uiFragA > uiFragB;
+
+	if ( a.ubStunDamage != b.ubStunDamage )
+		return a.ubStunDamage > b.ubStunDamage;
+
+	if ( a.ubRadius != b.ubRadius )
+		return a.ubRadius > b.ubRadius;
+
+	if ( a.ubFragRange != b.ubFragRange )
+		return a.ubFragRange > b.ubFragRange;
+
+	return usA < usB;
+}
+
+static BOOLEAN TakeBestHandGrenadeFromSector( OBJECTTYPE *pOut )
 {
 	if ( pOut == NULL )
 		return FALSE;
+
+	INT32 iBestWorldItem = -1;
+	UINT16 usBestItem = NONE;
 
 	for ( UINT32 i = 0; i < pInventoryPoolList.size(); ++i )
 	{
@@ -1247,12 +1318,39 @@ static BOOLEAN TakeOneHandGrenadeFromSector( OBJECTTYPE *pOut )
 		if ( !IsHandThrownNonSmokeGrenade( pObj->usItem ) )
 			continue;
 
-		pObj->RemoveObjectAtIndex( 0, pOut );
-		if ( pObj->ubNumberOfObjects < 1 )
-			DeleteObj( pObj );
-
-		return pOut->exists();
+		if ( iBestWorldItem < 0 || IsHandGrenadeStronger( pObj->usItem, usBestItem ) )
+		{
+			iBestWorldItem = (INT32)i;
+			usBestItem = pObj->usItem;
+		}
 	}
+
+	if ( iBestWorldItem < 0 )
+		return FALSE;
+
+	OBJECTTYPE *pBest = &( pInventoryPoolList[iBestWorldItem].object );
+	pBest->RemoveObjectAtIndex( 0, pOut );
+	if ( pBest->ubNumberOfObjects < 1 )
+		DeleteObj( pBest );
+
+	return pOut->exists();
+}
+
+static BOOLEAN GiveBestHandGrenade( SOLDIERTYPE *pSoldier )
+{
+	if ( pSoldier == NULL )
+		return FALSE;
+
+	OBJECTTYPE grenade;
+	if ( !TakeBestHandGrenadeFromSector( &grenade ) )
+		return FALSE;
+
+	if ( PlaceInAnyPocket( pSoldier, &grenade, FALSE ) && !grenade.exists() )
+		return TRUE;
+
+	// Full/unsuitable inventory: never delete or overwrite existing equipment.
+	if ( grenade.exists() )
+		PoolObjectForSectorLoadout( &grenade );
 
 	return FALSE;
 }
@@ -1263,28 +1361,43 @@ static void RedistributeSectorGrenades()
 	if ( uiOldFilter != IC_MAPFILTER_ALL )
 		MapInventoryFilterSet( IC_MAPFILTER_ALL );
 
-	// Everyone in the sector contributes non-smoke hand grenades to the pool,
-	// including Matt and Buns. They are excluded only when handing them back out.
+	// First pool every non-smoke hand grenade. This guarantees Matt and Buns are
+	// reduced to exactly one grenade rather than keeping weaker extras.
 	PoolSquadHandGrenades();
 
+	SOLDIERTYPE *pMatt = NULL;
+	SOLDIERTYPE *pBuns = NULL;
 	std::vector<SOLDIERTYPE*> mercs;
+
 	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
 		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
 	{
 		SOLDIERTYPE *pSoldier = MercPtrs[id];
-		if ( IsSectorLoadoutMercEligible( pSoldier ) &&
-			 !IsGrenadeRecipientExcluded( pSoldier ) )
-		{
+		if ( !IsSectorLoadoutMercEligible( pSoldier ) )
+			continue;
+
+		if ( IsMattForGrenadeLoadout( pSoldier ) )
+			pMatt = pSoldier;
+		else if ( IsBunsForGrenadeLoadout( pSoldier ) )
+			pBuns = pSoldier;
+		else
 			mercs.push_back( pSoldier );
-		}
 	}
+
+	// Priority reservation: strongest direct-damage grenades go to Matt and Buns
+	// before anyone else receives a grenade. Each receives at most one.
+	UINT32 uiPriorityGiven = 0;
+	if ( pMatt != NULL && GiveBestHandGrenade( pMatt ) )
+		++uiPriorityGiven;
+	if ( pBuns != NULL && GiveBestHandGrenade( pBuns ) )
+		++uiPriorityGiven;
 
 	std::vector<UINT8> counts( mercs.size(), 0 );
 	std::vector<BOOLEAN> blocked( mercs.size(), FALSE );
 	UINT32 uiDistributed = 0;
 
-	// Four round-robin passes: everyone gets a chance at grenade #1 before
-	// anyone gets #2, and so on. Full inventories are skipped thereafter.
+	// Everybody else is equal: one grenade per merc per pass, max four. Remaining
+	// grenades are still taken strongest-first, but no merc can jump a pass.
 	for ( UINT8 ubPass = 0; ubPass < 4; ++ubPass )
 	{
 		BOOLEAN fOutOfGrenades = FALSE;
@@ -1295,7 +1408,7 @@ static void RedistributeSectorGrenades()
 				continue;
 
 			OBJECTTYPE grenade;
-			if ( !TakeOneHandGrenadeFromSector( &grenade ) )
+			if ( !TakeBestHandGrenadeFromSector( &grenade ) )
 			{
 				fOutOfGrenades = TRUE;
 				break;
@@ -1328,8 +1441,8 @@ static void RedistributeSectorGrenades()
 	fCharacterInfoPanelDirty = TRUE;
 
 	ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
-		L"GRN: %d granadas repartidas entre %d mercenarios (max. 4; Matt y Buns excluidos).",
-		uiDistributed, (UINT32)mercs.size() );
+		L"GRN: Matt/Buns %d/2 con la granada mas potente; %d granadas repartidas entre %d mercenarios (max. 4).",
+		uiPriorityGiven, uiDistributed, (UINT32)mercs.size() );
 }
 
 // load the background panel graphics for inventory
@@ -2840,7 +2953,7 @@ void CreateMapInventoryButtons( void )
 		BUTTON_USE_DEFAULT, sLoadoutButtonX, INVEN_POOL_Y + 24 + yResOffset, 28, 13,
 		BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST, NULL, (GUI_CALLBACK)MapInventoryPoolAmmo3xBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[0],
-		L"3x: retirar toda la municion suelta, cargar cada arma y dar 3 cargadores por arma, repartidos por turnos segun el espacio. AP > estandar > otras > HP > Glaser." );
+		L"3x: cargar armas primero y luego dar 3 cargadores por arma. Municion: mayor penetracion de blindaje primero, segun valores XML; reparto equilibrado segun espacio." );
 
 	guiMapInvenLoadoutButton[1] = CreateTextButton( L"SMK", SMALLCOMPFONT, FONT_WHITE, DEFAULT_SHADOW,
 		BUTTON_USE_DEFAULT, sLoadoutButtonX + 30, INVEN_POOL_Y + 24 + yResOffset, 28, 13,
@@ -2852,7 +2965,7 @@ void CreateMapInventoryButtons( void )
 		BUTTON_USE_DEFAULT, sLoadoutButtonX + 60, INVEN_POOL_Y + 24 + yResOffset, 28, 13,
 		BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST, NULL, (GUI_CALLBACK)MapInventoryPoolGrenadeBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[2],
-		L"GRN: reunir granadas de mano (sin humo) y repartirlas por igual; max. 4 por mercenario. Matt y Buns no reciben." );
+		L"GRN: Matt y Buns reciben primero 1 granada cada uno, la de mayor dano; el resto se reparte por igual, max. 4 por mercenario. Humo separado." );
 
 	//reset the current inventory page to be the first page
 	iCurrentInventoryPoolPage = 0;
