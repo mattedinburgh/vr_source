@@ -43,11 +43,8 @@ static void TraceSanMonaC5VisualAsset( const STR8 pStage, const STR8 pFilename, 
 
 
 static BOOLEAN ValidateAndCanonicalizeNativeVHDImage(
-	HIMAGE hNativeImage, STR8 pCanonicalFilename, UINT8 ubScale, HIMAGE *phCanonicalFallback )
+	HIMAGE hNativeImage, STR8 pCanonicalFilename, UINT8 ubScale )
 {
-	if ( phCanonicalFallback != NULL )
-		*phCanonicalFallback = NULL;
-
 	if ( hNativeImage == NULL || pCanonicalFilename == NULL ||
 		 ( ubScale != 2 && ubScale != 4 ) )
 		return FALSE;
@@ -219,11 +216,7 @@ static BOOLEAN ValidateAndCanonicalizeNativeVHDImage(
 		return TRUE;
 	}
 
-	if ( phCanonicalFallback != NULL )
-		*phCanonicalFallback = hCanonicalImage;
-	else
-		DestroyImage( hCanonicalImage );
-
+	DestroyImage( hCanonicalImage );
 	return FALSE;
 }
 
@@ -302,9 +295,8 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 				hImage = CreateImage( cVHDVisualFilename, IMAGE_ALLDATA, ImageFileType::PNG );
 			if ( hImage != NULL )
 			{
-				HIMAGE hCanonicalFallback = NULL;
 				if ( ValidateAndCanonicalizeNativeVHDImage(
-						hImage, cVisualFilename, ubRequestedVHDScale, &hCanonicalFallback ) )
+						hImage, cFilename, ubRequestedVHDScale ) )
 				{
 					ubLoadedVHDScale = ubRequestedVHDScale;
 					fLoadedNativeVHD = TRUE;
@@ -312,10 +304,10 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 				else
 				{
 					BlackBoxEvent( "VHD",
-						"native asset rejected; using canonical fallback file=%s native=%s scale=%u",
-						cVisualFilename, hImage->ImageFile, ubRequestedVHDScale );
+						"native asset rejected; using visual fallback logical=%s visual=%s native=%s scale=%u",
+						cFilename, cVisualFilename, hImage->ImageFile, ubRequestedVHDScale );
 					DestroyImage( hImage );
-					hImage = hCanonicalFallback;
+					hImage = NULL;
 				}
 			}
 		}
