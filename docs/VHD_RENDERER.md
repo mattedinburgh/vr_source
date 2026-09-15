@@ -114,9 +114,9 @@ This gives one maintainable scale-aware C++ path for:
 
 ### Soldiers and tactical effects
 
-VHD cannot stop at map tiles. Merc animations, corpses, projectiles, effects, shadows and tactical markers must eventually obey the same world render scale or proportions will be wrong.
+VHD cannot stop at map tiles. Merc animations, corpses, projectiles, effects, shadows and tactical markers must obey the same world render scale or proportions will be wrong.
 
-The soldier animation loader is separate from `LoadTileSurface`, so it will be integrated after the tile/depth prototype proves correct.
+The soldier animation loader is separate from `LoadTileSurface`; legacy soldier animation packages are now scaled through the VHD fallback path while remaining indexed so per-merc palette recolouring is preserved. Cached tactical effects that load through tile surfaces inherit the same VHD scale handling.
 
 ## Milestones
 
@@ -129,7 +129,7 @@ Status: implemented on this branch.
 - 1x default
 
 ### VHD-1 — native 2x true-colour tile prototype
-Status: renderer plumbing implemented; build/runtime validation pending.
+Status: renderer plumbing implemented; automated build/startup validation passed.
 
 Implemented foundations:
 - native `VHD2/` and `VHD4/` tactical tile lookup with legacy JSD identity preserved
@@ -161,14 +161,20 @@ Status: runtime nearest-neighbour fallback is implemented; persistent cache/qual
 Missing native tile art is enlarged in memory with nearest-neighbour ETRLE scaling while remaining indexed/compressed. Scale-aware C++ multi-Z rendering maps 2x/4x source pixels back to legacy JSD coordinates. Soldier animation packages likewise remain palette-based.
 
 ### VHD-3 — tactical actors/effects
+Status: core scale integration implemented; visual QA remains part of sector/asset production.
 
-Scale or replace:
-- merc/enemy animations
-- corpses
-- projectiles
-- explosions/smoke
+Implemented:
+- legacy merc/enemy animation scaling with palette recolouring preserved
+- corpse/cached tactical effect scaling through tile-surface loading
+- scale-aware tactical world markers and locators
+- scale-aware soldier hitboxes/world-height offsets
+- scale-aware multi-Z rendering for indexed actor/structure paths
+
+Still requires ongoing visual QA as native-HD asset production expands:
+- projectile/explosion/smoke presentation
 - shadows
-- tactical world markers
+- mixed native-HD + fallback scenes
+- complex wall/roof/corpse depth interactions
 
 ### VHD-4 — 4x optional mode
 
@@ -177,7 +183,7 @@ Only after 2x is stable.
 
 ## Validation gate before any merge
 
-VHD remains experimental and must not be merged into the canonical integration branch until all of the following pass in a 2x test build:
+Automated engineering validation has passed on the VHD branch, including the true VS2013/v120 Release Win32 build and an isolated 2x startup smoke test. VHD remains isolated from the canonical integration branch until manual visual/mechanical QA covers the following in representative sectors:
 
 - clean Release Win32 compile
 - sector load with mixed native-HD and legacy fallback assets
@@ -190,6 +196,20 @@ VHD remains experimental and must not be merged into the canonical integration b
 - scrolling without seams or stale save-buffer rectangles
 - Fallout-style wall cutout at 2x
 - save/load without map or save-format changes
+
+
+### Automated validation status
+
+Verified on the VHD branch:
+
+- hosted Win32 full compile/link: passed
+- targeted SGP/TileEngine/Tactical/Editor compile: passed
+- root compile-only check: passed
+- VS2013/v120 Release Win32 build: passed
+- isolated 2x startup smoke: passed
+- runtime diagnostic collection/cleanup: passed
+
+A green startup gate is not a substitute for sector-by-sector visual QA. Native VHD2 production must still validate seams, anchors, roofs, doors/windows, JSD depth, occlusion, scrolling, mouse/grid alignment and destruction states in-engine.
 
 ## Non-goals
 
