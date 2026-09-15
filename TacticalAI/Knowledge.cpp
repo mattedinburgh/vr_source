@@ -273,10 +273,14 @@ INT32 MostImportantNoiseHeard( SOLDIERTYPE *pSoldier, INT32 *piRetValue, BOOLEAN
 			iDistAway = SpacesAway(pSoldier->sGridNo,pSoldier->aiData.sNoiseGridno);
 			iNoiseValue = ((pSoldier->aiData.ubNoiseVolume / 2) - 6) * iDistAway;
 
-			// Correlate the sound with visually established contact memory. This
-			// boosts investigation priority only; it does not reveal who fired.
-			iNoiseValue += AIMemoryNoiseRelevance(
+			// Correlate the sound with visually established contact memory.
+			// A matched sound also becomes short-lived anonymous directional evidence.
+			INT32 iMemoryRelevance = AIMemoryNoiseRelevance(
 				pSoldier, pSoldier->aiData.sNoiseGridno, pSoldier->bNoiseLevel);
+			iNoiseValue += iMemoryRelevance;
+			AIRegisterThreatNoiseEvidence(
+				pSoldier, pSoldier->aiData.sNoiseGridno,
+				pSoldier->bNoiseLevel, iMemoryRelevance, FALSE);
 
 			if (iNoiseValue > iBestValue)
 			{
@@ -305,8 +309,12 @@ INT32 MostImportantNoiseHeard( SOLDIERTYPE *pSoldier, INT32 *piRetValue, BOOLEAN
 				// calculate how far this noise was, and its relative "importance"
 				iDistAway = SpacesAway(pSoldier->sGridNo,*psNoiseGridNo);
 				iNoiseValue = ((*pubNoiseVolume / 2) - 6) * iDistAway;
-				iNoiseValue += AIMemoryNoiseRelevance(
+				INT32 iMemoryRelevance = AIMemoryNoiseRelevance(
 					pSoldier, *psNoiseGridNo, *pbNoiseLevel);
+				iNoiseValue += iMemoryRelevance;
+				AIRegisterThreatNoiseEvidence(
+					pSoldier, *psNoiseGridNo, *pbNoiseLevel,
+					iMemoryRelevance, TRUE);
 
 				if (iNoiseValue > iBestValue)
 				{
