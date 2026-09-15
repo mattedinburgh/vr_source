@@ -118,6 +118,7 @@
 
 #include		"BobbyR.h"
 #include "ExceptionHandling.h"
+#include "Campaign.h"
 #include		"Imp Portraits.h"
 #include		"Loading Screen.h"
 #include		"Interface Utils.h"
