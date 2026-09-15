@@ -1616,7 +1616,18 @@ UINT32 InitializeJA2(void)
 		return( ERROR_SCREEN );
 	}
 
-	InitTileCache( );
+	if ( !InitTileCache( ) )
+	{
+		SET_ERROR( "Could not initialize tile cache" );
+		return( ERROR_SCREEN );
+	}
+
+	CHAR8 zVHDTileCacheFixture[] = "TILESETS\\0\\sgrass1.sti";
+	if ( !RunVHDTileCacheSelfTest( zVHDTileCacheFixture ) )
+	{
+		SET_ERROR( "VHD tile cache self-test failed: %s", zVHDTileCacheFixture );
+		return( ERROR_SCREEN );
+	}
 
 	InitMercPopupBox( );
 
