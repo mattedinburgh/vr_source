@@ -5933,8 +5933,12 @@ static BOOLEAN VHDIndexedMultiZBlit(
 
 		if ( !fSawEndOfLine && usSourceY + 1 < pRegion->usHeight )
 			return FALSE;
-		if ( usSourceX != pRegion->usWidth )
-			return FALSE;
+
+		// Legal legacy ETRLE may terminate a scanline before usWidth; the
+		// unmentioned tail is implicitly transparent. Do not reject such STI
+		// art merely because VHD is using the C++ multi-Z path. Run bounds above
+		// still guarantee usSourceX can never advance beyond the declared width.
+		// The missing tail needs no destination/Z work because it is transparent.
 	}
 
 	return TRUE;
