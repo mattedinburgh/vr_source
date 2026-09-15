@@ -342,7 +342,8 @@ INT32 MostImportantNoiseHeard( SOLDIERTYPE *pSoldier, INT32 *piRetValue, BOOLEAN
 				-80 +
 				(INT32)MemoryCue.ubConfidence / 2 -
 				(INT32)MemoryCue.ubAgeTurns * 2 +
-				(INT32)__min((UINT8)3, MemoryCue.ubMatchedMemories) * 6;
+				(INT32)__min((UINT8)3, MemoryCue.ubMatchedMemories) * 6 +
+				(MemoryCue.fNoiseCorroborated ? 10 : 0);
 		}
 	}
 
