@@ -478,6 +478,90 @@ BOOLEAN RemoveCachedTile( INT32 iCachedTile )
 	return TRUE;
 }
 
+BOOLEAN RunVHDTileCacheSelfTest( const STR8 cFilename )
+{
+	const CHAR8 *pEnabled = getenv( "VR_VHD_TILE_CACHE_TEST" );
+	if ( pEnabled == NULL || strcmp( pEnabled, "1" ) != 0 )
+		return TRUE;
+
+	if ( cFilename == NULL )
+	{
+		BlackBoxEvent( "VHD_CACHE", "self-test missing fixture path" );
+		return FALSE;
+	}
+
+	BlackBoxEvent( "VHD_CACHE", "self-test begin file=%s", cFilename );
+
+	const INT32 iFirst = GetCachedTile( cFilename );
+	if ( iFirst < 0 )
+	{
+		BlackBoxEvent( "VHD_CACHE", "self-test failed initial load file=%s", cFilename );
+		return FALSE;
+	}
+
+	const INT32 iSecond = GetCachedTile( cFilename );
+	if ( iSecond != iFirst || gpTileCache[ iFirst ].sHits < 2 )
+	{
+		BlackBoxEvent( "VHD_CACHE",
+			"self-test failed resident hit first=%d second=%d refs=%d",
+			iFirst, iSecond, gpTileCache[ iFirst ].sHits );
+		return FALSE;
+	}
+
+	if ( !RemoveCachedTile( iFirst ) || !RemoveCachedTile( iSecond ) ||
+		 gpTileCache[ iFirst ].pImagery == NULL || gpTileCache[ iFirst ].sHits != 0 )
+	{
+		BlackBoxEvent( "VHD_CACHE",
+			"self-test failed zero-ref residency index=%d refs=%d resident=%d",
+			iFirst, gpTileCache[ iFirst ].sHits, gpTileCache[ iFirst ].pImagery != NULL );
+		return FALSE;
+	}
+
+	const INT32 iReused = GetCachedTile( cFilename );
+	if ( iReused != iFirst || gpTileCache[ iFirst ].sHits != 1 )
+	{
+		BlackBoxEvent( "VHD_CACHE",
+			"self-test failed LRU reuse first=%d reused=%d refs=%d",
+			iFirst, iReused, gpTileCache[ iFirst ].sHits );
+		return FALSE;
+	}
+
+	if ( !RemoveCachedTile( iReused ) || gpTileCache[ iFirst ].sHits != 0 )
+	{
+		BlackBoxEvent( "VHD_CACHE", "self-test failed final release index=%d refs=%d",
+			iFirst, gpTileCache[ iFirst ].sHits );
+		return FALSE;
+	}
+
+	const UINT32 uiSavedBudget = guiTileCacheBudgetBytes;
+	guiTileCacheBudgetBytes = 0;
+	TrimTileCacheToBudget( -1 );
+	guiTileCacheBudgetBytes = uiSavedBudget;
+
+	if ( (UINT32)iFirst < guiMaxTileCacheSize && gpTileCache[ iFirst ].pImagery != NULL )
+	{
+		BlackBoxEvent( "VHD_CACHE", "self-test failed byte-budget eviction index=%d", iFirst );
+		return FALSE;
+	}
+
+	FILE *pMarker = fopen( "vhd-tile-cache-selftest.ok", "w" );
+	if ( pMarker == NULL )
+	{
+		BlackBoxEvent( "VHD_CACHE", "self-test could not write marker" );
+		return FALSE;
+	}
+	fprintf( pMarker, "pass file=%s hits=%u misses=%u evictions=%u peak=%u\n",
+		cFilename, guiTileCacheHitCount, guiTileCacheMissCount,
+		guiTileCacheEvictionCount, guiTileCachePeakBytes );
+	fclose( pMarker );
+
+	BlackBoxEvent( "VHD_CACHE",
+		"self-test passed file=%s hits=%u misses=%u evictions=%u peak=%u",
+		cFilename, guiTileCacheHitCount, guiTileCacheMissCount,
+		guiTileCacheEvictionCount, guiTileCachePeakBytes );
+	return TRUE;
+}
+
 HVOBJECT GetCachedTileVideoObject( INT32 iIndex )
 {
 	if ( iIndex == -1 )
