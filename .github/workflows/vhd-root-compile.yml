@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/vhd-renderer
+      - 'engine/vhd-*'
     paths:
       - 'GameSettings.cpp'
       - 'GameSettings.h'
@@ -12,7 +13,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: vhd-root-compile
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

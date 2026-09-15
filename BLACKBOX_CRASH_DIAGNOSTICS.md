@@ -1,7 +1,7 @@
 # Vengeance Crash Black Box
 
 Vengeance now has an always-on crash **flight recorder** layered on top of the existing
-exception report and Windows minidump system. Recorder **v3** is intentionally independent
+exception report and Windows minidump system. Recorder **v5** is intentionally independent
 of VFS/FileMan for its durable journal and has an additional watchdog path that does not
 take the normal recorder lock.
 
@@ -18,12 +18,12 @@ constant disk I/O.
   snapshot, first-chance exception feed, subsystem states, checkpoint history, durable
   history, registers and stack data.
 - `Vengeance-Crash-<PID>-<TID>-YYYYMMDD-HHMMSS.dmp` — Windows minidump captured before
-  the more complex text/stack reporting work. Recorder v3 first tries a richer dump with
+  the more complex text/stack reporting work. Recorder v5 first tries a richer dump with
   referenced memory, unloaded modules and additional thread/process metadata, then
   automatically falls back to the legacy-compatible dump flags if the installed
   `dbghelp.dll` rejects the enhanced request.
 
-## Recorder v3 event format
+## Recorder v5 event format
 
 Durable events carry enough information to correlate work across threads and time:
 
@@ -40,7 +40,7 @@ The in-memory recorder now keeps the latest **4,096 durable events**.
 
 `BlackBoxCheckpoint()` is memory-only and is safe for hot diagnostic paths.
 
-Recorder v3 keeps:
+Recorder v5 keeps:
 
 - the latest global checkpoint;
 - the latest **4,096 high-frequency checkpoints** as a circular history;
@@ -76,7 +76,7 @@ When a stalled main loop eventually resumes, the normal durable timeline also re
 
 ## First-chance structured-exception feed
 
-Recorder v3 installs a Windows vectored exception handler for fatal-class structured
+Recorder v5 installs a Windows vectored exception handler for fatal-class structured
 exceptions. It records the fault **before** normal exception dispatch has a chance to mask
 or transform it.
 
@@ -128,6 +128,25 @@ Once per second, the main loop stores a memory-only `HEALTH` checkpoint containi
 
 Every 30 seconds the same class of health data is written as a durable event. This makes
 slow handle/GDI leaks and memory-pressure problems visible without per-frame disk writes.
+
+## v5 durability and snapshot safety
+
+Recorder v5 separates **write visibility** from **physical flush frequency**:
+
+- every durable event is written to the Windows file handle immediately;
+- ordinary events force a physical flush at most once per second;
+- crash/assert/stall/recovery/fatal/watchdog events and failed timed operations flush
+  immediately;
+- recovered first-chance exception batches perform one forced flush after the batch;
+- failed flushes are attempt-throttled, preventing repeated disk errors from turning the
+  diagnostic system into a performance problem.
+
+The fatal reporter still never takes the normal recorder lock. Instead, v5 uses
+commit-marker validation around every lock-free snapshot class. Event/checkpoint ring
+entries, subsystem state, structured context, counters, timed operations and first-chance
+exception records are copied only when their commit marker is stable before and after the
+copy. A partially published record is skipped or retried rather than printed as valid
+evidence.
 
 ## Failure feeds
 

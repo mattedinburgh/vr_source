@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
+import tempfile
 import unittest
+from pathlib import Path
 
 import vr_companion_analyze as companion
 
@@ -180,6 +182,95 @@ class CompanionAnalysisTests(unittest.TestCase):
         self.assertEqual(1, result["targeted_beyond_range"])
         self.assertEqual(1, result["actual_overrange"])
         self.assertEqual(1, len(result["overrange_records"]))
+
+
+    def test_session_summary_marks_clean_unclean_and_legacy_sessions(self):
+        events = [
+            {
+                "schema": "vr-blackbox-1", "session": 10, "seq": 1,
+                "kind": "session_start", "journal_lifecycle_version": 1,
+            },
+            {"schema": "vr-blackbox-1", "session": 10, "seq": 2, "kind": "session_end"},
+            {
+                "schema": "vr-blackbox-1", "session": 11, "seq": 1,
+                "kind": "session_start", "journal_lifecycle_version": 1,
+            },
+            {"schema": "vr-blackbox-1", "session": 12, "seq": 1, "kind": "session_start"},
+        ]
+        summary = companion.session_summary(events)
+        self.assertEqual([10], summary["ended_sessions"])
+        self.assertEqual([10, 11], summary["lifecycle_sessions"])
+        self.assertEqual([11], summary["unclean_sessions"])
+        self.assertEqual([12], summary["legacy_sessions"])
+
+    def test_truncated_final_jsonl_record_is_recovered(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "VR_BlackBox.jsonl"
+            path.write_text(
+                '{"schema":"vr-blackbox-1","session":1,"seq":1,"kind":"session_start"}\n'
+                '{"schema":"vr-blackbox-1","session":1,"seq":2,"kind":"decision_begin"',
+                encoding="utf-8",
+            )
+            events, diagnostics = companion.load_events_with_diagnostics(path)
+            self.assertEqual(1, len(events))
+            self.assertEqual(1, diagnostics["skipped_truncated_tail"])
+            self.assertEqual(1, diagnostics["invalid_lines"])
+
+    def test_truncated_tail_with_trailing_blank_lines_is_recovered(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "VR_BlackBox.jsonl"
+            path.write_text(
+                '{"schema":"vr-blackbox-1","session":1,"seq":1}\n'
+                '{"schema":"vr-blackbox-1","session":1,"seq":2\n'
+                '\n\n',
+                encoding="utf-8",
+            )
+            events, diagnostics = companion.load_events_with_diagnostics(path)
+            self.assertEqual(1, len(events))
+            self.assertEqual(1, diagnostics["skipped_truncated_tail"])
+
+    def test_malformed_middle_jsonl_record_remains_fatal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "VR_BlackBox.jsonl"
+            path.write_text(
+                '{"schema":"vr-blackbox-1","session":1,"seq":1}\n'
+                '{"schema":"vr-blackbox-1"\n'
+                '{"schema":"vr-blackbox-1","session":1,"seq":3}\n',
+                encoding="utf-8",
+            )
+            with self.assertRaises(SystemExit):
+                companion.load_events_with_diagnostics(path)
+
+    def test_strict_jsonl_rejects_truncated_tail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "VR_BlackBox.jsonl"
+            path.write_text(
+                '{"schema":"vr-blackbox-1","session":1,"seq":1}\n'
+                '{"schema":"vr-blackbox-1","session":1,"seq":2',
+                encoding="utf-8",
+            )
+            with self.assertRaises(SystemExit):
+                companion.load_events_with_diagnostics(path, strict=True)
+
+    def test_integrity_summary_flags_gaps_duplicates_and_regressions(self):
+        events = [
+            {"schema": "vr-blackbox-1", "session": 1, "seq": 1},
+            {"schema": "vr-blackbox-1", "session": 1, "seq": 3},
+            {"schema": "vr-blackbox-1", "session": 1, "seq": 3},
+            {"schema": "vr-blackbox-1", "session": 1, "seq": 2},
+        ]
+        integrity = companion.event_integrity_summary(events)
+        self.assertEqual(1, integrity["duplicate_sequence_ids"])
+        self.assertEqual(2, integrity["sequence_regressions"])
+        self.assertEqual(1, integrity["missing_sequence_ids"])
+
+    def test_atomic_report_write_replaces_complete_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "report.md"
+            path.write_text("old", encoding="utf-8")
+            companion.write_text_atomic(path, "new report")
+            self.assertEqual("new report", path.read_text(encoding="utf-8"))
+            self.assertEqual([], list(path.parent.glob(path.name + ".tmp.*")))
 
 
 if __name__ == "__main__":

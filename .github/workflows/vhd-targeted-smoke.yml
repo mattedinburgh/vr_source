@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/vhd-renderer
+      - 'engine/vhd-*'
     paths:
       - 'Standard Gaming Platform/**'
       - 'TileEngine/**'
@@ -13,7 +14,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: vhd-targeted-smoke
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

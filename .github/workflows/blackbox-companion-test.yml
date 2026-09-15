@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - install/all-2026-09-12
+      - 'blackbox/**'
     paths:
       - 'VRAnalytics.cpp'
       - 'VRAnalytics.h'
@@ -11,6 +12,7 @@ on:
       - 'Strategic/Strategic AI.cpp'
       - 'tools/vr_companion_analyze.py'
       - 'tools/test_vr_companion.py'
+      - 'COLLECT_BLACKBOX.ps1'
       - '.github/workflows/blackbox-companion-test.yml'
   workflow_dispatch:
 
@@ -32,8 +34,90 @@ jobs:
           python -m py_compile tools/vr_companion_analyze.py
           python -m py_compile tools/test_vr_companion.py
 
+      - name: Parse Black Box collector PowerShell
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $env:GITHUB_WORKSPACE 'COLLECT_BLACKBOX.ps1'),
+            [ref]$tokens,
+            [ref]$errors
+          )
+          if ($errors.Count -gt 0) {
+            $errors | Format-List
+            throw 'PowerShell syntax errors in COLLECT_BLACKBOX.ps1'
+          }
+
+      - name: Smoke-test Black Box evidence collector
+        shell: pwsh
+        run: |
+          $game = Join-Path $env:RUNNER_TEMP 'blackbox-collector-game'
+          $out = Join-Path $env:RUNNER_TEMP 'blackbox-collector-out'
+          $expanded = Join-Path $env:RUNNER_TEMP 'blackbox-collector-expanded'
+          Remove-Item $game, $out, $expanded -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $game, $out | Out-Null
+          @(
+            '[00:00:01.000] [ENGINE] synthetic smoke test',
+            '[00:00:02.000] [ENGINE] Clean shutdown'
+          ) | Set-Content -LiteralPath (Join-Path $game 'BlackBox_LastRun.log') -Encoding UTF8
+          '{"schema":"vr-blackbox-1","session":1,"seq":1,"kind":"session_start"}' |
+            Set-Content -LiteralPath (Join-Path $game 'VR_BlackBox.jsonl') -Encoding UTF8
+
+          & (Join-Path $env:GITHUB_WORKSPACE 'COLLECT_BLACKBOX.ps1') -GameRoot $game -OutputDirectory $out
+
+          $zip = Get-ChildItem -LiteralPath $out -Filter 'Vengeance_BlackBox_*.zip' -File |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $zip) { throw 'Collector did not create a ZIP.' }
+
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $expanded -Force
+          foreach ($required in @('manifest.csv', 'environment.txt', 'BlackBox_LastRun.log', 'VR_BlackBox.jsonl')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $expanded $required) -PathType Leaf)) {
+              throw "Collector ZIP is missing required file: $required"
+            }
+          }
+
+          $manifest = Import-Csv -LiteralPath (Join-Path $expanded 'manifest.csv')
+          if (-not ($manifest.RelativePath -contains 'BlackBox_LastRun.log')) {
+            throw 'Manifest does not contain BlackBox_LastRun.log.'
+          }
+
       - name: Compile logger as C++03
         run: g++ -std=c++03 -Wall -Wextra -pedantic -c VRAnalytics.cpp -o /tmp/VRAnalytics.o
+
+      - name: Smoke-test analytics journal rotation
+        shell: bash
+        run: |
+          cat > /tmp/vr_blackbox_rotate.cpp <<'CPP'
+          #include "VRAnalytics.h"
+          int main()
+          {
+              int enabled = VRAnalyticsIsEnabled() ? 0 : 1;
+              VRAnalyticsShutdown();
+              return enabled;
+          }
+          CPP
+          rm -f VR_BlackBox.jsonl VR_BlackBox_Previous*.jsonl VR_BlackBox_RotatePending.jsonl
+          python - <<'PY'
+          from pathlib import Path
+          Path("VR_BlackBox.jsonl").write_bytes(b"x" * 2048)
+          PY
+          g++ -std=c++03 -DVR_ANALYTICS_MAX_BYTES=1024 -I. VRAnalytics.cpp /tmp/vr_blackbox_rotate.cpp -o /tmp/vr_blackbox_rotate
+          /tmp/vr_blackbox_rotate
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          previous = Path("VR_BlackBox_Previous.jsonl")
+          current = Path("VR_BlackBox.jsonl")
+          assert previous.exists() and previous.stat().st_size == 2048
+          events = [json.loads(line) for line in current.read_text(encoding="utf-8").splitlines() if line.strip()]
+          assert [event.get("kind") for event in events] == ["session_start", "session_end"]
+          assert events[0].get("journal_lifecycle_version") == 1
+          assert not Path("VR_BlackBox_RotatePending.jsonl").exists()
+          print("Analytics rotation smoke test passed")
+          PY
+          rm -f VR_BlackBox.jsonl VR_BlackBox_Previous*.jsonl VR_BlackBox_RotatePending.jsonl
 
       - name: End-to-end Black Box smoke test
         shell: bash
@@ -61,6 +145,7 @@ jobs:
               VRAnalyticsStrategicMoveOrdered(110, 7, 0, 17, 8, 0, 0);
               VRAnalyticsStrategicGroupArrived(170, 7, 17, 8, "garrison_reinforcement");
               VRAnalyticsBattleEnded("victory", 200, 1, 1, 0, 6, 0, 0, false);
+              VRAnalyticsShutdown();
               return 0;
           }
           CPP
@@ -73,7 +158,12 @@ jobs:
           p = Path("VR_BlackBox.jsonl")
           assert p.exists() and p.stat().st_size > 0
           events = [json.loads(line) for line in p.read_text(encoding="utf-8").splitlines() if line.strip()]
-          assert any(e.get("kind") == "session_start" and e.get("blackbox_version") == 2 for e in events)
+          assert any(
+              e.get("kind") == "session_start"
+              and e.get("blackbox_version") == 2
+              and e.get("journal_lifecycle_version") == 1
+              for e in events
+          )
           assert any(e.get("kind") == "battle_start" for e in events)
           assert any(e.get("kind") == "formation_snapshot" for e in events)
           assert any(
@@ -89,6 +179,7 @@ jobs:
           assert any(e.get("kind") == "strategic_move_order" for e in events)
           assert any(e.get("kind") == "strategic_group_arrived" for e in events)
           assert any(e.get("kind") == "battle_end" for e in events)
+          assert events[-1].get("kind") == "session_end"
           print(f"Parsed {len(events)} Black Box events")
           PY
           python tools/vr_companion_analyze.py VR_BlackBox.jsonl

@@ -23,16 +23,23 @@ if (-not $OutputDirectory) {
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 
 $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-$work = Join-Path $env:TEMP ("VR_BlackBox_" + $stamp + "_" + $PID)
+$tempRoot = [IO.Path]::GetTempPath()
+$work = Join-Path $tempRoot ("VR_BlackBox_" + $stamp + "_" + $PID)
 $zip = Join-Path $OutputDirectory ("Vengeance_BlackBox_" + $stamp + ".zip")
 New-Item -ItemType Directory -Force -Path $work | Out-Null
+$collectionErrors = New-Object System.Collections.Generic.List[string]
+$zipPartial = $null
 
 function Copy-EvidenceFile {
     param([string]$Path, [string]$Subdir = '')
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
     $destDir = if ($Subdir) { Join-Path $work $Subdir } else { $work }
     New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-    Copy-Item -LiteralPath $Path -Destination (Join-Path $destDir ([IO.Path]::GetFileName($Path))) -Force
+    try {
+        Copy-Item -LiteralPath $Path -Destination (Join-Path $destDir ([IO.Path]::GetFileName($Path))) -Force -ErrorAction Stop
+    } catch {
+        $collectionErrors.Add(("COPY FAILED: {0} :: {1}" -f $Path, $_.Exception.Message))
+    }
 }
 
 function Copy-NewestMatches {
@@ -43,9 +50,14 @@ function Copy-NewestMatches {
         ForEach-Object { Copy-EvidenceFile -Path $_.FullName -Subdir $Subdir }
 }
 
+try {
 # Core recorder evidence. Preserve current and rotated runs.
 @(
     'VR_BlackBox.jsonl',
+    'VR_BlackBox_Previous.jsonl',
+    'VR_BlackBox_Previous_2.jsonl',
+    'VR_BlackBox_Previous_3.jsonl',
+    'VR_BlackBox_RotatePending.jsonl',
     'VR_Companion_Report.md',
     'VR_Companion_Summary.json',
     'VR_Analytics_Experiment.txt',
@@ -91,7 +103,11 @@ foreach ($relative in $configCandidates) {
     $path = Join-Path $GameRoot $relative
     if (Test-Path -LiteralPath $path -PathType Leaf) {
         $safeName = ($relative -replace '[\\/:*?"<>|]', '_')
-        Copy-Item -LiteralPath $path -Destination (Join-Path $work $safeName) -Force
+        try {
+            Copy-Item -LiteralPath $path -Destination (Join-Path $work $safeName) -Force -ErrorAction Stop
+        } catch {
+            $collectionErrors.Add(("CONFIG COPY FAILED: {0} :: {1}" -f $path, $_.Exception.Message))
+        }
     }
 }
 
@@ -140,6 +156,10 @@ if ($git -and (Test-Path (Join-Path $RepoRoot '.git'))) {
 }
 $lines | Set-Content -LiteralPath $envFile -Encoding UTF8
 
+if ($collectionErrors.Count -gt 0) {
+    $collectionErrors | Set-Content -LiteralPath (Join-Path $work 'collection_errors.txt') -Encoding UTF8
+}
+
 # File manifest with hashes makes truncated/corrupt bundles obvious.
 $manifest = Join-Path $work 'manifest.csv'
 $manifestRows = Get-ChildItem -Path $work -Recurse -File |
@@ -155,13 +175,25 @@ $manifestRows = Get-ChildItem -Path $work -Recurse -File |
     }
 $manifestRows | Export-Csv -LiteralPath $manifest -NoTypeInformation -Encoding UTF8
 
+$zipPartial = Join-Path $OutputDirectory ("Vengeance_BlackBox_" + $stamp + ".partial.zip")
+if (Test-Path -LiteralPath $zipPartial) { Remove-Item -LiteralPath $zipPartial -Force }
+Compress-Archive -Path (Join-Path $work '*') -DestinationPath $zipPartial -CompressionLevel Optimal
+
 if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
-Compress-Archive -Path (Join-Path $work '*') -DestinationPath $zip -CompressionLevel Optimal
+Move-Item -LiteralPath $zipPartial -Destination $zip -Force
 
 Write-Host ''
 Write-Host 'Vengeance black-box evidence bundle created:'
 Write-Host "  $zip"
+if ($collectionErrors.Count -gt 0) {
+    Write-Warning ("Bundle completed with {0} skipped/copy-failed file(s). See collection_errors.txt inside the ZIP." -f $collectionErrors.Count)
+}
 Write-Host ''
 Write-Host 'Upload this ZIP when reporting a crash, freeze, save/load failure, or sector-transition problem.'
-
-Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+}
+finally {
+    Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+    if ($zipPartial -and (Test-Path -LiteralPath $zipPartial)) {
+        Remove-Item -LiteralPath $zipPartial -Force -ErrorAction SilentlyContinue
+    }
+}

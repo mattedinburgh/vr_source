@@ -391,7 +391,7 @@ void InitEditorItemsInfo(UINT32 uiItemType)
 			swprintf( pStr, L"%S", LockTable[ i ].ubEditorName );
 			DisplayWrappedString(x, (UINT16)(y+25), 60, 2, SMALLCOMPFONT, FONT_WHITE,	pStr, FONT_BLACK, TRUE, CENTER_JUSTIFIED );
 
-			UINT16 usGraphicNum = g_bUsePngItemImages ? 0 : item->ubGraphicNum;
+			UINT16 usGraphicNum = GetInterfaceGraphicSubIndex(item->ubGraphicType, item->ubGraphicNum);
 			//Calculate the center position of the graphic in a 60 pixel wide area.
 			sWidth = hVObject->pETRLEObject[usGraphicNum].usWidth;
 			sOffset = hVObject->pETRLEObject[usGraphicNum].sOffsetX;
@@ -548,7 +548,7 @@ void InitEditorItemsInfo(UINT32 uiItemType)
 
 				DisplayWrappedString(x, (UINT16)(y+25), 60, 2, SMALLCOMPFONT, FONT_WHITE, pStr, FONT_BLACK, TRUE, CENTER_JUSTIFIED );
 
-				UINT16 usGraphicNum = g_bUsePngItemImages ? 0 : item->ubGraphicNum;
+				UINT16 usGraphicNum = GetInterfaceGraphicSubIndex(item->ubGraphicType, item->ubGraphicNum);
 				if(usGraphicNum < hVObject->usNumberOfObjects)
 				{
 					//Calculate the center position of the graphic in a 60 pixel wide area.
@@ -651,7 +651,7 @@ void RenderEditorItemsInfo()
 			x = iScreenWidthOffset + (eInfo.sHilitedItemIndex/2 - eInfo.sScrollIndex)*60 + 110;
 			y = 2 * iScreenHeightOffset + 360 + (eInfo.sHilitedItemIndex % 2) * 40;
 
-			UINT16 usGraphicNum = g_bUsePngItemImages ? 0 : item->ubGraphicNum;
+			UINT16 usGraphicNum = GetInterfaceGraphicSubIndex(item->ubGraphicType, item->ubGraphicNum);
 			sWidth = hVObject->pETRLEObject[usGraphicNum].usWidth;
 			sOffset = hVObject->pETRLEObject[usGraphicNum].sOffsetX;
 			sStart = x + (60 - sWidth - sOffset*2) / 2;
@@ -673,7 +673,7 @@ void RenderEditorItemsInfo()
 			x = iScreenWidthOffset + (eInfo.sSelItemIndex/2 - eInfo.sScrollIndex)*60 + 110;
 			y = 2 * iScreenHeightOffset + 360 + (eInfo.sSelItemIndex % 2) * 40;
 
-			UINT16 usGraphicNum = g_bUsePngItemImages ? 0 : item->ubGraphicNum;
+			UINT16 usGraphicNum = GetInterfaceGraphicSubIndex(item->ubGraphicType, item->ubGraphicNum);
 			sWidth = hVObject->pETRLEObject[usGraphicNum].usWidth;
 			sOffset = hVObject->pETRLEObject[usGraphicNum].sOffsetX;
 			sStart = x + (60 - sWidth - sOffset*2) / 2;

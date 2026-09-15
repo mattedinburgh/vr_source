@@ -37,6 +37,9 @@
 #include "input.h"
 #include "zmouse.h"
 #include "ExceptionHandling.h"
+#ifdef JA2
+	#include "../VRAnalytics.h"
+#endif
 
 #include <vfs/Aspects/vfs_settings.h>
 #include <vfs/Core/vfs.h>
@@ -989,6 +992,12 @@ void ShutdownStandardGamingPlatform(void)
 	{
 		ShutdownGame();
 	}
+
+#ifdef JA2
+	// Close the structured analytics journal after game shutdown has emitted
+	// its final gameplay events, but before lower SGP services are torn down.
+	VRAnalyticsShutdown();
+#endif
 
 	ShutdownButtonSystem();
 	MSYS_Shutdown();

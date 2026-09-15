@@ -826,7 +826,7 @@ void RenderSelectedItemBlownUp()
 	uiVideoObjectIndex = GetInterfaceGraphicForItem( &Item[ gpItem->usItem ] );
 	GetVideoObject( &hVObject, uiVideoObjectIndex );
 
-	UINT16 usGraphicNum = g_bUsePngItemImages ? 0 : Item[ gpItem->usItem ].ubGraphicNum;
+	UINT16 usGraphicNum = GetInterfaceGraphicSubIndex(Item[ gpItem->usItem ].ubGraphicType, Item[ gpItem->usItem ].ubGraphicNum);
 	sWidth = hVObject->pETRLEObject[ usGraphicNum ].usWidth;
 	sOffsetX = hVObject->pETRLEObject[ usGraphicNum ].sOffsetX;
 	xp = sScreenX + (40 - sWidth - sOffsetX*2) / 2;

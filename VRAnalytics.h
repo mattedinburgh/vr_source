@@ -21,6 +21,10 @@ enum VRAnalyticsLayer
 void VRAnalyticsSetEnabled( bool enabled );
 bool VRAnalyticsIsEnabled();
 
+// Clean lifecycle boundary for the structured JSONL journal. Safe to call
+// repeatedly; after shutdown, later telemetry calls become no-ops.
+void VRAnalyticsShutdown();
+
 // Generic causal decision API.
 unsigned long VRAnalyticsBeginDecision(
 	VRAnalyticsLayer layer,

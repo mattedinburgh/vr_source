@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/vhd-renderer
+      - 'engine/vhd-*'
     paths:
       - '**/*.c'
       - '**/*.cc'
@@ -17,7 +18,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: vhd-hosted-smoke
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

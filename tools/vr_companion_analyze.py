@@ -18,14 +18,33 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import statistics
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
-def load_events(path: Path) -> List[Dict[str, Any]]:
+def load_events_with_diagnostics(
+    path: Path, strict: bool = False
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Load Black Box JSONL without throwing away an otherwise usable crash trace.
+
+    A process crash can interrupt the final fwrite and leave only the last record
+    truncated.  In normal mode we preserve every earlier valid record and report
+    that damaged tail.  --strict-jsonl restores fail-fast behaviour for CI and
+    format validation.
+    """
     events: List[Dict[str, Any]] = []
+    diagnostics: Dict[str, Any] = {
+        "source": str(path),
+        "invalid_lines": 0,
+        "skipped_truncated_tail": 0,
+        "foreign_schema_lines": 0,
+        "first_invalid_line": None,
+    }
+
     with path.open("r", encoding="utf-8", errors="replace") as handle:
         for line_no, raw in enumerate(handle, 1):
             raw = raw.strip()
@@ -34,11 +53,96 @@ def load_events(path: Path) -> List[Dict[str, Any]]:
             try:
                 event = json.loads(raw)
             except json.JSONDecodeError as exc:
+                diagnostics["invalid_lines"] += 1
+                if diagnostics["first_invalid_line"] is None:
+                    diagnostics["first_invalid_line"] = line_no
+
+                if not strict:
+                    # We only tolerate a malformed final non-empty record. Scan
+                    # forward without retaining the rest of the file; if any
+                    # later content exists, this was corruption in the middle
+                    # and remains fatal.
+                    has_later_nonempty = any(later.strip() for later in handle)
+                    if not has_later_nonempty:
+                        diagnostics["skipped_truncated_tail"] += 1
+                        print(
+                            f"{path}:{line_no}: warning: ignoring truncated final JSONL record: {exc}",
+                            file=sys.stderr,
+                        )
+                        break
                 raise SystemExit(f"{path}:{line_no}: invalid JSONL: {exc}")
+
+            if not isinstance(event, dict):
+                if strict:
+                    raise SystemExit(f"{path}:{line_no}: Black Box event is not a JSON object")
+                diagnostics["foreign_schema_lines"] += 1
+                continue
             if event.get("schema") != "vr-blackbox-1":
+                diagnostics["foreign_schema_lines"] += 1
                 continue
             events.append(event)
+
+    diagnostics["loaded_events"] = len(events)
+    return events, diagnostics
+
+
+def load_events(path: Path) -> List[Dict[str, Any]]:
+    events, _ = load_events_with_diagnostics(path)
     return events
+
+
+def event_integrity_summary(
+    events: List[Dict[str, Any]], ingestion: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    seen = set()
+    duplicates = 0
+    regressions = 0
+    missing_sequence_ids = 0
+    last_by_session: Dict[Any, int] = {}
+
+    for event in events:
+        session = event.get("session")
+        seq = event.get("seq")
+        if not isinstance(seq, int):
+            continue
+
+        key = (session, seq)
+        if key in seen:
+            duplicates += 1
+        seen.add(key)
+
+        previous = last_by_session.get(session)
+        if previous is not None:
+            if seq <= previous:
+                regressions += 1
+            elif seq > previous + 1:
+                missing_sequence_ids += seq - previous - 1
+        last_by_session[session] = seq
+
+    result = {
+        "duplicate_sequence_ids": duplicates,
+        "sequence_regressions": regressions,
+        "missing_sequence_ids": missing_sequence_ids,
+        "ingestion": dict(ingestion or {}),
+    }
+    return result
+
+
+def write_text_atomic(path: Path, text: str) -> None:
+    """Replace a report only after the complete new file has reached disk."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    try:
+        with tmp.open("w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        tmp.replace(path)
+    finally:
+        try:
+            tmp.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def parse_detail(detail: Any) -> Dict[str, str]:
@@ -779,10 +883,27 @@ def strategic_summary(
 
 def session_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     starts = [e for e in events if e.get("kind") == "session_start"]
+    ends = [e for e in events if e.get("kind") == "session_end"]
     sessions = sorted({e.get("session") for e in events if e.get("session") is not None})
+    ended_sessions = {
+        e.get("session") for e in ends if e.get("session") is not None
+    }
+    lifecycle_sessions = {
+        e.get("session")
+        for e in starts
+        if e.get("session") is not None
+        and int(e.get("journal_lifecycle_version", 0) or 0) >= 1
+    }
     return {
         "events": len(events),
         "sessions": sessions,
+        "ended_sessions": sorted(ended_sessions),
+        "lifecycle_sessions": sorted(lifecycle_sessions),
+        "legacy_sessions": [session for session in sessions if session not in lifecycle_sessions],
+        "unclean_sessions": [
+            session for session in sorted(lifecycle_sessions)
+            if session not in ended_sessions
+        ],
         "builds": [
             {
                 "session": e.get("session"),
@@ -806,10 +927,14 @@ def session_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def summarize(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+def summarize(
+    events: List[Dict[str, Any]],
+    ingestion: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     decisions = build_decisions(events)
     return {
         "session": session_summary(events),
+        "integrity": event_integrity_summary(events, ingestion),
         "battle": battle_summary(events),
         "tactical": tactical_summary(events, decisions),
         "grenades": grenade_throw_summary(events),
@@ -868,6 +993,31 @@ def recommendations(summary: Dict[str, Any], baseline: Optional[Dict[str, Any]])
     grenades = summary["grenades"]
     mobility = summary["strategic_mobility"]
     strat = summary["strategic"]
+    integrity = summary.get("integrity", {})
+    ingestion = integrity.get("ingestion", {})
+    unclean_sessions = summary.get("session", {}).get("unclean_sessions", [])
+
+    if unclean_sessions:
+        findings.append(
+            f"Black Box lifecycle warning: {len(unclean_sessions)} telemetry session(s) have no clean session_end marker. "
+            "This is expected after a crash or forced termination; correlate those sessions with crash/hang evidence."
+        )
+
+    if ingestion.get("skipped_truncated_tail", 0):
+        findings.append(
+            "Black Box recovery: the final JSONL record was truncated, so the Companion "
+            "ignored only that tail record and analyzed all earlier complete evidence."
+        )
+    if integrity.get("duplicate_sequence_ids", 0) or integrity.get("sequence_regressions", 0):
+        findings.append(
+            "Black Box integrity warning: duplicate or out-of-order sequence IDs were detected. "
+            "Treat causal ordering around those records as uncertain until the source log is inspected."
+        )
+    if integrity.get("missing_sequence_ids", 0):
+        findings.append(
+            f"Black Box integrity warning: {integrity['missing_sequence_ids']} sequence ID(s) are missing "
+            "from the loaded telemetry. This may indicate an interrupted or partially copied log."
+        )
 
     if (
         interaction["reinforced_resolved"] >= 3
@@ -1007,6 +1157,8 @@ def render_markdown(
     grenades = summary["grenades"]
     mobility = summary["strategic_mobility"]
     strat = summary["strategic"]
+    integrity = summary.get("integrity", {})
+    ingestion = integrity.get("ingestion", {})
 
     lines: List[str] = [
         "# Vengeance Reloaded Campaign Companion",
@@ -1048,6 +1200,25 @@ def render_markdown(
             )
 
     lines += [
+        "",
+        "## Black Box integrity",
+        "",
+        "| Check | Result |",
+        "|---|---:|",
+        f"| Loaded events | {summary['session']['events']} |",
+        f"| Sessions | {len(summary['session']['sessions'])} |",
+        f"| Lifecycle-aware sessions | {len(summary['session'].get('lifecycle_sessions', []))} |",
+        f"| Cleanly closed lifecycle sessions | {len([s for s in summary['session'].get('ended_sessions', []) if s in set(summary['session'].get('lifecycle_sessions', []))])} |",
+        f"| Lifecycle sessions without session_end | {len(summary['session'].get('unclean_sessions', []))} |",
+        f"| Legacy sessions without lifecycle marker | {len(summary['session'].get('legacy_sessions', []))} |",
+        f"| Truncated tail records recovered | {ingestion.get('skipped_truncated_tail', 0)} |",
+        f"| Foreign/unsupported records skipped | {ingestion.get('foreign_schema_lines', 0)} |",
+        f"| Duplicate sequence IDs | {integrity.get('duplicate_sequence_ids', 0)} |",
+        f"| Out-of-order sequence IDs | {integrity.get('sequence_regressions', 0)} |",
+        f"| Missing sequence IDs | {integrity.get('missing_sequence_ids', 0)} |",
+        "",
+        "A single malformed final record is recoverable because a crash can interrupt the last write. "
+        "Malformed records in the middle of the file remain fatal unless explicitly validated in strict mode.",
         "",
         "## Tactical refinement subsystem",
         "",
@@ -1262,20 +1433,28 @@ def main() -> None:
     parser.add_argument("--baseline", type=Path, help="Earlier Black Box log for before/after comparison")
     parser.add_argument("-o", "--output", type=Path, default=Path("VR_Companion_Report.md"))
     parser.add_argument("--json-output", type=Path, default=Path("VR_Companion_Summary.json"))
+    parser.add_argument(
+        "--strict-jsonl",
+        action="store_true",
+        help="Fail on any malformed JSONL record, including a truncated final crash record.",
+    )
     args = parser.parse_args()
 
-    current_events = load_events(args.log)
-    current = summarize(current_events)
+    current_events, current_ingestion = load_events_with_diagnostics(
+        args.log, strict=args.strict_jsonl
+    )
+    current = summarize(current_events, current_ingestion)
 
     baseline = None
     if args.baseline:
-        baseline = summarize(load_events(args.baseline))
+        baseline_events, baseline_ingestion = load_events_with_diagnostics(
+            args.baseline, strict=args.strict_jsonl
+        )
+        baseline = summarize(baseline_events, baseline_ingestion)
 
     report = render_markdown(args.log, current, args.baseline, baseline)
-    args.output.write_text(report, encoding="utf-8")
-    args.json_output.write_text(
-        json.dumps(current, indent=2, sort_keys=True), encoding="utf-8"
-    )
+    write_text_atomic(args.output, report)
+    write_text_atomic(args.json_output, json.dumps(current, indent=2, sort_keys=True))
 
     print(f"Wrote {args.output}")
     print(f"Wrote {args.json_output}")
