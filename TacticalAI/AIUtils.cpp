@@ -14203,10 +14203,18 @@ INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 	if (bRole < AI_ROLE_SUPPORT || bRole > AI_ROLE_RESERVE)
 		bRole = AITacticalRole(pSoldier, sTargetSpot);
 
+	INT8 bMoveAction = AI_ACTION_GET_CLOSER;
+	if (bIntent == AI_INTENT_FALLBACK || bIntent == AI_INTENT_DISENGAGE)
+		bMoveAction = AI_ACTION_WITHDRAW;
+	else if (bIntent == AI_INTENT_FLANK)
+		bMoveAction = AI_ACTION_FLANK_LEFT;
+	else if (bIntent == AI_INTENT_HOLD)
+		bMoveAction = AI_ACTION_TAKE_COVER;
+
 	AITACTICALPOSITIONFEATURES Features;
 	if (!AIEvaluateTacticalPosition(
 		pSoldier, sCandidateSpot, sTargetSpot,
-		0, &Features))
+		DetermineMovementMode(pSoldier, bMoveAction), &Features))
 	{
 		return -10000;
 	}
