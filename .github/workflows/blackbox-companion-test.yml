@@ -112,8 +112,8 @@ jobs:
           current = Path("VR_BlackBox.jsonl")
           assert previous.exists() and previous.stat().st_size == 2048
           events = [json.loads(line) for line in current.read_text(encoding="utf-8").splitlines() if line.strip()]
-          assert len(events) == 1
-          assert events[0].get("kind") == "session_start"
+          assert [event.get("kind") for event in events] == ["session_start", "session_end"]
+          assert events[0].get("journal_lifecycle_version") == 1
           assert not Path("VR_BlackBox_RotatePending.jsonl").exists()
           print("Analytics rotation smoke test passed")
           PY
