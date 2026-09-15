@@ -365,6 +365,7 @@ def draw_window(
     orientation: int,
     is_open: bool,
     family_seed: int,
+    variant: int,
 ) -> None:
     w, h = mask.size
     if w < 12 or h < 24:
@@ -386,16 +387,36 @@ def draw_window(
     def window_layer(d: ImageDraw.ImageDraw) -> None:
         d.polygon(poly, fill=interior)
         d.line(poly + [poly[0]], fill=frame_colour, width=2)
-        # A mid-century rural frame: simple mullion and sill, not ornate trim.
+        # A mid-century rural frame: simple, practical construction.
         mx = sum(p[0] for p in poly) // 4
         my0 = (poly[0][1] + poly[1][1]) // 2 + 2
         my1 = (poly[2][1] + poly[3][1]) // 2 - 1
         if not is_open:
-            d.line((mx, my0, mx, my1), fill=(112, 103, 82, 190), width=1)
-            # Muted sky reflection is newly authored and intentionally subtle.
-            d.line((poly[0][0] + 2, poly[0][1] + 3,
-                    poly[1][0] - 2, poly[1][1] + 4),
-                   fill=(128, 154, 149, 85), width=1)
+            if variant == 1:
+                # Second authored window variant: welded security bars are common
+                # on modest rural/commercial buildings. Keep them sparse enough
+                # not to turn the opening into visual noise at JA2 scale.
+                left = min(p[0] for p in poly) + 3
+                right = max(p[0] for p in poly) - 3
+                top = max(0, min(p[1] for p in poly) + 2)
+                bottom = min(h - 1, max(p[1] for p in poly) - 2)
+                for bx in (left, (left + right) // 2, right):
+                    d.line((bx, top, bx, bottom),
+                           fill=(58, 58, 52, 205), width=1)
+                d.line((left, (top + bottom) // 2, right, (top + bottom) // 2),
+                       fill=(58, 58, 52, 180), width=1)
+            else:
+                d.line((mx, my0, mx, my1), fill=(112, 103, 82, 190), width=1)
+                # Muted sky reflection is newly authored and intentionally subtle.
+                d.line((poly[0][0] + 2, poly[0][1] + 3,
+                        poly[1][0] - 2, poly[1][1] + 4),
+                       fill=(128, 154, 149, 85), width=1)
+        else:
+            # JSD says this is the open partner. Give it a visibly open dark void
+            # plus a narrow hinged/shutter edge without changing the alpha contract.
+            side_x = min(p[0] for p in poly) + 2 if orientation in (1, 4) else max(p[0] for p in poly) - 2
+            d.line((side_x, my0, side_x, my1),
+                   fill=(103, 78, 57, 220), width=2)
         d.line((poly[3][0], poly[3][1] + 1,
                 poly[2][0], poly[2][1] + 1),
                fill=sill_colour, width=1)
@@ -431,10 +452,12 @@ def render_wall(
 
     flags = int(semantic.get("flags", 0))
     if flags & STRUCTURE_WALLNWINDOW:
+        window_variant = (index - 35) % 3 if 35 <= index <= 46 else 0
         draw_window(
             out, mask, orientation,
             bool(flags & STRUCTURE_OPEN),
             family_seed,
+            window_variant,
         )
 
     if int(semantic.get("tile_count", 1)) > 1:
@@ -464,12 +487,13 @@ def render_floor(
     meta: dict,
 ) -> Image.Image:
     family_seed = seed32("a3-floor-family", family)
-    phase = fast_hash32(family_seed ^ index) & 0xFFFF
     out = coherent_material(
         mask, base, family_seed,
         int(meta["offset_x"]), int(meta["offset_y"]),
         vertical_weather=False,
-        frame_phase=phase,
+        # Floors are continuous surfaces. Never add per-frame material phase:
+        # repeated tiles must share one world/geometry-anchored field.
+        frame_phase=0,
     )
 
     w, h = mask.size
@@ -505,7 +529,7 @@ def render_floor(
     layer.putalpha(cp)
     out.alpha_composite(layer)
 
-    add_contract_edges(out, mask)
+    # Do not outline each floor sprite: that exposes the engine tile grid.
     out.putalpha(mask.copy())
     return out
 
@@ -660,7 +684,11 @@ def generate_family(tilesets_root: Path, out_root: Path, qa_root: Path,
             else:
                 flags = int(semantic.get("flags", 0))
                 if flags & STRUCTURE_WALLNWINDOW:
-                    label = "window-open" if flags & STRUCTURE_OPEN else "window"
+                    if flags & STRUCTURE_OPEN:
+                        label = "window-open"
+                    else:
+                        window_variant = (i - 35) % 3 if 35 <= i <= 46 else 0
+                        label = "window-barred" if window_variant == 1 else "window-glazed"
                 elif int(semantic.get("tile_count", 1)) > 1:
                     label = f"wall-corner o{semantic.get('orientation', 0)}"
                 else:
