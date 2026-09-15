@@ -63,17 +63,31 @@ jobs:
             exit 0
           }
 
-          Write-Host 'Checkout is an archive; rebuilding .git with GitHub Desktop Git.'
+          Write-Host 'Checkout is an archive; rebuilding lightweight .git metadata with GitHub Desktop Git.'
+          $refName = '${{ github.ref_name }}'
+          $commit = '${{ github.sha }}'
+          $refSpec = "+refs/heads/$refName`:refs/remotes/origin/$refName"
+
           & $git -C $env:GITHUB_WORKSPACE init
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $git -C $env:GITHUB_WORKSPACE remote add origin "https://x-access-token:$env:GH_TOKEN@github.com/mattedinburgh/vr_source.git"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $git -C $env:GITHUB_WORKSPACE fetch origin feature/vhd-renderer
+
+          # The REST archive already contains the exact working-tree bytes. Fetch
+          # only commit/tree metadata for the triggering branch instead of pulling
+          # the full feature/vhd-renderer history and blob pack on the render PC.
+          & $git -C $env:GITHUB_WORKSPACE -c protocol.version=2 fetch --no-tags --depth=1 --filter=blob:none origin $refSpec
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $git -C $env:GITHUB_WORKSPACE clean -fdx
+          & $git -C $env:GITHUB_WORKSPACE cat-file -e "$commit`^{commit}"
+          if ($LASTEXITCODE -ne 0) { throw "Fetched branch does not contain expected commit $commit" }
+
+          & $git -C $env:GITHUB_WORKSPACE update-ref refs/heads/render-source $commit
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $git -C $env:GITHUB_WORKSPACE checkout -f -B render-source '${{ github.sha }}'
+          & $git -C $env:GITHUB_WORKSPACE symbolic-ref HEAD refs/heads/render-source
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $git -C $env:GITHUB_WORKSPACE reset --mixed $commit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "Rehydrated metadata for $refName at $commit without replacing archive working-tree files."
 
       - name: Reuse cached MapEditor when source tree is unchanged
         id: editor_cache
