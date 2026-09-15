@@ -351,22 +351,27 @@ def main() -> None:
 
     qa_root = ns.qa_root or (ns.out_root / "_qa")
     results = []
+    missing = []
+
+    def attempt(family, filename, base, flavour, kind):
+        try:
+            results.append(generate_family(
+                ns.tilesets_root, ns.out_root, qa_root,
+                family, filename, base, flavour, kind
+            ))
+        except FileNotFoundError as exc:
+            # A few Ja2Set entries are inherited from legacy libraries that are
+            # not checked into vr_gamedir. Never substitute a different frame
+            # contract just to make the pilot complete.
+            missing.append((family, filename, str(exc)))
+            print(f"SKIP {family}: source contract unavailable ({filename})")
 
     for family, (filename, base, flavour) in WALLS.items():
-        results.append(generate_family(
-            ns.tilesets_root, ns.out_root, qa_root,
-            family, filename, base, flavour, "wall"
-        ))
+        attempt(family, filename, base, flavour, "wall")
     for family, (filename, base, flavour) in FLOORS.items():
-        results.append(generate_family(
-            ns.tilesets_root, ns.out_root, qa_root,
-            family, filename, base, flavour, "floor"
-        ))
+        attempt(family, filename, base, flavour, "floor")
     for family, (filename, base, flavour) in ROOFS.items():
-        results.append(generate_family(
-            ns.tilesets_root, ns.out_root, qa_root,
-            family, filename, base, flavour, "roof"
-        ))
+        attempt(family, filename, base, flavour, "roof")
 
     manifest = ns.out_root / "A3_STRUCTURAL_PILOT_MANIFEST.txt"
     lines = [
@@ -379,9 +384,11 @@ def main() -> None:
         lines.append(
             f"{r['family']}: {r['kind']} {r['frames']} frames <- {r['source_contract']}"
         )
+    for family, filename, reason in missing:
+        lines.append(f"{family}: SKIPPED missing source contract {filename}")
     manifest.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    print(f"generated {len(results)} structural families")
+    print(f"generated {len(results)} structural families; skipped {len(missing)}")
     print(f"manifest: {manifest}")
     print(f"QA sheets: {qa_root}")
 
