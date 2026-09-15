@@ -45,42 +45,42 @@ def load_events_with_diagnostics(
         "first_invalid_line": None,
     }
 
-    raw_lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    last_nonempty = 0
-    for index, raw in enumerate(raw_lines, 1):
-        if raw.strip():
-            last_nonempty = index
-
-    for line_no, raw in enumerate(raw_lines, 1):
-        raw = raw.strip()
-        if not raw:
-            continue
-        try:
-            event = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            diagnostics["invalid_lines"] += 1
-            if diagnostics["first_invalid_line"] is None:
-                diagnostics["first_invalid_line"] = line_no
-
-            is_tail = line_no == last_nonempty
-            if is_tail and not strict:
-                diagnostics["skipped_truncated_tail"] += 1
-                print(
-                    f"{path}:{line_no}: warning: ignoring truncated final JSONL record: {exc}",
-                    file=sys.stderr,
-                )
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        for line_no, raw in enumerate(handle, 1):
+            raw = raw.strip()
+            if not raw:
                 continue
-            raise SystemExit(f"{path}:{line_no}: invalid JSONL: {exc}")
+            try:
+                event = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                diagnostics["invalid_lines"] += 1
+                if diagnostics["first_invalid_line"] is None:
+                    diagnostics["first_invalid_line"] = line_no
 
-        if not isinstance(event, dict):
-            if strict:
-                raise SystemExit(f"{path}:{line_no}: Black Box event is not a JSON object")
-            diagnostics["foreign_schema_lines"] += 1
-            continue
-        if event.get("schema") != "vr-blackbox-1":
-            diagnostics["foreign_schema_lines"] += 1
-            continue
-        events.append(event)
+                if not strict:
+                    # We only tolerate a malformed final non-empty record. Scan
+                    # forward without retaining the rest of the file; if any
+                    # later content exists, this was corruption in the middle
+                    # and remains fatal.
+                    has_later_nonempty = any(later.strip() for later in handle)
+                    if not has_later_nonempty:
+                        diagnostics["skipped_truncated_tail"] += 1
+                        print(
+                            f"{path}:{line_no}: warning: ignoring truncated final JSONL record: {exc}",
+                            file=sys.stderr,
+                        )
+                        break
+                raise SystemExit(f"{path}:{line_no}: invalid JSONL: {exc}")
+
+            if not isinstance(event, dict):
+                if strict:
+                    raise SystemExit(f"{path}:{line_no}: Black Box event is not a JSON object")
+                diagnostics["foreign_schema_lines"] += 1
+                continue
+            if event.get("schema") != "vr-blackbox-1":
+                diagnostics["foreign_schema_lines"] += 1
+                continue
+            events.append(event)
 
     diagnostics["loaded_events"] = len(events)
     return events, diagnostics
@@ -131,12 +131,18 @@ def event_integrity_summary(
 def write_text_atomic(path: Path, text: str) -> None:
     """Replace a report only after the complete new file has reached disk."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    with tmp.open("w", encoding="utf-8", newline="") as handle:
-        handle.write(text)
-        handle.flush()
-        os.fsync(handle.fileno())
-    tmp.replace(path)
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    try:
+        with tmp.open("w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        tmp.replace(path)
+    finally:
+        try:
+            tmp.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def parse_detail(detail: Any) -> Dict[str, str]:
