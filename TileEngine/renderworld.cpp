@@ -937,6 +937,44 @@ static void RenderLogicalMercLayer8BPP(
 // layers are best-effort: if a single AIMNAS item has no 1.13 visual mapping,
 // the rest of the armour remains visible and the native underlay preserves the
 // soldier/weapon silhouette underneath.
+static BOOLEAN IsLogicalEquipmentOverlayLayer(
+	LogicalBodyTypes::Layers::LayerPropertiesVector::size_type layerIndex )
+{
+	// The Vengeance LOBOT catalog is intentionally overlay-only: the native
+	// Vengeance sprite remains the body/weapon source and these layers add worn
+	// equipment on top.  Do not require or render replacement body layers here.
+	const LogicalBodyTypes::Layers::LayerProperties &layer =
+		LogicalBodyTypes::Layers::Instance().GetLayerProperties( layerIndex );
+	if ( layer.identifier == NULL )
+		return FALSE;
+
+	static const char *equipmentLayers[] =
+	{
+		"legarmor",
+		"vest",
+		"legrig",
+		"legrig_left",
+		"knees",
+		"backpack",
+		"facegear",
+		"gasmask",
+		"ears",
+		"helmet"
+	};
+
+	for ( UINT32 i = 0; i < sizeof( equipmentLayers ) / sizeof( equipmentLayers[ 0 ] ); ++i )
+	{
+		if ( std::strcmp( layer.identifier, equipmentLayers[ i ] ) == 0 )
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
+// Overlay-only renderer: draw the normal Vengeance merc exactly once, then add
+// each compatible equipment layer independently.  One missing item/animation
+// must never suppress unrelated armour or force the whole merc back through the
+// legacy path.
 static BOOLEAN RenderHybridLogicalMercModel(
 	SOLDIERTYPE *pSoldier,
 	UINT8 *pDestBuf,
@@ -965,52 +1003,19 @@ static BOOLEAN RenderHybridLogicalMercModel(
 	if ( pBodyType == NULL )
 		return FALSE;
 
-	// Do not switch to the layered renderer unless the core body for this exact
-	// animation frame is coherent. This is what keeps special Vengeance-only
-	// animations from producing detached/floating equipment.
-	// Layer names must match TableData\\LogicalBodyTypes\\Layers.xml exactly.
-	// 1.13 calls the arm/hand body layer "hands"; using the non-existent
-	// "arms" name makes GetLogicalMercSurface() fail and forces the legacy
-	// renderer for every merc, which also suppresses all visible armour.
-	const char *requiredBodyLayers[] = { "legs", "body", "head", "hands" };
-	UINT32 i;
-	for ( i = 0; i < sizeof( requiredBodyLayers ) / sizeof( requiredBodyLayers[ 0 ] ); ++i )
-	{
-		if ( !LogicalMercSurfaceFrameUsable(
-			GetLogicalMercSurface( pBodyType, pSoldier, requiredBodyLayers[ i ] ),
-			usImageIndex ) )
-		{
-			return FALSE;
-		}
-	}
-
-	// First draw the original Vengeance merc. It becomes a safety net for any
-	// optional logical layer that is unavailable (most importantly an unmapped
-	// AIMNAS weapon). It also performs the normal Z write once.
+	// Native Vengeance is always the authoritative body/weapon sprite and owns
+	// the Z write.  Equipment surfaces below are transparent, Z-no-write overlays.
 	RenderLogicalMercLayer8BPP(
 		pDestBuf, uiDestPitchBYTES, sZLevel, sXPos, sYPos, usImageIndex,
 		hNativeObject, pDefaultShadeTable, fZBlitter, fZWrite,
 		fObscuredBlitter, FALSE );
 
-	// Then draw all usable logical layers in 1.13's configured graph order.
-	// These are Z-no-write overlays because the native underlay already handled
-	// the soldier's Z value; this preserves correct wall/obscured behaviour while
-	// allowing the ordered body/armour layers to compose on top of one another.
 	Layers::LayerGraphIterator layerIter = Layers::Instance().GetIterator( pSoldier->bMovementDirection );
 	Layers::LayerGraphIterator layerEnd = Layers::Instance().GetIterationEnd( pSoldier->bMovementDirection );
-	std::string shadowLayerName( "shadow" );
-	std::string bloodLayerName( "blood" );
-	const Layers::LayerPropertiesVector::size_type shadowLayerIndex =
-		Layers::Instance().GetIndex( shadowLayerName );
-	const Layers::LayerPropertiesVector::size_type bloodLayerIndex =
-		Layers::Instance().GetIndex( bloodLayerName );
 
 	for ( ; layerIter != layerEnd; ++layerIter )
 	{
-		// Keep Vengeance's native shadow and our custom blood/gore presentation.
-		// The logical model is providing body/equipment composition here, not
-		// replacing those effects.
-		if ( layerIter->index == shadowLayerIndex || layerIter->index == bloodLayerIndex )
+		if ( !IsLogicalEquipmentOverlayLayer( layerIter->index ) )
 			continue;
 
 		const Layers::LayerProperties *pLayerProperties =
