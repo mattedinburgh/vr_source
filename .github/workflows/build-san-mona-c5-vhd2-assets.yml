@@ -34,8 +34,18 @@ jobs:
       - name: Build ja2export with dependencies
         shell: powershell
         run: |
-          msbuild '.\ja2_VS2013.sln' /m /t:ja2export /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143
-          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+          $projects=@(
+            '.\ext\libpng\projects\visualc71\zlib_VS2013.vcxproj',
+            '.\ext\libpng\projects\visualc71\libpng_VS2013.vcxproj',
+            '.\ext\VFS\build\7z_VS2013.vcxproj',
+            '.\ext\VFS\build\VFS_VS2013.vcxproj',
+            '.\ext\export\ja2export_VS2013.vcxproj'
+          )
+          foreach($project in $projects){
+            Write-Host "Building dependency: $project"
+            msbuild $project /m /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143
+            if($LASTEXITCODE-ne0){throw "Build failed for $project with exit code $LASTEXITCODE"}
+          }
           $exe=Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\Release\ja2export.exe'
           if(-not(Test-Path $exe)){throw "ja2export missing: $exe"}
 
