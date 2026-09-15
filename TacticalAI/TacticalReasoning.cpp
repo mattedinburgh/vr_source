@@ -394,7 +394,8 @@ static void AIRefreshThreatMemoryFromKnowledge(SOLDIERTYPE *pSoldier)
 
 static BOOLEAN AIUsableContactMemory(
 	SOLDIERTYPE *pSoldier, UINT8 ubOpponentID,
-	AICONTACTMEMORYSLOT **ppSlot, UINT8 *pubConfidence)
+	AICONTACTMEMORYSLOT **ppSlot, UINT8 *pubConfidence,
+	BOOLEAN fApplyInspectionDecay)
 {
 	if (ppSlot) *ppSlot = NULL;
 	if (pubConfidence) *pubConfidence = 0;
@@ -432,7 +433,8 @@ static BOOLEAN AIUsableContactMemory(
 	// If the soldier has reached and can inspect the remembered location without
 	// reacquiring the opponent, sharply retire that hypothesis instead of pacing
 	// back to the same empty tile forever.
-	if (Knowledge(pSoldier, ubOpponentID) == NOT_HEARD_OR_SEEN &&
+	if (fApplyInspectionDecay &&
+		Knowledge(pSoldier, ubOpponentID) == NOT_HEARD_OR_SEEN &&
 		pSlot->bLevel == pSoldier->pathing.bLevel &&
 		PythSpacesAway(pSoldier->sGridNo, pSlot->sLastKnownGridNo) <= 4 &&
 		SoldierTo3DLocationLineOfSightTest(
@@ -492,7 +494,7 @@ BOOLEAN AIBuildThreatMemoryCue(
 		AICONTACTMEMORYSLOT *pSlot = NULL;
 		UINT8 ubConfidence = 0;
 		if (!AIUsableContactMemory(
-			pSoldier, (UINT8)i, &pSlot, &ubConfidence))
+			pSoldier, (UINT8)i, &pSlot, &ubConfidence, TRUE))
 		{
 			continue;
 		}
@@ -562,7 +564,7 @@ BOOLEAN AIBuildThreatMemoryCue(
 		AICONTACTMEMORYSLOT *pSlot = NULL;
 		UINT8 ubConfidence = 0;
 		if (!AIUsableContactMemory(
-			pSoldier, (UINT8)i, &pSlot, &ubConfidence))
+			pSoldier, (UINT8)i, &pSlot, &ubConfidence, TRUE))
 		{
 			continue;
 		}
@@ -605,7 +607,7 @@ INT32 AIMemoryNoiseRelevance(
 		AICONTACTMEMORYSLOT *pSlot = NULL;
 		UINT8 ubConfidence = 0;
 		if (!AIUsableContactMemory(
-			pSoldier, (UINT8)i, &pSlot, &ubConfidence))
+			pSoldier, (UINT8)i, &pSlot, &ubConfidence, FALSE))
 		{
 			continue;
 		}
@@ -920,7 +922,7 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 		AICONTACTMEMORYSLOT *pSlot = NULL;
 		UINT8 ubConfidence = 0;
 		if (!AIUsableContactMemory(
-			pSoldier, (UINT8)i, &pSlot, &ubConfidence))
+			pSoldier, (UINT8)i, &pSlot, &ubConfidence, TRUE))
 		{
 			continue;
 		}
