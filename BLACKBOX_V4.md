@@ -1,4 +1,4 @@
-# Vengeance Black Box v4
+# Vengeance Black Box v5
 
 The black box is a crash/freeze flight recorder designed for this modified 32-bit Vengeance build. It complements the legacy JA2 debug logs instead of replacing them.
 
@@ -80,7 +80,7 @@ BlackBoxOperationEnd(token, ok ? "OK" : "FAILED");
 
 If the game dies before `BlackBoxOperationEnd`, the crash report shows that operation as **ACTIVE**.
 
-## Companion reliability hardening (v5 workstream)
+## Reliability hardening in v5
 
 The recorder format remains compatible with existing `vr-blackbox-1` telemetry while the
 analysis path is being hardened separately.
@@ -100,6 +100,40 @@ Current reliability changes:
 This deliberately does not weaken the in-engine crash recorder. The next engine-side work
 should focus on bounded I/O and shutdown/watchdog race hardening only after the Companion
 changes pass their test workflow.
+
+## Engine-side v5 changes
+
+- ordinary durable events are still written immediately, but physical disk flushes are
+  throttled to a one-second cadence;
+- crash/assert/stall/recovery/fatal/watchdog events and failed operations force immediate
+  durability;
+- repeated flush failures use attempt-based backoff so a disk problem cannot make the
+  recorder hammer `FlushFileBuffers()` on every event;
+- first-chance exception batches force one durability flush per drained batch rather than
+  one physical flush per exception;
+- event/checkpoint rings, subsystem state, structured context, counters, timed operations
+  and first-chance exception records use commit-marker snapshot validation so the crash
+  handler does not consume half-published data;
+- timed-operation slot reuse is serialized, preventing an old operation from corrupting a
+  newer operation that reused the same fixed-size slot;
+- watchdog shutdown keeps synchronization handles alive if a hang dump is still finishing,
+  avoiding an invalid-handle loop during teardown.
+
+## Collection and analysis v5 changes
+
+- the evidence collector treats individual copy failures as recoverable and records them in
+  `collection_errors.txt` instead of aborting the entire bundle;
+- bundle compression writes to a partial ZIP and only moves it into place after successful
+  completion;
+- temporary collector state is always cleaned up;
+- the collector uses the platform temp-directory API rather than assuming `TEMP`;
+- CI syntax-checks and executes the collector against a synthetic game directory, then
+  expands the ZIP and verifies its manifest and core evidence;
+- the Companion streams JSONL input instead of holding a second full raw-text copy in
+  memory;
+- a crash-truncated final JSONL record is recoverable while malformed records in the middle
+  still fail;
+- report files use process-unique temporary files, fsync, and atomic replacement.
 
 ## Design rules
 
