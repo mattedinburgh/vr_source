@@ -97,6 +97,7 @@ typedef struct
 static VHD_RENDER_FRAME_STATS gVHDRenderFrameStats;
 static BOOLEAN gfVHDRenderDiagnosticsFrameActive = FALSE;
 static UINT32 guiVHDRenderDiagnosticsFrameSerial = 0;
+static UINT32 guiVHDRenderDiagnosticsLastSlowLogFrame = 0;
 static BOOLEAN gfVHDRenderDiagnosticsEnvChecked = FALSE;
 static BOOLEAN gfVHDRenderDiagnosticsEnvEnabled = FALSE;
 static LARGE_INTEGER gVHDRenderPerfFrequency = { 0 };
@@ -180,6 +181,11 @@ static void VHDRenderDiagnosticsBeginFrame( UINT32 uiRenderFlags )
 		guiVHDRenderDiagnosticsFrameSerial = 1;
 	gVHDRenderFrameStats.uiFrameSerial = guiVHDRenderDiagnosticsFrameSerial;
 	gVHDRenderFrameStats.iFrameStartTicks = VHDRenderDiagnosticsNowTicks( );
+	if ( gVHDRenderFrameStats.iFrameStartTicks <= 0 )
+	{
+		gfVHDRenderDiagnosticsFrameActive = FALSE;
+		return;
+	}
 	gVHDRenderFrameStats.uiRenderFlags = uiRenderFlags;
 }
 
@@ -193,7 +199,12 @@ static void VHDRenderDiagnosticsEndFrame( )
 	const BOOLEAN fSlowFrame = uiTotalUS >= 33000u;
 	const BOOLEAN fPeriodicSample = gVHDRenderFrameStats.uiFrameSerial == 1 ||
 		( gVHDRenderFrameStats.uiFrameSerial % 120u ) == 0;
-	if ( fSlowFrame || fPeriodicSample )
+	const BOOLEAN fSlowSample = fSlowFrame &&
+		( guiVHDRenderDiagnosticsLastSlowLogFrame == 0 ||
+		  gVHDRenderFrameStats.uiFrameSerial - guiVHDRenderDiagnosticsLastSlowLogFrame >= 30u );
+	if ( fSlowSample )
+		guiVHDRenderDiagnosticsLastSlowLogFrame = gVHDRenderFrameStats.uiFrameSerial;
+	if ( fSlowSample || fPeriodicSample )
 	{
 		BlackBoxEvent( "VHD_RENDER",
 			"frame=%u total_us=%u occlusion_us=%u static_us=%u dynamic_us=%u flags=0x%08x scale=%u indexed_calls=%u indexed_pixels=%u truecolor_calls=%u truecolor_pixels=%u occlusion_masks=%u outer_rects=%u slow=%u",
