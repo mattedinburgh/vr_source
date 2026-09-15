@@ -77,5 +77,8 @@
     <ClCompile Include="Realtime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="TacticalReasoning.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
