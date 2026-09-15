@@ -408,6 +408,11 @@ struct AITHREATMEMORYCUE
 	UINT8 ubConfidence;
 	UINT8 ubAgeTurns;
 	UINT8 ubMatchedMemories;
+	INT32 sCorroboratingGridNo;
+	INT8 bCorroboratingLevel;
+	UINT8 ubCorroborationStrength;
+	UINT8 ubCorroboratedCues;
+	UINT8 ubCorroborationAge;
 	BOOLEAN fNoiseCorroborated;
 };
 
