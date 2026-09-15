@@ -4467,6 +4467,11 @@ INT8 FireBulletGivenTargetNCTH( SOLDIERTYPE * pFirer, FLOAT dEndX, FLOAT dEndY, 
 		fTracer = TRUE;
 	}
 
+	// Modern 1.13 selective port: only flagged ammunition gets the special
+	// anti-materiel structural-destruction path.
+	if ( AmmoTypes[(*pObjAttHand)[0]->data.gun.ubGunAmmoType].ammoflag & AMMO_ANTIMATERIEL )
+		usBulletFlags |= BULLET_FLAG_ANTIMATERIEL;
+
 	ubImpact =(UINT8) GetDamage(&pFirer->inv[pFirer->ubAttackingHand]);
 	//zilpin: Begin new code block for spread patterns, number of projectiles, impact adjustment, etc.
 	{
@@ -4971,6 +4976,11 @@ INT8 FireBulletGivenTarget( SOLDIERTYPE * pFirer, FLOAT dEndX, FLOAT dEndY, FLOA
 		//usBulletFlags |= BULLET_FLAG_TRACER;
 		fTracer = TRUE;
 	}
+
+	// Modern 1.13 selective port: only flagged ammunition gets the special
+	// anti-materiel structural-destruction path.
+	if ( AmmoTypes[(*pObjAttHand)[0]->data.gun.ubGunAmmoType].ammoflag & AMMO_ANTIMATERIEL )
+		usBulletFlags |= BULLET_FLAG_ANTIMATERIEL;
 
 	ubImpact =(UINT8) GetDamage(pObjAttHand);
 	//zilpin: pellet spread patterns externalized in XML
@@ -5638,6 +5648,9 @@ INT8 FireBulletGivenTargetTrapOnly( SOLDIERTYPE* pThrower, OBJECTTYPE* pObj, INT
 		//usBulletFlags |= BULLET_FLAG_TRACER;
 		fTracer = TRUE;
 	}
+
+	if ( AmmoTypes[(*pObj)[0]->data.gun.ubGunAmmoType].ammoflag & AMMO_ANTIMATERIEL )
+		usBulletFlags |= BULLET_FLAG_ANTIMATERIEL;
 
 	ubImpact =(UINT8) GetDamage( pObj );
 
