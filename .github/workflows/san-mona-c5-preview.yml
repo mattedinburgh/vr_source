@@ -19,7 +19,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: san-mona-c5-visual-qa
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
