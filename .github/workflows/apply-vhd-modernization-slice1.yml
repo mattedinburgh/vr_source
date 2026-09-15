@@ -5,7 +5,7 @@ on:
     branches:
       - engine/vhd-modernization-2026
     paths:
-      - '.automation/vhd-modernization-slice1.patch'
+      - '.automation/vhd-modernization-slice1.trigger'
 
 permissions:
   contents: write
@@ -22,19 +22,42 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: engine/vhd-modernization-2026
-          fetch-depth: 20
+          fetch-depth: 50
 
-      - name: Apply verified diagnostics patch
+      - name: Integrate verified renderer diagnostics slice
         shell: bash
         run: |
           set -euo pipefail
-          git apply --check .automation/vhd-modernization-slice1.patch
-          git apply .automation/vhd-modernization-slice1.patch
-          git rm .automation/vhd-modernization-slice1.patch
-          git rm .github/workflows/apply-vhd-modernization-slice1.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add TileEngine/renderworld.cpp .github/workflows/san-mona-c5-preview.yml
-          git diff --cached --check
-          git commit -m "VHD modernization: integrate renderer diagnostics"
+
+          git fetch --no-tags --depth=80 origin engine/vhd-render-instrumentation-2026-09-15
+
+          for commit in             341174ba8b20e0a58ab41e75c1a614fb1cb7d995             7a729759ad             f0d9b2e1bc             355dc1ac67             06d285929b             1c29d1215b             98ffced050             74ee21f71d             0efc487c26
+          do
+            git cherry-pick "$commit"
+          done
+
+          python - <<'PY'
+          from pathlib import Path
+          p = Path(".github/workflows/san-mona-c5-preview.yml")
+          s = p.read_text(encoding="utf-8")
+          branch = "      - engine/vhd-modernization-2026\n"
+          if branch not in s:
+              needle = "    branches:\n      - feature/vhd-renderer\n"
+              if needle not in s:
+                  raise SystemExit("Could not find C5 workflow branch block")
+              s = s.replace(needle, needle + branch, 1)
+              p.write_text(s, encoding="utf-8")
+          PY
+
+          git add .github/workflows/san-mona-c5-preview.yml
+          if ! git diff --cached --quiet; then
+            git commit -m "VHD modernization: gate diagnostics on C5 QA"
+          fi
+
+          git rm .automation/vhd-modernization-slice1.trigger
+          git rm .github/workflows/apply-vhd-modernization-slice1.yml
+          git commit -m "Automation: retire VHD modernization slice integrator"
+
           git push origin HEAD:engine/vhd-modernization-2026
