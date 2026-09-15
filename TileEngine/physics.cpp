@@ -2012,24 +2012,29 @@ void CalculateLaunchItemBasicParams(SOLDIERTYPE *pSoldier, OBJECTTYPE *pItem, IN
 
 	if (fArmed && (Item[usLauncher].grenadelauncher || Item[pItem->usItem].grenadelauncher))
 	{
-		// OK, look at target level and decide angle to use...
+		// Modern 1.13 baseline: launchers have explicit low/high arcs. Player choice
+		// is controlled by TOPTION_GL_HIGH_ANGLE; AI sides select an arc tactically
+		// using VR's existing range heuristic rather than receiving a difficulty bonus.
 		if (ubLevel > pSoldier->pathing.bLevel)
-		{
 			dDegrees = GLAUNCHER_HIGHER_LEVEL_START_ANGLE;
+		else
+			dDegrees = GLAUNCHER_START_ANGLE;
+
+		if (pSoldier->bTeam == OUR_TEAM)
+		{
+			if (gGameSettings.fOptions[TOPTION_GL_HIGH_ANGLE])
+				dDegrees *= 2;
 		}
 		else
 		{
-			dDegrees = GLAUNCHER_START_ANGLE;
+			sRange = (INT16)GetRangeInCellCoordsFromGridNoDiff(pSoldier->sGridNo, sGridNo);
+			if (sRange > 250)
+				dDegrees *= 2;
+			else if (sRange > 150)
+				dDegrees = dDegrees * 3 / 2;
+			else if (sRange < 100 && ubLevel <= pSoldier->pathing.bLevel)
+				dDegrees /= 2;
 		}
-
-		sRange = (INT16)GetRangeInCellCoordsFromGridNoDiff(pSoldier->sGridNo, sGridNo);
-
-		if (sRange > 250)
-			dDegrees = dDegrees * 2;
-		else if (sRange > 150)
-			dDegrees = dDegrees * 3 / 2;
-		else if (sRange < 100 && ubLevel <= pSoldier->pathing.bLevel)
-			dDegrees = dDegrees / 2;
 
 		fGLauncher = TRUE;
 		sMinRange = MIN_MORTAR_RANGE / 2;
