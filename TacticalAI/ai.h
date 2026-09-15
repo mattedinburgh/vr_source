@@ -393,6 +393,20 @@ struct AICONTACTBELIEF
 	BOOLEAN fDirectlyVisible;
 };
 
+// Coarse post-contact memory. This is deliberately weaker than normal JA2
+// personal/public knowledge: it may guide search and geometry, never authorize
+// an attack against an unseen opponent.
+struct AITHREATMEMORYCUE
+{
+	INT32 sGridNo;
+	INT8 bLevel;
+	UINT8 ubDirection;
+	UINT8 ubConfidence;
+	UINT8 ubAgeTurns;
+	UINT8 ubMatchedMemories;
+	BOOLEAN fNoiseCorroborated;
+};
+
 // Local 8-sector battlefield geometry. It is derived only from legal opponent
 // beliefs plus friendly positions, and is rebuilt transiently during decisions.
 struct AITACTICALGEOMETRY
@@ -404,6 +418,8 @@ struct AITACTICALGEOMETRY
 	UINT8 ubFriendlyDirectionMask;
 	UINT8 ubKnownContacts;
 	UINT8 ubVisibleContacts;
+	UINT8 ubRememberedContacts;
+	UINT8 ubMemoryDirectionMask;
 	UINT8 ubPrimaryThreatDir;
 	UINT8 ubSecondaryThreatDir;
 	UINT8 ubSafestDirection;
@@ -458,6 +474,8 @@ struct AICONTACTCHANGE
 
 BOOLEAN AIBuildContactBelief(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID, AICONTACTBELIEF *pBelief);
 BOOLEAN AIBuildPrimaryContactBelief(SOLDIERTYPE *pSoldier, INT32 sPreferredGridNo, AICONTACTBELIEF *pBelief);
+BOOLEAN AIBuildThreatMemoryCue(SOLDIERTYPE *pSoldier, AITHREATMEMORYCUE *pCue);
+INT32 AIMemoryNoiseRelevance(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo, INT8 bNoiseLevel);
 BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 	AITACTICALGEOMETRY *pGeometry);
 INT32 AIGeometryPositionScore(SOLDIERTYPE *pSoldier,
