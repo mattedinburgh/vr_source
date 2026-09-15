@@ -13950,14 +13950,52 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 			if (fSameTarget)
 			{
+				BOOLEAN fPlanStillValid = FALSE;
 				switch (ShortPlan.ubType)
 				{
-				case AI_SHORT_PLAN_FLANK: return AI_INTENT_FLANK;
-				case AI_SHORT_PLAN_FALLBACK: return AI_INTENT_FALLBACK;
-				case AI_SHORT_PLAN_DISENGAGE: return AI_INTENT_DISENGAGE;
-				case AI_SHORT_PLAN_RESCUE: return AI_INTENT_RESCUE;
-				default: break;
+				case AI_SHORT_PLAN_FLANK:
+					fPlanStillValid =
+						!TileIsOutOfBounds(sTargetSpot) &&
+						!AIShouldAvoidAdvance(pSoldier) &&
+						iStress < 55 &&
+						iRisk <= iTolerance + 5;
+					if (fPlanStillValid)
+						return AI_INTENT_FLANK;
+					break;
+
+				case AI_SHORT_PLAN_FALLBACK:
+					fPlanStillValid =
+						pSoldier->aiData.bUnderFire ||
+						iStress >= 30 ||
+						iRisk + 5 >= iTolerance ||
+						bSituation == AI_BATTLE_LOSING ||
+						bSituation == AI_BATTLE_CATASTROPHIC;
+					if (fPlanStillValid)
+						return AI_INTENT_FALLBACK;
+					break;
+
+				case AI_SHORT_PLAN_DISENGAGE:
+					fPlanStillValid = AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier);
+					if (fPlanStillValid)
+						return AI_INTENT_DISENGAGE;
+					break;
+
+				case AI_SHORT_PLAN_RESCUE:
+					fPlanStillValid =
+						AICheckIsMedic(pSoldier) &&
+						CountFriendsNeedHelp(pSoldier) > 0 &&
+						!pSoldier->aiData.bUnderFire &&
+						iRisk <= iTolerance;
+					if (fPlanStillValid)
+						return AI_INTENT_RESCUE;
+					break;
+
+				default:
+					break;
 				}
+
+				if (!fPlanStillValid)
+					AICancelShortPlan(pSoldier);
 			}
 		}
 	}
@@ -14129,13 +14167,13 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	BOOLEAN fTaskReserved = TRUE;
 	if (bRole == AI_ROLE_FLANKER)
 		fTaskReserved = AIReserveTacticalTask(
-			pSoldier, AI_TASK_FLANK, sTargetSpot, NOBODY, 2, 2);
+			pSoldier, AI_TASK_FLANK, sTargetSpot, NOBODY, 2, 1);
 	else if (bRole == AI_ROLE_MANEUVER)
 		fTaskReserved = AIReserveTacticalTask(
-			pSoldier, AI_TASK_MANEUVER, sTargetSpot, NOBODY, 2, 2);
+			pSoldier, AI_TASK_MANEUVER, sTargetSpot, NOBODY, 2, 1);
 	else if (bRole == AI_ROLE_SCREEN)
 		fTaskReserved = AIReserveTacticalTask(
-			pSoldier, AI_TASK_SCREEN, sTargetSpot, NOBODY, 2, 2);
+			pSoldier, AI_TASK_SCREEN, sTargetSpot, NOBODY, 2, 1);
 	else
 		AIReleaseTacticalTask(pSoldier);
 
@@ -14165,18 +14203,10 @@ INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 	if (bRole < AI_ROLE_SUPPORT || bRole > AI_ROLE_RESERVE)
 		bRole = AITacticalRole(pSoldier, sTargetSpot);
 
-	INT8 bMoveAction = AI_ACTION_GET_CLOSER;
-	if (bIntent == AI_INTENT_FALLBACK || bIntent == AI_INTENT_DISENGAGE)
-		bMoveAction = AI_ACTION_WITHDRAW;
-	else if (bIntent == AI_INTENT_FLANK)
-		bMoveAction = AI_ACTION_FLANK_LEFT;
-	else if (bIntent == AI_INTENT_HOLD)
-		bMoveAction = AI_ACTION_TAKE_COVER;
-
 	AITACTICALPOSITIONFEATURES Features;
 	if (!AIEvaluateTacticalPosition(
 		pSoldier, sCandidateSpot, sTargetSpot,
-		DetermineMovementMode(pSoldier, bMoveAction), &Features))
+		0, &Features))
 	{
 		return -10000;
 	}
