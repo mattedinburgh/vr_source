@@ -2302,11 +2302,11 @@ static INT8 DecideThreatHypothesisSearch(
 	// One hypothesis has a bounded number of investigators. Other members secure
 	// the sector instead of forming a conga line toward the same remembered tile.
 	if (!AIReserveTacticalTask(
-		pSoldier, AI_TASK_SEARCH, Cue.sGridNo,
+		pSoldier, AI_TASK_SEARCH, sFocus,
 		NOBODY, ubSearchers, 1))
 	{
 		AIReserveTacticalTask(
-			pSoldier, AI_TASK_SEARCH_SUPPORT, Cue.sGridNo,
+			pSoldier, AI_TASK_SEARCH_SUPPORT, sFocus,
 			NOBODY, 3, 1);
 
 		UINT32 uiDecision = VRPlannerTraceBeginDecision(
