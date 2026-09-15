@@ -10,8 +10,9 @@ implemented in several places or on several permanent branches.
 | Area | Canonical source | Responsibility |
 | --- | --- | --- |
 | Public AI interface | `TacticalAI/ai.h` | Declarations only; no second public AI header |
-| Shared evaluation/state | `TacticalAI/AIUtils.cpp` | Doctrine, command, fireteams, risk, battle state, route exposure, shared utility |
-| Decision orchestration | `TacticalAI/DecideAction.cpp` | Alert-state entry points, planner priority, suppression response, planner analytics adapters |
+| Shared evaluation/state | `TacticalAI/AIUtils.cpp` | Doctrine, command, fireteams, risk, battle state, route exposure, compatibility utility wrapper |
+| Shared tactical reasoning | `TacticalAI/TacticalReasoning.cpp` | Legal contact beliefs, spatial feature evaluation/scoring, task reservations, short plans, contact-change/surprise tracking |
+| Decision orchestration | `TacticalAI/DecideAction.cpp` | Alert-state entry points, planner priority, suppression/contact-surprise responses, planner analytics adapters |
 | Casualty/medical AI | `TacticalAI/Medical.cpp` | Evacuation, medic rescue, buddy aid, self-aid |
 | Attack evaluation/execution helpers | `TacticalAI/Attacks.cpp` | Attack candidates and weapon-use execution support |
 | Movement candidate generation | `TacticalAI/FindLocations.cpp` | Cover/advance/retreat/flank location search |
@@ -31,8 +32,12 @@ A behaviour may call helpers from several files, but it has exactly one orchestr
 | Doctrine / competence | `AIUtils.cpp` |
 | Command / rank | `AIUtils.cpp` |
 | Fireteam identity/cohesion | `AIUtils.cpp` |
-| Tactical intent / role | `AIUtils.cpp` |
-| Position utility / range / exposure | `AIUtils.cpp` |
+| Tactical intent / role | `AIUtils.cpp` (persistent posture/role) + `TacticalReasoning.cpp` (short-plan/task state) |
+| Contact belief / uncertainty | `TacticalReasoning.cpp` |
+| Position utility / spatial features | `TacticalReasoning.cpp`; `AIUtils.cpp::AIUtilityPositionScore` is the compatibility wrapper |
+| Task reservations | `TacticalReasoning.cpp` |
+| Short tactical plans | `TacticalReasoning.cpp` |
+| Contact surprise / encirclement reassessment | `DecideAction.cpp` (decision) + `TacticalReasoning.cpp` (legal observation state) |
 | Disengagement / escape state | `DecideAction.cpp` (decision) + `AIUtils.cpp` (state/helpers) |
 | Suppression response | `DecideAction.cpp` |
 | Alert-state priority | `DecideAction.cpp` |
@@ -54,14 +59,15 @@ High-priority state can pre-empt ordinary combat:
 1. forced/manual retreat;
 2. immediate environmental/emergency protection;
 3. dispersion where required;
-4. fireteam cohesion / remnant handling;
-5. persistent disengagement / escape;
-6. suppression response;
-7. viable casualty response;
-8. tactical fallback / self-preservation;
-9. immediate viable attack in direct BLACK contact;
-10. building-aware CQB movement when context applies;
-11. generic coordinated attack/support/movement and legacy movement execution.
+4. newly revealed-contact / encirclement reassessment;
+5. fireteam cohesion / remnant handling;
+6. persistent disengagement / escape;
+7. suppression response;
+8. viable casualty response;
+9. tactical fallback / self-preservation;
+10. immediate viable attack in direct BLACK contact;
+11. building-aware CQB movement when context applies;
+12. generic coordinated attack/support/movement and legacy movement execution.
 
 The exact details may evolve, but a new behaviour must be deliberately placed in this hierarchy.
 
@@ -70,6 +76,7 @@ The exact details may evolve, but a new behaviour must be deliberately placed in
 Vengeance/1.13 AI remains valuable as an execution library.
 
 - Planner/state code decides **whether and why**.
+- Shared reasoning owns legal beliefs, reusable spatial features, reservations and short-lived plans.
 - Legacy helpers decide **how to execute a legal action**.
 - A legacy path must not independently trigger the same high-level behaviour after the planner rejected it.
 - Generic civilian panic code must not become a second retreat path for combat teams.
@@ -104,8 +111,9 @@ Before merging an AI change:
 2. Confirm it does not duplicate an existing decision path.
 3. Confirm it uses only legal AI information.
 4. Place it deliberately in the decision priority.
-5. Reuse `VRAnalytics`.
-6. Run `Tools/AI/VERIFY_AI_INTEGRITY.ps1`.
-7. Run `Tools/AI/VERIFY_AI_BRANCH_CONSOLIDATION.ps1` when branch topology changed.
-8. Complete the canonical integration build.
-9. Use Black Box/Companion results for behavioural tuning instead of adding parallel heuristics.
+5. Reuse `VRAnalytics`; material position choices must expose candidate/selection evidence.
+6. Reuse `TacticalReasoning.cpp` for beliefs, spatial scoring, task claims and short plans instead of creating parallel state.
+7. Run `Tools/AI/VERIFY_AI_INTEGRITY.ps1`.
+8. Run `Tools/AI/VERIFY_AI_BRANCH_CONSOLIDATION.ps1` when branch topology changed.
+9. Complete the canonical integration build.
+10. Use Black Box/Companion results for behavioural tuning instead of adding parallel heuristics.
