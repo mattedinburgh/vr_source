@@ -197,6 +197,19 @@ class CompanionAnalysisTests(unittest.TestCase):
             self.assertEqual(1, diagnostics["skipped_truncated_tail"])
             self.assertEqual(1, diagnostics["invalid_lines"])
 
+    def test_truncated_tail_with_trailing_blank_lines_is_recovered(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "VR_BlackBox.jsonl"
+            path.write_text(
+                '{"schema":"vr-blackbox-1","session":1,"seq":1}\n'
+                '{"schema":"vr-blackbox-1","session":1,"seq":2\n'
+                '\n\n',
+                encoding="utf-8",
+            )
+            events, diagnostics = companion.load_events_with_diagnostics(path)
+            self.assertEqual(1, len(events))
+            self.assertEqual(1, diagnostics["skipped_truncated_tail"])
+
     def test_malformed_middle_jsonl_record_remains_fatal(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "VR_BlackBox.jsonl"
@@ -238,7 +251,7 @@ class CompanionAnalysisTests(unittest.TestCase):
             path.write_text("old", encoding="utf-8")
             companion.write_text_atomic(path, "new report")
             self.assertEqual("new report", path.read_text(encoding="utf-8"))
-            self.assertFalse(path.with_name(path.name + ".tmp").exists())
+            self.assertEqual([], list(path.parent.glob(path.name + ".tmp.*")))
 
 
 if __name__ == "__main__":
