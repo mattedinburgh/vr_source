@@ -3073,8 +3073,8 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 							{
 								if(!(uiFlags&TILES_DIRTY))
 									UnLockVideoSurface( FRAME_BUFFER );
-								ColorFillVideoSurfaceArea( FRAME_BUFFER, iTempPosX_S, iTempPosY_S, (iTempPosX_S + 40), 
-									( min( iTempPosY_S + 20, INTERFACE_START_Y )), Get16BPPColor( FROMRGB( 0, 0, 0 ) ) );
+								ColorFillVideoSurfaceArea( FRAME_BUFFER, iTempPosX_S, iTempPosY_S, (iTempPosX_S + VHDScaleScreenValue( 40 )), 
+									( min( iTempPosY_S + VHDScaleScreenValue( 20 ), INTERFACE_START_Y )), Get16BPPColor( FROMRGB( 0, 0, 0 ) ) );
 								if(!(uiFlags&TILES_DIRTY))
 									pDestBuf = LockVideoSurface( FRAME_BUFFER, &uiDestPitchBYTES );
 							}
@@ -8088,12 +8088,12 @@ void RenderRoomInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sStartPoi
 
 			if ( usTileIndex < GRIDSIZE	)
 			{
-				sX = sTempPosX_S + ( WORLD_TILE_X / 2 ) - 5;
-				sY = sTempPosY_S + ( WORLD_TILE_Y / 2 ) - 5;
+				sX = sTempPosX_S + VHDScaleScreenValue( ( WORLD_TILE_X / 2 ) - 5 );
+				sY = sTempPosY_S + VHDScaleScreenValue( ( WORLD_TILE_Y / 2 ) - 5 );
 
 				// THIS ROOM STUFF IS ONLY DONE IN THE EDITOR...
 				// ADJUST BY SHEIGHT
-				sY -= gpWorldLevelData[ usTileIndex ].sHeight;
+				sY -= VHDScaleScreenValue( gpWorldLevelData[ usTileIndex ].sHeight );
 				sY += gsRenderHeight;//dnl ch85 030214
 
 				if ( gusWorldRoomInfo[ usTileIndex ] != NO_ROOM )
@@ -8194,11 +8194,11 @@ void RenderFOVDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sStar
 
 			if ( usTileIndex < GRIDSIZE	)
 			{
-				sX = sTempPosX_S + ( WORLD_TILE_X / 2 ) - 5;
-				sY = sTempPosY_S + ( WORLD_TILE_Y / 2 ) - 5;
+				sX = sTempPosX_S + VHDScaleScreenValue( ( WORLD_TILE_X / 2 ) - 5 );
+				sY = sTempPosY_S + VHDScaleScreenValue( ( WORLD_TILE_Y / 2 ) - 5 );
 
 				// Adjust for interface level
-				sY -= gpWorldLevelData[ usTileIndex ].sHeight;
+				sY -= VHDScaleScreenValue( gpWorldLevelData[ usTileIndex ].sHeight );
 				sY += gsRenderHeight;
 
 				if ( gubFOVDebugInfoInfo[ usTileIndex ] != 0 )
@@ -8303,11 +8303,11 @@ void RenderCoverDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sSt
 
 			if ( usTileIndex < GRIDSIZE	)
 			{
-				sX = sTempPosX_S + ( WORLD_TILE_X / 2 ) - 5;
-				sY = sTempPosY_S + ( WORLD_TILE_Y / 2 ) - 5;
+				sX = sTempPosX_S + VHDScaleScreenValue( ( WORLD_TILE_X / 2 ) - 5 );
+				sY = sTempPosY_S + VHDScaleScreenValue( ( WORLD_TILE_Y / 2 ) - 5 );
 
 				// Adjust for interface level
-				sY -= gpWorldLevelData[ usTileIndex ].sHeight;
+				sY -= VHDScaleScreenValue( gpWorldLevelData[ usTileIndex ].sHeight );
 				sY += gsRenderHeight;
 
 				if (gsCoverValue[ usTileIndex] != 0x7F7F)
@@ -8411,11 +8411,11 @@ void RenderGridNoVisibleDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, I
 
 			if ( usTileIndex < GRIDSIZE	)
 			{
-				sX = sTempPosX_S + ( WORLD_TILE_X / 2 ) - 5;
-				sY = sTempPosY_S + ( WORLD_TILE_Y / 2 ) - 5;
+				sX = sTempPosX_S + VHDScaleScreenValue( ( WORLD_TILE_X / 2 ) - 5 );
+				sY = sTempPosY_S + VHDScaleScreenValue( ( WORLD_TILE_Y / 2 ) - 5 );
 
 				// Adjust for interface level
-				sY -= gpWorldLevelData[ usTileIndex ].sHeight;
+				sY -= VHDScaleScreenValue( gpWorldLevelData[ usTileIndex ].sHeight );
 				sY += gsRenderHeight;
 
 				SetFont( SMALLCOMPFONT );
