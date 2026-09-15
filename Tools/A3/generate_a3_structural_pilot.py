@@ -987,7 +987,18 @@ def main() -> None:
         action="store_true",
         help="production gate: fail if any declared structural family cannot be generated",
     )
+    ap.add_argument(
+        "--allow-fallback",
+        action="append",
+        default=[],
+        metavar="FAMILY",
+        help=(
+            "explicitly keep FAMILY on canonical/original art when its source contract "
+            "is unavailable; may be repeated. Strict mode still fails on any other gap."
+        ),
+    )
     ns = ap.parse_args()
+    allowed_fallbacks = {name.upper() for name in ns.allow_fallback}
 
     qa_root = ns.qa_root or (ns.out_root / "_qa")
     alias_audit = validate_runtime_alias_table() if ns.strict else None
@@ -1022,6 +1033,8 @@ def main() -> None:
         "Legacy contract retained: frame count, dimensions, offsets, alpha footprint",
         "Contract verification: REQUIRED before artifact write",
         f"Production strict mode: {'YES' if ns.strict else 'NO'}",
+        "Explicit original-art fallbacks: "
+        + (", ".join(sorted(allowed_fallbacks)) if allowed_fallbacks else "NONE"),
         *(
             [
                 f"Runtime aliases verified: {alias_audit['aliases']}",
@@ -1050,16 +1063,36 @@ def main() -> None:
             f"artifact={r['artifact_sha256'][:16]}"
         )
     for family, filename, reason in missing:
-        lines.append(f"{family}: SKIPPED missing source contract {filename}")
+        fallback = family.upper() in allowed_fallbacks
+        lines.append(
+            f"{family}: {'ORIGINAL-FALLBACK' if fallback else 'SKIPPED'} "
+            f"missing source contract {filename}"
+        )
     manifest.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    if ns.strict and missing:
-        detail = ", ".join(family for family, _, _ in missing)
+    blocked_missing = [
+        entry for entry in missing if entry[0].upper() not in allowed_fallbacks
+    ]
+    unknown_fallbacks = sorted(
+        allowed_fallbacks
+        - {family.upper() for family, _, _ in missing}
+    )
+    if unknown_fallbacks:
+        raise SystemExit(
+            "A3 production gate FAILED: --allow-fallback named family/families "
+            "that were not missing: " + ", ".join(unknown_fallbacks)
+        )
+    if ns.strict and blocked_missing:
+        detail = ", ".join(family for family, _, _ in blocked_missing)
         raise SystemExit(
             f"A3 production gate FAILED: missing canonical contracts for {detail}"
         )
 
     print(f"generated {len(results)} structural families; skipped {len(missing)}")
+    if missing and allowed_fallbacks:
+        approved = [family for family, _, _ in missing if family.upper() in allowed_fallbacks]
+        if approved:
+            print("explicit original-art fallback: PASS (" + ", ".join(approved) + ")")
     if alias_audit:
         print(f"runtime alias verification: PASS ({alias_audit['aliases']} aliases)")
         print("STI-to-B1TC sibling loader verification: PASS")
