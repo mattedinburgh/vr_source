@@ -1,22 +1,6 @@
 #include "Filter.h"
-#include "Items.h"
 
 namespace LogicalBodyTypes {
-
-INT32 CompareAttachment(SOLDIERTYPE* pSoldier, INVENTORY_SLOT slot,  UINT8 index)
-{
-	INT32 cmp_val = 0;
-
-	if (pSoldier->inv[slot].objectStack.size() > 0)
-	{
-		OBJECTTYPE* const attachment = pSoldier->inv[slot].objectStack.front().GetAttachmentAtIndex(index);
-		if (attachment) { cmp_val = attachment->usItem; }
-		else { cmp_val = 0; }
-	}
-	else { cmp_val = 0; }
-
-	return cmp_val;
-}
 
 Filter::Filter(void) {
 }
@@ -202,9 +186,6 @@ bool Filter::Match(SOLDIERTYPE* pSoldier) {
 				case REQ_WEAPON_CLASS:
 					cmp_val = Weapon[pSoldier->inv[HANDPOS].usItem].ubWeaponClass;
 					break;
-				case REQ_LEFT_WEAPON_CLASS:
-					cmp_val = Weapon[pSoldier->inv[SECONDHANDPOS].usItem].ubWeaponClass;
-					break;
 				case REQ_WEAPON_TYPE:
 					cmp_val = Weapon[pSoldier->inv[HANDPOS].usItem].ubWeaponType;
 					break;
@@ -213,12 +194,6 @@ bool Filter::Match(SOLDIERTYPE* pSoldier) {
 					break;
 				case REQ_CALIBRE:
 					cmp_val = Weapon[pSoldier->inv[HANDPOS].usItem].ubCalibre;
-					break;
-				case REQ_WEAPON_TWOHANDED:
-					cmp_val = TwoHandedItem(pSoldier->inv[HANDPOS].usItem);
-					break;
-				case REQ_LEFT_WEAPON_TWOHANDED:
-					cmp_val = TwoHandedItem(pSoldier->inv[SECONDHANDPOS].usItem);
 					break;
 				case REQ_VEST_AMOR_PROTECTION:
 					cmp_val = Armour[Item[pSoldier->inv[VESTPOS].usItem].ubClassIndex].ubProtection;
@@ -234,42 +209,6 @@ bool Filter::Match(SOLDIERTYPE* pSoldier) {
 					break;
 				case REQ_WEARING_BACKPACK:
 					cmp_val = pSoldier->inv[BPACKPOCKPOS].exists();
-					break;
-				case REQ_HELMETPOSATTACHMENT0:
-					cmp_val = CompareAttachment(pSoldier, HELMETPOS, 0);
-					break;
-				case REQ_HELMETPOSATTACHMENT1:
-					cmp_val = CompareAttachment(pSoldier, HELMETPOS, 1);
-					break;
-				case REQ_HELMETPOSATTACHMENT2:
-					cmp_val = CompareAttachment(pSoldier, HELMETPOS, 2);
-					break;
-				case REQ_HELMETPOSATTACHMENT3:
-					cmp_val = CompareAttachment(pSoldier, HELMETPOS, 3);
-					break;
-				case REQ_LEGPOSATTACHMENT0:
-					cmp_val = CompareAttachment(pSoldier, LEGPOS, 0);
-					break;
-				case REQ_LEGPOSATTACHMENT1:
-					cmp_val = CompareAttachment(pSoldier, LEGPOS, 1);
-					break;
-				case REQ_LEGPOSATTACHMENT2:
-					cmp_val = CompareAttachment(pSoldier, LEGPOS, 2);
-					break;
-				case REQ_LEGPOSATTACHMENT3:
-					cmp_val = CompareAttachment(pSoldier, LEGPOS, 3);
-					break;
-				case REQ_VESTPOSATTACHMENT0:
-					cmp_val = CompareAttachment( pSoldier, VESTPOS, 0 );
-					break;
-				case REQ_VESTPOSATTACHMENT1:
-					cmp_val = CompareAttachment( pSoldier, VESTPOS, 1 );
-					break;
-				case REQ_VESTPOSATTACHMENT2:
-					cmp_val = CompareAttachment( pSoldier, VESTPOS, 2 );
-					break;
-				case REQ_VESTPOSATTACHMENT3:
-					cmp_val = CompareAttachment( pSoldier, VESTPOS, 3 );
 					break;
 				default:
 					if (q < NUM_REQTYPESINV) {
