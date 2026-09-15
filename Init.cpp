@@ -1529,6 +1529,10 @@ UINT32 InitializeJA2(void)
 	HandleJA2CDCheck( );
 
 	gfWorldLoaded = FALSE;
+
+	// VHD changes both world projection spacing and asset density. Configure it
+	// before any world/tile initialization can create tactical imagery.
+	BootstrapVHDGraphicsSettings();
 	
 	//Load external game mechanic data
 	//if ( !LoadExternalGameplayData(TABLEDATA_DIRECTORY))
