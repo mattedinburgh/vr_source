@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - install/all-2026-09-12
+      - 'blackbox/**'
     paths:
       - '**/*.c'
       - '**/*.cc'
@@ -39,6 +40,7 @@ jobs:
           fetch-depth: 20
 
       - name: Parse deployment and AI audit PowerShell
+        if: github.ref == 'refs/heads/install/all-2026-09-12'
         shell: powershell
         run: |
           $scripts = @(
@@ -61,6 +63,7 @@ jobs:
           }
 
       - name: Verify unified AI source integrity
+        if: github.ref == 'refs/heads/install/all-2026-09-12'
         shell: powershell
         run: |
           & (Join-Path $env:GITHUB_WORKSPACE 'Tools\AI\VERIFY_AI_INTEGRITY.ps1') -RepositoryRoot $env:GITHUB_WORKSPACE

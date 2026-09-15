@@ -5,6 +5,10 @@
 #include <string.h>
 #include <time.h>
 
+#ifndef VR_ANALYTICS_MAX_BYTES
+#define VR_ANALYTICS_MAX_BYTES (64L * 1024L * 1024L)
+#endif
+
 #ifdef _MSC_VER
 #include ".generated/VRBuildInfo.generated.h"
 #else
@@ -124,6 +128,46 @@ namespace
 		}
 	}
 
+	long FileSizeBytes( const char* path )
+	{
+		FILE* file = fopen( path, "rb" );
+		long size = -1;
+		if( !file )
+			return -1;
+
+		if( fseek( file, 0, SEEK_END ) == 0 )
+			size = ftell( file );
+		fclose( file );
+		return size;
+	}
+
+	void RotateAnalyticsLogIfNeeded()
+	{
+		const char* current = "VR_BlackBox.jsonl";
+		const char* pending = "VR_BlackBox_RotatePending.jsonl";
+		long size = FileSizeBytes( current );
+		if( size < 0 || size < VR_ANALYTICS_MAX_BYTES )
+			return;
+
+		// Never overwrite an unresolved prior rotation. It is evidence too.
+		if( FileSizeBytes( pending ) >= 0 )
+			return;
+
+		// First secure the oversized current journal under a temporary name.
+		// Only after that succeeds is it safe to shift older generations.
+		if( rename( current, pending ) != 0 )
+			return;
+
+		remove( "VR_BlackBox_Previous_3.jsonl" );
+		rename( "VR_BlackBox_Previous_2.jsonl", "VR_BlackBox_Previous_3.jsonl" );
+		rename( "VR_BlackBox_Previous.jsonl", "VR_BlackBox_Previous_2.jsonl" );
+
+		// If this last rename fails, RotatePending remains intact and the new
+		// current session still opens a fresh journal. The collector includes the
+		// pending file so the preserved evidence is not hidden from diagnostics.
+		rename( pending, "VR_BlackBox_Previous.jsonl" );
+	}
+
 	const char* LayerName( VRAnalyticsLayer layer )
 	{
 		switch( layer )
@@ -184,6 +228,7 @@ namespace
 		if( !gEnabled )
 			return;
 
+		RotateAnalyticsLogIfNeeded();
 		gFile = fopen( "VR_BlackBox.jsonl", "ab" );
 		if( !gFile )
 		{
@@ -234,7 +279,7 @@ namespace
 			JsonString( gFile, recentChanges[i] );
 		}
 		fputc( ']', gFile );
-		fputs( ",\"blackbox_version\":2,\"decision_forensics\":true,\"build_provenance_version\":1", gFile );
+		fputs( ",\"blackbox_version\":2,\"decision_forensics\":true,\"build_provenance_version\":1,\"journal_lifecycle_version\":1", gFile );
 		fputs( "}\n", gFile );
 		fflush( gFile );
 	}
@@ -296,6 +341,22 @@ bool VRAnalyticsIsEnabled()
 {
 	Initialize();
 	return gEnabled;
+}
+
+void VRAnalyticsShutdown()
+{
+	if( !gInitialized || gFile == NULL )
+		return;
+
+	++gSequence;
+	fprintf( gFile,
+		"{\"schema\":\"vr-blackbox-1\",\"seq\":%lu,\"session\":%lu,"
+		"\"layer\":\"system\",\"kind\":\"session_end\"}\n",
+		gSequence, gSessionId );
+	fflush( gFile );
+	fclose( gFile );
+	gFile = NULL;
+	gEnabled = false;
 }
 
 unsigned long VRAnalyticsBeginDecision(

@@ -49,9 +49,12 @@
 #define BLACKBOX_OPERATION_NAME_CHARS 128
 #define BLACKBOX_OPERATION_RESULT_CHARS 64
 #define BLACKBOX_SLOW_OPERATION_MS 2000
+#define BLACKBOX_WATCHDOG_SHUTDOWN_WAIT_MS 5000
+#define BLACKBOX_FLUSH_INTERVAL_MS 1000
 
 typedef struct
 {
+	volatile LONG committedSequence;
 	CHAR8 name[BLACKBOX_SUBSYSTEM_NAME_CHARS];
 	CHAR8 checkpoint[BLACKBOX_CHECKPOINT_CHARS];
 	LONG sequence;
@@ -82,6 +85,7 @@ typedef struct
 
 typedef struct
 {
+	volatile LONG committed;
 	CHAR8 name[BLACKBOX_COUNTER_NAME_CHARS];
 	volatile LONG value;
 } BLACKBOX_COUNTER_STATE;
@@ -102,13 +106,19 @@ static HANDLE gBlackBoxFile = INVALID_HANDLE_VALUE;
 static CRITICAL_SECTION gBlackBoxLock;
 static BOOL gBlackBoxInitialized = FALSE;
 static DWORD gBlackBoxStartTick = 0;
-static LONG gBlackBoxEventSequence = 0;
-static LONG gBlackBoxCheckpointSequence = 0;
+static volatile LONG gBlackBoxEventSequence = 0;
+static volatile LONG gBlackBoxCheckpointSequence = 0;
 static LONG gBlackBoxDiskWriteFailures = 0;
 static LONG gBlackBoxFlushFailures = 0;
+static LONG gBlackBoxFlushCount = 0;
+static LONG gBlackBoxDeferredFlushCount = 0;
+static DWORD gBlackBoxLastFlushTick = 0;
+static DWORD gBlackBoxLastFlushAttemptTick = 0;
 static LONG gBlackBoxSubsystemCursor = 0;
 static CHAR8 gBlackBoxEvents[BLACKBOX_EVENT_SLOTS][BLACKBOX_EVENT_CHARS];
+static volatile LONG gBlackBoxEventCommitted[BLACKBOX_EVENT_SLOTS];
 static CHAR8 gBlackBoxCheckpoints[BLACKBOX_CHECKPOINT_SLOTS][BLACKBOX_CHECKPOINT_CHARS];
+static volatile LONG gBlackBoxCheckpointCommitted[BLACKBOX_CHECKPOINT_SLOTS];
 static CHAR8 gBlackBoxCheckpoint[BLACKBOX_CHECKPOINT_CHARS] = "not initialized";
 static BLACKBOX_SUBSYSTEM_STATE gBlackBoxSubsystems[BLACKBOX_SUBSYSTEM_SLOTS];
 
@@ -136,6 +146,40 @@ static LONG gBlackBoxContextSequence = 0;
 static LONG gBlackBoxOperationToken = 0;
 static LONG gBlackBoxHangDumpHeartbeat = -1;
 
+static BOOL BlackBoxCopyLatestCommittedCheckpoint( CHAR8 *buffer, size_t bufferSize )
+{
+	LONG sequence;
+	LONG slot;
+	LONG committedBefore;
+	LONG committedAfter;
+
+	if( buffer == NULL || bufferSize == 0 )
+		return FALSE;
+
+	buffer[0] = 0;
+	sequence = gBlackBoxCheckpointSequence;
+	if( sequence <= 0 )
+		return FALSE;
+
+	slot = ( sequence - 1 ) % BLACKBOX_CHECKPOINT_SLOTS;
+	committedBefore = InterlockedCompareExchange(
+		&gBlackBoxCheckpointCommitted[slot], 0, 0 );
+	if( committedBefore != sequence )
+		return FALSE;
+
+	lstrcpynA( buffer, gBlackBoxCheckpoints[slot], (int)bufferSize );
+
+	committedAfter = InterlockedCompareExchange(
+		&gBlackBoxCheckpointCommitted[slot], 0, 0 );
+	if( committedAfter != committedBefore )
+	{
+		buffer[0] = 0;
+		return FALSE;
+	}
+
+	return buffer[0] != 0;
+}
+
 static const char *BlackBoxPhaseName( LONG phase )
 {
 	switch( phase )
@@ -149,6 +193,67 @@ static const char *BlackBoxPhaseName( LONG phase )
 		case BLACKBOX_PHASE_FRAME_END: return "FRAME_END";
 		default: return "UNKNOWN";
 	}
+}
+
+static BOOL BlackBoxEventNeedsImmediateFlush( const char *category, const char *message )
+{
+	if( category == NULL )
+		return FALSE;
+
+	if( _stricmp( category, "ASSERT" ) == 0 ||
+		_stricmp( category, "STALL" ) == 0 ||
+		_stricmp( category, "RECOVERY" ) == 0 ||
+		_stricmp( category, "ERROR" ) == 0 ||
+		_stricmp( category, "FATAL" ) == 0 ||
+		_stricmp( category, "CRASH" ) == 0 ||
+		_stricmp( category, "WATCHDOG" ) == 0 )
+	{
+		return TRUE;
+	}
+
+	// Engine lifecycle milestones should survive even if startup/shutdown fails.
+	if( _stricmp( category, "ENGINE" ) == 0 )
+		return TRUE;
+
+	// Slow successful operations can wait for the normal interval, but a failed
+	// multi-stage operation is useful evidence immediately before a possible CTD.
+	if( _stricmp( category, "OPERATION" ) == 0 && message != NULL )
+	{
+		// BlackBoxOperationEnd only emits OPERATION events for slow successes or
+		// non-OK results. Preserve every non-OK result immediately without
+		// having to enumerate all possible failure strings.
+		if( strstr( message, "result=OK" ) == NULL )
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
+static BOOL BlackBoxFlushFileLocked( DWORD now )
+{
+	if( gBlackBoxFile == INVALID_HANDLE_VALUE )
+		return FALSE;
+
+	gBlackBoxLastFlushAttemptTick = now;
+	if( !FlushFileBuffers( gBlackBoxFile ) )
+	{
+		++gBlackBoxFlushFailures;
+		return FALSE;
+	}
+
+	gBlackBoxLastFlushTick = now;
+	++gBlackBoxFlushCount;
+	return TRUE;
+}
+
+static void BlackBoxForceFlush( void )
+{
+	if( !gBlackBoxInitialized )
+		return;
+
+	EnterCriticalSection( &gBlackBoxLock );
+	BlackBoxFlushFileLocked( GetTickCount() );
+	LeaveCriticalSection( &gBlackBoxLock );
 }
 
 static BOOL BlackBoxIsInterestingException( DWORD code )
@@ -362,7 +467,8 @@ static void BlackBoxWriteHangEvidence( DWORD elapsedMs, LONG heartbeatSequence, 
 	}
 
 	BlackBoxFormatTime( timestamp, sizeof( timestamp ) );
-	lstrcpynA( checkpoint, gBlackBoxCheckpoint, BLACKBOX_CHECKPOINT_CHARS );
+	if( !BlackBoxCopyLatestCommittedCheckpoint( checkpoint, sizeof( checkpoint ) ) )
+		lstrcpynA( checkpoint, "<no safely committed checkpoint>", BLACKBOX_CHECKPOINT_CHARS );
 	_snprintf( line, sizeof( line ) - 1,
 		"[%s] [+%lums] [WATCHDOG] main-thread stall elapsedMs=%lu mainTid=%lu heartbeat=%ld screen=%ld phase=%s(%ld) context=%s captureError=%lu latest=%s\r\n",
 		timestamp, BlackBoxUptimeMs(), elapsedMs, gBlackBoxMainThreadId,
@@ -528,29 +634,55 @@ static void BlackBoxDrainExceptionFeed( void )
 	LONG snapshot;
 	LONG first;
 	LONG sequence;
+	LONG drainedThrough;
+	LONG drainedBefore;
 
 	snapshot = gBlackBoxExceptionSequence;
 	if( snapshot <= gBlackBoxExceptionDrainedSequence )
 		return;
 
-	first = gBlackBoxExceptionDrainedSequence + 1;
+	drainedBefore = gBlackBoxExceptionDrainedSequence;
+	first = drainedBefore + 1;
 	if( snapshot - first + 1 > BLACKBOX_EXCEPTION_SLOTS )
 		first = snapshot - BLACKBOX_EXCEPTION_SLOTS + 1;
+
+	// If an exception storm overran the emergency ring, acknowledge the
+	// irrecoverable prefix. Never acknowledge a slot that is merely still being
+	// published; the next heartbeat should retry it.
+	drainedThrough = first - 1;
 
 	for( sequence = first; sequence <= snapshot; ++sequence )
 	{
 		LONG slot = ( sequence - 1 ) % BLACKBOX_EXCEPTION_SLOTS;
 		BLACKBOX_EXCEPTION_EVENT *event = &gBlackBoxExceptions[slot];
-		if( event->committedSequence != sequence )
-			continue;
+		LONG committedBefore = InterlockedCompareExchange(
+			&event->committedSequence, 0, 0 );
+		if( committedBefore != sequence )
+			break;
+
+		DWORD tick = event->tick;
+		DWORD threadId = event->threadId;
+		DWORD code = event->code;
+		PVOID address = event->address;
+		DWORD parameterCount = event->parameterCount;
+		ULONG_PTR info0 = event->info0;
+		ULONG_PTR info1 = event->info1;
+		LONG committedAfter = InterlockedCompareExchange(
+			&event->committedSequence, 0, 0 );
+
+		if( committedAfter != committedBefore )
+			break;
 
 		BlackBoxEvent( "SEH",
 			"firstChance seq=%ld code=0x%08lx address=0x%08x tid=%lu uptimeMs=%lu params=%lu info0=0x%08x info1=0x%08x",
-			sequence, event->code, event->address, event->threadId, event->tick,
-			event->parameterCount, event->info0, event->info1 );
+			sequence, code, address, threadId, tick,
+			parameterCount, info0, info1 );
+		drainedThrough = sequence;
 	}
 
-	gBlackBoxExceptionDrainedSequence = snapshot;
+	gBlackBoxExceptionDrainedSequence = drainedThrough;
+	if( drainedThrough > drainedBefore )
+		BlackBoxForceFlush();
 }
 
 void BlackBoxInitialize( void )
@@ -567,6 +699,10 @@ void BlackBoxInitialize( void )
 	gBlackBoxCheckpointSequence = 0;
 	gBlackBoxDiskWriteFailures = 0;
 	gBlackBoxFlushFailures = 0;
+	gBlackBoxFlushCount = 0;
+	gBlackBoxDeferredFlushCount = 0;
+	gBlackBoxLastFlushTick = gBlackBoxStartTick;
+	gBlackBoxLastFlushAttemptTick = gBlackBoxStartTick;
 	gBlackBoxSubsystemCursor = 0;
 	gBlackBoxExceptionSequence = 0;
 	gBlackBoxExceptionDrainedSequence = 0;
@@ -586,7 +722,9 @@ void BlackBoxInitialize( void )
 	memset( gBlackBoxCounters, 0, sizeof( gBlackBoxCounters ) );
 	memset( gBlackBoxOperations, 0, sizeof( gBlackBoxOperations ) );
 	memset( gBlackBoxEvents, 0, sizeof( gBlackBoxEvents ) );
+	memset( (void*)gBlackBoxEventCommitted, 0, sizeof( gBlackBoxEventCommitted ) );
 	memset( gBlackBoxCheckpoints, 0, sizeof( gBlackBoxCheckpoints ) );
+	memset( (void*)gBlackBoxCheckpointCommitted, 0, sizeof( gBlackBoxCheckpointCommitted ) );
 	memset( gBlackBoxSubsystems, 0, sizeof( gBlackBoxSubsystems ) );
 	memset( gBlackBoxExceptions, 0, sizeof( gBlackBoxExceptions ) );
 	lstrcpynA( gBlackBoxCheckpoint, "initialized", BLACKBOX_CHECKPOINT_CHARS );
@@ -633,10 +771,10 @@ void BlackBoxInitialize( void )
 		}
 	}
 #ifdef _DEBUG
-	BlackBoxEvent( "ENGINE", "buildDate=%s buildTime=%s config=Debug pointerBits=%u recorderVersion=4 eventSlots=%u checkpointSlots=%u exceptionSlots=%u",
+	BlackBoxEvent( "ENGINE", "buildDate=%s buildTime=%s config=Debug pointerBits=%u recorderVersion=5 eventSlots=%u checkpointSlots=%u exceptionSlots=%u",
 		__DATE__, __TIME__, (UINT32)(sizeof(void*) * 8), (UINT32)BLACKBOX_EVENT_SLOTS, (UINT32)BLACKBOX_CHECKPOINT_SLOTS, (UINT32)BLACKBOX_EXCEPTION_SLOTS );
 #else
-	BlackBoxEvent( "ENGINE", "buildDate=%s buildTime=%s config=Release pointerBits=%u recorderVersion=4 eventSlots=%u checkpointSlots=%u exceptionSlots=%u",
+	BlackBoxEvent( "ENGINE", "buildDate=%s buildTime=%s config=Release pointerBits=%u recorderVersion=5 eventSlots=%u checkpointSlots=%u exceptionSlots=%u",
 		__DATE__, __TIME__, (UINT32)(sizeof(void*) * 8), (UINT32)BLACKBOX_EVENT_SLOTS, (UINT32)BLACKBOX_CHECKPOINT_SLOTS, (UINT32)BLACKBOX_EXCEPTION_SLOTS );
 #endif
 
@@ -654,10 +792,11 @@ void BlackBoxShutdown( void )
 	if( !gBlackBoxInitialized )
 		return;
 
-	BlackBoxEvent( "ENGINE", "Clean shutdown uptimeMs=%lu events=%ld checkpoints=%ld firstChance=%ld heartbeats=%ld diskWriteFailures=%ld flushFailures=%ld",
+	BlackBoxEvent( "ENGINE", "Clean shutdown uptimeMs=%lu events=%ld checkpoints=%ld firstChance=%ld heartbeats=%ld diskWriteFailures=%ld flushFailures=%ld flushes=%ld deferredFlushes=%ld",
 		BlackBoxUptimeMs(), gBlackBoxEventSequence, gBlackBoxCheckpointSequence,
 		gBlackBoxExceptionSequence, gBlackBoxHeartbeatSequence,
-		gBlackBoxDiskWriteFailures, gBlackBoxFlushFailures );
+		gBlackBoxDiskWriteFailures, gBlackBoxFlushFailures,
+		gBlackBoxFlushCount, gBlackBoxDeferredFlushCount );
 
 	if( gBlackBoxVectoredHandler != NULL )
 	{
@@ -669,11 +808,27 @@ void BlackBoxShutdown( void )
 		SetEvent( gBlackBoxWatchdogStopEvent );
 	if( gBlackBoxWatchdogThread != NULL )
 	{
-		WaitForSingleObject( gBlackBoxWatchdogThread, 2000 );
-		CloseHandle( gBlackBoxWatchdogThread );
-		gBlackBoxWatchdogThread = NULL;
+		DWORD watchdogWait = WaitForSingleObject(
+			gBlackBoxWatchdogThread, BLACKBOX_WATCHDOG_SHUTDOWN_WAIT_MS );
+		if( watchdogWait == WAIT_OBJECT_0 )
+		{
+			CloseHandle( gBlackBoxWatchdogThread );
+			gBlackBoxWatchdogThread = NULL;
+		}
+		else
+		{
+			DWORD waitError = ( watchdogWait == WAIT_FAILED ) ? GetLastError() : ERROR_TIMEOUT;
+			BlackBoxEvent( "WATCHDOG",
+				"shutdown wait did not complete result=%lu error=%lu; retaining watchdog handles until process exit",
+				watchdogWait, waitError );
+		}
 	}
-	if( gBlackBoxWatchdogStopEvent != NULL )
+
+	// Never close the stop-event out from under a watchdog that may still be
+	// finishing MiniDumpWriteDump().  A leaked pair of handles during process
+	// teardown is harmless; an invalid wait handle can otherwise make the
+	// watchdog spin in WAIT_FAILED while shutdown continues.
+	if( gBlackBoxWatchdogThread == NULL && gBlackBoxWatchdogStopEvent != NULL )
 	{
 		CloseHandle( gBlackBoxWatchdogStopEvent );
 		gBlackBoxWatchdogStopEvent = NULL;
@@ -682,8 +837,7 @@ void BlackBoxShutdown( void )
 	EnterCriticalSection( &gBlackBoxLock );
 	if( gBlackBoxFile != INVALID_HANDLE_VALUE )
 	{
-		if( !FlushFileBuffers( gBlackBoxFile ) )
-			++gBlackBoxFlushFailures;
+		BlackBoxFlushFileLocked( GetTickCount() );
 		CloseHandle( gBlackBoxFile );
 		gBlackBoxFile = INVALID_HANDLE_VALUE;
 	}
@@ -702,7 +856,9 @@ void BlackBoxEvent( const char *category, const char *format, ... )
 	DWORD threadId;
 	DWORD uptime;
 	DWORD length;
+	DWORD now;
 	BOOL writeOk;
+	BOOL immediateFlush;
 	va_list args;
 	LONG slot;
 	LONG sequence;
@@ -713,11 +869,13 @@ void BlackBoxEvent( const char *category, const char *format, ... )
 	BlackBoxFormatTime( timestamp, sizeof( timestamp ) );
 	threadId = GetCurrentThreadId();
 	uptime = BlackBoxUptimeMs();
+	now = GetTickCount();
 
 	va_start( args, format );
 	_vsnprintf( message, sizeof( message ) - 1, format, args );
 	va_end( args );
 	message[ sizeof( message ) - 1 ] = 0;
+	immediateFlush = BlackBoxEventNeedsImmediateFlush( category, message );
 
 	EnterCriticalSection( &gBlackBoxLock );
 	sequence = gBlackBoxEventSequence + 1;
@@ -726,7 +884,9 @@ void BlackBoxEvent( const char *category, const char *format, ... )
 	line[ sizeof( line ) - 1 ] = 0;
 
 	slot = gBlackBoxEventSequence % BLACKBOX_EVENT_SLOTS;
+	InterlockedExchange( &gBlackBoxEventCommitted[slot], 0 );
 	lstrcpynA( gBlackBoxEvents[slot], line, BLACKBOX_EVENT_CHARS );
+	InterlockedExchange( &gBlackBoxEventCommitted[slot], sequence );
 	++gBlackBoxEventSequence;
 
 	if( gBlackBoxFile != INVALID_HANDLE_VALUE )
@@ -734,9 +894,17 @@ void BlackBoxEvent( const char *category, const char *format, ... )
 		length = (DWORD)strlen( line );
 		writeOk = WriteFile( gBlackBoxFile, line, length, &bytesWritten, NULL );
 		if( !writeOk || bytesWritten != length )
+		{
 			++gBlackBoxDiskWriteFailures;
-		if( !FlushFileBuffers( gBlackBoxFile ) )
-			++gBlackBoxFlushFailures;
+		}
+		else if( immediateFlush || ( now - gBlackBoxLastFlushAttemptTick ) >= BLACKBOX_FLUSH_INTERVAL_MS )
+		{
+			BlackBoxFlushFileLocked( now );
+		}
+		else
+		{
+			++gBlackBoxDeferredFlushCount;
+		}
 	}
 	LeaveCriticalSection( &gBlackBoxLock );
 }
@@ -780,17 +948,21 @@ void BlackBoxCheckpoint( const char *subsystem, const char *format, ... )
 	// Keep a high-frequency memory-only history as well. Existing hot-path
 	// checkpoint calls automatically become much more useful without disk I/O.
 	slot = gBlackBoxCheckpointSequence % BLACKBOX_CHECKPOINT_SLOTS;
+	InterlockedExchange( &gBlackBoxCheckpointCommitted[slot], 0 );
 	lstrcpynA( gBlackBoxCheckpoints[slot], checkpoint, BLACKBOX_CHECKPOINT_CHARS );
+	InterlockedExchange( &gBlackBoxCheckpointCommitted[slot], sequence );
 	++gBlackBoxCheckpointSequence;
 
 	// Also retain the latest state independently for each subsystem so a MAP
 	// checkpoint no longer erases the most recent AI/SAVE/UI/B1 context.
 	subsystemSlot = BlackBoxFindSubsystemSlot( safeSubsystem );
+	InterlockedExchange( &gBlackBoxSubsystems[subsystemSlot].committedSequence, 0 );
 	lstrcpynA( gBlackBoxSubsystems[subsystemSlot].name, safeSubsystem, BLACKBOX_SUBSYSTEM_NAME_CHARS );
 	lstrcpynA( gBlackBoxSubsystems[subsystemSlot].checkpoint, checkpoint, BLACKBOX_CHECKPOINT_CHARS );
 	gBlackBoxSubsystems[subsystemSlot].sequence = sequence;
 	gBlackBoxSubsystems[subsystemSlot].tick = uptime;
 	gBlackBoxSubsystems[subsystemSlot].threadId = threadId;
+	InterlockedExchange( &gBlackBoxSubsystems[subsystemSlot].committedSequence, sequence );
 	LeaveCriticalSection( &gBlackBoxLock );
 }
 
@@ -873,8 +1045,10 @@ LONG BlackBoxCounterAdd( const char *name, LONG delta )
 	if( slot < 0 )
 	{
 		slot = empty >= 0 ? empty : 0;
+		InterlockedExchange( &gBlackBoxCounters[slot].committed, 0 );
 		lstrcpynA( gBlackBoxCounters[slot].name, safeName, BLACKBOX_COUNTER_NAME_CHARS );
 		InterlockedExchange( &gBlackBoxCounters[slot].value, 0 );
+		InterlockedExchange( &gBlackBoxCounters[slot].committed, 1 );
 	}
 	value = InterlockedExchangeAdd( &gBlackBoxCounters[slot].value, delta ) + delta;
 	LeaveCriticalSection( &gBlackBoxLock );
@@ -886,6 +1060,8 @@ DWORD BlackBoxOperationBegin( const char *subsystem, const char *name )
 	LONG token;
 	LONG slot;
 	BLACKBOX_OPERATION_STATE *op;
+	CHAR8 checkpointSubsystem[BLACKBOX_OPERATION_SUBSYSTEM_CHARS];
+	CHAR8 checkpointName[BLACKBOX_OPERATION_NAME_CHARS];
 
 	if( !gBlackBoxInitialized )
 		return 0;
@@ -897,6 +1073,11 @@ DWORD BlackBoxOperationBegin( const char *subsystem, const char *name )
 		token = 1;
 	}
 	slot = ( token - 1 ) % BLACKBOX_OPERATION_SLOTS;
+
+	// Slot publication is serialized with the normal recorder lock. Without
+	// this, token N could finish while token N+64 was reusing the same slot and
+	// the older end call could overwrite the newer operation.
+	EnterCriticalSection( &gBlackBoxLock );
 	op = &gBlackBoxOperations[slot];
 	InterlockedExchange( &op->committedToken, 0 );
 	op->token = (DWORD)token;
@@ -906,8 +1087,12 @@ DWORD BlackBoxOperationBegin( const char *subsystem, const char *name )
 	lstrcpynA( op->subsystem, ( subsystem && subsystem[0] ) ? subsystem : "?", BLACKBOX_OPERATION_SUBSYSTEM_CHARS );
 	lstrcpynA( op->name, ( name && name[0] ) ? name : "?", BLACKBOX_OPERATION_NAME_CHARS );
 	op->result[0] = 0;
+	lstrcpynA( checkpointSubsystem, op->subsystem, BLACKBOX_OPERATION_SUBSYSTEM_CHARS );
+	lstrcpynA( checkpointName, op->name, BLACKBOX_OPERATION_NAME_CHARS );
 	InterlockedExchange( &op->committedToken, token );
-	BlackBoxCheckpoint( op->subsystem, "operation token=%ld phase=BEGIN name=%s", token, op->name );
+	LeaveCriticalSection( &gBlackBoxLock );
+
+	BlackBoxCheckpoint( checkpointSubsystem, "operation token=%ld phase=BEGIN name=%s", token, checkpointName );
 	return (DWORD)token;
 }
 
@@ -924,9 +1109,14 @@ void BlackBoxOperationEnd( DWORD token, const char *result )
 		return;
 
 	slot = ( (LONG)token - 1 ) % BLACKBOX_OPERATION_SLOTS;
+
+	EnterCriticalSection( &gBlackBoxLock );
 	op = &gBlackBoxOperations[slot];
 	if( op->committedToken != (LONG)token || op->token != token )
+	{
+		LeaveCriticalSection( &gBlackBoxLock );
 		return;
+	}
 
 	lstrcpynA( subsystem, op->subsystem, BLACKBOX_OPERATION_SUBSYSTEM_CHARS );
 	lstrcpynA( name, op->name, BLACKBOX_OPERATION_NAME_CHARS );
@@ -937,6 +1127,7 @@ void BlackBoxOperationEnd( DWORD token, const char *result )
 	op->endTick = BlackBoxUptimeMs();
 	lstrcpynA( op->result, outcome, BLACKBOX_OPERATION_RESULT_CHARS );
 	InterlockedExchange( &op->committedToken, (LONG)token );
+	LeaveCriticalSection( &gBlackBoxLock );
 
 	BlackBoxCheckpoint( subsystem, "operation token=%lu phase=END name=%s result=%s elapsedMs=%lu",
 		token, name, outcome, elapsed );
@@ -1258,7 +1449,7 @@ static void BlackBoxDumpToCrashReport( HWFILE hFile, const EXCEPTION_RECORD *pRe
 	GlobalMemoryStatus( &memoryStatus );
 
 	ErrorLog( hFile, "================ VENGEANCE BLACK BOX ================\r\n" );
-	ErrorLog( hFile, "Recorder version: 4\r\n" );
+	ErrorLog( hFile, "Recorder version: 5\r\n" );
 	ErrorLog( hFile, "Process: pid=%lu crashThread=%lu uptimeMs=%lu\r\n",
 		GetCurrentProcessId(), GetCurrentThreadId(), uptime );
 	ErrorLog( hFile, "Recorder health: events=%ld checkpoints=%ld firstChance=%ld heartbeats=%ld diskWriteFailures=%ld flushFailures=%ld fileOpen=%s\r\n",
@@ -1321,63 +1512,144 @@ static void BlackBoxDumpToCrashReport( HWFILE hFile, const EXCEPTION_RECORD *pRe
 		{
 			LONG exceptionSlot = ( exceptionSequence - 1 ) % BLACKBOX_EXCEPTION_SLOTS;
 			BLACKBOX_EXCEPTION_EVENT *event = &gBlackBoxExceptions[exceptionSlot];
-			if( event->committedSequence != exceptionSequence )
+			LONG committedBefore = InterlockedCompareExchange(
+				&event->committedSequence, 0, 0 );
+			if( committedBefore != exceptionSequence )
+				continue;
+
+			DWORD tick = event->tick;
+			DWORD threadId = event->threadId;
+			DWORD code = event->code;
+			PVOID address = event->address;
+			DWORD parameterCount = event->parameterCount;
+			ULONG_PTR info0 = event->info0;
+			ULONG_PTR info1 = event->info1;
+			LONG committedAfter = InterlockedCompareExchange(
+				&event->committedSequence, 0, 0 );
+
+			if( committedAfter != committedBefore )
 				continue;
 
 			ErrorLog( hFile,
 				"  seq=%ld uptimeMs=%lu tid=%lu code=0x%08lx address=0x%08x params=%lu info0=0x%08x info1=0x%08x\r\n",
-				exceptionSequence, event->tick, event->threadId, event->code, event->address,
-				event->parameterCount, event->info0, event->info1 );
+				exceptionSequence, tick, threadId, code, address,
+				parameterCount, info0, info1 );
 		}
 	}
 
-	ErrorLog( hFile, "\r\nLatest global checkpoint:\r\n  %s\r\n", gBlackBoxCheckpoint );
+	{
+		CHAR8 latestCheckpoint[BLACKBOX_CHECKPOINT_CHARS];
+		if( BlackBoxCopyLatestCommittedCheckpoint( latestCheckpoint, sizeof( latestCheckpoint ) ) )
+			ErrorLog( hFile, "\r\nLatest global checkpoint:\r\n  %s\r\n", latestCheckpoint );
+		else
+			ErrorLog( hFile, "\r\nLatest global checkpoint:\r\n  <no safely committed checkpoint>\r\n" );
+	}
 
 	ErrorLog( hFile, "\r\nLatest checkpoint by subsystem:\r\n" );
 	for( i = 0; i < BLACKBOX_SUBSYSTEM_SLOTS; ++i )
 	{
-		if( gBlackBoxSubsystems[i].name[0] != 0 && gBlackBoxSubsystems[i].checkpoint[0] != 0 )
+		LONG committedBefore = InterlockedCompareExchange(
+			&gBlackBoxSubsystems[i].committedSequence, 0, 0 );
+		if( committedBefore > 0 )
 		{
-			ErrorLog( hFile, "  %-12s seq=%ld thread=%lu uptimeMs=%lu\r\n    %s\r\n",
-				gBlackBoxSubsystems[i].name,
-				gBlackBoxSubsystems[i].sequence,
-				gBlackBoxSubsystems[i].threadId,
-				gBlackBoxSubsystems[i].tick,
-				gBlackBoxSubsystems[i].checkpoint );
+			CHAR8 name[BLACKBOX_SUBSYSTEM_NAME_CHARS];
+			CHAR8 checkpoint[BLACKBOX_CHECKPOINT_CHARS];
+			LONG stateSequence = gBlackBoxSubsystems[i].sequence;
+			DWORD stateThread = gBlackBoxSubsystems[i].threadId;
+			DWORD stateTick = gBlackBoxSubsystems[i].tick;
+			LONG committedAfter;
+
+			lstrcpynA( name, gBlackBoxSubsystems[i].name, BLACKBOX_SUBSYSTEM_NAME_CHARS );
+			lstrcpynA( checkpoint, gBlackBoxSubsystems[i].checkpoint, BLACKBOX_CHECKPOINT_CHARS );
+			committedAfter = InterlockedCompareExchange(
+				&gBlackBoxSubsystems[i].committedSequence, 0, 0 );
+
+			if( committedBefore == committedAfter &&
+				stateSequence == committedBefore &&
+				name[0] != 0 && checkpoint[0] != 0 )
+			{
+				ErrorLog( hFile, "  %-12s seq=%ld thread=%lu uptimeMs=%lu\r\n    %s\r\n",
+					name, stateSequence, stateThread, stateTick, checkpoint );
+			}
 		}
 	}
 
 	ErrorLog( hFile, "\r\nStructured context:\r\n" );
 	for( i = 0; i < BLACKBOX_CONTEXT_SLOTS; ++i )
 	{
-		LONG committed = gBlackBoxContext[i].committedSequence;
-		if( committed > 0 && gBlackBoxContext[i].key[0] != 0 )
+		LONG committedBefore = InterlockedCompareExchange(
+			&gBlackBoxContext[i].committedSequence, 0, 0 );
+		if( committedBefore > 0 )
 		{
-			ErrorLog( hFile, "  %-20s = %s (seq=%ld tid=%lu uptimeMs=%lu)\r\n",
-				gBlackBoxContext[i].key, gBlackBoxContext[i].value, committed,
-				gBlackBoxContext[i].threadId, gBlackBoxContext[i].tick );
+			CHAR8 key[BLACKBOX_CONTEXT_KEY_CHARS];
+			CHAR8 value[BLACKBOX_CONTEXT_VALUE_CHARS];
+			DWORD contextThread = gBlackBoxContext[i].threadId;
+			DWORD contextTick = gBlackBoxContext[i].tick;
+			LONG committedAfter;
+
+			lstrcpynA( key, gBlackBoxContext[i].key, BLACKBOX_CONTEXT_KEY_CHARS );
+			lstrcpynA( value, gBlackBoxContext[i].value, BLACKBOX_CONTEXT_VALUE_CHARS );
+			committedAfter = InterlockedCompareExchange(
+				&gBlackBoxContext[i].committedSequence, 0, 0 );
+
+			if( committedBefore == committedAfter && key[0] != 0 )
+			{
+				ErrorLog( hFile, "  %-20s = %s (seq=%ld tid=%lu uptimeMs=%lu)\r\n",
+					key, value, committedBefore, contextThread, contextTick );
+			}
 		}
 	}
 
 	ErrorLog( hFile, "\r\nNamed counters:\r\n" );
 	for( i = 0; i < BLACKBOX_COUNTER_SLOTS; ++i )
 	{
-		if( gBlackBoxCounters[i].name[0] != 0 )
-			ErrorLog( hFile, "  %-24s = %ld\r\n", gBlackBoxCounters[i].name, gBlackBoxCounters[i].value );
+		LONG committedBefore = InterlockedCompareExchange(
+			&gBlackBoxCounters[i].committed, 0, 0 );
+		if( committedBefore != 0 )
+		{
+			CHAR8 name[BLACKBOX_COUNTER_NAME_CHARS];
+			LONG value;
+			LONG committedAfter;
+
+			lstrcpynA( name, gBlackBoxCounters[i].name, BLACKBOX_COUNTER_NAME_CHARS );
+			value = InterlockedCompareExchange( &gBlackBoxCounters[i].value, 0, 0 );
+			committedAfter = InterlockedCompareExchange(
+				&gBlackBoxCounters[i].committed, 0, 0 );
+
+			if( committedAfter == committedBefore && name[0] != 0 )
+				ErrorLog( hFile, "  %-24s = %ld\r\n", name, value );
+		}
 	}
 
 	ErrorLog( hFile, "\r\nRecent/active timed operations:\r\n" );
 	for( i = 0; i < BLACKBOX_OPERATION_SLOTS; ++i )
 	{
-		LONG committed = gBlackBoxOperations[i].committedToken;
-		if( committed > 0 && gBlackBoxOperations[i].token == (DWORD)committed )
+		LONG committedBefore = InterlockedCompareExchange(
+			&gBlackBoxOperations[i].committedToken, 0, 0 );
+		if( committedBefore > 0 )
 		{
-			DWORD duration = ( gBlackBoxOperations[i].endTick != 0 ? gBlackBoxOperations[i].endTick : uptime ) - gBlackBoxOperations[i].startTick;
-			ErrorLog( hFile, "  token=%lu %-12s state=%s elapsedMs=%lu tid=%lu name=%s result=%s\r\n",
-				gBlackBoxOperations[i].token, gBlackBoxOperations[i].subsystem,
-				gBlackBoxOperations[i].endTick == 0 ? "ACTIVE" : "done", duration,
-				gBlackBoxOperations[i].threadId, gBlackBoxOperations[i].name,
-				gBlackBoxOperations[i].result[0] ? gBlackBoxOperations[i].result : "-" );
+			DWORD token = gBlackBoxOperations[i].token;
+			DWORD startTick = gBlackBoxOperations[i].startTick;
+			DWORD endTick = gBlackBoxOperations[i].endTick;
+			DWORD operationThread = gBlackBoxOperations[i].threadId;
+			CHAR8 subsystem[BLACKBOX_OPERATION_SUBSYSTEM_CHARS];
+			CHAR8 name[BLACKBOX_OPERATION_NAME_CHARS];
+			CHAR8 result[BLACKBOX_OPERATION_RESULT_CHARS];
+			LONG committedAfter;
+
+			lstrcpynA( subsystem, gBlackBoxOperations[i].subsystem, BLACKBOX_OPERATION_SUBSYSTEM_CHARS );
+			lstrcpynA( name, gBlackBoxOperations[i].name, BLACKBOX_OPERATION_NAME_CHARS );
+			lstrcpynA( result, gBlackBoxOperations[i].result, BLACKBOX_OPERATION_RESULT_CHARS );
+			committedAfter = InterlockedCompareExchange(
+				&gBlackBoxOperations[i].committedToken, 0, 0 );
+
+			if( committedBefore == committedAfter && token == (DWORD)committedBefore )
+			{
+				DWORD duration = ( endTick != 0 ? endTick : uptime ) - startTick;
+				ErrorLog( hFile, "  token=%lu %-12s state=%s elapsedMs=%lu tid=%lu name=%s result=%s\r\n",
+					token, subsystem, endTick == 0 ? "ACTIVE" : "done", duration,
+					operationThread, name, result[0] ? result : "-" );
+			}
 		}
 	}
 
@@ -1390,9 +1662,22 @@ static void BlackBoxDumpToCrashReport( HWFILE hFile, const EXCEPTION_RECORD *pRe
 	ErrorLog( hFile, "\r\nRecent high-frequency checkpoints (oldest to newest):\r\n" );
 	for( i = first; i < checkpointSequence; ++i )
 	{
+		LONG expectedSequence = i + 1;
+		LONG committedBefore;
+		LONG committedAfter;
+		CHAR8 checkpoint[BLACKBOX_CHECKPOINT_CHARS];
+
 		slot = i % BLACKBOX_CHECKPOINT_SLOTS;
-		if( gBlackBoxCheckpoints[slot][0] )
-			ErrorLog( hFile, "%s\r\n", gBlackBoxCheckpoints[slot] );
+		committedBefore = InterlockedCompareExchange(
+			&gBlackBoxCheckpointCommitted[slot], 0, 0 );
+		if( committedBefore != expectedSequence )
+			continue;
+
+		lstrcpynA( checkpoint, gBlackBoxCheckpoints[slot], BLACKBOX_CHECKPOINT_CHARS );
+		committedAfter = InterlockedCompareExchange(
+			&gBlackBoxCheckpointCommitted[slot], 0, 0 );
+		if( committedAfter == committedBefore && checkpoint[0] )
+			ErrorLog( hFile, "%s\r\n", checkpoint );
 	}
 
 	sequence = gBlackBoxEventSequence;
@@ -1401,9 +1686,22 @@ static void BlackBoxDumpToCrashReport( HWFILE hFile, const EXCEPTION_RECORD *pRe
 	ErrorLog( hFile, "\r\nRecent durable events (oldest to newest):\r\n" );
 	for( i = first; i < sequence; ++i )
 	{
+		LONG expectedSequence = i + 1;
+		LONG committedBefore;
+		LONG committedAfter;
+		CHAR8 eventLine[BLACKBOX_EVENT_CHARS];
+
 		slot = i % BLACKBOX_EVENT_SLOTS;
-		if( gBlackBoxEvents[slot][0] )
-			ErrorLog( hFile, "%s", gBlackBoxEvents[slot] );
+		committedBefore = InterlockedCompareExchange(
+			&gBlackBoxEventCommitted[slot], 0, 0 );
+		if( committedBefore != expectedSequence )
+			continue;
+
+		lstrcpynA( eventLine, gBlackBoxEvents[slot], BLACKBOX_EVENT_CHARS );
+		committedAfter = InterlockedCompareExchange(
+			&gBlackBoxEventCommitted[slot], 0, 0 );
+		if( committedAfter == committedBefore && eventLine[0] )
+			ErrorLog( hFile, "%s", eventLine );
 	}
 	ErrorLog( hFile, "=======================================================\r\n" );
 }
