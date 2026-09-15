@@ -50,6 +50,7 @@
 #define BLACKBOX_OPERATION_RESULT_CHARS 64
 #define BLACKBOX_SLOW_OPERATION_MS 2000
 #define BLACKBOX_WATCHDOG_SHUTDOWN_WAIT_MS 5000
+#define BLACKBOX_FLUSH_INTERVAL_MS 1000
 
 typedef struct
 {
@@ -107,6 +108,9 @@ static LONG gBlackBoxEventSequence = 0;
 static LONG gBlackBoxCheckpointSequence = 0;
 static LONG gBlackBoxDiskWriteFailures = 0;
 static LONG gBlackBoxFlushFailures = 0;
+static LONG gBlackBoxFlushCount = 0;
+static LONG gBlackBoxDeferredFlushCount = 0;
+static DWORD gBlackBoxLastFlushTick = 0;
 static LONG gBlackBoxSubsystemCursor = 0;
 static CHAR8 gBlackBoxEvents[BLACKBOX_EVENT_SLOTS][BLACKBOX_EVENT_CHARS];
 static CHAR8 gBlackBoxCheckpoints[BLACKBOX_CHECKPOINT_SLOTS][BLACKBOX_CHECKPOINT_CHARS];
@@ -150,6 +154,57 @@ static const char *BlackBoxPhaseName( LONG phase )
 		case BLACKBOX_PHASE_FRAME_END: return "FRAME_END";
 		default: return "UNKNOWN";
 	}
+}
+
+static BOOL BlackBoxEventNeedsImmediateFlush( const char *category, const char *message )
+{
+	if( category == NULL )
+		return FALSE;
+
+	if( _stricmp( category, "ASSERT" ) == 0 ||
+		_stricmp( category, "SEH" ) == 0 ||
+		_stricmp( category, "STALL" ) == 0 ||
+		_stricmp( category, "RECOVERY" ) == 0 ||
+		_stricmp( category, "ERROR" ) == 0 ||
+		_stricmp( category, "FATAL" ) == 0 ||
+		_stricmp( category, "CRASH" ) == 0 ||
+		_stricmp( category, "WATCHDOG" ) == 0 )
+	{
+		return TRUE;
+	}
+
+	// Engine lifecycle milestones should survive even if startup/shutdown fails.
+	if( _stricmp( category, "ENGINE" ) == 0 )
+		return TRUE;
+
+	// Slow successful operations can wait for the normal interval, but a failed
+	// multi-stage operation is useful evidence immediately before a possible CTD.
+	if( _stricmp( category, "OPERATION" ) == 0 && message != NULL )
+	{
+		if( strstr( message, "result=FAILED" ) != NULL ||
+			strstr( message, "result=ERROR" ) != NULL )
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+static BOOL BlackBoxFlushFileLocked( DWORD now )
+{
+	if( gBlackBoxFile == INVALID_HANDLE_VALUE )
+		return FALSE;
+
+	if( !FlushFileBuffers( gBlackBoxFile ) )
+	{
+		++gBlackBoxFlushFailures;
+		return FALSE;
+	}
+
+	gBlackBoxLastFlushTick = now;
+	++gBlackBoxFlushCount;
+	return TRUE;
 }
 
 static BOOL BlackBoxIsInterestingException( DWORD code )
@@ -568,6 +623,9 @@ void BlackBoxInitialize( void )
 	gBlackBoxCheckpointSequence = 0;
 	gBlackBoxDiskWriteFailures = 0;
 	gBlackBoxFlushFailures = 0;
+	gBlackBoxFlushCount = 0;
+	gBlackBoxDeferredFlushCount = 0;
+	gBlackBoxLastFlushTick = gBlackBoxStartTick;
 	gBlackBoxSubsystemCursor = 0;
 	gBlackBoxExceptionSequence = 0;
 	gBlackBoxExceptionDrainedSequence = 0;
@@ -655,10 +713,11 @@ void BlackBoxShutdown( void )
 	if( !gBlackBoxInitialized )
 		return;
 
-	BlackBoxEvent( "ENGINE", "Clean shutdown uptimeMs=%lu events=%ld checkpoints=%ld firstChance=%ld heartbeats=%ld diskWriteFailures=%ld flushFailures=%ld",
+	BlackBoxEvent( "ENGINE", "Clean shutdown uptimeMs=%lu events=%ld checkpoints=%ld firstChance=%ld heartbeats=%ld diskWriteFailures=%ld flushFailures=%ld flushes=%ld deferredFlushes=%ld",
 		BlackBoxUptimeMs(), gBlackBoxEventSequence, gBlackBoxCheckpointSequence,
 		gBlackBoxExceptionSequence, gBlackBoxHeartbeatSequence,
-		gBlackBoxDiskWriteFailures, gBlackBoxFlushFailures );
+		gBlackBoxDiskWriteFailures, gBlackBoxFlushFailures,
+		gBlackBoxFlushCount, gBlackBoxDeferredFlushCount );
 
 	if( gBlackBoxVectoredHandler != NULL )
 	{
@@ -699,8 +758,7 @@ void BlackBoxShutdown( void )
 	EnterCriticalSection( &gBlackBoxLock );
 	if( gBlackBoxFile != INVALID_HANDLE_VALUE )
 	{
-		if( !FlushFileBuffers( gBlackBoxFile ) )
-			++gBlackBoxFlushFailures;
+		BlackBoxFlushFileLocked( GetTickCount() );
 		CloseHandle( gBlackBoxFile );
 		gBlackBoxFile = INVALID_HANDLE_VALUE;
 	}
@@ -719,7 +777,9 @@ void BlackBoxEvent( const char *category, const char *format, ... )
 	DWORD threadId;
 	DWORD uptime;
 	DWORD length;
+	DWORD now;
 	BOOL writeOk;
+	BOOL immediateFlush;
 	va_list args;
 	LONG slot;
 	LONG sequence;
@@ -730,11 +790,13 @@ void BlackBoxEvent( const char *category, const char *format, ... )
 	BlackBoxFormatTime( timestamp, sizeof( timestamp ) );
 	threadId = GetCurrentThreadId();
 	uptime = BlackBoxUptimeMs();
+	now = GetTickCount();
 
 	va_start( args, format );
 	_vsnprintf( message, sizeof( message ) - 1, format, args );
 	va_end( args );
 	message[ sizeof( message ) - 1 ] = 0;
+	immediateFlush = BlackBoxEventNeedsImmediateFlush( category, message );
 
 	EnterCriticalSection( &gBlackBoxLock );
 	sequence = gBlackBoxEventSequence + 1;
@@ -751,9 +813,17 @@ void BlackBoxEvent( const char *category, const char *format, ... )
 		length = (DWORD)strlen( line );
 		writeOk = WriteFile( gBlackBoxFile, line, length, &bytesWritten, NULL );
 		if( !writeOk || bytesWritten != length )
+		{
 			++gBlackBoxDiskWriteFailures;
-		if( !FlushFileBuffers( gBlackBoxFile ) )
-			++gBlackBoxFlushFailures;
+		}
+		else if( immediateFlush || ( now - gBlackBoxLastFlushTick ) >= BLACKBOX_FLUSH_INTERVAL_MS )
+		{
+			BlackBoxFlushFileLocked( now );
+		}
+		else
+		{
+			++gBlackBoxDeferredFlushCount;
+		}
 	}
 	LeaveCriticalSection( &gBlackBoxLock );
 }
