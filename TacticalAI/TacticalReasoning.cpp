@@ -63,6 +63,7 @@ typedef struct
 	UINT8 ubSource;
 	UINT8 ubBaseConfidence;
 	UINT32 uiLastVisualEvidenceTurn;
+	UINT32 uiLastCheckedTurn;
 } AICONTACTMEMORYSLOT;
 
 static AICONTACTMEMORYSLOT
@@ -279,7 +280,13 @@ static void AIRecordContactMemory(
 	pSlot->bLevel = pBelief->bLevel;
 	pSlot->ubSource = pBelief->ubSource;
 	pSlot->ubBaseConfidence = ubBase;
-	pSlot->uiLastVisualEvidenceTurn = guiTurnCnt;
+	UINT8 ubEvidenceAge = pBelief->ubAgeTurns;
+	if (ubEvidenceAge == 255)
+		ubEvidenceAge = AIKnowledgeAgeTurns(pBelief->bKnowledge);
+	pSlot->uiLastVisualEvidenceTurn =
+		(guiTurnCnt >= ubEvidenceAge) ?
+		(guiTurnCnt - ubEvidenceAge) : 0;
+	pSlot->uiLastCheckedTurn = 0xFFFFFFFF;
 
 	// Identity is bookkeeping only. It prevents a recycled soldier slot from
 	// inheriting somebody else's remembered contact; it is never used as evidence.
@@ -317,6 +324,7 @@ static void AIRefreshThreatMemoryFromKnowledge(SOLDIERTYPE *pSoldier)
 		Belief.sGridNo = sKnown;
 		Belief.bLevel = KnownLevel(pSoldier, (UINT8)i);
 		Belief.bKnowledge = bKnowledge;
+		Belief.ubAgeTurns = AIKnowledgeAgeTurns(bKnowledge);
 		Belief.ubSource = UsePersonalKnowledge(pSoldier, (UINT8)i) ?
 			AI_BELIEF_SOURCE_PERSONAL : AI_BELIEF_SOURCE_PUBLIC;
 
@@ -370,8 +378,11 @@ static BOOLEAN AIUsableContactMemory(
 		PythSpacesAway(pSoldier->sGridNo, pSlot->sLastKnownGridNo) <= 4 &&
 		SoldierTo3DLocationLineOfSightTest(
 			pSoldier, pSlot->sLastKnownGridNo, pSlot->bLevel,
-			0, FALSE, NO_DISTANCE_LIMIT) > 0)
+			0, FALSE, NO_DISTANCE_LIMIT) > 0 &&
+		pSlot->uiLastCheckedTurn != guiTurnCnt)
 	{
+		pSlot->uiLastCheckedTurn = guiTurnCnt;
+
 		if (ubConfidence <= 45)
 		{
 			memset(pSlot, 0, sizeof(AICONTACTMEMORYSLOT));
