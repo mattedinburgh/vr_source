@@ -509,28 +509,14 @@ UINT32 MapUtilScreenHandle(void)
 		(UINT16)(640 * WORLD_COLS / OLD_WORLD_COLS),
 		(UINT16)(320 * WORLD_ROWS / OLD_WORLD_ROWS) );
 
-	// MAPSHOT is also our safe A3 baking path.  The farm dressing has already
-	// been applied to the in-memory world by LoadWorld().  Persist it under a
-	// separate filename so QA can inspect a real map without touching live A3.dat.
-	BOOLEAN fBakeSaved = TRUE;
-	const CHAR8 *pBakeLeaf = zFilename;
-	const CHAR8 *pBakeBackslash = strrchr( zFilename, '\\' );
-	const CHAR8 *pBakeSlash = strrchr( zFilename, '/' );
-	if ( pBakeBackslash != NULL && pBakeBackslash + 1 > pBakeLeaf )
-		pBakeLeaf = pBakeBackslash + 1;
-	if ( pBakeSlash != NULL && pBakeSlash + 1 > pBakeLeaf )
-		pBakeLeaf = pBakeSlash + 1;
-
-	if ( gfMapPreviewCaptureMode && _stricmp( pBakeLeaf, "A3.dat" ) == 0 )
-	{
-		MapPreviewWriteStatus( "BAKE begin A3_REMASTERED.dat" );
-		fBakeSaved = SaveWorld( "A3_REMASTERED.dat" );
-		MapPreviewWriteStatus( fBakeSaved ? "BAKE_OK A3_REMASTERED.dat" : "BAKE_FAIL A3_REMASTERED.dat" );
-	}
+	// Graphics-only map overhaul: MAPSHOT must never bake the preview world back
+	// into a DAT.  The authored map remains authoritative; preview changes come
+	// only from sector-scoped art routing and renderer-side visual treatment.
+	const BOOLEAN fBakeSaved = TRUE;
 
 	// MAPSHOT is a single-purpose automation path. Do not spend another pass
 	// generating/quantizing the tiny radar STI; stop immediately after the
-	// full engine overview and optional baked map are on disk.
+	// full engine overview is on disk.
 	if ( gfMapPreviewCaptureMode )
 	{
 		TrashOverheadMap();
