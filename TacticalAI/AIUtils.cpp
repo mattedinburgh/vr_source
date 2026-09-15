@@ -13938,6 +13938,30 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		!pSoldier->aiData.bUnderFire && iRisk + 10 < iTolerance)
 		bEmergencyIntent = AI_INTENT_RESCUE;
 
+	if (bEmergencyIntent < 0)
+	{
+		AISHORTPLANSTATE ShortPlan;
+		if (AIGetShortPlan(pSoldier, &ShortPlan))
+		{
+			BOOLEAN fSameTarget =
+				(TileIsOutOfBounds(sTargetSpot) && TileIsOutOfBounds(ShortPlan.sTargetGridNo)) ||
+				(!TileIsOutOfBounds(sTargetSpot) && !TileIsOutOfBounds(ShortPlan.sTargetGridNo) &&
+				 PythSpacesAway(sTargetSpot, ShortPlan.sTargetGridNo) <= 3);
+
+			if (fSameTarget)
+			{
+				switch (ShortPlan.ubType)
+				{
+				case AI_SHORT_PLAN_FLANK: return AI_INTENT_FLANK;
+				case AI_SHORT_PLAN_FALLBACK: return AI_INTENT_FALLBACK;
+				case AI_SHORT_PLAN_DISENGAGE: return AI_INTENT_DISENGAGE;
+				case AI_SHORT_PLAN_RESCUE: return AI_INTENT_RESCUE;
+				default: break;
+				}
+			}
+		}
+	}
+
 	if (bEmergencyIntent < 0 &&
 		guiAITacticalPlanUntil[ubID] >= uiNow &&
 		!AITacticalTargetChanged(ubID, sTargetSpot))
