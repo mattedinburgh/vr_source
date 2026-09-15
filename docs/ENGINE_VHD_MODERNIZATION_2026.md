@@ -77,6 +77,22 @@ These branches are treated as candidate patch sets, not merge targets. They dive
 - Prefer bounded allocations and O(1)/amortized lookup improvements.
 - Use Black Box instrumentation for hangs/crashes instead of speculative rewrites.
 
+### E8 — Material / visual-profile architecture
+- Classify tactical-world imagery into reusable visual materials.
+- Move sector-specific grading policy out of world loading/rendering code.
+- Preserve current pixels first; tune visuals only after parity validation.
+- Keep gameplay materials/penetration/LOS completely separate from visual materials.
+
+### E9 — True-colour lighting 2.0
+- Preserve JA2 light placement and tactical shade semantics.
+- Add material-aware true-colour response behind regression gates.
+- Do not change gameplay darkness, LOS or AI knowledge.
+
+### E10 — Terrain presentation / anti-repetition
+- Add deterministic visual variants without changing logical tile identity.
+- Preserve maps, grid coordinates, JSDs and save compatibility.
+- Prefer authored variants and controlled overlays over noisy procedural effects.
+
 ## Integration policy
 
 Each patch must:
@@ -95,3 +111,5 @@ Each patch must:
 4. Port cache improvements second.
 5. Port compositor changes only after visual/Z regression checks.
 6. Revisit native 32-bit framebuffer only after the true-colour pipeline is proven stable.
+
+[executed on device: MSI (e4de0d4a-2679-4f35-acaf-b6552e7ec980)]

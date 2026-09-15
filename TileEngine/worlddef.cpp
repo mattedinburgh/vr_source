@@ -74,6 +74,7 @@
 #endif
 
 #include "ExceptionHandling.h"
+#include "VHD Material Profiles.h"
 
 
 #define	SET_MOVEMENTCOST( a, b, c, d )				( ( gubWorldMovementCosts[ a ][ b ][ c ] < d ) ? ( gubWorldMovementCosts[ a ][ b ][ c ] = d ) : 0 );
@@ -129,21 +130,8 @@ BOOLEAN					gfMapPreviewCaptureMode = FALSE;
 
 UINT32			gCurrentBackground = FIRSTTEXTURE;
 
-// Sector-specific visual profiles. These alter only loaded tile palettes; map geometry,
-// tile indices, JSD structure data, collision, LOS, cover, destruction and scripts stay intact.
-enum SectorVisualProfile
-{
-	SECTOR_VISUAL_DEFAULT = 0,
-	SECTOR_VISUAL_ORONEGRO_TOWN,
-	SECTOR_VISUAL_A3_FARM,
-	SECTOR_VISUAL_ORONEGRO_OIL_RIG,
-	SECTOR_VISUAL_SAN_MONA_C5_STRIP,
-	SECTOR_VISUAL_SAN_MONA_C6_EAST,
-	SECTOR_VISUAL_SAN_MONA_D4_MINE,
-	SECTOR_VISUAL_SAN_MONA_D5_KINGPIN,
-	SECTOR_VISUAL_SAN_MONA_UNDERGROUND
-};
-
+// Sector-specific visual profiles are defined in VHD Material Profiles.h.
+// They alter only loaded imagery; tactical simulation contracts remain untouched.
 static UINT8 gubSectorVisualProfile = SECTOR_VISUAL_DEFAULT;
 static UINT8 gubLoadedSectorVisualProfile = 0xFF;
 
@@ -656,11 +644,7 @@ static void TraceA3FarmLoad( const STR8 pStage, const STR8 pDetail )
 
 static BOOLEAN IsSanMonaVisualProfile( void )
 {
-	return gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C5_STRIP ||
-		gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C6_EAST ||
-		gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D4_MINE ||
-		gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D5_KINGPIN ||
-		gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_UNDERGROUND;
+	return VHDIsSanMonaVisualProfile( gubSectorVisualProfile );
 }
 
 BOOLEAN IsSanMonaC5GraphicsOnlyProfile( void )
@@ -1806,341 +1790,12 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 	if ( pObject->pPaletteEntry == NULL || pObject->ubBitDepth != 8 )
 		return;
 
+	const VHDVisualMaterialClass material = VHDClassifyVisualMaterial( ubType );
+	const VHDVisualGrade grade = VHDResolveVisualGrade(
+		gubSectorVisualProfile, material, fSectorReplacementLoaded );
+
 	SGPPaletteEntry palette[256];
 	memcpy( palette, pObject->pPaletteEntry, sizeof( palette ) );
-
-	INT32 saturationPercent = 106;
-	INT32 contrastPercent = 106;
-	INT32 redBias = 2;
-	INT32 greenBias = 1;
-	INT32 blueBias = 0;
-
-	const BOOLEAN fA3Profile = ( gubSectorVisualProfile == SECTOR_VISUAL_A3_FARM );
-	const BOOLEAN fA3Water = fA3Profile &&
-		( ubType == REGWATERTEXTURE || ubType == DEEPWATERTEXTURE || ubType == ANOTHERDEBRIS );
-	const BOOLEAN fA3Terrain = fA3Profile && ( ubType >= FIRSTTEXTURE && ubType <= SEVENTHTEXTURE );
-	const BOOLEAN fA3GreenTerrain = fA3Profile && ( ubType >= THIRDTEXTURE && ubType <= SIXTHTEXTURE );
-	const BOOLEAN fA3Vegetation = fA3Profile &&
-		( (ubType >= FIRSTOSTRUCT && ubType <= SEVENTHOSTRUCT) ||
-		  ubType == FIRSTFULLSTRUCT || ubType == SECONDFULLSTRUCT );
-	const BOOLEAN fA3Wall = fA3Profile && ( ubType >= FIRSTWALL && ubType <= LASTDOOR );
-	const BOOLEAN fA3Roof = fA3Profile && ( ubType >= FIRSTROOF && ubType <= LASTSLANTROOF );
-	const BOOLEAN fA3Floor = fA3Profile && ( ubType >= FIRSTFLOOR && ubType <= LASTFLOOR );
-	const BOOLEAN fA3Debris = fA3Profile &&
-		( ubType == DEBRISROCKS || ubType == DEBRISWOOD || ubType == DEBRISSAND ||
-		  ubType == DEBRISWEEDS || ubType == DEBRISGRASS || ubType == DEBRISMISC ||
-		  ubType == DEBRIS2MISC );
-
-	const BOOLEAN fB1Profile = ( gubSectorVisualProfile == SECTOR_VISUAL_ORONEGRO_OIL_RIG );
-	const BOOLEAN fB1Water = fB1Profile &&
-		( ubType == REGWATERTEXTURE || ubType == DEEPWATERTEXTURE || ubType == ANOTHERDEBRIS );
-	const BOOLEAN fB1Floor = fB1Profile && ( ubType >= FIRSTFLOOR && ubType <= LASTFLOOR );
-	const BOOLEAN fB1Roof = fB1Profile && ( ubType >= FIRSTROOF && ubType <= LASTSLANTROOF );
-	const BOOLEAN fB1OnRoof = fB1Profile && ( ubType >= FIRSTONROOF && ubType <= LASTONROOF );
-	const BOOLEAN fB1Wall = fB1Profile && ( ubType >= FIRSTWALL && ubType <= LASTDOOR );
-	const BOOLEAN fB1Road = fB1Profile && ( (ubType >= FIRSTROAD && ubType <= LASTROAD) || ubType == ROADPIECES );
-	const BOOLEAN fB1Terrain = fB1Profile && ( ubType >= FIRSTTEXTURE && ubType <= SEVENTHTEXTURE );
-	const BOOLEAN fB1GreenTerrain = fB1Profile && ( ubType >= THIRDTEXTURE && ubType <= SIXTHTEXTURE );
-	const BOOLEAN fB1Vegetation = fB1Profile &&
-		( (ubType >= FIRSTOSTRUCT && ubType <= SEVENTHOSTRUCT) ||
-		  ubType == FIRSTFULLSTRUCT || ubType == SECONDFULLSTRUCT );
-	const BOOLEAN fB1Machinery = fB1Profile &&
-		( ubType == EIGHTOSTRUCT || ubType == THRIDISTRUCT ||
-		  ubType == FIRSTVEHICLE || ubType == SECONDVEHICLE ||
-		  ubType == TENTHOSTRUCT || ubType == FENCESTRUCT );
-	const BOOLEAN fB1Interior = fB1Profile && ( ubType >= FIRSTISTRUCT && ubType <= FIRSTCISTRUCT );
-	const BOOLEAN fB1Decal = fB1Profile && ( ubType >= FIRSTWALLDECAL && ubType <= EIGTHWALLDECAL );
-
-	const BOOLEAN fSanMonaProfile = IsSanMonaVisualProfile();
-	const BOOLEAN fSMTerrain = fSanMonaProfile && ( ubType >= FIRSTTEXTURE && ubType <= SEVENTHTEXTURE );
-	const BOOLEAN fSMGreenTerrain = fSanMonaProfile && ( ubType >= THIRDTEXTURE && ubType <= SIXTHTEXTURE );
-	const BOOLEAN fSMVegetation = fSanMonaProfile &&
-		( (ubType >= FIRSTOSTRUCT && ubType <= SEVENTHOSTRUCT) ||
-		  ubType == FIRSTFULLSTRUCT || ubType == SECONDFULLSTRUCT );
-	const BOOLEAN fSMWall = fSanMonaProfile && ( ubType >= FIRSTWALL && ubType <= LASTDOOR );
-	const BOOLEAN fSMRoof = fSanMonaProfile && ( ubType >= FIRSTROOF && ubType <= LASTSLANTROOF );
-	const BOOLEAN fSMFloor = fSanMonaProfile && ( ubType >= FIRSTFLOOR && ubType <= LASTFLOOR );
-	const BOOLEAN fSMRoad = fSanMonaProfile && ( (ubType >= FIRSTROAD && ubType <= LASTROAD) || ubType == ROADPIECES );
-	const BOOLEAN fSMInterior = fSanMonaProfile && ( ubType >= FIRSTISTRUCT && ubType <= FIRSTCISTRUCT );
-	const BOOLEAN fSMDebris = fSanMonaProfile &&
-		( ubType == DEBRISROCKS || ubType == DEBRISWOOD || ubType == DEBRISSAND ||
-		  ubType == DEBRISWEEDS || ubType == DEBRISGRASS || ubType == DEBRISMISC ||
-		  ubType == DEBRIS2MISC );
-
-	if ( fSanMonaProfile )
-	{
-		// All San Mona districts share hard sun and a lawless, hand-built visual language,
-		// but each map gets its own material grade instead of one city-wide filter.
-		if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C5_STRIP )
-		{
-			saturationPercent = 112; contrastPercent = 118; redBias = 7; greenBias = 2; blueBias = -5;
-		}
-		else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C6_EAST )
-		{
-			// C6 is the postcard/commercial side of town, but its northern view is fire-scarred.
-		}
-		else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D4_MINE )
-		{
-			saturationPercent = 96; contrastPercent = 120; redBias = 8; greenBias = 2; blueBias = -8;
-		}
-		else if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_D5_KINGPIN )
-		{
-			saturationPercent = 105; contrastPercent = 122; redBias = 7; greenBias = 2; blueBias = -6;
-		}
-		else
-		{
-			saturationPercent = 88; contrastPercent = 118; redBias = -1; greenBias = 2; blueBias = 3;
-		}
-
-		if ( fSMRoad )
-		{
-			saturationPercent -= 8; contrastPercent += 5; redBias -= 2; greenBias -= 2; blueBias -= 1;
-		}
-		else if ( fSMWall )
-		{
-			contrastPercent += 3; redBias += 3; blueBias -= 2;
-		}
-		else if ( fSMRoof )
-		{
-			contrastPercent += 5; redBias += 4; greenBias -= 1; blueBias -= 3;
-		}
-		else if ( fSMFloor )
-		{
-			saturationPercent -= 7; contrastPercent += 3; blueBias -= 2;
-		}
-		else if ( fSMVegetation || fSMGreenTerrain )
-		{
-			saturationPercent += 7; greenBias += 7; redBias -= 3; blueBias -= 2;
-		}
-		else if ( fSMTerrain )
-		{
-			redBias += 4; greenBias += 2; blueBias -= 4;
-		}
-		else if ( fSMInterior )
-		{
-			saturationPercent -= 3; contrastPercent += 2;
-		}
-		else if ( fSMDebris )
-		{
-			contrastPercent += 4; redBias += 3; blueBias -= 3;
-		}
-	}
-	else if ( fA3Profile )
-	{
-		// A3 tropical-farm hero pass: humid growth, warm soil, faded buildings and
-		// weathered roofs.  Geometry and all tactical structure data remain authored.
-		saturationPercent = 111;
-		contrastPercent = 114;
-		redBias = 3;
-		greenBias = 4;
-		blueBias = -3;
-
-		if ( fA3Water )
-		{
-			saturationPercent = 116; contrastPercent = 115;
-			redBias = -8; greenBias = 7; blueBias = 10;
-		}
-		else if ( fA3GreenTerrain )
-		{
-			saturationPercent = 120; contrastPercent = 116;
-			redBias = -4; greenBias = 11; blueBias = -6;
-		}
-		else if ( fA3Terrain )
-		{
-			saturationPercent = 112; contrastPercent = 116;
-			redBias = 9; greenBias = 5; blueBias = -9;
-		}
-		else if ( fA3Vegetation )
-		{
-			saturationPercent = 122; contrastPercent = 118;
-			redBias = -4; greenBias = 12; blueBias = -6;
-		}
-		else if ( fA3Wall )
-		{
-			saturationPercent = 96; contrastPercent = 118;
-			redBias = 6; greenBias = 3; blueBias = -5;
-		}
-		else if ( fA3Roof )
-		{
-			saturationPercent = 101; contrastPercent = 121;
-			redBias = 8; greenBias = 2; blueBias = -7;
-		}
-		else if ( fA3Floor )
-		{
-			saturationPercent = 94; contrastPercent = 116;
-			redBias = 5; greenBias = 3; blueBias = -5;
-		}
-		else if ( fA3Debris )
-		{
-			saturationPercent = 108; contrastPercent = 118;
-			redBias = 6; greenBias = 4; blueBias = -6;
-		}
-	}
-	else if ( fB1Profile )
-	{
-		// B1 HERO PASS.  This is intentionally dramatic at normal tactical zoom:
-		// humid tropical oil infrastructure, hard sun, salt/rain oxidation, dirty
-		// vegetation and black industrial surfaces.  Successful replacement STIs
-		// are graded too; the previous pass skipped them and was visually too subtle.
-		saturationPercent = 104;
-		contrastPercent = 114;
-		redBias = 3;
-		greenBias = 2;
-		blueBias = -2;
-
-		if ( fSectorReplacementLoaded )
-			contrastPercent += 2;
-
-		if ( fB1Water )
-		{
-			// Heavy tropical teal/blue water with obvious depth and reflected sky.
-			saturationPercent = 118;
-			contrastPercent = 116;
-			redBias = -10;
-			greenBias = 5;
-			blueBias = 13;
-		}
-		else if ( fB1GreenTerrain )
-		{
-			// Wet, dirty tropical growth around an industrial site.
-			saturationPercent = 114;
-			contrastPercent = 116;
-			redBias = -2;
-			greenBias = 8;
-			blueBias = -5;
-		}
-		else if ( fB1Terrain )
-		{
-			// Sun-bleached ochre sand/trails with baked, warm highlights.
-			saturationPercent = 110;
-			contrastPercent = 116;
-			redBias = 8;
-			greenBias = 5;
-			blueBias = -8;
-		}
-		else if ( fB1Floor )
-		{
-			// Oil-stained concrete / steel plate: cool graphite shadows, hard edges.
-			saturationPercent = 92;
-			contrastPercent = 120;
-			redBias = 2;
-			greenBias = 1;
-			blueBias = -4;
-		}
-		else if ( fB1Roof )
-		{
-			// Hot oxidised roofing.  Warm highlights and rusty mids separate roof
-			// planes clearly from the building sides.
-			saturationPercent = 105;
-			contrastPercent = 122;
-			redBias = 8;
-			greenBias = 2;
-			blueBias = -7;
-		}
-		else if ( fB1OnRoof )
-		{
-			// Fans/tanks/process equipment: darkest and punchiest metal family.
-			saturationPercent = 108;
-			contrastPercent = 124;
-			redBias = 8;
-			greenBias = 1;
-			blueBias = -8;
-		}
-		else if ( fB1Wall )
-		{
-			// Weathered industrial facades: faded paint, rust streaks, hard sunlight.
-			saturationPercent = 98;
-			contrastPercent = 118;
-			redBias = 6;
-			greenBias = 3;
-			blueBias = -5;
-		}
-		else if ( fB1Road )
-		{
-			// Blackened service roads / oily hardstanding.
-			saturationPercent = 88;
-			contrastPercent = 118;
-			redBias = 2;
-			greenBias = 1;
-			blueBias = -4;
-		}
-		else if ( fB1Vegetation )
-		{
-			// Humid coastal tropical growth: deep wet greens, bright sun tips.
-			// The contrast against rust/ochre industrial materials is intentional.
-			saturationPercent = 116;
-			contrastPercent = 118;
-			redBias = -3;
-			greenBias = 9;
-			blueBias = -4;
-		}
-		else if ( fB1Machinery )
-		{
-			// Oil lamps, process plant, cranes and railings: soot-black steel with
-			// oxidised/rusty mids and hard specular-looking highlights.
-			saturationPercent = 104;
-			contrastPercent = 124;
-			redBias = 7;
-			greenBias = 1;
-			blueBias = -7;
-		}
-		else if ( fB1Interior )
-		{
-			// Industrial furniture/crates: dark worn paint, wood and steel.
-			saturationPercent = 96;
-			contrastPercent = 116;
-			redBias = 4;
-			greenBias = 2;
-			blueBias = -4;
-		}
-		else if ( fB1Decal )
-		{
-			// Faded warning paint/signage should remain readable against the facades.
-			saturationPercent = 112;
-			contrastPercent = 120;
-			redBias = 6;
-			greenBias = 3;
-			blueBias = -4;
-		}
-		else if ( ubType == DEBRISROCKS || ubType == DEBRISMISC )
-		{
-			// Bleached concrete, gravel and pale industrial rubble.
-			saturationPercent = 90;
-			contrastPercent = 118;
-			redBias = 4;
-			greenBias = 3;
-			blueBias = -3;
-		}
-		else if ( ubType == DEBRISWOOD || ubType == DEBRISSAND || ubType == DEBRIS2MISC )
-		{
-			// Rust, soot, old wood and discarded industrial scrap.
-			saturationPercent = 108;
-			contrastPercent = 122;
-			redBias = 8;
-			greenBias = 1;
-			blueBias = -8;
-		}
-		else if ( ubType == DEBRISWEEDS || ubType == DEBRISGRASS )
-		{
-			saturationPercent = 108;
-			contrastPercent = 116;
-			redBias = -1;
-			greenBias = 6;
-			blueBias = -4;
-		}
-	}
-	else if ( ubType >= FIRSTTEXTURE && ubType <= LASTTEXTURE )
-	{
-		saturationPercent += 4;
-		contrastPercent += 2;
-	}
-	else if ( (ubType >= FIRSTWALL && ubType <= LASTDOOR) ||
-			  (ubType >= FIRSTROOF && ubType <= LASTSLANTROOF) )
-	{
-		// Oronegro town remains conservative. The dramatic treatment is B1-only.
-		contrastPercent += 2;
-		saturationPercent -= 2;
-	}
 
 	// Palette index 0 is commonly used as transparency; preserve it exactly.
 	for ( UINT16 i = 1; i < 256; ++i )
@@ -2150,113 +1805,15 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 		const INT32 b = palette[i].peBlue;
 		const INT32 luma = (r * 30 + g * 59 + b * 11) / 100;
 
-		INT32 outR = GradeSectorVisualComponent( r, luma, saturationPercent, contrastPercent, redBias );
-		INT32 outG = GradeSectorVisualComponent( g, luma, saturationPercent, contrastPercent, greenBias );
-		INT32 outB = GradeSectorVisualComponent( b, luma, saturationPercent, contrastPercent, blueBias );
+		INT32 outR = GradeSectorVisualComponent(
+			r, luma, grade.saturationPercent, grade.contrastPercent, grade.redBias );
+		INT32 outG = GradeSectorVisualComponent(
+			g, luma, grade.saturationPercent, grade.contrastPercent, grade.greenBias );
+		INT32 outB = GradeSectorVisualComponent(
+			b, luma, grade.saturationPercent, grade.contrastPercent, grade.blueBias );
 
-		if ( fSanMonaProfile )
-		{
-			// High-resolution tactical view benefits from stronger material separation:
-			// cool dirty shadows, sun-warmed highlights, and distinct vegetation/stone.
-			if ( luma < 86 )
-			{
-				const INT32 depth = 86 - luma;
-				outR -= 2 + depth / 24;
-				outG -= 1 + depth / 32;
-				outB += (gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_UNDERGROUND) ? (4 + depth / 18) : (2 + depth / 28);
-			}
-			else if ( luma > 172 )
-			{
-				const INT32 light = luma - 172;
-				outR += 3 + light / 22;
-				outG += 2 + light / 30;
-				if ( gubSectorVisualProfile == SECTOR_VISUAL_SAN_MONA_C6_EAST ) outG += 2;
-			}
-
-			if ( fSMVegetation || fSMGreenTerrain )
-			{
-				outR -= 1; outG += 3; outB -= 1;
-			}
-			else if ( fSMRoad || fSMFloor )
-			{
-				outR -= 1; outG -= 1;
-			}
-			else if ( fSMWall || fSMRoof || fSMDebris )
-			{
-				outR += 2; outB -= 2;
-			}
-		}
-		else if ( fA3Profile )
-		{
-			if ( luma < 82 )
-			{
-				const INT32 depth = 82 - luma;
-				outR -= 2 + depth / 24;
-				outB += fA3Water ? (5 + depth / 16) : (2 + depth / 30);
-			}
-			else if ( luma > 174 )
-			{
-				const INT32 light = luma - 174;
-				outR += fA3Water ? 0 : (3 + light / 22);
-				outG += 2 + light / 28;
-				if ( fA3Water )
-					outB += 4 + light / 18;
-			}
-			if ( fA3Vegetation || fA3GreenTerrain )
-			{
-				outR -= 1; outG += 3; outB -= 1;
-			}
-			else if ( fA3Roof || fA3Wall || fA3Debris )
-			{
-				outR += 2; outB -= 2;
-			}
-		}
-		else if ( fB1Profile )
-		{
-			// Strong luma-dependent split tone: cool damp shadows and hot sunlit
-			// highlights. This gives the low-resolution art more perceived depth.
-			if ( luma < 84 )
-			{
-				const INT32 depth = 84 - luma;
-				outR -= 3 + depth / 18;
-				outG -= 1 + depth / 30;
-				outB += fB1Water ? (6 + depth / 14) : (2 + depth / 24);
-			}
-			else if ( luma > 176 )
-			{
-				const INT32 light = luma - 176;
-				if ( fB1Water )
-				{
-					outG += 3 + light / 20;
-					outB += 5 + light / 15;
-				}
-				else
-				{
-					outR += 4 + light / 18;
-					outG += 2 + light / 24;
-					outB += light / 40;
-				}
-			}
-
-			// Material-specific secondary tone.  These are deliberately modest
-			// compared with the main grade, but make adjacent materials read apart.
-			if ( fB1Floor || fB1Road )
-			{
-				outR -= 2;
-				outG -= 2;
-			}
-			else if ( fB1Roof || fB1OnRoof || fB1Machinery )
-			{
-				outR += 3;
-				outB -= 3;
-			}
-			else if ( fB1Vegetation )
-			{
-				outR -= 2;
-				outG += 4;
-				outB -= 1;
-			}
-		}
+		VHDApplyMaterialTone(
+			gubSectorVisualProfile, material, luma, &outR, &outG, &outB );
 
 		palette[i].peRed   = ClampSectorVisualComponent( outR );
 		palette[i].peGreen = ClampSectorVisualComponent( outG );
@@ -2266,7 +1823,6 @@ static void ApplySectorVisualProfileToTileSurface( PTILE_IMAGERY pTileSurf, UINT
 	// Rebuild the base 16bpp palette from the adjusted 8bpp colours. Normal shade tables are built later.
 	SetVideoObjectPalette( pObject, palette );
 }
-
 static BOOLEAN IsMandatoryB1RemasterType( UINT8 ubType )
 {
 	switch ( ubType )
@@ -6608,3 +6164,5 @@ BOOLEAN MAPTRANSLATION::SetTrnPar(INT32 iFromRows, INT32 iFromCols, INT32 iToRow
 	return(fTrn);
 }
 
+
+[executed on device: MSI (e4de0d4a-2679-4f35-acaf-b6552e7ec980)]
