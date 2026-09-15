@@ -65,5 +65,3 @@ After parity is proven:
 
 Lighting, anti-repetition and authored-material changes are intentionally separate
 from this refactor so visual regressions can be attributed to one change at a time.
-
-[executed on device: MSI (e4de0d4a-2679-4f35-acaf-b6552e7ec980)]
