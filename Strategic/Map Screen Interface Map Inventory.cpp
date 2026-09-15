@@ -3382,59 +3382,57 @@ void CreateMapInventoryButtons( void )
 
 	// Vengeance: squad logistics controls.
 	//
-	// At normal/HD resolutions these are deliberately about twice the original
-	// 28x13 size and anchored to the right edge of the screen. This keeps them
-	// away from the dense sort/filter toolbar and makes them usable at 1080p+.
-	// Very small legacy resolutions use a reduced fallback to avoid overlap.
-	INT16 sLoadoutButtonW = 72;
-	INT16 sLoadoutButtonH = 24;
-	INT16 sLoadoutButtonGap = 5;
-	INT16 sLoadoutButtonY = INVEN_POOL_Y + 8 + yResOffset;
+	// Keep these visually subordinate to the native sector-inventory toolbar:
+	// compact height, small UI font, tight spacing and the same cold highlight
+	// treatment as the surrounding controls. They are helpers, not a second
+	// headline-sized toolbar.
+	INT16 sLoadoutButtonW = 54;
+	INT16 sLoadoutButtonH = 18;
+	INT16 sLoadoutButtonGap = 3;
+	INT16 sLoadoutButtonY = INVEN_POOL_Y + 11 + yResOffset;
 
 	if ( iResolution < _1024x768 )
 	{
-		// Legacy layouts simply do not have room for three doubled buttons
-		// without covering the sector-inventory controls/items.
+		// Legacy layouts need the original compact footprint.
 		sLoadoutButtonW = 28;
 		sLoadoutButtonH = 13;
 		sLoadoutButtonGap = 2;
 		sLoadoutButtonY = INVEN_POOL_Y + 38 + yResOffset;
 	}
 
-	// Right-align the logistics group in the deliberately unused header space.
-	// Keep a comfortable margin from the screen edge so it reads as part of the
-	// sector-inventory panel rather than as a floating overlay.
+	// Right-align the group inside the unused header space, close enough to the
+	// native controls to read as part of the panel rather than a floating overlay.
 	INT16 sLoadoutButtonX = SCREEN_WIDTH -
-		( sLoadoutButtonW * 3 + sLoadoutButtonGap * 2 ) - 40;
+		( sLoadoutButtonW * 3 + sLoadoutButtonGap * 2 ) - 24;
 
-	guiMapInvenLoadoutButton[0] = CreateTextButton( L"AMMO", COMPFONT, FONT_MCOLOR_DKWHITE, FONT_BLACK,
+	guiMapInvenLoadoutButton[0] = CreateTextButton( L"AMMO", SMALLCOMPFONT, FONT_MCOLOR_DKWHITE, DEFAULT_SHADOW,
 		BUTTON_USE_DEFAULT, sLoadoutButtonX, sLoadoutButtonY, sLoadoutButtonW, sLoadoutButtonH,
 		BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST, NULL, (GUI_CALLBACK)MapInventoryPoolAmmo3xBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[0],
-		L"AMMO: cargar armas primero. 1 arma/calibre: hasta 3 cargadores. 2+ armas del mismo calibre: 4 compartidos garantizados y un 5o solo si sobra. Primero, todos listos para combatir." );
+		L"AMMO: load carried guns first. Then distribute spare magazines fairly, prioritising the best armour penetration available and keeping every merc combat-ready before giving anyone surplus." );
 
-	guiMapInvenLoadoutButton[1] = CreateTextButton( L"HUMO", COMPFONT, FONT_MCOLOR_DKWHITE, FONT_BLACK,
+	guiMapInvenLoadoutButton[1] = CreateTextButton( L"SMK", SMALLCOMPFONT, FONT_MCOLOR_DKWHITE, DEFAULT_SHADOW,
 		BUTTON_USE_DEFAULT, sLoadoutButtonX + sLoadoutButtonW + sLoadoutButtonGap, sLoadoutButtonY,
 		sLoadoutButtonW, sLoadoutButtonH, BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST,
 		NULL, (GUI_CALLBACK)MapInventoryPoolSmokeBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[1],
-		L"SMK: dar una granada de humo de mano a cada mercenario del sector." );
+		L"SMK: give one hand-thrown smoke grenade to each eligible merc in the sector." );
 
-	guiMapInvenLoadoutButton[2] = CreateTextButton( L"GRAN", COMPFONT, FONT_MCOLOR_DKWHITE, FONT_BLACK,
+	guiMapInvenLoadoutButton[2] = CreateTextButton( L"GRN", SMALLCOMPFONT, FONT_MCOLOR_DKWHITE, DEFAULT_SHADOW,
 		BUTTON_USE_DEFAULT, sLoadoutButtonX + ( sLoadoutButtonW + sLoadoutButtonGap ) * 2, sLoadoutButtonY,
 		sLoadoutButtonW, sLoadoutButtonH, BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST,
 		NULL, (GUI_CALLBACK)MapInventoryPoolGrenadeBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[2],
-		L"GRAN: granaderos reciben primero toda municion compatible de lanzador (40 mm, etc.). Con 4+ no reciben granadas de mano; con menos, se completa hasta 4. Matt/Buns conservan prioridad de granada de mano cuando necesitan respaldo." );
+		L"GRN: give compatible launcher grenades to grenadiers first; then distribute hand grenades under the sector loadout rules, including Matt/Buns priority and the per-merc cap." );
 
-	// Match the sector-inventory chrome: muted text at rest, cold highlight on
-	// hover, brighter text while pressed. Generic JA2 button chrome and sounds
-	// remain intact so these do not look like a foreign overlay.
+	// Native-style text treatment: muted at rest, cold highlight on hover,
+	// brighter while pressed. Battle-language localisation is intentionally
+	// separate: only spoken combat barks/pop-ups use Spanish.
 	for ( INT32 i = 0; i < 3; ++i )
 	{
-		SpecifyButtonUpTextColors( guiMapInvenLoadoutButton[i], FONT_MCOLOR_DKWHITE, FONT_BLACK );
-		SpecifyButtonDownTextColors( guiMapInvenLoadoutButton[i], FONT_WHITE, FONT_BLACK );
-		SpecifyButtonHilitedTextColors( guiMapInvenLoadoutButton[i], FONT_MCOLOR_LTBLUE, FONT_BLACK );
+		SpecifyButtonUpTextColors( guiMapInvenLoadoutButton[i], FONT_MCOLOR_DKWHITE, DEFAULT_SHADOW );
+		SpecifyButtonDownTextColors( guiMapInvenLoadoutButton[i], FONT_WHITE, DEFAULT_SHADOW );
+		SpecifyButtonHilitedTextColors( guiMapInvenLoadoutButton[i], FONT_MCOLOR_LTBLUE, DEFAULT_SHADOW );
 		SpecifyButtonTextJustification( guiMapInvenLoadoutButton[i], BUTTON_TEXT_CENTER );
 	}
 
