@@ -1783,6 +1783,15 @@ void VRCQB_InvalidateSoldierPlan(SOLDIERTYPE *pSoldier)
 		return;
 
 	memset(&gVRCQBPlan[pSoldier->ubID], 0, sizeof(VRCQB_PLAN_SLOT));
+
+	// CQB owns invalidation of its shared short-plan wrapper. Do not cancel a
+	// fallback/disengage/rescue plan that may already have superseded CQB.
+	AISHORTPLANSTATE SharedPlan;
+	if (AIGetShortPlan(pSoldier, &SharedPlan) &&
+		SharedPlan.ubType == AI_SHORT_PLAN_CQB)
+	{
+		AICancelShortPlan(pSoldier);
+	}
 }
 
 void VRCQB_ResetTransientState(void)
