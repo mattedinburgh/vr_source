@@ -5781,7 +5781,8 @@ void InvalidateWorldRedundency( )
 // authored/JSD pixel space. Keeping this path indexed preserves compact ETRLE
 // storage and soldier palette recolouring instead of expanding fallback art to RGBA.
 static UINT16 VHDIndexedZStripLevel(
-	ZStripInfo *pZInfo, UINT16 usBaseZ, INT32 iScaledSourceX, UINT8 ubAssetScale )
+	ZStripInfo *pZInfo, UINT16 usBaseZ, INT32 iScaledSourceX, UINT8 ubAssetScale,
+	INT32 iPerStripDelta )
 {
 	if ( pZInfo == NULL )
 		return usBaseZ;
@@ -5799,11 +5800,12 @@ static UINT16 VHDIndexedZStripLevel(
 	INT32 iLevel = (INT32)usBaseZ +
 		( (INT32)pZInfo->bInitialZChange * (INT32)Z_STRIP_DELTA_Y );
 
-	// Mirror the legacy multi-Z blitters exactly: every authored JSD strip
-	// transition changes depth by Z_STRIP_DELTA_Y, not the broader world
-	// Z_SUBLAYERS spacing constant.
+	// Legacy multi-Z has two depth cadences. Normal indexed blitters advance
+	// each authored strip by Z_STRIP_DELTA_Y, while the trans-shadow variants
+	// keep the same initial Z-strip offset but advance subsequent strips by
+	// Z_SUBLAYERS. Preserve that historical distinction at VHD scales.
 	for ( INT32 i = 0; i < iChanges; ++i )
-		iLevel += (INT32)pZInfo->pbZChange[i] * (INT32)Z_STRIP_DELTA_Y;
+		iLevel += (INT32)pZInfo->pbZChange[i] * iPerStripDelta;
 
 	if ( iLevel < 0 )
 		iLevel = 0;
@@ -5901,7 +5903,8 @@ static BOOLEAN VHDIndexedMultiZBlit(
 					((UINT32)iDestY * uiDestPitchBYTES)) + iDestX;
 
 				const UINT16 usPixelZ = VHDIndexedZStripLevel(
-					pZInfo, usZValue, usSourceX, ubAssetScale );
+					pZInfo, usZValue, usSourceX, ubAssetScale,
+					fTransShadow ? (INT32)Z_SUBLAYERS : (INT32)Z_STRIP_DELTA_Y );
 
 				BOOLEAN fDrawPixel;
 				if ( fObscured )
