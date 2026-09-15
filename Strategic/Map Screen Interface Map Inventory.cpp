@@ -544,6 +544,8 @@ static BOOLEAN IsHandThrownSmokeGrenade( UINT16 usItem )
 
 static void PoolSquadSpareAmmo()
 {
+	// Full loose-ammo reset: every magazine/box/round carried by an eligible
+	// merc joins the common sector pool before anything is handed back.
 	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
 		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
 	{
@@ -778,21 +780,19 @@ static UINT32 CountAllCompatibleSectorAmmoRounds( UINT8 ubCalibre, UINT16 usMagS
 	return uiRounds;
 }
 
-// Pulls up to uiWantedRounds of one ammo type out of all matching sector
-// magazines/boxes/crates, rebuilds it as the correct magazine for the gun, then
-// lets the normal NIV/LBE pocket-placement code decide the best pocket.
-static UINT16 BuildAndPlaceSectorMagazine( SOLDIERTYPE *pSoldier, UINT8 ubCalibre,
-	UINT16 usMagSize, UINT8 ubAmmoType, UINT16 usWantedRounds )
+// Pull up to uiWantedRounds of one ammo type from matching sector
+// magazines/boxes/crates and rebuild it as the requested magazine size.
+static UINT16 BuildSectorAmmoObject( UINT8 ubCalibre, UINT16 usMagSize,
+	UINT8 ubAmmoType, UINT16 usWantedRounds, OBJECTTYPE *pOut )
 {
-	if ( pSoldier == NULL || usWantedRounds == 0 )
+	if ( pOut == NULL || usWantedRounds == 0 )
 		return 0;
 
 	UINT16 usMagItem = FindReplacementMagazine( ubCalibre, usMagSize, ubAmmoType );
 	if ( usMagItem == 0 )
 		return 0;
 
-	OBJECTTYPE newMag;
-	if ( !CreateAmmo( usMagItem, &newMag, 0 ) )
+	if ( !CreateAmmo( usMagItem, pOut, 0 ) )
 		return 0;
 
 	for ( UINT32 i = 0; i < pInventoryPoolList.size(); ++i )
@@ -808,26 +808,137 @@ static UINT16 BuildAndPlaceSectorMagazine( SOLDIERTYPE *pSoldier, UINT8 ubCalibr
 		if ( sourceMag.ubCalibre != ubCalibre || sourceMag.ubAmmoType != ubAmmoType )
 			continue;
 
-		DistributeStatus( pSource, &newMag, (INT16)usWantedRounds );
+		DistributeStatus( pSource, pOut, (INT16)usWantedRounds );
 
 		if ( pSource->ubNumberOfObjects < 1 )
 			DeleteObj( pSource );
 
-		if ( newMag.exists() && newMag[0]->data.objectStatus >= (INT16)usWantedRounds )
+		if ( pOut->exists() && (*pOut)[0]->data.objectStatus >= (INT16)usWantedRounds )
 			break;
 	}
 
-	if ( !newMag.exists() || newMag[0]->data.objectStatus <= 0 )
+	if ( !pOut->exists() || (*pOut)[0]->data.objectStatus <= 0 )
 	{
-		DeleteObj( &newMag );
+		DeleteObj( pOut );
 		return 0;
 	}
 
-	UINT16 usBuiltRounds = (UINT16)newMag[0]->data.objectStatus;
+	return (UINT16)(*pOut)[0]->data.objectStatus;
+}
+
+// Loaded weapons have priority over spare magazines.  Partial magazines keep
+// their current ammo type; an empty gun uses the normal loadout ammo priority.
+static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject )
+{
+	if ( pGun == NULL || !pGun->exists() || !( Item[pGun->usItem].usItemClass & IC_GUN ) )
+		return 0;
+
+	UINT16 usMagSize = GetMagSize( pGun, ubSubObject );
+	if ( usMagSize == 0 )
+		return 0;
+
+	UINT16 usCurrent = (*pGun)[ubSubObject]->data.gun.ubGunShotsLeft;
+	if ( usCurrent >= usMagSize )
+		return 0;
+
+	UINT8 ubCalibre = Weapon[pGun->usItem].ubCalibre;
+	INT16 sAmmoType = -1;
+
+	if ( usCurrent > 0 )
+	{
+		UINT8 ubCurrentType = (*pGun)[ubSubObject]->data.gun.ubGunAmmoType;
+		if ( FindReplacementMagazine( ubCalibre, usMagSize, ubCurrentType ) == 0 ||
+			 CountSectorAmmoRounds( ubCalibre, ubCurrentType ) == 0 )
+			return 0;
+
+		sAmmoType = (INT16)ubCurrentType;
+	}
+	else
+	{
+		sAmmoType = FindSectorAmmoTypeForFill( ubCalibre, usMagSize, usMagSize );
+	}
+
+	if ( sAmmoType < 0 )
+		return 0;
+
+	UINT16 usNeed = usMagSize - usCurrent;
+	UINT32 uiAvailable = CountSectorAmmoRounds( ubCalibre, (UINT8)sAmmoType );
+	UINT16 usWanted = (UINT16)__min( (UINT32)usNeed, uiAvailable );
+	if ( usWanted == 0 )
+		return 0;
+
+	OBJECTTYPE ammo;
+	UINT16 usBuilt = BuildSectorAmmoObject( ubCalibre, usMagSize, (UINT8)sAmmoType, usWanted, &ammo );
+	if ( usBuilt == 0 )
+		return 0;
+
+	UINT16 usAmmoItem = ammo.usItem;
+	DeleteObj( &ammo );
+
+	(*pGun)[ubSubObject]->data.gun.ubGunShotsLeft = usCurrent + usBuilt;
+	if ( usCurrent == 0 )
+	{
+		(*pGun)[ubSubObject]->data.gun.ubGunAmmoType = (UINT8)sAmmoType;
+		(*pGun)[ubSubObject]->data.gun.usGunAmmoItem = usAmmoItem;
+	}
+
+	if ( (*pGun)[ubSubObject]->data.gun.bGunAmmoStatus >= 0 )
+		(*pGun)[ubSubObject]->data.gun.bGunAmmoStatus = 100;
+
+	if ( Weapon[pGun->usItem].swapClips == 0 &&
+		 (*pGun)[ubSubObject]->data.gun.ubGunShotsLeft < usMagSize )
+	{
+		(*pGun)[ubSubObject]->data.gun.ubGunState |= GS_WEAPON_BEING_RELOADED;
+		(*pGun)[ubSubObject]->data.gun.ubGunState &= ~GS_CARTRIDGE_IN_CHAMBER;
+	}
+	else
+	{
+		(*pGun)[ubSubObject]->data.gun.ubGunState &= ~GS_WEAPON_BEING_RELOADED;
+		(*pGun)[ubSubObject]->data.gun.ubGunState |= GS_CARTRIDGE_IN_CHAMBER;
+	}
+
+	return usBuilt;
+}
+
+static UINT32 TopUpAllSectorMercGuns()
+{
+	UINT32 uiRoundsLoaded = 0;
+
+	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
+		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
+	{
+		SOLDIERTYPE *pSoldier = MercPtrs[id];
+		if ( !IsSectorLoadoutMercEligible( pSoldier ) )
+			continue;
+
+		for ( INT32 bSlot = 0; bSlot < NUM_INV_SLOTS; ++bSlot )
+		{
+			OBJECTTYPE *pGun = &( pSoldier->inv[bSlot] );
+			if ( !pGun->exists() || !( Item[pGun->usItem].usItemClass & IC_GUN ) )
+				continue;
+
+			for ( UINT8 x = 0; x < pGun->ubNumberOfObjects; ++x )
+				uiRoundsLoaded += TopUpGunFromSector( pGun, x );
+		}
+	}
+
+	return uiRoundsLoaded;
+}
+
+static UINT16 BuildAndPlaceSectorMagazine( SOLDIERTYPE *pSoldier, UINT8 ubCalibre,
+	UINT16 usMagSize, UINT8 ubAmmoType, UINT16 usWantedRounds )
+{
+	if ( pSoldier == NULL || usWantedRounds == 0 )
+		return 0;
+
+	OBJECTTYPE newMag;
+	UINT16 usBuiltRounds = BuildSectorAmmoObject( ubCalibre, usMagSize, ubAmmoType,
+		usWantedRounds, &newMag );
+	if ( usBuiltRounds == 0 )
+		return 0;
 
 	if ( !PlaceInAnyPocket( pSoldier, &newMag, FALSE ) || newMag.exists() )
 	{
-		// No suitable LBE/pocket space. Return the ammo to the common pool.
 		if ( newMag.exists() )
 			PoolObjectForSectorLoadout( &newMag );
 		return 0;
@@ -897,51 +1008,9 @@ static void CollectSectorAmmoDemands( std::vector<SECTOR_LOADOUT_AMMO_DEMAND> &d
 		}
 	}
 
-	// Per merc + calibre cap:
-	//   one weapon  -> 3 spare mags;
-	//   two or more -> 4 spare mags total shared by all weapons in that calibre.
-	// Different magazine sizes still share the four-mag ceiling because the
-	// underlying ammunition/calibre is the same.
+	// Exactly three spare magazines per carried weapon.
 	for ( UINT32 i = 0; i < demands.size(); ++i )
-	{
-		if ( demands[i].ubMaxMags != 0 )
-			continue;
-
-		std::vector<UINT32> sameCalibre;
-		UINT32 uiSameCalibreWeapons = 0;
-
-		for ( UINT32 j = i; j < demands.size(); ++j )
-		{
-			if ( demands[j].pSoldier == demands[i].pSoldier &&
-				 demands[j].ubCalibre == demands[i].ubCalibre )
-			{
-				sameCalibre.push_back( j );
-				uiSameCalibreWeapons += demands[j].ubWeaponCount;
-			}
-		}
-
-		if ( uiSameCalibreWeapons <= 1 )
-		{
-			demands[i].ubMaxMags = 3;
-			continue;
-		}
-
-		UINT32 uiAssigned = 0;
-		for ( UINT32 n = 0; n < sameCalibre.size(); ++n )
-		{
-			SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[sameCalibre[n]];
-			demand.ubMaxMags = (UINT8)( ( 4 * demand.ubWeaponCount ) / uiSameCalibreWeapons );
-			uiAssigned += demand.ubMaxMags;
-		}
-
-		// Hand out any rounding remainder deterministically. For the common
-		// two-weapon case this yields 2+2, or 4 if both guns use the same mag.
-		for ( UINT32 n = 0; uiAssigned < 4 && n < sameCalibre.size(); ++n )
-		{
-			++demands[sameCalibre[n]].ubMaxMags;
-			++uiAssigned;
-		}
-	}
+		demands[i].ubMaxMags = (UINT8)( 3 * demands[i].ubWeaponCount );
 }
 static void RedistributeSectorAmmo3x()
 {
@@ -949,88 +1018,45 @@ static void RedistributeSectorAmmo3x()
 	if ( uiOldFilter != IC_MAPFILTER_ALL )
 		MapInventoryFilterSet( IC_MAPFILTER_ALL );
 
+	PoolSquadSpareAmmo();
+
+	// Weapon loading comes first because it costs no inventory slots.
+	UINT32 uiRoundsLoaded = TopUpAllSectorMercGuns();
+
 	std::vector<SECTOR_LOADOUT_AMMO_DEMAND> demands;
 	UINT32 uiMercCount = 0;
 	UINT32 uiWeaponCount = 0;
 	CollectSectorAmmoDemands( demands, uiMercCount, uiWeaponCount );
 
-	// All spare squad ammo joins reachable sector ammo in one common pool.
-	PoolSquadSpareAmmo();
-
-	std::vector<UINT32> groupKeys;
-	for ( UINT32 i = 0; i < demands.size(); ++i )
-	{
-		UINT32 key = ( (UINT32)demands[i].ubCalibre << 16 ) | demands[i].usMagSize;
-		if ( std::find( groupKeys.begin(), groupKeys.end(), key ) == groupKeys.end() )
-			groupKeys.push_back( key );
-	}
-
 	UINT32 uiMagazinesGiven = 0;
 	UINT32 uiRoundsGiven = 0;
 
-	for ( UINT32 g = 0; g < groupKeys.size(); ++g )
+	// Fair pocket-aware allocation: spare #1 for every weapon before spare #2,
+	// then spare #3. If one demand cannot fit another magazine, only that demand
+	// is blocked and the remaining ammo stays available to the others.
+	for ( UINT8 ubWave = 0; ubWave < 3; ++ubWave )
 	{
-		std::vector<UINT32> group;
 		for ( UINT32 i = 0; i < demands.size(); ++i )
 		{
-			UINT32 key = ( (UINT32)demands[i].ubCalibre << 16 ) | demands[i].usMagSize;
-			if ( key == groupKeys[g] )
-				group.push_back( i );
-		}
+			SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[i];
+			if ( demand.fBlocked )
+				continue;
 
-		if ( group.empty() )
-			continue;
+			UINT8 ubWaveTarget = (UINT8)__min( (UINT32)demand.ubMaxMags,
+				(UINT32)( ubWave + 1 ) * demand.ubWeaponCount );
 
-		SECTOR_LOADOUT_AMMO_DEMAND &sample = demands[group[0]];
-		UINT32 uiAvailable = CountAllCompatibleSectorAmmoRounds( sample.ubCalibre, sample.usMagSize );
-		UINT32 uiGroupCapacity = 0;
-		for ( UINT32 n = 0; n < group.size(); ++n )
-		{
-			SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[group[n]];
-			uiGroupCapacity += (UINT32)demand.usMagSize * demand.ubMaxMags;
-		}
-		UINT32 uiToDistribute = __min( uiAvailable, uiGroupCapacity );
-
-		// Fair shortage rule with variable per-merc caps. Add one round at a time
-		// in waves until ammo is exhausted or every demand reaches its own cap.
-		std::vector<UINT32> targets( group.size(), 0 );
-		UINT32 uiAssignedRounds = 0;
-		while ( uiAssignedRounds < uiToDistribute )
-		{
-			BOOLEAN fProgress = FALSE;
-			for ( UINT32 n = 0; n < group.size() && uiAssignedRounds < uiToDistribute; ++n )
+			while ( demand.ubMagsGiven < ubWaveTarget )
 			{
-				SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[group[n]];
-				UINT32 uiCap = (UINT32)demand.usMagSize * demand.ubMaxMags;
-				if ( targets[n] < uiCap )
-				{
-					++targets[n];
-					++uiAssignedRounds;
-					fProgress = TRUE;
-				}
-			}
-			if ( !fProgress )
-				break;
-		}
-
-		for ( UINT32 n = 0; n < group.size(); ++n )
-		{
-			SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[group[n]];
-			UINT32 uiRemainingTarget = targets[n];
-
-			while ( uiRemainingTarget > 0 && demand.ubMagsGiven < demand.ubMaxMags && !demand.fBlocked )
-			{
-				UINT32 uiWantedThisMag = __min( (UINT32)demand.usMagSize, uiRemainingTarget );
-				INT16 sAmmoType = FindSectorAmmoTypeForFill( demand.ubCalibre, demand.usMagSize, uiWantedThisMag );
-
+				INT16 sAmmoType = FindSectorAmmoTypeForFill( demand.ubCalibre,
+					demand.usMagSize, demand.usMagSize );
 				if ( sAmmoType < 0 )
 					break;
 
-				UINT32 uiTypeAvailable = CountSectorAmmoRounds( demand.ubCalibre, (UINT8)sAmmoType );
-				UINT16 usWanted = (UINT16)__min( uiWantedThisMag, uiTypeAvailable );
-				if ( usWanted == 0 )
+				UINT32 uiAvailable = CountSectorAmmoRounds( demand.ubCalibre, (UINT8)sAmmoType );
+				if ( uiAvailable == 0 )
 					break;
 
+				UINT16 usWanted = (UINT16)__min( (UINT32)demand.usMagSize, uiAvailable );
 				UINT16 usMade = BuildAndPlaceSectorMagazine( demand.pSoldier, demand.ubCalibre,
 					demand.usMagSize, (UINT8)sAmmoType, usWanted );
 
@@ -1043,7 +1069,6 @@ static void RedistributeSectorAmmo3x()
 				++demand.ubMagsGiven;
 				++uiMagazinesGiven;
 				uiRoundsGiven += usMade;
-				uiRemainingTarget -= __min( uiRemainingTarget, (UINT32)usMade );
 			}
 		}
 	}
@@ -1058,8 +1083,8 @@ static void RedistributeSectorAmmo3x()
 	fCharacterInfoPanelDirty = TRUE;
 
 	ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
-		L"3x: %d cargadores (%d balas) repartidos para %d armas de %d mercenarios.",
-		uiMagazinesGiven, uiRoundsGiven, uiWeaponCount, uiMercCount );
+		L"3x: armas cargadas (+%d balas); %d cargadores de reserva (%d balas) para %d armas de %d mercenarios.",
+		uiRoundsLoaded, uiMagazinesGiven, uiRoundsGiven, uiWeaponCount, uiMercCount );
 }
 
 static BOOLEAN TakeOneHandSmokeFromSector( OBJECTTYPE *pOut )
@@ -2650,7 +2675,7 @@ void CreateMapInventoryButtons( void )
 		BUTTON_USE_DEFAULT, sLoadoutButtonX, INVEN_POOL_Y + 24 + yResOffset, 28, 13,
 		BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST, NULL, (GUI_CALLBACK)MapInventoryPoolAmmo3xBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[0],
-		L"3x: municion. 3 cargadores; con 2+ armas del mismo calibre, max. 4 compartidos. AP > estandar > otras > HP > Glaser." );
+		L"3x: retirar toda la municion suelta, cargar cada arma y dar 3 cargadores por arma, repartidos por turnos segun el espacio. AP > estandar > otras > HP > Glaser." );
 
 	guiMapInvenLoadoutButton[1] = CreateTextButton( L"SMK", SMALLCOMPFONT, FONT_WHITE, DEFAULT_SHADOW,
 		BUTTON_USE_DEFAULT, sLoadoutButtonX + 30, INVEN_POOL_Y + 24 + yResOffset, 28, 13,
