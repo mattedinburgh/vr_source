@@ -2157,7 +2157,7 @@ void HandleAutoPlaceFail( SOLDIERTYPE *pSoldier, INT32 iItemIndex, INT32 sGridNo
 void SoldierGetItemFromWorld( SOLDIERTYPE *pSoldier, INT32 iItemIndex, INT32 sGridNo, INT8 bZLevel, BOOLEAN *pfSelectionList )
 {
 	ITEM_POOL		*		pItemPool;
-	ITEM_POOL		*		pItemPoolToDelete = NULL;
+	INT32						iFailedAutoPlaceItemIndex = -1;
 	INT32						cnt = 0;
 	BOOLEAN					fPickup;
 	BOOLEAN					fFailedAutoPlace = FALSE;
