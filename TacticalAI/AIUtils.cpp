@@ -14225,45 +14225,62 @@ INT32 AIPathExposureCost(SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMov
 	gubNPCAPBudget = 0;
 	gubNPCDistLimit = 0;
 
-	BOOLEAN fPath = FindBestPath(pSoldier, sDestination, pSoldier->pathing.bLevel,
-		usMovementMode, COPYROUTE, 0);
+	// Use the non-copying route query: it gives us the full generated path through
+	// guiPathingData without replacing the soldier's prepared execution route.
+	INT32 iPathSteps = FindBestPath(pSoldier, sDestination, pSoldier->pathing.bLevel,
+		usMovementMode, NO_COPYROUTE, 0);
 
 	gubNPCAPBudget = sOldAPBudget;
 	gubNPCDistLimit = ubOldDistLimit;
 
-	if (!fPath)
+	if (iPathSteps <= 0 || !guiPathingData)
 		return 10000;
 
 	INT32 sPathSpot = pSoldier->sGridNo;
 	INT32 iCost = 0;
 	INT32 iExposedStreak = 0;
+	INT32 iPathLimit = __min(iPathSteps, (INT32)MAX_PATH_DATA_LENGTH);
 
-	for (INT16 sLoop = pSoldier->pathing.usPathIndex;
-		sLoop < pSoldier->pathing.usPathDataSize; ++sLoop)
+	for (INT32 iStep = 0; iStep < iPathLimit; ++iStep)
 	{
-		sPathSpot = NewGridNo(sPathSpot,
-			DirectionInc((UINT8)pSoldier->pathing.usPathingData[sLoop]));
-		if (TileIsOutOfBounds(sPathSpot))
-			break;
+		INT32 sNext = NewGridNo(
+			sPathSpot, DirectionInc((UINT8)guiPathingData[iStep]));
+		if (sNext == sPathSpot || TileIsOutOfBounds(sNext))
+			return 10000;
 
-		UINT16 usExposure = AIKnownThreatExposure(pSoldier, sPathSpot, pSoldier->pathing.bLevel);
-		// Existing smoke should make an otherwise exposed crossing substantially safer.
-		// Keep some residual risk because stale contacts can still fire through concealment.
+		sPathSpot = sNext;
+
+		// Environmental hazards are hard route penalties, not merely endpoint checks.
+		if (InGas(pSoldier, sPathSpot) ||
+			RedSmokeDanger(sPathSpot, pSoldier->pathing.bLevel) ||
+			FindBombNearby(pSoldier, sPathSpot, BOMB_DETECTION_RANGE))
+		{
+			return 10000;
+		}
+
+		UINT16 usExposure = AIKnownThreatExposure(
+			pSoldier, sPathSpot, pSoldier->pathing.bLevel);
+
 		if (InSmoke(sPathSpot, pSoldier->pathing.bLevel))
 			usExposure /= 3;
+
 		if (usExposure > 0)
 		{
 			++iExposedStreak;
 			iCost += __min((INT32)45, (INT32)usExposure / 8);
-			// Sample inferred reaction-fire risk on alternate path steps. Exact enemy AP
-			// is intentionally never inspected.
-			if ((sLoop & 1) == 0)
-				iCost += AIInferredReactionRisk(pSoldier, sPathSpot, pSoldier->pathing.bLevel) / 6;
+
+			// Richer route reasoning is intentionally allowed here. We sample inferred
+			// reaction risk on every step, but never inspect hidden enemy AP/state.
+			iCost += AIInferredReactionRisk(
+				pSoldier, sPathSpot, pSoldier->pathing.bLevel) / 6;
+
 			if (!SightCoverAtSpot(pSoldier, sPathSpot, FALSE))
 				iCost += 6;
 			if (!AnyCoverAtSpot(pSoldier, sPathSpot))
 				iCost += 4;
-			iCost += __min((INT32)12, 2 * iExposedStreak);
+
+			iCost += __min((INT32)16, 2 * iExposedStreak);
+
 			if (InLightAtNight(sPathSpot, pSoldier->pathing.bLevel))
 				iCost += 4;
 		}
@@ -14273,5 +14290,5 @@ INT32 AIPathExposureCost(SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMov
 		}
 	}
 
-	return __min((INT32)500, iCost);
+	return __min((INT32)700, iCost);
 }
