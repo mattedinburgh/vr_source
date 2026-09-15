@@ -1391,6 +1391,17 @@ static UINT32 VRCQBTraceBegin(SOLDIERTYPE *pSoldier,
 	VRAnalyticsStateInt(uiDecision, "cqb_risk", pAssessment->iRiskScore);
 	VRAnalyticsStateInt(uiDecision, "cqb_target_exposure", pAssessment->usKnownThreatExposure);
 
+	AITACTICALGEOMETRY Geometry;
+	if (AIBuildTacticalGeometry(pSoldier, pSoldier->sGridNo, &Geometry))
+	{
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_primary_threat_dir", Geometry.ubPrimaryThreatDir);
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_safest_dir", Geometry.ubSafestDirection);
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_left_flank", Geometry.sLeftFlankOpportunity);
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_right_flank", Geometry.sRightFlankOpportunity);
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_rear_safety", Geometry.sRearSafety);
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_encirclement", Geometry.fEncirclementPressure ? 1 : 0);
+	}
+
 	return uiDecision;
 }
 
