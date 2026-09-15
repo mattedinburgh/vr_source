@@ -201,7 +201,6 @@ static BOOL BlackBoxEventNeedsImmediateFlush( const char *category, const char *
 		return FALSE;
 
 	if( _stricmp( category, "ASSERT" ) == 0 ||
-		_stricmp( category, "SEH" ) == 0 ||
 		_stricmp( category, "STALL" ) == 0 ||
 		_stricmp( category, "RECOVERY" ) == 0 ||
 		_stricmp( category, "ERROR" ) == 0 ||
@@ -245,6 +244,16 @@ static BOOL BlackBoxFlushFileLocked( DWORD now )
 	gBlackBoxLastFlushTick = now;
 	++gBlackBoxFlushCount;
 	return TRUE;
+}
+
+static void BlackBoxForceFlush( void )
+{
+	if( !gBlackBoxInitialized )
+		return;
+
+	EnterCriticalSection( &gBlackBoxLock );
+	BlackBoxFlushFileLocked( GetTickCount() );
+	LeaveCriticalSection( &gBlackBoxLock );
 }
 
 static BOOL BlackBoxIsInterestingException( DWORD code )
@@ -626,12 +635,14 @@ static void BlackBoxDrainExceptionFeed( void )
 	LONG first;
 	LONG sequence;
 	LONG drainedThrough;
+	LONG drainedBefore;
 
 	snapshot = gBlackBoxExceptionSequence;
 	if( snapshot <= gBlackBoxExceptionDrainedSequence )
 		return;
 
-	first = gBlackBoxExceptionDrainedSequence + 1;
+	drainedBefore = gBlackBoxExceptionDrainedSequence;
+	first = drainedBefore + 1;
 	if( snapshot - first + 1 > BLACKBOX_EXCEPTION_SLOTS )
 		first = snapshot - BLACKBOX_EXCEPTION_SLOTS + 1;
 
@@ -670,6 +681,8 @@ static void BlackBoxDrainExceptionFeed( void )
 	}
 
 	gBlackBoxExceptionDrainedSequence = drainedThrough;
+	if( drainedThrough > drainedBefore )
+		BlackBoxForceFlush();
 }
 
 void BlackBoxInitialize( void )
