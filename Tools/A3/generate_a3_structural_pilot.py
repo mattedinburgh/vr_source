@@ -604,6 +604,67 @@ def render_roof(
     return out
 
 
+def validate_generated_contract(
+    family: str,
+    source: Path,
+    legacy_frames: list[Image.Image],
+    generated: list[Image.Image],
+    meta: list[dict],
+    semantics: dict[int, dict],
+) -> dict:
+    """Fail closed if authored art changes any tactical sprite contract."""
+    if len(generated) != len(legacy_frames):
+        raise ValueError(
+            f"{family}: frame count changed {len(legacy_frames)} -> {len(generated)}"
+        )
+    if len(meta) != len(legacy_frames):
+        raise ValueError(
+            f"{family}: metadata/frame mismatch meta={len(meta)} frames={len(legacy_frames)}"
+        )
+
+    alpha_hash = hashlib.sha256()
+    opaque_pixels = 0
+    for i, (legacy, authored) in enumerate(zip(legacy_frames, generated)):
+        legacy_rgba = legacy.convert("RGBA")
+        authored_rgba = authored.convert("RGBA")
+        if authored_rgba.size != legacy_rgba.size:
+            raise ValueError(
+                f"{family} frame {i}: dimensions changed "
+                f"{legacy_rgba.size} -> {authored_rgba.size}"
+            )
+
+        legacy_alpha = legacy_rgba.getchannel("A").tobytes()
+        authored_alpha = authored_rgba.getchannel("A").tobytes()
+        if authored_alpha != legacy_alpha:
+            raise ValueError(f"{family} frame {i}: alpha footprint changed")
+
+        alpha_hash.update(authored_alpha)
+        opaque_pixels += sum(a != 0 for a in authored_alpha)
+
+    bad_semantic_frames = sorted(i for i in semantics if i < 0 or i >= len(generated))
+    if bad_semantic_frames:
+        raise ValueError(
+            f"{family}: JSD references out-of-range frame(s) {bad_semantic_frames} "
+            f"for {len(generated)} images"
+        )
+
+    return {
+        "contract_signature": _contract_signature(legacy_frames, meta),
+        "alpha_sha256": alpha_hash.hexdigest(),
+        "opaque_pixels": opaque_pixels,
+        "semantic_frames": len(semantics),
+        "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+    }
+
+
+def file_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for block in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
 def write_b1tc(path: Path, frames: list[Image.Image], meta: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload_offset = 8 + 16 * len(frames)
@@ -669,6 +730,10 @@ def generate_family(tilesets_root: Path, out_root: Path, qa_root: Path,
         raise ValueError(f"{source}: no frames")
 
     jsd_path = find_jsd_sibling(source) if kind in ("wall", "roof") else None
+    if kind in ("wall", "roof") and jsd_path is None:
+        raise FileNotFoundError(
+            f"{family}: structural family has no canonical JSD sibling for {source}"
+        )
     semantics = parse_jsd_semantics(jsd_path)
     generated = []
     labels = []
@@ -703,9 +768,15 @@ def generate_family(tilesets_root: Path, out_root: Path, qa_root: Path,
         generated.append(frame)
         labels.append(label)
 
+    contract = validate_generated_contract(
+        family, source, legacy_frames, generated, meta, semantics
+    )
+
     out = out_root / f"VR_A3_{family}.b1tc"
     write_b1tc(out, generated, meta)
-    contact_sheet(qa_root / f"VR_A3_{family}.png", family, generated, labels)
+    artifact_sha256 = file_sha256(out)
+    qa_path = qa_root / f"VR_A3_{family}.png"
+    contact_sheet(qa_path, family, generated, labels)
 
     semantic_counts = {}
     for label in labels:
@@ -719,6 +790,9 @@ def generate_family(tilesets_root: Path, out_root: Path, qa_root: Path,
         "semantic_counts": semantic_counts,
         "frames": len(generated),
         "output": str(out),
+        "qa": str(qa_path),
+        "artifact_sha256": artifact_sha256,
+        **contract,
     }
 
 
@@ -727,6 +801,11 @@ def main() -> None:
     ap.add_argument("--tilesets-root", required=True, type=Path)
     ap.add_argument("--out-root", required=True, type=Path)
     ap.add_argument("--qa-root", type=Path)
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="production gate: fail if any declared structural family cannot be generated",
+    )
     ns = ap.parse_args()
 
     qa_root = ns.qa_root or (ns.out_root / "_qa")
@@ -758,6 +837,8 @@ def main() -> None:
         "A3 STRUCTURAL PILOT - QUARANTINED / NOT ROUTED",
         "Legacy RGB sampled: NO",
         "Legacy contract retained: frame count, dimensions, offsets, alpha footprint",
+        "Contract verification: REQUIRED before artifact write",
+        f"Production strict mode: {'YES' if ns.strict else 'NO'}",
         "",
     ]
     for r in results:
@@ -765,13 +846,23 @@ def main() -> None:
         sem_note = f" semantics={r['semantic_counts']}" if r.get("semantic_counts") else ""
         lines.append(
             f"{r['family']}: {r['kind']} {r['frames']} frames <- "
-            f"{r['source_contract']}{jsd_note}{sem_note}"
+            f"{r['source_contract']}{jsd_note}{sem_note} "
+            f"contract={r['contract_signature'][:16]} "
+            f"alpha={r['alpha_sha256'][:16]} "
+            f"artifact={r['artifact_sha256'][:16]}"
         )
     for family, filename, reason in missing:
         lines.append(f"{family}: SKIPPED missing source contract {filename}")
     manifest.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
+    if ns.strict and missing:
+        detail = ", ".join(family for family, _, _ in missing)
+        raise SystemExit(
+            f"A3 production gate FAILED: missing canonical contracts for {detail}"
+        )
+
     print(f"generated {len(results)} structural families; skipped {len(missing)}")
+    print("contract verification: PASS")
     print(f"manifest: {manifest}")
     print(f"QA sheets: {qa_root}")
 
