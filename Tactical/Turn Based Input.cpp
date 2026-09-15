@@ -4037,26 +4037,34 @@ void GetKeyboardInput( UINT32 *puiNewEvent )
 			case 'q':
 				if( fCtrl )
 				{
-					// used for cheat mode functions
-					HandleTBSwapHands( );												
-				}
-				else if ( fAlt )
-				{
-					// used for cheat mode functions
-					HandleTBSwapGunsling( );
-				}
-				else
-				{
-					/*if ( gGameSettings.fOptions[TOPTION_GL_HIGH_ANGLE] )
+					// Modern 1.13 high/low grenade-launcher angle toggle, without stealing
+					// VR's Ctrl+Q hand-swap when the selected merc is not using a GL.
+					BOOLEAN fHasGrenadeLauncher = FALSE;
+					if ( gusSelectedSoldier != NOBODY )
 					{
-						gGameSettings.fOptions[TOPTION_GL_HIGH_ANGLE] = FALSE;
-						ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, pMessageStrings[ MSG_GL_LOW_ANGLE ] );
+						SOLDIERTYPE *pSelected = MercPtrs[ gusSelectedSoldier ];
+						if ( pSelected && pSelected->inv[HANDPOS].exists() )
+						{
+							fHasGrenadeLauncher = Item[pSelected->inv[HANDPOS].usItem].grenadelauncher ||
+								IsGrenadeLauncherAttached( &pSelected->inv[HANDPOS] );
+						}
+					}
+
+					if ( fHasGrenadeLauncher )
+					{
+						gGameSettings.fOptions[TOPTION_GL_HIGH_ANGLE] = !gGameSettings.fOptions[TOPTION_GL_HIGH_ANGLE];
+						ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
+							gGameSettings.fOptions[TOPTION_GL_HIGH_ANGLE] ?
+							pMessageStrings[ MSG_GL_HIGH_ANGLE ] : pMessageStrings[ MSG_GL_LOW_ANGLE ] );
 					}
 					else
 					{
-						gGameSettings.fOptions[TOPTION_GL_HIGH_ANGLE] = TRUE;
-						ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, pMessageStrings[ MSG_GL_HIGH_ANGLE ] );
-					}*/
+						HandleTBSwapHands( );
+					}
+				}
+				else if ( fAlt )
+				{
+					HandleTBSwapGunsling( );
 				}
 				break;
 			
