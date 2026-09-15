@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/vhd-renderer
+      - 'engine/vhd-*'
     paths:
       - '**/*.c'
       - '**/*.cc'
