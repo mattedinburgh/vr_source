@@ -1,10 +1,10 @@
 # Vengeance Unified AI Framework
 
-Branch: `integration/unified-ai-framework-2026-09-14`
+Branch: `install/all-2026-09-12`
 
 ## Purpose
 
-This branch is the single canonical integration line for Vengeance AI work. It is based on
+`install/all-2026-09-12` is the single canonical integration line for Vengeance AI work. It is based on
 `ai/utility-squad-planner` because that branch contains the newest coherent tactical planner.
 Older AI branches are reference material only: useful behaviours are ported deliberately into
 this framework, never merged wholesale.
@@ -50,7 +50,7 @@ this framework, never merged wholesale.
 
 ## Branch policy
 
-- This branch is canonical for all new tactical AI development.
+- `install/all-2026-09-12` is canonical for all new tactical AI development.
 - Strategic modernization and diagnostics are ported onto this line.
 - No AI feature branch may become a second permanent integration branch.
 - Experimental features branch from this line and return through reviewed commits.
