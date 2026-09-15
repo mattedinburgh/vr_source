@@ -10,6 +10,7 @@ on:
       - 'sgp/**'
       - 'Utils/**'
       - 'Tools/VRMapDisplayRouting.ps1'
+      - 'MapPreviewTrigger/C5_RENDER.txt'
   workflow_dispatch:
 
 permissions:
@@ -72,6 +73,48 @@ jobs:
           & $git -C $env:GITHUB_WORKSPACE checkout -f -B render-source '${{ github.sha }}'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Reuse cached MapEditor when source tree is unchanged
+        id: editor_cache
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $git='${{ steps.git.outputs.path }}'
+          $cache='C:\VENGENCE\VHD_RENDER_CACHE'
+          $cachedExe=Join-Path $cache 'MapEditor_EN_Release.exe'
+          $cachedFingerprintFile=Join-Path $cache 'source_fingerprint.txt'
+
+          $treeLines=& $git -C $env:GITHUB_WORKSPACE ls-tree -r HEAD
+          if($LASTEXITCODE-ne0){throw 'Could not enumerate source tree for MapEditor cache fingerprint.'}
+          $relevant=$treeLines | Where-Object {
+            $_ -notmatch '^[^\t]+\t\.github/' -and
+            $_ -notmatch '^[^\t]+\tMapPreviewTrigger/'
+          }
+          $joined=($relevant -join "`n")
+          $sha=[System.Security.Cryptography.SHA256]::Create()
+          try {
+            $bytes=[Text.Encoding]::UTF8.GetBytes($joined)
+            $fingerprint=([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant()
+          } finally { $sha.Dispose() }
+
+          $hit=$false
+          if((Test-Path $cachedExe) -and (Test-Path $cachedFingerprintFile)){
+            $cachedFingerprint=(Get-Content $cachedFingerprintFile -Raw).Trim()
+            $hit=($cachedFingerprint -eq $fingerprint)
+          }
+
+          if($hit){
+            $bin=Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013'
+            New-Item -ItemType Directory -Force -Path $bin | Out-Null
+            Copy-Item -LiteralPath $cachedExe -Destination (Join-Path $bin 'MapEditor_EN_Release.exe') -Force
+            Write-Host "MapEditor cache HIT: $fingerprint"
+            "hit=true"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "fingerprint=$fingerprint"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          } else {
+            Write-Host "MapEditor cache MISS: $fingerprint"
+            "hit=false"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "fingerprint=$fingerprint"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
       - name: Fetch only map assets from vr_gamedir
         id: gamedir
         shell: powershell
@@ -90,10 +133,22 @@ jobs:
           $sha = (& $git -C $gamedir rev-parse HEAD).Trim()
           $c5 = Join-Path $gamedir 'Data-Maps-Tiles\maps\c5.dat'
           if (-not (Test-Path $c5)) { throw "c5.dat was not materialised: $c5" }
+
+          # Fail before an expensive MapEditor rebuild when no C5 true-colour
+          # payload exists yet. Native VHD2 is the preferred pilot location;
+          # legacy Tilesets/18 B1TC remains accepted for compatibility.
+          $nativeVhd2 = @(Get-ChildItem -LiteralPath (Join-Path $gamedir 'Data-Maps-Tiles\VHD2\TILESETS\18') -Filter '*.b1tc' -File -ErrorAction SilentlyContinue)
+          $legacyTc = @(Get-ChildItem -LiteralPath (Join-Path $gamedir 'Data-Maps-Tiles\Tilesets\18') -Filter '*.b1tc' -File -ErrorAction SilentlyContinue)
+          if (($nativeVhd2.Count + $legacyTc.Count) -eq 0) {
+            throw 'C5 visual QA preflight: no native VHD2/B1TC C5 assets are present on feature/vhd-renderer-test.'
+          }
+          Write-Host "C5 true-colour preflight: native VHD2=$($nativeVhd2.Count), legacy B1TC=$($legacyTc.Count)"
+
           "sha=$sha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "vr_gamedir SHA: $sha"
 
       - name: Retarget VS2013 projects to v120
+        if: steps.editor_cache.outputs.hit != 'true'
         shell: powershell
         run: |
           $changed = 0
@@ -109,6 +164,7 @@ jobs:
           Write-Host "Retargeted $changed project file(s) to v120."
 
       - name: Find MSBuild
+        if: steps.editor_cache.outputs.hit != 'true'
         id: msbuild
         shell: powershell
         run: |
@@ -128,12 +184,30 @@ jobs:
           Write-Host "Using MSBuild: $msbuild"
 
       - name: Build MapEditor
+        if: steps.editor_cache.outputs.hit != 'true'
         shell: powershell
         run: |
           & '${{ steps.msbuild.outputs.path }}' '.\ja2_VS2013.sln' /m /t:ja2 /p:Configuration=MapEditor /p:Platform=Win32
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $editor = Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\MapEditor_EN_Release.exe'
           if (-not (Test-Path $editor)) { throw "Expected MapEditor was not built: $editor" }
+
+      - name: Refresh persistent MapEditor cache after rebuild
+        if: steps.editor_cache.outputs.hit != 'true' && success()
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\MapEditor_EN_Release.exe'
+          if(-not(Test-Path $exe)){throw "MapEditor cache refresh missing binary: $exe"}
+          $cache='C:\VENGENCE\VHD_RENDER_CACHE'
+          New-Item -ItemType Directory -Force -Path $cache | Out-Null
+          Copy-Item -LiteralPath $exe -Destination (Join-Path $cache 'MapEditor_EN_Release.exe') -Force
+          [IO.File]::WriteAllText(
+            (Join-Path $cache 'source_fingerprint.txt'),
+            '${{ steps.editor_cache.outputs.fingerprint }}',
+            (New-Object Text.UTF8Encoding($false))
+          )
+          Write-Host "Refreshed persistent MapEditor cache: ${{ steps.editor_cache.outputs.fingerprint }}"
 
       - name: Prepare Vengeance render sandbox
         shell: powershell
@@ -298,6 +372,11 @@ jobs:
 
           . (Join-Path $env:GITHUB_WORKSPACE 'Tools\VRMapDisplayRouting.ps1')
 
+          # MapEditor must run in the VHD2 renderer mode as well as the game.
+          # The environment override is authoritative even if an editor-specific
+          # config path does not load the same Ja2_Options.INI stack as normal play.
+          $env:VR_VHD_RENDER_SCALE = '2'
+          Write-Host "VHD render scale override: $env:VR_VHD_RENDER_SCALE"
           Write-Host "Launching unchanged C5 through VHD Vengeance MapEditor from isolated VFS working directory: $sandbox"
           $p = Start-VRProcessOnSecondary -FilePath $editor -ArgumentList "-MAPSHOT=c5.dat" -WorkingDirectory $sandbox -RequireSecondary
           $deadline = (Get-Date).AddSeconds(240)

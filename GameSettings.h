@@ -2473,6 +2473,7 @@ extern bool alreadySaving;
 BOOLEAN	SaveGameSettings();
 BOOLEAN LoadGameSettings();
 // Snap: Read options from an INI file in the default of custom Data directory
+void BootstrapVHDGraphicsSettings();
 void LoadGameExternalOptions();
 void LoadSkillTraitsExternalSettings(); // SANDRO - added this one
 void LoadModSettings();

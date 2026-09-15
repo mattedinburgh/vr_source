@@ -19,6 +19,7 @@
 #include "ExceptionHandling.h"
 #include "Isometric Utils.h"
 #include "GameSettings.h"
+#include "STCI.h"
 
 
 TILE_IMAGERY				*gTileSurfaceArray[ NUMBEROFTILETYPES ];
@@ -42,6 +43,33 @@ static void TraceSanMonaC5VisualAsset( const STR8 pStage, const STR8 pFilename, 
 }
 
 
+static HIMAGE CreateCanonicalSTIImage( const STR8 pFilename, UINT16 fContents )
+{
+	if ( pFilename == NULL )
+		return NULL;
+
+	// Geometry/app-data authority must always be the authored STI itself.
+	// CreateImage() intentionally prefers optional B1TC/JPC/PNG replacements,
+	// so using it here would let visual art redefine the native-HD contract.
+	HIMAGE hImage = (HIMAGE)MemAlloc( sizeof( image_type ) );
+	if ( hImage == NULL )
+		return NULL;
+
+	memset( hImage, 0, sizeof( image_type ) );
+	strncpy( hImage->ImageFile, pFilename, sizeof(hImage->ImageFile) - 1 );
+	hImage->ImageFile[ sizeof(hImage->ImageFile) - 1 ] = 0;
+	hImage->iFileLoader = STCI_FILE_READER;
+
+	if ( !LoadSTCIFileToImage( hImage, fContents ) )
+	{
+		MemFree( hImage );
+		return NULL;
+	}
+
+	return hImage;
+}
+
+
 static BOOLEAN ValidateAndCanonicalizeNativeVHDImage(
 	HIMAGE hNativeImage, STR8 pCanonicalFilename, UINT8 ubScale )
 {
@@ -49,11 +77,11 @@ static BOOLEAN ValidateAndCanonicalizeNativeVHDImage(
 		 ( ubScale != 2 && ubScale != 4 ) )
 		return FALSE;
 
-	// Native VHD packages replace pixels only.  Load the ordinary logical asset
-	// independently and use it as the contract for frame identity/geometry and
-	// auxiliary gameplay metadata.  This keeps map/JSD semantics at legacy scale.
-	HIMAGE hCanonicalImage = CreateImage(
-		pCanonicalFilename, IMAGE_ALLDATA, ImageFileType::DEFAULT );
+	// Native VHD packages replace pixels only. Load the authored STI directly,
+	// bypassing optional B1TC/JPC/PNG substitutions, and use it as the immutable
+	// contract for frame identity/geometry and auxiliary gameplay metadata.
+	HIMAGE hCanonicalImage = CreateCanonicalSTIImage(
+		pCanonicalFilename, IMAGE_ALLDATA );
 	if ( hCanonicalImage == NULL )
 	{
 		BlackBoxEvent( "VHD",
@@ -240,11 +268,11 @@ BOOLEAN RunVHDNativeContractSelfTest( STR8 pCanonicalFilename )
 		"native contract self-test begin file=%s scale=2",
 		pCanonicalFilename );
 
-	// Build the fixture through the production loader and production VHD fallback
-	// scaler. This deliberately exercises the same image/scaling code used by
-	// the renderer rather than maintaining a second STI/JPC/B1TC parser.
-	HIMAGE hSyntheticNative = CreateImage(
-		pCanonicalFilename, IMAGE_ALLDATA, ImageFileType::DEFAULT );
+	// Start from the authored STI contract, then run the production VHD fallback
+	// scaler. Optional B1TC/JPC/PNG replacements must never be the geometry
+	// authority for this positive/negative contract test.
+	HIMAGE hSyntheticNative = CreateCanonicalSTIImage(
+		pCanonicalFilename, IMAGE_ALLDATA );
 	if ( hSyntheticNative == NULL )
 	{
 		BlackBoxEvent( "VHD",
@@ -252,6 +280,15 @@ BOOLEAN RunVHDNativeContractSelfTest( STR8 pCanonicalFilename )
 			pCanonicalFilename );
 		return FALSE;
 	}
+
+	BlackBoxEvent( "VHD",
+		"native contract self-test fixture loader=%u bitDepth=%u flags=0x%04x objects=%u size=%ux%u",
+		hSyntheticNative->iFileLoader,
+		hSyntheticNative->ubBitDepth,
+		hSyntheticNative->fFlags,
+		hSyntheticNative->usNumberOfObjects,
+		hSyntheticNative->usWidth,
+		hSyntheticNative->usHeight );
 
 	if ( !ScaleImageNearestForVHD( hSyntheticNative, 2 ) ||
 		 hSyntheticNative->pETRLEObject == NULL ||
