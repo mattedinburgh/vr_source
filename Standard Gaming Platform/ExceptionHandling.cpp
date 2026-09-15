@@ -113,6 +113,7 @@ static LONG gBlackBoxFlushFailures = 0;
 static LONG gBlackBoxFlushCount = 0;
 static LONG gBlackBoxDeferredFlushCount = 0;
 static DWORD gBlackBoxLastFlushTick = 0;
+static DWORD gBlackBoxLastFlushAttemptTick = 0;
 static LONG gBlackBoxSubsystemCursor = 0;
 static CHAR8 gBlackBoxEvents[BLACKBOX_EVENT_SLOTS][BLACKBOX_EVENT_CHARS];
 static volatile LONG gBlackBoxEventCommitted[BLACKBOX_EVENT_SLOTS];
@@ -219,11 +220,11 @@ static BOOL BlackBoxEventNeedsImmediateFlush( const char *category, const char *
 	// multi-stage operation is useful evidence immediately before a possible CTD.
 	if( _stricmp( category, "OPERATION" ) == 0 && message != NULL )
 	{
-		if( strstr( message, "result=FAILED" ) != NULL ||
-			strstr( message, "result=ERROR" ) != NULL )
-		{
+		// BlackBoxOperationEnd only emits OPERATION events for slow successes or
+		// non-OK results. Preserve every non-OK result immediately without
+		// having to enumerate all possible failure strings.
+		if( strstr( message, "result=OK" ) == NULL )
 			return TRUE;
-		}
 	}
 
 	return FALSE;
@@ -234,6 +235,7 @@ static BOOL BlackBoxFlushFileLocked( DWORD now )
 	if( gBlackBoxFile == INVALID_HANDLE_VALUE )
 		return FALSE;
 
+	gBlackBoxLastFlushAttemptTick = now;
 	if( !FlushFileBuffers( gBlackBoxFile ) )
 	{
 		++gBlackBoxFlushFailures;
@@ -665,6 +667,7 @@ void BlackBoxInitialize( void )
 	gBlackBoxFlushCount = 0;
 	gBlackBoxDeferredFlushCount = 0;
 	gBlackBoxLastFlushTick = gBlackBoxStartTick;
+	gBlackBoxLastFlushAttemptTick = gBlackBoxStartTick;
 	gBlackBoxSubsystemCursor = 0;
 	gBlackBoxExceptionSequence = 0;
 	gBlackBoxExceptionDrainedSequence = 0;
@@ -859,7 +862,7 @@ void BlackBoxEvent( const char *category, const char *format, ... )
 		{
 			++gBlackBoxDiskWriteFailures;
 		}
-		else if( immediateFlush || ( now - gBlackBoxLastFlushTick ) >= BLACKBOX_FLUSH_INTERVAL_MS )
+		else if( immediateFlush || ( now - gBlackBoxLastFlushAttemptTick ) >= BLACKBOX_FLUSH_INTERVAL_MS )
 		{
 			BlackBoxFlushFileLocked( now );
 		}
