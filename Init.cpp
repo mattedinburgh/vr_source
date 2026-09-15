@@ -424,27 +424,27 @@ BOOLEAN LoadExternalGameplayData(STR directoryName)
 		using namespace LogicalBodyTypes;
 		CHAR8 errorBuf[512] = "Failed loading LogicalBodyTypes external data!";
 
-		if ( !Layers::Instance().LoadFromFile(directoryName, LBT_LAYERSFILENAME, errorBuf) )
+		if ( !Layers::Instance().LoadFromFile(directoryName, LBT_LAYERSFILENAME) )
 		{
 			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, errorBuf );
 			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, "LOBOT Layers load failed; visible equipment disabled for this run." );
 		}
-		else if ( !PaletteDB::Instance().LoadFromFile(directoryName, LBT_PALETTESFILENAME, errorBuf) )
+		else if ( !PaletteDB::Instance().LoadFromFile(directoryName, LBT_PALETTESFILENAME) )
 		{
 			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, errorBuf );
 			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, "LOBOT palette load failed; visible equipment disabled for this run." );
 		}
-		else if ( !SurfaceDB::Instance().LoadFromFile(directoryName, LBT_ANIMSURFACESFILENAME, errorBuf) )
+		else if ( !SurfaceDB::Instance().LoadFromFile(directoryName, LBT_ANIMSURFACESFILENAME) )
 		{
 			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, errorBuf );
 			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, "LOBOT AnimationSurfaces load failed; visible equipment disabled for this run." );
 		}
-		else if ( !FilterDB::Instance().LoadFromFile(directoryName, LBT_FILTERSFILENAME, errorBuf) )
+		else if ( !FilterDB::Instance().LoadFromFile(directoryName, LBT_FILTERSFILENAME) )
 		{
 			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, errorBuf );
 			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, "LOBOT Filters load failed; visible equipment disabled for this run." );
 		}
-		else if ( !BodyTypeDB::Instance().LoadFromFile(directoryName, LBT_BODYTYPESFILENAME, errorBuf) )
+		else if ( !BodyTypeDB::Instance().LoadFromFile(directoryName, LBT_BODYTYPESFILENAME) )
 		{
 			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, errorBuf );
 			DebugMsg( TOPIC_JA2, DBG_LEVEL_1, "LOBOT BodyTypes load failed; visible equipment disabled for this run." );
