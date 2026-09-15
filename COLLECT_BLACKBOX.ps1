@@ -27,6 +27,7 @@ $work = Join-Path $env:TEMP ("VR_BlackBox_" + $stamp + "_" + $PID)
 $zip = Join-Path $OutputDirectory ("Vengeance_BlackBox_" + $stamp + ".zip")
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 $collectionErrors = New-Object System.Collections.Generic.List[string]
+$zipPartial = $null
 
 function Copy-EvidenceFile {
     param([string]$Path, [string]$Subdir = '')
