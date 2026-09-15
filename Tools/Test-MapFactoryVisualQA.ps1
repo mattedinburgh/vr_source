@@ -8,9 +8,15 @@ param(
 
     [int]$PatchSize = 64,
 
-    [double]$SevereDarkGrowth = 32.0,
+    [double]$SevereDarkGrowth = 12.0,
 
-    [double]$SevereEdgeGrowth = 18.0
+    [double]$SevereEdgeGrowth = 5.0,
+
+    [double]$SevereLumaDrop = 10.0,
+
+    [double]$QuietDarkMax = 8.0,
+
+    [double]$QuietEdgeMax = 10.0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -163,23 +169,34 @@ function Find-LocalHotspots {
         }
 
         $hits = @()
-        $patch = [Math]::Max(24, $PatchSize)
-        for ($y = 0; $y -lt $p.Height; $y += $patch) {
-            for ($x = 0; $x -lt $p.Width; $x += $patch) {
+        $patch = [Math]::Max(32, $PatchSize)
+        $stride = [Math]::Max(16, [int]($patch / 2))
+        for ($y = 0; $y -lt $p.Height; $y += $stride) {
+            for ($x = 0; $x -lt $p.Width; $x += $stride) {
                 $ps = Measure-Region -Bmp $p -X0 $x -Y0 $y -Width $patch -Height $patch
                 $rs = Measure-Region -Bmp $r -X0 $x -Y0 $y -Width $patch -Height $patch
                 $dDark = $rs.DarkPct - $ps.DarkPct
                 $dEdge = $rs.Edge - $ps.Edge
+                $dLuma = $rs.Luma - $ps.Luma
+                $quietBefore = $ps.DarkPct -le $QuietDarkMax -and $ps.Edge -le $QuietEdgeMax
 
-                # Local artifact oracle: a previously quiet patch acquiring both a
-                # large dark mass and much stronger edges is not a harmless palette
-                # change. It requires review even when global averages look healthy.
-                if ($dDark -ge $SevereDarkGrowth -and $dEdge -ge $SevereEdgeGrowth) {
+                # Local artifact oracle. Restrict the hard check to previously quiet
+                # regions, then require three independent signals:
+                #   1) a substantial new dark mass,
+                #   2) new structural edges,
+                #   3) a meaningful local luminance collapse.
+                # Overlapping windows prevent a small object escaping at patch seams.
+                if ($quietBefore -and
+                    $dDark -ge $SevereDarkGrowth -and
+                    $dEdge -ge $SevereEdgeGrowth -and
+                    $dLuma -le (-1.0 * $SevereLumaDrop)) {
                     $hits += [pscustomobject]@{
-                        X = $x; Y = $y
+                        X = $x; Y = $y; Size = $patch
                         DeltaDark = [Math]::Round($dDark, 2)
                         DeltaEdge = [Math]::Round($dEdge, 2)
+                        DeltaLuma = [Math]::Round($dLuma, 2)
                         PristineDark = [Math]::Round($ps.DarkPct, 2)
+                        PristineEdge = [Math]::Round($ps.Edge, 2)
                         RemasterDark = [Math]::Round($rs.DarkPct, 2)
                     }
                 }
@@ -284,7 +301,7 @@ foreach ($map in $Maps) {
         DeltaDarkPct = [Math]::Round($dDark, 2)
         LocalHotspots = $localHotspotCount
         HotspotPreview = (($localHotspots | Select-Object -First 8 | ForEach-Object {
-            "($($_.X),$($_.Y)) dark+$($_.DeltaDark) edge+$($_.DeltaEdge)"
+            "($($_.X),$($_.Y),$($_.Size)) dark+$($_.DeltaDark) edge+$($_.DeltaEdge) luma$($_.DeltaLuma)"
         }) -join ' ')
         Verdict = if ($pass) { 'PASS' } else { 'FAIL' }
         Reason = if ($pass) { 'balanced visual change' } else { ($reason -join '; ') }
