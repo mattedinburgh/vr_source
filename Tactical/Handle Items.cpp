@@ -246,7 +246,7 @@ INT32 HandleItem( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel, UINT16 usHa
 	{
 		pTargetSoldier = MercPtrs[ usSoldierIndex ];
 
-		if (fFromUI && Item[usHandItem].usItemClass != IC_MEDKIT)
+		if (fFromUI && Item[usHandItem].usItemClass != IC_MEDKIT && !HasItemFlag( usHandItem, CAMO_REMOVAL ))
 		{
 			INT32 sInteractiveGridNo;
 
@@ -289,7 +289,7 @@ INT32 HandleItem( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel, UINT16 usHa
 	// sevenfm: r8451
 	if ( fFromUI && pSoldier->bTeam == gbPlayerNum && pTargetSoldier && 
 		(pTargetSoldier->bTeam == gbPlayerNum || pTargetSoldier->aiData.bNeutral) && pTargetSoldier->ubBodyType != CROW && 
-		Item[usHandItem].usItemClass != IC_MEDKIT && !Item[usHandItem].gascan &&
+		Item[usHandItem].usItemClass != IC_MEDKIT && !HasItemFlag( usHandItem, CAMO_REMOVAL ) && !Item[usHandItem].gascan &&
 		!ItemCanBeAppliedToOthers( usHandItem ) )
 	{
 		if ( pSoldier->ubProfile != NO_PROFILE	)
@@ -801,7 +801,7 @@ INT32 HandleItem( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel, UINT16 usHa
 	}
 
 	//USING THE MEDKIT
-	if ( Item[ usHandItem ].usItemClass == IC_MEDKIT )
+	if ( Item[ usHandItem ].usItemClass == IC_MEDKIT || HasItemFlag( usHandItem, CAMO_REMOVAL ) )
 	{
 		// ATE: AI CANNOT GO THROUGH HERE!
 		INT32 usMapPos;
