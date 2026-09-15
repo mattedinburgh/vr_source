@@ -1133,3 +1133,33 @@ void VRAnalyticsTacticalActionRejected(
 
 	*trace = TacticalDecisionTrace();
 }
+
+
+void VR_TacticalTelemetryTurnStart( unsigned char team )
+{
+	FILE* file = BeginEvent( VR_ANALYTICS_TACTICAL, "turn_start", 0 );
+	if( !file )
+		return;
+
+	fprintf( file, ",\"team\":%u", (unsigned int)team );
+	EndEvent( file );
+}
+
+void VR_TacticalTelemetrySmoke(
+	unsigned char owner,
+	int gridNo,
+	unsigned short item,
+	signed char level )
+{
+	FILE* file = BeginEvent( VR_ANALYTICS_TACTICAL, "smoke_created", 0 );
+	if( !file )
+		return;
+
+	fprintf( file,
+		",\"owner\":%u,\"grid\":%d,\"item\":%u,\"level\":%d",
+		(unsigned int)owner,
+		gridNo,
+		(unsigned int)item,
+		(int)level );
+	EndEvent( file );
+}
