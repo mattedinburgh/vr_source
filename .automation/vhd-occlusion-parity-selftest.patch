@@ -1,0 +1,340 @@
+﻿diff --git a/.github/scripts/vhd-runtime-smoke.ps1 b/.github/scripts/vhd-runtime-smoke.ps1
+index 5edefd9d..00e56367 100644
+--- a/.github/scripts/vhd-runtime-smoke.ps1
++++ b/.github/scripts/vhd-runtime-smoke.ps1
+@@ -100,8 +100,10 @@ if (Test-Path $ddraw) {
+ $env:VR_VHD_RENDER_SCALE = '2'
+ $env:VR_VHD_NATIVE_CONTRACT_TEST = '1'
+ $env:VR_VHD_TILE_CACHE_TEST = '1'
++$env:VR_VHD_OCCLUSION_PARITY_TEST = '1'
+ $contractMarker = Join-Path $smokeRoot 'vhd-native-contract-selftest.ok'
+ $tileCacheMarker = Join-Path $smokeRoot 'vhd-tile-cache-selftest.ok'
++$occlusionParityMarker = Join-Path $smokeRoot 'vhd-occlusion-mask-parity-selftest.ok'
+ 
+ $exe = Join-Path $smokeRoot 'JA2_EN_Release.exe'
+ $started = Get-Date
+@@ -132,6 +134,10 @@ try {
+         throw "VHD tile cache self-test did not complete during startup."
+     }
+     Write-Host "VHD tile cache residency self-test passed."
++    if (-not (Test-Path -LiteralPath $occlusionParityMarker)) {
++        throw "VHD occlusion mask parity self-test did not complete during startup."
++    }
++    Write-Host "VHD occlusion mask parity self-test passed."
+ 
+     $survived = $true
+     $proc.Refresh()
+diff --git a/Init.cpp b/Init.cpp
+index 1fd23fcd..5ab11b5e 100644
+--- a/Init.cpp
++++ b/Init.cpp
+@@ -1631,6 +1631,12 @@ UINT32 InitializeJA2(void)
+ 		return( ERROR_SCREEN );
+ 	}
+ 
++	if ( !RunVHDOcclusionMaskParitySelfTest( ) )
++	{
++		SET_ERROR( "VHD occlusion mask parity self-test failed" );
++		return( ERROR_SCREEN );
++	}
++
+ 	InitMercPopupBox( );
+ 
+ 	// Set global volume
+diff --git a/TileEngine/renderworld.cpp b/TileEngine/renderworld.cpp
+index 6405fb4a..5fa3d47f 100644
+--- a/TileEngine/renderworld.cpp
++++ b/TileEngine/renderworld.cpp
+@@ -3893,6 +3893,278 @@ static BOOLEAN VHDLegacyOcclusionMaskAllows(
+ 			iX, iY, iSpriteLeft, iSpriteTop, iSpriteRight, iSpriteBottom );
+ }
+ 
++static void VHDOcclusionParityFillRect(
++	UINT8 *pMask, INT32 iMaskWidth, INT32 iMaskHeight, const SGPRect *pRect )
++{
++	if ( pMask == NULL || pRect == NULL )
++		return;
++
++	const INT32 iLeft = __max( 0, pRect->iLeft );
++	const INT32 iTop = __max( 0, pRect->iTop );
++	const INT32 iRight = __min( iMaskWidth, pRect->iRight );
++	const INT32 iBottom = __min( iMaskHeight, pRect->iBottom );
++	if ( iRight <= iLeft || iBottom <= iTop )
++		return;
++
++	for ( INT32 iY = iTop; iY < iBottom; ++iY )
++		memset( pMask + iY * iMaskWidth + iLeft, 1, (size_t)( iRight - iLeft ) );
++}
++
++static BOOLEAN VHDOcclusionParityRasterizeLegacyMask(
++	HVOBJECT hVObject, INT16 sXPos, INT16 sYPos, UINT16 usImageIndex,
++	BOOLEAN fFadeOnly, UINT8 *pMask, INT32 iMaskWidth, INT32 iMaskHeight )
++{
++	if ( hVObject == NULL || pMask == NULL || iMaskWidth <= 0 || iMaskHeight <= 0 )
++		return FALSE;
++
++	memset( pMask, 0, (size_t)iMaskWidth * (size_t)iMaskHeight );
++
++	SGPRect ClipRects[ OCCLUSION_BUBBLE_MAX_CLIP_RECTS ];
++	const UINT8 ubCount = BuildOcclusionBubbleOutsideEllipseClipRects(
++		hVObject, sXPos, sYPos, usImageIndex,
++		OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y,
++		ClipRects, OCCLUSION_BUBBLE_MAX_CLIP_RECTS );
++	for ( UINT8 ubRect = 0; ubRect < ubCount; ++ubRect )
++		VHDOcclusionParityFillRect( pMask, iMaskWidth, iMaskHeight, &ClipRects[ ubRect ] );
++
++	INT32 iLeft = 0, iTop = 0, iRight = 0, iBottom = 0;
++	if ( !GetOcclusionBubbleSpriteBounds(
++			hVObject, sXPos, sYPos, usImageIndex,
++			&iLeft, &iTop, &iRight, &iBottom ) )
++		return TRUE;
++
++	if ( fFadeOnly )
++	{
++		INT32 iY = __max(
++			iTop, (INT32)gsOcclusionBubbleScreenCenterY - OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
++		const INT32 iEndY = __min(
++			iBottom, (INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
++		while ( iY < iEndY &&
++				 ( ( iY - gsOcclusionBubbleScreenCenterY ) % 3 + 3 ) % 3 != 0 )
++			++iY;
++
++		for ( ; iY < iEndY; iY += 3 )
++		{
++			const INT32 iHalfWidth = OcclusionBubbleEllipseHalfWidthAtY(
++				iY, OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
++			if ( iHalfWidth <= 0 )
++				continue;
++
++			SGPRect Rect;
++			Rect.iLeft = __max( iLeft, (INT32)gsOcclusionBubbleScreenCenterX - iHalfWidth );
++			Rect.iRight = __min( iRight, (INT32)gsOcclusionBubbleScreenCenterX + iHalfWidth );
++			Rect.iTop = iY;
++			Rect.iBottom = __min( iY + 1, iBottom );
++			VHDOcclusionParityFillRect( pMask, iMaskWidth, iMaskHeight, &Rect );
++		}
++		return TRUE;
++	}
++
++	INT32 iY = __max(
++		iTop, (INT32)gsOcclusionBubbleScreenCenterY - OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
++	const INT32 iEndY = __min(
++		iBottom, (INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
++	if ( ( iY ^ gsOcclusionBubbleScreenCenterY ) & 1 )
++		++iY;
++
++	for ( ; iY < iEndY; iY += 2 )
++	{
++		const INT32 iOuterHalf = OcclusionBubbleEllipseHalfWidthAtY(
++			iY, OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
++		if ( iOuterHalf <= 0 )
++			continue;
++
++		const INT32 iInnerHalf = OcclusionBubbleEllipseHalfWidthAtY(
++			iY, OCCLUSION_BUBBLE_INNER_RADIUS_X, OCCLUSION_BUBBLE_INNER_RADIUS_Y );
++		const INT32 iOuterLeft = __max(
++			iLeft, (INT32)gsOcclusionBubbleScreenCenterX - iOuterHalf );
++		const INT32 iOuterRight = __min(
++			iRight, (INT32)gsOcclusionBubbleScreenCenterX + iOuterHalf );
++
++		SGPRect Rect;
++		Rect.iTop = iY;
++		Rect.iBottom = __min( iY + 1, iBottom );
++
++		if ( iInnerHalf > 0 )
++		{
++			const INT32 iInnerLeft = (INT32)gsOcclusionBubbleScreenCenterX - iInnerHalf;
++			const INT32 iInnerRight = (INT32)gsOcclusionBubbleScreenCenterX + iInnerHalf;
++			Rect.iLeft = iOuterLeft;
++			Rect.iRight = __min( iOuterRight, iInnerLeft );
++			VHDOcclusionParityFillRect( pMask, iMaskWidth, iMaskHeight, &Rect );
++			Rect.iLeft = __max( iOuterLeft, iInnerRight );
++			Rect.iRight = iOuterRight;
++			VHDOcclusionParityFillRect( pMask, iMaskWidth, iMaskHeight, &Rect );
++		}
++		else
++		{
++			Rect.iLeft = iOuterLeft;
++			Rect.iRight = iOuterRight;
++			VHDOcclusionParityFillRect( pMask, iMaskWidth, iMaskHeight, &Rect );
++		}
++	}
++
++	INT32 iInnerY = __max(
++		iTop, (INT32)gsOcclusionBubbleScreenCenterY - OCCLUSION_BUBBLE_INNER_RADIUS_Y );
++	const INT32 iInnerEndY = __min(
++		iBottom, (INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_INNER_RADIUS_Y );
++	while ( iInnerY < iInnerEndY &&
++			 ( ( iInnerY - gsOcclusionBubbleScreenCenterY ) % 4 + 4 ) % 4 != 0 )
++		++iInnerY;
++
++	for ( ; iInnerY < iInnerEndY; iInnerY += 4 )
++	{
++		const INT32 iInnerHalf = OcclusionBubbleEllipseHalfWidthAtY(
++			iInnerY, OCCLUSION_BUBBLE_INNER_RADIUS_X, OCCLUSION_BUBBLE_INNER_RADIUS_Y );
++		if ( iInnerHalf <= 0 )
++			continue;
++
++		SGPRect Rect;
++		Rect.iLeft = __max( iLeft, (INT32)gsOcclusionBubbleScreenCenterX - iInnerHalf );
++		Rect.iRight = __min( iRight, (INT32)gsOcclusionBubbleScreenCenterX + iInnerHalf );
++		Rect.iTop = iInnerY;
++		Rect.iBottom = __min( iInnerY + 1, iBottom );
++		VHDOcclusionParityFillRect( pMask, iMaskWidth, iMaskHeight, &Rect );
++	}
++	return TRUE;
++}
++
++typedef struct
++{
++	INT16 sX, sY, sOffsetX, sOffsetY;
++	UINT16 usWidth, usHeight;
++} VHD_OCCLUSION_PARITY_CASE;
++
++static BOOLEAN VHDOcclusionParityRunCase(
++	const VHD_OCCLUSION_PARITY_CASE *pCase, UINT32 uiCase,
++	BOOLEAN fFadeOnly, UINT8 *pReferenceMask, INT32 iMaskWidth, INT32 iMaskHeight )
++{
++	ETRLEObject Region;
++	memset( &Region, 0, sizeof(Region) );
++	Region.sOffsetX = pCase->sOffsetX;
++	Region.sOffsetY = pCase->sOffsetY;
++	Region.usWidth = pCase->usWidth;
++	Region.usHeight = pCase->usHeight;
++
++	SGPVObject Object;
++	memset( &Object, 0, sizeof(Object) );
++	Object.pETRLEObject = &Region;
++	Object.usNumberOfObjects = 1;
++	Object.ubVHDAssetScale = GetVHDRenderScale();
++
++	if ( !VHDOcclusionParityRasterizeLegacyMask(
++			&Object, pCase->sX, pCase->sY, 0, fFadeOnly,
++			pReferenceMask, iMaskWidth, iMaskHeight ) )
++		return FALSE;
++
++	INT32 iLeft = 0, iTop = 0, iRight = 0, iBottom = 0;
++	if ( !GetOcclusionBubbleSpriteBounds(
++			&Object, pCase->sX, pCase->sY, 0,
++			&iLeft, &iTop, &iRight, &iBottom ) )
++		return TRUE;
++
++	for ( INT32 iY = iTop; iY < iBottom; ++iY )
++	{
++		for ( INT32 iX = iLeft; iX < iRight; ++iX )
++		{
++			const BOOLEAN fExpected = pReferenceMask[ iY * iMaskWidth + iX ] != 0;
++			const BOOLEAN fActual = VHDLegacyOcclusionMaskAllows(
++				iX, iY, iLeft, iTop, iRight, iBottom, fFadeOnly );
++			if ( fExpected != fActual )
++			{
++				BlackBoxEvent( "VHD_OCCLUSION_PARITY",
++					"mismatch scale=%u case=%u fade=%u x=%d y=%d expected=%u actual=%u bounds=%d,%d,%d,%d",
++					(UINT32)GetVHDRenderScale(), uiCase, fFadeOnly ? 1u : 0u,
++					iX, iY, fExpected ? 1u : 0u, fActual ? 1u : 0u,
++					iLeft, iTop, iRight, iBottom );
++				return FALSE;
++			}
++		}
++	}
++	return TRUE;
++}
++
++BOOLEAN RunVHDOcclusionMaskParitySelfTest( void )
++{
++	const CHAR8 *pSelfTest = getenv( "VR_VHD_OCCLUSION_PARITY_TEST" );
++	if ( pSelfTest == NULL || strcmp( pSelfTest, "1" ) != 0 )
++		return TRUE;
++
++	const INT32 iMaskWidth = 1024;
++	const INT32 iMaskHeight = 768;
++	UINT8 *pReferenceMask = (UINT8*)malloc( (size_t)iMaskWidth * (size_t)iMaskHeight );
++	if ( pReferenceMask == NULL )
++		return FALSE;
++
++	const UINT8 ubOldScale = GetVHDRenderScale();
++	const SGPRect OldClip = gClippingRect;
++	const BOOLEAN fOldActive = gfOcclusionBubbleActive;
++	const INT16 sOldCenterX = gsOcclusionBubbleScreenCenterX;
++	const INT16 sOldCenterY = gsOcclusionBubbleScreenCenterY;
++
++	gClippingRect.iLeft = 0;
++	gClippingRect.iTop = 0;
++	gClippingRect.iRight = iMaskWidth;
++	gClippingRect.iBottom = iMaskHeight;
++	gfOcclusionBubbleActive = TRUE;
++	gsOcclusionBubbleScreenCenterX = 512;
++	gsOcclusionBubbleScreenCenterY = 384;
++
++	VHD_OCCLUSION_PARITY_CASE Cases[7];
++	memset( Cases, 0, sizeof(Cases) );
++	Cases[0].sX = 12;  Cases[0].sY = 4;   Cases[0].usWidth = 1000; Cases[0].usHeight = 760;
++	Cases[1].sX = 0;   Cases[1].sY = 170; Cases[1].usWidth = 420; Cases[1].usHeight = 430;
++	Cases[2].sX = 700; Cases[2].sY = 160; Cases[2].usWidth = 324; Cases[2].usHeight = 470;
++	Cases[3].sX = 250; Cases[3].sY = 0;   Cases[3].usWidth = 540; Cases[3].usHeight = 280;
++	Cases[4].sX = 230; Cases[4].sY = 550; Cases[4].usWidth = 600; Cases[4].usHeight = 218;
++	Cases[5].sX = 0;   Cases[5].sY = 0;   Cases[5].usWidth = 48; Cases[5].usHeight = 48;
++	Cases[6].sX = 350; Cases[6].sY = 180; Cases[6].sOffsetX = -37; Cases[6].sOffsetY = 29;
++	Cases[6].usWidth = 390; Cases[6].usHeight = 410;
++
++	BOOLEAN fPassed = TRUE;
++	UINT32 uiCasesRun = 0;
++	for ( UINT8 ubScaleIndex = 0; ubScaleIndex < 2 && fPassed; ++ubScaleIndex )
++	{
++		if ( !SetVHDRenderScale( ubScaleIndex == 0 ? 2 : 4 ) )
++		{
++			fPassed = FALSE;
++			break;
++		}
++		for ( UINT32 uiCase = 0; uiCase < 7 && fPassed; ++uiCase )
++		{
++			for ( UINT8 ubFade = 0; ubFade < 2; ++ubFade )
++			{
++				++uiCasesRun;
++				if ( !VHDOcclusionParityRunCase(
++						&Cases[uiCase], uiCase, ubFade != 0,
++						pReferenceMask, iMaskWidth, iMaskHeight ) )
++				{
++					fPassed = FALSE;
++					break;
++				}
++			}
++		}
++	}
++
++	SetVHDRenderScale( ubOldScale );
++	gClippingRect = OldClip;
++	gfOcclusionBubbleActive = fOldActive;
++	gsOcclusionBubbleScreenCenterX = sOldCenterX;
++	gsOcclusionBubbleScreenCenterY = sOldCenterY;
++	free( pReferenceMask );
++
++	if ( !fPassed )
++		return FALSE;
++
++	FILE *pMarker = fopen( "vhd-occlusion-mask-parity-selftest.ok", "w" );
++	if ( pMarker == NULL )
++		return FALSE;
++	fprintf( pMarker, "VHD occlusion mask parity passed: cases=%u scales=2,4\n", uiCasesRun );
++	fclose( pMarker );
++	BlackBoxEvent( "VHD_OCCLUSION_PARITY", "passed cases=%u scales=2,4", uiCasesRun );
++	return TRUE;
++}
++
+ static void BlitOcclusionBubble8BitWallZStrip(
+ 	UINT16 *pDestBuf, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer,
+ 	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
+diff --git a/TileEngine/renderworld.h b/TileEngine/renderworld.h
+index 02537da7..d1e502cb 100644
+--- a/TileEngine/renderworld.h
++++ b/TileEngine/renderworld.h
+@@ -196,6 +196,7 @@ void ConcealAllWalls(void);
+ BOOLEAN ApplyScrolling( INT16 sTempRenderCenterX, INT16 sTempRenderCenterY, BOOLEAN fForceAdjust, BOOLEAN fCheckOnly );
+ 
+ BOOLEAN Blt8BPPDataTo16BPPBufferTransZIncClip( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion);
++BOOLEAN RunVHDOcclusionMaskParitySelfTest( void );
+ 
+ void RenderStaticWorldRect(INT16, INT16, INT16, INT16, BOOLEAN );
+ void RenderMarkedWorld(void);
+
+[executed on device: MSI (e4de0d4a-2679-4f35-acaf-b6552e7ec980)]
