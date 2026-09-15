@@ -10,6 +10,7 @@ on:
       - 'sgp/**'
       - 'Utils/**'
       - 'Tools/VRMapDisplayRouting.ps1'
+      - 'MapPreviewTrigger/C5_RENDER.txt'
   workflow_dispatch:
 
 permissions:
@@ -90,6 +91,17 @@ jobs:
           $sha = (& $git -C $gamedir rev-parse HEAD).Trim()
           $c5 = Join-Path $gamedir 'Data-Maps-Tiles\maps\c5.dat'
           if (-not (Test-Path $c5)) { throw "c5.dat was not materialised: $c5" }
+
+          # Fail before an expensive MapEditor rebuild when no C5 true-colour
+          # payload exists yet. Native VHD2 is the preferred pilot location;
+          # legacy Tilesets/18 B1TC remains accepted for compatibility.
+          $nativeVhd2 = @(Get-ChildItem -LiteralPath (Join-Path $gamedir 'Data-Maps-Tiles\VHD2\TILESETS\18') -Filter '*.b1tc' -File -ErrorAction SilentlyContinue)
+          $legacyTc = @(Get-ChildItem -LiteralPath (Join-Path $gamedir 'Data-Maps-Tiles\Tilesets\18') -Filter '*.b1tc' -File -ErrorAction SilentlyContinue)
+          if (($nativeVhd2.Count + $legacyTc.Count) -eq 0) {
+            throw 'C5 visual QA preflight: no native VHD2/B1TC C5 assets are present on feature/vhd-renderer-test.'
+          }
+          Write-Host "C5 true-colour preflight: native VHD2=$($nativeVhd2.Count), legacy B1TC=$($legacyTc.Count)"
+
           "sha=$sha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "vr_gamedir SHA: $sha"
 
