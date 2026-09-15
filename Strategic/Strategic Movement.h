@@ -72,11 +72,8 @@ typedef struct ENEMYGROUP
 	UINT8 numTanks;
 	// Persistent operational identity/state. These fields exactly consume the
 	// former 19 padding bytes, preserving sizeof(ENEMYGROUP) and save layout.
-	union
-	{
-		struct { UINT8 ubFormationIDLo; UINT8 ubFormationIDHi; };
-		UINT16 usFormationID;
-	};
+	UINT8 ubFormationIDLo;
+	UINT8 ubFormationIDHi;
 	UINT8 ubOperationalMagic0;
 	UINT8 ubOperationalMagic1;
 	UINT8 ubOperationalMagic2;
@@ -90,11 +87,8 @@ typedef struct ENEMYGROUP
 	UINT8 ubOperationalLastKnownPlayerSectorID;
 	UINT8 ubOperationalLastDecisionReason;
 	UINT8 ubOperationalRetreatCount;
-	union
-	{
-		struct { UINT8 ubOperationalFlagsLo; UINT8 ubOperationalFlagsHi; };
-		UINT16 usOperationalFlags;
-	};
+	UINT8 ubOperationalFlagsLo;
+	UINT8 ubOperationalFlagsHi;
 	UINT8 ubOperationalLastKnownPlayerStrength;
 	UINT8 ubOperationalLastKnownMilitiaStrength;
 }ENEMYGROUP;
