@@ -106,6 +106,21 @@ static UINT32 EstimateTileImageryResidentBytes( PTILE_IMAGERY pImagery )
 		}
 	}
 
+	if ( hVObject->ppZStripInfo != NULL && hVObject->usNumberOfObjects > 0 )
+	{
+		uiBytes = TileCacheSaturatingAdd( uiBytes,
+			TileCacheSaturatingMul( (UINT32)hVObject->usNumberOfObjects, (UINT32)sizeof( ZStripInfo * ) ) );
+		for ( UINT16 usObject = 0; usObject < hVObject->usNumberOfObjects; ++usObject )
+		{
+			const ZStripInfo *pZStrip = hVObject->ppZStripInfo[ usObject ];
+			if ( pZStrip == NULL )
+				continue;
+			uiBytes = TileCacheSaturatingAdd( uiBytes, (UINT32)sizeof( ZStripInfo ) );
+			if ( pZStrip->pbZChange != NULL )
+				uiBytes = TileCacheSaturatingAdd( uiBytes, (UINT32)pZStrip->ubNumberOfZChanges * (UINT32)sizeof( INT8 ) );
+		}
+	}
+
 	return uiBytes;
 }
 
