@@ -1,5 +1,5 @@
 San Mona C5 graphics-only engine validation
-requested_utc=2026-09-14T20:39:00Z
+requested_utc=2026-09-15T08:34:00Z
 rule=do not modify c5.dat or gameplay metadata
-gamedir_target=e5e9a2b90d13f95849263d68d85fd324574e240c
-qa=v2.3 material redraw + dominant flat roof + exact-JSD visual override + current build-info quoting fix
+gamedir_target=2e4a1fc9e8d129c284444610d69bc2f0b28a7a24
+qa=v3.1 native VHD2 structural pilot; force VR_VHD_RENDER_SCALE=2 in MapEditor; unchanged C5 map

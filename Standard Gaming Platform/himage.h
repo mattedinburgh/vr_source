@@ -163,6 +163,11 @@ BOOLEAN DestroyImage( HIMAGE hImage );
 // and the image does not contain that data, no error is raised
 BOOLEAN ReleaseImageData( HIMAGE hImage, UINT16 fContents );
 
+// Vengeance HD: scale only image pixels/region offsets while preserving logical metadata.
+// Used as a visual fallback when no native VHD2/VHD4 asset exists.
+BOOLEAN ScaleImageNearestForVHD( HIMAGE hImage, UINT8 ubScale );
+
+
 // This function will attept to Load data from an existing image object's filename
 // In this way, dynamic loading of image data can be done
 BOOLEAN LoadImageData( HIMAGE hImage, UINT16 fContents );

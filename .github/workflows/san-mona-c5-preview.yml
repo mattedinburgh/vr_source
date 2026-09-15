@@ -1,12 +1,17 @@
-name: San Mona C5 visual QA
+name: VHD San Mona C5 visual QA
 
 on:
   push:
     branches:
-      - install/all-2026-09-12
+      - feature/vhd-renderer
     paths:
+      - '.github/workflows/san-mona-c5-preview.yml'
+      - 'TileEngine/**'
+      - 'Standard Gaming Platform/**'
+      - 'sgp/**'
+      - 'Utils/**'
+      - 'Tools/VRMapDisplayRouting.ps1'
       - 'MapPreviewTrigger/C5_RENDER.txt'
-      - '.github/workflows/autonomous-map-preview.yml'
   workflow_dispatch:
 
 permissions:
@@ -62,12 +67,54 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $git -C $env:GITHUB_WORKSPACE remote add origin "https://x-access-token:$env:GH_TOKEN@github.com/mattedinburgh/vr_source.git"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $git -C $env:GITHUB_WORKSPACE fetch origin install/all-2026-09-12
+          & $git -C $env:GITHUB_WORKSPACE fetch origin feature/vhd-renderer
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $git -C $env:GITHUB_WORKSPACE clean -fdx
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $git -C $env:GITHUB_WORKSPACE checkout -f -B render-source '${{ github.sha }}'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Reuse cached MapEditor when source tree is unchanged
+        id: editor_cache
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $git='${{ steps.git.outputs.path }}'
+          $cache='C:\VENGENCE\VHD_RENDER_CACHE'
+          $cachedExe=Join-Path $cache 'MapEditor_EN_Release.exe'
+          $cachedFingerprintFile=Join-Path $cache 'source_fingerprint.txt'
+
+          $treeLines=& $git -C $env:GITHUB_WORKSPACE ls-tree -r HEAD
+          if($LASTEXITCODE-ne0){throw 'Could not enumerate source tree for MapEditor cache fingerprint.'}
+          $relevant=$treeLines | Where-Object {
+            $_ -notmatch '^[^\t]+\t\.github/' -and
+            $_ -notmatch '^[^\t]+\tMapPreviewTrigger/'
+          }
+          $joined=($relevant -join "`n")
+          $sha=[System.Security.Cryptography.SHA256]::Create()
+          try {
+            $bytes=[Text.Encoding]::UTF8.GetBytes($joined)
+            $fingerprint=([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant()
+          } finally { $sha.Dispose() }
+
+          $hit=$false
+          if((Test-Path $cachedExe) -and (Test-Path $cachedFingerprintFile)){
+            $cachedFingerprint=(Get-Content $cachedFingerprintFile -Raw).Trim()
+            $hit=($cachedFingerprint -eq $fingerprint)
+          }
+
+          if($hit){
+            $bin=Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013'
+            New-Item -ItemType Directory -Force -Path $bin | Out-Null
+            Copy-Item -LiteralPath $cachedExe -Destination (Join-Path $bin 'MapEditor_EN_Release.exe') -Force
+            Write-Host "MapEditor cache HIT: $fingerprint"
+            "hit=true"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "fingerprint=$fingerprint"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          } else {
+            Write-Host "MapEditor cache MISS: $fingerprint"
+            "hit=false"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "fingerprint=$fingerprint"|Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
 
       - name: Fetch only map assets from vr_gamedir
         id: gamedir
@@ -76,21 +123,33 @@ jobs:
           $git = '${{ steps.git.outputs.path }}'
           $gamedir = Join-Path $env:GITHUB_WORKSPACE '_vr_gamedir'
           if (Test-Path $gamedir) { Remove-Item -Recurse -Force $gamedir }
-          & $git -c core.longpaths=true clone --depth 1 --single-branch --branch install/all-2026-09-12 --filter=blob:none --no-checkout https://github.com/mattedinburgh/vr_gamedir.git $gamedir
+          & $git -c core.longpaths=true clone --depth 1 --single-branch --branch feature/vhd-renderer-test --filter=blob:none --no-checkout https://github.com/mattedinburgh/vr_gamedir.git $gamedir
           if ($LASTEXITCODE -ne 0) { throw "Partial clone failed with exit code $LASTEXITCODE" }
           & $git -C $gamedir sparse-checkout init --cone
           if ($LASTEXITCODE -ne 0) { throw "sparse-checkout init failed with exit code $LASTEXITCODE" }
           & $git -C $gamedir sparse-checkout set Data-Maps-Tiles
           if ($LASTEXITCODE -ne 0) { throw "sparse-checkout set failed with exit code $LASTEXITCODE" }
-          & $git -C $gamedir checkout install/all-2026-09-12
+          & $git -C $gamedir checkout feature/vhd-renderer-test
           if ($LASTEXITCODE -ne 0) { throw "gamedir checkout failed with exit code $LASTEXITCODE" }
           $sha = (& $git -C $gamedir rev-parse HEAD).Trim()
           $c5 = Join-Path $gamedir 'Data-Maps-Tiles\maps\c5.dat'
           if (-not (Test-Path $c5)) { throw "c5.dat was not materialised: $c5" }
+
+          # Fail before an expensive MapEditor rebuild when no C5 true-colour
+          # payload exists yet. Native VHD2 is the preferred pilot location;
+          # legacy Tilesets/18 B1TC remains accepted for compatibility.
+          $nativeVhd2 = @(Get-ChildItem -LiteralPath (Join-Path $gamedir 'Data-Maps-Tiles\VHD2\TILESETS\18') -Filter '*.b1tc' -File -ErrorAction SilentlyContinue)
+          $legacyTc = @(Get-ChildItem -LiteralPath (Join-Path $gamedir 'Data-Maps-Tiles\Tilesets\18') -Filter '*.b1tc' -File -ErrorAction SilentlyContinue)
+          if (($nativeVhd2.Count + $legacyTc.Count) -eq 0) {
+            throw 'C5 visual QA preflight: no native VHD2/B1TC C5 assets are present on feature/vhd-renderer-test.'
+          }
+          Write-Host "C5 true-colour preflight: native VHD2=$($nativeVhd2.Count), legacy B1TC=$($legacyTc.Count)"
+
           "sha=$sha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "vr_gamedir SHA: $sha"
 
       - name: Retarget VS2013 projects to v120
+        if: steps.editor_cache.outputs.hit != 'true'
         shell: powershell
         run: |
           $changed = 0
@@ -106,6 +165,7 @@ jobs:
           Write-Host "Retargeted $changed project file(s) to v120."
 
       - name: Find MSBuild
+        if: steps.editor_cache.outputs.hit != 'true'
         id: msbuild
         shell: powershell
         run: |
@@ -125,12 +185,30 @@ jobs:
           Write-Host "Using MSBuild: $msbuild"
 
       - name: Build MapEditor
+        if: steps.editor_cache.outputs.hit != 'true'
         shell: powershell
         run: |
           & '${{ steps.msbuild.outputs.path }}' '.\ja2_VS2013.sln' /m /t:ja2 /p:Configuration=MapEditor /p:Platform=Win32
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $editor = Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\MapEditor_EN_Release.exe'
           if (-not (Test-Path $editor)) { throw "Expected MapEditor was not built: $editor" }
+
+      - name: Refresh persistent MapEditor cache after rebuild
+        if: steps.editor_cache.outputs.hit != 'true' && success()
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\MapEditor_EN_Release.exe'
+          if(-not(Test-Path $exe)){throw "MapEditor cache refresh missing binary: $exe"}
+          $cache='C:\VENGENCE\VHD_RENDER_CACHE'
+          New-Item -ItemType Directory -Force -Path $cache | Out-Null
+          Copy-Item -LiteralPath $exe -Destination (Join-Path $cache 'MapEditor_EN_Release.exe') -Force
+          [IO.File]::WriteAllText(
+            (Join-Path $cache 'source_fingerprint.txt'),
+            '${{ steps.editor_cache.outputs.fingerprint }}',
+            (New-Object Text.UTF8Encoding($false))
+          )
+          Write-Host "Refreshed persistent MapEditor cache: ${{ steps.editor_cache.outputs.fingerprint }}"
 
       - name: Prepare Vengeance render sandbox
         shell: powershell
@@ -157,19 +235,6 @@ jobs:
 
             Remove-Item -LiteralPath $Path -Recurse -Force
           }
-
-          # Cancelled self-hosted runs can leave old render sandboxes behind. Since this
-          # workflow is serialized by ja2-render-shared, no other A3 render can be using
-          # one now. Reclaim those stale folders before allocating anything new.
-          Get-ChildItem -LiteralPath 'C:\VENGENCE' -Force -Directory -Filter 'JA2_RENDER_SANDBOX_*' -ErrorAction SilentlyContinue |
-            ForEach-Object {
-              try {
-                Write-Host "Reclaiming stale render sandbox: $($_.FullName)"
-                Remove-SandboxSafely -Path $_.FullName
-              } catch {
-                Write-Warning "Could not fully remove stale sandbox $($_.FullName): $($_.Exception.Message)"
-              }
-            }
 
           Remove-SandboxSafely -Path $sandbox
           New-Item -ItemType Directory -Force -Path $sandbox | Out-Null
@@ -227,8 +292,8 @@ jobs:
           }
 
           # Use the freshly fetched vr_gamedir map/tile layer, not the possibly stale
-          # live Data-Maps-Tiles directory. It is disposable, so pass 2 may safely
-          # overlay A3_REMASTERED.dat there without touching the live installation.
+          # live Data-Maps-Tiles directory. The VHD C5 graphics test layer is disposable
+          # and isolated from the live installation.
           $mapLayer = Join-Path $gamedir 'Data-Maps-Tiles'
           if (-not (Test-Path (Join-Path $mapLayer 'maps\c5.dat'))) {
             throw "Fresh vr_gamedir C5 map layer is incomplete: $mapLayer"
@@ -288,7 +353,7 @@ jobs:
 
           $previewDir = Join-Path $sandbox 'MAP_PREVIEWS'
           New-Item -ItemType Directory -Force -Path $previewDir | Out-Null
-          Write-Host 'Vengeance render sandbox ready (junction-backed; live data remains read-only).'
+          Write-Host 'VHD C5 render sandbox ready (private config/profile/map layer; live installation is not modified).'
           Write-Host "Editor: $editor"
           Write-Host "VFS: $vfsIni"
           Write-Host "Map layer: $mapLayer"
@@ -308,7 +373,12 @@ jobs:
 
           . (Join-Path $env:GITHUB_WORKSPACE 'Tools\VRMapDisplayRouting.ps1')
 
-          Write-Host "Launching unchanged C5 through Vengeance MapEditor..."
+          # MapEditor must run in the VHD2 renderer mode as well as the game.
+          # The environment override is authoritative even if an editor-specific
+          # config path does not load the same Ja2_Options.INI stack as normal play.
+          $env:VR_VHD_RENDER_SCALE = '2'
+          Write-Host "VHD render scale override: $env:VR_VHD_RENDER_SCALE"
+          Write-Host "Launching unchanged C5 through VHD Vengeance MapEditor from isolated VFS working directory: $sandbox"
           $p = Start-VRProcessOnSecondary -FilePath $editor -ArgumentList "-MAPSHOT=c5.dat" -WorkingDirectory $sandbox -RequireSecondary
           $deadline = (Get-Date).AddSeconds(240)
           $lastStatus = ''
@@ -351,10 +421,21 @@ jobs:
           if (-not (Test-Path $visualLog)) { throw 'C5 visual/JSD diagnostic log was not produced.' }
 
           $log = Get-Content $visualLog
-          $trueColor = @($log | Where-Object { $_ -match '^IMAGE_TRUECOLOR ' })
-          Write-Host "True-colour tile surfaces loaded: $($trueColor.Count)"
+          $trueColor = @($log | Where-Object { $_ -match '^(IMAGE_TRUECOLOR|IMAGE_VHD_NATIVE) ' })
+          $vhdFallback = @($log | Where-Object { $_ -match '^IMAGE_VHD_FALLBACK ' })
+          $legacyAt2x = @($log | Where-Object { $_ -match '^IMAGE_LEGACY ' })
+          Write-Host "Native/true-colour tile surfaces loaded: $($trueColor.Count)"
+          Write-Host "Scaled legacy VHD fallback surfaces loaded: $($vhdFallback.Count)"
+          Write-Host "Unscaled legacy surfaces while forcing VHD2: $($legacyAt2x.Count)"
           if ($trueColor.Count -lt 4) {
-            throw "Expected C5 B1TC visual replacements were not active (only $($trueColor.Count) true-colour surfaces)."
+            throw "Expected C5 native VHD2/B1TC visual replacements were not active (only $($trueColor.Count) native/true-colour surfaces)."
+          }
+          if ($legacyAt2x.Count -gt 0) {
+            $examples = ($legacyAt2x | Select-Object -First 6) -join '; '
+            throw "VHD2 fallback invariant failed: $($legacyAt2x.Count) traced C5 surfaces remained unscaled. Examples: $examples"
+          }
+          if ($vhdFallback.Count -lt 8) {
+            throw "VHD2 fallback invariant failed: expected scaled legacy fallback assets, found only $($vhdFallback.Count)."
           }
 
           $structural = @(

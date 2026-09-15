@@ -4458,12 +4458,12 @@ void RenderTopmostFlashingItems( )
 					FloatFromCellToScreenCoordinates( dOffsetX, dOffsetY, &dTempX_S, &dTempY_S );
 
 					sXPos = ( ( gsVIEWPORT_END_X - gsVIEWPORT_START_X ) /2 ) + (INT16)dTempX_S;
-					sYPos = ( ( gsVIEWPORT_END_Y - gsVIEWPORT_START_Y ) /2 ) + (INT16)dTempY_S - gpWorldLevelData[ pItemPool->sGridNo ].sHeight;
+					sYPos = ( ( gsVIEWPORT_END_Y - gsVIEWPORT_START_Y ) /2 ) + (INT16)dTempY_S - VHDScaleScreenValue( gpWorldLevelData[ pItemPool->sGridNo ].sHeight );
 
 					// Adjust for offset position on screen
 					sXPos -= gsRenderWorldOffsetX;
 					sYPos -= gsRenderWorldOffsetY;
-					sYPos -= pItemPool->bRenderZHeightAboveLevel;
+					sYPos -= VHDScaleScreenValue( pItemPool->bRenderZHeightAboveLevel );
 
 					// Adjust for render height
 					sYPos += gsRenderHeight;
@@ -4471,7 +4471,7 @@ void RenderTopmostFlashingItems( )
 					// Adjust for level height
 					if ( pItemPool->ubLevel )
 					{
-						sYPos -= ROOF_LEVEL_HEIGHT;
+						sYPos -= VHDScaleScreenValue( ROOF_LEVEL_HEIGHT );
 					}
 
 					// Center circle!

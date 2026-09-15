@@ -585,11 +585,11 @@ BOOLEAN IsGridNoInScreenRect( INT32 sGridNo, SGPRect *pRect )
 				return( TRUE );
 			}
 
-			iXTrav += WORLD_TILE_X;
+			iXTrav += VHDScaleScreenValue( WORLD_TILE_X );
 
 		} while( iXTrav < pRect->iRight );
 
-		iYTrav += WORLD_TILE_Y;
+		iYTrav += VHDScaleScreenValue( WORLD_TILE_Y );
 		iXTrav = pRect->iLeft;
 
 	} while( iYTrav < pRect->iBottom );
@@ -612,8 +612,8 @@ void GetSoldierScreenRect( SOLDIERTYPE *pSoldier, SGPRect *pRect )
 		{
 			pRect->iLeft		= sMercScreenX;
 			pRect->iTop			= sMercScreenY;
-			pRect->iBottom	= sMercScreenY + 5;
-			pRect->iRight		= sMercScreenX + 5;
+			pRect->iBottom	= sMercScreenY + VHDScaleScreenValue( 5 );
+			pRect->iRight		= sMercScreenX + VHDScaleScreenValue( 5 );
 
 			return;
 		}
@@ -624,8 +624,8 @@ void GetSoldierScreenRect( SOLDIERTYPE *pSoldier, SGPRect *pRect )
 
 		pRect->iLeft		= sMercScreenX;
 		pRect->iTop			= sMercScreenY;
-		pRect->iBottom	= sMercScreenY + pSoldier->sBoundingBoxHeight;
-		pRect->iRight		= sMercScreenX + pSoldier->sBoundingBoxWidth;
+		pRect->iBottom	= sMercScreenY + VHDScaleScreenValue( pSoldier->sBoundingBoxHeight );
+		pRect->iRight		= sMercScreenX + VHDScaleScreenValue( pSoldier->sBoundingBoxWidth );
 }
 
 void GetSoldierAnimDims( SOLDIERTYPE *pSoldier, INT16 *psHeight, INT16 *psWidth )
@@ -646,8 +646,8 @@ void GetSoldierAnimDims( SOLDIERTYPE *pSoldier, INT16 *psHeight, INT16 *psWidth 
 	// depending on the frame and the value returned here will vary thusly. However, for the
 	// uses of this function, we should be able to use just the first frame...
 
-	*psHeight					= (INT16)pSoldier->sBoundingBoxHeight;
-	*psWidth					= (INT16)pSoldier->sBoundingBoxWidth;
+	*psHeight					= VHDScaleScreenValue( (INT16)pSoldier->sBoundingBoxHeight );
+	*psWidth					= VHDScaleScreenValue( (INT16)pSoldier->sBoundingBoxWidth );
 }
 
 void GetSoldierAnimOffsets( SOLDIERTYPE *pSoldier, INT16 *sOffsetX, INT16 *sOffsetY )
@@ -664,8 +664,8 @@ void GetSoldierAnimOffsets( SOLDIERTYPE *pSoldier, INT16 *sOffsetX, INT16 *sOffs
 		return;
 	}
 
-	*sOffsetX					= (INT16)pSoldier->sBoundingBoxOffsetX;
-	*sOffsetY					= (INT16)pSoldier->sBoundingBoxOffsetY;
+	*sOffsetX					= VHDScaleScreenValue( (INT16)pSoldier->sBoundingBoxOffsetX );
+	*sOffsetY					= VHDScaleScreenValue( (INT16)pSoldier->sBoundingBoxOffsetY );
 }
 
 void GetSoldierScreenPos( SOLDIERTYPE *pSoldier, INT16 *psScreenX, INT16 *psScreenY )
@@ -699,7 +699,7 @@ void GetSoldierScreenPos( SOLDIERTYPE *pSoldier, INT16 *psScreenX, INT16 *psScre
 		// Adjust starting screen coordinates
 		sMercScreenX	-= gsRenderWorldOffsetX;
 		sMercScreenY	-= gsRenderWorldOffsetY;
-		sMercScreenY	-= gpWorldLevelData[ pSoldier->sGridNo ].sHeight;
+		sMercScreenY	-= VHDScaleScreenValue( gpWorldLevelData[ pSoldier->sGridNo ].sHeight );
 
 		// Adjust for render height
 		sMercScreenY += gsRenderHeight;
@@ -707,11 +707,11 @@ void GetSoldierScreenPos( SOLDIERTYPE *pSoldier, INT16 *psScreenX, INT16 *psScre
 		// Add to start position of dest buffer
 		//sMercScreenX += pTrav->sOffsetX;
 		//sMercScreenY += pTrav->sOffsetY;
-		sMercScreenX += pSoldier->sBoundingBoxOffsetX;
-		sMercScreenY += pSoldier->sBoundingBoxOffsetY;
+		sMercScreenX += VHDScaleScreenValue( pSoldier->sBoundingBoxOffsetX );
+		sMercScreenY += VHDScaleScreenValue( pSoldier->sBoundingBoxOffsetY );
 
 
-		sMercScreenY -= pSoldier->sHeightAdjustment;
+		sMercScreenY -= VHDScaleScreenValue( pSoldier->sHeightAdjustment );
 
 		*psScreenX = sMercScreenX;
 		*psScreenY = sMercScreenY;
@@ -749,9 +749,9 @@ void GetSoldierTRUEScreenPos( SOLDIERTYPE *pSoldier, INT16 *psScreenX, INT16 *ps
 
 		// Adjust for render height
 		sMercScreenY += gsRenderHeight;
-		sMercScreenY	-= gpWorldLevelData[ pSoldier->sGridNo ].sHeight;
+		sMercScreenY	-= VHDScaleScreenValue( gpWorldLevelData[ pSoldier->sGridNo ].sHeight );
 
-		sMercScreenY -= pSoldier->sHeightAdjustment;
+		sMercScreenY -= VHDScaleScreenValue( pSoldier->sHeightAdjustment );
 
 
 		*psScreenX = sMercScreenX;
@@ -764,11 +764,11 @@ BOOLEAN GridNoOnScreen( INT32 sGridNo )
 	INT16 sNewCenterWorldX, sNewCenterWorldY;
 	INT16 sWorldX;
 	INT16 sWorldY;
-	INT16 sAllowance = 20;
+	INT16 sAllowance = VHDScaleScreenValue( 20 );
 
 	if ( gsVIEWPORT_WINDOW_START_Y == 20 )
 	{
-	sAllowance = 40;
+	sAllowance = VHDScaleScreenValue( 40 );
 	}
 
 	ConvertGridNoToXY( sGridNo, &sNewCenterWorldX, &sNewCenterWorldY );
@@ -778,7 +778,7 @@ BOOLEAN GridNoOnScreen( INT32 sGridNo )
 
 	// ATE: OK, here, adjust the top value so that it's a tile and a bit over, because of our mercs!
 	if ( sWorldX >= gsTopLeftWorldX && sWorldX <= gsBottomRightWorldX &&
-			sWorldY >= ( gsTopLeftWorldY + sAllowance )	&& sWorldY <= ( gsBottomRightWorldY + 20 ) )
+			sWorldY >= ( gsTopLeftWorldY + sAllowance )	&& sWorldY <= ( gsBottomRightWorldY + VHDScaleScreenValue( 20 ) ) )
 	{
 		return( TRUE );
 	}
@@ -834,26 +834,26 @@ BOOLEAN SoldierLocationRelativeToScreen( INT32 sGridNo, UINT16 usReasonID, INT8 
 
 	// Adjust for offset origin!
 	sScreenCenterX += 0;
-	sScreenCenterY += 10;
+	sScreenCenterY += VHDScaleScreenValue( 10 );
 
 	// Get direction
 	//*pbDirection = atan8( sScreenCenterX, sScreenCenterY, sWorldX, sWorldY );
 	*pbDirection = atan8( gsRenderCenterX, gsRenderCenterY, (INT16)(sX), (INT16)(sY) );
 
 	// Check values!
-	if ( sWorldX > ( sScreenCenterX + 20 ) )
+	if ( sWorldX > ( sScreenCenterX + VHDScaleScreenValue( 20 ) ) )
 	{
 		(*puiScrollFlags) |= SCROLL_RIGHT;
 	}
-	if ( sWorldX < ( sScreenCenterX - 20 ) )
+	if ( sWorldX < ( sScreenCenterX - VHDScaleScreenValue( 20 ) ) )
 	{
 		(*puiScrollFlags) |= SCROLL_LEFT;
 	}
-	if ( sWorldY > ( sScreenCenterY + 20 ) )
+	if ( sWorldY > ( sScreenCenterY + VHDScaleScreenValue( 20 ) ) )
 	{
 		(*puiScrollFlags) |= SCROLL_DOWN;
 	}
-	if ( sWorldY < ( sScreenCenterY - 20 ) )
+	if ( sWorldY < ( sScreenCenterY - VHDScaleScreenValue( 20 ) ) )
 	{
 		(*puiScrollFlags) |= SCROLL_UP;
 	}
@@ -861,7 +861,7 @@ BOOLEAN SoldierLocationRelativeToScreen( INT32 sGridNo, UINT16 usReasonID, INT8 
 
 	// If we are on screen, stop
 	if ( sWorldX >= gsTopLeftWorldX && sWorldX <= gsBottomRightWorldX &&
-			sWorldY >= gsTopLeftWorldY	&& sWorldY <= ( gsBottomRightWorldY + 20 ) )
+			sWorldY >= gsTopLeftWorldY	&& sWorldY <= ( gsBottomRightWorldY + VHDScaleScreenValue( 20 ) ) )
 	{
 		// CHECK IF WE ARE DONE...
 		if ( fCountdown > gScrollSlideInertiaDirection[ *pbDirection ] )
@@ -1005,12 +1005,12 @@ void GetGridNoScreenPos( INT32 sGridNo, UINT8 ubLevel, INT16 *psScreenX, INT16 *
 		sScreenY += gsRenderHeight;
 
 		// Adjust for world height
-		sScreenY -= gpWorldLevelData[ sGridNo ].sHeight;
+		sScreenY -= VHDScaleScreenValue( gpWorldLevelData[ sGridNo ].sHeight );
 
 		// Adjust for level height
 		if ( ubLevel )
 		{
-			sScreenY -= ROOF_LEVEL_HEIGHT;
+			sScreenY -= VHDScaleScreenValue( ROOF_LEVEL_HEIGHT );
 		}
 
 		*psScreenX = sScreenX;

@@ -77,6 +77,15 @@ void GetFromAbsoluteScreenXYWorldXY( INT32 *psWorldCellX, INT32* psWorldCellY, I
 void FromCellToScreenCoordinates( INT16 sCellX, INT16 sCellY, INT16 *psScreenX, INT16 *psScreenY );
 void FromScreenToCellCoordinates( INT16 sScreenX, INT16 sScreenY, INT16 *psCellX, INT16 *psCellY );
 
+// Vengeance HD (VHD): experimental tactical rendering scale.
+// Scale 1 is legacy behaviour; 2 and 4 are reserved for HD world rendering.
+UINT8 GetVHDRenderScale( void );
+BOOLEAN SetVHDRenderScale( UINT8 ubScale );
+INT16 VHDScaleScreenValue( INT16 sValue );
+INT16 VHDUnscaleScreenValue( INT16 sValue );
+FLOAT VHDScaleScreenValueF( FLOAT dValue );
+FLOAT VHDUnscaleScreenValueF( FLOAT dValue );
+
 // Higher resolution convertion functions
 void FloatFromCellToScreenCoordinates( FLOAT dCellX, FLOAT dCellY, FLOAT *pdScreenX, FLOAT *pdScreenY );
 void FloatFromScreenToCellCoordinates( FLOAT dScreenX, FLOAT dScreenY, FLOAT *pdCellX, FLOAT *pdCellY );

@@ -1382,7 +1382,7 @@ void DisplayWayPoints(void)
 		sScreenY = ( ( gsVIEWPORT_END_Y - gsVIEWPORT_START_Y ) /2 ) + (INT16)ScrnY;
 
 		// Adjust for tiles height factor!
-		sScreenY -= gpWorldLevelData[sGridNo].sHeight;
+		sScreenY -= VHDScaleScreenValue( gpWorldLevelData[sGridNo].sHeight );
 		// Bring it down a touch
 		sScreenY += 5;
 
@@ -1393,7 +1393,7 @@ void DisplayWayPoints(void)
 			if( pSoldier->pathing.bLevel == 1 )
 			{
 				SetFontBackground( FONT_LTBLUE );
-				sScreenY -= 68;
+				sScreenY -= VHDScaleScreenValue( 68 );
 			}
 			else
 				SetFontBackground( FONT_LTRED );
@@ -3659,7 +3659,7 @@ void RenderCurrentSchedule()
 		sScreenY = ( ( gsVIEWPORT_END_Y - gsVIEWPORT_START_Y ) /2 ) + (INT16)ScrnY;
 
 		// Adjust for tiles height factor!
-		sScreenY -= gpWorldLevelData[ iMapIndex ].sHeight;
+		sScreenY -= VHDScaleScreenValue( gpWorldLevelData[ iMapIndex ].sHeight );
 		// Bring it down a touch
 		sScreenY += 5;
 

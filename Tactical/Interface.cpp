@@ -21,6 +21,7 @@
 	#include "Animation Control.h"
 	#include "Animation Data.h"
 	#include "renderworld.h"
+	#include "Isometric Utils.h"
 	#include "sys globals.h"
 	#include "cursors.h"
 	#include "radar screen.h"
@@ -5766,7 +5767,7 @@ void RenderTopmostMultiPurposeLocator( )
 	FloatFromCellToScreenCoordinates( dOffsetX, dOffsetY, &dTempX_S, &dTempY_S );
 
 	sXPos = ( ( gsVIEWPORT_END_X - gsVIEWPORT_START_X ) /2 ) + (INT16)dTempX_S;
-	sYPos = ( ( gsVIEWPORT_END_Y - gsVIEWPORT_START_Y ) /2 ) + (INT16)dTempY_S - gpWorldLevelData[ gsMultiPurposeLocatorGridNo ].sHeight;
+	sYPos = ( ( gsVIEWPORT_END_Y - gsVIEWPORT_START_Y ) /2 ) + (INT16)dTempY_S - VHDScaleScreenValue( gpWorldLevelData[ gsMultiPurposeLocatorGridNo ].sHeight );
 
 	// Adjust for offset position on screen
 	sXPos -= gsRenderWorldOffsetX;
@@ -5778,7 +5779,7 @@ void RenderTopmostMultiPurposeLocator( )
 	// Adjust for level height
 	if ( gbMultiPurposeLocatorLevel )
 	{
-		sYPos -= ROOF_LEVEL_HEIGHT;
+		sYPos -= VHDScaleScreenValue( ROOF_LEVEL_HEIGHT );
 	}
 
 	// Center circle!

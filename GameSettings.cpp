@@ -46,6 +46,9 @@
 #include "sgp_logger.h"
 
 #include "Map Information.h"
+#include "Isometric Utils.h"
+
+#include <stdlib.h>
 
 #include <vfs/Core/vfs.h>
 #include <vfs/Core/vfs_file_raii.h>
@@ -709,6 +712,32 @@ extern INT32 CountFilledIMPSlots( INT8 iSex );
 extern INT32 CountEmptyIMPSlots( INT8 iSex );
 
 // Snap: Read options from an INI file in the default of custom Data directory
+void BootstrapVHDGraphicsSettings()
+{
+	CIniReader iniReader(GAME_EXTERNAL_OPTIONS_FILE);
+
+	UINT8 ubScale = (UINT8)iniReader.ReadInteger("Graphics Settings", "VHD_RENDER_SCALE", 1, 1, 4);
+	if ( ubScale != 1 && ubScale != 2 && ubScale != 4 )
+		ubScale = 1;
+
+	BOOLEAN fPreferNative = iniReader.ReadBoolean("Graphics Settings", "VHD_PREFER_NATIVE_ASSETS", TRUE);
+
+	// Honour the CI/test override here as well as during the normal options load.
+	// This function is called before InitializeWorld(), so early tactical surfaces
+	// and world projection are created at the same density.
+	const CHAR8 *pVHDScaleOverride = getenv( "VR_VHD_RENDER_SCALE" );
+	if ( pVHDScaleOverride != NULL && pVHDScaleOverride[0] != '\0' )
+	{
+		const INT32 iOverrideScale = atoi( pVHDScaleOverride );
+		if ( iOverrideScale == 1 || iOverrideScale == 2 || iOverrideScale == 4 )
+			ubScale = (UINT8)iOverrideScale;
+	}
+
+	gGameExternalOptions.ubVHDRenderScale = ubScale;
+	gGameExternalOptions.fVHDPreferNativeAssets = fPreferNative;
+	SetVHDRenderScale( ubScale );
+}
+
 void LoadGameExternalOptions()
 {
 
@@ -979,6 +1008,9 @@ void LoadGameExternalOptions()
 
 	//################# Graphics Settings #################
 	gGameExternalOptions.gfVSync = iniReader.ReadBoolean("Graphics Settings","VERTICAL_SYNC",0);
+
+	// Re-read the same renderer settings used by the pre-world bootstrap.
+	BootstrapVHDGraphicsSettings();
 
 	gGameExternalOptions.giPlayerTurnSpeedUpFactor		= iniReader.ReadFloat("Graphics Settings","PLAYER_TURN_SPEED_UP_FACTOR",1.0, 0, 1.0);
 	gGameExternalOptions.giEnemyTurnSpeedUpFactor		= iniReader.ReadFloat("Graphics Settings","ENEMY_TURN_SPEED_UP_FACTOR",1.0, 0, 1.0);

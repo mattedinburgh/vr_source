@@ -1,0 +1,86 @@
+name: Build San Mona C5 native VHD2 scratch assets
+
+on:
+  push:
+    branches:
+      - feature/vhd-renderer
+    paths:
+      - 'Tools/SanMonaC5/**'
+      - '.github/workflows/build-san-mona-c5-vhd2-assets.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: san-mona-c5-vhd2-assets
+  cancel-in-progress: true
+
+jobs:
+  build-c5-vhd2-assets:
+    runs-on: windows-2022
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out VHD source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Fetch canonical C5 structural STI contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $source=Join-Path $env:GITHUB_WORKSPACE 'C5Canonical'
+          New-Item -ItemType Directory -Force -Path $source | Out-Null
+
+          $targets=@(
+            @{name='Cobble_Road.sti'; path='Data-Maps-Tiles/Tilesets/18/Cobble_Road.sti'},
+            @{name='Cobble_Road_Pieces.sti'; path='Data-Maps-Tiles/Tilesets/18/Cobble_Road_Pieces.sti'},
+            @{name='Pave_b.sti'; path='Data-Maps-Tiles/Tilesets/18/Pave_b.sti'},
+            # C5 inherits these two generic structural families. The canonical
+            # gamedir copies in tilesets 51/55 are byte-identical to each other.
+            @{name='build_24.sti'; path='Data-Maps-Tiles/Tilesets/51/BUILD_24.STI'},
+            @{name='slant_12.sti'; path='Data-Maps-Tiles/Tilesets/51/SLANT_12.STI'}
+          )
+
+          $headers=@{'User-Agent'='JA2-Vengeance-C5-VHD2'}
+          $gamedirSha='9b6418e68b0eb8323be3ff69d73b84b611cd33ee'
+          foreach($entry in $targets){
+            $target=$entry.name
+            $repoPath=$entry.path
+            $url="https://raw.githubusercontent.com/mattedinburgh/vr_gamedir/$gamedirSha/$repoPath"
+            $dst=Join-Path $source $target
+            Invoke-WebRequest -Uri $url -Headers $headers -OutFile $dst -UseBasicParsing
+            if(-not(Test-Path $dst)){throw "Failed to download $target"}
+            Write-Host "Canonical contract: $target <- $repoPath ($((Get-Item $dst).Length) bytes)"
+          }
+
+      - name: Install Pillow
+        shell: powershell
+        run: |
+          py -3 -m pip install --disable-pip-version-check Pillow
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+
+      - name: Generate scratch-authored native VHD2 pixels
+        shell: powershell
+        run: |
+          $script=Join-Path $env:GITHUB_WORKSPACE 'Tools\SanMonaC5\generate_vhd2_c5_pilot.py'
+          $source=Join-Path $env:GITHUB_WORKSPACE 'C5Canonical'
+          $out=Join-Path $env:GITHUB_WORKSPACE 'C5VHD2'
+
+          py -3 $script --sti-root $source --out-root $out
+          if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
+
+          $assets=@(Get-ChildItem -LiteralPath (Join-Path $out 'VHD2\TILESETS\18') -Filter '*.b1tc' -File)
+          if($assets.Count -ne 5){throw "Expected exactly five native VHD2 structural assets, generated $($assets.Count)."}
+          Write-Host "Generated native VHD2 assets: $($assets.Name -join ', ')"
+
+      - name: Upload native VHD2 pilot pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: san-mona-c5-vhd2-scratch-pilot
+          path: C5VHD2/
+          if-no-files-found: error
+          retention-days: 14

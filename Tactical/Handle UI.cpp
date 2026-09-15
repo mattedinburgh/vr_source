@@ -1394,13 +1394,13 @@ void ChangeInterfaceLevel( INT16 sLevel )
 
 	if ( gsInterfaceLevel == 1 )
 	{
-		gsRenderHeight += ROOF_LEVEL_HEIGHT;
+		gsRenderHeight += VHDScaleScreenValue( ROOF_LEVEL_HEIGHT );
 		gTacticalStatus.uiFlags |= SHOW_ALL_ROOFS;
 		InvalidateWorldRedundency( );
 	}
 	else if ( gsInterfaceLevel == 0 )
 	{
-		gsRenderHeight -= ROOF_LEVEL_HEIGHT;
+		gsRenderHeight -= VHDScaleScreenValue( ROOF_LEVEL_HEIGHT );
 		gTacticalStatus.uiFlags &= (~SHOW_ALL_ROOFS );
 		InvalidateWorldRedundency( );
 	}
@@ -5564,7 +5564,7 @@ void GetGridNoScreenXY( INT32 sGridNo, INT16 *pScreenX, INT16 *pScreenY )
 	// Adjust for offset position on screen
 	sScreenX -= gsRenderWorldOffsetX;
 	sScreenY -= gsRenderWorldOffsetY;
-	sScreenY -=	gpWorldLevelData[ sGridNo ].sHeight;
+	sScreenY -= VHDScaleScreenValue( gpWorldLevelData[ sGridNo ].sHeight );
 
 	// Adjust based on interface level
 
@@ -5572,7 +5572,7 @@ void GetGridNoScreenXY( INT32 sGridNo, INT16 *pScreenX, INT16 *pScreenY )
 	sScreenY += gsRenderHeight;
 
 	// Adjust y offset!
-	sScreenY += ( WORLD_TILE_Y/2);
+	sScreenY += VHDScaleScreenValue( WORLD_TILE_Y / 2 );
 
 	(*pScreenX) = sScreenX;
 	(*pScreenY) = sScreenY;
@@ -5889,7 +5889,7 @@ UINT32 UIHandleRubberBandOnTerrain( UI_EVENT *pUIEvent )
 			// ATE: If we are in a hiehger interface level, subttrasct....
 			if ( gsInterfaceLevel == 1 )
 			{
-				sScreenY -= 50;
+				sScreenY -= VHDScaleScreenValue( WALL_HEIGHT );
 			}
 
 			if ( IsPointInScreenRect( sScreenX, sScreenY, &aRect ) )
@@ -5923,7 +5923,7 @@ UINT32 UIHandleRubberBandOnTerrain( UI_EVENT *pUIEvent )
 			// ATE: If we are in a hiehger interface level, subttrasct....
 			if ( gsInterfaceLevel == 1 )
 			{
-				sScreenY -= 50;
+				sScreenY -= VHDScaleScreenValue( WALL_HEIGHT );
 			}
 
 			if ( IsPointInScreenRect( sScreenX, sScreenY, &aRect ) )
@@ -6890,11 +6890,11 @@ void SetInterfaceHeightLevel( )
 
 	if ( sHeight != sOldHeight )
 	{
-		gsRenderHeight = sHeight;
+		gsRenderHeight = VHDScaleScreenValue( sHeight );
 
 		if ( gsInterfaceLevel > 0 )
 		{
-			gsRenderHeight += ROOF_LEVEL_HEIGHT;
+			gsRenderHeight += VHDScaleScreenValue( ROOF_LEVEL_HEIGHT );
 		}
 
 		SetRenderFlags(RENDER_FLAG_FULL);

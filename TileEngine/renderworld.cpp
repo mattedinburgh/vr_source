@@ -87,8 +87,8 @@ extern	BOOLEAN	gfTopMessageDirty;
 // VIEWPORT OFFSET VALUES
 // NOTE:
 // THESE VALUES MUST BE MULTIPLES OF TILE SIZES!
-#define	VIEWPORT_XOFFSET_S					WORLD_TILE_X*1
-#define	VIEWPORT_YOFFSET_S					WORLD_TILE_Y*2
+#define	VIEWPORT_XOFFSET_S					( WORLD_TILE_X * GetVHDRenderScale() )
+#define	VIEWPORT_YOFFSET_S					( WORLD_TILE_Y * 2 * GetVHDRenderScale() )
 #define LARGER_VIEWPORT_XOFFSET_S			( VIEWPORT_XOFFSET_S * 3 )
 #define LARGER_VIEWPORT_YOFFSET_S			( VIEWPORT_YOFFSET_S * 5 )
 
@@ -1212,7 +1212,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 		{
 				iTileMapPos[ uiMapPosIndex ] = FASTMAPROWCOLTOPOS( iTempPosY_M, iTempPosX_M );
 
-				iTempPosX_S += 40;
+				iTempPosX_S += VHDScaleScreenValue( 40 );
 				iTempPosX_M ++;
 				iTempPosY_M --;
 
@@ -1245,7 +1245,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 
 
 				if(bXOddFlag > 0)
-					iTempPosX_S += 20;
+					iTempPosX_S += VHDScaleScreenValue( 20 );
 
 				do
 				{
@@ -1599,7 +1599,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 											FloatFromCellToScreenCoordinates( dOffsetX, dOffsetY, &dTempX_S, &dTempY_S );
 
 											sXPos = ( ( gsVIEWPORT_END_X - gsVIEWPORT_START_X ) /2 ) + (INT16)dTempX_S;
-											sYPos = ( ( gsVIEWPORT_END_Y - gsVIEWPORT_START_Y ) /2 ) + (INT16)dTempY_S - sTileHeight;
+											sYPos = ( ( gsVIEWPORT_END_Y - gsVIEWPORT_START_Y ) /2 ) + (INT16)dTempY_S - VHDScaleScreenValue( sTileHeight );
 
 											// Adjust for offset position on screen
 											sXPos -= gsRenderWorldOffsetX;
@@ -1612,16 +1612,16 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 											usImageIndex=TileElem->usRegionIndex;
 
 											// ADJUST FOR WORLD MAPELEM HIEGHT
-											sYPos-=TileElem->sOffsetHeight;
+											sYPos-=VHDScaleScreenValue( TileElem->sOffsetHeight );
 
 											if((TileElem->uiFlags&IGNORE_WORLD_HEIGHT) )
 											{
-												sYPos = sYPos - sModifiedTileHeight;
+												sYPos = sYPos - VHDScaleScreenValue( sModifiedTileHeight );
 												//sYPos -= sTileHeight;
 											}
 
 											if( !(uiLevelNodeFlags&LEVELNODE_IGNOREHEIGHT) && !(TileElem->uiFlags&IGNORE_WORLD_HEIGHT ))
-												sYPos-=sTileHeight;
+												sYPos-=VHDScaleScreenValue( sTileHeight );
 
 											if(!(uiFlags&TILES_DIRTY))
 											{
@@ -1635,13 +1635,13 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 										//ADJUST FOR RELATIVE OFFSETS
 										if ( uiLevelNodeFlags & LEVELNODE_USERELPOS )
 										{
-											sXPos += pNode->sRelativeX;
-											sYPos += pNode->sRelativeY;
+											sXPos += VHDScaleScreenValue( pNode->sRelativeX );
+											sYPos += VHDScaleScreenValue( pNode->sRelativeY );
 										}
 
 										if ( uiLevelNodeFlags& LEVELNODE_USEZ )
 										{
-											sYPos -= pNode->sRelativeZ;
+											sYPos -= VHDScaleScreenValue( pNode->sRelativeZ );
 										}
 
 										//ADJUST FOR ABSOLUTE POSITIONING
@@ -1663,7 +1663,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 											sYPos -= gsRenderWorldOffsetY;
 
 
-											sYPos -= pNode->sRelativeZ;
+											sYPos -= VHDScaleScreenValue( pNode->sRelativeZ );
 
 										}
 
@@ -1721,7 +1721,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 										}
 										if ( pItemPool->bRenderZHeightAboveLevel > 0 )
 										{
-											sYPos -= pItemPool->bRenderZHeightAboveLevel;
+											sYPos -= VHDScaleScreenValue( pItemPool->bRenderZHeightAboveLevel );
 										}
 
 									}
@@ -1774,7 +1774,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 									sZLevel = RoofZLevel( iTempPosX_M, iTempPosY_M, sWorldY );
 
 									// Automatically adjust height!
-									sYPos -= WALL_HEIGHT;
+									sYPos -= VHDScaleScreenValue( WALL_HEIGHT );
 
 									// ATE: Added for shadows on roofs
 									if ( fUseTileElem && ( TileElem->uiFlags & ROOFSHADOW_TILE ) )
@@ -1786,7 +1786,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 
 									sZLevel = OnRoofZLevel( iTempPosX_M, iTempPosY_M, sWorldY, uiLevelNodeFlags );
 									// Automatically adjust height!
-									sYPos -= WALL_HEIGHT;
+									sYPos -= VHDScaleScreenValue( WALL_HEIGHT );
 									break;
 
 								case TILES_STATIC_TOPMOST:
@@ -1837,7 +1837,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 									break;
 								case TILES_DYNAMIC_ROOF:
 
-									sYPos -= WALL_HEIGHT;
+									sYPos -= VHDScaleScreenValue( WALL_HEIGHT );
 
 									sZLevel = RoofZLevel( iTempPosX_M, iTempPosY_M, sWorldY );
 									uiDirtyFlags=BGND_FLAG_SINGLE|BGND_FLAG_ANIMATED;
@@ -1853,7 +1853,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 									sZLevel = OnRoofZLevel( iTempPosX_M, iTempPosY_M, sWorldY, uiLevelNodeFlags );
 									uiDirtyFlags=BGND_FLAG_SINGLE|BGND_FLAG_ANIMATED;
 									// Automatically adjust height!
-									sYPos -= WALL_HEIGHT;
+									sYPos -= VHDScaleScreenValue( WALL_HEIGHT );
 									break;
 
 								case TILES_DYNAMIC_TOPMOST:
@@ -1999,14 +1999,14 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 									FloatFromCellToScreenCoordinates( dOffsetX, dOffsetY, &dTempX_S, &dTempY_S );
 
 									sXPos = ( ( gsVIEWPORT_END_X - gsVIEWPORT_START_X ) /2 ) + (INT16)dTempX_S;
-									sYPos = ( ( gsVIEWPORT_END_Y - gsVIEWPORT_START_Y ) /2 ) + (INT16)dTempY_S - sTileHeight;
+									sYPos = ( ( gsVIEWPORT_END_Y - gsVIEWPORT_START_Y ) /2 ) + (INT16)dTempY_S - VHDScaleScreenValue( sTileHeight );
 
 									// Adjust for offset position on screen
 									sXPos -= gsRenderWorldOffsetX;
 									sYPos -= gsRenderWorldOffsetY;
 
 									// Adjust for soldier height
-									sYPos -= pSoldier->sHeightAdjustment;
+									sYPos -= VHDScaleScreenValue( pSoldier->sHeightAdjustment );
 
 									// Handle shade stuff....
 									if ( !pSoldier->flags.fBeginFade )
@@ -3073,15 +3073,15 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 							{
 								if(!(uiFlags&TILES_DIRTY))
 									UnLockVideoSurface( FRAME_BUFFER );
-								ColorFillVideoSurfaceArea( FRAME_BUFFER, iTempPosX_S, iTempPosY_S, (iTempPosX_S + 40), 
-									( min( iTempPosY_S + 20, INTERFACE_START_Y )), Get16BPPColor( FROMRGB( 0, 0, 0 ) ) );
+								ColorFillVideoSurfaceArea( FRAME_BUFFER, iTempPosX_S, iTempPosY_S, (iTempPosX_S + VHDScaleScreenValue( 40 )), 
+									( min( iTempPosY_S + VHDScaleScreenValue( 20 ), INTERFACE_START_Y )), Get16BPPColor( FROMRGB( 0, 0, 0 ) ) );
 								if(!(uiFlags&TILES_DIRTY))
 									pDestBuf = LockVideoSurface( FRAME_BUFFER, &uiDestPitchBYTES );
 							}
 						}
 					}
 
-					iTempPosX_S += 40;
+					iTempPosX_S += VHDScaleScreenValue( 40 );
 					iTempPosX_M ++;
 					iTempPosY_M --;
 
@@ -3107,7 +3107,7 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 		}
 
 		bXOddFlag = !bXOddFlag;
-		iAnchorPosY_S += 10;
+		iAnchorPosY_S += VHDScaleScreenValue( 10 );
 
 		if ( iAnchorPosY_S >= iEndYS )
 		{
@@ -3223,15 +3223,15 @@ void ScrollBackground(UINT32 uiDirection, INT16 sScrollXIncrement, INT16 sScroll
 #define OCCLUSION_BUBBLE_SCAN_RADIUS       4
 // Camera-space ellipse. JA2's isometric projection is much wider than it is
 // tall, so a true screen-space oval reads like Fallout's circular cutaway.
-#define OCCLUSION_BUBBLE_INNER_RADIUS_X    72
-#define OCCLUSION_BUBBLE_INNER_RADIUS_Y    46
-#define OCCLUSION_BUBBLE_OUTER_RADIUS_X    112
-#define OCCLUSION_BUBBLE_OUTER_RADIUS_Y    72
+#define OCCLUSION_BUBBLE_INNER_RADIUS_X    ( 72 * GetVHDRenderScale() )
+#define OCCLUSION_BUBBLE_INNER_RADIUS_Y    ( 46 * GetVHDRenderScale() )
+#define OCCLUSION_BUBBLE_OUTER_RADIUS_X    ( 112 * GetVHDRenderScale() )
+#define OCCLUSION_BUBBLE_OUTER_RADIUS_Y    ( 72 * GetVHDRenderScale() )
 // Classification is deliberately broader than the visible mask. A wall sprite
 // can overlap the bubble even when its tile anchor sits outside the ellipse.
-#define OCCLUSION_BUBBLE_CLASSIFY_RADIUS_X 168
-#define OCCLUSION_BUBBLE_CLASSIFY_RADIUS_Y 118
-#define OCCLUSION_BUBBLE_CLIP_BAND_HEIGHT  4
+#define OCCLUSION_BUBBLE_CLASSIFY_RADIUS_X ( 168 * GetVHDRenderScale() )
+#define OCCLUSION_BUBBLE_CLASSIFY_RADIUS_Y ( 118 * GetVHDRenderScale() )
+#define OCCLUSION_BUBBLE_CLIP_BAND_HEIGHT  ( 4 * GetVHDRenderScale() )
 #define OCCLUSION_BUBBLE_MAX_CLIP_RECTS    128
 #define OCCLUSION_BUBBLE_MAX_MARKED_GRIDS  ( ( OCCLUSION_BUBBLE_SCAN_RADIUS * 2 + 1 ) * ( OCCLUSION_BUBBLE_SCAN_RADIUS * 2 + 1 ) )
 
@@ -3359,8 +3359,8 @@ static void GetOcclusionBubbleMercCenter(
 	GetSoldierScreenPos( pSoldier, &sScreenX, &sScreenY );
 
 	// Bounding-box centre tracks stance/animation far better than grid centre.
-	*psCenterX = (INT16)( sScreenX + pSoldier->sBoundingBoxWidth / 2 );
-	*psCenterY = (INT16)( sScreenY + pSoldier->sBoundingBoxHeight / 2 );
+	*psCenterX = (INT16)( sScreenX + VHDScaleScreenValue( pSoldier->sBoundingBoxWidth ) / 2 );
+	*psCenterY = (INT16)( sScreenY + VHDScaleScreenValue( pSoldier->sBoundingBoxHeight ) / 2 );
 }
 
 static void GetOcclusionBubbleWallAnchor(
@@ -3370,7 +3370,7 @@ static void GetOcclusionBubbleWallAnchor(
 
 	// Grid position is at floor level; move the test point into the wall face so
 	// distance is measured against what actually covers the merc on screen.
-	*psAnchorY = (INT16)( *psAnchorY - WALL_HEIGHT / 2 );
+	*psAnchorY = (INT16)( *psAnchorY - VHDScaleScreenValue( WALL_HEIGHT / 2 ) );
 }
 
 static void SetOcclusionBubbleNodeState(
@@ -5334,13 +5334,13 @@ void InitRenderParams( UINT8 ubRestrictionID )
 		FromCellToScreenCoordinates( gCenterWorldX , gCenterWorldY, &gsCX, &gsCY );
 
 		// Adjust for interface height tabbing!
-		gsTLY += ROOF_LEVEL_HEIGHT;
-		gsTRY += ROOF_LEVEL_HEIGHT;
-		gsCY  += ( ROOF_LEVEL_HEIGHT / 2 );
+		gsTLY += VHDScaleScreenValue( ROOF_LEVEL_HEIGHT );
+		gsTRY += VHDScaleScreenValue( ROOF_LEVEL_HEIGHT );
+		gsCY  += VHDScaleScreenValue( ROOF_LEVEL_HEIGHT / 2 );
 
 		// Take these spaning distances and determine # tiles spaning
-		gsTilesX = ( gsTRX - gsTLX ) / WORLD_TILE_X;
-		gsTilesY = ( gsBRY - gsTRY ) / WORLD_TILE_Y;
+		gsTilesX = ( gsTRX - gsTLX ) / VHDScaleScreenValue( WORLD_TILE_X );
+		gsTilesY = ( gsBRY - gsTRY ) / VHDScaleScreenValue( WORLD_TILE_Y );
 
 		DebugMsg(TOPIC_JA2, DBG_LEVEL_0, String("World Screen Width %d Height %d", ( gsTRX - gsTLX ), ( gsBRY - gsTRY )));
 
@@ -5438,7 +5438,7 @@ BOOLEAN ApplyScrolling( INT16 sTempRenderCenterX, INT16 sTempRenderCenterY, BOOL
 
 	// Adjust for offset position on screen
 	sScreenCenterX -= 0;
-	sScreenCenterY -= 10;
+	sScreenCenterY -= VHDScaleScreenValue( 10 );
 
 
 	// Get corners in screen coords
@@ -5774,6 +5774,173 @@ void InvalidateWorldRedundency( )
 
 }
 
+// VHD indexed multi-Z renderer.
+//
+// Legacy assembly Z-strip blitters advance depth every 20 raw sprite pixels.
+// VHD fallback sprites are 2x/4x larger, so raw source X must be mapped back to
+// authored/JSD pixel space. Keeping this path indexed preserves compact ETRLE
+// storage and soldier palette recolouring instead of expanding fallback art to RGBA.
+static UINT16 VHDIndexedZStripLevel(
+	ZStripInfo *pZInfo, UINT16 usBaseZ, INT32 iScaledSourceX, UINT8 ubAssetScale,
+	INT32 iPerStripDelta )
+{
+	if ( pZInfo == NULL )
+		return usBaseZ;
+
+	const INT32 iLegacySourceX = iScaledSourceX / (INT32)ubAssetScale;
+	INT32 iChanges = 0;
+
+	if ( iLegacySourceX >= (INT32)pZInfo->ubFirstZStripWidth )
+	{
+		iChanges = 1 + ( ( iLegacySourceX - (INT32)pZInfo->ubFirstZStripWidth ) / 20 );
+		if ( iChanges > (INT32)pZInfo->ubNumberOfZChanges )
+			iChanges = pZInfo->ubNumberOfZChanges;
+	}
+
+	INT32 iLevel = (INT32)usBaseZ +
+		( (INT32)pZInfo->bInitialZChange * (INT32)Z_STRIP_DELTA_Y );
+
+	// Legacy multi-Z has two depth cadences. Normal indexed blitters advance
+	// each authored strip by Z_STRIP_DELTA_Y, while the trans-shadow variants
+	// keep the same initial Z-strip offset but advance subsequent strips by
+	// Z_SUBLAYERS. Preserve that historical distinction at VHD scales.
+	for ( INT32 i = 0; i < iChanges; ++i )
+		iLevel += (INT32)pZInfo->pbZChange[i] * iPerStripDelta;
+
+	if ( iLevel < 0 )
+		iLevel = 0;
+	else if ( iLevel > 65535 )
+		iLevel = 65535;
+
+	return (UINT16)iLevel;
+}
+
+static BOOLEAN VHDIndexedMultiZBlit(
+	UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue,
+	HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion,
+	INT16 sZIndex, UINT16 *p16BPPPalette,
+	BOOLEAN fSameZBurnsThrough, BOOLEAN fObscured, BOOLEAN fTransShadow )
+{
+	Assert( hSrcVObject != NULL );
+	Assert( pBuffer != NULL );
+	Assert( pZBuffer != NULL );
+	Assert( p16BPPPalette != NULL );
+
+	if ( hSrcVObject == NULL || pBuffer == NULL || pZBuffer == NULL || p16BPPPalette == NULL )
+		return FALSE;
+	if ( usIndex >= hSrcVObject->usNumberOfObjects || hSrcVObject->pETRLEObject == NULL ||
+		 hSrcVObject->pPixData == NULL || hSrcVObject->ppZStripInfo == NULL )
+		return FALSE;
+	if ( sZIndex < 0 || sZIndex >= (INT16)hSrcVObject->usNumberOfObjects ||
+		 hSrcVObject->ppZStripInfo[sZIndex] == NULL )
+		return FALSE;
+
+	const UINT8 ubAssetScale =
+		( hSrcVObject->ubVHDAssetScale == 2 || hSrcVObject->ubVHDAssetScale == 4 )
+			? hSrcVObject->ubVHDAssetScale : 1;
+	if ( ubAssetScale == 1 )
+		return FALSE;
+
+	const ETRLEObject *pRegion = &hSrcVObject->pETRLEObject[usIndex];
+	ZStripInfo *pZInfo = hSrcVObject->ppZStripInfo[sZIndex];
+
+	const INT32 iDestLeft = iX + pRegion->sOffsetX;
+	const INT32 iDestTop = iY + pRegion->sOffsetY;
+	const INT32 iClipLeft = clipregion ? clipregion->iLeft : ClippingRect.iLeft;
+	const INT32 iClipTop = clipregion ? clipregion->iTop : ClippingRect.iTop;
+	const INT32 iClipRight = clipregion ? clipregion->iRight : ClippingRect.iRight;
+	const INT32 iClipBottom = clipregion ? clipregion->iBottom : ClippingRect.iBottom;
+
+	if ( iDestLeft >= iClipRight || iDestTop >= iClipBottom ||
+		 iDestLeft + (INT32)pRegion->usWidth <= iClipLeft ||
+		 iDestTop + (INT32)pRegion->usHeight <= iClipTop )
+		return TRUE;
+
+	const UINT8 *pSrc = (const UINT8*)hSrcVObject->pPixData + pRegion->uiDataOffset;
+	const UINT8 *pSrcEnd = pSrc + pRegion->uiDataLength;
+
+	for ( UINT16 usSourceY = 0; usSourceY < pRegion->usHeight; ++usSourceY )
+	{
+		UINT16 usSourceX = 0;
+		BOOLEAN fSawEndOfLine = FALSE;
+
+		while ( pSrc < pSrcEnd )
+		{
+			const UINT8 ubCode = *pSrc++;
+
+			if ( ubCode == 0 )
+			{
+				fSawEndOfLine = TRUE;
+				break;
+			}
+
+			const UINT8 ubCount = ubCode & 0x7F;
+			if ( ubCount == 0 || (UINT32)usSourceX + ubCount > pRegion->usWidth )
+				return FALSE;
+
+			if ( ubCode & 0x80 )
+			{
+				usSourceX = (UINT16)( usSourceX + ubCount );
+				continue;
+			}
+
+			if ( pSrc + ubCount > pSrcEnd )
+				return FALSE;
+
+			for ( UINT8 ubRunPixel = 0; ubRunPixel < ubCount; ++ubRunPixel, ++usSourceX )
+			{
+				const UINT8 ubPaletteIndex = *pSrc++;
+				const INT32 iDestX = iDestLeft + usSourceX;
+				const INT32 iDestY = iDestTop + usSourceY;
+
+				if ( iDestX < iClipLeft || iDestX >= iClipRight ||
+					 iDestY < iClipTop || iDestY >= iClipBottom )
+					continue;
+
+				UINT16 *pDest = (UINT16*)((UINT8*)pBuffer +
+					((UINT32)iDestY * uiDestPitchBYTES)) + iDestX;
+				UINT16 *pZ = (UINT16*)((UINT8*)pZBuffer +
+					((UINT32)iDestY * uiDestPitchBYTES)) + iDestX;
+
+				const UINT16 usPixelZ = VHDIndexedZStripLevel(
+					pZInfo, usZValue, usSourceX, ubAssetScale,
+					fTransShadow ? (INT32)Z_SUBLAYERS : (INT32)Z_STRIP_DELTA_Y );
+
+				BOOLEAN fDrawPixel;
+				if ( fObscured )
+				{
+					// Legacy obscured multi-Z: nearer pixels are solid; equal or
+					// farther pixels appear as the established checkerboard hint.
+					fDrawPixel = ( *pZ < usPixelZ ) ||
+						( ( iDestX & 1 ) == ( iDestY & 1 ) );
+				}
+				else if ( fSameZBurnsThrough )
+				fDrawPixel = ( *pZ <= usPixelZ );
+				else
+				fDrawPixel = ( *pZ < usPixelZ );
+
+				if ( !fDrawPixel )
+					continue;
+
+				*pZ = usPixelZ;
+
+				if ( fTransShadow && ubPaletteIndex == 254 )
+					*pDest = ShadeTable[*pDest];
+				else
+					*pDest = p16BPPPalette[ubPaletteIndex];
+			}
+		}
+
+		if ( !fSawEndOfLine && usSourceY + 1 < pRegion->usHeight )
+			return FALSE;
+		if ( usSourceX != pRegion->usWidth )
+			return FALSE;
+	}
+
+	return TRUE;
+}
+
+
 /**********************************************************************************************
  Blt8BPPDataTo16BPPBufferTransZIncClip
 
@@ -5786,6 +5953,11 @@ void InvalidateWorldRedundency( )
 **********************************************************************************************/
 BOOLEAN Blt8BPPDataTo16BPPBufferTransZIncClip( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion)
 {
+	if ( hSrcVObject != NULL && hSrcVObject->ubVHDAssetScale > 1 )
+		return VHDIndexedMultiZBlit(
+			pBuffer, uiDestPitchBYTES, pZBuffer, usZValue, hSrcVObject,
+			iX, iY, usIndex, clipregion, (INT16)usIndex, hSrcVObject->pShadeCurrent,
+			FALSE, FALSE, FALSE );
 	UINT16 *p16BPPPalette;
 	UINT32 uiOffset;
 	UINT32 usHeight, usWidth, Unblitted;
@@ -6184,6 +6356,11 @@ BlitDone:
 **********************************************************************************************/
 BOOLEAN Blt8BPPDataTo16BPPBufferTransZIncClipZSameZBurnsThrough( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion, INT16 usZStripIndex )
 {
+	if ( hSrcVObject != NULL && hSrcVObject->ubVHDAssetScale > 1 )
+		return VHDIndexedMultiZBlit(
+			pBuffer, uiDestPitchBYTES, pZBuffer, usZValue, hSrcVObject,
+			iX, iY, usIndex, clipregion, usZStripIndex, hSrcVObject->pShadeCurrent,
+			TRUE, FALSE, FALSE );
 	UINT16 *p16BPPPalette;
 	UINT32 uiOffset;
 	UINT32 usHeight, usWidth, Unblitted;
@@ -6585,6 +6762,11 @@ BlitDone:
 **********************************************************************************************/
 BOOLEAN Blt8BPPDataTo16BPPBufferTransZIncObscureClip( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion)
 {
+	if ( hSrcVObject != NULL && hSrcVObject->ubVHDAssetScale > 1 )
+		return VHDIndexedMultiZBlit(
+			pBuffer, uiDestPitchBYTES, pZBuffer, usZValue, hSrcVObject,
+			iX, iY, usIndex, clipregion, (INT16)usIndex, hSrcVObject->pShadeCurrent,
+			FALSE, TRUE, FALSE );
 	UINT16 *p16BPPPalette;
 	UINT32 uiOffset, uiLineFlag;
 	UINT32 usHeight, usWidth, Unblitted;
@@ -7002,6 +7184,11 @@ BlitDone:
 //
 BOOLEAN Blt8BPPDataTo16BPPBufferTransZTransShadowIncObscureClip( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion, INT16 sZIndex, UINT16 *p16BPPPalette )
 {
+	if ( hSrcVObject != NULL && hSrcVObject->ubVHDAssetScale > 1 )
+		return VHDIndexedMultiZBlit(
+			pBuffer, uiDestPitchBYTES, pZBuffer, usZValue, hSrcVObject,
+			iX, iY, usIndex, clipregion, sZIndex, p16BPPPalette,
+			TRUE, TRUE, TRUE );
 	UINT32 uiOffset, uiLineFlag;
 	UINT32 usHeight, usWidth, Unblitted;
 	UINT8	 *SrcPtr, *DestPtr, *ZPtr;
@@ -7431,9 +7618,10 @@ void CorrectRenderCenter( INT16 sRenderX, INT16 sRenderY, INT16 *pSNewX, INT16 *
 	sScreenX = (INT16) sRenderX;
 	sScreenY = (INT16) sRenderY;
 
-	// Adjust for offsets!
+	// Adjust for offsets. This is the same tactical render-origin correction
+	// used by mouse/world projection, so it must scale with VHD.
 	sScreenX += 0;
-	sScreenY += 10;
+	sScreenY += VHDScaleScreenValue( 10 );
 
 	// Adjust to viewport start!
 	sScreenX -= ( ( gsVIEWPORT_END_X - gsVIEWPORT_START_X ) /2 );
@@ -7466,6 +7654,11 @@ void CorrectRenderCenter( INT16 sRenderX, INT16 sRenderY, INT16 *pSNewX, INT16 *
 //
 BOOLEAN Blt8BPPDataTo16BPPBufferTransZTransShadowIncClip( UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue, HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, SGPRect *clipregion, INT16 sZIndex, UINT16 *p16BPPPalette )
 {
+	if ( hSrcVObject != NULL && hSrcVObject->ubVHDAssetScale > 1 )
+		return VHDIndexedMultiZBlit(
+			pBuffer, uiDestPitchBYTES, pZBuffer, usZValue, hSrcVObject,
+			iX, iY, usIndex, clipregion, sZIndex, p16BPPPalette,
+			TRUE, FALSE, TRUE );
 	UINT32 uiOffset;
 	UINT32 usHeight, usWidth, Unblitted;
 	UINT8	 *SrcPtr, *DestPtr, *ZPtr;
@@ -7896,7 +8089,7 @@ void RenderRoomInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sStartPoi
 		sTempPosY_S = sAnchorPosY_S;
 
 		if(bXOddFlag > 0)
-			sTempPosX_S += 20;
+			sTempPosX_S += VHDScaleScreenValue( 20 );
 
 
 		do
@@ -7906,12 +8099,12 @@ void RenderRoomInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sStartPoi
 
 			if ( usTileIndex < GRIDSIZE	)
 			{
-				sX = sTempPosX_S + ( WORLD_TILE_X / 2 ) - 5;
-				sY = sTempPosY_S + ( WORLD_TILE_Y / 2 ) - 5;
+				sX = sTempPosX_S + VHDScaleScreenValue( ( WORLD_TILE_X / 2 ) - 5 );
+				sY = sTempPosY_S + VHDScaleScreenValue( ( WORLD_TILE_Y / 2 ) - 5 );
 
 				// THIS ROOM STUFF IS ONLY DONE IN THE EDITOR...
 				// ADJUST BY SHEIGHT
-				sY -= gpWorldLevelData[ usTileIndex ].sHeight;
+				sY -= VHDScaleScreenValue( gpWorldLevelData[ usTileIndex ].sHeight );
 				sY += gsRenderHeight;//dnl ch85 030214
 
 				if ( gusWorldRoomInfo[ usTileIndex ] != NO_ROOM )
@@ -7931,7 +8124,7 @@ void RenderRoomInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sStartPoi
 				}
 			}
 
-			sTempPosX_S += 40;
+			sTempPosX_S += VHDScaleScreenValue( 40 );
 			sTempPosX_M ++;
 			sTempPosY_M --;
 
@@ -7953,7 +8146,7 @@ void RenderRoomInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sStartPoi
 
 
 		bXOddFlag = !bXOddFlag;
-		sAnchorPosY_S += 10;
+		sAnchorPosY_S += VHDScaleScreenValue( 10 );
 
 		if ( sAnchorPosY_S >= sEndYS )
 		{
@@ -8002,7 +8195,7 @@ void RenderFOVDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sStar
 		sTempPosY_S = sAnchorPosY_S;
 
 		if(bXOddFlag > 0)
-			sTempPosX_S += 20;
+			sTempPosX_S += VHDScaleScreenValue( 20 );
 
 
 		do
@@ -8012,11 +8205,11 @@ void RenderFOVDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sStar
 
 			if ( usTileIndex < GRIDSIZE	)
 			{
-				sX = sTempPosX_S + ( WORLD_TILE_X / 2 ) - 5;
-				sY = sTempPosY_S + ( WORLD_TILE_Y / 2 ) - 5;
+				sX = sTempPosX_S + VHDScaleScreenValue( ( WORLD_TILE_X / 2 ) - 5 );
+				sY = sTempPosY_S + VHDScaleScreenValue( ( WORLD_TILE_Y / 2 ) - 5 );
 
 				// Adjust for interface level
-				sY -= gpWorldLevelData[ usTileIndex ].sHeight;
+				sY -= VHDScaleScreenValue( gpWorldLevelData[ usTileIndex ].sHeight );
 				sY += gsRenderHeight;
 
 				if ( gubFOVDebugInfoInfo[ usTileIndex ] != 0 )
@@ -8043,7 +8236,7 @@ void RenderFOVDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sStar
 
 			}
 
-			sTempPosX_S += 40;
+			sTempPosX_S += VHDScaleScreenValue( 40 );
 			sTempPosX_M ++;
 			sTempPosY_M --;
 
@@ -8065,7 +8258,7 @@ void RenderFOVDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sStar
 
 
 		bXOddFlag = !bXOddFlag;
-		sAnchorPosY_S += 10;
+		sAnchorPosY_S += VHDScaleScreenValue( 10 );
 
 		if ( sAnchorPosY_S >= sEndYS )
 		{
@@ -8111,7 +8304,7 @@ void RenderCoverDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sSt
 		sTempPosY_S = sAnchorPosY_S;
 
 		if(bXOddFlag > 0)
-			sTempPosX_S += 20;
+			sTempPosX_S += VHDScaleScreenValue( 20 );
 
 
 		do
@@ -8121,11 +8314,11 @@ void RenderCoverDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sSt
 
 			if ( usTileIndex < GRIDSIZE	)
 			{
-				sX = sTempPosX_S + ( WORLD_TILE_X / 2 ) - 5;
-				sY = sTempPosY_S + ( WORLD_TILE_Y / 2 ) - 5;
+				sX = sTempPosX_S + VHDScaleScreenValue( ( WORLD_TILE_X / 2 ) - 5 );
+				sY = sTempPosY_S + VHDScaleScreenValue( ( WORLD_TILE_Y / 2 ) - 5 );
 
 				// Adjust for interface level
-				sY -= gpWorldLevelData[ usTileIndex ].sHeight;
+				sY -= VHDScaleScreenValue( gpWorldLevelData[ usTileIndex ].sHeight );
 				sY += gsRenderHeight;
 
 				if (gsCoverValue[ usTileIndex] != 0x7F7F)
@@ -8150,7 +8343,7 @@ void RenderCoverDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sSt
 
 			}
 
-			sTempPosX_S += 40;
+			sTempPosX_S += VHDScaleScreenValue( 40 );
 			sTempPosX_M ++;
 			sTempPosY_M --;
 
@@ -8172,7 +8365,7 @@ void RenderCoverDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, INT16 sSt
 
 
 		bXOddFlag = !bXOddFlag;
-		sAnchorPosY_S += 10;
+		sAnchorPosY_S += VHDScaleScreenValue( 10 );
 
 		if ( sAnchorPosY_S >= sEndYS )
 		{
@@ -8219,7 +8412,7 @@ void RenderGridNoVisibleDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, I
 		sTempPosY_S = sAnchorPosY_S;
 
 		if(bXOddFlag > 0)
-			sTempPosX_S += 20;
+			sTempPosX_S += VHDScaleScreenValue( 20 );
 
 
 		do
@@ -8229,11 +8422,11 @@ void RenderGridNoVisibleDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, I
 
 			if ( usTileIndex < GRIDSIZE	)
 			{
-				sX = sTempPosX_S + ( WORLD_TILE_X / 2 ) - 5;
-				sY = sTempPosY_S + ( WORLD_TILE_Y / 2 ) - 5;
+				sX = sTempPosX_S + VHDScaleScreenValue( ( WORLD_TILE_X / 2 ) - 5 );
+				sY = sTempPosY_S + VHDScaleScreenValue( ( WORLD_TILE_Y / 2 ) - 5 );
 
 				// Adjust for interface level
-				sY -= gpWorldLevelData[ usTileIndex ].sHeight;
+				sY -= VHDScaleScreenValue( gpWorldLevelData[ usTileIndex ].sHeight );
 				sY += gsRenderHeight;
 
 				SetFont( SMALLCOMPFONT );
@@ -8252,7 +8445,7 @@ void RenderGridNoVisibleDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, I
 
 			}
 
-			sTempPosX_S += 40;
+			sTempPosX_S += VHDScaleScreenValue( 40 );
 			sTempPosX_M ++;
 			sTempPosY_M --;
 
@@ -8274,7 +8467,7 @@ void RenderGridNoVisibleDebugInfo( INT16 sStartPointX_M, INT16 sStartPointY_M, I
 
 
 		bXOddFlag = !bXOddFlag;
-		sAnchorPosY_S += 10;
+		sAnchorPosY_S += VHDScaleScreenValue( 10 );
 
 		if ( sAnchorPosY_S >= sEndYS )
 		{
@@ -8340,7 +8533,7 @@ void ExamineZBufferForHiddenTiles( INT16 sStartPointX_M, INT16 sStartPointY_M, I
 		sTempPosY_S = sAnchorPosY_S;
 
 		if(bXOddFlag > 0)
-			sTempPosX_S += 20;
+			sTempPosX_S += VHDScaleScreenValue( 20 );
 
 
 		do
@@ -8358,7 +8551,7 @@ void ExamineZBufferForHiddenTiles( INT16 sStartPointX_M, INT16 sStartPointY_M, I
 				}
 
 				sX = sTempPosX_S;
-				sY = sTempPosY_S - gpWorldLevelData[usTileIndex].sHeight;
+				sY = sTempPosY_S - VHDScaleScreenValue( gpWorldLevelData[usTileIndex].sHeight );
 
 				// Adjust for interface level
 				sY += gsRenderHeight;
@@ -8401,7 +8594,7 @@ void ExamineZBufferForHiddenTiles( INT16 sStartPointX_M, INT16 sStartPointY_M, I
 
 ENDOFLOOP:
 
-			sTempPosX_S += 40;
+			sTempPosX_S += VHDScaleScreenValue( 40 );
 			sTempPosX_M ++;
 			sTempPosY_M --;
 
@@ -8423,7 +8616,7 @@ ENDOFLOOP:
 
 
 		bXOddFlag = !bXOddFlag;
-		sAnchorPosY_S += 10;
+		sAnchorPosY_S += VHDScaleScreenValue( 10 );
 
 		if ( sAnchorPosY_S >= sEndYS )
 		{
@@ -8551,7 +8744,7 @@ void CalcRenderParameters(INT16 sLeft, INT16 sTop, INT16 sRight, INT16 sBottom )
 	if ( gsLStartPointY_W < 0 )
 	{
 		gsLStartPointY_S	+= 0;
-		gsLStartPointX_S	-= 20;
+		gsLStartPointX_S	-= VHDScaleScreenValue( 20 );
 	}
 	else
 	{

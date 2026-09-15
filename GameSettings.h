@@ -411,6 +411,10 @@ typedef struct
 	//Video settings	
 	BOOLEAN gfVSync;
 
+	// Vengeance HD (VHD) experimental renderer. 1 = legacy, 2/4 = HD tactical scale.
+	UINT8 ubVHDRenderScale;
+	BOOLEAN fVHDPreferNativeAssets;
+
 	// Flugente: zombie settings
 	INT8	sZombieRiseBehaviour;
 	BOOLEAN fZombieSpawnWaves;
@@ -2469,6 +2473,7 @@ extern bool alreadySaving;
 BOOLEAN	SaveGameSettings();
 BOOLEAN LoadGameSettings();
 // Snap: Read options from an INI file in the default of custom Data directory
+void BootstrapVHDGraphicsSettings();
 void LoadGameExternalOptions();
 void LoadSkillTraitsExternalSettings(); // SANDRO - added this one
 void LoadModSettings();

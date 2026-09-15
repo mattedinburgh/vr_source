@@ -1,0 +1,59 @@
+name: Vengeance HD root compile-only check
+
+on:
+  push:
+    branches:
+      - feature/vhd-renderer
+      - 'engine/vhd-*'
+    paths:
+      - 'GameSettings.cpp'
+      - 'GameSettings.h'
+      - 'ja2_VS2013.vcxproj'
+      - '.github/workflows/vhd-root-compile.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  root-compile:
+    runs-on: windows-2022
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out VHD source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Generate VR build info
+        shell: powershell
+        run: |
+          & '.\GENERATE_VR_BUILD_INFO.ps1' -RepoRoot '.' -OutputPath '.\.generated\VRBuildInfo.generated.h' -Configuration 'Release' -Platform 'Win32' -TargetName 'JA2_EN_Release.exe'
+
+      - name: Compile ja2 translation units without linking
+        shell: powershell
+        run: |
+          $log = Join-Path $env:GITHUB_WORKSPACE 'vhd-root-compile.log'
+          msbuild '.\ja2_VS2013.vcxproj' /m /t:ClCompile /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /fl "/flp:logfile=$log;verbosity=normal"
+          $buildExit = $LASTEXITCODE
+
+          if (Test-Path $log) {
+            Write-Host '----- Root compile tail -----'
+            Get-Content $log -Tail 250
+          }
+
+          if ($buildExit -ne 0) { exit $buildExit }
+
+      - name: Upload root compile log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vhd-root-compile-log-${{ github.run_number }}
+          path: vhd-root-compile.log
+          if-no-files-found: warn

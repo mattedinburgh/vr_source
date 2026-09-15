@@ -21,6 +21,9 @@
 	#include "vobject_blitters.h"
 #endif
 
+#include "STIConvert.h"
+#include <vector>
+
 #include <vfs/Core/vfs.h>
 
 const vfs::String::str_t CONST_DOTJPC(L".jpc.7z");
@@ -313,6 +316,275 @@ BOOLEAN DestroyImage( HIMAGE hImage )
 	return( TRUE );
 }
 
+static BOOLEAN VHDUnpackETRLERegion( HIMAGE hImage, UINT16 usIndex, std::vector<UINT8> &out )
+{
+	if ( hImage == NULL || hImage->pETRLEObject == NULL || hImage->pPixData8 == NULL ||
+		 usIndex >= hImage->usNumberOfObjects )
+		return FALSE;
+
+	const ETRLEObject *pRegion = &hImage->pETRLEObject[ usIndex ];
+	const UINT32 uiPixelCount = (UINT32)pRegion->usWidth * (UINT32)pRegion->usHeight;
+	if ( uiPixelCount == 0 || uiPixelCount > 0x3FFFFFFFu )
+		return FALSE;
+	out.assign( (size_t)uiPixelCount, 0 );
+
+	const UINT8 *pSrc = hImage->pPixData8 + pRegion->uiDataOffset;
+	const UINT8 *pEnd = pSrc + pRegion->uiDataLength;
+
+	// ETRLE is encoded per scanline.  A zero code terminates the current row;
+	// old STI assets are allowed to end a row before x reaches usWidth, with the
+	// unmentioned tail implicitly transparent.  The previous VHD decoder treated
+	// the stream as one flat width*height run and therefore rejected virtually
+	// every sprite containing a short transparent row.  Decode row-by-row so the
+	// legacy fallback can be enlarged without changing its authored alpha shape.
+	for ( UINT16 y = 0; y < pRegion->usHeight; ++y )
+	{
+		UINT16 x = 0;
+		BOOLEAN fEndOfLine = FALSE;
+
+		while ( pSrc < pEnd )
+		{
+			const UINT8 ubCode = *pSrc++;
+			const UINT8 ubCount = ubCode & 0x7F;
+
+			if ( ubCode == 0 )
+			{
+				fEndOfLine = TRUE;
+				break;
+			}
+
+			if ( ubCount == 0 )
+				return FALSE;
+
+			if ( (UINT32)x + ubCount > pRegion->usWidth )
+				return FALSE;
+
+			if ( ubCode & 0x80 )
+			{
+				// Transparent run; output was pre-cleared to palette index 0.
+				x = (UINT16)( x + ubCount );
+			}
+			else
+			{
+				if ( pSrc + ubCount > pEnd )
+					return FALSE;
+				memcpy( &out[ (UINT32)y * pRegion->usWidth + x ], pSrc, ubCount );
+				pSrc += ubCount;
+				x = (UINT16)( x + ubCount );
+			}
+		}
+
+		if ( !fEndOfLine )
+			return FALSE;
+	}
+
+	return TRUE;
+}
+
+BOOLEAN ScaleImageNearestForVHD( HIMAGE hImage, UINT8 ubScale )
+{
+	if ( hImage == NULL )
+		return FALSE;
+	if ( ubScale == 1 )
+		return TRUE;
+	if ( ubScale != 2 && ubScale != 4 )
+		return FALSE;
+	if ( !( hImage->fFlags & IMAGE_BITMAPDATA ) || hImage->usNumberOfObjects == 0 ||
+		 hImage->pETRLEObject == NULL )
+		return FALSE;
+
+	const UINT16 usCount = hImage->usNumberOfObjects;
+	std::vector<ETRLEObject> newRegions( usCount );
+	UINT32 uiTotalBytes = 0;
+	UINT16 usMaxWidth = 0;
+	UINT16 usMaxHeight = 0;
+
+	if ( hImage->ubBitDepth == 8 && ( hImage->fFlags & IMAGE_TRLECOMPRESSED ) )
+	{
+		std::vector< std::vector<UINT8> > compressed( usCount );
+
+		for ( UINT16 i = 0; i < usCount; ++i )
+		{
+			const ETRLEObject &srcRegion = hImage->pETRLEObject[i];
+			const UINT32 uiNewWidth32 = (UINT32)srcRegion.usWidth * ubScale;
+			const UINT32 uiNewHeight32 = (UINT32)srcRegion.usHeight * ubScale;
+			const INT32 iNewOffsetX = (INT32)srcRegion.sOffsetX * ubScale;
+			const INT32 iNewOffsetY = (INT32)srcRegion.sOffsetY * ubScale;
+
+			if ( uiNewWidth32 == 0 || uiNewHeight32 == 0 ||
+				 uiNewWidth32 > 65535 || uiNewHeight32 > 65535 ||
+				 iNewOffsetX < -32768 || iNewOffsetX > 32767 ||
+				 iNewOffsetY < -32768 || iNewOffsetY > 32767 )
+				return FALSE;
+
+			const size_t uiScaledPixels = (size_t)uiNewWidth32 * (size_t)uiNewHeight32;
+			if ( uiScaledPixels > 0x3FFFFFFFu ||
+				 uiScaledPixels > ( (size_t)0xFFFFFFFFu - uiNewHeight32 - 16 ) / 3 )
+				return FALSE;
+
+			std::vector<UINT8> srcPixels;
+			if ( !VHDUnpackETRLERegion( hImage, i, srcPixels ) )
+				return FALSE;
+
+			const UINT16 usNewWidth = (UINT16)uiNewWidth32;
+			const UINT16 usNewHeight = (UINT16)uiNewHeight32;
+			std::vector<UINT8> scaled( uiScaledPixels, 0 );
+
+			for ( UINT16 y = 0; y < usNewHeight; ++y )
+			{
+				const UINT16 srcY = (UINT16)( y / ubScale );
+				for ( UINT16 x = 0; x < usNewWidth; ++x )
+				{
+					const UINT16 srcX = (UINT16)( x / ubScale );
+					scaled[ (UINT32)y * usNewWidth + x ] =
+						srcPixels[ (UINT32)srcY * srcRegion.usWidth + srcX ];
+				}
+			}
+
+			// Existing STI code uses 3x raw size as a safe ETRLE work buffer.
+			compressed[i].resize( ( scaled.size() * 3 ) + usNewHeight + 16, 0 );
+			STCISubImage tempSub;
+			memset( &tempSub, 0, sizeof(tempSub) );
+			// ETRLECompressSubImage expects the subimage rectangle to be populated.
+			// A zeroed descriptor has usHeight == 0, compresses no scanlines, and
+			// returns a zero-length payload even when the scaled pixels are valid.
+			tempSub.sOffsetX = 0;
+			tempSub.sOffsetY = 0;
+			tempSub.usWidth = usNewWidth;
+			tempSub.usHeight = usNewHeight;
+			const UINT32 uiCompressed = ETRLECompressSubImage(
+				&compressed[i][0], (UINT32)compressed[i].size(), &scaled[0],
+				usNewWidth, usNewHeight, &tempSub );
+			if ( uiCompressed == 0 )
+				return FALSE;
+			compressed[i].resize( uiCompressed );
+			if ( 0xFFFFFFFFu - uiTotalBytes < uiCompressed )
+				return FALSE;
+
+			ETRLEObject &dstRegion = newRegions[i];
+			memset( &dstRegion, 0, sizeof(dstRegion) );
+			dstRegion.uiDataOffset = uiTotalBytes;
+			dstRegion.uiDataLength = uiCompressed;
+			dstRegion.sOffsetX = (INT16)iNewOffsetX;
+			dstRegion.sOffsetY = (INT16)iNewOffsetY;
+			dstRegion.usWidth = usNewWidth;
+			dstRegion.usHeight = usNewHeight;
+
+			uiTotalBytes += uiCompressed;
+			usMaxWidth = __max( usMaxWidth, usNewWidth );
+			usMaxHeight = __max( usMaxHeight, usNewHeight );
+		}
+
+		UINT8 *pNewData = (UINT8*)MemAlloc( uiTotalBytes );
+		ETRLEObject *pNewRegions = (ETRLEObject*)MemAlloc( sizeof(ETRLEObject) * usCount );
+		if ( pNewData == NULL || pNewRegions == NULL )
+		{
+			if ( pNewData ) MemFree( pNewData );
+			if ( pNewRegions ) MemFree( pNewRegions );
+			return FALSE;
+		}
+
+		for ( UINT16 i = 0; i < usCount; ++i )
+		{
+			memcpy( pNewData + newRegions[i].uiDataOffset, &compressed[i][0], compressed[i].size() );
+			pNewRegions[i] = newRegions[i];
+		}
+
+		MemFree( hImage->pPixData8 );
+		MemFree( hImage->pETRLEObject );
+		hImage->pPixData8 = pNewData;
+		hImage->pETRLEObject = pNewRegions;
+		hImage->uiSizePixData = uiTotalBytes;
+		hImage->usWidth = usMaxWidth;
+		hImage->usHeight = usMaxHeight;
+		return TRUE;
+	}
+
+	if ( hImage->ubBitDepth == 16 || hImage->ubBitDepth == 32 )
+	{
+		const UINT32 uiBytesPerPixel = ( hImage->ubBitDepth == 32 ) ? 4 : 2;
+		const UINT8 *pOldData = (const UINT8*)hImage->pImageData;
+		if ( pOldData == NULL )
+			return FALSE;
+
+		for ( UINT16 i = 0; i < usCount; ++i )
+		{
+			const ETRLEObject &srcRegion = hImage->pETRLEObject[i];
+			const UINT32 uiNewWidth32 = (UINT32)srcRegion.usWidth * ubScale;
+			const UINT32 uiNewHeight32 = (UINT32)srcRegion.usHeight * ubScale;
+			const INT32 iNewOffsetX = (INT32)srcRegion.sOffsetX * ubScale;
+			const INT32 iNewOffsetY = (INT32)srcRegion.sOffsetY * ubScale;
+
+			if ( uiNewWidth32 == 0 || uiNewHeight32 == 0 ||
+				 uiNewWidth32 > 65535 || uiNewHeight32 > 65535 ||
+				 iNewOffsetX < -32768 || iNewOffsetX > 32767 ||
+				 iNewOffsetY < -32768 || iNewOffsetY > 32767 )
+				return FALSE;
+
+			const size_t uiFrameBytes =
+				(size_t)uiNewWidth32 * (size_t)uiNewHeight32 * (size_t)uiBytesPerPixel;
+			if ( uiFrameBytes == 0 || uiFrameBytes > 0xFFFFFFFFu )
+				return FALSE;
+
+			ETRLEObject &dstRegion = newRegions[i];
+			memset( &dstRegion, 0, sizeof(dstRegion) );
+			dstRegion.uiDataOffset = uiTotalBytes;
+			dstRegion.uiDataLength = (UINT32)uiFrameBytes;
+			dstRegion.sOffsetX = (INT16)iNewOffsetX;
+			dstRegion.sOffsetY = (INT16)iNewOffsetY;
+			dstRegion.usWidth = (UINT16)uiNewWidth32;
+			dstRegion.usHeight = (UINT16)uiNewHeight32;
+
+			if ( 0xFFFFFFFFu - uiTotalBytes < dstRegion.uiDataLength )
+				return FALSE;
+			uiTotalBytes += dstRegion.uiDataLength;
+			usMaxWidth = __max( usMaxWidth, dstRegion.usWidth );
+			usMaxHeight = __max( usMaxHeight, dstRegion.usHeight );
+		}
+
+		UINT8 *pNewData = (UINT8*)MemAlloc( uiTotalBytes );
+		ETRLEObject *pNewRegions = (ETRLEObject*)MemAlloc( sizeof(ETRLEObject) * usCount );
+		if ( pNewData == NULL || pNewRegions == NULL )
+		{
+			if ( pNewData ) MemFree( pNewData );
+			if ( pNewRegions ) MemFree( pNewRegions );
+			return FALSE;
+		}
+
+		for ( UINT16 i = 0; i < usCount; ++i )
+		{
+			const ETRLEObject &srcRegion = hImage->pETRLEObject[i];
+			const ETRLEObject &dstRegion = newRegions[i];
+			for ( UINT16 y = 0; y < dstRegion.usHeight; ++y )
+			{
+				const UINT16 srcY = (UINT16)( y / ubScale );
+				for ( UINT16 x = 0; x < dstRegion.usWidth; ++x )
+				{
+					const UINT16 srcX = (UINT16)( x / ubScale );
+					const UINT8 *pSrcPixel = pOldData + srcRegion.uiDataOffset +
+						( ( (UINT32)srcY * srcRegion.usWidth + srcX ) * uiBytesPerPixel );
+					UINT8 *pDstPixel = pNewData + dstRegion.uiDataOffset +
+						( ( (UINT32)y * dstRegion.usWidth + x ) * uiBytesPerPixel );
+					memcpy( pDstPixel, pSrcPixel, uiBytesPerPixel );
+				}
+			}
+			pNewRegions[i] = dstRegion;
+		}
+
+		MemFree( hImage->pImageData );
+		MemFree( hImage->pETRLEObject );
+		hImage->pImageData = pNewData;
+		hImage->pETRLEObject = pNewRegions;
+		hImage->uiSizePixData = uiTotalBytes;
+		hImage->usWidth = usMaxWidth;
+		hImage->usHeight = usMaxHeight;
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+
 BOOLEAN ReleaseImageData( HIMAGE hImage, UINT16 fContents )
 {
 
@@ -392,6 +664,20 @@ static void B1TCInheritSTIAppData( HIMAGE hImage, UINT16 fContents )
 	memset( &legacyImage, 0, sizeof(legacyImage) );
 	strncpy( legacyImage.ImageFile, legacyFilename.c_str(), sizeof(legacyImage.ImageFile) - 1 );
 	legacyImage.ImageFile[ sizeof(legacyImage.ImageFile) - 1 ] = 0;
+
+	if( !FileExists( legacyImage.ImageFile ) )
+	{
+		// Native VHD B1TC lives below VHD2\\/VHD4\\ while the canonical STI
+		// remains in the ordinary data stack. Inherit auxiliary STI metadata from
+		// that canonical identity rather than requiring a duplicated VHD STI.
+		const CHAR8 *pLegacyPath = legacyImage.ImageFile;
+		if( (_strnicmp( pLegacyPath, "VHD2\\\\", 5 ) == 0 ||
+			 _strnicmp( pLegacyPath, "VHD4\\\\", 5 ) == 0) &&
+			 strlen( pLegacyPath ) > 5 )
+		{
+			memmove( legacyImage.ImageFile, pLegacyPath + 5, strlen( pLegacyPath + 5 ) + 1 );
+		}
+	}
 
 	if( !FileExists( legacyImage.ImageFile ) )
 		return;

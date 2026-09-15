@@ -60,6 +60,7 @@
 	#include "Arms Dealer Init.h"
 #endif
 #include "LogicalBodyTypes/PaletteDB.h"
+#include "Tile Surface.h"
 
 #include "MPXmlTeams.hpp"
 #include "Strategic Mines LUA.h"
@@ -1529,6 +1530,10 @@ UINT32 InitializeJA2(void)
 	HandleJA2CDCheck( );
 
 	gfWorldLoaded = FALSE;
+
+	// VHD changes both world projection spacing and asset density. Configure it
+	// before any world/tile initialization can create tactical imagery.
+	BootstrapVHDGraphicsSettings();
 	
 	//Load external game mechanic data
 	//if ( !LoadExternalGameplayData(TABLEDATA_DIRECTORY))
@@ -1549,6 +1554,16 @@ UINT32 InitializeJA2(void)
 	
 	// Init data
 	InitializeSystemVideoObjects( );
+
+	// Runtime/CI-only native-HD contract smoke. VFS and image/video systems are
+	// live here, and InitializeJA2 always reaches this point before the main menu.
+	// Normal runs pay only the environment-variable check inside the helper.
+	CHAR8 zVHDContractFixture[] = "TILESETS\\0\\sgrass1.sti";
+	if ( !RunVHDNativeContractSelfTest( zVHDContractFixture ) )
+	{
+		SET_ERROR( "VHD native asset contract self-test failed: %s", zVHDContractFixture );
+		return( ERROR_SCREEN );
+	}
 
 	// Init animation system
 	if ( !InitAnimationSystem( ) )

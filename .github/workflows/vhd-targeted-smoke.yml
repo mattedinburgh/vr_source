@@ -1,0 +1,55 @@
+name: Vengeance HD targeted renderer build
+
+on:
+  push:
+    branches:
+      - feature/vhd-renderer
+      - 'engine/vhd-*'
+    paths:
+      - 'Standard Gaming Platform/**'
+      - 'TileEngine/**'
+      - 'Tactical/**'
+      - 'Editor/**'
+      - '.github/workflows/vhd-targeted-smoke.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  renderer-projects:
+    runs-on: windows-2022
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out VHD source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build SGP TileEngine Tactical Editor
+        shell: powershell
+        run: |
+          $projects = @('SGP','TileEngine','Tactical','Editor')
+          foreach ($project in $projects) {
+            $log = Join-Path $env:GITHUB_WORKSPACE ("vhd-" + $project + ".log")
+            Write-Host "===== Building $project ====="
+            msbuild '.\ja2_VS2013.sln' /m "/t:$project" /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /fl "/flp:logfile=$log;verbosity=normal"
+            if ($LASTEXITCODE -ne 0) {
+              if (Test-Path $log) { Get-Content $log -Tail 250 }
+              exit $LASTEXITCODE
+            }
+          }
+
+      - name: Upload renderer build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vhd-renderer-build-logs-${{ github.run_number }}
+          path: vhd-*.log
+          if-no-files-found: warn

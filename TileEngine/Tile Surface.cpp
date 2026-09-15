@@ -17,6 +17,9 @@
 #endif
 
 #include "ExceptionHandling.h"
+#include "Isometric Utils.h"
+#include "GameSettings.h"
+#include "STCI.h"
 
 
 TILE_IMAGERY				*gTileSurfaceArray[ NUMBEROFTILETYPES ];
@@ -37,6 +40,316 @@ static void TraceSanMonaC5VisualAsset( const STR8 pStage, const STR8 pFilename, 
 		pStage != NULL ? pStage : "", pFilename != NULL ? pFilename : "", usObjects,
 		ubBitDepth, pJsd != NULL ? pJsd : "", usStructures );
 	fclose( pTrace );
+}
+
+static HIMAGE CreateCanonicalSTIImage( const STR8 pFilename, UINT16 fContents )
+{
+	if ( pFilename == NULL )
+		return NULL;
+
+	// Geometry/app-data authority must always be the authored STI itself.
+	// CreateImage() intentionally prefers optional B1TC/JPC/PNG replacements,
+	// so using it here would let visual art redefine the native-HD contract.
+	HIMAGE hImage = (HIMAGE)MemAlloc( sizeof( image_type ) );
+	if ( hImage == NULL )
+		return NULL;
+
+	memset( hImage, 0, sizeof( image_type ) );
+	strncpy( hImage->ImageFile, pFilename, sizeof(hImage->ImageFile) - 1 );
+	hImage->ImageFile[ sizeof(hImage->ImageFile) - 1 ] = 0;
+	hImage->iFileLoader = STCI_FILE_READER;
+
+	if ( !LoadSTCIFileToImage( hImage, fContents ) )
+	{
+		MemFree( hImage );
+		return NULL;
+	}
+
+	return hImage;
+}
+
+
+static BOOLEAN ValidateAndCanonicalizeNativeVHDImage(
+	HIMAGE hNativeImage, STR8 pCanonicalFilename, UINT8 ubScale )
+{
+	if ( hNativeImage == NULL || pCanonicalFilename == NULL ||
+		 ( ubScale != 2 && ubScale != 4 ) )
+		return FALSE;
+
+	// Native VHD packages replace pixels only. Load the authored STI directly,
+	// bypassing optional B1TC/JPC/PNG substitutions, and use it as the immutable
+	// contract for frame identity/geometry and auxiliary gameplay metadata.
+	HIMAGE hCanonicalImage = CreateCanonicalSTIImage(
+		pCanonicalFilename, IMAGE_ALLDATA );
+	if ( hCanonicalImage == NULL )
+	{
+		BlackBoxEvent( "VHD",
+			"native validation cannot load canonical file=%s native=%s scale=%u",
+			pCanonicalFilename,
+			hNativeImage->ImageFile,
+			ubScale );
+		return FALSE;
+	}
+
+	BOOLEAN fValid = TRUE;
+
+	if ( hNativeImage->pImageData == NULL ||
+		 hCanonicalImage->pImageData == NULL ||
+		 hNativeImage->pETRLEObject == NULL ||
+		 hCanonicalImage->pETRLEObject == NULL ||
+		 hNativeImage->usNumberOfObjects == 0 ||
+		 hCanonicalImage->usNumberOfObjects == 0 )
+	{
+		BlackBoxEvent( "VHD",
+			"native validation rejected malformed image canonical=%s native=%s",
+			pCanonicalFilename, hNativeImage->ImageFile );
+		fValid = FALSE;
+	}
+	else if ( hNativeImage->usNumberOfObjects != hCanonicalImage->usNumberOfObjects )
+	{
+		BlackBoxEvent( "VHD",
+			"native validation rejected frame count canonical=%s native=%s expected=%u got=%u",
+			pCanonicalFilename,
+			hNativeImage->ImageFile,
+			hCanonicalImage->usNumberOfObjects,
+			hNativeImage->usNumberOfObjects );
+		fValid = FALSE;
+	}
+
+	if ( fValid )
+	{
+		for ( UINT16 usFrame = 0; usFrame < hCanonicalImage->usNumberOfObjects; ++usFrame )
+		{
+			const ETRLEObject *pCanonical = &hCanonicalImage->pETRLEObject[ usFrame ];
+			const ETRLEObject *pNative = &hNativeImage->pETRLEObject[ usFrame ];
+
+			const UINT32 uiExpectedWidth = (UINT32)pCanonical->usWidth * ubScale;
+			const UINT32 uiExpectedHeight = (UINT32)pCanonical->usHeight * ubScale;
+			const INT32 iExpectedOffsetX = (INT32)pCanonical->sOffsetX * ubScale;
+			const INT32 iExpectedOffsetY = (INT32)pCanonical->sOffsetY * ubScale;
+
+			if ( uiExpectedWidth == 0 || uiExpectedHeight == 0 ||
+				 uiExpectedWidth > 65535 || uiExpectedHeight > 65535 ||
+				 iExpectedOffsetX < -32768 || iExpectedOffsetX > 32767 ||
+				 iExpectedOffsetY < -32768 || iExpectedOffsetY > 32767 )
+			{
+				BlackBoxEvent( "VHD",
+					"native validation rejected canonical overflow file=%s frame=%u scale=%u",
+					pCanonicalFilename, usFrame, ubScale );
+				fValid = FALSE;
+				break;
+			}
+
+			if ( pNative->usWidth != (UINT16)uiExpectedWidth ||
+				 pNative->usHeight != (UINT16)uiExpectedHeight ||
+				 pNative->sOffsetX != (INT16)iExpectedOffsetX ||
+				 pNative->sOffsetY != (INT16)iExpectedOffsetY )
+			{
+				BlackBoxEvent( "VHD",
+					"native validation rejected geometry file=%s native=%s frame=%u expected=%ux%u@%d,%d got=%ux%u@%d,%d",
+					pCanonicalFilename,
+					hNativeImage->ImageFile,
+					usFrame,
+					(UINT16)uiExpectedWidth,
+					(UINT16)uiExpectedHeight,
+					(INT16)iExpectedOffsetX,
+					(INT16)iExpectedOffsetY,
+					pNative->usWidth,
+					pNative->usHeight,
+					pNative->sOffsetX,
+					pNative->sOffsetY );
+				fValid = FALSE;
+				break;
+			}
+		}
+	}
+
+	// IMAGE_APPDATA can affect animation/interaction behavior, so an HD visual
+	// package must never silently replace it.  Canonicalize native metadata to
+	// the logical asset after geometry has passed.
+	const BOOLEAN fCanonicalAppDataConsistent =
+		( hCanonicalImage->uiAppDataSize == 0 && hCanonicalImage->pAppData == NULL ) ||
+		( hCanonicalImage->uiAppDataSize > 0 &&
+		  hCanonicalImage->pAppData != NULL &&
+		  ( hCanonicalImage->fFlags & IMAGE_APPDATA ) );
+
+	const BOOLEAN fNativeAppDataConsistent =
+		( hNativeImage->uiAppDataSize == 0 && hNativeImage->pAppData == NULL ) ||
+		( hNativeImage->uiAppDataSize > 0 &&
+		  hNativeImage->pAppData != NULL &&
+		  ( hNativeImage->fFlags & IMAGE_APPDATA ) );
+
+	if ( fValid && ( !fCanonicalAppDataConsistent || !fNativeAppDataConsistent ) )
+	{
+		BlackBoxEvent( "VHD",
+			"native validation rejected inconsistent appdata canonical=%s native=%s",
+			pCanonicalFilename, hNativeImage->ImageFile );
+		fValid = FALSE;
+	}
+
+	if ( fValid )
+	{
+		const BOOLEAN fAppDataDiffers =
+			hNativeImage->uiAppDataSize != hCanonicalImage->uiAppDataSize ||
+			( hCanonicalImage->uiAppDataSize > 0 &&
+			  memcmp( hNativeImage->pAppData,
+					  hCanonicalImage->pAppData,
+					  hCanonicalImage->uiAppDataSize ) != 0 );
+
+		if ( fAppDataDiffers )
+		{
+			if ( hNativeImage->fFlags & IMAGE_APPDATA )
+				ReleaseImageData( hNativeImage, IMAGE_APPDATA );
+
+			hNativeImage->pAppData = NULL;
+			hNativeImage->uiAppDataSize = 0;
+			hNativeImage->fFlags &= ~IMAGE_APPDATA;
+
+			if ( hCanonicalImage->uiAppDataSize > 0 )
+			{
+				hNativeImage->pAppData =
+					(UINT8 *)MemAlloc( hCanonicalImage->uiAppDataSize );
+				if ( hNativeImage->pAppData == NULL )
+				{
+					BlackBoxEvent( "VHD",
+						"native validation appdata allocation failed file=%s bytes=%u",
+						pCanonicalFilename, hCanonicalImage->uiAppDataSize );
+					fValid = FALSE;
+				}
+				else
+				{
+					memcpy( hNativeImage->pAppData,
+							hCanonicalImage->pAppData,
+							hCanonicalImage->uiAppDataSize );
+					hNativeImage->uiAppDataSize = hCanonicalImage->uiAppDataSize;
+					hNativeImage->fFlags |= IMAGE_APPDATA;
+					BlackBoxEvent( "VHD",
+						"native metadata canonicalized file=%s bytes=%u",
+						pCanonicalFilename, hCanonicalImage->uiAppDataSize );
+				}
+			}
+			else
+			{
+				BlackBoxEvent( "VHD",
+					"native noncanonical appdata removed file=%s",
+					pCanonicalFilename );
+			}
+		}
+	}
+
+	if ( fValid )
+	{
+		DestroyImage( hCanonicalImage );
+		return TRUE;
+	}
+
+	DestroyImage( hCanonicalImage );
+	return FALSE;
+}
+
+BOOLEAN RunVHDNativeContractSelfTest( STR8 pCanonicalFilename )
+{
+	static BOOLEAN fSelfTestComplete = FALSE;
+	if ( fSelfTestComplete )
+		return TRUE;
+
+	const CHAR8 *pSelfTest = getenv( "VR_VHD_NATIVE_CONTRACT_TEST" );
+	if ( pSelfTest == NULL || strcmp( pSelfTest, "1" ) != 0 )
+		return TRUE;
+
+	if ( pCanonicalFilename == NULL )
+	{
+		BlackBoxEvent( "VHD", "native contract self-test missing canonical fixture path" );
+		return FALSE;
+	}
+
+	BlackBoxEvent( "VHD",
+		"native contract self-test begin file=%s scale=2",
+		pCanonicalFilename );
+
+	// Start from the authored STI contract, then run the production VHD fallback
+	// scaler. Optional B1TC/JPC/PNG replacements must never be the geometry
+	// authority for this positive/negative contract test.
+	HIMAGE hSyntheticNative = CreateCanonicalSTIImage(
+		pCanonicalFilename, IMAGE_ALLDATA );
+	if ( hSyntheticNative == NULL )
+	{
+		BlackBoxEvent( "VHD",
+			"native contract self-test could not load fixture file=%s",
+			pCanonicalFilename );
+		return FALSE;
+	}
+
+	BlackBoxEvent( "VHD",
+		"native contract self-test fixture loader=%u bitDepth=%u flags=0x%04x objects=%u size=%ux%u",
+		hSyntheticNative->iFileLoader,
+		hSyntheticNative->ubBitDepth,
+		hSyntheticNative->fFlags,
+		hSyntheticNative->usNumberOfObjects,
+		hSyntheticNative->usWidth,
+		hSyntheticNative->usHeight );
+
+	if ( !ScaleImageNearestForVHD( hSyntheticNative, 2 ) ||
+		 hSyntheticNative->pETRLEObject == NULL ||
+		 hSyntheticNative->usNumberOfObjects == 0 )
+	{
+		BlackBoxEvent( "VHD",
+			"native contract self-test could not scale fixture file=%s",
+			pCanonicalFilename );
+		DestroyImage( hSyntheticNative );
+		return FALSE;
+	}
+
+	if ( !ValidateAndCanonicalizeNativeVHDImage(
+			hSyntheticNative, pCanonicalFilename, 2 ) )
+	{
+		BlackBoxEvent( "VHD",
+			"native contract self-test failed valid fixture file=%s",
+			pCanonicalFilename );
+		DestroyImage( hSyntheticNative );
+		return FALSE;
+	}
+
+	// Corrupt one geometry field and require rejection, then restore it before
+	// cleanup so even the synthetic fixture never retains inconsistent state.
+	ETRLEObject *pFrame = &hSyntheticNative->pETRLEObject[ 0 ];
+	const UINT16 usOriginalWidth = pFrame->usWidth;
+	pFrame->usWidth = ( usOriginalWidth > 1 ) ?
+		( UINT16 )( usOriginalWidth - 1 ) : ( UINT16 )( usOriginalWidth + 1 );
+
+	const BOOLEAN fRejectedBadGeometry =
+		!ValidateAndCanonicalizeNativeVHDImage(
+			hSyntheticNative, pCanonicalFilename, 2 );
+	pFrame->usWidth = usOriginalWidth;
+
+	if ( !fRejectedBadGeometry )
+	{
+		BlackBoxEvent( "VHD",
+			"native contract self-test accepted corrupt fixture file=%s",
+			pCanonicalFilename );
+		DestroyImage( hSyntheticNative );
+		return FALSE;
+	}
+
+	DestroyImage( hSyntheticNative );
+
+	FILE *pMarker = fopen( "vhd-native-contract-selftest.ok", "w" );
+	if ( pMarker == NULL )
+	{
+		BlackBoxEvent( "VHD",
+			"native contract self-test could not write marker file=%s",
+			pCanonicalFilename );
+		return FALSE;
+	}
+	fprintf( pMarker, "pass file=%s scale=2\n", pCanonicalFilename );
+	fclose( pMarker );
+
+	BlackBoxEvent( "VHD",
+		"native contract self-test passed file=%s scale=2",
+		pCanonicalFilename );
+
+	fSelfTestComplete = TRUE;
+	return TRUE;
 }
 
 TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
@@ -92,15 +405,77 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 	STR										cEndOfName;
 	STRUCTURE_FILE_REF *	pStructureFileRef;
 	BOOLEAN								fOk;
+	UINT8 ubLoadedVHDScale = 1;
+	BOOLEAN fLoadedNativeVHD = FALSE;
 
+	// Vengeance HD overlay.  Keep map/JSD filenames untouched and only replace
+	// the visual package.  A 2x game looks under VHD2\..., a 4x game under
+	// VHD4\..., first for a multi-frame JPC package and then for a single PNG.
+	// Missing HD art falls through to the normal VFS/legacy path.
+	hImage = NULL;
+	const UINT8 ubRequestedVHDScale = GetVHDRenderScale();
+	if ( gGameExternalOptions.fVHDPreferNativeAssets &&
+		 ( ubRequestedVHDScale == 2 || ubRequestedVHDScale == 4 ) )
+	{
+		CHAR8 cVHDVisualFilename[512];
+		const int iVHDNameLen = sprintf( cVHDVisualFilename, "VHD%u\\%s",
+			(unsigned int)ubRequestedVHDScale, cVisualFilename );
+		if ( iVHDNameLen > 0 && iVHDNameLen < (int)sizeof(cVHDVisualFilename) )
+		{
+			// Native VHD2/VHD4 may be supplied as a same-name B1TC sibling,
+			// JPC archive or PNG. DEFAULT first lets CreateImage resolve
+			// VHD2\\...\\foo.b1tc without requiring a duplicate VHD STI.
+			hImage = CreateImage( cVHDVisualFilename, IMAGE_ALLDATA, ImageFileType::DEFAULT );
+			if ( hImage == NULL )
+				hImage = CreateImage( cVHDVisualFilename, IMAGE_ALLDATA, ImageFileType::JPC );
+			if ( hImage == NULL )
+				hImage = CreateImage( cVHDVisualFilename, IMAGE_ALLDATA, ImageFileType::PNG );
+			if ( hImage != NULL )
+			{
+				if ( ValidateAndCanonicalizeNativeVHDImage(
+						hImage, cFilename, ubRequestedVHDScale ) )
+				{
+					ubLoadedVHDScale = ubRequestedVHDScale;
+					fLoadedNativeVHD = TRUE;
+				}
+				else
+				{
+					BlackBoxEvent( "VHD",
+						"native asset rejected; using visual fallback logical=%s visual=%s native=%s scale=%u",
+						cFilename, cVisualFilename, hImage->ImageFile, ubRequestedVHDScale );
+					DestroyImage( hImage );
+					hImage = NULL;
+				}
+			}
+		}
+	}
 
-	hImage = CreateImage( cVisualFilename, IMAGE_ALLDATA );
+	if ( hImage == NULL )
+		hImage = CreateImage( cVisualFilename, IMAGE_ALLDATA );
 	if ( hImage == NULL && fC5VisualOverride )
 	{
 		TraceSanMonaC5VisualAsset( "PIXEL_OVERRIDE_FALLBACK", cVisualFilename, 0, 0, cFilename, 0 );
 		hImage = CreateImage( cFilename, IMAGE_ALLDATA );
 		fC5VisualOverride = FALSE;
 	}
+
+	// If no native VHD package exists, enlarge the loaded legacy imagery once.
+	// Legacy indexed ETRLE stays indexed/compressed. The VHD renderer's C++ multi-Z
+	// fallback maps scaled source pixels back to authored/JSD strip coordinates.
+	if ( hImage != NULL && ubLoadedVHDScale == 1 &&
+		 ( ubRequestedVHDScale == 2 || ubRequestedVHDScale == 4 ) )
+	{
+		if ( ScaleImageNearestForVHD( hImage, ubRequestedVHDScale ) )
+		{
+			ubLoadedVHDScale = ubRequestedVHDScale;
+		}
+		else
+		{
+			BlackBoxEvent( "VHD", "fallback scale failed file=%s scale=%u",
+				cFilename != NULL ? cFilename : "(null)", ubRequestedVHDScale );
+		}
+	}
+
 	if (hImage == NULL)
 	{
 		if ( fTraceB1Asset )
@@ -111,7 +486,10 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 		return( NULL );
 	}
 	if ( fTraceC5Asset )
-		TraceSanMonaC5VisualAsset( hImage->ubBitDepth == 32 ? "IMAGE_TRUECOLOR" : "IMAGE_LEGACY", hImage->ImageFile, hImage->usNumberOfObjects, hImage->ubBitDepth, "", 0 );
+		TraceSanMonaC5VisualAsset( fLoadedNativeVHD ? "IMAGE_VHD_NATIVE" :
+			( ubLoadedVHDScale > 1 ? "IMAGE_VHD_FALLBACK" :
+			  ( hImage->ubBitDepth == 32 ? "IMAGE_TRUECOLOR" : "IMAGE_LEGACY" ) ),
+			hImage->ImageFile, hImage->usNumberOfObjects, hImage->ubBitDepth, "", 0 );
 	if ( fTraceB1Asset )
 	{
 		TraceB1RemasterLoad( "CREATE IMAGE OK", cFilename );
@@ -128,6 +506,9 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 	VObjectDesc.hImage = hImage;
 
 	hVObject = CreateVideoObject( &VObjectDesc );
+
+	if ( hVObject != NULL )
+		hVObject->ubVHDAssetScale = ubLoadedVHDScale;
 
 	if ( hVObject == NULL )
 	{
