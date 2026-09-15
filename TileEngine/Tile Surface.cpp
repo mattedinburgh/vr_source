@@ -60,6 +60,72 @@ static void TraceA3VisualAsset( const STR8 pStage, const STR8 pFilename, UINT16 
 }
 
 
+static BOOLEAN ApplyA3VisualAlias( const STR8 pCanonicalFilename, STR8 pVisualFilename )
+{
+	if ( !IsA3FarmGraphicsOnlyProfile() || pCanonicalFilename == NULL || pVisualFilename == NULL )
+		return FALSE;
+
+	const CHAR8 *pLeaf = strrchr( pCanonicalFilename, '\\' );
+	pLeaf = ( pLeaf != NULL ) ? pLeaf + 1 : pCanonicalFilename;
+
+	struct A3_VISUAL_ALIAS
+	{
+		const CHAR8 *pOriginal;
+		const CHAR8 *pVisual;
+		BOOLEAN fRequiresJSD;
+	};
+	static const A3_VISUAL_ALIAS gAliases[] =
+	{
+		{ "BUILD_39.STI", "TILESETS\\38\\VR_A3_BUILD_39.STI", TRUE },
+		{ "BUILD_31.STI", "TILESETS\\38\\VR_A3_BUILD_31.STI", TRUE },
+		{ "BUILD_40.STI", "TILESETS\\38\\VR_A3_BUILD_40.STI", TRUE },
+		{ "BUILD_35.STI", "TILESETS\\38\\VR_A3_BUILD_35.STI", TRUE },
+		{ "WELFLOR3.STI", "TILESETS\\38\\VR_A3_WELFLOR3.STI", FALSE },
+		{ "P-FLOOR3.STI", "TILESETS\\38\\VR_A3_P_FLOOR3.STI", FALSE },
+		{ "WELFLOR1.STI", "TILESETS\\38\\VR_A3_WELFLOR1.STI", FALSE },
+		{ "WELFLOR2.STI", "TILESETS\\38\\VR_A3_WELFLOR2.STI", FALSE },
+		{ "W-ROOF1.STI", "TILESETS\\38\\VR_A3_W_ROOF1.STI", TRUE },
+		{ "SLANT_11.STI", "TILESETS\\38\\VR_A3_SLANT_11.STI", TRUE },
+		{ "SLANT_13.STI", "TILESETS\\38\\VR_A3_SLANT_13.STI", TRUE },
+	};
+
+	for ( UINT32 i = 0; i < sizeof(gAliases) / sizeof(gAliases[0]); ++i )
+	{
+		if ( _stricmp( pLeaf, gAliases[i].pOriginal ) != 0 )
+			continue;
+
+		if ( !FileExists( pCanonicalFilename ) )
+		{
+			TraceA3VisualAsset( "ALIAS_SKIP_NO_CANONICAL_STI", pCanonicalFilename, 0, 0, "", 0 );
+			return FALSE;
+		}
+
+		if ( gAliases[i].fRequiresJSD )
+		{
+			SGPFILENAME cJsdFilename;
+			strncpy( cJsdFilename, pCanonicalFilename, sizeof(cJsdFilename) - 1 );
+			cJsdFilename[ sizeof(cJsdFilename) - 1 ] = 0;
+			CHAR8 *pExt = strrchr( cJsdFilename, '.' );
+			if ( pExt != NULL )
+				strcpy( pExt + 1, STRUCTURE_FILE_EXTENSION );
+			else
+				strcat( cJsdFilename, ".JSD" );
+
+			if ( !FileExists( cJsdFilename ) )
+			{
+				TraceA3VisualAsset( "ALIAS_SKIP_NO_CANONICAL_JSD", pCanonicalFilename, 0, 0, cJsdFilename, 0 );
+				return FALSE;
+			}
+		}
+
+		strcpy( pVisualFilename, gAliases[i].pVisual );
+		TraceA3VisualAsset( "ALIAS_SELECTED", pVisualFilename, 0, 0, pCanonicalFilename, 0 );
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
 static HIMAGE CreateCanonicalSTIImage( const STR8 pFilename, UINT16 fContents )
 {
 	if ( pFilename == NULL )
@@ -377,6 +443,7 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 	SGPFILENAME cVisualFilename;
 	strncpy( cVisualFilename, cFilename, sizeof(cVisualFilename) - 1 );
 	cVisualFilename[ sizeof(cVisualFilename) - 1 ] = 0;
+	BOOLEAN fA3VisualOverride = ApplyA3VisualAlias( cFilename, cVisualFilename );
 	BOOLEAN fC5VisualOverride = FALSE;
 	if ( IsSanMonaC5GraphicsOnlyProfile() && cFilename != NULL )
 	{
@@ -414,6 +481,7 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 	}
 	const BOOLEAN fTraceB1Asset = ( cFilename != NULL && strstr( cFilename, "B1_" ) != NULL );
 	const BOOLEAN fTraceC5Asset = IsSanMonaC5TilePath( cFilename ) || fC5VisualOverride;
+	const BOOLEAN fTraceA3Asset = fA3VisualOverride;
 	if ( fTraceB1Asset )
 		TraceB1RemasterLoad( "TILE LOAD BEGIN", cFilename );
 	VOBJECT_DESC	VObjectDesc;
@@ -470,6 +538,12 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 
 	if ( hImage == NULL )
 		hImage = CreateImage( cVisualFilename, IMAGE_ALLDATA );
+	if ( hImage == NULL && fA3VisualOverride )
+	{
+		TraceA3VisualAsset( "PIXEL_OVERRIDE_FALLBACK", cVisualFilename, 0, 0, cFilename, 0 );
+		hImage = CreateImage( cFilename, IMAGE_ALLDATA );
+		fA3VisualOverride = FALSE;
+	}
 	if ( hImage == NULL && fC5VisualOverride )
 	{
 		TraceSanMonaC5VisualAsset( "PIXEL_OVERRIDE_FALLBACK", cVisualFilename, 0, 0, cFilename, 0 );
@@ -508,6 +582,12 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 			( ubLoadedVHDScale > 1 ? "IMAGE_VHD_FALLBACK" :
 			  ( hImage->ubBitDepth == 32 ? "IMAGE_TRUECOLOR" : "IMAGE_LEGACY" ) ),
 			hImage->ImageFile, hImage->usNumberOfObjects, hImage->ubBitDepth, "", 0 );
+	if ( fTraceA3Asset )
+		TraceA3VisualAsset(
+			fA3VisualOverride ?
+				( hImage->ubBitDepth == 32 ? "IMAGE_OVERRIDE_TRUECOLOR" : "IMAGE_OVERRIDE_LEGACY" ) :
+				"IMAGE_CANONICAL_FALLBACK",
+			hImage->ImageFile, hImage->usNumberOfObjects, hImage->ubBitDepth, cFilename, 0 );
 	if ( fTraceB1Asset )
 	{
 		TraceB1RemasterLoad( "CREATE IMAGE OK", cFilename );
@@ -563,6 +643,8 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 	const BOOLEAN fStructureExists = FileExists( cStructureFilename );
 	if ( fTraceC5Asset )
 		TraceSanMonaC5VisualAsset( fStructureExists ? "JSD_FOUND" : "JSD_NOT_PRESENT", cFilename, hVObject->usNumberOfObjects, hVObject->ubBitDepth, cStructureFilename, 0 );
+	if ( fTraceA3Asset )
+		TraceA3VisualAsset( fStructureExists ? "JSD_FOUND" : "JSD_NOT_PRESENT", cFilename, hVObject->usNumberOfObjects, hVObject->ubBitDepth, cStructureFilename, 0 );
 	if ( fTraceB1Asset )
 		TraceB1RemasterLoad( fStructureExists ? "JSD FOUND" : "JSD NOT PRESENT", cStructureFilename );
 	if ( fStructureExists )
@@ -572,6 +654,8 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 		{
 			if ( fTraceC5Asset )
 				TraceSanMonaC5VisualAsset( "JSD_COUNT_FAILED", cFilename, hVObject->usNumberOfObjects, hVObject->ubBitDepth, cStructureFilename, pStructureFileRef != NULL ? pStructureFileRef->usNumberOfStructures : 0 );
+			if ( fTraceA3Asset )
+				TraceA3VisualAsset( "JSD_COUNT_FAILED", cFilename, hVObject->usNumberOfObjects, hVObject->ubBitDepth, cStructureFilename, pStructureFileRef != NULL ? pStructureFileRef->usNumberOfStructures : 0 );
 			if ( fTraceB1Asset )
 			{
 				CHAR8 zB1StructError[224];
@@ -590,6 +674,8 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 
 		if ( fTraceC5Asset )
 			TraceSanMonaC5VisualAsset( "JSD_OK", cFilename, hVObject->usNumberOfObjects, hVObject->ubBitDepth, cStructureFilename, pStructureFileRef->usNumberOfStructures );
+		if ( fTraceA3Asset )
+			TraceA3VisualAsset( "JSD_OK", cFilename, hVObject->usNumberOfObjects, hVObject->ubBitDepth, cStructureFilename, pStructureFileRef->usNumberOfStructures );
 		if ( fTraceB1Asset )
 			TraceB1RemasterLoad( "JSD LOAD OK", cStructureFilename );
 		DebugMsg( TOPIC_JA2, DBG_LEVEL_3, cStructureFilename );
