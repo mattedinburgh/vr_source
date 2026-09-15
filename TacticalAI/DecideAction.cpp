@@ -561,15 +561,15 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 		return AI_ACTION_NONE;
 	}
 
-	// New information invalidates the old offensive commitment even when there is no
-	// safe move available. If boxed in, normal BLACK/RED attack logic can still fight.
+	// Snapshot the old role for utility semantics, then invalidate its offensive
+	// commitment. A surprise withdrawal must not continue to reserve a flank/maneuver task.
+	INT8 bRole = AITacticalRole(pSoldier, Context.sPrimaryThreat);
 	AICancelShortPlan(pSoldier);
 	AIReleaseTacticalTask(pSoldier);
 
 	if (!fCanMove || pSoldier->aiData.bOrders == STATIONARY)
 		return AI_ACTION_NONE;
 
-	INT8 bRole = AITacticalRole(pSoldier, Context.sPrimaryThreat);
 	INT32 iCurrentScore = AIUtilityPositionScore(
 		pSoldier, pSoldier->sGridNo, Context.sPrimaryThreat,
 		AI_INTENT_FALLBACK, bRole);
@@ -3334,17 +3334,17 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 	}
 	if (AICombatTeam(pSoldier))
 	{
-		// A shattered element first gets a chance to join another viable local
+		// Newly revealed personal contacts invalidate the old movement plan before
+		// ordinary cohesion/regrouping gets a chance to pull the soldier elsewhere.
+		INT8 bContactReaction = DecideContactSurpriseReposition(pSoldier, ubCanMove);
+		if (bContactReaction != AI_ACTION_NONE)
+			return bContactReaction;
+
+		// A shattered element then gets a chance to join another viable local
 		// fireteam; the helper refuses ordinary regrouping while under direct pressure.
 		INT8 bCohesionAction = DecideFireteamCohesionAction(pSoldier, ubCanMove);
 		if (bCohesionAction != AI_ACTION_NONE)
 			return bCohesionAction;
-
-		// Newly revealed personal contacts can invalidate an otherwise sensible route.
-		// Reassess before committing to suppression/ordinary fallback or another attack.
-		INT8 bContactReaction = DecideContactSurpriseReposition(pSoldier, ubCanMove);
-		if (bContactReaction != AI_ACTION_NONE)
-			return bContactReaction;
 
 		// Persistent break-contact intent then outranks ordinary attack setup.
 		INT8 bDisengageAction = DecideDisengagementAction(pSoldier, ubCanMove);
@@ -5775,20 +5775,19 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				if (bDisperseAction != AI_ACTION_NONE)
 					return bDisperseAction;
 			}
-			// Maintain element cohesion before ordinary offensive movement. Soldiers
-			// already under direct pressure are excluded inside the helper.
+			// A movement plan that unexpectedly reveals several personal contacts is no
+			// longer authoritative. Reassess before any ordinary cohesion move.
+			INT8 bContactReaction = DecideContactSurpriseReposition(pSoldier, ubCanMove);
+			if (bContactReaction != AI_ACTION_NONE)
+				return bContactReaction;
+
+			// Maintain element cohesion only after the surprise geometry has been handled.
 			if (AICombatTeam(pSoldier))
 			{
 				INT8 bCohesionAction = DecideFireteamCohesionAction(pSoldier, ubCanMove);
 				if (bCohesionAction != AI_ACTION_NONE)
 					return bCohesionAction;
 			}
-
-			// A movement plan that unexpectedly reveals several personal contacts is no
-			// longer authoritative. Reposition if the newly observed geometry warrants it.
-			INT8 bContactReaction = DecideContactSurpriseReposition(pSoldier, ubCanMove);
-			if (bContactReaction != AI_ACTION_NONE)
-				return bContactReaction;
 
 			// Persistent break-contact intent outranks ordinary fallback/attack setup.
 			if (AICombatTeam(pSoldier))
