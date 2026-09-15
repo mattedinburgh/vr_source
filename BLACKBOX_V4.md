@@ -80,6 +80,26 @@ BlackBoxOperationEnd(token, ok ? "OK" : "FAILED");
 
 If the game dies before `BlackBoxOperationEnd`, the crash report shows that operation as **ACTIVE**.
 
+## Companion reliability hardening (v5 workstream)
+
+The recorder format remains compatible with existing `vr-blackbox-1` telemetry while the
+analysis path is being hardened separately.
+
+Current reliability changes:
+
+- a crash-truncated **final** JSONL record no longer makes the whole Companion report unusable;
+- malformed JSONL in the middle of a log still fails fast;
+- `--strict-jsonl` restores fail-fast validation for every malformed record;
+- the Companion reports duplicate, out-of-order and missing sequence IDs;
+- Markdown and JSON summaries are written to a temporary file, flushed to disk, and only
+  then atomically replace the prior report;
+- regression tests cover truncated-tail recovery, strict parsing, sequence integrity and
+  atomic output replacement.
+
+This deliberately does not weaken the in-engine crash recorder. The next engine-side work
+should focus on bounded I/O and shutdown/watchdog race hardening only after the Companion
+changes pass their test workflow.
+
 ## Design rules
 
 1. Do not write every frame or AI decision to disk.
