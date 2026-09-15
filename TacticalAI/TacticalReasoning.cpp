@@ -50,6 +50,22 @@ typedef struct
 
 static AICONTACTTRACKER gAIContactTracker[MAX_NUM_SOLDIERS];
 
+#define AI_TACTICAL_SETBACK_SLOTS 6
+
+typedef struct
+{
+	BOOLEAN fValid;
+	UINT32 uiOwnerIdentity;
+	UINT8 ubType;
+	INT32 sGridNo;
+	UINT8 ubSeverity;
+	UINT32 uiRegisteredTurn;
+	UINT32 uiExpiresTurn;
+} AITACTICALSETBACKSLOT;
+
+static AITACTICALSETBACKSLOT
+	gAITacticalSetbacks[MAX_NUM_SOLDIERS][AI_TACTICAL_SETBACK_SLOTS];
+
 #define AI_CONTACT_MEMORY_MAX_TURNS 12
 #define AI_CONTACT_MEMORY_MIN_CONFIDENCE 18
 
@@ -102,12 +118,15 @@ static void AIValidateContactMemorySector(void)
 
 	memset(gAIContactMemory, 0, sizeof(gAIContactMemory));
 	memset(gAIThreatNoiseEvidence, 0, sizeof(gAIThreatNoiseEvidence));
+	memset(gAITacticalSetbacks, 0, sizeof(gAITacticalSetbacks));
 	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
 	{
 		for (UINT16 j = 0; j < MAX_NUM_SOLDIERS; ++j)
 			gAIContactMemory[i][j].sLastKnownGridNo = NOWHERE;
 		for (UINT8 j = 0; j < AI_THREAT_NOISE_EVIDENCE_SLOTS; ++j)
 			gAIThreatNoiseEvidence[i][j].sGridNo = NOWHERE;
+		for (UINT8 j = 0; j < AI_TACTICAL_SETBACK_SLOTS; ++j)
+			gAITacticalSetbacks[i][j].sGridNo = NOWHERE;
 	}
 
 	gsAIContactMemorySectorX = gWorldSectorX;
@@ -1306,6 +1325,145 @@ INT8 AIPreferredFlankAction(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 }
 
 
+void AIRegisterTacticalSetback(SOLDIERTYPE *pSoldier, UINT8 ubType,
+	INT32 sGridNo, UINT8 ubSeverity, UINT8 ubTurns)
+{
+	AIValidateContactMemorySector();
+
+	if (!pSoldier || !AICombatTeam(pSoldier) ||
+		pSoldier->ubID >= MAX_NUM_SOLDIERS ||
+		ubType == AI_SETBACK_NONE ||
+		TileIsOutOfBounds(sGridNo) ||
+		ubSeverity == 0)
+	{
+		return;
+	}
+
+	AITACTICALSETBACKSLOT *pSlots =
+		gAITacticalSetbacks[pSoldier->ubID];
+	INT8 bReplace = -1;
+	INT32 iWeakestValue = 1000000;
+
+	for (UINT8 i = 0; i < AI_TACTICAL_SETBACK_SLOTS; ++i)
+	{
+		AITACTICALSETBACKSLOT *pSlot = &pSlots[i];
+
+		if (pSlot->fValid &&
+			pSlot->uiOwnerIdentity == pSoldier->uiUniqueSoldierIdValue &&
+			pSlot->ubType == ubType &&
+			!TileIsOutOfBounds(pSlot->sGridNo) &&
+			PythSpacesAway(pSlot->sGridNo, sGridNo) <= 2 &&
+			pSlot->uiExpiresTurn >= guiTurnCnt)
+		{
+			pSlot->sGridNo = sGridNo;
+			pSlot->ubSeverity = (UINT8)__max(
+				(INT32)pSlot->ubSeverity, (INT32)ubSeverity);
+			pSlot->uiRegisteredTurn = guiTurnCnt;
+			pSlot->uiExpiresTurn =
+				guiTurnCnt + __max((UINT8)1, ubTurns);
+			return;
+		}
+
+		if (!pSlot->fValid ||
+			pSlot->uiOwnerIdentity != pSoldier->uiUniqueSoldierIdValue ||
+			pSlot->uiExpiresTurn < guiTurnCnt)
+		{
+			bReplace = (INT8)i;
+			break;
+		}
+
+		INT32 iValue =
+			(INT32)pSlot->ubSeverity -
+			5 * (INT32)(guiTurnCnt - pSlot->uiRegisteredTurn);
+		if (iValue < iWeakestValue)
+		{
+			iWeakestValue = iValue;
+			bReplace = (INT8)i;
+		}
+	}
+
+	if (bReplace < 0)
+		return;
+
+	AITACTICALSETBACKSLOT *pSlot = &pSlots[bReplace];
+	memset(pSlot, 0, sizeof(AITACTICALSETBACKSLOT));
+	pSlot->fValid = TRUE;
+	pSlot->uiOwnerIdentity = pSoldier->uiUniqueSoldierIdValue;
+	pSlot->ubType = ubType;
+	pSlot->sGridNo = sGridNo;
+	pSlot->ubSeverity = (UINT8)__min((INT32)100, (INT32)ubSeverity);
+	pSlot->uiRegisteredTurn = guiTurnCnt;
+	pSlot->uiExpiresTurn =
+		guiTurnCnt + __max((UINT8)1, ubTurns);
+}
+
+INT32 AITacticalSetbackPenalty(SOLDIERTYPE *pSoldier, INT32 sCandidateGridNo)
+{
+	AIValidateContactMemorySector();
+
+	if (!pSoldier || !AICombatTeam(pSoldier) ||
+		pSoldier->ubID >= MAX_NUM_SOLDIERS ||
+		TileIsOutOfBounds(sCandidateGridNo))
+	{
+		return 0;
+	}
+
+	INT32 iPenalty = 0;
+
+	for (UINT16 uiOwner = 0; uiOwner < MAX_NUM_SOLDIERS; ++uiOwner)
+	{
+		SOLDIERTYPE *pOwner = MercPtrs[uiOwner];
+		if (!pOwner || !pOwner->bActive || !pOwner->bInSector ||
+			pOwner->bTeam != pSoldier->bTeam ||
+			pOwner->stats.bLife < OKLIFE ||
+			pOwner->bCollapsed ||
+			(uiOwner != pSoldier->ubID &&
+			 (!AISameFireteam(pSoldier, pOwner) ||
+			  PythSpacesAway(pSoldier->sGridNo, pOwner->sGridNo) >
+			  __max(6, DAY_VISION_RANGE / 2))))
+		{
+			continue;
+		}
+
+		for (UINT8 i = 0; i < AI_TACTICAL_SETBACK_SLOTS; ++i)
+		{
+			AITACTICALSETBACKSLOT *pSlot =
+				&gAITacticalSetbacks[uiOwner][i];
+			if (!pSlot->fValid ||
+				pSlot->uiOwnerIdentity != pOwner->uiUniqueSoldierIdValue ||
+				pSlot->uiExpiresTurn < guiTurnCnt ||
+				TileIsOutOfBounds(pSlot->sGridNo))
+			{
+				continue;
+			}
+
+			INT32 iDistance =
+				PythSpacesAway(sCandidateGridNo, pSlot->sGridNo);
+			if (iDistance > 5)
+				continue;
+
+			INT32 iAge =
+				(INT32)(guiTurnCnt - pSlot->uiRegisteredTurn);
+			INT32 iEffective =
+				__max(0, (INT32)pSlot->ubSeverity - 6 * iAge);
+			if (uiOwner != pSoldier->ubID)
+				iEffective = (3 * iEffective) / 4;
+
+			if (iDistance <= 1)
+				;
+			else if (iDistance <= 3)
+				iEffective = (2 * iEffective) / 3;
+			else
+				iEffective /= 3;
+
+			iPenalty += iEffective;
+		}
+	}
+
+	return __min((INT32)70, iPenalty);
+}
+
+
 BOOLEAN AIEvaluateTacticalPosition(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 	INT32 sTargetSpot, UINT16 usMovementMode, AITACTICALPOSITIONFEATURES *pFeatures)
 {
@@ -1333,6 +1491,9 @@ BOOLEAN AIEvaluateTacticalPosition(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 		NumberOfTeamMatesAdjacent(pSoldier, sCandidateSpot);
 	pFeatures->sReactionRisk = (INT16)__min(32767,
 		AIInferredReactionRisk(pSoldier, sCandidateSpot, pSoldier->pathing.bLevel));
+	pFeatures->sSetbackPenalty = (INT16)__min(
+		(INT32)32767,
+		AITacticalSetbackPenalty(pSoldier, sCandidateSpot));
 
 	AITACTICALGEOMETRY Geometry;
 	if (AIBuildTacticalGeometry(pSoldier, pSoldier->sGridNo, &Geometry))
@@ -1451,6 +1612,7 @@ INT32 AIScoreTacticalPosition(SOLDIERTYPE *pSoldier, const AITACTICALPOSITIONFEA
 	}
 
 	iScore -= pFeatures->sReactionRisk / 3;
+	iScore -= __min((INT32)70, (INT32)pFeatures->sSetbackPenalty);
 
 	AITACTICALGEOMETRY Geometry;
 	if (AIBuildTacticalGeometry(pSoldier, pSoldier->sGridNo, &Geometry))
@@ -1776,6 +1938,7 @@ void AIResetTacticalReasoningStateForLoad(void)
 	memset(gAIContactTracker, 0, sizeof(gAIContactTracker));
 	memset(gAIContactMemory, 0, sizeof(gAIContactMemory));
 	memset(gAIThreatNoiseEvidence, 0, sizeof(gAIThreatNoiseEvidence));
+	memset(gAITacticalSetbacks, 0, sizeof(gAITacticalSetbacks));
 	gsAIContactMemorySectorX = gWorldSectorX;
 	gsAIContactMemorySectorY = gWorldSectorY;
 	gbAIContactMemorySectorZ = gbWorldSectorZ;
@@ -1791,5 +1954,7 @@ void AIResetTacticalReasoningStateForLoad(void)
 			gAIContactMemory[i][j].sLastKnownGridNo = NOWHERE;
 		for (UINT8 j = 0; j < AI_THREAT_NOISE_EVIDENCE_SLOTS; ++j)
 			gAIThreatNoiseEvidence[i][j].sGridNo = NOWHERE;
+		for (UINT8 j = 0; j < AI_TACTICAL_SETBACK_SLOTS; ++j)
+			gAITacticalSetbacks[i][j].sGridNo = NOWHERE;
 	}
 }
