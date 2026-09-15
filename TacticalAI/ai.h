@@ -392,6 +392,27 @@ struct AICONTACTBELIEF
 	BOOLEAN fDirectlyVisible;
 };
 
+// Local 8-sector battlefield geometry. It is derived only from legal opponent
+// beliefs plus friendly positions, and is rebuilt transiently during decisions.
+struct AITACTICALGEOMETRY
+{
+	UINT16 usThreatPressure[NUM_WORLD_DIRECTIONS];
+	UINT16 usFriendlyPressure[NUM_WORLD_DIRECTIONS];
+	UINT8 ubThreatDirectionMask;
+	UINT8 ubFriendlyDirectionMask;
+	UINT8 ubKnownContacts;
+	UINT8 ubVisibleContacts;
+	UINT8 ubPrimaryThreatDir;
+	UINT8 ubSecondaryThreatDir;
+	UINT8 ubSafestDirection;
+	UINT8 ubStrongestFriendlyDir;
+	INT16 sLeftFlankOpportunity;
+	INT16 sRightFlankOpportunity;
+	INT16 sRearSafety;
+	BOOLEAN fMultiAngleThreat;
+	BOOLEAN fEncirclementPressure;
+};
+
 struct AITACTICALPOSITIONFEATURES
 {
 	UINT16 usCurrentExposure;
@@ -408,6 +429,7 @@ struct AITACTICALPOSITIONFEATURES
 	INT16 sRangeError;
 	INT16 sReactionRisk;
 	INT16 sPathExposure;
+	INT16 sGeometryScore;
 };
 
 struct AISHORTPLANSTATE
@@ -434,6 +456,12 @@ struct AICONTACTCHANGE
 
 BOOLEAN AIBuildContactBelief(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID, AICONTACTBELIEF *pBelief);
 BOOLEAN AIBuildPrimaryContactBelief(SOLDIERTYPE *pSoldier, INT32 sPreferredGridNo, AICONTACTBELIEF *pBelief);
+BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
+	AITACTICALGEOMETRY *pGeometry);
+INT32 AIGeometryPositionScore(SOLDIERTYPE *pSoldier,
+	const AITACTICALGEOMETRY *pGeometry, INT32 sCandidateSpot,
+	INT32 sTargetSpot, INT8 bIntent, INT8 bRole);
+INT8 AIPreferredFlankAction(SOLDIERTYPE *pSoldier, INT32 sTargetSpot);
 BOOLEAN AIEvaluateTacticalPosition(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 	INT32 sTargetSpot, UINT16 usMovementMode, AITACTICALPOSITIONFEATURES *pFeatures);
 INT32 AIScoreTacticalPosition(SOLDIERTYPE *pSoldier, const AITACTICALPOSITIONFEATURES *pFeatures,
