@@ -93,7 +93,9 @@ jobs:
           #include "VRAnalytics.h"
           int main()
           {
-              return VRAnalyticsIsEnabled() ? 0 : 1;
+              int enabled = VRAnalyticsIsEnabled() ? 0 : 1;
+              VRAnalyticsShutdown();
+              return enabled;
           }
           CPP
           rm -f VR_BlackBox.jsonl VR_BlackBox_Previous*.jsonl VR_BlackBox_RotatePending.jsonl
@@ -143,6 +145,7 @@ jobs:
               VRAnalyticsStrategicMoveOrdered(110, 7, 0, 17, 8, 0, 0);
               VRAnalyticsStrategicGroupArrived(170, 7, 17, 8, "garrison_reinforcement");
               VRAnalyticsBattleEnded("victory", 200, 1, 1, 0, 6, 0, 0, false);
+              VRAnalyticsShutdown();
               return 0;
           }
           CPP
@@ -171,6 +174,7 @@ jobs:
           assert any(e.get("kind") == "strategic_move_order" for e in events)
           assert any(e.get("kind") == "strategic_group_arrived" for e in events)
           assert any(e.get("kind") == "battle_end" for e in events)
+          assert events[-1].get("kind") == "session_end"
           print(f"Parsed {len(events)} Black Box events")
           PY
           python tools/vr_companion_analyze.py VR_BlackBox.jsonl
