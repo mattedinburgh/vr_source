@@ -6436,6 +6436,31 @@ static BOOLEAN LoadSavedGameBlackBoxInternal( int ubSavedGameID )
 		}
 	}
 
+	// One-time VR progression migration for Matt's 2026-09-15 QuickSave.
+	// The migration tool only rewrites hidden profile gain counters (not checksum-protected
+	// visible stats).  On the first load of slot 0, let the normal JA2 stat-update path
+	// materialize those pending gains so health, experience levels, salaries, soldier
+	// copies, UI flags and all other side effects are handled by the engine itself.
+	{
+		CHAR8 zProgressionMigrationMarker[ MAX_PATH ];
+		sprintf( zProgressionMigrationMarker, "%s\\VR_ProgressionMigration_20260915.pending", gSaveDir );
+
+		if( ubSavedGameID == 0 && FileExists( zProgressionMigrationMarker ) )
+		{
+			for( INT8 bLoop = gTacticalStatus.Team[ gbPlayerNum ].bFirstID; bLoop <= gTacticalStatus.Team[ gbPlayerNum ].bLastID; ++bLoop )
+			{
+				SOLDIERTYPE *pTeamSoldier = MercPtrs[ bLoop ];
+				if( pTeamSoldier != NULL && pTeamSoldier->bActive && pTeamSoldier->ubProfile != NO_PROFILE )
+				{
+					UpdateStats( pTeamSoldier );
+				}
+			}
+
+			// Delete only after every active player merc has been normalized successfully.
+			FileDelete( zProgressionMigrationMarker );
+		}
+	}
+
 	BlackBoxCheckpoint( "SAVE", "operation=LOAD slot=%d phase=COMPLETE sector=%d,%d,%d", ubSavedGameID, gWorldSectorX, gWorldSectorY, gbWorldSectorZ );
 	BlackBoxEvent( "SAVE", "LoadSavedGame complete slot=%d sector=%d,%d,%d", ubSavedGameID, gWorldSectorX, gWorldSectorY, gbWorldSectorZ );
 	return( TRUE );
