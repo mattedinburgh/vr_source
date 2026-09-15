@@ -220,7 +220,7 @@ static BOOLEAN ValidateAndCanonicalizeNativeVHDImage(
 	return FALSE;
 }
 
-static BOOLEAN RunVHDNativeContractSelfTest( STR8 pCanonicalFilename )
+BOOLEAN RunVHDNativeContractSelfTest( STR8 pCanonicalFilename )
 {
 	static BOOLEAN fSelfTestComplete = FALSE;
 	if ( fSelfTestComplete )
@@ -231,22 +231,37 @@ static BOOLEAN RunVHDNativeContractSelfTest( STR8 pCanonicalFilename )
 		return TRUE;
 
 	if ( pCanonicalFilename == NULL )
-		return TRUE;
+	{
+		BlackBoxEvent( "VHD", "native contract self-test missing canonical fixture path" );
+		return FALSE;
+	}
+
+	BlackBoxEvent( "VHD",
+		"native contract self-test begin file=%s scale=2",
+		pCanonicalFilename );
 
 	// Build the fixture through the production loader and production VHD fallback
-	// scaler. This avoids a second STI/JPC/B1TC parser. If a tile cannot be
-	// scaled, keep the test pending and try the next tile loaded during startup.
+	// scaler. This deliberately exercises the same image/scaling code used by
+	// the renderer rather than maintaining a second STI/JPC/B1TC parser.
 	HIMAGE hSyntheticNative = CreateImage(
 		pCanonicalFilename, IMAGE_ALLDATA, ImageFileType::DEFAULT );
 	if ( hSyntheticNative == NULL )
-		return TRUE;
+	{
+		BlackBoxEvent( "VHD",
+			"native contract self-test could not load fixture file=%s",
+			pCanonicalFilename );
+		return FALSE;
+	}
 
 	if ( !ScaleImageNearestForVHD( hSyntheticNative, 2 ) ||
 		 hSyntheticNative->pETRLEObject == NULL ||
 		 hSyntheticNative->usNumberOfObjects == 0 )
 	{
+		BlackBoxEvent( "VHD",
+			"native contract self-test could not scale fixture file=%s",
+			pCanonicalFilename );
 		DestroyImage( hSyntheticNative );
-		return TRUE;
+		return FALSE;
 	}
 
 	if ( !ValidateAndCanonicalizeNativeVHDImage(
@@ -292,6 +307,10 @@ static BOOLEAN RunVHDNativeContractSelfTest( STR8 pCanonicalFilename )
 	}
 	fprintf( pMarker, "pass file=%s scale=2\n", pCanonicalFilename );
 	fclose( pMarker );
+
+	BlackBoxEvent( "VHD",
+		"native contract self-test passed file=%s scale=2",
+		pCanonicalFilename );
 
 	fSelfTestComplete = TRUE;
 	return TRUE;
@@ -339,12 +358,6 @@ TILE_IMAGERY *LoadTileSurface(	STR8	cFilename )
 			}
 		}
 	}
-	if ( !RunVHDNativeContractSelfTest( cFilename ) )
-	{
-		SET_ERROR( "VHD native asset contract self-test failed: %s", cFilename );
-		return NULL;
-	}
-
 	const BOOLEAN fTraceB1Asset = ( cFilename != NULL && strstr( cFilename, "B1_" ) != NULL );
 	const BOOLEAN fTraceC5Asset = IsSanMonaC5TilePath( cFilename ) || fC5VisualOverride;
 	if ( fTraceB1Asset )
