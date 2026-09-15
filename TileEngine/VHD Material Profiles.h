@@ -398,5 +398,3 @@ static void VHDApplyMaterialTone(
 }
 
 #endif
-
-[executed on device: MSI (e4de0d4a-2679-4f35-acaf-b6552e7ec980)]
