@@ -44,6 +44,7 @@
 #include "Interface Items.h"
 #include "Food.h"	// added by Flugente
 #include "Campaign Types.h"	// added by Flugente
+#include "ExceptionHandling.h"
 
 //forward declarations of common classes to eliminate includes
 class OBJECTTYPE;
@@ -2461,6 +2462,21 @@ void MapInvenPoolSlots(MOUSE_REGION * pRegion, INT32 iReason )
 			//CHRISL: Make it possible to right click and pull up stack popup and/or item description boxes
 			WORLDITEM	* twItem = &(pInventoryPoolList[ ( iCurrentInventoryPoolPage * MAP_INVENTORY_POOL_SLOT_COUNT ) + iCounter ]);
 			bool	fValidPointer = false;
+
+			// BlackBox v5: preserve the exact object that entered the map-sector
+			// item-description path before any stack/description logic can stall.
+			BlackBoxEvent( "ITEMDESC",
+				"map inventory rbutton-up slot=%ld page=%ld item=%u class=0x%08lx count=%u reachable=%u descOpen=%u selected=%d",
+				(LONG)iCounter, (LONG)iCurrentInventoryPoolPage, (UINT32)twItem->object.usItem,
+				(ULONG)Item[twItem->object.usItem].usItemClass,
+				(UINT32)twItem->object.ubNumberOfObjects,
+				(UINT32)((twItem->usFlags & WORLD_ITEM_REACHABLE) != 0),
+				(UINT32)InItemDescriptionBox(), (INT32)bSelectedInfoChar );
+			BlackBoxContext( "itemdesc.last_rightclick",
+				"slot=%ld page=%ld item=%u class=0x%08lx count=%u",
+				(LONG)iCounter, (LONG)iCurrentInventoryPoolPage, (UINT32)twItem->object.usItem,
+				(ULONG)Item[twItem->object.usItem].usItemClass,
+				(UINT32)twItem->object.ubNumberOfObjects );
 			//CHRISL: Try to update InSector value so we don't have to "activate" a sector
 			if(MercPtrs[gCharactersList[bSelectedInfoChar].usSolID]->sSectorX == sSelMapX && MercPtrs[gCharactersList[bSelectedInfoChar].usSolID]->sSectorY == sSelMapY && MercPtrs[gCharactersList[bSelectedInfoChar].usSolID]->bSectorZ == iCurrentMapSectorZ && !MercPtrs[gCharactersList[bSelectedInfoChar].usSolID]->flags.fBetweenSectors)
 			{
@@ -2519,7 +2535,18 @@ void MapInvenPoolSlots(MOUSE_REGION * pRegion, INT32 iReason )
 								InternalMAPBeginItemPointer( MercPtrs[gCharactersList[bSelectedInfoChar].usSolID] );
 							}
 							else
-								MAPInternalInitItemDescriptionBox( &twItem->object, 0, MercPtrs[gCharactersList[bSelectedInfoChar].usSolID] );
+							{
+								BOOLEAN fDescInitOK;
+								BlackBoxCheckpoint( "ITEMDESC",
+									"phase=MAPInternalInitItemDescriptionBox begin item=%u class=0x%08lx slot=%ld",
+									(UINT32)twItem->object.usItem,
+									(ULONG)Item[twItem->object.usItem].usItemClass, (LONG)iCounter );
+								fDescInitOK = MAPInternalInitItemDescriptionBox( &twItem->object, 0, MercPtrs[gCharactersList[bSelectedInfoChar].usSolID] );
+								BlackBoxEvent( "ITEMDESC",
+									"map description init returned item=%u class=0x%08lx result=%u",
+									(UINT32)twItem->object.usItem,
+									(ULONG)Item[twItem->object.usItem].usItemClass, (UINT32)fDescInitOK );
+							}
 						}
 					}
 					else if(fValidPointer)
