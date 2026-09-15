@@ -99,3 +99,35 @@ The current V1 render is rejected because:
 - procedural density destroys tactical readability.
 
 V2 starts from a clean authored-map baseline, with custom art reintroduced only after visual inspection of each family.
+
+
+## 2026-09-15 production reset: graphics-only
+
+The old runtime dressing/baking route is retired from the active map stream.
+A3 must not gain objects, cows, crops, roof nodes or other map content during
+LoadWorld, and MAPSHOT must not save a transformed A3_REMASTERED.dat.
+
+The authoritative geometry is the authored A3.dat.  The visual profile may:
+- route sector-scoped replacement art;
+- apply renderer-side visual treatment;
+- preserve the original tile/frame identity contract.
+
+It may not mutate world nodes or tactical placement.
+
+### Structural pilot gate
+
+`Tools/A3/generate_a3_structural_pilot.py` now covers the major A3 surface
+families (walls, floors and roofs) using the old STI only for frame count,
+dimensions, offsets and alpha footprint. Legacy RGB is not sampled.
+
+The structural pilot is intentionally **quarantined / not routed**. Promotion
+requires, in order:
+
+1. B1TC header/frame-contract validation.
+2. Contact-sheet review for seams, perspective, alpha holes and family coherence.
+3. Real MapEditor / MAPSHOT review at native 1920x1080.
+4. Side-by-side tactical-readability review against original A3.
+5. Only then, sector-scoped routing. No global tileset replacement.
+
+If a candidate looks like a recolour, texture filter or generic HD treatment,
+reject it rather than trying to polish it in place.
