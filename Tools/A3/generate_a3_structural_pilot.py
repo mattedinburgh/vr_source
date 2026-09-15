@@ -704,6 +704,80 @@ def validate_generated_contract(
     }
 
 
+def validate_written_b1tc(
+    path: Path,
+    family: str,
+    legacy_frames: list[Image.Image],
+    meta: list[dict],
+) -> dict:
+    """Read the serialized artifact back and verify the tactical contract again."""
+    raw = path.read_bytes()
+    if len(raw) < 8 or raw[:4] != b"B1TC":
+        raise ValueError(f"{family}: invalid B1TC header after write: {path}")
+
+    version, frame_count = struct.unpack_from("<HH", raw, 4)
+    if version != 1:
+        raise ValueError(f"{family}: unsupported B1TC version {version}")
+    if frame_count != len(legacy_frames):
+        raise ValueError(
+            f"{family}: serialized frame count {frame_count} != {len(legacy_frames)}"
+        )
+
+    header_end = 8 + frame_count * 16
+    if len(raw) < header_end:
+        raise ValueError(f"{family}: truncated B1TC frame table")
+
+    expected_payload_offset = header_end
+    alpha_hash = hashlib.sha256()
+    for i, (legacy, m) in enumerate(zip(legacy_frames, meta)):
+        off = 8 + i * 16
+        ox, oy, width, height, payload_offset, data_length = struct.unpack_from(
+            "<hhHHII", raw, off
+        )
+        expected_size = legacy.convert("RGBA").size
+        expected_offset = (int(m["offset_x"]), int(m["offset_y"]))
+        if (ox, oy) != expected_offset:
+            raise ValueError(
+                f"{family} frame {i}: serialized offset {(ox, oy)} != {expected_offset}"
+            )
+        if (width, height) != expected_size:
+            raise ValueError(
+                f"{family} frame {i}: serialized size {(width, height)} != {expected_size}"
+            )
+        if payload_offset != expected_payload_offset:
+            raise ValueError(
+                f"{family} frame {i}: non-canonical payload offset "
+                f"{payload_offset} != {expected_payload_offset}"
+            )
+        expected_length = width * height * 4
+        if data_length != expected_length:
+            raise ValueError(
+                f"{family} frame {i}: RGBA payload length {data_length} != {expected_length}"
+            )
+        payload_end = payload_offset + data_length
+        if payload_end > len(raw):
+            raise ValueError(f"{family} frame {i}: payload exceeds file length")
+
+        payload = raw[payload_offset:payload_end]
+        serialized_alpha = payload[3::4]
+        legacy_alpha = legacy.convert("RGBA").getchannel("A").tobytes()
+        if serialized_alpha != legacy_alpha:
+            raise ValueError(f"{family} frame {i}: serialized alpha footprint changed")
+        alpha_hash.update(serialized_alpha)
+        expected_payload_offset = payload_end
+
+    if expected_payload_offset != len(raw):
+        raise ValueError(
+            f"{family}: unexpected trailing/overlapping B1TC bytes "
+            f"expected_end={expected_payload_offset} file_size={len(raw)}"
+        )
+
+    return {
+        "serialized_bytes": len(raw),
+        "serialized_alpha_sha256": alpha_hash.hexdigest(),
+    }
+
+
 def file_sha256(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as fh:
@@ -821,6 +895,7 @@ def generate_family(tilesets_root: Path, out_root: Path, qa_root: Path,
 
     out = out_root / f"VR_A3_{family}.b1tc"
     write_b1tc(out, generated, meta)
+    serialized = validate_written_b1tc(out, family, legacy_frames, meta)
     artifact_sha256 = file_sha256(out)
     qa_path = qa_root / f"VR_A3_{family}.png"
     contact_sheet(qa_path, family, generated, labels)
@@ -840,6 +915,7 @@ def generate_family(tilesets_root: Path, out_root: Path, qa_root: Path,
         "qa": str(qa_path),
         "artifact_sha256": artifact_sha256,
         **contract,
+        **serialized,
     }
 
 
@@ -904,6 +980,8 @@ def main() -> None:
             f"{r['source_contract']}{jsd_note}{sem_note} "
             f"contract={r['contract_signature'][:16]} "
             f"alpha={r['alpha_sha256'][:16]} "
+            f"serialized_alpha={r['serialized_alpha_sha256'][:16]} "
+            f"bytes={r['serialized_bytes']} "
             f"artifact={r['artifact_sha256'][:16]}"
         )
     for family, filename, reason in missing:
