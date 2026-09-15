@@ -384,10 +384,15 @@ static BOOLEAN AIUsableContactMemory(
 	AICONTACTMEMORYSLOT *pSlot =
 		&gAIContactMemory[pSoldier->ubID][ubOpponentID];
 
+	SOLDIERTYPE *pOpponent = MercPtrs[ubOpponentID];
 	if (!pSlot->fValid ||
 		pSlot->uiObserverIdentity != pSoldier->uiUniqueSoldierIdValue ||
+		(pOpponent && pSlot->uiOpponentIdentity != 0 &&
+		 pSlot->uiOpponentIdentity != pOpponent->uiUniqueSoldierIdValue) ||
 		TileIsOutOfBounds(pSlot->sLastKnownGridNo))
 	{
+		memset(pSlot, 0, sizeof(AICONTACTMEMORYSLOT));
+		pSlot->sLastKnownGridNo = NOWHERE;
 		return FALSE;
 	}
 
@@ -492,6 +497,11 @@ BOOLEAN AIBuildThreatMemoryCue(
 	// evidence of an area of concern, not evidence that those opponents are there now.
 	for (UINT16 i = 0; i < TOTAL_SOLDIERS && i < MAX_NUM_SOLDIERS; ++i)
 	{
+		// The supporting-memory count is a measure of unresolved old contacts,
+		// not a back door for fresh JA2 knowledge to inflate a stale hypothesis.
+		if (Knowledge(pSoldier, (UINT8)i) != NOT_HEARD_OR_SEEN)
+			continue;
+
 		AICONTACTMEMORYSLOT *pSlot = NULL;
 		UINT8 ubConfidence = 0;
 		if (!AIUsableContactMemory(
