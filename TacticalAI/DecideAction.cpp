@@ -701,10 +701,16 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 		}
 	}
 
-	// Candidate 4: lateral/backward bounded maneuver. This matters when the soldier
-	// is not merely surprised but has entered a multi-angle threat geometry.
-	INT32 sFallback = FindFlankingSpot(
-		pSoldier, Context.sPrimaryThreat, AI_ACTION_WITHDRAW);
+	// Candidate 4: weakest-sector breakout. Unlike a simple "backwards" retreat,
+	// this can choose a lateral/diagonal exit when a second threat axis makes the
+	// nominal rear dangerous.
+	INT32 sFallback = FindGeometryBreakoutSpot(
+		pSoldier, Context.sPrimaryThreat);
+	if (TileIsOutOfBounds(sFallback))
+	{
+		sFallback = FindFlankingSpot(
+			pSoldier, Context.sPrimaryThreat, AI_ACTION_WITHDRAW);
+	}
 	if (!TileIsOutOfBounds(sFallback) && sFallback != pSoldier->sGridNo)
 	{
 		INT32 iScore = AIUtilityPositionScore(
@@ -720,7 +726,7 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 				DetermineMovementMode(pSoldier, AI_ACTION_WITHDRAW)),
 			CountNearbyFriends(pSoldier, sFallback, DAY_VISION_RANGE / 3),
 			AICrossfirePositionScore(pSoldier, sFallback, Context.sPrimaryThreat),
-			"lateral or backward break-contact candidate");
+			"weakest-sector breakout candidate");
 
 		if (iScore > iBestScore)
 		{
@@ -12176,6 +12182,30 @@ INT8 DecideDisengagementAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (!AIHasUsedTacticalFallback(pSoldier))
 	{
 		INT32 sFallback = FindRetreatSpot(pSoldier);
+
+		AITACTICALGEOMETRY Geometry;
+		if (AIBuildTacticalGeometry(
+			pSoldier, pSoldier->sGridNo, &Geometry) &&
+			(Geometry.fMultiAngleThreat || Geometry.fEncirclementPressure))
+		{
+			INT32 sBreakout = FindGeometryBreakoutSpot(pSoldier, sThreat);
+			if (!TileIsOutOfBounds(sBreakout))
+			{
+				INT32 iBreakoutScore = AIUtilityPositionScore(
+					pSoldier, sBreakout, sThreat,
+					AI_INTENT_DISENGAGE, AI_ROLE_SCREEN);
+				INT32 iRetreatScore = TileIsOutOfBounds(sFallback) ?
+					-10000 :
+					AIUtilityPositionScore(
+						pSoldier, sFallback, sThreat,
+						AI_INTENT_DISENGAGE, AI_ROLE_SCREEN);
+				if (iBreakoutScore > iRetreatScore)
+					sFallback = sBreakout;
+			}
+		}
+
+		if (TileIsOutOfBounds(sFallback))
+			sFallback = FindGeometryBreakoutSpot(pSoldier, sThreat);
 		if (TileIsOutOfBounds(sFallback))
 			sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
 		if (!TileIsOutOfBounds(sFallback))
@@ -12335,6 +12365,33 @@ INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		return AI_ACTION_NONE;
 
 	INT32 sFallback = FindRetreatSpot(pSoldier);
+
+	AITACTICALGEOMETRY Geometry;
+	const BOOLEAN fHasGeometry =
+		AIBuildTacticalGeometry(pSoldier, pSoldier->sGridNo, &Geometry);
+
+	if (fHasGeometry &&
+		(Geometry.fMultiAngleThreat || Geometry.fEncirclementPressure))
+	{
+		INT32 sBreakout = FindGeometryBreakoutSpot(pSoldier, sThreat);
+		if (!TileIsOutOfBounds(sBreakout))
+		{
+			INT32 iBreakoutScore = AIUtilityPositionScore(
+				pSoldier, sBreakout, sThreat,
+				AI_INTENT_FALLBACK, AI_ROLE_SCREEN);
+			INT32 iRetreatScore = TileIsOutOfBounds(sFallback) ?
+				-10000 :
+				AIUtilityPositionScore(
+					pSoldier, sFallback, sThreat,
+					AI_INTENT_FALLBACK, AI_ROLE_SCREEN);
+
+			if (iBreakoutScore > iRetreatScore)
+				sFallback = sBreakout;
+		}
+	}
+
+	if (TileIsOutOfBounds(sFallback))
+		sFallback = FindGeometryBreakoutSpot(pSoldier, sThreat);
 	if (TileIsOutOfBounds(sFallback))
 		sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
 	if (TileIsOutOfBounds(sFallback))
