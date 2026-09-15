@@ -158,7 +158,12 @@ jobs:
           p = Path("VR_BlackBox.jsonl")
           assert p.exists() and p.stat().st_size > 0
           events = [json.loads(line) for line in p.read_text(encoding="utf-8").splitlines() if line.strip()]
-          assert any(e.get("kind") == "session_start" and e.get("blackbox_version") == 2 for e in events)
+          assert any(
+              e.get("kind") == "session_start"
+              and e.get("blackbox_version") == 2
+              and e.get("journal_lifecycle_version") == 1
+              for e in events
+          )
           assert any(e.get("kind") == "battle_start" for e in events)
           assert any(e.get("kind") == "formation_snapshot" for e in events)
           assert any(
