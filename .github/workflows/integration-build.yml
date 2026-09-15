@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - install/all-2026-09-12
+      - 'blackbox/**'
     paths:
       - '**/*.c'
       - '**/*.cc'
