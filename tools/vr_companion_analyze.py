@@ -883,10 +883,16 @@ def strategic_summary(
 
 def session_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     starts = [e for e in events if e.get("kind") == "session_start"]
+    ends = [e for e in events if e.get("kind") == "session_end"]
     sessions = sorted({e.get("session") for e in events if e.get("session") is not None})
+    ended_sessions = {
+        e.get("session") for e in ends if e.get("session") is not None
+    }
     return {
         "events": len(events),
         "sessions": sessions,
+        "ended_sessions": sorted(ended_sessions),
+        "unclean_sessions": [session for session in sessions if session not in ended_sessions],
         "builds": [
             {
                 "session": e.get("session"),
@@ -978,6 +984,13 @@ def recommendations(summary: Dict[str, Any], baseline: Optional[Dict[str, Any]])
     strat = summary["strategic"]
     integrity = summary.get("integrity", {})
     ingestion = integrity.get("ingestion", {})
+    unclean_sessions = summary.get("session", {}).get("unclean_sessions", [])
+
+    if unclean_sessions:
+        findings.append(
+            f"Black Box lifecycle warning: {len(unclean_sessions)} telemetry session(s) have no clean session_end marker. "
+            "This is expected after a crash or forced termination; correlate those sessions with crash/hang evidence."
+        )
 
     if ingestion.get("skipped_truncated_tail", 0):
         findings.append(
@@ -1182,6 +1195,9 @@ def render_markdown(
         "| Check | Result |",
         "|---|---:|",
         f"| Loaded events | {summary['session']['events']} |",
+        f"| Sessions | {len(summary['session']['sessions'])} |",
+        f"| Cleanly closed sessions | {len(summary['session'].get('ended_sessions', []))} |",
+        f"| Sessions without session_end | {len(summary['session'].get('unclean_sessions', []))} |",
         f"| Truncated tail records recovered | {ingestion.get('skipped_truncated_tail', 0)} |",
         f"| Foreign/unsupported records skipped | {ingestion.get('foreign_schema_lines', 0)} |",
         f"| Duplicate sequence IDs | {integrity.get('duplicate_sequence_ids', 0)} |",
