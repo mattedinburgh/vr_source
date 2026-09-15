@@ -1,895 +1,104 @@
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
 #include "Strategic Operational AI.h"
 #include "Strategic Movement.h"
-#include "Campaign Types.h"
-#include "strategicmap.h"
-#include "strategic.h"
+#include "Strategic AI.h"
 #include "Strategic Mines.h"
-#include "VRAnalytics.h"
+#include "Campaign Types.h"
+#include "Game Clock.h"
+#include "Queen Command.h"
+#include "strategic.h"
+#include "strategicmap.h"
+#include "random.h"
+
+extern ARMY_COMPOSITION gArmyComp[ MAX_ARMY_COMPOSITIONS ];
+extern GARRISON_GROUP *gGarrisonGroup;
+extern INT32 giGarrisonArraySize;
+extern UINT8 NUM_ARMY_COMPOSITIONS;
 
 #define VR_OPERATIONAL_MAGIC0 'O'
 #define VR_OPERATIONAL_MAGIC1 'P'
 #define VR_OPERATIONAL_MAGIC2 'S'
 
-static UINT16 VR_ReadFormationID( const ENEMYGROUP *pEnemy )
+static UINT8 VR_ClampByte( INT32 value )
 {
-	if( !pEnemy )
+	if( value < 0 )
 		return 0;
-	return (UINT16)(
-		(UINT16)pEnemy->ubFormationIDLo |
-		((UINT16)pEnemy->ubFormationIDHi << 8) );
+	if( value > 100 )
+		return 100;
+	return (UINT8)value;
 }
 
-static void VR_WriteFormationID( ENEMYGROUP *pEnemy, UINT16 usValue )
+static INT32 VR_Abs( INT32 value )
 {
-	if( !pEnemy )
-		return;
-	pEnemy->ubFormationIDLo = (UINT8)( usValue & 0xff );
-	pEnemy->ubFormationIDHi = (UINT8)( ( usValue >> 8 ) & 0xff );
+	return value < 0 ? -value : value;
 }
 
-static UINT16 VR_ReadOperationalFlags( const ENEMYGROUP *pEnemy )
+static BOOLEAN VR_IsEnemyFormation( GROUP *pGroup )
 {
-	if( !pEnemy )
-		return 0;
-	return (UINT16)(
-		(UINT16)pEnemy->ubOperationalFlagsLo |
-		((UINT16)pEnemy->ubOperationalFlagsHi << 8) );
+	return pGroup && !pGroup->fPlayer && pGroup->pEnemyGroup;
 }
 
-static void VR_WriteOperationalFlags( ENEMYGROUP *pEnemy, UINT16 usFlags )
+static BOOLEAN VR_FormationStateIsInitialized( GROUP *pGroup )
 {
-	if( !pEnemy )
-		return;
-	pEnemy->ubOperationalFlagsLo = (UINT8)( usFlags & 0xff );
-	pEnemy->ubOperationalFlagsHi = (UINT8)( ( usFlags >> 8 ) & 0xff );
+	if( !VR_IsEnemyFormation( pGroup ) )
+		return FALSE;
+
+	return pGroup->pEnemyGroup->ubOperationalMagic0 == VR_OPERATIONAL_MAGIC0 &&
+		pGroup->pEnemyGroup->ubOperationalMagic1 == VR_OPERATIONAL_MAGIC1 &&
+		pGroup->pEnemyGroup->ubOperationalMagic2 == VR_OPERATIONAL_MAGIC2;
 }
 
-static BOOLEAN VR_HasOperationalFlags( const ENEMYGROUP *pEnemy, UINT16 usFlags )
+static UINT16 VR_CreateFormationID( GROUP *pGroup )
 {
-	return ( VR_ReadOperationalFlags( pEnemy ) & usFlags ) != 0;
-}
-
-static void VR_AddOperationalFlags( ENEMYGROUP *pEnemy, UINT16 usFlags )
-{
-	VR_WriteOperationalFlags(
-		pEnemy, (UINT16)( VR_ReadOperationalFlags( pEnemy ) | usFlags ) );
-}
-
-static void VR_ClearOperationalFlags( ENEMYGROUP *pEnemy, UINT16 usFlags )
-{
-	VR_WriteOperationalFlags(
-		pEnemy, (UINT16)( VR_ReadOperationalFlags( pEnemy ) & ~usFlags ) );
-}
-
-static BOOLEAN VR_IsEnemyFormation( const GROUP *pGroup )
-{
-	return pGroup && VR_IsEnemyStrategicGroup( pGroup ) && pGroup->pEnemyGroup;
+	UINT32 seed = GetWorldTotalMin();
+	seed = (seed * 257U) ^ (UINT32)pGroup->ubGroupID ^ ((UINT32)pGroup->ubOriginalSector << 8);
+	UINT16 id = (UINT16)( seed & 0xffffU );
+	return id ? id : (UINT16)( pGroup->ubGroupID ? pGroup->ubGroupID : 1 );
 }
 
 static UINT8 VR_MissionFromLegacyIntention( UINT8 ubLegacyIntention )
 {
 	switch( ubLegacyIntention )
 	{
-		case PURSUIT:        return VR_OPMISSION_INTERCEPT;
-		case STAGING:        return VR_OPMISSION_ATTACK;
-		case PATROL:         return VR_OPMISSION_PATROL;
-		case REINFORCEMENTS: return VR_OPMISSION_REINFORCE;
-		case ASSAULT:        return VR_OPMISSION_ATTACK;
+		case PURSUIT:
+			return VR_OPMISSION_INTERCEPT;
+		case STAGING:
+			return VR_OPMISSION_ATTACK;
+		case PATROL:
+			return VR_OPMISSION_PATROL;
+		case REINFORCEMENTS:
+			return VR_OPMISSION_REINFORCE;
+		case ASSAULT:
+			return VR_OPMISSION_ATTACK;
 		case NO_INTENTIONS:
-		default:             return VR_OPMISSION_NONE;
+		default:
+			return VR_OPMISSION_NONE;
 	}
-}
-
-BOOLEAN VR_FormationStateIsInitialized( const GROUP *pGroup )
-{
-	if( !VR_IsEnemyFormation( pGroup ) )
-		return FALSE;
-
-	const ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
-	return VR_ReadFormationID( pEnemy ) != 0 &&
-		pEnemy->ubOperationalMagic0 == VR_OPERATIONAL_MAGIC0 &&
-		pEnemy->ubOperationalMagic1 == VR_OPERATIONAL_MAGIC1 &&
-		pEnemy->ubOperationalMagic2 == VR_OPERATIONAL_MAGIC2 &&
-		pEnemy->ubOperationalMission < VR_OPMISSION_COUNT &&
-		pEnemy->ubOperationalReserveRole < VR_RESERVE_COUNT;
-}
-
-static BOOLEAN VR_FormationIDInUse( UINT16 usFormationID, const GROUP *pExcept )
-{
-	for( GROUP *pGroup = gpGroupList; pGroup; pGroup = pGroup->next )
-	{
-		if( pGroup == pExcept || !VR_IsEnemyFormation( pGroup ) )
-			continue;
-
-		if( VR_FormationStateIsInitialized( pGroup ) &&
-			VR_ReadFormationID( pGroup->pEnemyGroup ) == usFormationID )
-		{
-			return TRUE;
-		}
-	}
-
-	return FALSE;
-}
-
-static UINT16 VR_CreateFormationID( GROUP *pGroup )
-{
-	// Build a stable active-campaign identity from immutable/long-lived group data,
-	// then resolve the rare collision against currently active formations.
-	UINT16 usCandidate =
-		(UINT16)( ( (UINT16)pGroup->ubOriginalSector << 8 ) |
-			(UINT16)pGroup->ubGroupID );
-
-	if( usCandidate == 0 )
-		usCandidate = 1;
-
-	const UINT16 usStart = usCandidate;
-	while( VR_FormationIDInUse( usCandidate, pGroup ) )
-	{
-		++usCandidate;
-		if( usCandidate == 0 )
-			usCandidate = 1;
-
-		if( usCandidate == usStart )
-			return (UINT16)( pGroup->ubGroupID ? pGroup->ubGroupID : 1 );
-	}
-
-	return usCandidate;
-}
-
-void VR_EnsureEnemyFormationState( GROUP *pGroup )
-{
-	if( !VR_OPERATIONAL_STATE_FOUNDATION_ENABLED ||
-		!VR_IsEnemyFormation( pGroup ) ||
-		VR_FormationStateIsInitialized( pGroup ) )
-	{
-		return;
-	}
-
-	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
-	VR_WriteFormationID( pEnemy, VR_CreateFormationID( pGroup ) );
-	pEnemy->ubOperationalMagic0 = VR_OPERATIONAL_MAGIC0;
-	pEnemy->ubOperationalMagic1 = VR_OPERATIONAL_MAGIC1;
-	pEnemy->ubOperationalMagic2 = VR_OPERATIONAL_MAGIC2;
-	pEnemy->ubOperationalMission = VR_MissionFromLegacyIntention( pEnemy->ubIntention );
-	pEnemy->ubOperationalReserveRole = VR_RESERVE_NONE;
-	pEnemy->ubOperationalSupply = 100;
-	pEnemy->ubOperationalMorale = 75;
-
-	// No free knowledge: a new/legacy formation starts without an operational
-	// player-location report. Later intelligence code must explicitly supply it.
-	pEnemy->ubOperationalIntelConfidence = 0;
-	pEnemy->ubOperationalTargetSectorID =
-		(UINT8)SECTOR( pGroup->ubSectorX, pGroup->ubSectorY );
-	pEnemy->ubOperationalHomeSectorID = pGroup->ubOriginalSector;
-	pEnemy->ubOperationalLastKnownPlayerSectorID = 0xff;
-	pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_FORMATION_CREATED;
-	pEnemy->ubOperationalRetreatCount = 0;
-	VR_WriteOperationalFlags( pEnemy, 0 );
-	pEnemy->ubOperationalLastKnownPlayerStrength = VR_OPERATIONAL_STRENGTH_UNKNOWN;
-	pEnemy->ubOperationalLastKnownMilitiaStrength = VR_OPERATIONAL_STRENGTH_UNKNOWN;
-}
-
-void VR_EnsureAllEnemyFormationStates()
-{
-	for( GROUP *pGroup = gpGroupList; pGroup; pGroup = pGroup->next )
-		VR_EnsureEnemyFormationState( pGroup );
-}
-
-void VR_SyncFormationMissionFromLegacy( GROUP *pGroup )
-{
-	VR_EnsureEnemyFormationState( pGroup );
-	if( !VR_FormationStateIsInitialized( pGroup ) )
-		return;
-
-	pGroup->pEnemyGroup->ubOperationalMission =
-		VR_MissionFromLegacyIntention( pGroup->pEnemyGroup->ubIntention );
-	pGroup->pEnemyGroup->ubOperationalLastDecisionReason =
-		VR_OPREASON_LEGACY_ASSIGNMENT;
-}
-
-void VR_RecordLegacyAssignment( GROUP *pGroup, UINT8 ubTargetSectorID, UINT8 ubLegacyIntention )
-{
-	VR_EnsureEnemyFormationState( pGroup );
-	if( !VR_FormationStateIsInitialized( pGroup ) )
-		return;
-
-	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
-	pEnemy->ubOperationalMission = VR_MissionFromLegacyIntention( ubLegacyIntention );
-	pEnemy->ubOperationalTargetSectorID = ubTargetSectorID;
-	pEnemy->ubOperationalReserveRole = VR_RESERVE_NONE;
-	pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_LEGACY_ASSIGNMENT;
-}
-
-static UINT8 VR_ClampOperationalValue( UINT8 ubValue )
-{
-	if( ubValue == VR_OPERATIONAL_STRENGTH_UNKNOWN )
-		return ubValue;
-	return ubValue > 100 ? 100 : ubValue;
-}
-
-static UINT8 VR_ClampOperationalPercent( INT32 iValue )
-{
-	if( iValue < 0 )
-		return 0;
-	if( iValue > 100 )
-		return 100;
-	return (UINT8)iValue;
-}
-
-void VR_RecordOperationalContact( GROUP *pObserver, UINT8 ubSectorID,
-	UINT8 ubObservedPlayerStrength, UINT8 ubObservedMilitiaStrength, UINT8 ubConfidence )
-{
-	VR_EnsureEnemyFormationState( pObserver );
-	if( !VR_FormationStateIsInitialized( pObserver ) )
-		return;
-
-	ENEMYGROUP *pEnemy = pObserver->pEnemyGroup;
-	const UINT8 ubClampedConfidence = ubConfidence > 100 ? 100 : ubConfidence;
-
-	pEnemy->ubOperationalLastKnownPlayerSectorID = ubSectorID;
-	pEnemy->ubOperationalIntelConfidence = ubClampedConfidence;
-	if( ubObservedPlayerStrength != VR_OPERATIONAL_STRENGTH_UNKNOWN )
-		pEnemy->ubOperationalLastKnownPlayerStrength =
-			VR_ClampOperationalValue( ubObservedPlayerStrength );
-	if( ubObservedMilitiaStrength != VR_OPERATIONAL_STRENGTH_UNKNOWN )
-		pEnemy->ubOperationalLastKnownMilitiaStrength =
-			VR_ClampOperationalValue( ubObservedMilitiaStrength );
-
-	pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_CONTACT;
-	if( ubClampedConfidence >= 60 )
-		VR_AddOperationalFlags( pEnemy, VR_OPFLAG_RECENT_CONTACT );
-	else
-		VR_ClearOperationalFlags( pEnemy, VR_OPFLAG_RECENT_CONTACT );
-
-	const unsigned long uiDecision = VRAnalyticsBeginDecision(
-		VR_ANALYTICS_STRATEGIC, "enemy_formation",
-		(unsigned int)VR_ReadFormationID( pEnemy ), "operational_intel_update" );
-	if( uiDecision )
-	{
-		VRAnalyticsStateInt( uiDecision, "observer_group", pObserver->ubGroupID );
-		VRAnalyticsStateInt( uiDecision, "reported_sector", ubSectorID );
-		VRAnalyticsStateInt( uiDecision, "confidence", ubClampedConfidence );
-		VRAnalyticsStateInt( uiDecision, "player_strength",
-			pEnemy->ubOperationalLastKnownPlayerStrength );
-		VRAnalyticsStateInt( uiDecision, "militia_strength",
-			pEnemy->ubOperationalLastKnownMilitiaStrength );
-		VRAnalyticsCommitDecision( uiDecision, "record_local_report",
-			ubSectorID, ubClampedConfidence, "direct/local strategic contact" );
-	}
-}
-
-void VR_DecayOperationalIntelHourly()
-{
-	for( GROUP *pGroup = gpGroupList; pGroup; pGroup = pGroup->next )
-	{
-		if( !VR_FormationStateIsInitialized( pGroup ) )
-			continue;
-
-		ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
-		if( pEnemy->ubOperationalIntelConfidence == 0 )
-			continue;
-
-		const UINT8 ubOldConfidence = pEnemy->ubOperationalIntelConfidence;
-		pEnemy->ubOperationalIntelConfidence =
-			ubOldConfidence > 8 ? (UINT8)( ubOldConfidence - 8 ) : 0;
-
-		if( pEnemy->ubOperationalIntelConfidence < 60 )
-			VR_ClearOperationalFlags( pEnemy, VR_OPFLAG_RECENT_CONTACT );
-
-		if( pEnemy->ubOperationalIntelConfidence == 0 )
-			pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_INTEL_DECAY;
-	}
-}
-
-static UINT8 VR_SelectReserveRole( const GROUP *pGroup )
-{
-	if( !pGroup )
-		return VR_RESERVE_NONE;
-
-	// Reserve depth is organizational, not a difficulty bonus. Small remnants
-	// remain local; larger intact formations can serve at regional/central depth.
-	if( pGroup->ubGroupSize >= 20 )
-		return VR_RESERVE_CENTRAL;
-	if( pGroup->ubGroupSize >= 10 )
-		return VR_RESERVE_REGIONAL;
-	return VR_RESERVE_LOCAL;
-}
-
-void VR_UpdateOperationalReadinessHourly()
-{
-	for( GROUP *pGroup = gpGroupList; pGroup; pGroup = pGroup->next )
-	{
-		VR_EnsureEnemyFormationState( pGroup );
-		if( !VR_FormationStateIsInitialized( pGroup ) )
-			continue;
-
-		ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
-		const UINT8 ubCurrentSector =
-			(UINT8)SECTOR( pGroup->ubSectorX, pGroup->ubSectorY );
-
-		// Some legacy callers create a GROUP first and assign ubIntention
-		// immediately afterwards. Formation state may therefore have been born as
-		// NONE even though the group is now a patrol/staging/reinforcement group.
-		// Mirror that authoritative legacy intent before considering reserve status.
-		if( pEnemy->ubOperationalMission == VR_OPMISSION_NONE &&
-			pEnemy->ubIntention != NO_INTENTIONS )
-		{
-			pEnemy->ubOperationalMission =
-				VR_MissionFromLegacyIntention( pEnemy->ubIntention );
-			pEnemy->ubOperationalReserveRole = VR_RESERVE_NONE;
-			pEnemy->ubOperationalLastDecisionReason =
-				VR_OPREASON_LEGACY_ASSIGNMENT;
-		}
-
-
-		// Logistics model is intentionally information-independent: it depends only
-		// on the formation's own movement and Queen-controlled infrastructure.
-		if( pGroup->fBetweenSectors )
-		{
-			pEnemy->ubOperationalSupply =
-				VR_ClampOperationalPercent( (INT32)pEnemy->ubOperationalSupply - 1 );
-		}
-		else
-		{
-			const BOOLEAN fEnemyControlled =
-				StrategicMap[
-					CALCULATE_STRATEGIC_INDEX(
-						pGroup->ubSectorX, pGroup->ubSectorY ) ].fEnemyControlled;
-
-			if( fEnemyControlled && ubCurrentSector == pEnemy->ubOperationalHomeSectorID )
-			{
-				pEnemy->ubOperationalSupply =
-					VR_ClampOperationalPercent( (INT32)pEnemy->ubOperationalSupply + 5 );
-			}
-			else if( fEnemyControlled &&
-				( SectorInfo[ ubCurrentSector ].ubGarrisonID != NO_GARRISON ||
-				  SectorInfo[ ubCurrentSector ].ubTraversability[ 4 ] == TOWN ||
-				  IsThereAMineInThisSector( pGroup->ubSectorX, pGroup->ubSectorY ) ||
-				  IsThisSectorASAMSector( pGroup->ubSectorX, pGroup->ubSectorY, 0 ) ) )
-			{
-				pEnemy->ubOperationalSupply =
-					VR_ClampOperationalPercent( (INT32)pEnemy->ubOperationalSupply + 2 );
-			}
-		}
-
-		if( pEnemy->ubOperationalSupply < 25 )
-		{
-			VR_AddOperationalFlags( pEnemy,
-				VR_OPFLAG_SUPPLY_LOW | VR_OPFLAG_SUPPLY_CRITICAL );
-		}
-		else if( pEnemy->ubOperationalSupply < 50 )
-		{
-			VR_AddOperationalFlags( pEnemy, VR_OPFLAG_SUPPLY_LOW );
-			VR_ClearOperationalFlags( pEnemy, VR_OPFLAG_SUPPLY_CRITICAL );
-		}
-		else
-		{
-			VR_ClearOperationalFlags( pEnemy,
-				VR_OPFLAG_SUPPLY_LOW | VR_OPFLAG_SUPPLY_CRITICAL );
-		}
-
-		// Logistics affects staying power rather than combat statistics directly.
-		// Critically undersupplied formations erode; well-supplied stationary
-		// formations recover slowly, capped below perfect morale.
-		if( pEnemy->ubOperationalSupply < 25 )
-		{
-			pEnemy->ubOperationalMorale =
-				VR_ClampOperationalPercent( (INT32)pEnemy->ubOperationalMorale - 2 );
-		}
-		else if( !pGroup->fBetweenSectors &&
-			pEnemy->ubOperationalSupply > 60 &&
-			pEnemy->ubOperationalMorale < 85 )
-		{
-			pEnemy->ubOperationalMorale =
-				VR_ClampOperationalPercent( (INT32)pEnemy->ubOperationalMorale + 1 );
-		}
-
-		// Only idle/recovering formations receive reserve classification here.
-		// Active legacy Queen assignments remain untouched.
-		if( (pEnemy->ubOperationalMission == VR_OPMISSION_NONE &&
-			 pEnemy->ubIntention == NO_INTENTIONS &&
-			 !pGroup->fBetweenSectors &&
-			 pGroup->pWaypoints == NULL) ||
-			pEnemy->ubOperationalMission == VR_OPMISSION_RESERVE )
-		{
-			const UINT8 ubRole = VR_SelectReserveRole( pGroup );
-			if( pEnemy->ubOperationalReserveRole != ubRole )
-			{
-				pEnemy->ubOperationalReserveRole = ubRole;
-				pEnemy->ubOperationalMission = VR_OPMISSION_RESERVE;
-				pEnemy->ubOperationalLastDecisionReason =
-					VR_OPREASON_RESERVE_POSTURE;
-			}
-		}
-
-		// A formation that has completed its retreat and is physically stationary
-		// may progress from REGROUP to RESERVE once basic readiness is restored.
-		if( pEnemy->ubOperationalMission == VR_OPMISSION_REGROUP &&
-			!pGroup->fBetweenSectors &&
-			!VR_HasOperationalFlags( pEnemy, VR_OPFLAG_RECENT_CONTACT ) &&
-			pEnemy->ubOperationalSupply >= 60 &&
-			pEnemy->ubOperationalMorale >= 55 )
-		{
-			pEnemy->ubOperationalMission = VR_OPMISSION_RESERVE;
-			pEnemy->ubOperationalReserveRole = VR_SelectReserveRole( pGroup );
-			VR_ClearOperationalFlags( pEnemy, VR_OPFLAG_REGROUPING );
-			pEnemy->ubOperationalLastDecisionReason =
-				VR_OPREASON_RESERVE_POSTURE;
-		}
-	}
-}
-
-void VR_RecordFormationRetreat( GROUP *pGroup, UINT8 ubSourceSectorID, UINT8 ubDestinationSectorID )
-{
-	VR_EnsureEnemyFormationState( pGroup );
-	if( !VR_FormationStateIsInitialized( pGroup ) )
-		return;
-
-	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
-	pEnemy->ubOperationalMission = VR_OPMISSION_RETREAT;
-	pEnemy->ubOperationalTargetSectorID = ubDestinationSectorID;
-	pEnemy->ubOperationalReserveRole = VR_RESERVE_NONE;
-	VR_AddOperationalFlags( pEnemy,
-		VR_OPFLAG_RETREATED_ONCE | VR_OPFLAG_REGROUPING | VR_OPFLAG_RECENT_CONTACT );
-
-	// Breaking contact is itself a direct operational observation: the formation
-	// knows where the fight happened, but not necessarily exact surviving player
-	// or militia strength. Never carry a strength estimate from another sector.
-	if( pEnemy->ubOperationalLastKnownPlayerSectorID != ubSourceSectorID )
-	{
-		pEnemy->ubOperationalLastKnownPlayerStrength =
-			VR_OPERATIONAL_STRENGTH_UNKNOWN;
-		pEnemy->ubOperationalLastKnownMilitiaStrength =
-			VR_OPERATIONAL_STRENGTH_UNKNOWN;
-	}
-	pEnemy->ubOperationalLastKnownPlayerSectorID = ubSourceSectorID;
-
-	// A routed formation needs real recovery time. Confidence decays through the
-	// normal local-intel path and morale damage persists into regrouping.
-	if( pEnemy->ubOperationalIntelConfidence < 80 )
-		pEnemy->ubOperationalIntelConfidence = 80;
-	pEnemy->ubOperationalMorale =
-		VR_ClampOperationalPercent( (INT32)pEnemy->ubOperationalMorale - 12 );
-	if( pEnemy->ubOperationalRetreatCount < 255 )
-		++pEnemy->ubOperationalRetreatCount;
-	pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_RETREAT;
-
-	const unsigned long uiDecision = VRAnalyticsBeginDecision(
-		VR_ANALYTICS_STRATEGIC, "enemy_formation",
-		(unsigned int)VR_ReadFormationID( pEnemy ), "formation_retreat" );
-	if( uiDecision )
-	{
-		VRAnalyticsStateInt( uiDecision, "group_id", pGroup->ubGroupID );
-		VRAnalyticsStateInt( uiDecision, "source_sector", ubSourceSectorID );
-		VRAnalyticsStateInt( uiDecision, "destination_sector", ubDestinationSectorID );
-		VRAnalyticsStateInt( uiDecision, "retreat_count",
-			pEnemy->ubOperationalRetreatCount );
-		VRAnalyticsCommitDecision( uiDecision, "retreat",
-			ubDestinationSectorID, pGroup->ubGroupSize,
-			"persistent formation retreat state" );
-	}
-}
-
-void VR_RecordFormationArrival( GROUP *pGroup )
-{
-	VR_EnsureEnemyFormationState( pGroup );
-	if( !VR_FormationStateIsInitialized( pGroup ) )
-		return;
-
-	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
-	const UINT8 ubSectorID =
-		(UINT8)SECTOR( pGroup->ubSectorX, pGroup->ubSectorY );
-
-	if( pEnemy->ubOperationalMission == VR_OPMISSION_RETREAT )
-	{
-		pEnemy->ubOperationalMission = VR_OPMISSION_REGROUP;
-		pEnemy->ubOperationalTargetSectorID = ubSectorID;
-		pEnemy->ubOperationalReserveRole = VR_RESERVE_NONE;
-		VR_AddOperationalFlags( pEnemy, VR_OPFLAG_REGROUPING );
-		pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_REGROUP;
-	}
-	else if( pEnemy->ubOperationalMission == VR_OPMISSION_REGROUP )
-	{
-		pEnemy->ubOperationalTargetSectorID = ubSectorID;
-	}
-
-	const unsigned long uiDecision = VRAnalyticsBeginDecision(
-		VR_ANALYTICS_STRATEGIC, "enemy_formation",
-		(unsigned int)VR_ReadFormationID( pEnemy ), "formation_arrival" );
-	if( uiDecision )
-	{
-		VRAnalyticsStateInt( uiDecision, "group_id", pGroup->ubGroupID );
-		VRAnalyticsStateInt( uiDecision, "sector", ubSectorID );
-		VRAnalyticsStateInt( uiDecision, "mission",
-			pEnemy->ubOperationalMission );
-		VRAnalyticsCommitDecision( uiDecision, "arrive",
-			ubSectorID, pGroup->ubGroupSize,
-			"persistent formation arrival state" );
-	}
-}
-
-
-static GROUP *VR_FindTacticalRetreatRemnant( UINT8 ubSourceSectorID,
-	UINT8 ubDestinationX, UINT8 ubDestinationY )
-{
-	for( GROUP *pGroup = gpGroupList; pGroup; pGroup = pGroup->next )
-	{
-		if( !VR_FormationStateIsInitialized( pGroup ) ||
-			pGroup->fBetweenSectors ||
-			pGroup->ubSectorX != ubDestinationX ||
-			pGroup->ubSectorY != ubDestinationY )
-		{
-			continue;
-		}
-
-		ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
-		if( pEnemy->ubOperationalMission == VR_OPMISSION_RETREAT &&
-			pEnemy->ubOperationalHomeSectorID == ubSourceSectorID &&
-			pEnemy->ubOperationalTargetSectorID ==
-				(UINT8)SECTOR( ubDestinationX, ubDestinationY ) &&
-			VR_HasOperationalFlags( pEnemy, VR_OPFLAG_REGROUPING ) )
-		{
-			return pGroup;
-		}
-	}
-
-	return NULL;
-}
-
-BOOLEAN VR_RegisterTacticalRetreatSoldier( UINT8 ubSourceX, UINT8 ubSourceY,
-	UINT8 ubDestinationX, UINT8 ubDestinationY,
-	UINT8 ubAdmins, UINT8 ubTroops, UINT8 ubElites )
-{
-	if( ubSourceX < 1 || ubSourceX > 16 ||
-		ubSourceY < 1 || ubSourceY > 16 ||
-		ubDestinationX < 1 || ubDestinationX > 16 ||
-		ubDestinationY < 1 || ubDestinationY > 16 ||
-		( UINT16 )ubAdmins + ( UINT16 )ubTroops + ( UINT16 )ubElites != 1 )
-	{
-		return FALSE;
-	}
-
-	const UINT8 ubSourceSectorID =
-		(UINT8)SECTOR( ubSourceX, ubSourceY );
-	const UINT8 ubDestinationSectorID =
-		(UINT8)SECTOR( ubDestinationX, ubDestinationY );
-
-	GROUP *pGroup = VR_FindTacticalRetreatRemnant(
-		ubSourceSectorID, ubDestinationX, ubDestinationY );
-
-	if( pGroup )
-	{
-		pGroup->pEnemyGroup->ubNumAdmins += ubAdmins;
-		pGroup->pEnemyGroup->ubNumTroops += ubTroops;
-		pGroup->pEnemyGroup->ubNumElites += ubElites;
-		++pGroup->ubGroupSize;
-	}
-	else
-	{
-		pGroup = CreateNewEnemyGroupDepartingFromSector(
-			ubDestinationSectorID, ubAdmins, ubTroops, ubElites );
-		if( !pGroup )
-			return FALSE;
-
-		// Native tactical traversal is instantaneous at the strategic level. The
-		// remnant therefore exists in the destination already, but its previous
-		// sector records the edge it escaped through for any immediate pursuit.
-		pGroup->ubPrevX = ubSourceX;
-		pGroup->ubPrevY = ubSourceY;
-		pGroup->ubMoveType = ONE_WAY;
-		pGroup->ubCreatedSectorID = ubSourceSectorID;
-		pGroup->pEnemyGroup->ubIntention = NO_INTENTIONS;
-
-		VR_EnsureEnemyFormationState( pGroup );
-		if( !VR_FormationStateIsInitialized( pGroup ) )
-			return FALSE;
-
-		pGroup->pEnemyGroup->ubOperationalHomeSectorID = ubSourceSectorID;
-		VR_RecordFormationRetreat( pGroup, ubSourceSectorID, ubDestinationSectorID );
-	}
-
-	const unsigned long uiDecision = VRAnalyticsBeginDecision(
-		VR_ANALYTICS_STRATEGIC, "enemy_formation",
-		(unsigned int)VR_ReadFormationID( pGroup->pEnemyGroup ),
-		"tactical_retreat_transfer" );
-	if( uiDecision )
-	{
-		VRAnalyticsStateInt( uiDecision, "source_sector", ubSourceSectorID );
-		VRAnalyticsStateInt( uiDecision, "destination_sector", ubDestinationSectorID );
-		VRAnalyticsStateInt( uiDecision, "group_id", pGroup->ubGroupID );
-		VRAnalyticsStateInt( uiDecision, "group_size", pGroup->ubGroupSize );
-		VRAnalyticsCommitDecision( uiDecision, "preserve_retreat_remnant",
-			ubDestinationSectorID, pGroup->ubGroupSize,
-			"map-edge escape transferred into persistent formation" );
-	}
-
-	return TRUE;
-}
-
-void VR_CompleteRetreatInSector( UINT8 ubSectorX, UINT8 ubSectorY )
-{
-	for( GROUP *pGroup = gpGroupList; pGroup; pGroup = pGroup->next )
-	{
-		if( !VR_FormationStateIsInitialized( pGroup ) ||
-			pGroup->fBetweenSectors ||
-			pGroup->ubSectorX != ubSectorX ||
-			pGroup->ubSectorY != ubSectorY )
-		{
-			continue;
-		}
-
-		if( pGroup->pEnemyGroup->ubOperationalMission == VR_OPMISSION_RETREAT )
-			VR_RecordFormationArrival( pGroup );
-	}
-}
-
-
-static INT32 VR_OperationalAbs( INT32 iValue )
-{
-	return iValue < 0 ? -iValue : iValue;
-}
-
-INT32 VR_ScoreOperationalTarget( GROUP *pGroup, UINT8 ubSectorID, VR_OPERATIONAL_SCORE *pBreakdown )
-{
-	VR_OPERATIONAL_SCORE Score;
-	memset( &Score, 0, sizeof( Score ) );
-
-	if( !pGroup || !VR_IsEnemyFormation( pGroup ) )
-	{
-		if( pBreakdown )
-			*pBreakdown = Score;
-		return Score.iTotal;
-	}
-
-	VR_EnsureEnemyFormationState( pGroup );
-	const UINT8 ubX = (UINT8)SECTORX( ubSectorID );
-	const UINT8 ubY = (UINT8)SECTORY( ubSectorID );
-	SECTORINFO *pSector = &SectorInfo[ ubSectorID ];
-	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
-
-	// Static/administrative facts are legitimate Queen knowledge.
-	if( pSector->ubGarrisonID != NO_GARRISON )
-		Score.iBasePriority = 15;
-	if( StrategicMap[ CALCULATE_STRATEGIC_INDEX( ubX, ubY ) ].fEnemyControlled == FALSE )
-		Score.iOwnershipValue = 30;
-	if( pSector->ubTraversability[ 4 ] == TOWN )
-		Score.iTownValue = 15;
-	if( IsThereAMineInThisSector( ubX, ubY ) )
-		Score.iMineValue = 25;
-	if( IsThisSectorASAMSector( ubX, ubY, 0 ) )
-		Score.iSAMValue = 20;
-
-	// Dynamic force risk is knowledge-bound. Never query current player/militia
-	// presence here; only consume this formation's decaying operational report.
-	if( pEnemy->ubOperationalIntelConfidence > 0 &&
-		pEnemy->ubOperationalLastKnownPlayerSectorID == ubSectorID )
-	{
-		if( pEnemy->ubOperationalLastKnownPlayerStrength != VR_OPERATIONAL_STRENGTH_UNKNOWN )
-			Score.iPlayerForceRisk = -(
-				(INT32)pEnemy->ubOperationalLastKnownPlayerStrength *
-				(INT32)pEnemy->ubOperationalIntelConfidence / 100 );
-
-		if( pEnemy->ubOperationalLastKnownMilitiaStrength != VR_OPERATIONAL_STRENGTH_UNKNOWN )
-			Score.iMilitiaRisk = -(
-				(INT32)pEnemy->ubOperationalLastKnownMilitiaStrength *
-				(INT32)pEnemy->ubOperationalIntelConfidence / 100 );
-	}
-
-	const INT32 iDistance =
-		VR_OperationalAbs( (INT32)pGroup->ubSectorX - (INT32)ubX ) +
-		VR_OperationalAbs( (INT32)pGroup->ubSectorY - (INT32)ubY );
-	Score.iDistanceCost = -( iDistance * 3 );
-
-	if( pEnemy->ubOperationalSupply < 50 )
-		Score.iSupplyRisk = -( 50 - (INT32)pEnemy->ubOperationalSupply );
-
-	Score.iTotal =
-		Score.iBasePriority +
-		Score.iOwnershipValue +
-		Score.iTownValue +
-		Score.iMineValue +
-		Score.iSAMValue +
-		Score.iPlayerForceRisk +
-		Score.iMilitiaRisk +
-		Score.iDistanceCost +
-		Score.iSupplyRisk;
-
-	if( pBreakdown )
-		*pBreakdown = Score;
-	return Score.iTotal;
-}
-
-UINT8 VR_FindBestOperationalTarget( GROUP *pGroup, INT32 *piBestScore )
-{
-	if( !pGroup || !VR_IsEnemyFormation( pGroup ) )
-	{
-		if( piBestScore )
-			*piBestScore = 0;
-		return 0xff;
-	}
-
-	UINT8 ubBestSector = (UINT8)SECTOR( pGroup->ubSectorX, pGroup->ubSectorY );
-	INT32 iBestScore = -32767;
-
-	for( INT32 iSector = 0; iSector < 256; ++iSector )
-	{
-		VR_OPERATIONAL_SCORE Score;
-		const INT32 iScore =
-			VR_ScoreOperationalTarget( pGroup, (UINT8)iSector, &Score );
-
-		// Ignore empty wilderness merely because it is geographically close.
-		const INT32 iStrategicValue =
-			Score.iBasePriority + Score.iOwnershipValue + Score.iTownValue +
-			Score.iMineValue + Score.iSAMValue;
-		if( iStrategicValue <= 0 )
-			continue;
-
-		if( iScore > iBestScore )
-		{
-			iBestScore = iScore;
-			ubBestSector = (UINT8)iSector;
-		}
-	}
-
-	if( piBestScore )
-		*piBestScore = iBestScore;
-	return ubBestSector;
-}
-
-
-
-BOOLEAN VR_IsReadyOperationalReserve( GROUP *pGroup )
-{
-	VR_EnsureEnemyFormationState( pGroup );
-	if( !VR_FormationStateIsInitialized( pGroup ) ||
-		pGroup->fBetweenSectors ||
-		pGroup->ubGroupSize == 0 )
-	{
-		return FALSE;
-	}
-
-	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
-	return pEnemy->ubOperationalMission == VR_OPMISSION_RESERVE &&
-		pEnemy->ubOperationalReserveRole != VR_RESERVE_NONE &&
-		pEnemy->ubOperationalSupply >= 60 &&
-		pEnemy->ubOperationalMorale >= 55 &&
-		!VR_HasOperationalFlags( pEnemy,
-			VR_OPFLAG_SUPPLY_CRITICAL | VR_OPFLAG_REGROUPING |
-			VR_OPFLAG_RECENT_CONTACT );
-}
-
-GROUP *VR_FindReadyOperationalReserveForSector( UINT8 ubTargetSectorID )
-{
-	GROUP *pBest = NULL;
-	INT32 iBestScore = -32767;
-	const UINT8 ubTargetX = (UINT8)SECTORX( ubTargetSectorID );
-	const UINT8 ubTargetY = (UINT8)SECTORY( ubTargetSectorID );
-
-	for( GROUP *pGroup = gpGroupList; pGroup; pGroup = pGroup->next )
-	{
-		if( !VR_IsReadyOperationalReserve( pGroup ) )
-			continue;
-
-		ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
-		const INT32 iDistance =
-			VR_OperationalAbs( (INT32)pGroup->ubSectorX - (INT32)ubTargetX ) +
-			VR_OperationalAbs( (INT32)pGroup->ubSectorY - (INT32)ubTargetY );
-
-		// A reserve already in the destination is tactically available there but
-		// must be absorbed/handled locally, not issued a zero-distance move order.
-		if( iDistance == 0 )
-			continue;
-
-		// Pure readiness query: closer formations are preferred, with modest
-		// credit for strength/readiness. Reserve role is descriptive here, not
-		// a magical movement or combat bonus.
-		INT32 iScore =
-			-( iDistance * 10 ) +
-			(INT32)pGroup->ubGroupSize +
-			(INT32)pEnemy->ubOperationalSupply / 10 +
-			(INT32)pEnemy->ubOperationalMorale / 10;
-
-		if( iScore > iBestScore )
-		{
-			iBestScore = iScore;
-			pBest = pGroup;
-		}
-	}
-
-	return pBest;
-}
-
-void VR_TraceOperationalRecommendationsHourly()
-{
-	for( GROUP *pGroup = gpGroupList; pGroup; pGroup = pGroup->next )
-	{
-		if( !VR_FormationStateIsInitialized( pGroup ) ||
-			pGroup->fBetweenSectors )
-		{
-			continue;
-		}
-
-		INT32 iBestScore = 0;
-		const UINT8 ubBestSector =
-			VR_FindBestOperationalTarget( pGroup, &iBestScore );
-		// Sector IDs span the full UINT8 range; 0xff is the real P16 sector.
-		// Use the score sentinel instead of sacrificing a valid map sector.
-		if( iBestScore <= -32767 )
-			continue;
-
-		VR_OPERATIONAL_SCORE Score;
-		VR_ScoreOperationalTarget( pGroup, ubBestSector, &Score );
-
-		ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
-		const unsigned long uiDecision = VRAnalyticsBeginDecision(
-			VR_ANALYTICS_STRATEGIC, "enemy_formation",
-			(unsigned int)VR_ReadFormationID( pEnemy ), "operational_target_recommendation" );
-		if( !uiDecision )
-			continue;
-
-		VRAnalyticsStateInt( uiDecision, "group_id", pGroup->ubGroupID );
-		VRAnalyticsStateInt( uiDecision, "mission", pEnemy->ubOperationalMission );
-		VRAnalyticsStateInt( uiDecision, "supply", pEnemy->ubOperationalSupply );
-		VRAnalyticsStateInt( uiDecision, "morale", pEnemy->ubOperationalMorale );
-		VRAnalyticsStateInt( uiDecision, "intel_confidence",
-			pEnemy->ubOperationalIntelConfidence );
-		VRAnalyticsStateInt( uiDecision, "base_priority", Score.iBasePriority );
-		VRAnalyticsStateInt( uiDecision, "ownership_value", Score.iOwnershipValue );
-		VRAnalyticsStateInt( uiDecision, "town_value", Score.iTownValue );
-		VRAnalyticsStateInt( uiDecision, "mine_value", Score.iMineValue );
-		VRAnalyticsStateInt( uiDecision, "sam_value", Score.iSAMValue );
-		VRAnalyticsStateInt( uiDecision, "player_force_risk", Score.iPlayerForceRisk );
-		VRAnalyticsStateInt( uiDecision, "militia_risk", Score.iMilitiaRisk );
-		VRAnalyticsStateInt( uiDecision, "distance_cost", Score.iDistanceCost );
-		VRAnalyticsStateInt( uiDecision, "supply_risk", Score.iSupplyRisk );
-		VRAnalyticsCommitDecision( uiDecision, "recommend_target",
-			ubBestSector, iBestScore,
-			"advisory only; operational movement loop disabled" );
-	}
-}
-
-UINT16 VR_GetFormationID( GROUP *pGroup )
-{
-	VR_EnsureEnemyFormationState( pGroup );
-	return VR_FormationStateIsInitialized( pGroup ) ?
-		VR_ReadFormationID( pGroup->pEnemyGroup ) : 0;
-}
-
-UINT8 VR_GetFormationMission( GROUP *pGroup )
-{
-	VR_EnsureEnemyFormationState( pGroup );
-	return VR_FormationStateIsInitialized( pGroup ) ?
-		pGroup->pEnemyGroup->ubOperationalMission : VR_OPMISSION_NONE;
-}
-
-UINT8 VR_GetFormationReserveRole( GROUP *pGroup )
-{
-	VR_EnsureEnemyFormationState( pGroup );
-	return VR_FormationStateIsInitialized( pGroup ) ?
-		pGroup->pEnemyGroup->ubOperationalReserveRole : VR_RESERVE_NONE;
 }
 
 const CHAR8 *VR_OperationalMissionName( UINT8 ubMission )
 {
 	switch( ubMission )
 	{
-		case VR_OPMISSION_GARRISON:   return "GARRISON";
-		case VR_OPMISSION_PATROL:     return "PATROL";
-		case VR_OPMISSION_RECON:      return "RECON";
-		case VR_OPMISSION_ATTACK:     return "ATTACK";
-		case VR_OPMISSION_RAID:       return "RAID";
-		case VR_OPMISSION_REINFORCE:  return "REINFORCE";
-		case VR_OPMISSION_RELIEVE:    return "RELIEVE";
-		case VR_OPMISSION_INTERCEPT:  return "INTERCEPT";
+		case VR_OPMISSION_GARRISON: return "GARRISON";
+		case VR_OPMISSION_PATROL: return "PATROL";
+		case VR_OPMISSION_RECON: return "RECON";
+		case VR_OPMISSION_ATTACK: return "ATTACK";
+		case VR_OPMISSION_RAID: return "RAID";
+		case VR_OPMISSION_REINFORCE: return "REINFORCE";
+		case VR_OPMISSION_RELIEVE: return "RELIEVE";
+		case VR_OPMISSION_INTERCEPT: return "INTERCEPT";
 		case VR_OPMISSION_BLOCK_ROAD: return "BLOCK_ROAD";
-		case VR_OPMISSION_ESCORT:     return "ESCORT";
-		case VR_OPMISSION_SUPPLY:     return "SUPPLY";
-		case VR_OPMISSION_RETREAT:    return "RETREAT";
-		case VR_OPMISSION_REGROUP:    return "REGROUP";
-		case VR_OPMISSION_RESERVE:    return "RESERVE";
+		case VR_OPMISSION_ESCORT: return "ESCORT";
+		case VR_OPMISSION_SUPPLY: return "SUPPLY";
+		case VR_OPMISSION_RETREAT: return "RETREAT";
+		case VR_OPMISSION_REGROUP: return "REGROUP";
+		case VR_OPMISSION_RESERVE: return "RESERVE";
 		case VR_OPMISSION_NONE:
-		default:                      return "NONE";
+		default: return "NONE";
 	}
 }
 
@@ -897,10 +106,551 @@ const CHAR8 *VR_OperationalReserveRoleName( UINT8 ubRole )
 {
 	switch( ubRole )
 	{
-		case VR_RESERVE_LOCAL:    return "LOCAL";
+		case VR_RESERVE_LOCAL: return "LOCAL";
 		case VR_RESERVE_REGIONAL: return "REGIONAL";
-		case VR_RESERVE_CENTRAL:  return "CENTRAL";
+		case VR_RESERVE_CENTRAL: return "CENTRAL";
 		case VR_RESERVE_NONE:
-		default:                  return "NONE";
+		default: return "NONE";
+	}
+}
+
+const CHAR8 *VR_OperationalReasonName( UINT8 ubReason )
+{
+	switch( ubReason )
+	{
+		case VR_OPREASON_FORMATION_CREATED: return "FORMATION_CREATED";
+		case VR_OPREASON_LEGACY_ASSIGNMENT: return "LEGACY_ASSIGNMENT";
+		case VR_OPREASON_TARGET_SCORE: return "TARGET_SCORE";
+		case VR_OPREASON_ARRIVAL: return "ARRIVAL";
+		case VR_OPREASON_RETREAT: return "RETREAT";
+		case VR_OPREASON_REGROUP: return "REGROUP";
+		case VR_OPREASON_LOW_SUPPLY: return "LOW_SUPPLY";
+		case VR_OPREASON_RESUPPLIED: return "RESUPPLIED";
+		case VR_OPREASON_CONTACT: return "CONTACT";
+		case VR_OPREASON_INTEL_DECAY: return "INTEL_DECAY";
+		case VR_OPREASON_NONE:
+		default: return "NONE";
+	}
+}
+
+void VR_LogOperationalDecision( GROUP *pGroup, const CHAR8 *szEvent, const VR_OPERATIONAL_SCORE *pScore )
+{
+	if( !VR_IsEnemyFormation( pGroup ) || !VR_FormationStateIsInitialized( pGroup ) )
+		return;
+
+	FILE *pFile = fopen( "Strategic Operational BlackBox.txt", "a" );
+	if( !pFile )
+		return;
+
+	UINT32 totalMinutes = GetWorldTotalMin();
+	UINT32 day = totalMinutes / 1440U + 1U;
+	UINT32 hour = ( totalMinutes / 60U ) % 24U;
+	UINT32 minute = totalMinutes % 60U;
+
+	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+	fprintf( pFile,
+		"[D%u %02u:%02u] F=%u G=%u EVENT=%s MISSION=%s RESERVE=%s POS=%c%d TARGET=%c%d HOME=%c%d SIZE=%u SUP=%u MORALE=%u INTEL=%u KNOWN=%c%d PSTR=%u MSTR=%u RETREATS=%u REASON=%s",
+		(unsigned)day, (unsigned)hour, (unsigned)minute,
+		(unsigned)pEnemy->usFormationID, (unsigned)pGroup->ubGroupID,
+		szEvent ? szEvent : "UNKNOWN",
+		VR_OperationalMissionName( pEnemy->ubOperationalMission ),
+		VR_OperationalReserveRoleName( pEnemy->ubOperationalReserveRole ),
+		pGroup->ubSectorY + 'A' - 1, pGroup->ubSectorX,
+		SECTORY( pEnemy->ubOperationalTargetSectorID ) + 'A' - 1, SECTORX( pEnemy->ubOperationalTargetSectorID ),
+		SECTORY( pEnemy->ubOperationalHomeSectorID ) + 'A' - 1, SECTORX( pEnemy->ubOperationalHomeSectorID ),
+		(unsigned)pGroup->ubGroupSize,
+		(unsigned)pEnemy->ubOperationalSupply,
+		(unsigned)pEnemy->ubOperationalMorale,
+		(unsigned)pEnemy->ubOperationalIntelConfidence,
+		SECTORY( pEnemy->ubOperationalLastKnownPlayerSectorID ) + 'A' - 1, SECTORX( pEnemy->ubOperationalLastKnownPlayerSectorID ),
+		(unsigned)pEnemy->ubOperationalLastKnownPlayerStrength,
+		(unsigned)pEnemy->ubOperationalLastKnownMilitiaStrength,
+		(unsigned)pEnemy->ubOperationalRetreatCount,
+		VR_OperationalReasonName( pEnemy->ubOperationalLastDecisionReason ) );
+
+	if( pScore )
+	{
+		fprintf( pFile,
+			" SCORE=%ld [base=%ld ownership=%ld town=%ld mine=%ld sam=%ld mercRisk=%ld militiaRisk=%ld distance=%ld supplyRisk=%ld]",
+			(long)pScore->iTotal,
+			(long)pScore->iBasePriority,
+			(long)pScore->iOwnershipValue,
+			(long)pScore->iTownValue,
+			(long)pScore->iMineValue,
+			(long)pScore->iSAMValue,
+			(long)pScore->iPlayerForceRisk,
+			(long)pScore->iMilitiaRisk,
+			(long)pScore->iDistanceCost,
+			(long)pScore->iSupplyRisk );
+	}
+
+	fprintf( pFile, "\n" );
+	fclose( pFile );
+}
+
+void VR_EnsureEnemyFormationState( GROUP *pGroup )
+{
+	if( !VR_IsEnemyFormation( pGroup ) || VR_FormationStateIsInitialized( pGroup ) )
+		return;
+
+	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+	pEnemy->usFormationID = VR_CreateFormationID( pGroup );
+	pEnemy->ubOperationalMagic0 = VR_OPERATIONAL_MAGIC0;
+	pEnemy->ubOperationalMagic1 = VR_OPERATIONAL_MAGIC1;
+	pEnemy->ubOperationalMagic2 = VR_OPERATIONAL_MAGIC2;
+	pEnemy->ubOperationalMission = VR_MissionFromLegacyIntention( pEnemy->ubIntention );
+	pEnemy->ubOperationalReserveRole = VR_RESERVE_NONE;
+	pEnemy->ubOperationalSupply = 100;
+	pEnemy->ubOperationalMorale = 75;
+	pEnemy->ubOperationalIntelConfidence = 20;
+	pEnemy->ubOperationalTargetSectorID = (UINT8)SECTOR( pGroup->ubSectorX, pGroup->ubSectorY );
+	pEnemy->ubOperationalHomeSectorID = pGroup->ubOriginalSector;
+	pEnemy->ubOperationalLastKnownPlayerSectorID = 0xff;
+	pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_FORMATION_CREATED;
+	pEnemy->ubOperationalRetreatCount = 0;
+	pEnemy->usOperationalFlags = 0;
+	pEnemy->ubOperationalLastKnownPlayerStrength = 0;
+	pEnemy->ubOperationalLastKnownMilitiaStrength = 0;
+
+	VR_LogOperationalDecision( pGroup, "CREATE", NULL );
+}
+
+void VR_EnsureAllEnemyFormationStates()
+{
+	GROUP *pGroup = gpGroupList;
+	while( pGroup )
+	{
+		if( !pGroup->fPlayer && pGroup->pEnemyGroup )
+			VR_EnsureEnemyFormationState( pGroup );
+		pGroup = pGroup->next;
+	}
+}
+
+void VR_SetFormationMission( GROUP *pGroup, UINT8 ubMission, UINT8 ubReason )
+{
+	VR_EnsureEnemyFormationState( pGroup );
+	if( !VR_FormationStateIsInitialized( pGroup ) )
+		return;
+
+	pGroup->pEnemyGroup->ubOperationalMission = ubMission;
+	pGroup->pEnemyGroup->ubOperationalLastDecisionReason = ubReason;
+}
+
+void VR_SetFormationReserveRole( GROUP *pGroup, UINT8 ubReserveRole, UINT8 ubReason )
+{
+	VR_EnsureEnemyFormationState( pGroup );
+	if( !VR_FormationStateIsInitialized( pGroup ) )
+		return;
+
+	pGroup->pEnemyGroup->ubOperationalReserveRole = ubReserveRole;
+	pGroup->pEnemyGroup->ubOperationalLastDecisionReason = ubReason;
+}
+
+BOOLEAN VR_HoldFormationAsReserve( GROUP *pGroup, UINT8 ubReserveRole )
+{
+	if( !VR_OPERATIONAL_PERSISTENT_RESERVES_ENABLED || !VR_IsEnemyFormation( pGroup ) )
+		return FALSE;
+
+	VR_EnsureEnemyFormationState( pGroup );
+	if( !VR_FormationStateIsInitialized( pGroup ) )
+		return FALSE;
+
+	RemovePGroupWaypoints( pGroup );
+	pGroup->ubMoveType = ONE_WAY;
+	pGroup->pEnemyGroup->ubIntention = NO_INTENTIONS;
+	pGroup->pEnemyGroup->ubOperationalMission = VR_OPMISSION_RESERVE;
+	pGroup->pEnemyGroup->ubOperationalReserveRole = ubReserveRole;
+	pGroup->pEnemyGroup->ubOperationalTargetSectorID = (UINT8)SECTOR( pGroup->ubSectorX, pGroup->ubSectorY );
+	pGroup->pEnemyGroup->ubOperationalLastDecisionReason = VR_OPREASON_REGROUP;
+	pGroup->pEnemyGroup->usOperationalFlags &= ~VR_OPFLAG_REGROUPING;
+
+	VR_LogOperationalDecision( pGroup, "RESERVE_HOLD", NULL );
+	return TRUE;
+}
+
+BOOLEAN VR_IsReadyOperationalReserve( GROUP *pGroup )
+{
+	if( !VR_OPERATIONAL_PERSISTENT_RESERVES_ENABLED || !VR_IsEnemyFormation( pGroup ) )
+		return FALSE;
+
+	VR_EnsureEnemyFormationState( pGroup );
+	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+
+	return pEnemy->ubOperationalMission == VR_OPMISSION_RESERVE &&
+		!pGroup->fBetweenSectors &&
+		pGroup->ubGroupSize > 0 &&
+		pEnemy->ubOperationalSupply >= 50 &&
+		pEnemy->ubOperationalMorale >= 50;
+}
+
+GROUP *VR_FindReadyOperationalReserve()
+{
+	GROUP *pBest = NULL;
+	INT32 iBestReadiness = -1;
+
+	GROUP *pGroup = gpGroupList;
+	while( pGroup )
+	{
+		if( VR_IsReadyOperationalReserve( pGroup ) )
+		{
+			ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+			INT32 iReadiness =
+				(INT32)pEnemy->ubOperationalSupply +
+				(INT32)pEnemy->ubOperationalMorale +
+				(INT32)pGroup->ubGroupSize * 3;
+
+			if( iReadiness > iBestReadiness )
+			{
+				iBestReadiness = iReadiness;
+				pBest = pGroup;
+			}
+		}
+
+		pGroup = pGroup->next;
+	}
+
+	return pBest;
+}
+
+static UINT8 VR_EstimateStrengthWithConfidence( INT32 iObservedStrength, UINT8 ubConfidence )
+{
+	INT32 iEstimate = iObservedStrength;
+	INT32 iError = ( 100 - ubConfidence ) / 5;
+
+	if( iError > 0 )
+		iEstimate += (INT32)Random( iError * 2 + 1 ) - iError;
+
+	return VR_ClampByte( iEstimate );
+}
+
+void VR_ReportOperationalIntel( UINT8 ubSectorID, UINT8 ubConfidence )
+{
+	UINT8 x = (UINT8)SECTORX( ubSectorID );
+	UINT8 y = (UINT8)SECTORY( ubSectorID );
+	SECTORINFO *pSector = &SectorInfo[ ubSectorID ];
+
+	INT32 iObservedPlayerStrength = (INT32)PlayerMercsInSector( x, y, 0 ) * 8;
+	INT32 iObservedMilitiaStrength =
+		(INT32)pSector->ubNumberOfCivsAtLevel[ GREEN_MILITIA ] +
+		(INT32)pSector->ubNumberOfCivsAtLevel[ REGULAR_MILITIA ] * 2 +
+		(INT32)pSector->ubNumberOfCivsAtLevel[ ELITE_MILITIA ] * 3;
+
+	GROUP *pGroup = gpGroupList;
+	while( pGroup )
+	{
+		if( !pGroup->fPlayer && pGroup->pEnemyGroup )
+		{
+			VR_EnsureEnemyFormationState( pGroup );
+			ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+
+			INT32 iDistance = VR_Abs( (INT32)pGroup->ubSectorX - x ) +
+				VR_Abs( (INT32)pGroup->ubSectorY - y );
+			INT32 iDeliveredConfidence = (INT32)ubConfidence - iDistance * 2;
+			if( iDeliveredConfidence < 10 )
+				iDeliveredConfidence = 10;
+			if( iDeliveredConfidence > 100 )
+				iDeliveredConfidence = 100;
+
+			pEnemy->ubOperationalLastKnownPlayerSectorID = ubSectorID;
+			pEnemy->ubOperationalIntelConfidence = (UINT8)iDeliveredConfidence;
+			pEnemy->ubOperationalLastKnownPlayerStrength =
+				VR_EstimateStrengthWithConfidence( iObservedPlayerStrength, (UINT8)iDeliveredConfidence );
+			pEnemy->ubOperationalLastKnownMilitiaStrength =
+				VR_EstimateStrengthWithConfidence( iObservedMilitiaStrength, (UINT8)iDeliveredConfidence );
+			pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_CONTACT;
+
+			if( iDeliveredConfidence >= 60 )
+				pEnemy->usOperationalFlags |= VR_OPFLAG_RECENT_CONTACT;
+			else
+				pEnemy->usOperationalFlags &= ~VR_OPFLAG_RECENT_CONTACT;
+
+			VR_LogOperationalDecision( pGroup, "INTEL_REPORT", NULL );
+		}
+
+		pGroup = pGroup->next;
+	}
+}
+
+INT32 VR_ScoreOperationalTarget( GROUP *pGroup, UINT8 ubSectorID, VR_OPERATIONAL_SCORE *pBreakdown )
+{
+	VR_OPERATIONAL_SCORE score;
+	memset( &score, 0, sizeof( score ) );
+
+	UINT8 x = (UINT8)SECTORX( ubSectorID );
+	UINT8 y = (UINT8)SECTORY( ubSectorID );
+	SECTORINFO *pSector = &SectorInfo[ ubSectorID ];
+
+	if( pSector->ubGarrisonID != NO_GARRISON && pSector->ubGarrisonID < giGarrisonArraySize )
+	{
+		UINT8 composition = gGarrisonGroup[ pSector->ubGarrisonID ].ubComposition;
+		if( composition < NUM_ARMY_COMPOSITIONS )
+			score.iBasePriority = gArmyComp[ composition ].bPriority;
+	}
+
+	if( StrategicMap[ CALCULATE_STRATEGIC_INDEX( x, y ) ].fEnemyControlled == FALSE )
+		score.iOwnershipValue = 30;
+
+	if( pSector->ubTraversability[ 4 ] == TOWN )
+		score.iTownValue = 15;
+
+	if( IsThereAMineInThisSector( x, y ) )
+		score.iMineValue = 25;
+
+	if( IsThisSectorASAMSector( x, y, 0 ) )
+		score.iSAMValue = 20;
+
+	// No omniscience: threat comes only from the formation's last received intelligence snapshot.
+	if( pGroup && pGroup->pEnemyGroup )
+	{
+		VR_EnsureEnemyFormationState( pGroup );
+		ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+		if( pEnemy->ubOperationalLastKnownPlayerSectorID == ubSectorID &&
+			pEnemy->ubOperationalIntelConfidence > 0 )
+		{
+			score.iPlayerForceRisk = -( (INT32)pEnemy->ubOperationalLastKnownPlayerStrength *
+				pEnemy->ubOperationalIntelConfidence / 100 );
+			score.iMilitiaRisk = -( (INT32)pEnemy->ubOperationalLastKnownMilitiaStrength *
+				pEnemy->ubOperationalIntelConfidence / 100 );
+		}
+	}
+
+	if( pGroup )
+	{
+		INT32 distance = VR_Abs( (INT32)pGroup->ubSectorX - x ) + VR_Abs( (INT32)pGroup->ubSectorY - y );
+		score.iDistanceCost = -( distance * 3 );
+
+		if( pGroup->pEnemyGroup )
+		{
+			VR_EnsureEnemyFormationState( pGroup );
+			if( pGroup->pEnemyGroup->ubOperationalSupply < 50 )
+				score.iSupplyRisk = -( 50 - pGroup->pEnemyGroup->ubOperationalSupply );
+		}
+	}
+
+	score.iTotal = score.iBasePriority + score.iOwnershipValue + score.iTownValue +
+		score.iMineValue + score.iSAMValue + score.iPlayerForceRisk +
+		score.iMilitiaRisk + score.iDistanceCost + score.iSupplyRisk;
+
+	if( pBreakdown )
+		*pBreakdown = score;
+
+	return score.iTotal;
+}
+
+UINT8 VR_FindBestOperationalTarget( GROUP *pGroup, INT32 *piBestScore )
+{
+	UINT8 bestSector = (UINT8)SECTOR( pGroup ? pGroup->ubSectorX : 1, pGroup ? pGroup->ubSectorY : 1 );
+	INT32 bestScore = -32767;
+
+	for( INT32 sector = 0; sector < 256; ++sector )
+	{
+		VR_OPERATIONAL_SCORE score;
+		INT32 value = VR_ScoreOperationalTarget( pGroup, (UINT8)sector, &score );
+
+		// Operational targets must either matter to the Queen or be held by the player.
+		if( score.iBasePriority <= 0 && score.iOwnershipValue <= 0 )
+			continue;
+
+		if( value > bestScore )
+		{
+			bestScore = value;
+			bestSector = (UINT8)sector;
+		}
+	}
+
+	if( piBestScore )
+		*piBestScore = bestScore;
+
+	return bestSector;
+}
+
+void VR_OnEnemyGroupAssigned( GROUP *pGroup, UINT8 ubTargetSectorID, UINT8 ubLegacyIntention )
+{
+	VR_EnsureEnemyFormationState( pGroup );
+	if( !VR_FormationStateIsInitialized( pGroup ) )
+		return;
+
+	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+	pEnemy->ubOperationalTargetSectorID = ubTargetSectorID;
+	pEnemy->ubOperationalMission = VR_MissionFromLegacyIntention( ubLegacyIntention );
+
+	if( pEnemy->ubOperationalMission == VR_OPMISSION_REINFORCE )
+	{
+		UINT8 targetX = (UINT8)SECTORX( ubTargetSectorID );
+		UINT8 targetY = (UINT8)SECTORY( ubTargetSectorID );
+		if( StrategicMap[ CALCULATE_STRATEGIC_INDEX( targetX, targetY ) ].fEnemyControlled == FALSE )
+			pEnemy->ubOperationalMission = VR_OPMISSION_RELIEVE;
+	}
+
+	pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_LEGACY_ASSIGNMENT;
+
+	if( pEnemy->ubOperationalMission == VR_OPMISSION_REINFORCE )
+	{
+		INT32 distance = VR_Abs( (INT32)pGroup->ubSectorX - SECTORX( ubTargetSectorID ) ) +
+			VR_Abs( (INT32)pGroup->ubSectorY - SECTORY( ubTargetSectorID ) );
+
+		if( distance <= 2 )
+			pEnemy->ubOperationalReserveRole = VR_RESERVE_LOCAL;
+		else if( distance <= 5 )
+			pEnemy->ubOperationalReserveRole = VR_RESERVE_REGIONAL;
+		else
+			pEnemy->ubOperationalReserveRole = VR_RESERVE_CENTRAL;
+	}
+	else
+	{
+		pEnemy->ubOperationalReserveRole = VR_RESERVE_NONE;
+	}
+
+	VR_OPERATIONAL_SCORE score;
+	VR_ScoreOperationalTarget( pGroup, ubTargetSectorID, &score );
+	VR_LogOperationalDecision( pGroup, "ASSIGN", &score );
+
+	INT32 bestScore = 0;
+	UINT8 bestTarget = VR_FindBestOperationalTarget( pGroup, &bestScore );
+	if( bestTarget != ubTargetSectorID && bestScore > score.iTotal )
+	{
+		VR_OPERATIONAL_SCORE bestBreakdown;
+		VR_ScoreOperationalTarget( pGroup, bestTarget, &bestBreakdown );
+
+		UINT8 originalTarget = pEnemy->ubOperationalTargetSectorID;
+		pEnemy->ubOperationalTargetSectorID = bestTarget;
+		pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_TARGET_SCORE;
+		VR_LogOperationalDecision( pGroup, "BETTER_TARGET_AVAILABLE", &bestBreakdown );
+		pEnemy->ubOperationalTargetSectorID = originalTarget;
+		pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_LEGACY_ASSIGNMENT;
+	}
+}
+
+void VR_OnEnemyGroupArrived( GROUP *pGroup )
+{
+	VR_EnsureEnemyFormationState( pGroup );
+	if( !VR_FormationStateIsInitialized( pGroup ) )
+		return;
+
+	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+	UINT8 currentSector = (UINT8)SECTOR( pGroup->ubSectorX, pGroup->ubSectorY );
+
+	if( PlayerMercsInSector( pGroup->ubSectorX, pGroup->ubSectorY, 0 ) > 0 )
+	{
+		// A formation in direct contact radios a precise report; confidence degrades with dissemination distance.
+		VR_ReportOperationalIntel( currentSector, 100 );
+		pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_CONTACT;
+	}
+
+	if( pEnemy->ubOperationalMission == VR_OPMISSION_RETREAT )
+	{
+		pEnemy->ubOperationalMission = VR_OPMISSION_REGROUP;
+		pEnemy->ubOperationalReserveRole = VR_RESERVE_LOCAL;
+		pEnemy->usOperationalFlags |= VR_OPFLAG_REGROUPING;
+		pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_REGROUP;
+	}
+	else
+	{
+		pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_ARRIVAL;
+	}
+
+	if( currentSector == pEnemy->ubOperationalHomeSectorID )
+		pEnemy->ubOperationalSupply = VR_ClampByte( pEnemy->ubOperationalSupply + 10 );
+
+	VR_LogOperationalDecision( pGroup, "ARRIVE", NULL );
+}
+
+void VR_OnEnemyGroupRetreated( GROUP *pGroup )
+{
+	VR_EnsureEnemyFormationState( pGroup );
+	if( !VR_FormationStateIsInitialized( pGroup ) )
+		return;
+
+	ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+	if( pEnemy->ubOperationalRetreatCount < 255 )
+		++pEnemy->ubOperationalRetreatCount;
+
+	pEnemy->usOperationalFlags |= VR_OPFLAG_RETREATED_ONCE;
+	pEnemy->ubOperationalMission = VR_OPMISSION_RETREAT;
+	pEnemy->ubOperationalReserveRole = VR_RESERVE_NONE;
+	pEnemy->ubOperationalMorale = VR_ClampByte( pEnemy->ubOperationalMorale - 12 );
+	pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_RETREAT;
+
+	VR_LogOperationalDecision( pGroup, "RETREAT", NULL );
+}
+
+void VR_HourlyOperationalUpdate()
+{
+	GROUP *pGroup = gpGroupList;
+
+	while( pGroup )
+	{
+		if( !pGroup->fPlayer && pGroup->pEnemyGroup )
+		{
+			VR_EnsureEnemyFormationState( pGroup );
+			ENEMYGROUP *pEnemy = pGroup->pEnemyGroup;
+
+			// Keep persistent mission state aligned with legacy VR intentions while migration is incremental.
+			if( pEnemy->ubOperationalMission == VR_OPMISSION_NONE && pEnemy->ubIntention != NO_INTENTIONS )
+				pEnemy->ubOperationalMission = VR_MissionFromLegacyIntention( pEnemy->ubIntention );
+
+			if( pEnemy->ubOperationalIntelConfidence > 0 )
+			{
+				UINT8 decay = ( pEnemy->usOperationalFlags & VR_OPFLAG_RECENT_CONTACT ) ? 1 : 3;
+				pEnemy->ubOperationalIntelConfidence =
+					( pEnemy->ubOperationalIntelConfidence > decay ) ?
+					pEnemy->ubOperationalIntelConfidence - decay : 0;
+
+				if( pEnemy->ubOperationalIntelConfidence < 60 )
+					pEnemy->usOperationalFlags &= ~VR_OPFLAG_RECENT_CONTACT;
+			}
+
+			UINT8 currentSector = (UINT8)SECTOR( pGroup->ubSectorX, pGroup->ubSectorY );
+			BOOLEAN fFriendlySector = StrategicMap[ CALCULATE_STRATEGIC_INDEX( pGroup->ubSectorX, pGroup->ubSectorY ) ].fEnemyControlled;
+
+			if( pGroup->fBetweenSectors )
+			{
+				pEnemy->ubOperationalSupply = VR_ClampByte( pEnemy->ubOperationalSupply - 1 );
+			}
+			else if( currentSector == pEnemy->ubOperationalHomeSectorID )
+			{
+				UINT8 oldSupply = pEnemy->ubOperationalSupply;
+				pEnemy->ubOperationalSupply = VR_ClampByte( pEnemy->ubOperationalSupply + 5 );
+				if( oldSupply < 50 && pEnemy->ubOperationalSupply >= 50 )
+				{
+					pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_RESUPPLIED;
+					VR_LogOperationalDecision( pGroup, "RESUPPLIED", NULL );
+				}
+			}
+			else if( fFriendlySector &&
+				( SectorInfo[ currentSector ].ubGarrisonID != NO_GARRISON ||
+				  SectorInfo[ currentSector ].ubTraversability[ 4 ] == TOWN ||
+				  IsThereAMineInThisSector( pGroup->ubSectorX, pGroup->ubSectorY ) ||
+				  IsThisSectorASAMSector( pGroup->ubSectorX, pGroup->ubSectorY, 0 ) ) )
+			{
+				pEnemy->ubOperationalSupply = VR_ClampByte( pEnemy->ubOperationalSupply + 2 );
+			}
+
+			pEnemy->usOperationalFlags &= ~( VR_OPFLAG_SUPPLY_LOW | VR_OPFLAG_SUPPLY_CRITICAL );
+			if( pEnemy->ubOperationalSupply < 40 )
+				pEnemy->usOperationalFlags |= VR_OPFLAG_SUPPLY_LOW;
+			if( pEnemy->ubOperationalSupply < 20 )
+			{
+				pEnemy->usOperationalFlags |= VR_OPFLAG_SUPPLY_CRITICAL;
+				pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_LOW_SUPPLY;
+			}
+
+			if( pEnemy->ubOperationalSupply < 25 )
+				pEnemy->ubOperationalMorale = VR_ClampByte( pEnemy->ubOperationalMorale - 2 );
+			else if( pEnemy->ubOperationalSupply > 60 && pEnemy->ubOperationalMorale < 85 )
+				pEnemy->ubOperationalMorale = VR_ClampByte( pEnemy->ubOperationalMorale + 1 );
+
+			if( pEnemy->ubOperationalMission == VR_OPMISSION_REGROUP &&
+				pEnemy->ubOperationalSupply >= 70 && pEnemy->ubOperationalMorale >= 65 )
+			{
+				pEnemy->ubOperationalMission = VR_OPMISSION_RESERVE;
+				pEnemy->ubOperationalReserveRole = VR_RESERVE_LOCAL;
+				pEnemy->usOperationalFlags &= ~VR_OPFLAG_REGROUPING;
+				pEnemy->ubOperationalLastDecisionReason = VR_OPREASON_REGROUP;
+				VR_LogOperationalDecision( pGroup, "REGROUP_COMPLETE", NULL );
+			}
+		}
+
+		pGroup = pGroup->next;
 	}
 }

@@ -1,349 +1,101 @@
 # Vengeance Unified AI Framework
 
-Canonical branch: `install/all-2026-09-12`
-
-Status: **ACTIVE / SINGLE SOURCE OF TRUTH**
+Branch: `integration/unified-ai-framework-2026-09-14`
 
 ## Purpose
 
-This document freezes the AI architecture and branch policy after the 2026-09-14 consolidation review.
+This branch is the single canonical integration line for Vengeance AI work. It is based on
+`ai/utility-squad-planner` because that branch contains the newest coherent tactical planner.
+Older AI branches are reference material only: useful behaviours are ported deliberately into
+this framework, never merged wholesale.
 
-The playable branch `install/all-2026-09-12` is the only canonical integration line for tactical AI. Older
-`ai/*`, `integration/*ai*`, and `final-human-ai-*` branches are reference/archaeology unless a future
-review proves that they contain a behaviour not present in the canonical branch.
+## Architecture
 
-No older AI branch is to be merged wholesale into the canonical branch.
+1. **Legal perception**
+   - JA2 personal/public knowledge, sight, noise and legitimate radio reports only.
+   - No hidden AP, exact unseen position, hidden equipment, or raw sector-strength cheats.
 
-## Consolidation finding
+2. **Competence / friction**
+   - Administrators and green militia use simple, noisy plans.
+   - Regular army and militia use coordinated tactics inconsistently.
+   - Elites can reliably use the full planner.
+   - Competence changes reasoning and execution, never CTH/AP.
 
-The consolidation review compared the canonical branch against the major AI branches.
+3. **Battle state**
+   - casualties, perceived force balance, stress, risk, morale, isolation and rout pressure.
 
-### Fully subsumed / ancestor branches
+4. **Persistent local intent**
+   - HOLD, PRESS, FLANK, FALLBACK, DISENGAGE, RESCUE.
 
-These have no commits ahead of the canonical branch and are already integrated by ancestry:
+5. **Dynamic fireteam role**
+   - SUPPORT, MANEUVER, FLANKER, SCREEN, RESERVE.
 
-- `ai/ap-budgeting`
-- `ai/combat-dispersion`
-- `ai/combat-medic-rescue`
-- `ai/covering-fire-cooperation`
-- `ai/emergency-casualty-smoke`
-- `ai/fireteam-cohesion`
-- `ai/individual-self-preservation`
-- `ai/local-advance-cooperation`
-- `ai/no-weapon-self-preservation`
-- `ai/range-aware-positioning`
-- `ai/search-confidence-decay`
-- `ai/support-aware-withdrawal`
-- `ai/target-allocation`
-- `ai/wound-self-preservation`
-- `ai/wounded-tactical-withdrawal`
+6. **Local fire plan**
+   - target saturation, covering fire, fire superiority, alternate-arc preservation.
 
-### Diverged but functionally superseded
+7. **Action utility**
+   - legacy Vengeance / 1.13 behaviours remain the execution library.
+   - the planner decides when those behaviours are appropriate.
 
-These branches are historically useful but their AI functions are already represented by newer code on the
-canonical branch:
+8. **Position / route utility**
+   - cover, known-threat exposure, crossfire, useful weapon range, support, crowding,
+     smoke, route exposure and inferred reaction-fire risk.
 
-- `ai/deidranna-doctrine`
-- `ai/legacy-core-modernization`
-- `ai/shared-enemy-militia-brain`
-- `ai/team-coordination`
-- `ai/utility-squad-planner`
-- `ai/radio-support-doctrine`
-- `ai/human-tactical-final`
-- `final-human-ai-modern-113`
-- `integration/unified-ai-fireteams-doctrine-2026-09-14`
-- `integration/unified-ai-framework-2026-09-14`
+9. **Execution friction**
+   - lower-quality troops may fall back to a simpler legal action instead of executing
+     the mathematically best complex plan.
 
-The old unified-framework branch must **not** replace the canonical branch: it was built from an older base and
-is substantially behind the playable integration line. Its useful concepts are already present in newer form in
-the canonical code.
-
-## Canonical tactical architecture
-
-The canonical AI is one layered decision system, not a collection of independent brains.
-
-### 1. Legal perception
-
-AI reasoning may use:
-
-- personal/public JA2 knowledge;
-- current sight and legitimate heard information;
-- known contacts and legally disseminated reports;
-- locally observable casualties, suppression and friendly state.
-
-It must not gain hidden CTH/AP bonuses or exact unseen information as a substitute for competence.
-
-### 2. Doctrine and competence
-
-Doctrine/competence affects:
-
-- whether complex plans are attempted;
-- planner reliability and execution friction;
-- command/support behaviour;
-- local initiative.
-
-It does **not** directly grant magical shooting, AP, sight or weapon-performance bonuses.
-
-Canonical interfaces include:
-
-- `AIGetDoctrineProfile`
-- `AIGetCommandRank`
-- `AICommandAuthority`
-- `AIHasLocalCommandSupport`
-- `AIAllowsPlanComplexity`
-- `AIAllowsIndependentFlank`
-- `AIAllowsProactiveSupport`
-
-#### Deidranna doctrine profiles
-
-Deidranna's army is intentionally heterogeneous. Doctrine changes initiative, anchoring and planning complexity,
-not CTH, AP, sight, health, weapon performance or hidden information.
-
-| Profile | Main mapping | Initiative | Anchoring | Complex manoeuvre |
-| --- | --- | --- | --- | --- |
-| SECURITY | administrators/security troops | very low | very high | no independent complex manoeuvre |
-| LINE | ordinary army | low/moderate | moderate | only with nearby command |
-| VETERAN | leaders and level 6+ regulars | moderate/high | lower | yes |
-| ELITE_MOBILE | mobile elites | high | low | yes |
-| ELITE_GUARD | stationary/guard/sniper elites | high tactical skill | high | yes, objective-focused |
-
-A nearby active commander can raise LINE troops from simple covered movement into coordinated local
-fire-and-manoeuvre, proactive suppression/smoke and fuller casualty-response behaviour. The effect is local:
-incapacitated, cowering, disengaging or distant leaders do not provide magical sector-wide command.
-
-Contact/QRF doctrine retains local garrisons instead of emptying a facility into every firefight. Typical response
-baselines are SECURITY 2 (hard cap 3), LINE 4, VETERAN 5, ELITE_MOBILE 6 and ELITE_GUARD 4 (hard cap 5).
-`ONCALL` and `SEEKENEMY` can increase mobile response within those final caps. Mapper orders remain authoritative.
-
-Lower-quality formations remain visibly imperfect: SECURITY does not independently solve exposed advance/CQB
-geometry; uncommanded LINE uses simpler support and one-mover-style coordination; advanced crossfire, alternate
-entry, proactive movement smoke and unsupported improvisational manoeuvre require command, veteran or elite quality.
-Emergency survival smoke and ordinary self-preservation remain available regardless of doctrine.
-
-Militia shares the human-like tactical core but does not inherit Deidranna-specific command, anchoring or QRF
-restrictions.
-
-### 3. Persistent local organization
-
-Enemy/militia combatants are organized into transient sector-local fireteams.
-
-Canonical interfaces include:
-
-- `AIFireteamId`
-- `AIFireteamAliveCount`
-- `AIFireteamCombatReadyCount`
-- `AISameFireteam`
-- `DecideFireteamCohesionAction`
-
-The canonical branch additionally contains newer remnant absorption, regrouping, fixed-mission, reserve and
-response-control logic. Older fireteam branches are therefore reference-only.
-
-### 4. Battle state and self-preservation
-
-The AI continuously reasons about:
-
-- local stress;
-- personal risk vs risk tolerance;
-- perceived friendly/enemy strength;
-- casualty pressure;
-- isolation;
-- suppression;
-- route exposure;
-- hopeless odds;
-- disengagement/escape state.
-
-Canonical interfaces include:
-
-- `AILocalStress`
-- `AIPersonalRisk`
-- `AIPersonalRiskTolerance`
-- `AIBattleSituation`
-- `AIShouldAvoidAdvance`
-- `AIShouldStartDisengagement`
-- `DecideDisengagementAction`
-- `DecideTacticalFallback`
-- `DecideHopelessSurvivorAction`
-- `AIKnownRouteExposureAcceptable`
-
-### 5. Tactical intent and roles
-
-The planner uses a shared tactical model:
-
-Intents:
-
-- HOLD
-- PRESS
-- FLANK
-- FALLBACK
-- DISENGAGE
-- RESCUE
-
-Roles:
-
-- SUPPORT
-- MANEUVER
-- FLANKER
-- SCREEN
-- RESERVE
-
-Canonical interfaces include:
-
-- `AITacticalIntent`
-- `AITacticalRole`
-- `AIUtilityPositionScore`
-- `AIPathExposureCost`
-- `AIEngagementRangeModifier`
-- `AIAdvanceHasMutualSupport`
-
-### 6. Team fire plan
-
-The AI coordinates rather than letting every soldier independently chase the same local optimum.
-
-Canonical mechanisms include:
-
-- target saturation control;
-- covering fire;
-- support-aware advance;
-- withdrawal cover;
-- alternate arcs/crossfire;
-- response limits and reserve retention;
-- bounded reinforcement of local contacts.
-
-Canonical interfaces include:
-
-- `AITargetSaturation`
-- `AIFriendNeedsCoveringFire`
-- `AIFriendAdvancingNeedsCover`
-- `AIFriendWithdrawingNeedsCover`
-- `AIShouldHoldForWithdrawingFriend`
-- `AICrossfirePositionScore`
-
-### 7. Casualty handling
-
-Casualty behaviour is part of the same priority system, not a separate medic AI.
-
-Canonical order is intentionally coordinated across alert states:
-
-1. emergency protection / dispersion where required;
-2. fireteam cohesion;
-3. persistent disengagement;
-4. suppression response;
-5. safe medic casualty response;
-6. emergency self-aid;
-7. non-medic casualty response / buddy aid;
-8. ordinary offensive behaviour.
-
-Canonical entry point:
-
-- `DecideCombatCasualtyResponse`
-
-Older branch-specific routines such as a separate `DecideCombatMedicRescue` path are superseded by the
-canonical casualty-response path.
-
-### 8. Building-aware CQB
-
-CQB/building reasoning is an active subordinate planner, not a parallel AI.
-
-- `DecideAction.cpp` owns its placement in the RED/BLACK priority hierarchy.
-- `CQBBuildingDoctrine.cpp` owns building context, state/role assessment, bounded position utility and the
-  `VRCQB_DecideAction` adapter.
-- RED considers CQB only after senior survival/cohesion/disengagement/suppression/casualty logic.
-- BLACK preserves viable immediate attacks before considering CQB movement.
-- CQB uses canonical doctrine, fireteams, knowledge, route exposure and `VRAnalytics`.
-- The historical CQB branch is frozen archaeology; active code lives only on the canonical branch.
-
-See `TacticalAI/CQB_BUILDING_AI.md`.
-
-### 9. Legacy Vengeance / 1.13 behaviour
-
-Legacy AI is retained as the execution library.
-
-The rule is:
-
-> Unified planner decides **whether/when/why** an action is appropriate; legacy code executes the legal action.
-
-A legacy heuristic must not independently re-trigger a behaviour already controlled by the canonical planner.
-Emergency/survival rules may pre-empt ordinary planning.
-
-## Canonical decision priority
-
-The current integration intentionally gives high-priority survival/team-state decisions the opportunity to
-pre-empt lower-priority opportunistic actions.
-
-Important ordering relationships:
-
-- forced/manual retreat remains authoritative across alert-state changes;
-- emergency smoke/dispersion can pre-empt ordinary movement;
-- shattered fireteams may regroup/reattach before ordinary attack movement;
-- persistent disengagement outranks attack setup;
-- suppression response is blocked while active disengagement is in control;
-- casualty response outranks opportunistic sniper/mortar/support actions when viable;
-- BLACK immediate executable attacks outrank CQB repositioning;
-- CQB movement outranks generic building-unaware cover/approach movement only when its context is valid;
-- combat-team panic movement does not fall through to the old generic civilian RUN_AWAY path.
-
-When adding a new behaviour, it must be inserted into this priority model instead of being called independently
-from multiple unrelated locations.
-
-## Analytics / Black Box integration
-
-The canonical branch already uses the shared `VRAnalytics` stream for planner decisions.
-
-Planner adapters in `TacticalAI/DecideAction.cpp` include:
-
-- `VRPlannerTraceBeginDecision`
-- `VRPlannerTraceCandidate`
-- `VRPlannerTraceReject`
-- `VRPlannerTraceSelect`
-
-Do not restore the older separate `AI Diagnostics.cpp` / standalone tactical TSV implementation from the old
-unified branch. That would recreate duplicate diagnostics and another source of truth.
-
-New AI behaviour should record enough state to answer:
-
-- What did the actor legally know?
-- What intent/role was active?
-- What candidates were considered?
-- Why were candidates rejected?
-- What action was selected?
-- Did competence/doctrine friction alter the choice?
-- What was the outcome?
-- Which subsystem drove the decision?
-
-## Strategic AI staging
-
-Strategic modernization is tracked separately from the active tactical AI because it depends on savegame/group-state
-changes that are not yet safe to activate on the playable branch.
-
-The historical branches `inactive/strategic-modernization`,
-`integration/unified-strategic-companion-2026-09-14`, and
-`consolidation/install-all-2026-09-14` are classified as **inactive staging/archaeology**, not alternative active
-integration lines. Their tactical AI is superseded by the canonical branch; their genuinely unique strategic work
-is catalogued in `Strategic/STRATEGIC_AI_STAGING_MANIFEST.md` and must be forward-ported from the current canonical
-base when resumed.
+10. **Outcome feedback**
+    - Black Box records raw facts; Companion records plans, reasons and outcomes.
 
 ## Branch policy
 
-1. All completed AI work ends on `install/all-2026-09-12`.
-2. Short-lived experimental branches are allowed, but they are not permanent integration lines.
-3. A new AI branch must start from the current canonical branch.
-4. Never merge an old AI branch wholesale merely because its name sounds newer.
-5. Port only behaviour proven to be unique and still desirable.
-6. If the canonical branch already has a newer implementation of the same behaviour, keep the canonical one.
-7. New AI systems must use the shared planner state and `VRAnalytics`; do not create parallel decision engines,
-   parallel fireteam state, or parallel Black Box formats.
-8. Before declaring an AI feature complete, verify:
-   - code is on the canonical branch;
-   - it compiles;
-   - its priority relative to survival/retreat/casualty behaviour is deliberate;
-   - its information use is legal;
-   - its decisions are observable in analytics;
-   - it has no duplicate legacy trigger that can independently fire the same behaviour.
+- This branch is canonical for all new tactical AI development.
+- Strategic modernization and diagnostics are ported onto this line.
+- No AI feature branch may become a second permanent integration branch.
+- Experimental features branch from this line and return through reviewed commits.
+- Old branches stay available for archaeology until all unique behaviours are catalogued.
+- A behaviour is considered integrated only when:
+  1. its code is present here;
+  2. it compiles;
+  3. it is visible in Black Box / Companion telemetry;
+  4. its interactions with morale, smoke, suppression, movement and retreat are tested.
 
-## Future cleanup
+## Legacy + modern coexistence
 
-Old AI branches should remain available for archaeology until their useful ideas have been catalogued, but they
-are **inactive**. Their existence must not be interpreted as unfinished integration.
+The old Vengeance / 1.13 AI is retained as an execution library, not discarded.
 
-Any future audit should compare candidate branches against `install/all-2026-09-12` at the function/behaviour
-level, not by branch age or branch name.
+- Legacy code answers: *How do I perform this legal action?*
+- Unified planner answers: *Should I perform it now, with which role, against which known
+  contact, and at what risk?*
+- Hard emergency/survival rules may pre-empt the planner.
+- A legacy heuristic must not independently re-trigger a behaviour already reserved by the
+  planner; adapters/gates prevent double decisions.
+
+## Strategic integration policy
+
+Strategic modernization remains gated until tactical integration is stable.
+
+The eventual shared loop is:
+
+strategic mission -> tactical posture -> tactical outcome -> formation losses/morale/supply
+-> retreat/regroup/reserve -> new strategic mission.
+
+Strategic intelligence must use delayed/degraded dissemination. A contact report must not
+instantly update every enemy formation.
+
+## Diagnostic policy
+
+Every material AI change must expose enough information for the daily Companion review to
+answer:
+
+- What did the AI know?
+- What alternatives did it consider?
+- Why did it reject alternatives?
+- Why was the selected action preferred?
+- Did execution match the plan?
+- What happened afterward?
+- Which subsystem materially drove the result?
+- Did the change improve behaviour across battles or only one anecdote?
+
+See `Diagnostics/AI_COMPANION_ANALYSIS_CONTRACT.md`.
