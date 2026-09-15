@@ -479,7 +479,7 @@ BOOLEAN AIBuildPrimaryContactBelief(SOLDIERTYPE *pSoldier, INT32 sPreferredGridN
 BOOLEAN AIBuildThreatMemoryCue(SOLDIERTYPE *pSoldier, AITHREATMEMORYCUE *pCue);
 INT32 AIMemoryNoiseRelevance(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo, INT8 bNoiseLevel);
 void AIRegisterThreatNoiseEvidence(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo,
-	INT8 bNoiseLevel, INT32 iRelevance, BOOLEAN fPublic);
+	INT8 bNoiseLevel, INT32 iRelevance, UINT8 ubNoiseVolume, BOOLEAN fPublic);
 BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 	AITACTICALGEOMETRY *pGeometry);
 INT32 AIGeometryPositionScore(SOLDIERTYPE *pSoldier,
