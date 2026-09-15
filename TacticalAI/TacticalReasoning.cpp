@@ -172,6 +172,361 @@ BOOLEAN AIBuildPrimaryContactBelief(SOLDIERTYPE *pSoldier, INT32 sPreferredGridN
 	return TRUE;
 }
 
+static UINT8 AIGeometryDirectionDelta(UINT8 ubA, UINT8 ubB)
+{
+	if (ubA >= NUM_WORLD_DIRECTIONS || ubB >= NUM_WORLD_DIRECTIONS)
+		return NUM_WORLD_DIRECTIONS;
+
+	UINT8 ubDelta = (UINT8)abs((INT32)ubA - (INT32)ubB);
+	return __min(ubDelta, (UINT8)(NUM_WORLD_DIRECTIONS - ubDelta));
+}
+
+static UINT8 AIGeometryRotate(UINT8 ubDirection, INT8 bSteps)
+{
+	if (ubDirection >= NUM_WORLD_DIRECTIONS)
+		return DIRECTION_IRRELEVANT;
+
+	INT32 iDirection = (INT32)ubDirection + (INT32)bSteps;
+	while (iDirection < 0)
+		iDirection += NUM_WORLD_DIRECTIONS;
+	while (iDirection >= NUM_WORLD_DIRECTIONS)
+		iDirection -= NUM_WORLD_DIRECTIONS;
+	return (UINT8)iDirection;
+}
+
+static INT32 AIGeometryDirectionalThreat(const AITACTICALGEOMETRY *pGeometry, UINT8 ubDirection)
+{
+	if (!pGeometry || ubDirection >= NUM_WORLD_DIRECTIONS)
+		return 0;
+
+	const UINT8 ubCW = AIGeometryRotate(ubDirection, 1);
+	const UINT8 ubCCW = AIGeometryRotate(ubDirection, -1);
+
+	return (INT32)pGeometry->usThreatPressure[ubDirection] * 2 +
+		(INT32)pGeometry->usThreatPressure[ubCW] +
+		(INT32)pGeometry->usThreatPressure[ubCCW];
+}
+
+static INT32 AIGeometryDirectionalSupport(const AITACTICALGEOMETRY *pGeometry, UINT8 ubDirection)
+{
+	if (!pGeometry || ubDirection >= NUM_WORLD_DIRECTIONS)
+		return 0;
+
+	const UINT8 ubCW = AIGeometryRotate(ubDirection, 1);
+	const UINT8 ubCCW = AIGeometryRotate(ubDirection, -1);
+
+	return (INT32)pGeometry->usFriendlyPressure[ubDirection] * 2 +
+		(INT32)pGeometry->usFriendlyPressure[ubCW] +
+		(INT32)pGeometry->usFriendlyPressure[ubCCW];
+}
+
+static INT32 AIGeometryDirectionalDanger(const AITACTICALGEOMETRY *pGeometry, UINT8 ubDirection)
+{
+	return AIGeometryDirectionalThreat(pGeometry, ubDirection) -
+		AIGeometryDirectionalSupport(pGeometry, ubDirection) / 3;
+}
+
+BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
+	AITACTICALGEOMETRY *pGeometry)
+{
+	if (!pGeometry)
+		return FALSE;
+
+	memset(pGeometry, 0, sizeof(AITACTICALGEOMETRY));
+	pGeometry->ubPrimaryThreatDir = DIRECTION_IRRELEVANT;
+	pGeometry->ubSecondaryThreatDir = DIRECTION_IRRELEVANT;
+	pGeometry->ubSafestDirection = DIRECTION_IRRELEVANT;
+	pGeometry->ubStrongestFriendlyDir = DIRECTION_IRRELEVANT;
+
+	if (!pSoldier || TileIsOutOfBounds(sAnchorGridNo))
+		return FALSE;
+
+	// Opponent geometry is belief-bound. Stale/heard contacts contribute less
+	// pressure through the normal ThreatPercent-derived belief confidence.
+	for (UINT16 i = 0; i < TOTAL_SOLDIERS; ++i)
+	{
+		AICONTACTBELIEF Belief;
+		if (!AIBuildContactBelief(pSoldier, (UINT8)i, &Belief))
+			continue;
+
+		UINT8 ubDir = AIDirection(sAnchorGridNo, Belief.sGridNo);
+		if (ubDir >= NUM_WORLD_DIRECTIONS)
+			continue;
+
+		const INT32 iDistance = __max(1, PythSpacesAway(sAnchorGridNo, Belief.sGridNo));
+		const INT32 iDistanceWeight = __max(25, __min(100, 120 - 4 * iDistance));
+		INT32 iPressure = ((INT32)Belief.ubConfidence * iDistanceWeight) / 100;
+
+		if (Belief.fDirectlyVisible)
+		{
+			iPressure += 20;
+			++pGeometry->ubVisibleContacts;
+		}
+
+		if (Belief.bLevel == pSoldier->pathing.bLevel)
+			iPressure += 5;
+
+		iPressure = __max(1, __min(180, iPressure));
+		pGeometry->usThreatPressure[ubDir] = (UINT16)__min(
+			65535, (INT32)pGeometry->usThreatPressure[ubDir] + iPressure);
+		++pGeometry->ubKnownContacts;
+	}
+
+	// Friendly geometry is intentionally local. Combat teams coordinate only with
+	// their fireteam so this does not become a sector-wide hive mind.
+	for (UINT8 ubID = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		ubID <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++ubID)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[ubID];
+		if (!pFriend || pFriend == pSoldier ||
+			!pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE ||
+			pFriend->bCollapsed || pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			pFriend->pathing.bLevel != pSoldier->pathing.bLevel)
+		{
+			continue;
+		}
+
+		if (AICombatTeam(pSoldier) && !AISameFireteam(pSoldier, pFriend))
+			continue;
+
+		const INT32 iDistance = PythSpacesAway(sAnchorGridNo, pFriend->sGridNo);
+		if (iDistance > DAY_VISION_RANGE)
+			continue;
+
+		UINT8 ubDir = AIDirection(sAnchorGridNo, pFriend->sGridNo);
+		if (ubDir >= NUM_WORLD_DIRECTIONS)
+			continue;
+
+		INT32 iPressure = __max(15, 90 - 3 * iDistance);
+		if (AICheckHasGun(pFriend) && AIGunAmmo(pFriend) > 0)
+			iPressure += 10;
+		if (AICheckIsLeader(pFriend))
+			iPressure += 5;
+
+		pGeometry->usFriendlyPressure[ubDir] = (UINT16)__min(
+			65535, (INT32)pGeometry->usFriendlyPressure[ubDir] + iPressure);
+	}
+
+	INT32 iPrimary = -1;
+	INT32 iSecondary = -1;
+	INT32 iStrongestFriendly = -1;
+	UINT8 ubStrongThreatSectors = 0;
+
+	for (UINT8 ubDir = 0; ubDir < NUM_WORLD_DIRECTIONS; ++ubDir)
+	{
+		const INT32 iThreat = pGeometry->usThreatPressure[ubDir];
+		const INT32 iFriendly = pGeometry->usFriendlyPressure[ubDir];
+
+		if (iThreat >= 20)
+		{
+			pGeometry->ubThreatDirectionMask |= (UINT8)(1 << ubDir);
+			++ubStrongThreatSectors;
+		}
+		if (iFriendly >= 20)
+			pGeometry->ubFriendlyDirectionMask |= (UINT8)(1 << ubDir);
+
+		if (iThreat > iPrimary)
+		{
+			iSecondary = iPrimary;
+			pGeometry->ubSecondaryThreatDir = pGeometry->ubPrimaryThreatDir;
+			iPrimary = iThreat;
+			pGeometry->ubPrimaryThreatDir = ubDir;
+		}
+		else if (iThreat > iSecondary)
+		{
+			iSecondary = iThreat;
+			pGeometry->ubSecondaryThreatDir = ubDir;
+		}
+
+		if (iFriendly > iStrongestFriendly)
+		{
+			iStrongestFriendly = iFriendly;
+			pGeometry->ubStrongestFriendlyDir = ubDir;
+		}
+	}
+
+	if (pGeometry->ubKnownContacts == 0 || iPrimary <= 0)
+	{
+		pGeometry->ubPrimaryThreatDir = DIRECTION_IRRELEVANT;
+		pGeometry->ubSecondaryThreatDir = DIRECTION_IRRELEVANT;
+		return FALSE;
+	}
+
+	INT32 iLowestDanger = 0x7fffffff;
+	for (UINT8 ubDir = 0; ubDir < NUM_WORLD_DIRECTIONS; ++ubDir)
+	{
+		const INT32 iDanger = AIGeometryDirectionalDanger(pGeometry, ubDir);
+		if (iDanger < iLowestDanger)
+		{
+			iLowestDanger = iDanger;
+			pGeometry->ubSafestDirection = ubDir;
+		}
+	}
+
+	if (pGeometry->ubSecondaryThreatDir < NUM_WORLD_DIRECTIONS &&
+		iSecondary >= 20 &&
+		AIGeometryDirectionDelta(
+			pGeometry->ubPrimaryThreatDir,
+			pGeometry->ubSecondaryThreatDir) >= 2)
+	{
+		pGeometry->fMultiAngleThreat = TRUE;
+	}
+
+	const UINT8 ubOpposite =
+		AIGeometryRotate(pGeometry->ubPrimaryThreatDir, NUM_WORLD_DIRECTIONS / 2);
+	const INT32 iRearThreat =
+		AIGeometryDirectionalThreat(pGeometry, ubOpposite);
+	const INT32 iRearSupport =
+		AIGeometryDirectionalSupport(pGeometry, ubOpposite);
+	pGeometry->sRearSafety = (INT16)__max(-100, __min(100,
+		70 - iRearThreat / 5 + iRearSupport / 8));
+
+	pGeometry->fEncirclementPressure =
+		(ubStrongThreatSectors >= 3 && pGeometry->fMultiAngleThreat) ||
+		(pGeometry->usThreatPressure[ubOpposite] >= 35 &&
+		 pGeometry->usThreatPressure[pGeometry->ubPrimaryThreatDir] >= 35);
+
+	const UINT8 ubLeft =
+		AIGeometryRotate(pGeometry->ubPrimaryThreatDir, -2);
+	const UINT8 ubRight =
+		AIGeometryRotate(pGeometry->ubPrimaryThreatDir, 2);
+
+	const INT32 iLeftDanger = AIGeometryDirectionalDanger(pGeometry, ubLeft);
+	const INT32 iRightDanger = AIGeometryDirectionalDanger(pGeometry, ubRight);
+
+	pGeometry->sLeftFlankOpportunity = (INT16)__max(-100, __min(100,
+		55 + iPrimary / 8 -
+		iLeftDanger / 5 -
+		(INT32)pGeometry->usFriendlyPressure[ubLeft] / 4));
+
+	pGeometry->sRightFlankOpportunity = (INT16)__max(-100, __min(100,
+		55 + iPrimary / 8 -
+		iRightDanger / 5 -
+		(INT32)pGeometry->usFriendlyPressure[ubRight] / 4));
+
+	return TRUE;
+}
+
+INT32 AIGeometryPositionScore(SOLDIERTYPE *pSoldier,
+	const AITACTICALGEOMETRY *pGeometry, INT32 sCandidateSpot,
+	INT32 sTargetSpot, INT8 bIntent, INT8 bRole)
+{
+	if (!pSoldier || !pGeometry || TileIsOutOfBounds(sCandidateSpot) ||
+		pGeometry->ubPrimaryThreatDir >= NUM_WORLD_DIRECTIONS)
+	{
+		return 0;
+	}
+
+	if (sCandidateSpot == pSoldier->sGridNo)
+		return 0;
+
+	UINT8 ubMoveDir = AIDirection(pSoldier->sGridNo, sCandidateSpot);
+	if (ubMoveDir >= NUM_WORLD_DIRECTIONS)
+		return 0;
+
+	const INT32 iDanger = AIGeometryDirectionalDanger(pGeometry, ubMoveDir);
+	const INT32 iSupport = AIGeometryDirectionalSupport(pGeometry, ubMoveDir);
+	INT32 iScore = -iDanger / 12 + iSupport / 20;
+
+	if (bIntent == AI_INTENT_FALLBACK || bIntent == AI_INTENT_DISENGAGE)
+	{
+		if (pGeometry->ubSafestDirection < NUM_WORLD_DIRECTIONS)
+		{
+			const UINT8 ubDelta = AIGeometryDirectionDelta(
+				ubMoveDir, pGeometry->ubSafestDirection);
+			iScore += __max(-12, 24 - 8 * (INT32)ubDelta);
+		}
+
+		const UINT8 ubRear =
+			AIGeometryRotate(pGeometry->ubPrimaryThreatDir, NUM_WORLD_DIRECTIONS / 2);
+		if (AIGeometryDirectionDelta(ubMoveDir, ubRear) <= 1)
+			iScore += pGeometry->sRearSafety / 4;
+
+		if (pGeometry->fEncirclementPressure)
+			iScore += 10;
+	}
+	else if (bIntent == AI_INTENT_FLANK || bRole == AI_ROLE_FLANKER)
+	{
+		const UINT8 ubLeft =
+			AIGeometryRotate(pGeometry->ubPrimaryThreatDir, -2);
+		const UINT8 ubRight =
+			AIGeometryRotate(pGeometry->ubPrimaryThreatDir, 2);
+		const UINT8 ubLeftDelta = AIGeometryDirectionDelta(ubMoveDir, ubLeft);
+		const UINT8 ubRightDelta = AIGeometryDirectionDelta(ubMoveDir, ubRight);
+
+		INT32 iLeft = pGeometry->sLeftFlankOpportunity -
+			12 * (INT32)ubLeftDelta;
+		INT32 iRight = pGeometry->sRightFlankOpportunity -
+			12 * (INT32)ubRightDelta;
+		iScore += __max(iLeft, iRight) / 3;
+	}
+	else if (bIntent == AI_INTENT_PRESS)
+	{
+		// Pressing straight into the strongest known fire sector is legal, but it
+		// should need cover/support advantages elsewhere in the utility model.
+		const UINT8 ubDelta = AIGeometryDirectionDelta(
+			ubMoveDir, pGeometry->ubPrimaryThreatDir);
+		if (ubDelta == 0)
+			iScore -= __min((INT32)18, iDanger / 15);
+		else if (ubDelta == 1)
+			iScore -= __min((INT32)10, iDanger / 20);
+	}
+
+	if (bRole == AI_ROLE_SCREEN && pGeometry->ubSafestDirection < NUM_WORLD_DIRECTIONS)
+	{
+		const UINT8 ubRear =
+			AIGeometryRotate(pGeometry->ubPrimaryThreatDir, NUM_WORLD_DIRECTIONS / 2);
+		if (AIGeometryDirectionDelta(ubMoveDir, ubRear) <= 1)
+			iScore += 8;
+	}
+
+	if (!TileIsOutOfBounds(sTargetSpot) &&
+		bRole == AI_ROLE_SUPPORT &&
+		pGeometry->ubStrongestFriendlyDir < NUM_WORLD_DIRECTIONS)
+	{
+		// Support should preserve the base of fire rather than chase the same open
+		// flank as the maneuver element.
+		if (AIGeometryDirectionDelta(
+			ubMoveDir, pGeometry->ubStrongestFriendlyDir) <= 1)
+			iScore += 5;
+	}
+
+	return __max(-45, __min(45, iScore));
+}
+
+INT8 AIPreferredFlankAction(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
+{
+	if (!pSoldier || TileIsOutOfBounds(sTargetSpot))
+		return AI_ACTION_NONE;
+
+	AITACTICALGEOMETRY Geometry;
+	if (!AIBuildTacticalGeometry(pSoldier, pSoldier->sGridNo, &Geometry))
+		return AI_ACTION_NONE;
+
+	if (Geometry.fEncirclementPressure ||
+		Geometry.ubPrimaryThreatDir >= NUM_WORLD_DIRECTIONS)
+	{
+		return AI_ACTION_NONE;
+	}
+
+	const INT32 iLeft = Geometry.sLeftFlankOpportunity;
+	const INT32 iRight = Geometry.sRightFlankOpportunity;
+
+	if (__max(iLeft, iRight) < -10)
+		return AI_ACTION_NONE;
+
+	if (iLeft >= iRight + 5)
+		return AI_ACTION_FLANK_LEFT;
+	if (iRight >= iLeft + 5)
+		return AI_ACTION_FLANK_RIGHT;
+
+	return AI_ACTION_NONE;
+}
+
+
 BOOLEAN AIEvaluateTacticalPosition(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 	INT32 sTargetSpot, UINT16 usMovementMode, AITACTICALPOSITIONFEATURES *pFeatures)
 {
@@ -199,6 +554,18 @@ BOOLEAN AIEvaluateTacticalPosition(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 		NumberOfTeamMatesAdjacent(pSoldier, sCandidateSpot);
 	pFeatures->sReactionRisk = (INT16)__min(32767,
 		AIInferredReactionRisk(pSoldier, sCandidateSpot, pSoldier->pathing.bLevel));
+
+	AITACTICALGEOMETRY Geometry;
+	if (AIBuildTacticalGeometry(pSoldier, pSoldier->sGridNo, &Geometry))
+	{
+		INT8 bGeometryIntent = AI_INTENT_HOLD;
+		INT8 bGeometryRole = AI_ROLE_SUPPORT;
+		// The caller-specific intent/role are applied in AIScoreTacticalPosition.
+		// This base geometry term captures only directional safety/support.
+		pFeatures->sGeometryScore = (INT16)AIGeometryPositionScore(
+			pSoldier, &Geometry, sCandidateSpot, sTargetSpot,
+			bGeometryIntent, bGeometryRole);
+	}
 	if (usMovementMode != 0)
 	{
 		pFeatures->sPathExposure = (INT16)__min(32767,
@@ -305,6 +672,17 @@ INT32 AIScoreTacticalPosition(SOLDIERTYPE *pSoldier, const AITACTICALPOSITIONFEA
 	}
 
 	iScore -= pFeatures->sReactionRisk / 3;
+
+	AITACTICALGEOMETRY Geometry;
+	if (AIBuildTacticalGeometry(pSoldier, pSoldier->sGridNo, &Geometry))
+	{
+		iScore += AIGeometryPositionScore(
+			pSoldier, &Geometry, sCandidateSpot, sTargetSpot, bIntent, bRole);
+	}
+	else
+	{
+		iScore += pFeatures->sGeometryScore;
+	}
 
 	// Route quality is now a first-class spatial consideration. Keep the weight
 	// deliberately bounded so a slightly riskier but much better destination can win.
