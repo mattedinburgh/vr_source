@@ -86,6 +86,37 @@ jobs:
       - name: Compile logger as C++03
         run: g++ -std=c++03 -Wall -Wextra -pedantic -c VRAnalytics.cpp -o /tmp/VRAnalytics.o
 
+      - name: Smoke-test analytics journal rotation
+        shell: bash
+        run: |
+          cat > /tmp/vr_blackbox_rotate.cpp <<'CPP'
+          #include "VRAnalytics.h"
+          int main()
+          {
+              return VRAnalyticsIsEnabled() ? 0 : 1;
+          }
+          CPP
+          rm -f VR_BlackBox.jsonl VR_BlackBox_Previous*.jsonl VR_BlackBox_RotatePending.jsonl
+          python - <<'PY'
+          from pathlib import Path
+          Path("VR_BlackBox.jsonl").write_bytes(b"x" * 2048)
+          PY
+          g++ -std=c++03 -DVR_ANALYTICS_MAX_BYTES=1024 -I. VRAnalytics.cpp /tmp/vr_blackbox_rotate.cpp -o /tmp/vr_blackbox_rotate
+          /tmp/vr_blackbox_rotate
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          previous = Path("VR_BlackBox_Previous.jsonl")
+          current = Path("VR_BlackBox.jsonl")
+          assert previous.exists() and previous.stat().st_size == 2048
+          events = [json.loads(line) for line in current.read_text(encoding="utf-8").splitlines() if line.strip()]
+          assert len(events) == 1
+          assert events[0].get("kind") == "session_start"
+          assert not Path("VR_BlackBox_RotatePending.jsonl").exists()
+          print("Analytics rotation smoke test passed")
+          PY
+          rm -f VR_BlackBox.jsonl VR_BlackBox_Previous*.jsonl VR_BlackBox_RotatePending.jsonl
+
       - name: End-to-end Black Box smoke test
         shell: bash
         run: |
