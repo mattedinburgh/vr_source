@@ -15,6 +15,11 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 1
       - uses: microsoft/setup-msbuild@v2
+      - name: Verify unified AI integrity
+        shell: powershell
+        run: |
+          & '.\\Tools\\AI\\VERIFY_AI_INTEGRITY.ps1' -RepositoryRoot '.'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Generate VR build info
         shell: powershell
         run: |
