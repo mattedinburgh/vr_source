@@ -115,6 +115,8 @@ static void AIValidateContactMemorySector(void)
 
 static void AIRecordContactMemory(
 	SOLDIERTYPE *pSoldier, const AICONTACTBELIEF *pBelief);
+static BOOLEAN AIThreatMemoryNoiseCorroborated(
+	SOLDIERTYPE *pSoldier, UINT8 ubMemoryDirection);
 
 static UINT8 AIKnowledgeAgeTurns(INT8 bKnowledge)
 {
