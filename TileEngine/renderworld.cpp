@@ -92,6 +92,8 @@ typedef struct
 	UINT32 uiTrueColorSourcePixels;
 	UINT32 uiOcclusionMaskCalls;
 	UINT32 uiOcclusionOuterRects;
+	UINT32 uiOcclusionOnePassCalls;
+	UINT32 uiOcclusionPixelsMasked;
 } VHD_RENDER_FRAME_STATS;
 
 static VHD_RENDER_FRAME_STATS gVHDRenderFrameStats;
@@ -207,14 +209,15 @@ static void VHDRenderDiagnosticsEndFrame( )
 	if ( fSlowSample || fPeriodicSample )
 	{
 		BlackBoxEvent( "VHD_RENDER",
-			"frame=%u total_us=%u occlusion_us=%u static_us=%u dynamic_us=%u flags=0x%08x scale=%u indexed_calls=%u indexed_pixels=%u truecolor_calls=%u truecolor_pixels=%u occlusion_masks=%u outer_rects=%u slow=%u",
+			"frame=%u total_us=%u occlusion_us=%u static_us=%u dynamic_us=%u flags=0x%08x scale=%u indexed_calls=%u indexed_pixels=%u truecolor_calls=%u truecolor_pixels=%u occlusion_masks=%u outer_rects=%u onepass=%u masked_pixels=%u slow=%u",
 			gVHDRenderFrameStats.uiFrameSerial, uiTotalUS,
 			gVHDRenderFrameStats.uiOcclusionUpdateUS, gVHDRenderFrameStats.uiStaticUS,
 			gVHDRenderFrameStats.uiDynamicUS, gVHDRenderFrameStats.uiRenderFlags,
 			GetVHDRenderScale( ), gVHDRenderFrameStats.uiIndexedMultiZCalls,
 			gVHDRenderFrameStats.uiIndexedSourcePixels, gVHDRenderFrameStats.uiTrueColorCalls,
 			gVHDRenderFrameStats.uiTrueColorSourcePixels, gVHDRenderFrameStats.uiOcclusionMaskCalls,
-			gVHDRenderFrameStats.uiOcclusionOuterRects, fSlowFrame ? 1 : 0 );
+			gVHDRenderFrameStats.uiOcclusionOuterRects, gVHDRenderFrameStats.uiOcclusionOnePassCalls,
+			gVHDRenderFrameStats.uiOcclusionPixelsMasked, fSlowFrame ? 1 : 0 );
 	}
 	gfVHDRenderDiagnosticsFrameActive = FALSE;
 }
@@ -260,6 +263,10 @@ static void BlitOcclusionBubble8BitWallFadeZStrip(
 	UINT16 *pDestBuf, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer,
 	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
 	UINT16 usImageIndex, INT16 sZStripIndex );
+static BOOLEAN VHDIndexedOcclusionBubbleBlit(
+	UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue,
+	HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, INT16 sZIndex,
+	BOOLEAN fFadeOnly );
 static void BlitOcclusionBubbleTrueColorWallZStrip(
 	UINT16 *pDestBuf, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer,
 	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
@@ -3722,6 +3729,14 @@ static void BlitOcclusionBubble8BitWallZStrip(
 	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
 	UINT16 usImageIndex, INT16 sZStripIndex )
 {
+	if ( hVObject != NULL && hVObject->ubVHDAssetScale > 1 )
+	{
+		VHDIndexedOcclusionBubbleBlit(
+			pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue, hVObject,
+			sXPos, sYPos, usImageIndex, sZStripIndex, FALSE );
+		return;
+	}
+
 	if ( gfVHDRenderDiagnosticsFrameActive )
 		++gVHDRenderFrameStats.uiOcclusionMaskCalls;
 	// Zone 1: wall remains fully opaque outside the outer ellipse.
@@ -4002,6 +4017,14 @@ static void BlitOcclusionBubble8BitWallFadeZStrip(
 	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
 	UINT16 usImageIndex, INT16 sZStripIndex )
 {
+	if ( hVObject != NULL && hVObject->ubVHDAssetScale > 1 )
+	{
+		VHDIndexedOcclusionBubbleBlit(
+			pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue, hVObject,
+			sXPos, sYPos, usImageIndex, sZStripIndex, TRUE );
+		return;
+	}
+
 	if ( gfVHDRenderDiagnosticsFrameActive )
 		++gVHDRenderFrameStats.uiOcclusionMaskCalls;
 	// Preserve the door/window/corner sprite at full strength outside the bubble.
@@ -6015,6 +6038,160 @@ static UINT16 VHDIndexedZStripLevel(
 		iLevel = 65535;
 
 	return (UINT16)iLevel;
+}
+
+static BOOLEAN VHDIndexedOcclusionBubbleBlit(
+	UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue,
+	HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, INT16 sZIndex,
+	BOOLEAN fFadeOnly )
+{
+	if ( hSrcVObject == NULL || pBuffer == NULL || pZBuffer == NULL ||
+		 hSrcVObject->pShadeCurrent == NULL )
+		return FALSE;
+	if ( usIndex >= hSrcVObject->usNumberOfObjects || hSrcVObject->pETRLEObject == NULL ||
+		 hSrcVObject->pPixData == NULL || hSrcVObject->ppZStripInfo == NULL )
+		return FALSE;
+	if ( sZIndex < 0 || sZIndex >= (INT16)hSrcVObject->usNumberOfObjects ||
+		 hSrcVObject->ppZStripInfo[sZIndex] == NULL )
+		return FALSE;
+
+	const UINT8 ubAssetScale = hSrcVObject->ubVHDAssetScale;
+	if ( ubAssetScale != 2 && ubAssetScale != 4 )
+		return FALSE;
+
+	const ETRLEObject *pRegion = &hSrcVObject->pETRLEObject[ usIndex ];
+	ZStripInfo *pZInfo = hSrcVObject->ppZStripInfo[ sZIndex ];
+
+	if ( gfVHDRenderDiagnosticsFrameActive )
+	{
+		++gVHDRenderFrameStats.uiIndexedMultiZCalls;
+		++gVHDRenderFrameStats.uiOcclusionMaskCalls;
+		++gVHDRenderFrameStats.uiOcclusionOnePassCalls;
+		gVHDRenderFrameStats.uiIndexedSourcePixels = VHDRenderSaturatingAdd(
+			gVHDRenderFrameStats.uiIndexedSourcePixels,
+			(UINT32)pRegion->usWidth * (UINT32)pRegion->usHeight );
+	}
+
+	const INT32 iDestLeft = iX + pRegion->sOffsetX;
+	const INT32 iDestTop = iY + pRegion->sOffsetY;
+	const INT32 iClipLeft = ClippingRect.iLeft;
+	const INT32 iClipTop = ClippingRect.iTop;
+	const INT32 iClipRight = ClippingRect.iRight;
+	const INT32 iClipBottom = ClippingRect.iBottom;
+
+	if ( iDestLeft >= iClipRight || iDestTop >= iClipBottom ||
+		 iDestLeft + (INT32)pRegion->usWidth <= iClipLeft ||
+		 iDestTop + (INT32)pRegion->usHeight <= iClipTop )
+		return TRUE;
+
+	const UINT8 *pSrc = (const UINT8*)hSrcVObject->pPixData + pRegion->uiDataOffset;
+	const UINT8 *pSrcEnd = pSrc + pRegion->uiDataLength;
+
+	for ( UINT16 usSourceY = 0; usSourceY < pRegion->usHeight; ++usSourceY )
+	{
+		UINT16 usSourceX = 0;
+		BOOLEAN fSawEndOfLine = FALSE;
+		const INT32 iDestY = iDestTop + usSourceY;
+
+		INT32 iOuterHalf = 0;
+		INT32 iInnerHalf = 0;
+		if ( iDestY >= (INT32)gsOcclusionBubbleScreenCenterY - OCCLUSION_BUBBLE_OUTER_RADIUS_Y &&
+			 iDestY < (INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_OUTER_RADIUS_Y )
+		{
+			iOuterHalf = OcclusionBubbleEllipseHalfWidthAtY(
+				iDestY, OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+			if ( !fFadeOnly )
+			{
+				iInnerHalf = OcclusionBubbleEllipseHalfWidthAtY(
+					iDestY, OCCLUSION_BUBBLE_INNER_RADIUS_X, OCCLUSION_BUBBLE_INNER_RADIUS_Y );
+			}
+		}
+
+		while ( pSrc < pSrcEnd )
+		{
+			const UINT8 ubCode = *pSrc++;
+			if ( ubCode == 0 )
+			{
+				fSawEndOfLine = TRUE;
+				break;
+			}
+
+			const UINT8 ubCount = ubCode & 0x7F;
+			if ( ubCount == 0 || (UINT32)usSourceX + ubCount > pRegion->usWidth )
+				return FALSE;
+
+			if ( ubCode & 0x80 )
+			{
+				usSourceX = (UINT16)( usSourceX + ubCount );
+				continue;
+			}
+
+			if ( pSrc + ubCount > pSrcEnd )
+				return FALSE;
+
+			for ( UINT8 ubRunPixel = 0; ubRunPixel < ubCount; ++ubRunPixel, ++usSourceX )
+			{
+				const UINT8 ubPaletteIndex = *pSrc++;
+				const INT32 iDestX = iDestLeft + usSourceX;
+				if ( iDestX < iClipLeft || iDestX >= iClipRight ||
+					 iDestY < iClipTop || iDestY >= iClipBottom )
+				{
+					continue;
+				}
+
+				BOOLEAN fMaskAllows = TRUE;
+				if ( iOuterHalf > 0 &&
+					 iDestX >= (INT32)gsOcclusionBubbleScreenCenterX - iOuterHalf &&
+					 iDestX < (INT32)gsOcclusionBubbleScreenCenterX + iOuterHalf )
+				{
+					if ( fFadeOnly )
+					{
+						fMaskAllows =
+							( ( iDestY - gsOcclusionBubbleScreenCenterY ) % 3 + 3 ) % 3 == 0;
+					}
+					else if ( iInnerHalf > 0 &&
+						 iDestX >= (INT32)gsOcclusionBubbleScreenCenterX - iInnerHalf &&
+						 iDestX < (INT32)gsOcclusionBubbleScreenCenterX + iInnerHalf )
+					{
+						fMaskAllows =
+							( ( iDestY - gsOcclusionBubbleScreenCenterY ) % 4 + 4 ) % 4 == 0;
+					}
+					else
+					{
+						fMaskAllows = ( ( iDestY ^ gsOcclusionBubbleScreenCenterY ) & 1 ) == 0;
+					}
+				}
+
+				if ( !fMaskAllows )
+				{
+					if ( gfVHDRenderDiagnosticsFrameActive )
+					{
+						gVHDRenderFrameStats.uiOcclusionPixelsMasked = VHDRenderSaturatingAdd(
+							gVHDRenderFrameStats.uiOcclusionPixelsMasked, 1 );
+					}
+					continue;
+				}
+
+				UINT16 *pDest = (UINT16*)((UINT8*)pBuffer +
+					((UINT32)iDestY * uiDestPitchBYTES)) + iDestX;
+				UINT16 *pZ = (UINT16*)((UINT8*)pZBuffer +
+					((UINT32)iDestY * uiDestPitchBYTES)) + iDestX;
+				const UINT16 usPixelZ = VHDIndexedZStripLevel(
+					pZInfo, usZValue, usSourceX, ubAssetScale, (INT32)Z_STRIP_DELTA_Y );
+
+				if ( *pZ > usPixelZ )
+					continue;
+
+				*pZ = usPixelZ;
+				*pDest = hSrcVObject->pShadeCurrent[ ubPaletteIndex ];
+			}
+		}
+
+		if ( !fSawEndOfLine && usSourceY + 1 < pRegion->usHeight )
+			return FALSE;
+	}
+
+	return TRUE;
 }
 
 static BOOLEAN VHDIndexedMultiZBlit(
