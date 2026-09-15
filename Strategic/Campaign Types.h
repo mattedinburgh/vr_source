@@ -104,6 +104,10 @@ enum //strategic values for each sector
 // Stored in SECTORINFO so the rule survives save/load.
 #define SF_ENEMY_RETREAT_LOCKED						0x00010000
 
+// Map/item migration marker: one ground shovel is seeded exactly once in each surface city sector.
+// This does not alter strategic AI, force movement, garrisons, patrols, or campaign behaviour.
+#define SF_CITY_SHOVEL_SEEDED						0x00020000
+
 #define SF_SMOKE_EFFECTS_TEMP_FILE_EXISTS			0x00100000		//Temp File starts with sm_
 #define SF_LIGHTING_EFFECTS_TEMP_FILE_EXISTS		0x00200000		//Temp File starts with l_
 #define SF_REVEALED_STATUS_TEMP_FILE_EXISTS			0x01000000		//Temp File starts with v_
