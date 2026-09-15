@@ -97,6 +97,27 @@ When a last-known contact remains unresolved:
 
 Fresh ordinary JA2 sight/hearing knowledge always supersedes this weaker memory layer.
 
+## Battle-local setback memory fairness
+
+The AI may retain a short-lived memory that **its own recent tactical experience made a location undesirable**.
+This is outcome memory, not opponent knowledge.
+
+Current high-confidence producers are deliberately narrow:
+- a soldier personally reveals unexpected contacts / multi-angle danger while moving;
+- a CQB approach is rejected by the existing route-exposure safety logic;
+- a CQB route is locally unusable.
+
+The resulting setback:
+- stores only a grid, coarse reason/severity and expiry;
+- decays over a few tactical turns;
+- affects destination and route utility rather than authorizing an action;
+- can be reused only by the same soldier and nearby members of the same fireteam, at reduced strength;
+- is cleared on sector change, reasoning reset and abandoned-future turn rewinds;
+- never reveals who caused the setback, where an unseen opponent moved, or whether the danger still contains an enemy.
+
+Do not create setback memory from ordinary misses, random pathfinding failures or hidden opponent state.
+The purpose is to avoid mechanical repetition of clearly bad recent tactical choices, not to build a magical danger map.
+
 ## Surprise / encirclement fairness
 
 A contact-surprise event is permitted only when a combatant gains **personal current sight** of
