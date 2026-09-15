@@ -1291,6 +1291,25 @@ static INT8 VRCQBTryProactiveEntrySmoke(SOLDIERTYPE *pSoldier,
 	if (!BestThrow.ubPossible)
 		return AI_ACTION_NONE;
 
+	// Entry smoke is a fireteam resource, not a private CQB side effect. Claim the
+	// same local smoke task used by the rest of the tactical planner so two soldiers
+	// do not independently spend smoke on the same threshold.
+	if (!AIReserveTacticalTask(
+		pSoldier, AI_TASK_SMOKE,
+		sSmokeGrid, NOBODY, 1, 1))
+	{
+		return AI_ACTION_NONE;
+	}
+
+	// Smoke is the first step of the entry sequence. Preserve the CQB commitment
+	// through a stance change/throw so the next decision can continue the entry plan.
+	const INT32 sCQBPlanTarget =
+		!TileIsOutOfBounds(pAssessment->sTargetGridNo) ?
+		pAssessment->sTargetGridNo : sSmokeGrid;
+	AIBeginShortPlan(
+		pSoldier, AI_SHORT_PLAN_CQB,
+		sCQBPlanTarget, NOBODY, 2);
+
 	if (BestThrow.bWeaponIn != HANDPOS)
 		RearrangePocket(pSoldier, HANDPOS, BestThrow.bWeaponIn, FOREVER);
 
@@ -1401,6 +1420,20 @@ static INT8 VRCQBTryAlternateWindowEntry(SOLDIERTYPE *pSoldier,
 	pSoldier->ubDirection = bOldDirection;
 	if (bBestDirection < 0 || TileIsOutOfBounds(sBestLanding))
 		return AI_ACTION_NONE;
+
+	// Window entry returns before the normal doorway reservation bridge below, so it
+	// must claim its own threshold here. Different windows can be used in parallel,
+	// but two point men cannot independently commit to the same landing.
+	if (!AIReserveTacticalTask(
+		pSoldier, AI_TASK_ENTRY_POINT,
+		sBestLanding, NOBODY, 1, 1))
+	{
+		return AI_ACTION_NONE;
+	}
+
+	AIBeginShortPlan(
+		pSoldier, AI_SHORT_PLAN_CQB,
+		sBestLanding, NOBODY, 2);
 
 	// A deliberate entry faces the opening first. This also prevents the jump
 	// executor from selecting a different adjacent window from stale facing.
@@ -1676,10 +1709,9 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 
 	if (bAction != AI_ACTION_NONE && !TileIsOutOfBounds(sDesiredSpot))
 	{
-		// CQB now participates in the same fireteam-local task board as outdoor
-		// maneuver. Entering the building plan supersedes a previous generic role claim.
-		AIReleaseTacticalTask(pSoldier);
-
+		// CQB participates in the same fireteam-local task board as outdoor maneuver.
+		// AIReserveTacticalTask() replaces this soldier's old claim only after the new
+		// CQB claim succeeds, so merely evaluating CQB cannot erase a valid role task.
 		const INT32 sTaskTarget =
 			!TileIsOutOfBounds(Assessment.sEntryGridNo) ?
 			Assessment.sEntryGridNo : sDesiredSpot;
@@ -1699,9 +1731,18 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 					eMovementState, eMovementRole);
 				bAction = AI_ACTION_TAKE_COVER;
 				pActionReason = "CQB entry claimed: establish support";
-				AIReserveTacticalTask(
+				if (!AIReserveTacticalTask(
 					pSoldier, AI_TASK_ENTRY_SUPPORT,
-					sTaskTarget, NOBODY, 2, 1);
+					sTaskTarget, NOBODY, 2, 1))
+				{
+					eMovementRole = VRCQB_ROLE_RESERVE;
+					sDesiredSpot = VRCQBFindBestLocalPosition(
+						pSoldier, &Context, &Model,
+						VRCQB_STATE_HOLD, eMovementRole);
+					bAction = AI_ACTION_TAKE_COVER;
+					pActionReason = "CQB entry support saturated: hold reserve";
+					AIReleaseTacticalTask(pSoldier);
+				}
 			}
 		}
 		else if (fAggressiveCQB ||
@@ -1709,9 +1750,19 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 			eMovementRole == VRCQB_ROLE_COVER ||
 			eMovementRole == VRCQB_ROLE_SECURITY)
 		{
-			AIReserveTacticalTask(
+			if (!AIReserveTacticalTask(
 				pSoldier, AI_TASK_ENTRY_SUPPORT,
-				sTaskTarget, NOBODY, 2, 1);
+				sTaskTarget, NOBODY, 2, 1))
+			{
+				eMovementState = VRCQB_STATE_HOLD;
+				eMovementRole = VRCQB_ROLE_RESERVE;
+				sDesiredSpot = VRCQBFindBestLocalPosition(
+					pSoldier, &Context, &Model,
+					eMovementState, eMovementRole);
+				bAction = AI_ACTION_TAKE_COVER;
+				pActionReason = "CQB support saturated: hold local reserve";
+				AIReleaseTacticalTask(pSoldier);
+			}
 		}
 	}
 
