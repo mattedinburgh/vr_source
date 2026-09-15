@@ -444,16 +444,50 @@ static BOOLEAN AIUsableContactMemory(
 	{
 		pSlot->uiLastCheckedTurn = guiTurnCnt;
 
-		if (ubConfidence <= 45)
+		INT32 sCorroboratingGridNo = NOWHERE;
+		INT8 bCorroboratingLevel = 0;
+		UINT8 ubCorroboratedCues = 0;
+		UINT8 ubCorroborationAge = 255;
+		UINT8 ubMemoryDir =
+			AIDirection(pSoldier->sGridNo, pSlot->sLastKnownGridNo);
+		UINT8 ubCorroborationStrength =
+			AIThreatMemoryNoiseCorroboration(
+				pSoldier, ubMemoryDir,
+				&sCorroboratingGridNo,
+				&bCorroboratingLevel,
+				&ubCorroboratedCues,
+				&ubCorroborationAge);
+
+		const BOOLEAN fSectorStillCorroborated =
+			ubCorroborationStrength >= 20 &&
+			ubCorroborationAge <= AI_THREAT_NOISE_EVIDENCE_MAX_TURNS &&
+			!TileIsOutOfBounds(sCorroboratingGridNo);
+
+		if (ubConfidence <= 45 && !fSectorStillCorroborated)
 		{
 			memset(pSlot, 0, sizeof(AICONTACTMEMORYSLOT));
 			pSlot->sLastKnownGridNo = NOWHERE;
 			return FALSE;
 		}
 
+		// Clearing the exact old tile disproves that coordinate, but a fresh
+		// compatible sound means the broader sector hypothesis remains plausible.
+		// Decay it sharply enough to avoid fixation, but do not erase it before
+		// the anonymous new evidence can redirect the search.
+		const INT32 iInspectionPenalty =
+			fSectorStillCorroborated ? 15 : 35;
 		pSlot->ubBaseConfidence =
-			(UINT8)__max(0, (INT32)pSlot->ubBaseConfidence - 35);
+			(UINT8)__max(0,
+				(INT32)pSlot->ubBaseConfidence - iInspectionPenalty);
 		ubConfidence = AIContactMemoryConfidence(pSlot);
+
+		if (ubConfidence < AI_CONTACT_MEMORY_MIN_CONFIDENCE &&
+			!fSectorStillCorroborated)
+		{
+			memset(pSlot, 0, sizeof(AICONTACTMEMORYSLOT));
+			pSlot->sLastKnownGridNo = NOWHERE;
+			return FALSE;
+		}
 	}
 
 	if (ppSlot) *ppSlot = pSlot;
