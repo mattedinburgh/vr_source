@@ -195,6 +195,11 @@ try {
     New-Item -ItemType Directory -Path $DestTable -Force | Out-Null
     Set-Content -Path $Marker -Value $PinnedCommit -Encoding ASCII
 
+    # Also create the runtime readiness marker used by the integrated renderer.
+    # Keep the legacy marker above for incremental/revision checks.
+    $runtimeMarker = Join-Path $DestLobot "VR_EQUIPMENT.READY"
+    Set-Content -Path $runtimeMarker -Value ("Legacy LOBOT deployment " + $PinnedCommit) -Encoding ASCII
+
     Write-Host ""
     Write-Host "LOBOT equipment graphics deployed successfully."
     Write-Host "Game root : $GameRoot"
