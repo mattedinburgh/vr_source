@@ -537,6 +537,150 @@ static INT8 DecidePersonalRiskWithdrawal(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove
 	return AI_ACTION_WITHDRAW;
 }
 
+static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
+{
+	if (!gfTurnBasedAI || !AICombatTeam(pSoldier) ||
+		pSoldier->stats.bLife < OKLIFE || pSoldier->bCollapsed ||
+		pSoldier->bBreathCollapsed)
+	{
+		return AI_ACTION_NONE;
+	}
+
+	AICONTACTCHANGE Change;
+	if (!AIObserveContactChange(pSoldier, &Change))
+		return AI_ACTION_NONE;
+
+	// Existing hard break-contact state already owns movement once committed.
+	if (AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier))
+		return AI_ACTION_NONE;
+
+	AITACTICALDECISIONCONTEXT Context;
+	if (!AIBuildTacticalDecisionContext(pSoldier, &Context) ||
+		TileIsOutOfBounds(Context.sPrimaryThreat))
+	{
+		return AI_ACTION_NONE;
+	}
+
+	// New information invalidates the old offensive commitment even when there is no
+	// safe move available. If boxed in, normal BLACK/RED attack logic can still fight.
+	AICancelShortPlan(pSoldier);
+	AIReleaseTacticalTask(pSoldier);
+
+	if (!fCanMove || pSoldier->aiData.bOrders == STATIONARY)
+		return AI_ACTION_NONE;
+
+	INT8 bRole = AITacticalRole(pSoldier, Context.sPrimaryThreat);
+	INT32 iCurrentScore = AIUtilityPositionScore(
+		pSoldier, pSoldier->sGridNo, Context.sPrimaryThreat,
+		AI_INTENT_FALLBACK, bRole);
+
+	INT32 sBestSpot = NOWHERE;
+	INT32 iBestScore = iCurrentScore;
+	INT8 bBestAction = AI_ACTION_NONE;
+
+	// Candidate 1: step back to the last decision position. This is the natural
+	// "I rounded the corner and found three rifles" reaction when the old tile is safer.
+	if (!TileIsOutOfBounds(Change.sPreviousGridNo) &&
+		Change.sPreviousGridNo != pSoldier->sGridNo &&
+		NewOKDestination(pSoldier, Change.sPreviousGridNo, FALSE, pSoldier->pathing.bLevel) &&
+		CheckNPCDestination(pSoldier, Change.sPreviousGridNo))
+	{
+		INT32 iScore = AIUtilityPositionScore(
+			pSoldier, Change.sPreviousGridNo, Context.sPrimaryThreat,
+			AI_INTENT_FALLBACK, bRole);
+
+		// A just-vacated tile is known terrain and needs less cognitive commitment
+		// than inventing a new maneuver under surprise.
+		if (Change.fSurprise)
+			iScore += 6;
+
+		if (iScore > iBestScore)
+		{
+			iBestScore = iScore;
+			sBestSpot = Change.sPreviousGridNo;
+			bBestAction = AI_ACTION_WITHDRAW;
+		}
+	}
+
+	// Candidate 2: nearby cover.
+	INT32 iCoverPercentBetter = 0;
+	INT32 sCover = FindBestNearbyCover(
+		pSoldier, pSoldier->aiData.bAIMorale, &iCoverPercentBetter);
+	if (!TileIsOutOfBounds(sCover) && sCover != pSoldier->sGridNo)
+	{
+		INT32 iScore = AIUtilityPositionScore(
+			pSoldier, sCover, Context.sPrimaryThreat,
+			AI_INTENT_HOLD, bRole);
+
+		if (iScore > iBestScore)
+		{
+			iBestScore = iScore;
+			sBestSpot = sCover;
+			bBestAction = AI_ACTION_TAKE_COVER;
+		}
+	}
+
+	// Candidate 3: dedicated retreat finder.
+	INT32 sRetreat = FindRetreatSpot(pSoldier);
+	if (!TileIsOutOfBounds(sRetreat) && sRetreat != pSoldier->sGridNo)
+	{
+		INT32 iScore = AIUtilityPositionScore(
+			pSoldier, sRetreat, Context.sPrimaryThreat,
+			AI_INTENT_FALLBACK, bRole);
+
+		if (iScore > iBestScore)
+		{
+			iBestScore = iScore;
+			sBestSpot = sRetreat;
+			bBestAction = AI_ACTION_WITHDRAW;
+		}
+	}
+
+	// Candidate 4: lateral/backward bounded maneuver. This matters when the soldier
+	// is not merely surprised but has entered a multi-angle threat geometry.
+	INT32 sFallback = FindFlankingSpot(
+		pSoldier, Context.sPrimaryThreat, AI_ACTION_WITHDRAW);
+	if (!TileIsOutOfBounds(sFallback) && sFallback != pSoldier->sGridNo)
+	{
+		INT32 iScore = AIUtilityPositionScore(
+			pSoldier, sFallback, Context.sPrimaryThreat,
+			AI_INTENT_FALLBACK, bRole);
+
+		if (Change.fEncirclementPressure)
+			iScore += 4;
+
+		if (iScore > iBestScore)
+		{
+			iBestScore = iScore;
+			sBestSpot = sFallback;
+			bBestAction = AI_ACTION_WITHDRAW;
+		}
+	}
+
+	// The more violent the information shock, the less improvement is required before
+	// abandoning the now-invalidated route. A marginal move is still rejected.
+	INT32 iRequiredGain = 8;
+	if (Change.fEncirclementPressure || Change.ubNewContacts >= 3)
+		iRequiredGain = 2;
+	else if (Change.ubNewContacts >= 2 || Change.fMultiAngleThreat)
+		iRequiredGain = 4;
+
+	if (bBestAction == AI_ACTION_NONE ||
+		TileIsOutOfBounds(sBestSpot) ||
+		iBestScore < iCurrentScore + iRequiredGain)
+	{
+		return AI_ACTION_NONE;
+	}
+
+	pSoldier->aiData.usActionData = sBestSpot;
+	AIRegisterTacticalFallback(pSoldier);
+	AIBeginShortPlan(
+		pSoldier, AI_SHORT_PLAN_FALLBACK,
+		Context.sPrimaryThreat, NOBODY, 2);
+	return bBestAction;
+}
+
+
 // global status time counters to determine what takes the most time
 
 #define CENTER_OF_RING 11237//dnl!!!
@@ -3196,6 +3340,12 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 		if (bCohesionAction != AI_ACTION_NONE)
 			return bCohesionAction;
 
+		// Newly revealed personal contacts can invalidate an otherwise sensible route.
+		// Reassess before committing to suppression/ordinary fallback or another attack.
+		INT8 bContactReaction = DecideContactSurpriseReposition(pSoldier, ubCanMove);
+		if (bContactReaction != AI_ACTION_NONE)
+			return bContactReaction;
+
 		// Persistent break-contact intent then outranks ordinary attack setup.
 		INT8 bDisengageAction = DecideDisengagementAction(pSoldier, ubCanMove);
 		if (bDisengageAction != AI_ACTION_NONE)
@@ -5633,6 +5783,12 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 				if (bCohesionAction != AI_ACTION_NONE)
 					return bCohesionAction;
 			}
+
+			// A movement plan that unexpectedly reveals several personal contacts is no
+			// longer authoritative. Reposition if the newly observed geometry warrants it.
+			INT8 bContactReaction = DecideContactSurpriseReposition(pSoldier, ubCanMove);
+			if (bContactReaction != AI_ACTION_NONE)
+				return bContactReaction;
 
 			// Persistent break-contact intent outranks ordinary fallback/attack setup.
 			if (AICombatTeam(pSoldier))
