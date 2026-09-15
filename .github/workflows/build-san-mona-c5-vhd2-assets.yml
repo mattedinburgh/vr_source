@@ -56,7 +56,10 @@ jobs:
       - name: Build ja2export
         shell: powershell
         run: |
-          & '${{ steps.msbuild.outputs.path }}' '.\ext\export\ja2export_VS2013.vcxproj' /m /p:Configuration=Release /p:Platform=Win32
+          # Build through the solution target so ja2export dependencies (VFS, 7z,
+          # libpng/zlib) are linked first. Building the project directly fails on
+          # a clean runner because VFS.lib does not exist yet.
+          & '${{ steps.msbuild.outputs.path }}' '.\ja2_VS2013.sln' /m /t:ja2export /p:Configuration=Release /p:Platform=Win32
           if($LASTEXITCODE-ne0){exit $LASTEXITCODE}
           $exe=Join-Path $env:GITHUB_WORKSPACE 'bin\VS2013\Release\ja2export.exe'
           if(-not(Test-Path $exe)){throw "ja2export missing: $exe"}
