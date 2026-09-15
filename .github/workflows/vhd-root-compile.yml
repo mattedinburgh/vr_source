@@ -3,6 +3,7 @@ name: Vengeance HD root compile-only check
 on:
   push:
     branches:
+      - exp/vhd
       - feature/vhd-renderer
       - 'engine/vhd-*'
     paths:
