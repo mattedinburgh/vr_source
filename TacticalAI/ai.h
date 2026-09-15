@@ -392,6 +392,9 @@ struct AITACTICALDECISIONCONTEXT
 {
 	INT32 sPrimaryThreat;
 	INT8 bBattleSituation;
+	UINT16 usPerceivedFriendlyStrength;
+	UINT16 usPerceivedEnemyStrength;
+	UINT8 ubFriendlyCasualtyPercent;
 	INT32 iStress;
 	INT32 iPersonalRisk;
 	INT32 iRiskTolerance;
@@ -402,9 +405,12 @@ struct AITACTICALDECISIONCONTEXT
 	BOOLEAN fBadRange;
 	BOOLEAN fIsolated;
 	BOOLEAN fHasLivePersonalContact;
+	BOOLEAN fDisengaging;
+	BOOLEAN fEscaping;
 };
 
 BOOLEAN AIBuildTacticalDecisionContext(SOLDIERTYPE *pSoldier, AITACTICALDECISIONCONTEXT *pContext);
+void AIResetTacticalPlannerStateForLoad(void);
 INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT32 sTargetSpot, INT8 bIntent, INT8 bRole);
