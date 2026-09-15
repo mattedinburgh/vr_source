@@ -23,7 +23,8 @@ if (-not $OutputDirectory) {
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 
 $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-$work = Join-Path $env:TEMP ("VR_BlackBox_" + $stamp + "_" + $PID)
+$tempRoot = [IO.Path]::GetTempPath()
+$work = Join-Path $tempRoot ("VR_BlackBox_" + $stamp + "_" + $PID)
 $zip = Join-Path $OutputDirectory ("Vengeance_BlackBox_" + $stamp + ".zip")
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 $collectionErrors = New-Object System.Collections.Generic.List[string]
