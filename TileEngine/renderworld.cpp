@@ -53,6 +53,8 @@
 #include "TileDat.h"
 #include "LogicalBodyTypes/BodyTypeDB.h"
 #include "LogicalBodyTypes/Layers.h"
+#include "ExceptionHandling.h"
+#include <stdlib.h>
 #include <string>
 #include <cstring>
 
@@ -74,6 +76,66 @@ extern	INT16	gsVIEWPORT_END_X;
 
 UINT16	*gpZBuffer				= NULL;
 BOOLEAN gfTagAnimatedTiles		= TRUE;
+
+typedef struct
+{
+	UINT32 uiFrameSerial;
+	UINT32 uiFrameStartMS;
+	UINT32 uiRenderFlags;
+	UINT32 uiOcclusionUpdateMS;
+	UINT32 uiStaticMS;
+	UINT32 uiDynamicMS;
+} VHD_RENDER_FRAME_STATS;
+
+static VHD_RENDER_FRAME_STATS gVHDRenderFrameStats;
+static BOOLEAN gfVHDRenderDiagnosticsFrameActive = FALSE;
+static UINT32 guiVHDRenderDiagnosticsFrameSerial = 0;
+
+static BOOLEAN VHDRenderDiagnosticsEnabled( )
+{
+	const CHAR8 *pEnabled = getenv( "VR_VHD_RENDER_DIAGNOSTICS" );
+	return pEnabled != NULL && strcmp( pEnabled, "1" ) == 0;
+}
+
+static void VHDRenderDiagnosticsBeginFrame( UINT32 uiRenderFlags )
+{
+	gfVHDRenderDiagnosticsFrameActive = VHDRenderDiagnosticsEnabled( );
+	if ( !gfVHDRenderDiagnosticsFrameActive )
+		return;
+
+	memset( &gVHDRenderFrameStats, 0, sizeof(gVHDRenderFrameStats) );
+	++guiVHDRenderDiagnosticsFrameSerial;
+	if ( guiVHDRenderDiagnosticsFrameSerial == 0 )
+		guiVHDRenderDiagnosticsFrameSerial = 1;
+	gVHDRenderFrameStats.uiFrameSerial = guiVHDRenderDiagnosticsFrameSerial;
+	gVHDRenderFrameStats.uiFrameStartMS = GetJA2Clock( );
+	gVHDRenderFrameStats.uiRenderFlags = uiRenderFlags;
+}
+
+static UINT32 VHDRenderDiagnosticsNow( )
+{
+	return gfVHDRenderDiagnosticsFrameActive ? GetJA2Clock( ) : 0;
+}
+
+static void VHDRenderDiagnosticsEndFrame( )
+{
+	if ( !gfVHDRenderDiagnosticsFrameActive )
+		return;
+
+	const UINT32 uiTotalMS = GetJA2Clock( ) - gVHDRenderFrameStats.uiFrameStartMS;
+	const BOOLEAN fSlowFrame = uiTotalMS >= 33;
+	const BOOLEAN fPeriodicSample = ( gVHDRenderFrameStats.uiFrameSerial % 120u ) == 0;
+	if ( fSlowFrame || fPeriodicSample )
+	{
+		BlackBoxEvent( "VHD_RENDER",
+			"frame=%u total_ms=%u occlusion_ms=%u static_ms=%u dynamic_ms=%u flags=0x%08x scale=%u slow=%u",
+			gVHDRenderFrameStats.uiFrameSerial, uiTotalMS,
+			gVHDRenderFrameStats.uiOcclusionUpdateMS, gVHDRenderFrameStats.uiStaticMS,
+			gVHDRenderFrameStats.uiDynamicMS, gVHDRenderFrameStats.uiRenderFlags,
+			GetVHDRenderScale( ), fSlowFrame ? 1 : 0 );
+	}
+	gfVHDRenderDiagnosticsFrameActive = FALSE;
+}
 
 INT16	gsCurrentGlowFrame		= 0;
 INT16	gsCurrentItemGlowFrame	= 0;
@@ -4124,11 +4186,19 @@ TILE_ELEMENT					*TileElem;
 TILE_ANIMATION_DATA		*pAnimData;
 UINT32 cnt = 0;
 
+	VHDRenderDiagnosticsBeginFrame( gRenderFlags );
+	const UINT32 uiOcclusionStartMS = VHDRenderDiagnosticsNow( );
+
 	gfRenderFullThisFrame = FALSE;
 
 	// Synchronize the Fallout-style visibility bubble before deciding whether
 	// this frame needs a static-world rebuild.
 	UpdateSelectedMercOcclusionBubble( );
+	if ( gfVHDRenderDiagnosticsFrameActive )
+	{
+		gVHDRenderFrameStats.uiOcclusionUpdateMS = GetJA2Clock( ) - uiOcclusionStartMS;
+		gVHDRenderFrameStats.uiRenderFlags = gRenderFlags;
+	}
 
 	// If we are testing renderer, set background to pink!
 	if ( gTacticalStatus.uiFlags & DEBUGCLIFFS )
@@ -4199,6 +4269,7 @@ UINT32 cnt = 0;
 
 	if(gRenderFlags&RENDER_FLAG_FULL)
 	{
+		const UINT32 uiStaticStartMS = VHDRenderDiagnosticsNow( );
 		gfRenderFullThisFrame = TRUE;
 
 		gfTopMessageDirty = TRUE;
@@ -4225,20 +4296,28 @@ UINT32 cnt = 0;
 		if(!(gRenderFlags&RENDER_FLAG_SAVEOFF))
 			UpdateSaveBuffer();
 
+		if ( gfVHDRenderDiagnosticsFrameActive )
+			gVHDRenderFrameStats.uiStaticMS += GetJA2Clock( ) - uiStaticStartMS;
 
 	}
 	else if(gRenderFlags&RENDER_FLAG_MARKED)
 	{
+		const UINT32 uiStaticStartMS = VHDRenderDiagnosticsNow( );
 		ResetLayerOptimizing();
 		RenderMarkedWorld();
 		if(!(gRenderFlags&RENDER_FLAG_SAVEOFF))
 			UpdateSaveBuffer();
+		if ( gfVHDRenderDiagnosticsFrameActive )
+			gVHDRenderFrameStats.uiStaticMS += GetJA2Clock( ) - uiStaticStartMS;
 
 	}
 
 	if ( gfScrollInertia == FALSE || (gRenderFlags&RENDER_FLAG_NOZ ) || (gRenderFlags&RENDER_FLAG_FULL ) || (gRenderFlags&RENDER_FLAG_MARKED ) )
 	{
+		const UINT32 uiDynamicStartMS = VHDRenderDiagnosticsNow( );
 		RenderDynamicWorld( );
+		if ( gfVHDRenderDiagnosticsFrameActive )
+			gVHDRenderFrameStats.uiDynamicMS += GetJA2Clock( ) - uiDynamicStartMS;
 
 ///////////////////////////////////////////////////////////
 
@@ -4309,6 +4388,8 @@ UINT32 cnt = 0;
 
 		UnLockVideoSurface(guiRENDERBUFFER);
 	}
+
+	VHDRenderDiagnosticsEndFrame( );
 
 }
 
