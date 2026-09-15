@@ -3359,8 +3359,8 @@ static void GetOcclusionBubbleMercCenter(
 	GetSoldierScreenPos( pSoldier, &sScreenX, &sScreenY );
 
 	// Bounding-box centre tracks stance/animation far better than grid centre.
-	*psCenterX = (INT16)( sScreenX + pSoldier->sBoundingBoxWidth / 2 );
-	*psCenterY = (INT16)( sScreenY + pSoldier->sBoundingBoxHeight / 2 );
+	*psCenterX = (INT16)( sScreenX + VHDScaleScreenValue( pSoldier->sBoundingBoxWidth ) / 2 );
+	*psCenterY = (INT16)( sScreenY + VHDScaleScreenValue( pSoldier->sBoundingBoxHeight ) / 2 );
 }
 
 static void GetOcclusionBubbleWallAnchor(
