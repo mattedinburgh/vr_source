@@ -11,12 +11,12 @@ implemented in several places or on several permanent branches.
 | --- | --- | --- |
 | Public AI interface | `TacticalAI/ai.h` | Declarations only; no second public AI header |
 | Shared evaluation/state | `TacticalAI/AIUtils.cpp` | Doctrine, command, fireteams, risk, battle state, route exposure, compatibility utility wrapper |
-| Shared tactical reasoning | `TacticalAI/TacticalReasoning.cpp` | Legal contact beliefs, spatial feature evaluation/scoring, task reservations, short plans, contact-change/surprise tracking |
+| Shared tactical reasoning | `TacticalAI/TacticalReasoning.cpp` | Legal contact beliefs, 8-sector local battlefield geometry, spatial feature evaluation/scoring, task reservations, short plans, contact-change/surprise tracking |
 | Decision orchestration | `TacticalAI/DecideAction.cpp` | Alert-state entry points, planner priority, suppression/contact-surprise responses, planner analytics adapters |
 | Casualty/medical AI | `TacticalAI/Medical.cpp` | Evacuation, medic rescue, buddy aid, self-aid |
 | Attack evaluation/execution helpers | `TacticalAI/Attacks.cpp` | Attack candidates and weapon-use execution support |
-| Movement candidate generation | `TacticalAI/FindLocations.cpp` | Cover/advance/retreat/flank location search |
-| CQB/building planner | `TacticalAI/CQBBuildingDoctrine.cpp/.h` | Building context/utility/action adapter; top-level priority remains owned by `DecideAction.cpp` |
+| Movement candidate generation | `TacticalAI/FindLocations.cpp` | Cover/advance/retreat/flank search plus weakest-sector geometry breakout search |
+| CQB/building planner | `TacticalAI/CQBBuildingDoctrine.cpp/.h` | Building context/utility/action adapter; consumes shared geometry, entry reservations and CQB short-plan state; top-level priority remains owned by `DecideAction.cpp` |
 | Shared analytics | `VRAnalytics.cpp`, `VRAnalytics.h` | Tactical + strategic Black Box event stream |
 | Architecture policy | `UNIFIED_AI_FRAMEWORK.md` | Single-source architecture and branch rules |
 | Strategic staged work | `Strategic/STRATEGIC_AI_STAGING_MANIFEST.md` | Inactive strategic-AI forward-port plan |
@@ -34,6 +34,8 @@ A behaviour may call helpers from several files, but it has exactly one orchestr
 | Fireteam identity/cohesion | `AIUtils.cpp` |
 | Tactical intent / role | `AIUtils.cpp` (persistent posture/role) + `TacticalReasoning.cpp` (short-plan/task state) |
 | Contact belief / uncertainty | `TacticalReasoning.cpp` |
+| Local battlefield geometry | `TacticalReasoning.cpp` (threat/friendly sectors, open flanks, safest direction, encirclement) |
+| Geometry-aware breakout search | `FindLocations.cpp::FindGeometryBreakoutSpot` |
 | Position utility / spatial features | `TacticalReasoning.cpp`; `AIUtils.cpp::AIUtilityPositionScore` is the compatibility wrapper |
 | Task reservations | `TacticalReasoning.cpp` |
 | Short tactical plans | `TacticalReasoning.cpp` |
@@ -42,7 +44,7 @@ A behaviour may call helpers from several files, but it has exactly one orchestr
 | Suppression response | `DecideAction.cpp` |
 | Alert-state priority | `DecideAction.cpp` |
 | Flank decision gate | `DecideAction.cpp` |
-| Building/CQB behavior | `DecideAction.cpp` (priority) + `CQBBuildingDoctrine.cpp` (building planner) |
+| Building/CQB behavior | `DecideAction.cpp` (priority) + `CQBBuildingDoctrine.cpp` (building planner); shared task/short-plan primitives remain owned by `TacticalReasoning.cpp` |
 | Casualty response | `Medical.cpp` through `DecideCombatCasualtyResponse` |
 | Medic rescue | `Medical.cpp` |
 | Buddy aid | `Medical.cpp` |
