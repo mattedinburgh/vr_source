@@ -178,8 +178,11 @@ enum
 
 // -------- added by Flugente: various ammo flags --------
 // flags used for various ammo properties (easier than adding 32 differently named variables). DO NOT CHANGE THEM, UNLESS YOU KNOW WHAT YOU ARE DOING!!!
-#define AMMO_NEUROTOXIN			0x00000001	//1			// this ammo adds the cyanide drug effect to its target, killing it in a few turns
-#define AMMO_BLIND				0x00000002	//2			// this ammo will blind if it hits the head
+#define AMMO_NEUROTOXIN			0x00000001	//1			// VR legacy: cyanide/lifedamage drug effect
+#define AMMO_BLIND				0x00000002	//2			// blind target on suitable head hit
+#define AMMO_ANTIMATERIEL		0x00000004	//4			// modern 1.13: bullet may damage/destroy structures
+// 0x00000008 intentionally left free here. Modern 1.13 uses it for white-smoke trails,
+// but VR does not yet have that complete effect pipeline.
 /*#define SHOVEL					0x00000004	//4
 #define CONCERTINA				0x00000008	//8
 
@@ -270,6 +273,15 @@ typedef struct
 
 	// Flugente: item flag for various properties. Way easier than 32 boolean flags
 	UINT32	ammoflag;
+
+	// Modern 1.13 selective port: target-specific damage scaling. 1.0 = unchanged.
+	// Defaults are supplied by XML_AmmoTypes.cpp so legacy VR XML remains compatible.
+	FLOAT dDamageModifierLife;
+	FLOAT dDamageModifierBreath;
+	FLOAT dDamageModifierTank;
+	FLOAT dDamageModifierArmouredVehicle;
+	FLOAT dDamageModifierCivilianVehicle;
+	FLOAT dDamageModifierZombie;
 	
 } AMMOTYPE;
 
