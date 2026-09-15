@@ -117,8 +117,10 @@ static void AIValidateContactMemorySector(void)
 
 static void AIRecordContactMemory(
 	SOLDIERTYPE *pSoldier, const AICONTACTBELIEF *pBelief);
-static BOOLEAN AIThreatMemoryNoiseCorroborated(
-	SOLDIERTYPE *pSoldier, UINT8 ubMemoryDirection);
+static UINT8 AIThreatMemoryNoiseCorroboration(
+	SOLDIERTYPE *pSoldier, UINT8 ubMemoryDirection,
+	INT32 *psBestGridNo, INT8 *pbBestLevel,
+	UINT8 *pubCueCount, UINT8 *pubBestAge);
 
 static UINT8 AIKnowledgeAgeTurns(INT8 bKnowledge)
 {
@@ -468,6 +470,9 @@ BOOLEAN AIBuildThreatMemoryCue(
 	pCue->bLevel = 0;
 	pCue->ubDirection = DIRECTION_IRRELEVANT;
 	pCue->ubAgeTurns = 255;
+	pCue->sCorroboratingGridNo = NOWHERE;
+	pCue->bCorroboratingLevel = 0;
+	pCue->ubCorroborationAge = 255;
 
 	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
 		return FALSE;
@@ -516,8 +521,16 @@ BOOLEAN AIBuildThreatMemoryCue(
 	if (ubBestOpponent == NOBODY || TileIsOutOfBounds(pCue->sGridNo))
 		return FALSE;
 
+	pCue->ubCorroborationStrength =
+		AIThreatMemoryNoiseCorroboration(
+			pSoldier, pCue->ubDirection,
+			&pCue->sCorroboratingGridNo,
+			&pCue->bCorroboratingLevel,
+			&pCue->ubCorroboratedCues,
+			&pCue->ubCorroborationAge);
 	pCue->fNoiseCorroborated =
-		AIThreatMemoryNoiseCorroborated(pSoldier, pCue->ubDirection);
+		pCue->ubCorroborationStrength > 0 &&
+		!TileIsOutOfBounds(pCue->sCorroboratingGridNo);
 
 	// Count other remembered contacts supporting roughly the same sector. This is
 	// evidence of an area of concern, not evidence that those opponents are there now.
@@ -724,14 +737,27 @@ void AIRegisterThreatNoiseEvidence(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo,
 	pBest->uiEvidenceTurn = guiTurnCnt;
 }
 
-static BOOLEAN AIThreatMemoryNoiseCorroborated(
-	SOLDIERTYPE *pSoldier, UINT8 ubMemoryDirection)
+static UINT8 AIThreatMemoryNoiseCorroboration(
+	SOLDIERTYPE *pSoldier, UINT8 ubMemoryDirection,
+	INT32 *psBestGridNo, INT8 *pbBestLevel,
+	UINT8 *pubCueCount, UINT8 *pubBestAge)
 {
+	if (psBestGridNo) *psBestGridNo = NOWHERE;
+	if (pbBestLevel) *pbBestLevel = 0;
+	if (pubCueCount) *pubCueCount = 0;
+	if (pubBestAge) *pubBestAge = 255;
+
 	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS ||
 		ubMemoryDirection >= NUM_WORLD_DIRECTIONS)
 	{
-		return FALSE;
+		return 0;
 	}
+
+	UINT8 ubBestStrength = 0;
+	UINT8 ubBestAge = 255;
+	UINT8 ubCueCount = 0;
+	INT32 sBestGridNo = NOWHERE;
+	INT8 bBestLevel = 0;
 
 	for (UINT8 i = 0; i < AI_THREAT_NOISE_EVIDENCE_SLOTS; ++i)
 	{
@@ -746,21 +772,47 @@ static BOOLEAN AIThreatMemoryNoiseCorroborated(
 			continue;
 		}
 
-		UINT32 uiAge = guiTurnCnt - pSlot->uiEvidenceTurn;
+		const UINT32 uiAge = guiTurnCnt - pSlot->uiEvidenceTurn;
 		INT32 iEffectiveStrength =
 			(INT32)pSlot->ubStrength - 14 * (INT32)uiAge;
 		if (iEffectiveStrength <= 0)
 			continue;
 
 		UINT8 ubNoiseDir = AIDirection(pSoldier->sGridNo, pSlot->sGridNo);
-		if (ubNoiseDir < NUM_WORLD_DIRECTIONS &&
-			AIGeometryDirectionDelta(ubMemoryDirection, ubNoiseDir) <= 1)
+		if (ubNoiseDir >= NUM_WORLD_DIRECTIONS ||
+			AIGeometryDirectionDelta(ubMemoryDirection, ubNoiseDir) > 1)
 		{
-			return TRUE;
+			continue;
+		}
+
+		// Public/radio noise is useful corroboration, but direct personal hearing
+		// should remain more persuasive than a relayed cue.
+		if (pSlot->fPublic)
+			iEffectiveStrength = (3 * iEffectiveStrength) / 4;
+
+		if (iEffectiveStrength <= 0)
+			continue;
+
+		if (ubCueCount < 255)
+			++ubCueCount;
+
+		if (iEffectiveStrength > (INT32)ubBestStrength ||
+			(iEffectiveStrength == (INT32)ubBestStrength &&
+			 (UINT8)uiAge < ubBestAge))
+		{
+			ubBestStrength = (UINT8)__min(100, iEffectiveStrength);
+			ubBestAge = (UINT8)__min((UINT32)255, uiAge);
+			sBestGridNo = pSlot->sGridNo;
+			bBestLevel = pSlot->bLevel;
 		}
 	}
 
-	return FALSE;
+	if (psBestGridNo) *psBestGridNo = sBestGridNo;
+	if (pbBestLevel) *pbBestLevel = bBestLevel;
+	if (pubCueCount) *pubCueCount = ubCueCount;
+	if (pubBestAge) *pubBestAge = ubBestAge;
+
+	return ubBestStrength;
 }
 
 static INT32 AIGeometryDirectionalThreat(const AITACTICALGEOMETRY *pGeometry, UINT8 ubDirection)
