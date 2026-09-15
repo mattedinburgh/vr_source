@@ -48,6 +48,27 @@ The belief layer never estimates hidden current health, AP, stance, weapon, move
 current position. It is a normalized view over the existing JA2 information model, not a second
 perception system.
 
+## Decaying contact memory and evidence fusion
+
+The shared reasoning layer retains a short-lived, identity-bound memory of **visually established**
+last-known contact locations after normal JA2 opponent knowledge expires.
+
+Rules:
+- only visual knowledge refreshes an exact contact-memory location;
+- memory confidence decays every tactical turn and expires automatically;
+- personally established memory persists more strongly than public/team-reported visual memory;
+- reaching and visibly checking the remembered location sharply reduces or clears the hypothesis;
+- remembered locations may influence search, facing, route choice, flank evaluation and local geometry;
+- memory alone may **never** authorize aimed fire, grenades, exact unseen targeting, or an encirclement conclusion.
+
+Fresh legitimate miscellaneous noise is compared with remembered sectors. A sound from the same
+or adjacent direction, especially near the last-known area, receives a bounded investigation-priority
+boost. This is **evidence fusion**, not identification: the AI may think "that direction is credible
+again" but does not learn which unseen opponent made the sound or their exact current tile.
+
+If no normal heard/public/noise cue remains, combatants may briefly investigate a sufficiently
+confident last-known visual area. Any fresh evidence always outranks this fallback memory.
+
 ## Surprise / encirclement fairness
 
 A contact-surprise event is permitted only when a combatant gains **personal current sight** of
