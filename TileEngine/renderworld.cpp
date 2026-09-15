@@ -2158,6 +2158,9 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 														//if(fZWrite)
 														//	Blt8BPPDataTo16BPPBufferTransZClipTranslucent((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex, &gClippingRect);
 														//else
+															if ( uiLevelNodeFlags & LEVELNODE_GENTLE_OVERLAY )
+															Blt8BPPDataTo16BPPBufferTransZNBClipGentlePixelate((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex, &gClippingRect);
+														else
 															Blt8BPPDataTo16BPPBufferTransZNBClipTranslucent((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex, &gClippingRect);
 													}
 													else
@@ -2304,9 +2307,15 @@ void RenderTiles(UINT32 uiFlags, INT32 iStartPointX_M, INT32 iStartPointY_M, INT
 													if(fTranslucencyType)
 													{
 														if(fZWrite)
-															Blt8BPPDataTo16BPPBufferTransZTranslucent((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex);
+															if ( uiLevelNodeFlags & LEVELNODE_GENTLE_OVERLAY )
+																Blt8BPPDataTo16BPPBufferTransZGentlePixelate((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex);
+															else
+																Blt8BPPDataTo16BPPBufferTransZTranslucent((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex);
 														else
-															Blt8BPPDataTo16BPPBufferTransZNBTranslucent((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex);
+															if ( uiLevelNodeFlags & LEVELNODE_GENTLE_OVERLAY )
+																Blt8BPPDataTo16BPPBufferTransZNBGentlePixelate((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex);
+															else
+																Blt8BPPDataTo16BPPBufferTransZNBTranslucent((UINT16*)pDestBuf, uiDestPitchBYTES, gpZBuffer, sZLevel, hVObject, sXPos, sYPos, usImageIndex);
 													}
 													else
 													{
