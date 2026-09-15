@@ -147,7 +147,7 @@ static void VHDRenderDiagnosticsOcclusionCall( UINT8 ubOuterClipRects )
 		(UINT32)ubOuterClipRects;
 }
 
-static void VHDRenderDiagnosticsEndFrame( UINT32 uiFrameStart, BOOLEAN fBubbleActive )
+static void VHDRenderDiagnosticsEndFrame( UINT32 uiFrameStart, BOOLEAN fFullFrame, BOOLEAN fBubbleActive )
 {
 	if ( !VHDRenderDiagnosticsEnabled( ) )
 		return;
@@ -158,7 +158,7 @@ static void VHDRenderDiagnosticsEndFrame( UINT32 uiFrameStart, BOOLEAN fBubbleAc
 		uiElapsed;
 	gVHDRenderDiagnostics.uiFrameMsMax =
 		__max( gVHDRenderDiagnostics.uiFrameMsMax, uiElapsed );
-	if ( gfRenderFullThisFrame )
+	if ( fFullFrame )
 		++gVHDRenderDiagnostics.uiFullFrames;
 	if ( fBubbleActive )
 		++gVHDRenderDiagnostics.uiBubbleFrames;
@@ -4420,7 +4420,7 @@ UINT32 cnt = 0;
 		UnLockVideoSurface(guiRENDERBUFFER);
 	}
 
-	VHDRenderDiagnosticsEndFrame( uiVHDRenderDiagnosticStart, gfOcclusionBubbleActive );
+	VHDRenderDiagnosticsEndFrame( uiVHDRenderDiagnosticStart, gfRenderFullThisFrame, gfOcclusionBubbleActive );
 
 }
 
