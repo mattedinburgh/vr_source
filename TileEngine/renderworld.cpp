@@ -92,6 +92,8 @@ typedef struct
 	UINT32 uiTrueColorSourcePixels;
 	UINT32 uiOcclusionMaskCalls;
 	UINT32 uiOcclusionOuterRects;
+	UINT32 uiOcclusionOnePassCalls;
+	UINT32 uiOcclusionPixelsMasked;
 } VHD_RENDER_FRAME_STATS;
 
 static VHD_RENDER_FRAME_STATS gVHDRenderFrameStats;
@@ -207,14 +209,15 @@ static void VHDRenderDiagnosticsEndFrame( )
 	if ( fSlowSample || fPeriodicSample )
 	{
 		BlackBoxEvent( "VHD_RENDER",
-			"frame=%u total_us=%u occlusion_us=%u static_us=%u dynamic_us=%u flags=0x%08x scale=%u indexed_calls=%u indexed_pixels=%u truecolor_calls=%u truecolor_pixels=%u occlusion_masks=%u outer_rects=%u slow=%u",
+			"frame=%u total_us=%u occlusion_us=%u static_us=%u dynamic_us=%u flags=0x%08x scale=%u indexed_calls=%u indexed_pixels=%u truecolor_calls=%u truecolor_pixels=%u occlusion_masks=%u outer_rects=%u onepass_calls=%u masked_pixels=%u slow=%u",
 			gVHDRenderFrameStats.uiFrameSerial, uiTotalUS,
 			gVHDRenderFrameStats.uiOcclusionUpdateUS, gVHDRenderFrameStats.uiStaticUS,
 			gVHDRenderFrameStats.uiDynamicUS, gVHDRenderFrameStats.uiRenderFlags,
 			GetVHDRenderScale( ), gVHDRenderFrameStats.uiIndexedMultiZCalls,
 			gVHDRenderFrameStats.uiIndexedSourcePixels, gVHDRenderFrameStats.uiTrueColorCalls,
 			gVHDRenderFrameStats.uiTrueColorSourcePixels, gVHDRenderFrameStats.uiOcclusionMaskCalls,
-			gVHDRenderFrameStats.uiOcclusionOuterRects, fSlowFrame ? 1 : 0 );
+			gVHDRenderFrameStats.uiOcclusionOuterRects, gVHDRenderFrameStats.uiOcclusionOnePassCalls,
+			gVHDRenderFrameStats.uiOcclusionPixelsMasked, fSlowFrame ? 1 : 0 );
 	}
 	gfVHDRenderDiagnosticsFrameActive = FALSE;
 }
@@ -260,6 +263,10 @@ static void BlitOcclusionBubble8BitWallFadeZStrip(
 	UINT16 *pDestBuf, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer,
 	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
 	UINT16 usImageIndex, INT16 sZStripIndex );
+static BOOLEAN VHDIndexedOcclusionBubbleBlit(
+	UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue,
+	HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, INT16 sZIndex,
+	BOOLEAN fFadeOnly );
 static void BlitOcclusionBubbleTrueColorWallZStrip(
 	UINT16 *pDestBuf, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer,
 	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
@@ -3722,6 +3729,170 @@ static UINT8 BuildOcclusionBubbleOutsideEllipseClipRects(
 	return ubCount;
 }
 
+// Exact per-pixel form of the existing legacy cutaway mask. The outer hole is
+// intentionally banded, not a mathematically exact ellipse: BuildOcclusionBubble-
+// OutsideEllipseClipRects() samples each band toward the bubble centre so the
+// legacy renderer slightly over-cuts walls. Preserve that visual contract here.
+static BOOLEAN VHDLegacyOuterOcclusionMaskAllows(
+	INT32 iX, INT32 iY, INT32 iSpriteLeft, INT32 iSpriteTop,
+	INT32 iSpriteRight, INT32 iSpriteBottom )
+{
+	if ( !gfOcclusionBubbleActive )
+		return TRUE;
+
+	const INT32 iRadiusX = OCCLUSION_BUBBLE_OUTER_RADIUS_X;
+	const INT32 iRadiusY = OCCLUSION_BUBBLE_OUTER_RADIUS_Y;
+	const INT32 iHoleLeft = (INT32)gsOcclusionBubbleScreenCenterX - iRadiusX;
+	const INT32 iHoleRight = (INT32)gsOcclusionBubbleScreenCenterX + iRadiusX;
+	const INT32 iHoleTop = (INT32)gsOcclusionBubbleScreenCenterY - iRadiusY;
+	const INT32 iHoleBottom = (INT32)gsOcclusionBubbleScreenCenterY + iRadiusY;
+
+	if ( iSpriteRight <= iHoleLeft || iSpriteLeft >= iHoleRight ||
+		 iSpriteBottom <= iHoleTop || iSpriteTop >= iHoleBottom )
+	{
+		return TRUE;
+	}
+
+	if ( iY < iHoleTop || iY >= iHoleBottom )
+		return TRUE;
+
+	const INT32 iMiddleTop = __max( iSpriteTop, iHoleTop );
+	const INT32 iMiddleBottom = __min( iSpriteBottom, iHoleBottom );
+	if ( iY < iMiddleTop || iY >= iMiddleBottom )
+		return TRUE;
+
+	const INT32 iBandHeight = __max( 1, (INT32)OCCLUSION_BUBBLE_CLIP_BAND_HEIGHT );
+	const INT32 iBandTop = iMiddleTop +
+		( ( iY - iMiddleTop ) / iBandHeight ) * iBandHeight;
+	const INT32 iBandBottom = __min( iBandTop + iBandHeight, iMiddleBottom );
+
+	INT32 iSampleY = iBandTop;
+	if ( iBandBottom <= gsOcclusionBubbleScreenCenterY )
+		iSampleY = iBandBottom;
+	else if ( iBandTop <= gsOcclusionBubbleScreenCenterY &&
+			  iBandBottom >= gsOcclusionBubbleScreenCenterY )
+		iSampleY = gsOcclusionBubbleScreenCenterY;
+
+	const double dNormalizedY =
+		( (double)iSampleY - (double)gsOcclusionBubbleScreenCenterY ) /
+		(double)iRadiusY;
+	const double dInside = 1.0 - dNormalizedY * dNormalizedY;
+	if ( dInside <= 0.0 )
+		return TRUE;
+
+	const INT32 iHalfWidth =
+		(INT32)( (double)iRadiusX * sqrt( dInside ) + 0.5 );
+	const INT32 iCutLeft = (INT32)gsOcclusionBubbleScreenCenterX - iHalfWidth;
+	const INT32 iCutRight = (INT32)gsOcclusionBubbleScreenCenterX + iHalfWidth;
+	return iX < iCutLeft || iX >= iCutRight;
+}
+
+static BOOLEAN VHDLegacyPlainOcclusionInteriorMaskAllows(
+	INT32 iX, INT32 iY, INT32 iSpriteLeft, INT32 iSpriteTop,
+	INT32 iSpriteRight, INT32 iSpriteBottom )
+{
+	const INT32 iOuterTop = __max(
+		iSpriteTop, (INT32)gsOcclusionBubbleScreenCenterY - OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+	const INT32 iOuterBottom = __min(
+		iSpriteBottom, (INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+
+	if ( iY >= iOuterTop && iY < iOuterBottom &&
+		 ( ( iY ^ gsOcclusionBubbleScreenCenterY ) & 1 ) == 0 )
+	{
+		const INT32 iOuterHalf = OcclusionBubbleEllipseHalfWidthAtY(
+			iY, OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+		if ( iOuterHalf > 0 )
+		{
+			const INT32 iOuterLeft = __max(
+				iSpriteLeft, (INT32)gsOcclusionBubbleScreenCenterX - iOuterHalf );
+			const INT32 iOuterRight = __min(
+				iSpriteRight, (INT32)gsOcclusionBubbleScreenCenterX + iOuterHalf );
+			if ( iX >= iOuterLeft && iX < iOuterRight )
+			{
+				const INT32 iInnerHalf = OcclusionBubbleEllipseHalfWidthAtY(
+					iY, OCCLUSION_BUBBLE_INNER_RADIUS_X, OCCLUSION_BUBBLE_INNER_RADIUS_Y );
+				if ( iInnerHalf <= 0 )
+					return TRUE;
+
+				const INT32 iInnerLeft =
+					(INT32)gsOcclusionBubbleScreenCenterX - iInnerHalf;
+				const INT32 iInnerRight =
+					(INT32)gsOcclusionBubbleScreenCenterX + iInnerHalf;
+				if ( iX < __min( iOuterRight, iInnerLeft ) ||
+					 iX >= __max( iOuterLeft, iInnerRight ) )
+				{
+					return TRUE;
+				}
+			}
+		}
+	}
+
+	const INT32 iInnerTop = __max(
+		iSpriteTop, (INT32)gsOcclusionBubbleScreenCenterY - OCCLUSION_BUBBLE_INNER_RADIUS_Y );
+	const INT32 iInnerBottom = __min(
+		iSpriteBottom, (INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_INNER_RADIUS_Y );
+	if ( iY >= iInnerTop && iY < iInnerBottom &&
+		 ( ( iY - gsOcclusionBubbleScreenCenterY ) % 4 + 4 ) % 4 == 0 )
+	{
+		const INT32 iInnerHalf = OcclusionBubbleEllipseHalfWidthAtY(
+			iY, OCCLUSION_BUBBLE_INNER_RADIUS_X, OCCLUSION_BUBBLE_INNER_RADIUS_Y );
+		if ( iInnerHalf > 0 )
+		{
+			const INT32 iInnerLeft = __max(
+				iSpriteLeft, (INT32)gsOcclusionBubbleScreenCenterX - iInnerHalf );
+			const INT32 iInnerRight = __min(
+				iSpriteRight, (INT32)gsOcclusionBubbleScreenCenterX + iInnerHalf );
+			if ( iX >= iInnerLeft && iX < iInnerRight )
+				return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+static BOOLEAN VHDLegacyFadeOcclusionInteriorMaskAllows(
+	INT32 iX, INT32 iY, INT32 iSpriteLeft, INT32 iSpriteTop,
+	INT32 iSpriteRight, INT32 iSpriteBottom )
+{
+	const INT32 iOuterTop = __max(
+		iSpriteTop, (INT32)gsOcclusionBubbleScreenCenterY - OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+	const INT32 iOuterBottom = __min(
+		iSpriteBottom, (INT32)gsOcclusionBubbleScreenCenterY + OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+	if ( iY < iOuterTop || iY >= iOuterBottom ||
+		 ( ( iY - gsOcclusionBubbleScreenCenterY ) % 3 + 3 ) % 3 != 0 )
+	{
+		return FALSE;
+	}
+
+	const INT32 iHalfWidth = OcclusionBubbleEllipseHalfWidthAtY(
+		iY, OCCLUSION_BUBBLE_OUTER_RADIUS_X, OCCLUSION_BUBBLE_OUTER_RADIUS_Y );
+	if ( iHalfWidth <= 0 )
+		return FALSE;
+
+	const INT32 iLeft = __max(
+		iSpriteLeft, (INT32)gsOcclusionBubbleScreenCenterX - iHalfWidth );
+	const INT32 iRight = __min(
+		iSpriteRight, (INT32)gsOcclusionBubbleScreenCenterX + iHalfWidth );
+	return iX >= iLeft && iX < iRight;
+}
+
+static BOOLEAN VHDLegacyOcclusionMaskAllows(
+	INT32 iX, INT32 iY, INT32 iSpriteLeft, INT32 iSpriteTop,
+	INT32 iSpriteRight, INT32 iSpriteBottom, BOOLEAN fFadeOnly )
+{
+	if ( VHDLegacyOuterOcclusionMaskAllows(
+			iX, iY, iSpriteLeft, iSpriteTop, iSpriteRight, iSpriteBottom ) )
+	{
+		return TRUE;
+	}
+
+	return fFadeOnly ?
+		VHDLegacyFadeOcclusionInteriorMaskAllows(
+			iX, iY, iSpriteLeft, iSpriteTop, iSpriteRight, iSpriteBottom ) :
+		VHDLegacyPlainOcclusionInteriorMaskAllows(
+			iX, iY, iSpriteLeft, iSpriteTop, iSpriteRight, iSpriteBottom );
+}
+
 static void BlitOcclusionBubble8BitWallZStrip(
 	UINT16 *pDestBuf, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer,
 	UINT16 usZValue, HVOBJECT hVObject, INT16 sXPos, INT16 sYPos,
@@ -3729,6 +3900,13 @@ static void BlitOcclusionBubble8BitWallZStrip(
 {
 	if ( gfVHDRenderDiagnosticsFrameActive )
 		++gVHDRenderFrameStats.uiOcclusionMaskCalls;
+	if ( hVObject != NULL && hVObject->ubVHDAssetScale > 1 &&
+		 VHDIndexedOcclusionBubbleBlit(
+			pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue, hVObject,
+			sXPos, sYPos, usImageIndex, sZStripIndex, FALSE ) )
+	{
+		return;
+	}
 	// Zone 1: wall remains fully opaque outside the outer ellipse.
 	SGPRect ClipRects[ OCCLUSION_BUBBLE_MAX_CLIP_RECTS ];
 	const UINT8 ubCount = BuildOcclusionBubbleOutsideEllipseClipRects(
@@ -4009,6 +4187,13 @@ static void BlitOcclusionBubble8BitWallFadeZStrip(
 {
 	if ( gfVHDRenderDiagnosticsFrameActive )
 		++gVHDRenderFrameStats.uiOcclusionMaskCalls;
+	if ( hVObject != NULL && hVObject->ubVHDAssetScale > 1 &&
+		 VHDIndexedOcclusionBubbleBlit(
+			pDestBuf, uiDestPitchBYTES, pZBuffer, usZValue, hVObject,
+			sXPos, sYPos, usImageIndex, sZStripIndex, TRUE ) )
+	{
+		return;
+	}
 	// Preserve the door/window/corner sprite at full strength outside the bubble.
 	SGPRect ClipRects[ OCCLUSION_BUBBLE_MAX_CLIP_RECTS ];
 	const UINT8 ubCount = BuildOcclusionBubbleOutsideEllipseClipRects(
@@ -6143,6 +6328,134 @@ static BOOLEAN VHDIndexedMultiZBlit(
 					*pDest = ShadeTable[*pDest];
 				else
 					*pDest = p16BPPPalette[ubPaletteIndex];
+			}
+		}
+
+		if ( !fSawEndOfLine && usSourceY + 1 < pRegion->usHeight )
+			return FALSE;
+		if ( usSourceX != pRegion->usWidth )
+			return FALSE;
+	}
+
+	return TRUE;
+}
+
+// Single-decode compositor for scaled indexed wall cutaways. Unlike the older
+// experiment, the mask above reproduces the existing banded legacy geometry
+// exactly; this function changes decode/compositing cost, not cutaway visuals.
+static BOOLEAN VHDIndexedOcclusionBubbleBlit(
+	UINT16 *pBuffer, UINT32 uiDestPitchBYTES, UINT16 *pZBuffer, UINT16 usZValue,
+	HVOBJECT hSrcVObject, INT32 iX, INT32 iY, UINT16 usIndex, INT16 sZIndex,
+	BOOLEAN fFadeOnly )
+{
+	if ( hSrcVObject == NULL || pBuffer == NULL || pZBuffer == NULL ||
+		 hSrcVObject->pShadeCurrent == NULL )
+	{
+		return FALSE;
+	}
+	if ( usIndex >= hSrcVObject->usNumberOfObjects || hSrcVObject->pETRLEObject == NULL ||
+		 hSrcVObject->pPixData == NULL || hSrcVObject->ppZStripInfo == NULL )
+	{
+		return FALSE;
+	}
+	if ( sZIndex < 0 || sZIndex >= (INT16)hSrcVObject->usNumberOfObjects ||
+		 hSrcVObject->ppZStripInfo[sZIndex] == NULL )
+	{
+		return FALSE;
+	}
+
+	const UINT8 ubAssetScale = hSrcVObject->ubVHDAssetScale;
+	if ( ubAssetScale != 2 && ubAssetScale != 4 )
+		return FALSE;
+
+	INT32 iSpriteLeft = 0;
+	INT32 iSpriteTop = 0;
+	INT32 iSpriteRight = 0;
+	INT32 iSpriteBottom = 0;
+	if ( !GetOcclusionBubbleSpriteBounds(
+			hSrcVObject, (INT16)iX, (INT16)iY, usIndex,
+			&iSpriteLeft, &iSpriteTop, &iSpriteRight, &iSpriteBottom ) )
+	{
+		return TRUE;
+	}
+
+	const ETRLEObject *pRegion = &hSrcVObject->pETRLEObject[usIndex];
+	ZStripInfo *pZInfo = hSrcVObject->ppZStripInfo[sZIndex];
+	if ( gfVHDRenderDiagnosticsFrameActive )
+	{
+		++gVHDRenderFrameStats.uiIndexedMultiZCalls;
+		++gVHDRenderFrameStats.uiOcclusionOnePassCalls;
+		gVHDRenderFrameStats.uiIndexedSourcePixels = VHDRenderSaturatingAdd(
+			gVHDRenderFrameStats.uiIndexedSourcePixels,
+			(UINT32)pRegion->usWidth * (UINT32)pRegion->usHeight );
+	}
+
+	const INT32 iDestLeft = iX + pRegion->sOffsetX;
+	const INT32 iDestTop = iY + pRegion->sOffsetY;
+	const UINT8 *pSrc = (const UINT8*)hSrcVObject->pPixData + pRegion->uiDataOffset;
+	const UINT8 *pSrcEnd = pSrc + pRegion->uiDataLength;
+
+	for ( UINT16 usSourceY = 0; usSourceY < pRegion->usHeight; ++usSourceY )
+	{
+		UINT16 usSourceX = 0;
+		BOOLEAN fSawEndOfLine = FALSE;
+		const INT32 iDestY = iDestTop + usSourceY;
+
+		while ( pSrc < pSrcEnd )
+		{
+			const UINT8 ubCode = *pSrc++;
+			if ( ubCode == 0 )
+			{
+				fSawEndOfLine = TRUE;
+				break;
+			}
+
+			const UINT8 ubCount = ubCode & 0x7F;
+			if ( ubCount == 0 || (UINT32)usSourceX + ubCount > pRegion->usWidth )
+				return FALSE;
+
+			if ( ubCode & 0x80 )
+			{
+				usSourceX = (UINT16)( usSourceX + ubCount );
+				continue;
+			}
+
+			if ( pSrc + ubCount > pSrcEnd )
+				return FALSE;
+
+			for ( UINT8 ubRunPixel = 0; ubRunPixel < ubCount; ++ubRunPixel, ++usSourceX )
+			{
+				const UINT8 ubPaletteIndex = *pSrc++;
+				const INT32 iDestX = iDestLeft + usSourceX;
+
+				if ( iDestX < iSpriteLeft || iDestX >= iSpriteRight ||
+					 iDestY < iSpriteTop || iDestY >= iSpriteBottom )
+				{
+					continue;
+				}
+
+				if ( !VHDLegacyOcclusionMaskAllows(
+						iDestX, iDestY, iSpriteLeft, iSpriteTop,
+						iSpriteRight, iSpriteBottom, fFadeOnly ) )
+				{
+					if ( gfVHDRenderDiagnosticsFrameActive )
+						++gVHDRenderFrameStats.uiOcclusionPixelsMasked;
+					continue;
+				}
+
+				UINT16 *pDest = (UINT16*)((UINT8*)pBuffer +
+					((UINT32)iDestY * uiDestPitchBYTES)) + iDestX;
+				UINT16 *pZ = (UINT16*)((UINT8*)pZBuffer +
+					((UINT32)iDestY * uiDestPitchBYTES)) + iDestX;
+				const UINT16 usPixelZ = VHDIndexedZStripLevel(
+					pZInfo, usZValue, usSourceX, ubAssetScale, (INT32)Z_STRIP_DELTA_Y );
+
+				// The legacy wall cutaway uses the SameZBurnsThrough blitter.
+				if ( *pZ > usPixelZ )
+					continue;
+
+				*pZ = usPixelZ;
+				*pDest = hSrcVObject->pShadeCurrent[ubPaletteIndex];
 			}
 		}
 
