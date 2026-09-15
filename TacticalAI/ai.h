@@ -400,6 +400,7 @@ struct AITACTICALGEOMETRY
 	UINT16 usThreatPressure[NUM_WORLD_DIRECTIONS];
 	UINT16 usFriendlyPressure[NUM_WORLD_DIRECTIONS];
 	UINT8 ubThreatDirectionMask;
+	UINT8 ubVisibleDirectionMask;
 	UINT8 ubFriendlyDirectionMask;
 	UINT8 ubKnownContacts;
 	UINT8 ubVisibleContacts;
