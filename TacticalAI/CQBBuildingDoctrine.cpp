@@ -1434,11 +1434,17 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 
 	VRCQB_CONTEXT Context;
 	if (!VRCQB_BuildContext(pSoldier, &Context))
+	{
+		VRCQB_InvalidateSoldierPlan(pSoldier);
 		return AI_ACTION_NONE;
+	}
 
 	VRCQB_ASSESSMENT Assessment;
 	if (!VRCQB_Assess(pSoldier, &Context, &Assessment))
+	{
+		VRCQB_InvalidateSoldierPlan(pSoldier);
 		return AI_ACTION_NONE;
+	}
 
 	UINT32 uiDecision = VRCQBTraceBegin(pSoldier, &Context, &Assessment);
 
