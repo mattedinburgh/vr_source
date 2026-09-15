@@ -144,18 +144,28 @@ namespace
 	void RotateAnalyticsLogIfNeeded()
 	{
 		const char* current = "VR_BlackBox.jsonl";
+		const char* pending = "VR_BlackBox_RotatePending.jsonl";
 		long size = FileSizeBytes( current );
 		if( size < 0 || size < VR_ANALYTICS_MAX_BYTES )
+			return;
+
+		// Never overwrite an unresolved prior rotation. It is evidence too.
+		if( FileSizeBytes( pending ) >= 0 )
+			return;
+
+		// First secure the oversized current journal under a temporary name.
+		// Only after that succeeds is it safe to shift older generations.
+		if( rename( current, pending ) != 0 )
 			return;
 
 		remove( "VR_BlackBox_Previous_3.jsonl" );
 		rename( "VR_BlackBox_Previous_2.jsonl", "VR_BlackBox_Previous_3.jsonl" );
 		rename( "VR_BlackBox_Previous.jsonl", "VR_BlackBox_Previous_2.jsonl" );
 
-		// Only start a fresh journal if the current file was safely preserved.
-		// If rename fails (for example antivirus/file-lock interference), keep
-		// appending to the existing file rather than deleting evidence.
-		rename( current, "VR_BlackBox_Previous.jsonl" );
+		// If this last rename fails, RotatePending remains intact and the new
+		// current session still opens a fresh journal. The collector includes the
+		// pending file so the preserved evidence is not hidden from diagnostics.
+		rename( pending, "VR_BlackBox_Previous.jsonl" );
 	}
 
 	const char* LayerName( VRAnalyticsLayer layer )
