@@ -2750,6 +2750,22 @@ INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction )
 	BOOLEAN fCurrentWithdrawSightCover = FALSE;
 	INT32 iCurrentWithdrawSupport = 0;
 	INT8 bCurrentWithdrawRangePreference = 0;
+	AITACTICALGEOMETRY TacticalGeometry;
+	const BOOLEAN fHasTacticalGeometry =
+		AIBuildTacticalGeometry(pSoldier, pSoldier->sGridNo, &TacticalGeometry);
+
+	INT8 bGeometryIntent = AI_INTENT_PRESS;
+	INT8 bGeometryRole = AI_ROLE_MANEUVER;
+	if (bAction == AI_ACTION_FLANK_LEFT || bAction == AI_ACTION_FLANK_RIGHT)
+	{
+		bGeometryIntent = AI_INTENT_FLANK;
+		bGeometryRole = AI_ROLE_FLANKER;
+	}
+	else if (bAction == AI_ACTION_WITHDRAW)
+	{
+		bGeometryIntent = AI_INTENT_FALLBACK;
+		bGeometryRole = AI_ROLE_SCREEN;
+	}
 	if (bAction == AI_ACTION_WITHDRAW)
 	{
 		fCurrentWithdrawCover = AnyCoverAtSpot(pSoldier, pSoldier->sGridNo);
@@ -2951,6 +2967,15 @@ INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction )
 			if (bAction == AI_ACTION_FLANK_LEFT || bAction == AI_ACTION_FLANK_RIGHT)
 			{
 				sTempDist += AICrossfirePositionScore(pSoldier, sGridNo, sPos);
+			}
+
+			// Shared geometry shapes the tile search itself: flank/fallback positions
+			// prefer the safe/open side of the local battle rather than distance alone.
+			if (fHasTacticalGeometry)
+			{
+				sTempDist += AIGeometryPositionScore(
+					pSoldier, &TacticalGeometry, sGridNo, sPos,
+					bGeometryIntent, bGeometryRole);
 			}
 			// if this is better than the best place found so far
 			if ( sTempDist > sBestDist )
