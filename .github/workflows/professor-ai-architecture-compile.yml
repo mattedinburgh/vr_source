@@ -1,0 +1,22 @@
+name: Professor AI architecture compile
+
+on:
+  push:
+    branches:
+      - ai/professor-architecture-2026-09-15
+
+jobs:
+  compile:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+      - uses: microsoft/setup-msbuild@v2
+      - name: Compile integration translation units
+        shell: powershell
+        run: |
+          msbuild '.\\ja2_VS2013.vcxproj' /m /t:ClCompile /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
