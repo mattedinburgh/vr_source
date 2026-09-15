@@ -564,18 +564,44 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 	// Snapshot the old role for utility semantics, then invalidate its offensive
 	// commitment. A surprise withdrawal must not continue to reserve a flank/maneuver task.
 	INT8 bRole = AITacticalRole(pSoldier, Context.sPrimaryThreat);
+	UINT32 uiDecision = VRPlannerTraceBeginDecision(
+		pSoldier, "contact_reassessment", Context.sPrimaryThreat,
+		AI_INTENT_FALLBACK, bRole);
+	if (uiDecision)
+	{
+		VRAnalyticsStateInt(uiDecision, "visible_contacts", Change.ubVisibleContacts);
+		VRAnalyticsStateInt(uiDecision, "new_contacts", Change.ubNewContacts);
+		VRAnalyticsStateInt(uiDecision, "direction_mask", Change.ubDirectionMask);
+		VRAnalyticsStateInt(uiDecision, "multi_angle", Change.fMultiAngleThreat ? 1 : 0);
+		VRAnalyticsStateInt(uiDecision, "surprise", Change.fSurprise ? 1 : 0);
+		VRAnalyticsStateInt(uiDecision, "encirclement", Change.fEncirclementPressure ? 1 : 0);
+		VRAnalyticsStateInt(uiDecision, "known_exposure", Change.usCurrentExposure);
+		VRAnalyticsStateInt(uiDecision, "previous_grid", Change.sPreviousGridNo);
+	}
+
 	AICancelShortPlan(pSoldier);
 	AIReleaseTacticalTask(pSoldier);
 
 	if (!fCanMove || pSoldier->aiData.bOrders == STATIONARY)
+	{
+		VRPlannerTraceSelect(pSoldier, uiDecision, "contact_reassessment",
+			AI_ACTION_NONE, pSoldier->sGridNo, 0, 0, FALSE,
+			"new contact geometry noticed but movement unavailable");
 		return AI_ACTION_NONE;
+	}
 
 	INT32 iCurrentScore = AIUtilityPositionScore(
 		pSoldier, pSoldier->sGridNo, Context.sPrimaryThreat,
 		AI_INTENT_FALLBACK, bRole);
+	VRPlannerTraceCandidate(pSoldier, uiDecision, "contact_reassessment",
+		AI_ACTION_NONE, pSoldier->sGridNo, iCurrentScore, 0,
+		CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 3),
+		AICrossfirePositionScore(pSoldier, pSoldier->sGridNo, Context.sPrimaryThreat),
+		"hold after surprise");
 
 	INT32 sBestSpot = NOWHERE;
 	INT32 iBestScore = iCurrentScore;
+	INT32 iRunnerUpScore = -10000;
 	INT8 bBestAction = AI_ACTION_NONE;
 
 	// Candidate 1: step back to the last decision position. This is the natural
@@ -594,11 +620,24 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 		if (Change.fSurprise)
 			iScore += 6;
 
+		VRPlannerTraceCandidate(pSoldier, uiDecision, "contact_reassessment",
+			AI_ACTION_WITHDRAW, Change.sPreviousGridNo, iScore,
+			AIPathExposureCost(pSoldier, Change.sPreviousGridNo,
+				DetermineMovementMode(pSoldier, AI_ACTION_WITHDRAW)),
+			CountNearbyFriends(pSoldier, Change.sPreviousGridNo, DAY_VISION_RANGE / 3),
+			AICrossfirePositionScore(pSoldier, Change.sPreviousGridNo, Context.sPrimaryThreat),
+			"return to last known-safe position");
+
 		if (iScore > iBestScore)
 		{
+			iRunnerUpScore = __max(iRunnerUpScore, iBestScore);
 			iBestScore = iScore;
 			sBestSpot = Change.sPreviousGridNo;
 			bBestAction = AI_ACTION_WITHDRAW;
+		}
+		else
+		{
+			iRunnerUpScore = __max(iRunnerUpScore, iScore);
 		}
 	}
 
@@ -612,11 +651,24 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 			pSoldier, sCover, Context.sPrimaryThreat,
 			AI_INTENT_HOLD, bRole);
 
+		VRPlannerTraceCandidate(pSoldier, uiDecision, "contact_reassessment",
+			AI_ACTION_TAKE_COVER, sCover, iScore,
+			AIPathExposureCost(pSoldier, sCover,
+				DetermineMovementMode(pSoldier, AI_ACTION_TAKE_COVER)),
+			CountNearbyFriends(pSoldier, sCover, DAY_VISION_RANGE / 3),
+			AICrossfirePositionScore(pSoldier, sCover, Context.sPrimaryThreat),
+			"nearby cover after surprise");
+
 		if (iScore > iBestScore)
 		{
+			iRunnerUpScore = __max(iRunnerUpScore, iBestScore);
 			iBestScore = iScore;
 			sBestSpot = sCover;
 			bBestAction = AI_ACTION_TAKE_COVER;
+		}
+		else
+		{
+			iRunnerUpScore = __max(iRunnerUpScore, iScore);
 		}
 	}
 
@@ -628,11 +680,24 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 			pSoldier, sRetreat, Context.sPrimaryThreat,
 			AI_INTENT_FALLBACK, bRole);
 
+		VRPlannerTraceCandidate(pSoldier, uiDecision, "contact_reassessment",
+			AI_ACTION_WITHDRAW, sRetreat, iScore,
+			AIPathExposureCost(pSoldier, sRetreat,
+				DetermineMovementMode(pSoldier, AI_ACTION_WITHDRAW)),
+			CountNearbyFriends(pSoldier, sRetreat, DAY_VISION_RANGE / 3),
+			AICrossfirePositionScore(pSoldier, sRetreat, Context.sPrimaryThreat),
+			"dedicated retreat candidate");
+
 		if (iScore > iBestScore)
 		{
+			iRunnerUpScore = __max(iRunnerUpScore, iBestScore);
 			iBestScore = iScore;
 			sBestSpot = sRetreat;
 			bBestAction = AI_ACTION_WITHDRAW;
+		}
+		else
+		{
+			iRunnerUpScore = __max(iRunnerUpScore, iScore);
 		}
 	}
 
@@ -649,11 +714,24 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 		if (Change.fEncirclementPressure)
 			iScore += 4;
 
+		VRPlannerTraceCandidate(pSoldier, uiDecision, "contact_reassessment",
+			AI_ACTION_WITHDRAW, sFallback, iScore,
+			AIPathExposureCost(pSoldier, sFallback,
+				DetermineMovementMode(pSoldier, AI_ACTION_WITHDRAW)),
+			CountNearbyFriends(pSoldier, sFallback, DAY_VISION_RANGE / 3),
+			AICrossfirePositionScore(pSoldier, sFallback, Context.sPrimaryThreat),
+			"lateral or backward break-contact candidate");
+
 		if (iScore > iBestScore)
 		{
+			iRunnerUpScore = __max(iRunnerUpScore, iBestScore);
 			iBestScore = iScore;
 			sBestSpot = sFallback;
 			bBestAction = AI_ACTION_WITHDRAW;
+		}
+		else
+		{
+			iRunnerUpScore = __max(iRunnerUpScore, iScore);
 		}
 	}
 
@@ -669,6 +747,10 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 		TileIsOutOfBounds(sBestSpot) ||
 		iBestScore < iCurrentScore + iRequiredGain)
 	{
+		VRPlannerTraceSelect(pSoldier, uiDecision, "contact_reassessment",
+			AI_ACTION_NONE, pSoldier->sGridNo, iCurrentScore,
+			__max(iBestScore, iRunnerUpScore), FALSE,
+			"no reposition candidate exceeded surprise-response gain");
 		return AI_ACTION_NONE;
 	}
 
@@ -677,6 +759,10 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 	AIBeginShortPlan(
 		pSoldier, AI_SHORT_PLAN_FALLBACK,
 		Context.sPrimaryThreat, NOBODY, 2);
+	VRPlannerTraceSelect(pSoldier, uiDecision, "contact_reassessment",
+		bBestAction, sBestSpot, iBestScore,
+		__max(iCurrentScore, iRunnerUpScore), FALSE,
+		"newly observed contact geometry justified repositioning");
 	return bBestAction;
 }
 
