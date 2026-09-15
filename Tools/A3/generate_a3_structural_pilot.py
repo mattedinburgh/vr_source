@@ -934,6 +934,17 @@ def generate_family(tilesets_root: Path, out_root: Path, qa_root: Path,
         generated.append(frame)
         labels.append(label)
 
+    passthrough_frames = []
+    if kind == "wall":
+        for i, (legacy, authored) in enumerate(zip(legacy_frames, generated)):
+            if i not in semantics:
+                passthrough_frames.append(i)
+                if authored.convert("RGBA").tobytes() != legacy.convert("RGBA").tobytes():
+                    raise ValueError(
+                        f"{family} frame {i}: unknown auxiliary frame was modified; "
+                        "canonical RGBA passthrough is mandatory"
+                    )
+
     contract = validate_generated_contract(
         family, source, legacy_frames, generated, meta, semantics
     )
@@ -956,6 +967,7 @@ def generate_family(tilesets_root: Path, out_root: Path, qa_root: Path,
         "jsd_contract": str(jsd_path) if jsd_path else "",
         "semantic_counts": semantic_counts,
         "door_frames": door_frames,
+        "passthrough_frames": passthrough_frames,
         "frames": len(generated),
         "output": str(out),
         "qa": str(qa_path),
@@ -1005,7 +1017,8 @@ def main() -> None:
     manifest = ns.out_root / "A3_STRUCTURAL_PILOT_MANIFEST.txt"
     lines = [
         "A3 STRUCTURAL PILOT - QUARANTINED / NOT ROUTED",
-        "Legacy RGB sampled: NO",
+        "Known semantic frames sample legacy RGB: NO",
+        "Unknown auxiliary wall frames: canonical RGBA passthrough REQUIRED",
         "Legacy contract retained: frame count, dimensions, offsets, alpha footprint",
         "Contract verification: REQUIRED before artifact write",
         f"Production strict mode: {'YES' if ns.strict else 'NO'}",
@@ -1023,9 +1036,13 @@ def main() -> None:
         jsd_note = f" jsd={r['jsd_contract']}" if r.get("jsd_contract") else ""
         sem_note = f" semantics={r['semantic_counts']}" if r.get("semantic_counts") else ""
         door_note = f" door_frames={r['door_frames']}" if r.get("door_frames") else ""
+        pass_note = (
+            f" passthrough_frames={r['passthrough_frames']}"
+            if r.get("passthrough_frames") else ""
+        )
         lines.append(
             f"{r['family']}: {r['kind']} {r['frames']} frames <- "
-            f"{r['source_contract']}{jsd_note}{sem_note}{door_note} "
+            f"{r['source_contract']}{jsd_note}{sem_note}{door_note}{pass_note} "
             f"contract={r['contract_signature'][:16]} "
             f"alpha={r['alpha_sha256'][:16]} "
             f"serialized_alpha={r['serialized_alpha_sha256'][:16]} "
