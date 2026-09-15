@@ -1,0 +1,29 @@
+name: Map Visual QA Regression
+
+on:
+  push:
+    branches:
+      - maps/visual-overhaul-2026
+    paths:
+      - 'Tools/Test-MapFactoryVisualQA.ps1'
+      - 'Tools/Test-MapFactoryVisualQARegression.ps1'
+      - 'Docs/MapVisualQA_Doctrine_2026.md'
+      - '.github/workflows/map-visual-qa-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Run map visual QA regression benchmark
+        shell: powershell
+        run: |
+          & '.\Tools\Test-MapFactoryVisualQARegression.ps1'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
