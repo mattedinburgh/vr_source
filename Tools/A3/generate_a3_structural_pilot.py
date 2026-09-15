@@ -339,6 +339,16 @@ def add_contract_edges(out: Image.Image, mask: Image.Image) -> None:
 STRUCTURE_OPEN = 0x00000002
 STRUCTURE_WALL = 0x00010000
 STRUCTURE_WALLNWINDOW = 0x00020000
+STRUCTURE_SLIDINGDOOR = 0x00040000
+STRUCTURE_DOOR = 0x00080000
+STRUCTURE_DDOOR_LEFT = 0x00400000
+STRUCTURE_DDOOR_RIGHT = 0x00800000
+STRUCTURE_ANYDOOR = (
+    STRUCTURE_SLIDINGDOOR
+    | STRUCTURE_DOOR
+    | STRUCTURE_DDOOR_LEFT
+    | STRUCTURE_DDOOR_RIGHT
+)
 
 
 def render_wall_aux(mask: Image.Image, family: str, index: int) -> Image.Image:
@@ -870,6 +880,21 @@ def generate_family(tilesets_root: Path, out_root: Path, qa_root: Path,
             f"{family}: structural family has no canonical JSD sibling for {source}"
         )
     semantics = parse_jsd_semantics(jsd_path)
+
+    # Production truth gate: never reinterpret a door frame as a generic wall or
+    # auxiliary sprite. The current A3 pilot has explicit wall/window rendering,
+    # but no door renderer yet. In strict mode this must stop the build rather
+    # than create visually plausible-but-wrong freestanding structures.
+    door_frames = sorted(
+        index for index, semantic in semantics.items()
+        if int(semantic.get("flags", 0)) & STRUCTURE_ANYDOOR
+    )
+    if ns.strict and door_frames:
+        raise RuntimeError(
+            f"{family}: unsupported door semantics in frame(s) {door_frames}; "
+            "dedicated door handling is required before production deployment"
+        )
+
     generated = []
     labels = []
 
@@ -924,6 +949,7 @@ def generate_family(tilesets_root: Path, out_root: Path, qa_root: Path,
         "source_contract": str(source),
         "jsd_contract": str(jsd_path) if jsd_path else "",
         "semantic_counts": semantic_counts,
+        "door_frames": door_frames,
         "frames": len(generated),
         "output": str(out),
         "qa": str(qa_path),
@@ -990,9 +1016,10 @@ def main() -> None:
     for r in results:
         jsd_note = f" jsd={r['jsd_contract']}" if r.get("jsd_contract") else ""
         sem_note = f" semantics={r['semantic_counts']}" if r.get("semantic_counts") else ""
+        door_note = f" door_frames={r['door_frames']}" if r.get("door_frames") else ""
         lines.append(
             f"{r['family']}: {r['kind']} {r['frames']} frames <- "
-            f"{r['source_contract']}{jsd_note}{sem_note} "
+            f"{r['source_contract']}{jsd_note}{sem_note}{door_note} "
             f"contract={r['contract_signature'][:16]} "
             f"alpha={r['alpha_sha256'][:16]} "
             f"serialized_alpha={r['serialized_alpha_sha256'][:16]} "
