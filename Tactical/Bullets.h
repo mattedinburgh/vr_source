@@ -16,6 +16,7 @@
 #define		BULLET_FLAG_BUCKSHOT					 0x0040
 #define		BULLET_FLAG_FLAME							 0x0080
 #define		BULLET_FLAG_TRACER							 0x0100
+#define		BULLET_FLAG_ANTIMATERIEL			 0x0200	// modern 1.13: special structural damage
 
 //afp-start calculate line points between two point
 #define BULLET_TRACER_MAX_LENGTH 60

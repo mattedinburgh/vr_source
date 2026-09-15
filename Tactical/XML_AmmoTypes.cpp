@@ -45,6 +45,15 @@ ammotypeStartElementHandle(void *userData, const XML_Char *name, const XML_Char 
 
 			memset(&pData->curAmmoType,0,sizeof(AMMOTYPE));
 
+			// Selective modern 1.13 port. Legacy Vengeance XML omits these fields,
+			// so neutral defaults preserve existing balance exactly.
+			pData->curAmmoType.dDamageModifierLife = 1.0f;
+			pData->curAmmoType.dDamageModifierBreath = 1.0f;
+			pData->curAmmoType.dDamageModifierTank = 1.0f;
+			pData->curAmmoType.dDamageModifierArmouredVehicle = 1.0f;
+			pData->curAmmoType.dDamageModifierCivilianVehicle = 1.0f;
+			pData->curAmmoType.dDamageModifierZombie = 1.0f;
+
 			pData->maxReadDepth++; //we are not skipping this element
 		}
 		else if(pData->curElement == ELEMENT &&
@@ -82,7 +91,13 @@ ammotypeStartElementHandle(void *userData, const XML_Char *name, const XML_Char 
 				strcmp(name, "temperatureModificator") == 0 ||
 				strcmp(name, "PoisonPercentage") == 0 ||
 				strcmp(name, "dirtModificator") == 0 ||
-				strcmp(name, "ammoflag") == 0 ))
+				strcmp(name, "ammoflag") == 0 ||
+				strcmp(name, "dDamageModifierLife") == 0 ||
+				strcmp(name, "dDamageModifierBreath") == 0 ||
+				strcmp(name, "dDamageModifierTank") == 0 ||
+				strcmp(name, "dDamageModifierArmouredVehicle") == 0 ||
+				strcmp(name, "dDamageModifierCivilianVehicle") == 0 ||
+				strcmp(name, "dDamageModifierZombie") == 0 ))
 		{
 			pData->curElement = ELEMENT_PROPERTY;
 
@@ -304,6 +319,36 @@ ammotypeEndElementHandle(void *userData, const XML_Char *name)
 			pData->curElement = ELEMENT;
 			pData->curAmmoType.ammoflag	= (UINT32) strtoul(pData->szCharData, NULL, 0);
 		}
+		else if(strcmp(name, "dDamageModifierLife") == 0)
+		{
+			pData->curElement = ELEMENT;
+			pData->curAmmoType.dDamageModifierLife = min(100.0f, max(0.0f, (FLOAT)atof(pData->szCharData)));
+		}
+		else if(strcmp(name, "dDamageModifierBreath") == 0)
+		{
+			pData->curElement = ELEMENT;
+			pData->curAmmoType.dDamageModifierBreath = min(100.0f, max(0.0f, (FLOAT)atof(pData->szCharData)));
+		}
+		else if(strcmp(name, "dDamageModifierTank") == 0)
+		{
+			pData->curElement = ELEMENT;
+			pData->curAmmoType.dDamageModifierTank = min(100.0f, max(0.0f, (FLOAT)atof(pData->szCharData)));
+		}
+		else if(strcmp(name, "dDamageModifierArmouredVehicle") == 0)
+		{
+			pData->curElement = ELEMENT;
+			pData->curAmmoType.dDamageModifierArmouredVehicle = min(100.0f, max(0.0f, (FLOAT)atof(pData->szCharData)));
+		}
+		else if(strcmp(name, "dDamageModifierCivilianVehicle") == 0)
+		{
+			pData->curElement = ELEMENT;
+			pData->curAmmoType.dDamageModifierCivilianVehicle = min(100.0f, max(0.0f, (FLOAT)atof(pData->szCharData)));
+		}
+		else if(strcmp(name, "dDamageModifierZombie") == 0)
+		{
+			pData->curElement = ELEMENT;
+			pData->curAmmoType.dDamageModifierZombie = min(100.0f, max(0.0f, (FLOAT)atof(pData->szCharData)));
+		}
 
 		pData->maxReadDepth--;
 	}
@@ -429,6 +474,13 @@ BOOLEAN WriteAmmoTypeStats()
 			FilePrintf(hFile,"\t\t<PoisonPercentage>%d</PoisonPercentage>\r\n",											AmmoTypes[cnt].poisonPercentage	);
 			FilePrintf(hFile,"\t\t<dirtModificator>%4.2f</dirtModificator>\r\n",							AmmoTypes[cnt].dirtModificator	);
 			FilePrintf(hFile,"\t\t<ammoflag>%d</ammoflag>\r\n",															AmmoTypes[cnt].ammoflag	);
+
+			FilePrintf(hFile,"\t\t<dDamageModifierLife>%4.2f</dDamageModifierLife>\r\n", AmmoTypes[cnt].dDamageModifierLife );
+			FilePrintf(hFile,"\t\t<dDamageModifierBreath>%4.2f</dDamageModifierBreath>\r\n", AmmoTypes[cnt].dDamageModifierBreath );
+			FilePrintf(hFile,"\t\t<dDamageModifierTank>%4.2f</dDamageModifierTank>\r\n", AmmoTypes[cnt].dDamageModifierTank );
+			FilePrintf(hFile,"\t\t<dDamageModifierArmouredVehicle>%4.2f</dDamageModifierArmouredVehicle>\r\n", AmmoTypes[cnt].dDamageModifierArmouredVehicle );
+			FilePrintf(hFile,"\t\t<dDamageModifierCivilianVehicle>%4.2f</dDamageModifierCivilianVehicle>\r\n", AmmoTypes[cnt].dDamageModifierCivilianVehicle );
+			FilePrintf(hFile,"\t\t<dDamageModifierZombie>%4.2f</dDamageModifierZombie>\r\n", AmmoTypes[cnt].dDamageModifierZombie );
 
 			FilePrintf(hFile,"\t</AMMOTYPE>\r\n");
 		}

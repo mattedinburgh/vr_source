@@ -8308,6 +8308,37 @@ INT32 BulletImpact( SOLDIERTYPE *pFirer, BULLET *pBullet, SOLDIERTYPE * pTarget,
 		}
 	}
 
+	// Modern 1.13 selective port: ammo may scale base damage by target class.
+	// Legacy Vengeance ammo defaults to 1.0, so unconfigured rounds are unchanged.
+	FLOAT fAmmoDamageModifier = AmmoTypes[ubAmmoType].dDamageModifierLife;
+	if ( pTarget->IsZombie() )
+	{
+		fAmmoDamageModifier *= AmmoTypes[ubAmmoType].dDamageModifierZombie;
+	}
+	else if ( TANK( pTarget ) )
+	{
+		fAmmoDamageModifier *= AmmoTypes[ubAmmoType].dDamageModifierTank;
+	}
+	else if ( AM_A_ROBOT( pTarget ) )
+	{
+		fAmmoDamageModifier *= AmmoTypes[ubAmmoType].dDamageModifierArmouredVehicle;
+	}
+	else if ( pTarget->flags.uiStatusFlags & SOLDIER_VEHICLE )
+	{
+		fAmmoDamageModifier *= AmmoTypes[ubAmmoType].dDamageModifierCivilianVehicle;
+	}
+
+	if ( fAmmoDamageModifier <= 0.0f )
+	{
+		damageDiag.iImpactBeforeArmour = iOrigImpact;
+		damageDiag.iFinalDamage = 0;
+		if ( damageDiag.fValid )
+			DamageRegisterBulletDiagnostic( damageDiag.iBullet, &damageDiag );
+		return 0;
+	}
+
+	iOrigImpact = (INT32)( iOrigImpact * fAmmoDamageModifier );
+
 	// plus/minus up to 25% due to "random" factors (major organs hit or missed,
 	// lucky lighter in breast pocket, divine intervention on behalf of "Rev"...)
 	iFluke = PreRandom(51) - 25;		// gives (0 to 50 -25)->-25% to +25%

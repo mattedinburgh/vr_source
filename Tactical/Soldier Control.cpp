@@ -7105,6 +7105,14 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 			fInterfacePanelDirty = DIRTYLEVEL2;
 		}
 		sBreathLoss += APBPConstants[BP_GET_HIT];
+
+		// Modern 1.13 selective port: let ammo scale breath/stun damage.
+		// This branch already guarantees a real attacker/gun ammo object.
+		UINT8 ubHitAmmoType = MercPtrs[ubAttackerID]->inv[MercPtrs[ubAttackerID]->ubAttackingHand][0]->data.gun.ubGunAmmoType;
+		FLOAT fBreathModifier = AmmoTypes[ubHitAmmoType].dDamageModifierBreath;
+		INT32 iModifiedBreathLoss = (INT32)( sBreathLoss * fBreathModifier );
+		sBreathLoss = (INT16)min( (INT32)32767, max( (INT32)0, iModifiedBreathLoss ) );
+
 		ubReason = TAKE_DAMAGE_GUNFIRE;
 	}
 	else if ( Item[ usWeaponIndex ].usItemClass & IC_BLADE )
