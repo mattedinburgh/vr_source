@@ -625,6 +625,7 @@ static void BlackBoxDrainExceptionFeed( void )
 	LONG snapshot;
 	LONG first;
 	LONG sequence;
+	LONG drainedThrough;
 
 	snapshot = gBlackBoxExceptionSequence;
 	if( snapshot <= gBlackBoxExceptionDrainedSequence )
@@ -634,20 +635,41 @@ static void BlackBoxDrainExceptionFeed( void )
 	if( snapshot - first + 1 > BLACKBOX_EXCEPTION_SLOTS )
 		first = snapshot - BLACKBOX_EXCEPTION_SLOTS + 1;
 
+	// If an exception storm overran the emergency ring, acknowledge the
+	// irrecoverable prefix. Never acknowledge a slot that is merely still being
+	// published; the next heartbeat should retry it.
+	drainedThrough = first - 1;
+
 	for( sequence = first; sequence <= snapshot; ++sequence )
 	{
 		LONG slot = ( sequence - 1 ) % BLACKBOX_EXCEPTION_SLOTS;
 		BLACKBOX_EXCEPTION_EVENT *event = &gBlackBoxExceptions[slot];
-		if( event->committedSequence != sequence )
-			continue;
+		LONG committedBefore = InterlockedCompareExchange(
+			&event->committedSequence, 0, 0 );
+		if( committedBefore != sequence )
+			break;
+
+		DWORD tick = event->tick;
+		DWORD threadId = event->threadId;
+		DWORD code = event->code;
+		PVOID address = event->address;
+		DWORD parameterCount = event->parameterCount;
+		ULONG_PTR info0 = event->info0;
+		ULONG_PTR info1 = event->info1;
+		LONG committedAfter = InterlockedCompareExchange(
+			&event->committedSequence, 0, 0 );
+
+		if( committedAfter != committedBefore )
+			break;
 
 		BlackBoxEvent( "SEH",
 			"firstChance seq=%ld code=0x%08lx address=0x%08x tid=%lu uptimeMs=%lu params=%lu info0=0x%08x info1=0x%08x",
-			sequence, event->code, event->address, event->threadId, event->tick,
-			event->parameterCount, event->info0, event->info1 );
+			sequence, code, address, threadId, tick,
+			parameterCount, info0, info1 );
+		drainedThrough = sequence;
 	}
 
-	gBlackBoxExceptionDrainedSequence = snapshot;
+	gBlackBoxExceptionDrainedSequence = drainedThrough;
 }
 
 void BlackBoxInitialize( void )
