@@ -644,10 +644,24 @@ def validate_runtime_alias_table() -> dict:
             f"missing={missing or 'none'} extra={extra or 'none'}"
         )
 
+    himage = repo_root / "Standard Gaming Platform" / "himage.cpp"
+    if not himage.is_file():
+        raise FileNotFoundError(f"B1TC loader source not found: {himage}")
+    loader_text = himage.read_text(encoding="utf-8", errors="replace")
+    sibling_start = loader_text.find("if(reader_type == STCI_FILE_READER)")
+    sibling_end = loader_text.find("/*", sibling_start)
+    if sibling_start < 0 or sibling_end < 0:
+        raise ValueError("STI -> B1TC sibling resolution block not found in himage.cpp")
+    sibling_block = loader_text[sibling_start:sibling_end]
+    if 'append("b1tc")' not in sibling_block or "return B1TC_FILE_READER" not in sibling_block:
+        raise ValueError("STI -> B1TC sibling resolution is no longer guaranteed")
+
     return {
         "engine_source": str(tile_surface),
+        "loader_source": str(himage),
         "aliases": len(expected),
         "alias_sha256": hashlib.sha256(block.encode("utf-8")).hexdigest(),
+        "loader_sha256": hashlib.sha256(sibling_block.encode("utf-8")).hexdigest(),
     }
 
 
@@ -967,6 +981,7 @@ def main() -> None:
             [
                 f"Runtime aliases verified: {alias_audit['aliases']}",
                 f"Runtime alias table hash: {alias_audit['alias_sha256'][:16]}",
+                f"STI-to-B1TC loader hash: {alias_audit['loader_sha256'][:16]}",
             ]
             if alias_audit else []
         ),
@@ -997,6 +1012,7 @@ def main() -> None:
     print(f"generated {len(results)} structural families; skipped {len(missing)}")
     if alias_audit:
         print(f"runtime alias verification: PASS ({alias_audit['aliases']} aliases)")
+        print("STI-to-B1TC sibling loader verification: PASS")
     print("contract verification: PASS")
     print(f"manifest: {manifest}")
     print(f"QA sheets: {qa_root}")
