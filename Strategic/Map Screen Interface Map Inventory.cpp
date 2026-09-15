@@ -444,8 +444,10 @@ void ToggleShowMoveItem()
 //
 // 3x ammo:
 //   * pools all spare ammo carried by eligible mercs with reachable sector ammo;
-//   * fills carried guns first, preserving a partial load unless a strictly better
-//     penetrator can provide a complete replacement load;
+//   * fills carried guns first, but gives every merc a round-robin readiness floor
+//     (up to 5 rounds in one usable gun) before anyone receives full top-ups;
+//     partial loads are preserved unless a strictly better penetrator can provide
+//     a complete replacement load;
 //   * then distributes spare ammo for squad readiness before surplus:
 //       - one weapon in a calibre gets up to 3 spare magazines;
 //       - if one merc carries 2+ weapons of the same calibre, those weapons share
@@ -971,7 +973,7 @@ static UINT16 BuildSectorAmmoObject( UINT8 ubCalibre, UINT16 usMagSize,
 
 // Loaded weapons have priority over spare magazines.  Partial magazines keep
 // their current ammo type; an empty gun uses the normal loadout ammo priority.
-static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject )
+static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject, UINT16 usMaxRoundsToAdd = 0 )
 {
 	if ( pGun == NULL || !pGun->exists() || !( Item[pGun->usItem].usItemClass & IC_GUN ) )
 		return 0;
@@ -996,7 +998,7 @@ static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject )
 		// Upgrade a partial gun only if a strictly better penetrator can provide
 		// a complete replacement magazine. The actual swap happens only after
 		// that new load has been successfully built, so failure cannot empty the gun.
-		if ( sBestFullType >= 0 &&
+		if ( usMaxRoundsToAdd == 0 && sBestFullType >= 0 &&
 			 SectorLoadoutAmmoTypeLess( (UINT8)sBestFullType, ubCurrentType ) &&
 			 CountSectorAmmoRounds( ubCalibre, (UINT8)sBestFullType ) >= usMagSize )
 		{
@@ -1022,6 +1024,9 @@ static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject )
 		return 0;
 
 	UINT16 usWanted = fReplaceCurrent ? usMagSize : ( usMagSize - usCurrent );
+	if ( usMaxRoundsToAdd > 0 && !fReplaceCurrent )
+		usWanted = (UINT16)__min( (UINT32)usWanted, (UINT32)usMaxRoundsToAdd );
+
 	UINT32 uiAvailable = CountSectorAmmoRounds( ubCalibre, (UINT8)sAmmoType );
 	usWanted = (UINT16)__min( (UINT32)usWanted, uiAvailable );
 	if ( usWanted == 0 )
@@ -1084,6 +1089,70 @@ static UINT32 TopUpAllSectorMercGuns()
 {
 	UINT32 uiRoundsLoaded = 0;
 
+	// Readiness floor before full magazines: in each pass every eligible merc gets
+	// at most one round added to one usable gun until that merc has a weapon with
+	// min(5, magazine size) rounds. If ammunition is extremely scarce, this means
+	// one shot per merc before anybody is allowed to consume the remaining pool.
+	for ( UINT8 ubReadinessPass = 0; ubReadinessPass < 5; ++ubReadinessPass )
+	{
+		BOOLEAN fAnyLoaded = FALSE;
+
+		for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
+			  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
+		{
+			SOLDIERTYPE *pSoldier = MercPtrs[id];
+			if ( !IsSectorLoadoutMercEligible( pSoldier ) )
+				continue;
+
+			BOOLEAN fReady = FALSE;
+			for ( INT32 bSlot = 0; bSlot < NUM_INV_SLOTS && !fReady; ++bSlot )
+			{
+				OBJECTTYPE *pGun = &( pSoldier->inv[bSlot] );
+				if ( !pGun->exists() || !( Item[pGun->usItem].usItemClass & IC_GUN ) )
+					continue;
+
+				for ( UINT8 x = 0; x < pGun->ubNumberOfObjects; ++x )
+				{
+					UINT16 usMagSize = GetMagSize( pGun, x );
+					UINT16 usReadyTarget = (UINT16)__min( (UINT32)5, (UINT32)usMagSize );
+					if ( usReadyTarget > 0 && (*pGun)[x]->data.gun.ubGunShotsLeft >= usReadyTarget )
+					{
+						fReady = TRUE;
+						break;
+					}
+				}
+			}
+
+			if ( fReady )
+				continue;
+
+			BOOLEAN fLoadedThisMerc = FALSE;
+			for ( INT32 bSlot = 0; bSlot < NUM_INV_SLOTS && !fLoadedThisMerc; ++bSlot )
+			{
+				OBJECTTYPE *pGun = &( pSoldier->inv[bSlot] );
+				if ( !pGun->exists() || !( Item[pGun->usItem].usItemClass & IC_GUN ) )
+					continue;
+
+				for ( UINT8 x = 0; x < pGun->ubNumberOfObjects; ++x )
+				{
+					UINT16 usAdded = TopUpGunFromSector( pGun, x, 1 );
+					if ( usAdded > 0 )
+					{
+						uiRoundsLoaded += usAdded;
+						fLoadedThisMerc = TRUE;
+						fAnyLoaded = TRUE;
+						break;
+					}
+				}
+			}
+		}
+
+		if ( !fAnyLoaded )
+			break;
+	}
+
+	// Once everyone has had the same opportunity to become combat-ready, top up
+	// all carried guns normally. Spare-magazine fairness is handled afterwards.
 	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
 		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
 	{
