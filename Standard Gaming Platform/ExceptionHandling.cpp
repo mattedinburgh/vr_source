@@ -113,7 +113,9 @@ static LONG gBlackBoxDeferredFlushCount = 0;
 static DWORD gBlackBoxLastFlushTick = 0;
 static LONG gBlackBoxSubsystemCursor = 0;
 static CHAR8 gBlackBoxEvents[BLACKBOX_EVENT_SLOTS][BLACKBOX_EVENT_CHARS];
+static volatile LONG gBlackBoxEventCommitted[BLACKBOX_EVENT_SLOTS];
 static CHAR8 gBlackBoxCheckpoints[BLACKBOX_CHECKPOINT_SLOTS][BLACKBOX_CHECKPOINT_CHARS];
+static volatile LONG gBlackBoxCheckpointCommitted[BLACKBOX_CHECKPOINT_SLOTS];
 static CHAR8 gBlackBoxCheckpoint[BLACKBOX_CHECKPOINT_CHARS] = "not initialized";
 static BLACKBOX_SUBSYSTEM_STATE gBlackBoxSubsystems[BLACKBOX_SUBSYSTEM_SLOTS];
 
@@ -645,7 +647,9 @@ void BlackBoxInitialize( void )
 	memset( gBlackBoxCounters, 0, sizeof( gBlackBoxCounters ) );
 	memset( gBlackBoxOperations, 0, sizeof( gBlackBoxOperations ) );
 	memset( gBlackBoxEvents, 0, sizeof( gBlackBoxEvents ) );
+	memset( (void*)gBlackBoxEventCommitted, 0, sizeof( gBlackBoxEventCommitted ) );
 	memset( gBlackBoxCheckpoints, 0, sizeof( gBlackBoxCheckpoints ) );
+	memset( (void*)gBlackBoxCheckpointCommitted, 0, sizeof( gBlackBoxCheckpointCommitted ) );
 	memset( gBlackBoxSubsystems, 0, sizeof( gBlackBoxSubsystems ) );
 	memset( gBlackBoxExceptions, 0, sizeof( gBlackBoxExceptions ) );
 	lstrcpynA( gBlackBoxCheckpoint, "initialized", BLACKBOX_CHECKPOINT_CHARS );
@@ -805,7 +809,9 @@ void BlackBoxEvent( const char *category, const char *format, ... )
 	line[ sizeof( line ) - 1 ] = 0;
 
 	slot = gBlackBoxEventSequence % BLACKBOX_EVENT_SLOTS;
+	InterlockedExchange( &gBlackBoxEventCommitted[slot], 0 );
 	lstrcpynA( gBlackBoxEvents[slot], line, BLACKBOX_EVENT_CHARS );
+	InterlockedExchange( &gBlackBoxEventCommitted[slot], sequence );
 	++gBlackBoxEventSequence;
 
 	if( gBlackBoxFile != INVALID_HANDLE_VALUE )
@@ -867,7 +873,9 @@ void BlackBoxCheckpoint( const char *subsystem, const char *format, ... )
 	// Keep a high-frequency memory-only history as well. Existing hot-path
 	// checkpoint calls automatically become much more useful without disk I/O.
 	slot = gBlackBoxCheckpointSequence % BLACKBOX_CHECKPOINT_SLOTS;
+	InterlockedExchange( &gBlackBoxCheckpointCommitted[slot], 0 );
 	lstrcpynA( gBlackBoxCheckpoints[slot], checkpoint, BLACKBOX_CHECKPOINT_CHARS );
+	InterlockedExchange( &gBlackBoxCheckpointCommitted[slot], sequence );
 	++gBlackBoxCheckpointSequence;
 
 	// Also retain the latest state independently for each subsystem so a MAP
@@ -1477,9 +1485,13 @@ static void BlackBoxDumpToCrashReport( HWFILE hFile, const EXCEPTION_RECORD *pRe
 	ErrorLog( hFile, "\r\nRecent high-frequency checkpoints (oldest to newest):\r\n" );
 	for( i = first; i < checkpointSequence; ++i )
 	{
+		LONG expectedSequence = i + 1;
 		slot = i % BLACKBOX_CHECKPOINT_SLOTS;
-		if( gBlackBoxCheckpoints[slot][0] )
+		if( gBlackBoxCheckpointCommitted[slot] == expectedSequence &&
+			gBlackBoxCheckpoints[slot][0] )
+		{
 			ErrorLog( hFile, "%s\r\n", gBlackBoxCheckpoints[slot] );
+		}
 	}
 
 	sequence = gBlackBoxEventSequence;
@@ -1488,9 +1500,13 @@ static void BlackBoxDumpToCrashReport( HWFILE hFile, const EXCEPTION_RECORD *pRe
 	ErrorLog( hFile, "\r\nRecent durable events (oldest to newest):\r\n" );
 	for( i = first; i < sequence; ++i )
 	{
+		LONG expectedSequence = i + 1;
 		slot = i % BLACKBOX_EVENT_SLOTS;
-		if( gBlackBoxEvents[slot][0] )
+		if( gBlackBoxEventCommitted[slot] == expectedSequence &&
+			gBlackBoxEvents[slot][0] )
+		{
 			ErrorLog( hFile, "%s", gBlackBoxEvents[slot] );
+		}
 	}
 	ErrorLog( hFile, "=======================================================\r\n" );
 }
