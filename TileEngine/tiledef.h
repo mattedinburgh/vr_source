@@ -80,6 +80,14 @@ typedef struct
 	// Reserved for added room and 32-byte boundaries
 	BYTE													bReserved[ 2 ];
 
+	// Optional per-tile camouflage affinity (1.13-style external properties).
+	// Zero values preserve Vengeance's legacy terrain-based camouflage fallback.
+	INT8													bWoodCamoAffinity;
+	INT8													bDesertCamoAffinity;
+	INT8													bUrbanCamoAffinity;
+	INT8													bSnowCamoAffinity;
+	INT8													bCamoStanceModifer;
+
 } TILE_IMAGERY, *PTILE_IMAGERY;
 
 typedef struct
@@ -126,6 +134,12 @@ typedef struct
 	// Reserved for added room and 32-byte boundaries
 	BYTE													bReserved[ 3 ];
 
+	INT8													bWoodCamoAffinity;
+	INT8													bDesertCamoAffinity;
+	INT8													bUrbanCamoAffinity;
+	INT8													bSnowCamoAffinity;
+	INT8													bCamoStanceModifer;
+
 
 } TILE_ELEMENT, *PTILE_ELEMENT;
 
@@ -156,6 +170,18 @@ extern UINT8						gTileTypeLogicalHeight[ NUMBEROFTILETYPES ];
 extern UINT16					gusNumAnimatedTiles;
 extern UINT16					gusAnimatedTiles[ MAX_ANIMATED_TILES ];
 extern UINT8					gTileTypeMovementCost[ NUM_TERRAIN_TYPES ];
+
+typedef struct
+{
+	INT8 bWoodCamoAffinity;
+	INT8 bDesertCamoAffinity;
+	INT8 bUrbanCamoAffinity;
+	INT8 bSnowCamoAffinity;
+	INT8 bCamoStanceModifer;
+} ADDITIONAL_TILE_CAMO_VALUES;
+
+extern ADDITIONAL_TILE_CAMO_VALUES zAdditionalTileCamoProperties;
+BOOLEAN ReadInAdditionalTileCamoProperties( STR fileName );
 
 void CreateTileDatabase( );
 
