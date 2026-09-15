@@ -50,6 +50,27 @@ typedef struct
 
 static AICONTACTTRACKER gAIContactTracker[MAX_NUM_SOLDIERS];
 
+#define AI_CONTACT_MEMORY_MAX_TURNS 12
+#define AI_CONTACT_MEMORY_MIN_CONFIDENCE 18
+
+typedef struct
+{
+	BOOLEAN fValid;
+	UINT32 uiObserverIdentity;
+	UINT32 uiOpponentIdentity;
+	INT32 sLastKnownGridNo;
+	INT8 bLevel;
+	UINT8 ubSource;
+	UINT8 ubBaseConfidence;
+	UINT32 uiLastVisualEvidenceTurn;
+} AICONTACTMEMORYSLOT;
+
+static AICONTACTMEMORYSLOT
+	gAIContactMemory[MAX_NUM_SOLDIERS][MAX_NUM_SOLDIERS];
+
+static void AIRecordContactMemory(
+	SOLDIERTYPE *pSoldier, const AICONTACTBELIEF *pBelief);
+
 static UINT8 AIKnowledgeAgeTurns(INT8 bKnowledge)
 {
 	switch (bKnowledge)
@@ -120,6 +141,12 @@ BOOLEAN AIBuildContactBelief(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID, AICONTAC
 	pBelief->ubAgeTurns = AIKnowledgeAgeTurns(bKnowledge);
 	pBelief->fDirectlyVisible =
 		(PersonalKnowledge(pSoldier, ubOpponentID) == SEEN_CURRENTLY);
+
+	// Only visual knowledge refreshes exact contact memory. Heard information and
+	// generic noises may corroborate a remembered sector later, but they do not
+	// silently identify the unseen shooter.
+	if (pBelief->bKnowledge > NOT_HEARD_OR_SEEN)
+		AIRecordContactMemory(pSoldier, pBelief);
 
 	return TRUE;
 }
@@ -194,6 +221,326 @@ static UINT8 AIGeometryRotate(UINT8 ubDirection, INT8 bSteps)
 	return (UINT8)iDirection;
 }
 
+static UINT8 AIContactMemoryAge(const AICONTACTMEMORYSLOT *pSlot)
+{
+	if (!pSlot || !pSlot->fValid)
+		return 255;
+
+	if (guiTurnCnt < pSlot->uiLastVisualEvidenceTurn)
+		return 255;
+
+	UINT32 uiAge = guiTurnCnt - pSlot->uiLastVisualEvidenceTurn;
+	return (UINT8)__min((UINT32)255, uiAge);
+}
+
+static UINT8 AIContactMemoryConfidence(const AICONTACTMEMORYSLOT *pSlot)
+{
+	const UINT8 ubAge = AIContactMemoryAge(pSlot);
+	if (!pSlot || !pSlot->fValid || ubAge == 255 ||
+		ubAge > AI_CONTACT_MEMORY_MAX_TURNS)
+	{
+		return 0;
+	}
+
+	INT32 iDecayPerTurn =
+		(pSlot->ubSource == AI_BELIEF_SOURCE_PERSONAL) ? 6 : 9;
+	INT32 iConfidence =
+		(INT32)pSlot->ubBaseConfidence - iDecayPerTurn * (INT32)ubAge;
+
+	return (UINT8)__max(0, __min(100, iConfidence));
+}
+
+static void AIRecordContactMemory(
+	SOLDIERTYPE *pSoldier, const AICONTACTBELIEF *pBelief)
+{
+	if (!pSoldier || !pBelief ||
+		pSoldier->ubID >= MAX_NUM_SOLDIERS ||
+		pBelief->ubOpponentID == NOBODY ||
+		pBelief->ubOpponentID >= MAX_NUM_SOLDIERS ||
+		TileIsOutOfBounds(pBelief->sGridNo) ||
+		pBelief->bKnowledge <= NOT_HEARD_OR_SEEN)
+	{
+		return;
+	}
+
+	AICONTACTMEMORYSLOT *pSlot =
+		&gAIContactMemory[pSoldier->ubID][pBelief->ubOpponentID];
+
+	UINT8 ubBase = pBelief->ubConfidence;
+	if (pBelief->ubSource == AI_BELIEF_SOURCE_PERSONAL)
+		ubBase = (UINT8)__max((INT32)80, (INT32)ubBase);
+	else
+		ubBase = (UINT8)__max((INT32)65, (INT32)ubBase);
+
+	memset(pSlot, 0, sizeof(AICONTACTMEMORYSLOT));
+	pSlot->fValid = TRUE;
+	pSlot->uiObserverIdentity = pSoldier->uiUniqueSoldierIdValue;
+	pSlot->sLastKnownGridNo = pBelief->sGridNo;
+	pSlot->bLevel = pBelief->bLevel;
+	pSlot->ubSource = pBelief->ubSource;
+	pSlot->ubBaseConfidence = ubBase;
+	pSlot->uiLastVisualEvidenceTurn = guiTurnCnt;
+
+	// Identity is bookkeeping only. It prevents a recycled soldier slot from
+	// inheriting somebody else's remembered contact; it is never used as evidence.
+	SOLDIERTYPE *pOpponent = MercPtrs[pBelief->ubOpponentID];
+	pSlot->uiOpponentIdentity =
+		pOpponent ? pOpponent->uiUniqueSoldierIdValue : 0;
+}
+
+static void AIRefreshThreatMemoryFromKnowledge(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return;
+
+	for (UINT16 i = 0; i < TOTAL_SOLDIERS && i < MAX_NUM_SOLDIERS; ++i)
+	{
+		SOLDIERTYPE *pOpponent = MercPtrs[i];
+		if (!pOpponent ||
+			CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			pSoldier->bSide == pOpponent->bSide)
+		{
+			continue;
+		}
+
+		INT8 bKnowledge = Knowledge(pSoldier, (UINT8)i);
+		if (bKnowledge <= NOT_HEARD_OR_SEEN)
+			continue;
+
+		INT32 sKnown = KnownLocation(pSoldier, (UINT8)i);
+		if (TileIsOutOfBounds(sKnown))
+			continue;
+
+		AICONTACTBELIEF Belief;
+		memset(&Belief, 0, sizeof(Belief));
+		Belief.ubOpponentID = (UINT8)i;
+		Belief.sGridNo = sKnown;
+		Belief.bLevel = KnownLevel(pSoldier, (UINT8)i);
+		Belief.bKnowledge = bKnowledge;
+		Belief.ubSource = UsePersonalKnowledge(pSoldier, (UINT8)i) ?
+			AI_BELIEF_SOURCE_PERSONAL : AI_BELIEF_SOURCE_PUBLIC;
+
+		INT32 iKnowledgeIndex =
+			(INT32)bKnowledge - (INT32)OLDEST_HEARD_VALUE;
+		if (iKnowledgeIndex >= 0 && iKnowledgeIndex < 10)
+			Belief.ubConfidence = (UINT8)__max(
+				0, __min(100, ThreatPercent[iKnowledgeIndex]));
+
+		AIRecordContactMemory(pSoldier, &Belief);
+	}
+}
+
+static BOOLEAN AIUsableContactMemory(
+	SOLDIERTYPE *pSoldier, UINT8 ubOpponentID,
+	AICONTACTMEMORYSLOT **ppSlot, UINT8 *pubConfidence)
+{
+	if (ppSlot) *ppSlot = NULL;
+	if (pubConfidence) *pubConfidence = 0;
+
+	if (!pSoldier ||
+		pSoldier->ubID >= MAX_NUM_SOLDIERS ||
+		ubOpponentID >= MAX_NUM_SOLDIERS)
+	{
+		return FALSE;
+	}
+
+	AICONTACTMEMORYSLOT *pSlot =
+		&gAIContactMemory[pSoldier->ubID][ubOpponentID];
+
+	if (!pSlot->fValid ||
+		pSlot->uiObserverIdentity != pSoldier->uiUniqueSoldierIdValue ||
+		TileIsOutOfBounds(pSlot->sLastKnownGridNo))
+	{
+		return FALSE;
+	}
+
+	UINT8 ubConfidence = AIContactMemoryConfidence(pSlot);
+	if (ubConfidence < AI_CONTACT_MEMORY_MIN_CONFIDENCE)
+	{
+		memset(pSlot, 0, sizeof(AICONTACTMEMORYSLOT));
+		pSlot->sLastKnownGridNo = NOWHERE;
+		return FALSE;
+	}
+
+	// If the soldier has reached and can inspect the remembered location without
+	// reacquiring the opponent, sharply retire that hypothesis instead of pacing
+	// back to the same empty tile forever.
+	if (Knowledge(pSoldier, ubOpponentID) == NOT_HEARD_OR_SEEN &&
+		pSlot->bLevel == pSoldier->pathing.bLevel &&
+		PythSpacesAway(pSoldier->sGridNo, pSlot->sLastKnownGridNo) <= 4 &&
+		SoldierTo3DLocationLineOfSightTest(
+			pSoldier, pSlot->sLastKnownGridNo, pSlot->bLevel,
+			0, FALSE, NO_DISTANCE_LIMIT) > 0)
+	{
+		if (ubConfidence <= 45)
+		{
+			memset(pSlot, 0, sizeof(AICONTACTMEMORYSLOT));
+			pSlot->sLastKnownGridNo = NOWHERE;
+			return FALSE;
+		}
+
+		pSlot->ubBaseConfidence =
+			(UINT8)__max(0, (INT32)pSlot->ubBaseConfidence - 35);
+		ubConfidence = AIContactMemoryConfidence(pSlot);
+	}
+
+	if (ppSlot) *ppSlot = pSlot;
+	if (pubConfidence) *pubConfidence = ubConfidence;
+	return TRUE;
+}
+
+BOOLEAN AIBuildThreatMemoryCue(
+	SOLDIERTYPE *pSoldier, AITHREATMEMORYCUE *pCue)
+{
+	if (!pCue)
+		return FALSE;
+
+	memset(pCue, 0, sizeof(AITHREATMEMORYCUE));
+	pCue->sGridNo = NOWHERE;
+	pCue->bLevel = 0;
+	pCue->ubDirection = DIRECTION_IRRELEVANT;
+	pCue->ubAgeTurns = 255;
+
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return FALSE;
+
+	AIRefreshThreatMemoryFromKnowledge(pSoldier);
+
+	INT32 iBestScore = -1000000;
+	UINT8 ubBestOpponent = NOBODY;
+
+	for (UINT16 i = 0; i < TOTAL_SOLDIERS && i < MAX_NUM_SOLDIERS; ++i)
+	{
+		// Normal legal knowledge is stronger than memory and should be handled by
+		// the ordinary JA2 opponent/noise logic.
+		if (Knowledge(pSoldier, (UINT8)i) != NOT_HEARD_OR_SEEN)
+			continue;
+
+		AICONTACTMEMORYSLOT *pSlot = NULL;
+		UINT8 ubConfidence = 0;
+		if (!AIUsableContactMemory(
+			pSoldier, (UINT8)i, &pSlot, &ubConfidence))
+		{
+			continue;
+		}
+
+		INT32 iDistance =
+			PythSpacesAway(pSoldier->sGridNo, pSlot->sLastKnownGridNo);
+		INT32 iScore =
+			(INT32)ubConfidence * 3 - __min(80, iDistance * 2);
+
+		if (pSlot->ubSource == AI_BELIEF_SOURCE_PERSONAL)
+			iScore += 20;
+
+		if (iScore > iBestScore)
+		{
+			iBestScore = iScore;
+			ubBestOpponent = (UINT8)i;
+			pCue->sGridNo = pSlot->sLastKnownGridNo;
+			pCue->bLevel = pSlot->bLevel;
+			pCue->ubDirection =
+				AIDirection(pSoldier->sGridNo, pSlot->sLastKnownGridNo);
+			pCue->ubConfidence = ubConfidence;
+			pCue->ubAgeTurns = AIContactMemoryAge(pSlot);
+		}
+	}
+
+	if (ubBestOpponent == NOBODY || TileIsOutOfBounds(pCue->sGridNo))
+		return FALSE;
+
+	// Count other remembered contacts supporting roughly the same sector. This is
+	// evidence of an area of concern, not evidence that those opponents are there now.
+	for (UINT16 i = 0; i < TOTAL_SOLDIERS && i < MAX_NUM_SOLDIERS; ++i)
+	{
+		AICONTACTMEMORYSLOT *pSlot = NULL;
+		UINT8 ubConfidence = 0;
+		if (!AIUsableContactMemory(
+			pSoldier, (UINT8)i, &pSlot, &ubConfidence))
+		{
+			continue;
+		}
+
+		UINT8 ubDir =
+			AIDirection(pSoldier->sGridNo, pSlot->sLastKnownGridNo);
+		if (AIGeometryDirectionDelta(ubDir, pCue->ubDirection) <= 1 &&
+			pCue->ubMatchedMemories < 255)
+		{
+			++pCue->ubMatchedMemories;
+		}
+	}
+
+	return TRUE;
+}
+
+INT32 AIMemoryNoiseRelevance(
+	SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo, INT8 bNoiseLevel)
+{
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS ||
+		TileIsOutOfBounds(sNoiseGridNo))
+	{
+		return 0;
+	}
+
+	AIRefreshThreatMemoryFromKnowledge(pSoldier);
+
+	UINT8 ubNoiseDir = AIDirection(pSoldier->sGridNo, sNoiseGridNo);
+	if (ubNoiseDir >= NUM_WORLD_DIRECTIONS)
+		return 0;
+
+	INT32 iBest = 0;
+
+	for (UINT16 i = 0; i < TOTAL_SOLDIERS && i < MAX_NUM_SOLDIERS; ++i)
+	{
+		// If the opponent is currently visible, this is not a memory inference.
+		if (PersonalKnowledge(pSoldier, (UINT8)i) == SEEN_CURRENTLY)
+			continue;
+
+		AICONTACTMEMORYSLOT *pSlot = NULL;
+		UINT8 ubConfidence = 0;
+		if (!AIUsableContactMemory(
+			pSoldier, (UINT8)i, &pSlot, &ubConfidence))
+		{
+			continue;
+		}
+
+		UINT8 ubMemoryDir =
+			AIDirection(pSoldier->sGridNo, pSlot->sLastKnownGridNo);
+		UINT8 ubDelta =
+			AIGeometryDirectionDelta(ubMemoryDir, ubNoiseDir);
+
+		INT32 iScore = 0;
+		if (ubDelta == 0)
+			iScore += 38;
+		else if (ubDelta == 1)
+			iScore += 24;
+		else if (ubDelta == 2)
+			iScore += 8;
+		else
+			continue;
+
+		INT32 iEvidenceDistance =
+			PythSpacesAway(pSlot->sLastKnownGridNo, sNoiseGridNo);
+		if (iEvidenceDistance <= 3)
+			iScore += 24;
+		else if (iEvidenceDistance <= __max(4, TACTICAL_RANGE / 3))
+			iScore += 15;
+		else if (iEvidenceDistance <= __max(6, TACTICAL_RANGE / 2))
+			iScore += 8;
+
+		if (pSlot->bLevel == bNoiseLevel)
+			iScore += 6;
+		else
+			iScore /= 2;
+
+		iScore = (iScore * (INT32)ubConfidence) / 100;
+		iBest = __max(iBest, iScore);
+	}
+
+	// Corroboration should materially affect investigation priority without turning
+	// a noise into precise opponent knowledge.
+	return __min(60, iBest);
+}
+
 static INT32 AIGeometryDirectionalThreat(const AITACTICALGEOMETRY *pGeometry, UINT8 ubDirection)
 {
 	if (!pGeometry || ubDirection >= NUM_WORLD_DIRECTIONS)
@@ -241,6 +588,8 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 	if (!pSoldier || TileIsOutOfBounds(sAnchorGridNo))
 		return FALSE;
 
+	AIRefreshThreatMemoryFromKnowledge(pSoldier);
+
 	// Opponent geometry is belief-bound. Stale/heard contacts contribute less
 	// pressure through the normal ThreatPercent-derived belief confidence.
 	for (UINT16 i = 0; i < TOTAL_SOLDIERS; ++i)
@@ -271,6 +620,38 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 		pGeometry->usThreatPressure[ubDir] = (UINT16)__min(
 			65535, (INT32)pGeometry->usThreatPressure[ubDir] + iPressure);
 		++pGeometry->ubKnownContacts;
+	}
+
+	// Once normal JA2 knowledge expires, retain only low-confidence directional
+	// pressure from the last visually established location. It may influence
+	// caution/search/flank choice but is too weak to authorize an attack.
+	for (UINT16 i = 0; i < TOTAL_SOLDIERS && i < MAX_NUM_SOLDIERS; ++i)
+	{
+		if (Knowledge(pSoldier, (UINT8)i) != NOT_HEARD_OR_SEEN)
+			continue;
+
+		AICONTACTMEMORYSLOT *pSlot = NULL;
+		UINT8 ubConfidence = 0;
+		if (!AIUsableContactMemory(
+			pSoldier, (UINT8)i, &pSlot, &ubConfidence))
+		{
+			continue;
+		}
+
+		UINT8 ubDir =
+			AIDirection(sAnchorGridNo, pSlot->sLastKnownGridNo);
+		if (ubDir >= NUM_WORLD_DIRECTIONS)
+			continue;
+
+		INT32 iPressure = __max(4, (INT32)ubConfidence / 3);
+		if (pSlot->ubSource == AI_BELIEF_SOURCE_PUBLIC)
+			iPressure = (3 * iPressure) / 4;
+
+		pGeometry->usThreatPressure[ubDir] = (UINT16)__min(
+			65535, (INT32)pGeometry->usThreatPressure[ubDir] + iPressure);
+		pGeometry->ubMemoryDirectionMask |= (UINT8)(1 << ubDir);
+		if (pGeometry->ubRememberedContacts < 255)
+			++pGeometry->ubRememberedContacts;
 	}
 
 	// Friendly geometry is intentionally local. Combat teams coordinate only with
@@ -349,7 +730,9 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 		}
 	}
 
-	if (pGeometry->ubKnownContacts == 0 || iPrimary <= 0)
+	if ((pGeometry->ubKnownContacts == 0 &&
+		 pGeometry->ubRememberedContacts == 0) ||
+		iPrimary <= 0)
 	{
 		pGeometry->ubPrimaryThreatDir = DIRECTION_IRRELEVANT;
 		pGeometry->ubSecondaryThreatDir = DIRECTION_IRRELEVANT;
@@ -1016,6 +1399,7 @@ void AIResetTacticalReasoningStateForLoad(void)
 	memset(gAITaskReservations, 0, sizeof(gAITaskReservations));
 	memset(gAIShortPlans, 0, sizeof(gAIShortPlans));
 	memset(gAIContactTracker, 0, sizeof(gAIContactTracker));
+	memset(gAIContactMemory, 0, sizeof(gAIContactMemory));
 
 	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
 	{
@@ -1024,5 +1408,7 @@ void AIResetTacticalReasoningStateForLoad(void)
 		gAIShortPlans[i].Plan.sTargetGridNo = NOWHERE;
 		gAIShortPlans[i].Plan.ubTargetID = NOBODY;
 		gAIContactTracker[i].sLastDecisionGridNo = NOWHERE;
+		for (UINT16 j = 0; j < MAX_NUM_SOLDIERS; ++j)
+			gAIContactMemory[i][j].sLastKnownGridNo = NOWHERE;
 	}
 }
