@@ -2836,7 +2836,7 @@ UINT32 DisplayInvSlot( UINT16 ubSlotNum, UINT16 usItemIndex, UINT16 usPosX, UINT
 	//Display the item graphic, and price
 	pItem = &Item[ usItemIndex ];
 	GetVideoObject( &hVObject, GetInterfaceGraphicForItem( pItem ) );
-	UINT16 usGraphicNum = g_bUsePngItemImages ? 0 : pItem->ubGraphicNum;
+	UINT16 usGraphicNum = GetInterfaceGraphicSubIndex(pItem->ubGraphicType, pItem->ubGraphicNum);
 	pTrav = &(hVObject->pETRLEObject[ usGraphicNum ] );
 
 	usHeight				= (UINT32)pTrav->usHeight;
@@ -2851,10 +2851,10 @@ UINT32 DisplayInvSlot( UINT16 ubSlotNum, UINT16 usItemIndex, UINT16 usPosX, UINT
 
 
 	//blt the shadow of the item
-	if(gGameSettings.fOptions[ TOPTION_SHOW_ITEM_SHADOW ]) BltVideoObjectOutlineShadowFromIndex( FRAME_BUFFER, GetInterfaceGraphicForItem( pItem ), g_bUsePngItemImages ? 0 : pItem->ubGraphicNum, sCenX-2, sCenY+2);
+	if(gGameSettings.fOptions[ TOPTION_SHOW_ITEM_SHADOW ]) BltVideoObjectOutlineShadowFromIndex( FRAME_BUFFER, GetInterfaceGraphicForItem( pItem ), GetInterfaceGraphicSubIndex(pItem->ubGraphicType, pItem->ubGraphicNum), sCenX-2, sCenY+2);
 
 	//blt the item
-	BltVideoObjectOutlineFromIndex( FRAME_BUFFER, GetInterfaceGraphicForItem( pItem ), g_bUsePngItemImages ? 0 : pItem->ubGraphicNum, sCenX, sCenY, Get16BPPColor( FROMRGB( 255, 255, 255 ) ), fHighlighted );
+	BltVideoObjectOutlineFromIndex( FRAME_BUFFER, GetInterfaceGraphicForItem( pItem ), GetInterfaceGraphicSubIndex(pItem->ubGraphicType, pItem->ubGraphicNum), sCenX, sCenY, Get16BPPColor( FROMRGB( 255, 255, 255 ) ), fHighlighted );
 
 	//Moa: encyclopedia item visibility
 	EncyclopediaSetItemAsVisible( usItemIndex, ENC_ITEM_DISCOVERED_INSPECTABLE );
@@ -4749,7 +4749,7 @@ void SetSkiCursor( UINT16	usCursor )
 
 		// Set mouse
 		guiExternVo = GetInterfaceGraphicForItem( &(Item[ gMoveingItem.sItemIndex ]) );
-		gusExternVoSubIndex = g_bUsePngItemImages ? 0 : Item[ gMoveingItem.sItemIndex ].ubGraphicNum;
+		gusExternVoSubIndex = GetInterfaceGraphicSubIndex(Item[ gMoveingItem.sItemIndex ].ubGraphicType, Item[ gMoveingItem.sItemIndex ].ubGraphicNum);
 		SetCurrentCursorFromDatabase( EXTERN_CURSOR );
 
 		MSYS_ChangeRegionCursor( &gSMPanelRegion, usCursor );

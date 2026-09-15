@@ -1640,7 +1640,7 @@ BOOLEAN DisplayMERCMercsInventory(UINT8 ubMercID)
 				GetVideoObject( &hVObject, GetInterfaceGraphicForItem( pItem ) );
 				/*JMich_MMG: this is the original one, but g_bUsePngItemImages is set to false, so I'm skipping it
 				UINT16 usGraphicNum = g_bUsePngItemImages ? 0 : pItem->ubGraphicNum;*/
-				UINT16 usGraphicNum = pItem->ubGraphicNum;
+				UINT16 usGraphicNum = GetInterfaceGraphicSubIndex(pItem->ubGraphicType, pItem->ubGraphicNum);
 				
 				if(usGraphicNum < hVObject->usNumberOfObjects)
 				{
