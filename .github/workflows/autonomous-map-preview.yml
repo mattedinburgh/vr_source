@@ -1,4 +1,4 @@
-name: Autonomous JA2 map visual QA
+name: RETIRED - Autonomous JA2 map bake QA
 
 on:
   push:
@@ -17,7 +17,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Retired: this workflow persists modified DAT maps and belongs to the superseded
+  # map-bake methodology. Graphics-only map work must not execute it.
   render-a3:
+    if: ${{ false }}
     runs-on: [self-hosted, Windows, X64, ja2-render]
     timeout-minutes: 60
 
