@@ -1,0 +1,65 @@
+name: Apply reviewed VHD cache modernization
+
+on:
+  push:
+    branches:
+      - engine/vhd-modernization-2026
+    paths:
+      - '.automation/vhd-cache-reviewed.trigger'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-vhd-cache-reviewed
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out modernization branch
+        uses: actions/checkout@v4
+        with:
+          ref: engine/vhd-modernization-2026
+          fetch-depth: 80
+
+      - name: Integrate reviewed cache slice
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git fetch --no-tags --depth=100 origin engine/vhd-cache-modernization-2026-09-15
+
+          for commit in \
+            3fe91cd450 \
+            d979c0190f \
+            e3472cb20f \
+            0143730fdb \
+            5c7b5a6a54 \
+            fa8d2a055b \
+            0d0d16c6c0
+          do
+            git cherry-pick "$commit"
+          done
+
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("TileEngine/Tile Cache.cpp")
+          s = p.read_text(encoding="utf-8")
+          old = "if ( ulBudgetMB > 1024 ) ulBudgetMB = 1024;"
+          new = "if ( ulBudgetMB > 512 ) ulBudgetMB = 512; // Win32/non-LAA: preserve address-space headroom."
+          if old not in s:
+              raise SystemExit("Expected VHD cache budget clamp not found")
+          p.write_text(s.replace(old, new, 1), encoding="utf-8")
+          PY
+
+          git add "TileEngine/Tile Cache.cpp"
+          git diff --cached --check
+          git commit -m "VHD cache: cap override for Win32 address space"
+
+          git rm .automation/vhd-cache-reviewed.trigger
+          git commit -m "Automation: clear reviewed VHD cache trigger"
+          git push origin HEAD:engine/vhd-modernization-2026
