@@ -347,7 +347,7 @@ namespace LogicalBodyTypes {
 			SOLDIER_CLASS_ELITE_MILITIA,
 			SOLDIER_CLASS_CREATURE,
 			SOLDIER_CLASS_MINER,
-			SOLDIER_CLASS_ZOMBIE,
+			SOLDIER_CLASS_ZOMBIE
 		);
 
 		/*****************************************
@@ -389,7 +389,7 @@ namespace LogicalBodyTypes {
 			TANK_NE,
 			ELDORADO,
 			ICECREAMTRUCK,
-			JEEP,
+			JEEP
 		);
 
 		/*****************************************
@@ -419,8 +419,8 @@ namespace LogicalBodyTypes {
 			ASSASSIN_CIV_GROUP,
 			POW_PRISON_CIV_GROUP,
 			UNNAMED_CIV_GROUP_22,
-			UNNAMED_CIV_GROUP_23,
-			UNNAMED_CIV_GROUP_36,
+			UNNAMED_CIV_GROUP_23,
+			UNNAMED_CIV_GROUP_36,
 			UNNAMED_CIV_GROUP_38,
 			UNNAMED_CIV_GROUP_39,
 			UNNAMED_CIV_GROUP_40,
