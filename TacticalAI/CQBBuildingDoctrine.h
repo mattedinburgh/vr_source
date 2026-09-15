@@ -48,6 +48,7 @@ enum VRCQB_REASON
 	VRCQB_REASON_SECURITY_REFUSES_COMPLEX_ASSAULT,
 	VRCQB_REASON_INSUFFICIENT_ENTRY_SUPPORT,
 	VRCQB_REASON_ASSAULT_HESITATION,
+	VRCQB_REASON_UNRESOLVED_CONTACT_MEMORY,
 	VRCQB_REASON_MAX
 };
 
@@ -114,6 +115,8 @@ struct VRCQB_CONTEXT
 	BOOLEAN fEntryExposed;
 	BOOLEAN fHasLocalSupport;
 	BOOLEAN fFallbackAvailable;
+	BOOLEAN fMemoryThreatInSameRoom;
+	BOOLEAN fMemoryThreatInSameBuilding;
 
 	UINT16 usRoomNo;
 	UINT16 usThreatRoomNo;
@@ -121,8 +124,11 @@ struct VRCQB_CONTEXT
 	UINT8 ubThreatBuildingID;
 	UINT8 ubKnownThreats;
 	UINT8 ubLocalFriends;
+	UINT8 ubMemoryThreatConfidence;
 
 	INT32 sPrimaryKnownThreat;
+	INT32 sMemoryThreat;
+	INT8 bMemoryThreatLevel;
 	INT8 bPrimaryKnownThreatLevel;
 	INT32 sPreferredEntry;
 	INT32 sPreferredFoothold;
