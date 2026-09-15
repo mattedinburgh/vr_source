@@ -184,6 +184,16 @@ class CompanionAnalysisTests(unittest.TestCase):
         self.assertEqual(1, len(result["overrange_records"]))
 
 
+    def test_session_summary_marks_clean_and_unclean_sessions(self):
+        events = [
+            {"schema": "vr-blackbox-1", "session": 10, "seq": 1, "kind": "session_start"},
+            {"schema": "vr-blackbox-1", "session": 10, "seq": 2, "kind": "session_end"},
+            {"schema": "vr-blackbox-1", "session": 11, "seq": 1, "kind": "session_start"},
+        ]
+        summary = companion.session_summary(events)
+        self.assertEqual([10], summary["ended_sessions"])
+        self.assertEqual([11], summary["unclean_sessions"])
+
     def test_truncated_final_jsonl_record_is_recovered(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "VR_BlackBox.jsonl"
