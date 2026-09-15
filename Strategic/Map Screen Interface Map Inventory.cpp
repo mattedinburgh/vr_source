@@ -2959,34 +2959,58 @@ void CreateMapInventoryButtons( void )
 	ButtonList[ guiMapInvenFilterButton[ 9 ] ]->UserData[1] = 0;
 	*/
 
-	// Vengeance: compact squad logistics buttons.
-	// On 1024+ layouts these sit to the RIGHT of the black header/status panel,
-	// clear of the standard sort/filter toolbar. Keep the compact 28x13 treatment
-	// and 2px inter-button gap so they remain visually consistent with this UI.
-	// Lower resolutions retain safe fallback positions rather than going off-screen.
-	INT16 sLoadoutButtonX = INVEN_POOL_X + 50 + xResOffset;
-	if ( iResolution >= _1024x768 )
-		sLoadoutButtonX = INVEN_POOL_X + 590 + xResOffset;
-	else if ( iResolution >= _800x600 )
-		sLoadoutButtonX = INVEN_POOL_X + 430 + xResOffset;
+	// Vengeance: squad logistics controls.
+	//
+	// At normal/HD resolutions these are deliberately about twice the original
+	// 28x13 size and anchored to the right edge of the screen. This keeps them
+	// away from the dense sort/filter toolbar and makes them usable at 1080p+.
+	// Very small legacy resolutions use a reduced fallback to avoid overlap.
+	INT16 sLoadoutButtonW = 56;
+	INT16 sLoadoutButtonH = 26;
+	INT16 sLoadoutButtonGap = 4;
+	INT16 sLoadoutButtonY = INVEN_POOL_Y + 10 + yResOffset;
 
-	guiMapInvenLoadoutButton[0] = CreateTextButton( L"3x", SMALLCOMPFONT, FONT_WHITE, DEFAULT_SHADOW,
-		BUTTON_USE_DEFAULT, sLoadoutButtonX, INVEN_POOL_Y + 24 + yResOffset, 28, 13,
+	if ( iResolution < _1024x768 )
+	{
+		sLoadoutButtonW = 42;
+		sLoadoutButtonH = 20;
+		sLoadoutButtonGap = 2;
+		sLoadoutButtonY = INVEN_POOL_Y + 39 + yResOffset;
+	}
+
+	INT16 sLoadoutButtonX = SCREEN_WIDTH -
+		( sLoadoutButtonW * 3 + sLoadoutButtonGap * 2 ) - 12;
+
+	guiMapInvenLoadoutButton[0] = CreateTextButton( L"3x MAG", COMPFONT, FONT_MCOLOR_DKWHITE, FONT_BLACK,
+		BUTTON_USE_DEFAULT, sLoadoutButtonX, sLoadoutButtonY, sLoadoutButtonW, sLoadoutButtonH,
 		BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST, NULL, (GUI_CALLBACK)MapInventoryPoolAmmo3xBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[0],
 		L"3x: cargar armas primero y luego dar 3 cargadores por arma. Municion: mayor penetracion de blindaje primero, segun valores XML; reparto equilibrado segun espacio." );
 
-	guiMapInvenLoadoutButton[1] = CreateTextButton( L"SMK", SMALLCOMPFONT, FONT_WHITE, DEFAULT_SHADOW,
-		BUTTON_USE_DEFAULT, sLoadoutButtonX + 30, INVEN_POOL_Y + 24 + yResOffset, 28, 13,
-		BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST, NULL, (GUI_CALLBACK)MapInventoryPoolSmokeBtn );
+	guiMapInvenLoadoutButton[1] = CreateTextButton( L"HUMO", COMPFONT, FONT_MCOLOR_DKWHITE, FONT_BLACK,
+		BUTTON_USE_DEFAULT, sLoadoutButtonX + sLoadoutButtonW + sLoadoutButtonGap, sLoadoutButtonY,
+		sLoadoutButtonW, sLoadoutButtonH, BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST,
+		NULL, (GUI_CALLBACK)MapInventoryPoolSmokeBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[1],
 		L"SMK: dar una granada de humo de mano a cada mercenario del sector." );
 
-	guiMapInvenLoadoutButton[2] = CreateTextButton( L"GRN", SMALLCOMPFONT, FONT_WHITE, DEFAULT_SHADOW,
-		BUTTON_USE_DEFAULT, sLoadoutButtonX + 60, INVEN_POOL_Y + 24 + yResOffset, 28, 13,
-		BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST, NULL, (GUI_CALLBACK)MapInventoryPoolGrenadeBtn );
+	guiMapInvenLoadoutButton[2] = CreateTextButton( L"GRAN", COMPFONT, FONT_MCOLOR_DKWHITE, FONT_BLACK,
+		BUTTON_USE_DEFAULT, sLoadoutButtonX + ( sLoadoutButtonW + sLoadoutButtonGap ) * 2, sLoadoutButtonY,
+		sLoadoutButtonW, sLoadoutButtonH, BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST,
+		NULL, (GUI_CALLBACK)MapInventoryPoolGrenadeBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[2],
 		L"GRN: Matt y Buns reciben primero 1 granada cada uno, la de mayor dano; el resto se reparte por igual, max. 4 por mercenario. Humo separado." );
+
+	// Match the sector-inventory chrome: muted text at rest, cold highlight on
+	// hover, brighter text while pressed. Generic JA2 button chrome and sounds
+	// remain intact so these do not look like a foreign overlay.
+	for ( INT32 i = 0; i < 3; ++i )
+	{
+		SpecifyButtonUpTextColors( guiMapInvenLoadoutButton[i], FONT_MCOLOR_DKWHITE, FONT_BLACK );
+		SpecifyButtonDownTextColors( guiMapInvenLoadoutButton[i], FONT_WHITE, FONT_BLACK );
+		SpecifyButtonHilitedTextColors( guiMapInvenLoadoutButton[i], FONT_MCOLOR_LTBLUE, FONT_BLACK );
+		SpecifyButtonTextJustification( guiMapInvenLoadoutButton[i], BUTTON_TEXT_CENTER );
+	}
 
 	//reset the current inventory page to be the first page
 	iCurrentInventoryPoolPage = 0;
