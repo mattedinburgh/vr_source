@@ -104,6 +104,7 @@
     <ClCompile Include="worlddef.cpp" />
     <ClCompile Include="worldman.cpp" />
     <ClCompile Include="XML_ExplosionData.cpp" />
+    <ClCompile Include="XML_AdditionalTileCamo.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{D027A0E1-C661-4B8C-8159-4E0BF3D163AA}</ProjectGuid>
