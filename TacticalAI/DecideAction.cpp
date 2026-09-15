@@ -571,6 +571,17 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 	if (!AIObserveContactChange(pSoldier, &Change))
 		return AI_ACTION_NONE;
 
+	// Remember the tile where a movement plan unexpectedly broke down. This is
+	// transient experience, not extra enemy knowledge: it is created only after
+	// personally visible contacts made the geometry materially worse.
+	UINT8 ubSetbackSeverity = (UINT8)__min(
+		(INT32)85,
+		40 + 10 * __min((UINT8)3, Change.ubNewContacts) +
+		(Change.fEncirclementPressure ? 15 : 0));
+	AIRegisterTacticalSetback(
+		pSoldier, AI_SETBACK_SURPRISE,
+		pSoldier->sGridNo, ubSetbackSeverity, 5);
+
 	// Existing hard break-contact state already owns movement once committed.
 	if (AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier))
 		return AI_ACTION_NONE;
