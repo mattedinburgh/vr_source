@@ -2915,6 +2915,11 @@ UINT8 GetActionModeCursor( SOLDIERTYPE *pSoldier )
 			ubCursor = APPLYITEMCURS;
 	}
 	
+	// Vengeance: the rag is the CAMO_REMOVAL item.  While held in tactical
+	// view it also behaves as an improvised bandage, using the normal aid UI.
+	if ( HasItemFlag( usInHand, CAMO_REMOVAL ) )
+		ubCursor = AIDCURS;
+
 	// Now check our terrain to see if we cannot do the action now...
 	// sevenfm: r7998 fix 
 	// WANNE.WATER: Allow shooting if we are on a "water" tile, but on level > 0
