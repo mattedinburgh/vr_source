@@ -23,9 +23,11 @@ enum VHDVisualMaterialClass
 {
 	VHD_MATERIAL_GENERIC = 0,
 	VHD_MATERIAL_WATER,
+	VHD_MATERIAL_DEEP_OR_AUX_WATER,
 	VHD_MATERIAL_TERRAIN,
 	VHD_MATERIAL_GREEN_TERRAIN,
-	VHD_MATERIAL_VEGETATION,	VHD_MATERIAL_WALL,
+	VHD_MATERIAL_VEGETATION,
+	VHD_MATERIAL_WALL,
 	VHD_MATERIAL_ROOF,
 	VHD_MATERIAL_FLOOR,
 	VHD_MATERIAL_ROAD,
@@ -53,7 +55,8 @@ static VHDVisualGrade VHDMakeVisualGrade(
 	INT32 redBias, INT32 greenBias, INT32 blueBias )
 {
 	VHDVisualGrade grade;
-	grade.saturationPercent = saturationPercent;	grade.contrastPercent = contrastPercent;
+	grade.saturationPercent = saturationPercent;
+	grade.contrastPercent = contrastPercent;
 	grade.redBias = redBias;
 	grade.greenBias = greenBias;
 	grade.blueBias = blueBias;
@@ -77,11 +80,21 @@ static BOOLEAN VHDMaterialIsDebris( VHDVisualMaterialClass material )
 		material == VHD_MATERIAL_DEBRIS_GENERIC;
 }
 
+static BOOLEAN VHDMaterialIsWater( VHDVisualMaterialClass material )
+{
+	return material == VHD_MATERIAL_WATER ||
+		material == VHD_MATERIAL_DEEP_OR_AUX_WATER;
+}
+
 static VHDVisualMaterialClass VHDClassifyVisualMaterial( UINT32 ubType )
 {
-	if ( ubType == REGWATERTEXTURE || ubType == DEEPWATERTEXTURE ||
-		 ubType == ANOTHERDEBRIS )
-		return VHD_MATERIAL_WATER;	if ( ubType >= THIRDTEXTURE && ubType <= SIXTHTEXTURE )
+	if ( ubType == REGWATERTEXTURE )
+		return VHD_MATERIAL_WATER;
+
+	if ( ubType == DEEPWATERTEXTURE || ubType == ANOTHERDEBRIS )
+		return VHD_MATERIAL_DEEP_OR_AUX_WATER;
+
+	if ( ubType >= THIRDTEXTURE && ubType <= SIXTHTEXTURE )
 		return VHD_MATERIAL_GREEN_TERRAIN;
 
 	if ( ubType >= FIRSTTEXTURE && ubType <= SEVENTHTEXTURE )
@@ -107,7 +120,8 @@ static VHDVisualMaterialClass VHDClassifyVisualMaterial( UINT32 ubType )
 		return VHD_MATERIAL_ONROOF;
 
 	if ( ubType == EIGHTOSTRUCT || ubType == THRIDISTRUCT ||
-		 ubType == FIRSTVEHICLE || ubType == SECONDVEHICLE ||		 ubType == TENTHOSTRUCT || ubType == FENCESTRUCT )
+		 ubType == FIRSTVEHICLE || ubType == SECONDVEHICLE ||
+		 ubType == TENTHOSTRUCT || ubType == FENCESTRUCT )
 		return VHD_MATERIAL_MACHINERY;
 
 	if ( ubType >= FIRSTISTRUCT && ubType <= FIRSTCISTRUCT )
@@ -134,7 +148,9 @@ static VHDVisualMaterialClass VHDClassifyVisualMaterial( UINT32 ubType )
 static VHDVisualGrade VHDResolveVisualGrade(
 	UINT8 ubProfile, VHDVisualMaterialClass material, BOOLEAN fReplacementLoaded )
 {
-	VHDVisualGrade grade = VHDMakeVisualGrade( 106, 106, 2, 1, 0 );	if ( VHDIsSanMonaVisualProfile( ubProfile ) )
+	VHDVisualGrade grade = VHDMakeVisualGrade( 106, 106, 2, 1, 0 );
+
+	if ( VHDIsSanMonaVisualProfile( ubProfile ) )
 	{
 		switch ( ubProfile )
 		{
@@ -199,6 +215,7 @@ static VHDVisualGrade VHDResolveVisualGrade(
 		switch ( material )
 		{
 			case VHD_MATERIAL_WATER:
+			case VHD_MATERIAL_DEEP_OR_AUX_WATER:
 				return VHDMakeVisualGrade( 116, 115, -8, 7, 10 );
 			case VHD_MATERIAL_GREEN_TERRAIN:
 				return VHDMakeVisualGrade( 120, 116, -4, 11, -6 );
@@ -228,6 +245,7 @@ static VHDVisualGrade VHDResolveVisualGrade(
 		switch ( material )
 		{
 			case VHD_MATERIAL_WATER:
+			case VHD_MATERIAL_DEEP_OR_AUX_WATER:
 				return VHDMakeVisualGrade( 118, 116, -10, 5, 13 );
 			case VHD_MATERIAL_GREEN_TERRAIN:
 				return VHDMakeVisualGrade( 114, 116, -2, 8, -5 );
@@ -264,7 +282,8 @@ static VHDVisualGrade VHDResolveVisualGrade(
 
 	if ( ubProfile == SECTOR_VISUAL_ORONEGRO_TOWN )
 	{
-		if ( material == VHD_MATERIAL_TERRAIN || material == VHD_MATERIAL_GREEN_TERRAIN )
+		if ( material == VHD_MATERIAL_TERRAIN || material == VHD_MATERIAL_GREEN_TERRAIN ||
+			 material == VHD_MATERIAL_WATER )
 		{
 			grade.saturationPercent += 4;
 			grade.contrastPercent += 2;
@@ -282,7 +301,8 @@ static VHDVisualGrade VHDResolveVisualGrade(
 static void VHDApplyMaterialTone(
 	UINT8 ubProfile, VHDVisualMaterialClass material, INT32 luma,
 	INT32 *pOutR, INT32 *pOutG, INT32 *pOutB )
-{	if ( pOutR == NULL || pOutG == NULL || pOutB == NULL )
+{
+	if ( pOutR == NULL || pOutG == NULL || pOutB == NULL )
 		return;
 
 	if ( VHDIsSanMonaVisualProfile( ubProfile ) )
@@ -326,16 +346,16 @@ static void VHDApplyMaterialTone(
 		{
 			const INT32 depth = 82 - luma;
 			*pOutR -= 2 + depth / 24;
-			*pOutB += ( material == VHD_MATERIAL_WATER ) ?
+			*pOutB += VHDMaterialIsWater( material ) ?
 				(5 + depth / 16) : (2 + depth / 30);
 		}
 		else if ( luma > 174 )
 		{
 			const INT32 light = luma - 174;
-			if ( material != VHD_MATERIAL_WATER )
+			if ( !VHDMaterialIsWater( material ) )
 				*pOutR += 3 + light / 22;
 			*pOutG += 2 + light / 28;
-			if ( material == VHD_MATERIAL_WATER )
+			if ( VHDMaterialIsWater( material ) )
 				*pOutB += 4 + light / 18;
 		}
 
@@ -358,13 +378,13 @@ static void VHDApplyMaterialTone(
 			const INT32 depth = 84 - luma;
 			*pOutR -= 3 + depth / 18;
 			*pOutG -= 1 + depth / 30;
-			*pOutB += ( material == VHD_MATERIAL_WATER ) ?
+			*pOutB += VHDMaterialIsWater( material ) ?
 				(6 + depth / 14) : (2 + depth / 24);
 		}
 		else if ( luma > 176 )
 		{
 			const INT32 light = luma - 176;
-			if ( material == VHD_MATERIAL_WATER )
+			if ( VHDMaterialIsWater( material ) )
 			{
 				*pOutG += 3 + light / 20;
 				*pOutB += 5 + light / 15;
