@@ -99,7 +99,9 @@ if (Test-Path $ddraw) {
 
 $env:VR_VHD_RENDER_SCALE = '2'
 $env:VR_VHD_NATIVE_CONTRACT_TEST = '1'
+$env:VR_VHD_TILE_CACHE_TEST = '1'
 $contractMarker = Join-Path $smokeRoot 'vhd-native-contract-selftest.ok'
+$tileCacheMarker = Join-Path $smokeRoot 'vhd-tile-cache-selftest.ok'
 
 $exe = Join-Path $smokeRoot 'JA2_EN_Release.exe'
 $started = Get-Date
@@ -126,6 +128,10 @@ try {
         throw "VHD native asset contract self-test did not complete during startup."
     }
     Write-Host "VHD native asset contract self-test passed."
+    if (-not (Test-Path -LiteralPath $tileCacheMarker)) {
+        throw "VHD tile cache self-test did not complete during startup."
+    }
+    Write-Host "VHD tile cache residency self-test passed."
 
     $survived = $true
     $proc.Refresh()
