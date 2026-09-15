@@ -41,7 +41,8 @@ jobs:
             $_ -notmatch '^[^\t]+\tMapPreviewTrigger/' -and
             $_ -notmatch '^[^\t]+\tTools/' -and
             $_ -notmatch '^[^\t]+\tdocs/' -and
-            $_ -notmatch '\.md
+            $_ -notmatch '\.md$'
+          }
           $joined=($relevant -join "`n")
           $sha=[System.Security.Cryptography.SHA256]::Create()
           try {
