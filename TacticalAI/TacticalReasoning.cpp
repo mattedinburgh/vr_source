@@ -746,6 +746,12 @@ static BOOLEAN AIThreatMemoryNoiseCorroborated(
 			continue;
 		}
 
+		UINT32 uiAge = guiTurnCnt - pSlot->uiEvidenceTurn;
+		INT32 iEffectiveStrength =
+			(INT32)pSlot->ubStrength - 14 * (INT32)uiAge;
+		if (iEffectiveStrength <= 0)
+			continue;
+
 		UINT8 ubNoiseDir = AIDirection(pSoldier->sGridNo, pSlot->sGridNo);
 		if (ubNoiseDir < NUM_WORLD_DIRECTIONS &&
 			AIGeometryDirectionDelta(ubMemoryDirection, ubNoiseDir) <= 1)
