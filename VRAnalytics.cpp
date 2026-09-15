@@ -5,6 +5,10 @@
 #include <string.h>
 #include <time.h>
 
+#ifndef VR_ANALYTICS_MAX_BYTES
+#define VR_ANALYTICS_MAX_BYTES (64L * 1024L * 1024L)
+#endif
+
 #ifdef _MSC_VER
 #include ".generated/VRBuildInfo.generated.h"
 #else
@@ -124,6 +128,36 @@ namespace
 		}
 	}
 
+	long FileSizeBytes( const char* path )
+	{
+		FILE* file = fopen( path, "rb" );
+		long size = -1;
+		if( !file )
+			return -1;
+
+		if( fseek( file, 0, SEEK_END ) == 0 )
+			size = ftell( file );
+		fclose( file );
+		return size;
+	}
+
+	void RotateAnalyticsLogIfNeeded()
+	{
+		const char* current = "VR_BlackBox.jsonl";
+		long size = FileSizeBytes( current );
+		if( size < 0 || size < VR_ANALYTICS_MAX_BYTES )
+			return;
+
+		remove( "VR_BlackBox_Previous_3.jsonl" );
+		rename( "VR_BlackBox_Previous_2.jsonl", "VR_BlackBox_Previous_3.jsonl" );
+		rename( "VR_BlackBox_Previous.jsonl", "VR_BlackBox_Previous_2.jsonl" );
+
+		// Only start a fresh journal if the current file was safely preserved.
+		// If rename fails (for example antivirus/file-lock interference), keep
+		// appending to the existing file rather than deleting evidence.
+		rename( current, "VR_BlackBox_Previous.jsonl" );
+	}
+
 	const char* LayerName( VRAnalyticsLayer layer )
 	{
 		switch( layer )
@@ -184,6 +218,7 @@ namespace
 		if( !gEnabled )
 			return;
 
+		RotateAnalyticsLogIfNeeded();
 		gFile = fopen( "VR_BlackBox.jsonl", "ab" );
 		if( !gFile )
 		{
