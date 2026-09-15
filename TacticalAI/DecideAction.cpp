@@ -9953,11 +9953,11 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		sClosestDisturbance, bPlanIntent, bPlanRole);
 	BOOLEAN fBasicFireteamManeuver =
 		AIBasicFireteamManeuverReady(pSoldier, sClosestDisturbance);
-	VRAnalyticsTacticalState(pSoldier->ubID, "fireteam_effective_fire_support",
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "fireteam_effective_fire_support",
 		(long)AIFireteamEffectiveFireSupport(pSoldier, sClosestDisturbance));
-	VRAnalyticsTacticalState(pSoldier->ubID, "shared_approach_pressure",
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "shared_approach_pressure",
 		(long)AISharedApproachPressure(pSoldier, sClosestDisturbance));
-	VRAnalyticsTacticalState(pSoldier->ubID, "basic_fireteam_maneuver",
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "basic_fireteam_maneuver",
 		fBasicFireteamManeuver ? 1L : 0L);
 	if (!fBasicFireteamManeuver &&
 		!AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED,
