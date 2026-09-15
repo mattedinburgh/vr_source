@@ -605,12 +605,17 @@ def write_b1tc(path: Path, frames: list[Image.Image], meta: list[dict]) -> None:
             fh.write(raw)
 
 
-def contact_sheet(path: Path, family: str, frames: list[Image.Image]) -> None:
+def contact_sheet(
+    path: Path,
+    family: str,
+    frames: list[Image.Image],
+    labels: list[str] | None = None,
+) -> None:
     if not frames:
         return
     cols = 5
-    cell_w = max(96, max(f.width for f in frames) + 20)
-    cell_h = max(96, max(f.height for f in frames) + 28)
+    cell_w = max(112, max(f.width for f in frames) + 20)
+    cell_h = max(104, max(f.height for f in frames) + 34)
     rows = math.ceil(len(frames) / cols)
     sheet = Image.new("RGBA", (cols * cell_w, rows * cell_h), (36, 36, 36, 255))
     d = ImageDraw.Draw(sheet)
@@ -618,13 +623,14 @@ def contact_sheet(path: Path, family: str, frames: list[Image.Image]) -> None:
     for i, frame in enumerate(frames):
         cx = (i % cols) * cell_w
         cy = (i // cols) * cell_h
-        # Checker-free neutral QA background makes alpha mistakes obvious.
         d.rectangle((cx, cy, cx + cell_w - 1, cy + cell_h - 1),
                     outline=(80, 80, 80, 255))
         x = cx + (cell_w - frame.width) // 2
-        y = cy + 18 + (cell_h - 24 - frame.height) // 2
+        y = cy + 24 + (cell_h - 30 - frame.height) // 2
         sheet.alpha_composite(frame, (x, y))
-        d.text((cx + 4, cy + 3), f"{family} #{i+1}", fill=(230, 230, 230, 255))
+        label = labels[i] if labels and i < len(labels) else ""
+        title = f"{family} #{i+1}" + (f" {label}" if label else "")
+        d.text((cx + 4, cy + 3), title, fill=(230, 230, 230, 255))
 
     path.parent.mkdir(parents=True, exist_ok=True)
     sheet.convert("RGB").save(path, "PNG")
@@ -638,24 +644,51 @@ def generate_family(tilesets_root: Path, out_root: Path, qa_root: Path,
     if not legacy_frames:
         raise ValueError(f"{source}: no frames")
 
+    jsd_path = find_jsd_sibling(source) if kind in ("wall", "roof") else None
+    semantics = parse_jsd_semantics(jsd_path)
     generated = []
+    labels = []
+
     for i, legacy in enumerate(legacy_frames):
         mask = legacy.convert("RGBA").getchannel("A")
+        semantic = semantics.get(i)
+
         if kind == "wall":
-            frame = render_wall(mask, base, family, i, flavour)
+            frame = render_wall(mask, base, family, i, flavour, meta[i], semantic)
+            if semantic is None:
+                label = "aux/shadow"
+            else:
+                flags = int(semantic.get("flags", 0))
+                if flags & STRUCTURE_WALLNWINDOW:
+                    label = "window-open" if flags & STRUCTURE_OPEN else "window"
+                elif int(semantic.get("tile_count", 1)) > 1:
+                    label = f"wall-corner o{semantic.get('orientation', 0)}"
+                else:
+                    label = f"wall o{semantic.get('orientation', 0)}"
         elif kind == "floor":
-            frame = render_floor(mask, base, family, i, flavour)
+            frame = render_floor(mask, base, family, i, flavour, meta[i])
+            label = flavour
         else:
-            frame = render_roof(mask, base, family, i, flavour)
+            frame = render_roof(mask, base, family, i, flavour, meta[i], semantic)
+            label = "slanted-roof" if semantic else flavour
+
         generated.append(frame)
+        labels.append(label)
 
     out = out_root / f"VR_A3_{family}.b1tc"
     write_b1tc(out, generated, meta)
-    contact_sheet(qa_root / f"VR_A3_{family}.png", family, generated)
+    contact_sheet(qa_root / f"VR_A3_{family}.png", family, generated, labels)
+
+    semantic_counts = {}
+    for label in labels:
+        semantic_counts[label] = semantic_counts.get(label, 0) + 1
+
     return {
         "family": family,
         "kind": kind,
         "source_contract": str(source),
+        "jsd_contract": str(jsd_path) if jsd_path else "",
+        "semantic_counts": semantic_counts,
         "frames": len(generated),
         "output": str(out),
     }
@@ -700,8 +733,11 @@ def main() -> None:
         "",
     ]
     for r in results:
+        jsd_note = f" jsd={r['jsd_contract']}" if r.get("jsd_contract") else ""
+        sem_note = f" semantics={r['semantic_counts']}" if r.get("semantic_counts") else ""
         lines.append(
-            f"{r['family']}: {r['kind']} {r['frames']} frames <- {r['source_contract']}"
+            f"{r['family']}: {r['kind']} {r['frames']} frames <- "
+            f"{r['source_contract']}{jsd_note}{sem_note}"
         )
     for family, filename, reason in missing:
         lines.append(f"{family}: SKIPPED missing source contract {filename}")
