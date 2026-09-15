@@ -197,7 +197,7 @@ UINT32 guiMapInvenSortButtonImage[4];
 UINT32 guiMapInvenSortButton[4];
 
 // Vengeance: squad logistics shortcuts in sector inventory.
-UINT32 guiMapInvenLoadoutButton[3];
+UINT32 guiMapInvenLoadoutButton[2];
 
 UINT32 guiMapInvenFilterButtonImage[MAP_INVENTORY_FILTER_BUTTONS];
 UINT32 guiMapInvenFilterButton[MAP_INVENTORY_FILTER_BUTTONS];
@@ -285,63 +285,757 @@ void MapInventoryPoolStackAndMergeBtn( GUI_BUTTON *btn, INT32 reason );
 void MapInventoryPoolSortAmmoBtn( GUI_BUTTON *btn, INT32 reason );
 void MapInventoryPoolSortAttachmentsBtn( GUI_BUTTON *btn, INT32 reason );
 void MapInventoryPoolEjectAmmoBtn( GUI_BUTTON *btn, INT32 reason );
-// Vengeance: squad logistics shortcuts.
+// Vengeance: 3-mag ammo redistribution and one-smoke-per-merc shortcuts.
 void MapInventoryPoolAmmo3xBtn( GUI_BUTTON *btn, INT32 reason );
 void MapInventoryPoolSmokeBtn( GUI_BUTTON *btn, INT32 reason );
-void MapInventoryPoolGrenadeBtn( GUI_BUTTON *btn, INT32 reason );
+static void RedistributeSectorAmmo3x();
+static void RedistributeSectorSmoke();
+// Vengeance: redistribute all spare squad/sector ammo into up to three mags per carried gun.
+void MapInventoryPoolAmmo3xBtn( GUI_BUTTON *btn, INT32 reason )
+{
+	if ( reason & MSYS_CALLBACK_REASON_LBUTTON_DWN )
+	{
+		btn->uiFlags |= BUTTON_CLICKED_ON;
+	}
+	else if ( reason & MSYS_CALLBACK_REASON_LBUTTON_UP )
+	{
+		if ( btn->uiFlags & BUTTON_CLICKED_ON )
+		{
+			btn->uiFlags &=~ BUTTON_CLICKED_ON;
+			RedistributeSectorAmmo3x();
+		}
+	}
+}
+
+// Vengeance: one hand-thrown smoke grenade per eligible merc.
+void MapInventoryPoolSmokeBtn( GUI_BUTTON *btn, INT32 reason )
+{
+	if ( reason & MSYS_CALLBACK_REASON_LBUTTON_DWN )
+	{
+		btn->uiFlags |= BUTTON_CLICKED_ON;
+	}
+	else if ( reason & MSYS_CALLBACK_REASON_LBUTTON_UP )
+	{
+		if ( btn->uiFlags & BUTTON_CLICKED_ON )
+		{
+			btn->uiFlags &=~ BUTTON_CLICKED_ON;
+			RedistributeSectorSmoke();
+		}
+	}
+}
+
+// HEADROCK HAM 5: Preliminary Filter Button
+void MapInventoryPoolFilterBtn( GUI_BUTTON *btn, INT32 reason );
+void MapInventoryPoolFilterBtnMoveItemDisplay( GUI_BUTTON *btn, INT32 reason );	// Flugente
+void DisplayCurrentSector( void );
+void ResizeInventoryList( void );
+#ifdef INVFIX_Moa//dnl ch85 050214
+void ClearUpTempUnSeenList( void );
+#endif
+void SaveSeenAndUnseenItems( void );
+void DrawTextOnMapInventoryBackground( void );
+void DrawTextOnSectorInventory( void );
+INT32 GetTotalNumberOfItemsInSectorStash( void );
+void HandleMapSectorInventory( void );
+void ResetMapSectorInventoryPoolHighLights( void );
+void ReBuildWorldItemStashForLoadedSector( INT32 iNumberSeenItems, INT32 iNumberUnSeenItems, std::vector<WORLDITEM>& pSeenItemsList, std::vector<WORLDITEM>& pUnSeenItemsList );//dnl ch75 271013
+BOOLEAN IsMapScreenWorldItemVisibleInMapInventory( WORLDITEM *pWorldItem );
+BOOLEAN IsMapScreenWorldItemInvisibleInMapInventory( WORLDITEM *pWorldItem );
+void CheckGridNoOfItemsInMapScreenMapInventory();
+INT32 MapScreenSectorInventoryCompare( const void *pNum1, const void *pNum2);
+void SortSectorInventory( std::vector<WORLDITEM>& pInventory, UINT32 uiSizeOfArray );
+BOOLEAN CanPlayerUseSectorInventory( SOLDIERTYPE *pSelectedSoldier );
+
+extern void MAPEndItemPointer( );
+extern	BOOLEAN GetCurrentBattleSectorXYZAndReturnTRUEIfThereIsABattle( INT16 *psSectorX, INT16 *psSectorY, INT16 *psSectorZ );
+extern BOOLEAN MAPInternalInitItemDescriptionBox( OBJECTTYPE *pObject, UINT8 ubStatusIndex, SOLDIERTYPE *pSoldier );
+
+#ifdef INVFIX_Moa//dnl ch85 050214
+void DeleteAllItemsInInventoryPool();
+#endif
+void DeleteItemsOfType( UINT16 usItemType );
+// HEADROCK HAM 5: flag to indicate that all items in the stack will be sold. This is primarily used to
+// figure out the price of the top item in the stack rather than just all of them.
+INT32 SellItem( OBJECTTYPE& object, BOOLEAN fAll, BOOLEAN useModifier = TRUE );
+
+// HEADROCK HAM 5: Resets the coordinates and sizes of inventory slots.
+void ResetMapInventoryOffsets(void);
+// HEADROCK HAM 5: Handles loading and unloading Big Item images.
+void LoadAllMapInventoryBigItemGraphics();
+void LoadMapInventoryBigItemGraphic( INT32 iCounter );
+void UnloadAllMapInventoryBigItemGraphics();
+void UnloadMapInventoryBigItemGraphic( INT32 iCounter );
+void ResetAllMapInventoryBigItemGraphics();
+// HEADROCK HAM 5: Handles map inventory zoom/unzoom to specific page.
+void HandleMapInventoryZoom( UINT32 iPage, INT32 iCounter );
+void HandleMapInventoryUnzoom( UINT32 iPage );
+// HEADROCK HAM 5: Function to get the number of slots when zoomed.
+UINT16 GetInventorySlotCount( BOOLEAN fZoomed );
+void CancelInventoryZoomInput( BOOLEAN fButtonOff );
+
+void AnimateZoomInventory ( UINT16 iLocationInPool, UINT16 iCounter, INT32 iStartX, INT32 iStartY, UINT32 uiOrigWidth, UINT32 uiOrigHeight );
+// HEADROCK HAM 5: This does the same thing as CTRL-SHIFT-A in the tactical view, except it sorts
+// the currently-opened sector inventory ammo.
+void SortSectorInventoryAmmo(bool useBoxes);
+void SortSectorInventoryEjectAmmo();
+void SortSectorInventoryEmptyLBE(); // Bob: added option to empty LBE items in sector
+void SortSectorInventorySeparateAttachments();
+void SortSectorInventoryStackAndMerge(bool ammoOnly);
+// HEADROCK HAM 5: A quick function to rebuilt the Seen and Unseen item pools without saving the inventory.
+void RefreshSeenAndUnseenPools();
+void CreateMapInventoryFilterMenu( );
+void MapInventoryFilterMenuPopup_FilterToggle( UINT32 uiFlags );
+void MapInventoryFilterMenuPopup_FilterSet(UINT32 uiFlags );
+void MapInventoryFilterMenuPopup_Hide( void );
+BOOLEAN MapInventoryFilterMenuPopup_OptionOff( void );
+void MapInventoryFilterToggle( UINT32 uiFlags );
+void MapInventoryFilterSet( UINT32 uiFlags );
+void HandleSetFilterButtons();
+
+//dnl ch75 271013 ClearAllItemPools and RefreshItemPools are relocated from "Handle Items.cpp"
+void ClearAllItemPools()
+{
+	for(INT32 cnt=0; cnt<WORLD_MAX; cnt++)
+	{
+		RemoveItemPool(cnt, 0);
+		RemoveItemPool(cnt, 1);
+	}
+}
+
+void RefreshItemPools(std::vector<WORLDITEM>& pItemList, INT32 iNumberOfItems)
+{
+	ClearAllItemPools();
+	RefreshWorldItemsIntoItemPools(pItemList, iNumberOfItems);
+}
+
+// Flugente:  show whether an item is set to be ignored by the 'move item' assignment. This can be toggled in strategic inventory.
+static BOOLEAN fShowMoveItem = TRUE;
+BOOLEAN IsShowMoveItem()
+{
+	return (fShowMoveItem && guiCurrentScreen == MAP_SCREEN);
+}
+
+void ToggleShowMoveItem()
+{
+	fShowMoveItem = !fShowMoveItem;
+}
+
+// -----------------------------------------------------------------------------
+// Vengeance sector-inventory squad logistics.
+//
+// 3x ammo:
+//   * leaves ammunition already loaded in weapons untouched;
+//   * pools all spare ammo carried by mercs in the selected sector together with
+//     reachable sector ammo;
+//   * normally gives up to three spare magazines for a weapon;
+//   * if one merc carries 2+ weapons using the same calibre, those weapons share
+//     a hard cap of four spare magazines total;
+//   * ammo preference: AP -> standard -> other -> HP/blue -> Glaser;
+//   * shortages are distributed fairly between merc/calibre demands;
+//   * magazines are placed in LBE-backed inventory pockets first.
+//
+// SMK:
+//   * pools hand-thrown smoke grenades from the squad and reachable sector stash;
+//   * gives each eligible merc at most one.
+//
+// Any surplus remains in sector inventory.
+// -----------------------------------------------------------------------------
+
+typedef struct
+{
+	SOLDIERTYPE *pSoldier;
+	UINT8 ubCalibre;
+	UINT16 usMagSize;
+	UINT8 ubWeaponCount;
+	UINT8 ubMaxMags;
+	UINT8 ubMagsGiven;
+	BOOLEAN fBlocked;
+} SECTOR_LOADOUT_AMMO_DEMAND;
+
+static BOOLEAN IsSectorLoadoutMercEligible( SOLDIERTYPE *pSoldier )
+{
+	if ( pSoldier == NULL || !pSoldier->bActive || pSoldier->stats.bLife <= 0 )
+		return FALSE;
+
+	if ( pSoldier->flags.uiStatusFlags & SOLDIER_VEHICLE )
+		return FALSE;
+
+	if ( AM_A_ROBOT( pSoldier ) )
+		return FALSE;
+
+	if ( pSoldier->flags.fBetweenSectors ||
+		 pSoldier->bAssignment == IN_TRANSIT ||
+		 pSoldier->bAssignment == ASSIGNMENT_DEAD )
+		return FALSE;
+
+	return ( pSoldier->sSectorX == sSelMapX &&
+		 pSoldier->sSectorY == sSelMapY &&
+		 pSoldier->bSectorZ == iCurrentMapSectorZ );
+}
+
+static BOOLEAN IsReachableSectorLoadoutItem( WORLDITEM &worldItem )
+{
+	return ( worldItem.fExists &&
+		 worldItem.bVisible == TRUE &&
+		 worldItem.object.exists() &&
+		 ( worldItem.usFlags & WORLD_ITEM_REACHABLE ) &&
+		 !( worldItem.usFlags & WORLD_ITEM_ARMED_BOMB ) );
+}
+
+// Unlike AutoPlaceObjectInInventoryStash(), this deliberately refuses to merge
+// into unreachable stacks. That prevents squad ammo from disappearing into an
+// inaccessible sector stack merely because the item id matches.
+static void PoolObjectForSectorLoadout( OBJECTTYPE *pObj )
+{
+	if ( pObj == NULL || !pObj->exists() )
+		return;
+
+	while ( pObj->exists() )
+	{
+		for ( UINT32 i = 0; i < pInventoryPoolList.size() && pObj->exists(); ++i )
+		{
+			if ( IsReachableSectorLoadoutItem( pInventoryPoolList[i] ) &&
+				 pInventoryPoolList[i].object.usItem == pObj->usItem )
+			{
+				pInventoryPoolList[i].object.AddObjectsToStack( *pObj );
+			}
+		}
+
+		if ( !pObj->exists() )
+			break;
+
+		for ( UINT32 i = 0; i < pInventoryPoolList.size(); ++i )
+		{
+			if ( !pInventoryPoolList[i].object.exists() )
+			{
+				pObj->MoveThisObjectTo( pInventoryPoolList[i].object );
+				pInventoryPoolList[i].sGridNo = -1;
+				pInventoryPoolList[i].ubLevel = 0;
+				pInventoryPoolList[i].bVisible = TRUE;
+				pInventoryPoolList[i].fExists = TRUE;
+				pInventoryPoolList[i].soldierID = (-1);
+				pInventoryPoolList[i].usFlags |= WORLD_ITEM_REACHABLE | WORLD_ITEM_GRIDNO_NOT_SET_USE_ENTRY_POINT;
+				break;
+			}
+		}
+
+		if ( pObj->exists() )
+		{
+			ResizeInventoryList();
+		}
+	}
+}
+
+static BOOLEAN IsHandThrownSmokeGrenade( UINT16 usItem )
+{
+	if ( usItem >= MAXITEMS )
+		return FALSE;
+
+	if ( Item[usItem].usItemClass != IC_GRENADE )
+		return FALSE;
+
+	// Exclude launcher ammunition/cylinders. We only want a grenade the merc can
+	// take from a pocket and throw directly.
+	if ( Item[usItem].glgrenade || Item[usItem].ubCursor != TOSSCURS )
+		return FALSE;
+
+	return ( Explosive[ Item[usItem].ubClassIndex ].ubType == EXPLOSV_SMOKE );
+}
+
+static void PoolSquadSpareAmmo()
+{
+	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
+		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
+	{
+		SOLDIERTYPE *pSoldier = MercPtrs[id];
+		if ( !IsSectorLoadoutMercEligible( pSoldier ) )
+			continue;
+
+		for ( INT32 bSlot = 0; bSlot < NUM_INV_SLOTS; ++bSlot )
+		{
+			OBJECTTYPE *pObj = &( pSoldier->inv[bSlot] );
+			if ( pObj->exists() && ( Item[pObj->usItem].usItemClass & IC_AMMO ) )
+			{
+				PoolObjectForSectorLoadout( pObj );
+			}
+		}
+	}
+}
+
+static UINT32 CountMercHandSmoke( SOLDIERTYPE *pSoldier )
+{
+	if ( pSoldier == NULL )
+		return 0;
+
+	UINT32 uiCount = 0;
+	for ( INT32 bSlot = 0; bSlot < NUM_INV_SLOTS; ++bSlot )
+	{
+		OBJECTTYPE *pObj = &( pSoldier->inv[bSlot] );
+		if ( !pObj->exists() || !IsHandThrownSmokeGrenade( pObj->usItem ) )
+			continue;
+
+		uiCount += pObj->ubNumberOfObjects;
+	}
+	return uiCount;
+}
+
+static void PoolSquadSurplusHandSmoke()
+{
+	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
+		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
+	{
+		SOLDIERTYPE *pSoldier = MercPtrs[id];
+		if ( !IsSectorLoadoutMercEligible( pSoldier ) )
+			continue;
+
+		BOOLEAN fKeptOne = FALSE;
+
+		for ( INT32 bSlot = 0; bSlot < NUM_INV_SLOTS; ++bSlot )
+		{
+			OBJECTTYPE *pObj = &( pSoldier->inv[bSlot] );
+			if ( !pObj->exists() || !IsHandThrownSmokeGrenade( pObj->usItem ) )
+				continue;
+
+			if ( !fKeptOne )
+			{
+				fKeptOne = TRUE;
+
+				// Keep exactly one from the first smoke stack; pool every extra.
+				while ( pObj->exists() && pObj->ubNumberOfObjects > 1 )
+				{
+					OBJECTTYPE extra;
+					pObj->RemoveObjectAtIndex( pObj->ubNumberOfObjects - 1, &extra );
+					if ( extra.exists() )
+						PoolObjectForSectorLoadout( &extra );
+				}
+			}
+			else
+			{
+				// A smoke is already reserved for this merc, so this entire later
+				// stack is surplus.
+				PoolObjectForSectorLoadout( pObj );
+			}
+		}
+	}
+}
+
+static UINT32 CountSectorAmmoRounds( UINT8 ubCalibre, UINT8 ubAmmoType )
+{
+	UINT32 uiRounds = 0;
+
+	for ( UINT32 i = 0; i < pInventoryPoolList.size(); ++i )
+	{
+		if ( !IsReachableSectorLoadoutItem( pInventoryPoolList[i] ) )
+			continue;
+
+		OBJECTTYPE *pObj = &( pInventoryPoolList[i].object );
+		if ( !( Item[pObj->usItem].usItemClass & IC_AMMO ) )
+			continue;
+
+		MAGTYPE &mag = Magazine[ Item[pObj->usItem].ubClassIndex ];
+		if ( mag.ubCalibre != ubCalibre || mag.ubAmmoType != ubAmmoType )
+			continue;
+
+		for ( INT32 x = 0; x < pObj->ubNumberOfObjects; ++x )
+		{
+			if ( (*pObj)[x]->data.objectStatus > 0 )
+				uiRounds += (UINT32)(*pObj)[x]->data.objectStatus;
+		}
+	}
+
+	return uiRounds;
+}
+
+// Data-driven classification keeps this working with Vengeance ammo XML rather
+// than hard-coding specific magazine item ids.
+//
+// 0 = AP, 1 = standard ball, 2 = other, 3 = HP ("blue"), 4 = Glaser.
+static INT8 SectorLoadoutAmmoPriority( UINT8 ubAmmoType )
+{
+	AMMOTYPE &ammo = AmmoTypes[ubAmmoType];
+
+	// AP family: standard-issue penetrators (AP/FMJ, SAP, SAP Match). Exotic
+	// penetrators such as AET/DU/cold variants remain in "other".
+	const BOOLEAN fAP =
+		ammo.standardIssue &&
+		ammo.armourImpactReductionMultiplier < ammo.armourImpactReductionDivisor;
+
+	// Glaser and Cold Glaser share extreme armour weakness plus a large
+	// post-armour damage multiplier. Hornet's Nest has the armour weakness but
+	// not the damage multiplier, so it remains "other".
+	const BOOLEAN fGlaser =
+		ammo.armourImpactReductionMultiplier >= ( ammo.armourImpactReductionDivisor * 3 ) &&
+		ammo.afterArmourDamageMultiplier >= ( ammo.afterArmourDamageDivisor * 2 );
+
+	// HP is the user's blue category. More exotic expanding rounds that don't
+	// match this classic HP signature stay in "other".
+	const BOOLEAN fHP =
+		ammo.armourImpactReductionMultiplier > ammo.armourImpactReductionDivisor &&
+		ammo.afterArmourDamageMultiplier > ammo.afterArmourDamageDivisor;
+
+	const BOOLEAN fStandard =
+		ammo.standardIssue &&
+		ammo.armourImpactReductionMultiplier == ammo.armourImpactReductionDivisor &&
+		ammo.beforeArmourDamageMultiplier == ammo.beforeArmourDamageDivisor &&
+		ammo.afterArmourDamageMultiplier == ammo.afterArmourDamageDivisor &&
+		ammo.numberOfBullets == 1 &&
+		ammo.highExplosive == 0 &&
+		!ammo.tracerEffect &&
+		!ammo.dart &&
+		!ammo.knife &&
+		!ammo.monsterSpit;
+
+	if ( fAP )
+		return 0;
+	if ( fStandard )
+		return 1;
+	if ( fGlaser )
+		return 4;
+	if ( fHP )
+		return 3;
+	return 2;
+}
+
+static BOOLEAN SectorLoadoutAmmoTypeLess( UINT8 a, UINT8 b )
+{
+	INT8 pa = SectorLoadoutAmmoPriority( a );
+	INT8 pb = SectorLoadoutAmmoPriority( b );
+
+	if ( pa != pb )
+		return pa < pb;
+
+	return a < b;
+}
+
+static void GetCompatibleSectorAmmoTypes( UINT8 ubCalibre, UINT16 usMagSize, std::vector<UINT8> &types )
+{
+	types.clear();
+
+	for ( UINT32 i = 0; i < pInventoryPoolList.size(); ++i )
+	{
+		if ( !IsReachableSectorLoadoutItem( pInventoryPoolList[i] ) )
+			continue;
+
+		OBJECTTYPE *pObj = &( pInventoryPoolList[i].object );
+		if ( !( Item[pObj->usItem].usItemClass & IC_AMMO ) )
+			continue;
+
+		MAGTYPE &mag = Magazine[ Item[pObj->usItem].ubClassIndex ];
+		if ( mag.ubCalibre != ubCalibre )
+			continue;
+
+		if ( FindReplacementMagazine( ubCalibre, usMagSize, mag.ubAmmoType ) == 0 )
+			continue;
+
+		if ( std::find( types.begin(), types.end(), mag.ubAmmoType ) == types.end() )
+			types.push_back( mag.ubAmmoType );
+	}
+
+	std::sort( types.begin(), types.end(), SectorLoadoutAmmoTypeLess );
+}
+
+static INT16 FindSectorAmmoTypeForFill( UINT8 ubCalibre, UINT16 usMagSize, UINT32 uiWantedRounds )
+{
+	std::vector<UINT8> types;
+	GetCompatibleSectorAmmoTypes( ubCalibre, usMagSize, types );
+
+	// First preserve the user's ammo preference when a type can fill the desired
+	// magazine amount completely.
+	for ( UINT32 i = 0; i < types.size(); ++i )
+	{
+		if ( CountSectorAmmoRounds( ubCalibre, types[i] ) >= uiWantedRounds )
+			return (INT16)types[i];
+	}
+
+	// If no type can fill it, maximize the rounds carried in this magazine.
+	// Preference is only the tiebreaker, so a tiny AP remainder cannot waste most
+	// of a magazine while a larger standard/other remainder is available.
+	INT16 sBestType = -1;
+	UINT32 uiBestRounds = 0;
+
+	for ( UINT32 i = 0; i < types.size(); ++i )
+	{
+		UINT32 uiAvailable = CountSectorAmmoRounds( ubCalibre, types[i] );
+		if ( uiAvailable > uiBestRounds )
+		{
+			uiBestRounds = uiAvailable;
+			sBestType = (INT16)types[i];
+		}
+	}
+
+	return sBestType;
+}
+
+static UINT32 CountAllCompatibleSectorAmmoRounds( UINT8 ubCalibre, UINT16 usMagSize )
+{
+	std::vector<UINT8> types;
+	GetCompatibleSectorAmmoTypes( ubCalibre, usMagSize, types );
+
+	UINT32 uiRounds = 0;
+	for ( UINT32 i = 0; i < types.size(); ++i )
+		uiRounds += CountSectorAmmoRounds( ubCalibre, types[i] );
+
+	return uiRounds;
+}
+
+// Pulls up to uiWantedRounds of one ammo type out of all matching sector
+// magazines/boxes/crates, rebuilds it as the correct magazine for the gun, then
+// lets the normal NIV/LBE pocket-placement code decide the best pocket.
+static UINT16 BuildAndPlaceSectorMagazine( SOLDIERTYPE *pSoldier, UINT8 ubCalibre,
+	UINT16 usMagSize, UINT8 ubAmmoType, UINT16 usWantedRounds )
+{
+	if ( pSoldier == NULL || usWantedRounds == 0 )
+		return 0;
+
+	UINT16 usMagItem = FindReplacementMagazine( ubCalibre, usMagSize, ubAmmoType );
+	if ( usMagItem == 0 )
+		return 0;
+
+	OBJECTTYPE newMag;
+	if ( !CreateAmmo( usMagItem, &newMag, 0 ) )
+		return 0;
+
+	for ( UINT32 i = 0; i < pInventoryPoolList.size(); ++i )
+	{
+		if ( !IsReachableSectorLoadoutItem( pInventoryPoolList[i] ) )
+			continue;
+
+		OBJECTTYPE *pSource = &( pInventoryPoolList[i].object );
+		if ( !( Item[pSource->usItem].usItemClass & IC_AMMO ) )
+			continue;
+
+		MAGTYPE &sourceMag = Magazine[ Item[pSource->usItem].ubClassIndex ];
+		if ( sourceMag.ubCalibre != ubCalibre || sourceMag.ubAmmoType != ubAmmoType )
+			continue;
+
+		DistributeStatus( pSource, &newMag, (INT16)usWantedRounds );
+
+		if ( pSource->ubNumberOfObjects < 1 )
+			DeleteObj( pSource );
+
+		if ( newMag.exists() && newMag[0]->data.objectStatus >= (INT16)usWantedRounds )
+			break;
+	}
+
+	if ( !newMag.exists() || newMag[0]->data.objectStatus <= 0 )
+	{
+		DeleteObj( &newMag );
+		return 0;
+	}
+
+	UINT16 usBuiltRounds = (UINT16)newMag[0]->data.objectStatus;
+
+	if ( !PlaceInAnyPocket( pSoldier, &newMag, FALSE ) || newMag.exists() )
+	{
+		// No suitable LBE/pocket space. Return the ammo to the common pool.
+		if ( newMag.exists() )
+			PoolObjectForSectorLoadout( &newMag );
+		return 0;
+	}
+
+	return usBuiltRounds;
+}
+
+static void CollectSectorAmmoDemands( std::vector<SECTOR_LOADOUT_AMMO_DEMAND> &demands, UINT32 &uiMercCount, UINT32 &uiWeaponCount )
+{
+	demands.clear();
+	uiMercCount = 0;
+	uiWeaponCount = 0;
+
+	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
+		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
+	{
+		SOLDIERTYPE *pSoldier = MercPtrs[id];
+		if ( !IsSectorLoadoutMercEligible( pSoldier ) )
+			continue;
+
+		++uiMercCount;
+
+		for ( INT32 bSlot = 0; bSlot < NUM_INV_SLOTS; ++bSlot )
+		{
+			OBJECTTYPE *pGun = &( pSoldier->inv[bSlot] );
+			if ( !pGun->exists() || !( Item[pGun->usItem].usItemClass & IC_GUN ) )
+				continue;
+
+			for ( INT32 x = 0; x < pGun->ubNumberOfObjects; ++x )
+			{
+				UINT16 usMagSize = GetMagSize( pGun, x );
+				if ( usMagSize == 0 )
+					continue;
+
+				++uiWeaponCount;
+				UINT8 ubCalibre = Weapon[pGun->usItem].ubCalibre;
+				BOOLEAN fFound = FALSE;
+
+				// Identical magazine needs on the same merc are one shared demand.
+				// This is important when primary and secondary use the same ammo.
+				for ( UINT32 d = 0; d < demands.size(); ++d )
+				{
+					if ( demands[d].pSoldier == pSoldier &&
+						 demands[d].ubCalibre == ubCalibre &&
+						 demands[d].usMagSize == usMagSize )
+					{
+						++demands[d].ubWeaponCount;
+						fFound = TRUE;
+						break;
+					}
+				}
+
+				if ( !fFound )
+				{
+					SECTOR_LOADOUT_AMMO_DEMAND demand;
+					demand.pSoldier = pSoldier;
+					demand.ubCalibre = ubCalibre;
+					demand.usMagSize = usMagSize;
+					demand.ubWeaponCount = 1;
+					demand.ubMaxMags = 0;
+					demand.ubMagsGiven = 0;
+					demand.fBlocked = FALSE;
+					demands.push_back( demand );
+				}
+			}
+		}
+	}
+
+	// Per merc + calibre cap:
+	//   one weapon  -> 3 spare mags;
+	//   two or more -> 4 spare mags total shared by all weapons in that calibre.
+	// Different magazine sizes still share the four-mag ceiling because the
+	// underlying ammunition/calibre is the same.
+	for ( UINT32 i = 0; i < demands.size(); ++i )
+	{
+		if ( demands[i].ubMaxMags != 0 )
+			continue;
+
+		std::vector<UINT32> sameCalibre;
+		UINT32 uiSameCalibreWeapons = 0;
+
+		for ( UINT32 j = i; j < demands.size(); ++j )
+		{
+			if ( demands[j].pSoldier == demands[i].pSoldier &&
+				 demands[j].ubCalibre == demands[i].ubCalibre )
+			{
+				sameCalibre.push_back( j );
+				uiSameCalibreWeapons += demands[j].ubWeaponCount;
+			}
+		}
+
+		if ( uiSameCalibreWeapons <= 1 )
+		{
+			demands[i].ubMaxMags = 3;
+			continue;
+		}
+
+		UINT32 uiAssigned = 0;
+		for ( UINT32 n = 0; n < sameCalibre.size(); ++n )
+		{
+			SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[sameCalibre[n]];
+			demand.ubMaxMags = (UINT8)( ( 4 * demand.ubWeaponCount ) / uiSameCalibreWeapons );
+			uiAssigned += demand.ubMaxMags;
+		}
+
+		// Hand out any rounding remainder deterministically. For the common
+		// two-weapon case this yields 2+2, or 4 if both guns use the same mag.
+		for ( UINT32 n = 0; uiAssigned < 4 && n < sameCalibre.size(); ++n )
+		{
+			++demands[sameCalibre[n]].ubMaxMags;
+			++uiAssigned;
+		}
+	}
+}
 static void RedistributeSectorAmmo3x()
 {
 	UINT32 uiOldFilter = guiMapInventoryFilter;
 	if ( uiOldFilter != IC_MAPFILTER_ALL )
 		MapInventoryFilterSet( IC_MAPFILTER_ALL );
 
-	// Full reset first: incompatible/surplus loose ammo cannot remain on mercs.
-	PoolSquadSpareAmmo();
-
-	// Loaded guns have first claim on ammo and consume no pocket capacity.
-	UINT32 uiRoundsLoaded = TopUpAllSectorMercGuns();
-
 	std::vector<SECTOR_LOADOUT_AMMO_DEMAND> demands;
 	UINT32 uiMercCount = 0;
 	UINT32 uiWeaponCount = 0;
 	CollectSectorAmmoDemands( demands, uiMercCount, uiWeaponCount );
 
+	// All spare squad ammo joins reachable sector ammo in one common pool.
+	PoolSquadSpareAmmo();
+
+	std::vector<UINT32> groupKeys;
+	for ( UINT32 i = 0; i < demands.size(); ++i )
+	{
+		UINT32 key = ( (UINT32)demands[i].ubCalibre << 16 ) | demands[i].usMagSize;
+		if ( std::find( groupKeys.begin(), groupKeys.end(), key ) == groupKeys.end() )
+			groupKeys.push_back( key );
+	}
+
 	UINT32 uiMagazinesGiven = 0;
 	UINT32 uiRoundsGiven = 0;
 
-	// Three magazine waves. Each physical weapon gets a chance at spare #1
-	// before any weapon advances to spare #2, etc. This keeps allocation even
-	// when ammo or pocket space is tight.
-	for ( UINT8 ubWave = 0; ubWave < 3; ++ubWave )
+	for ( UINT32 g = 0; g < groupKeys.size(); ++g )
 	{
+		std::vector<UINT32> group;
 		for ( UINT32 i = 0; i < demands.size(); ++i )
 		{
-			SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[i];
-			if ( demand.fBlocked )
-				continue;
+			UINT32 key = ( (UINT32)demands[i].ubCalibre << 16 ) | demands[i].usMagSize;
+			if ( key == groupKeys[g] )
+				group.push_back( i );
+		}
 
-			UINT8 ubWaveTarget = (UINT8)__min( (UINT32)demand.ubMaxMags,
-				(UINT32)( ubWave + 1 ) * demand.ubWeaponCount );
+		if ( group.empty() )
+			continue;
 
-			while ( demand.ubMagsGiven < ubWaveTarget )
+		SECTOR_LOADOUT_AMMO_DEMAND &sample = demands[group[0]];
+		UINT32 uiAvailable = CountAllCompatibleSectorAmmoRounds( sample.ubCalibre, sample.usMagSize );
+		UINT32 uiGroupCapacity = 0;
+		for ( UINT32 n = 0; n < group.size(); ++n )
+		{
+			SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[group[n]];
+			uiGroupCapacity += (UINT32)demand.usMagSize * demand.ubMaxMags;
+		}
+		UINT32 uiToDistribute = __min( uiAvailable, uiGroupCapacity );
+
+		// Fair shortage rule with variable per-merc caps. Add one round at a time
+		// in waves until ammo is exhausted or every demand reaches its own cap.
+		std::vector<UINT32> targets( group.size(), 0 );
+		UINT32 uiAssignedRounds = 0;
+		while ( uiAssignedRounds < uiToDistribute )
+		{
+			BOOLEAN fProgress = FALSE;
+			for ( UINT32 n = 0; n < group.size() && uiAssignedRounds < uiToDistribute; ++n )
 			{
-				INT16 sAmmoType = FindSectorAmmoTypeForFill( demand.ubCalibre,
-					demand.usMagSize, demand.usMagSize );
+				SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[group[n]];
+				UINT32 uiCap = (UINT32)demand.usMagSize * demand.ubMaxMags;
+				if ( targets[n] < uiCap )
+				{
+					++targets[n];
+					++uiAssignedRounds;
+					fProgress = TRUE;
+				}
+			}
+			if ( !fProgress )
+				break;
+		}
+
+		for ( UINT32 n = 0; n < group.size(); ++n )
+		{
+			SECTOR_LOADOUT_AMMO_DEMAND &demand = demands[group[n]];
+			UINT32 uiRemainingTarget = targets[n];
+
+			while ( uiRemainingTarget > 0 && demand.ubMagsGiven < demand.ubMaxMags && !demand.fBlocked )
+			{
+				UINT32 uiWantedThisMag = __min( (UINT32)demand.usMagSize, uiRemainingTarget );
+				INT16 sAmmoType = FindSectorAmmoTypeForFill( demand.ubCalibre, demand.usMagSize, uiWantedThisMag );
+
 				if ( sAmmoType < 0 )
 					break;
 
-				UINT32 uiAvailable = CountSectorAmmoRounds( demand.ubCalibre, (UINT8)sAmmoType );
-				if ( uiAvailable == 0 )
+				UINT32 uiTypeAvailable = CountSectorAmmoRounds( demand.ubCalibre, (UINT8)sAmmoType );
+				UINT16 usWanted = (UINT16)__min( uiWantedThisMag, uiTypeAvailable );
+				if ( usWanted == 0 )
 					break;
 
-				UINT16 usWanted = (UINT16)__min( (UINT32)demand.usMagSize, uiAvailable );
 				UINT16 usMade = BuildAndPlaceSectorMagazine( demand.pSoldier, demand.ubCalibre,
 					demand.usMagSize, (UINT8)sAmmoType, usWanted );
 
 				if ( usMade == 0 )
 				{
-					// Usually no compatible free pocket. Block this demand only;
-					// other weapons/mercs can still use their own remaining space.
 					demand.fBlocked = TRUE;
 					break;
 				}
@@ -349,6 +1043,7 @@ static void RedistributeSectorAmmo3x()
 				++demand.ubMagsGiven;
 				++uiMagazinesGiven;
 				uiRoundsGiven += usMade;
+				uiRemainingTarget -= __min( uiRemainingTarget, (UINT32)usMade );
 			}
 		}
 	}
@@ -363,8 +1058,8 @@ static void RedistributeSectorAmmo3x()
 	fCharacterInfoPanelDirty = TRUE;
 
 	ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
-		L"3x: armas cargadas (+%d balas); %d cargadores de reserva (%d balas) para %d armas de %d mercenarios.",
-		uiRoundsLoaded, uiMagazinesGiven, uiRoundsGiven, uiWeaponCount, uiMercCount );
+		L"3x: %d cargadores (%d balas) repartidos para %d armas de %d mercenarios.",
+		uiMagazinesGiven, uiRoundsGiven, uiWeaponCount, uiMercCount );
 }
 
 static BOOLEAN TakeOneHandSmokeFromSector( OBJECTTYPE *pOut )
@@ -445,120 +1140,6 @@ static void RedistributeSectorSmoke()
 	ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
 		L"SMK: un humo por mercenario: %d de %d equipados.",
 		uiEquipped, (UINT32)mercs.size() );
-}
-
-static void PoolSquadHandGrenades()
-{
-	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
-		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
-	{
-		SOLDIERTYPE *pSoldier = MercPtrs[id];
-		if ( !IsSectorLoadoutMercEligible( pSoldier ) )
-			continue;
-
-		for ( INT32 bSlot = 0; bSlot < NUM_INV_SLOTS; ++bSlot )
-		{
-			OBJECTTYPE *pObj = &( pSoldier->inv[bSlot] );
-			if ( pObj->exists() && IsHandThrownNonSmokeGrenade( pObj->usItem ) )
-				PoolObjectForSectorLoadout( pObj );
-		}
-	}
-}
-
-static BOOLEAN TakeOneHandGrenadeFromSector( OBJECTTYPE *pOut )
-{
-	if ( pOut == NULL )
-		return FALSE;
-
-	for ( UINT32 i = 0; i < pInventoryPoolList.size(); ++i )
-	{
-		if ( !IsReachableSectorLoadoutItem( pInventoryPoolList[i] ) )
-			continue;
-
-		OBJECTTYPE *pObj = &( pInventoryPoolList[i].object );
-		if ( !IsHandThrownNonSmokeGrenade( pObj->usItem ) )
-			continue;
-
-		pObj->RemoveObjectAtIndex( 0, pOut );
-		if ( pObj->ubNumberOfObjects < 1 )
-			DeleteObj( pObj );
-
-		return pOut->exists();
-	}
-
-	return FALSE;
-}
-
-static void RedistributeSectorGrenades()
-{
-	UINT32 uiOldFilter = guiMapInventoryFilter;
-	if ( uiOldFilter != IC_MAPFILTER_ALL )
-		MapInventoryFilterSet( IC_MAPFILTER_ALL );
-
-	// Matt and Buns donate to the common pool like everybody else; they are
-	// excluded only from the recipient list.
-	PoolSquadHandGrenades();
-
-	std::vector<SOLDIERTYPE*> mercs;
-	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
-		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
-	{
-		SOLDIERTYPE *pSoldier = MercPtrs[id];
-		if ( IsSectorLoadoutMercEligible( pSoldier ) &&
-			 !IsGrenadeRecipientExcluded( pSoldier ) )
-			mercs.push_back( pSoldier );
-	}
-
-	std::vector<UINT8> counts( mercs.size(), 0 );
-	std::vector<BOOLEAN> blocked( mercs.size(), FALSE );
-	UINT32 uiDistributed = 0;
-
-	// Equal distribution: one grenade per recipient per pass, max four passes.
-	for ( UINT8 ubPass = 0; ubPass < 4; ++ubPass )
-	{
-		BOOLEAN fOutOfGrenades = FALSE;
-
-		for ( UINT32 i = 0; i < mercs.size(); ++i )
-		{
-			if ( blocked[i] || counts[i] > ubPass )
-				continue;
-
-			OBJECTTYPE grenade;
-			if ( !TakeOneHandGrenadeFromSector( &grenade ) )
-			{
-				fOutOfGrenades = TRUE;
-				break;
-			}
-
-			if ( PlaceInAnyPocket( mercs[i], &grenade, FALSE ) && !grenade.exists() )
-			{
-				++counts[i];
-				++uiDistributed;
-			}
-			else
-			{
-				if ( grenade.exists() )
-					PoolObjectForSectorLoadout( &grenade );
-				blocked[i] = TRUE;
-			}
-		}
-
-		if ( fOutOfGrenades )
-			break;
-	}
-
-	SortSectorInventoryStackAndMerge( false );
-
-	if ( uiOldFilter != IC_MAPFILTER_ALL )
-		MapInventoryFilterSet( uiOldFilter );
-
-	fMapPanelDirty = TRUE;
-	fTeamPanelDirty = TRUE;
-	fCharacterInfoPanelDirty = TRUE;
-
-	ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
-		L"GRN: %d granadas repartidas entre %d mercenarios (max. 4; Matt y Buns excluidos).",
-		uiDistributed, (UINT32)mercs.size() );
 }
 
 // load the background panel graphics for inventory
@@ -2069,19 +2650,13 @@ void CreateMapInventoryButtons( void )
 		BUTTON_USE_DEFAULT, sLoadoutButtonX, INVEN_POOL_Y + 24 + yResOffset, 28, 13,
 		BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST, NULL, (GUI_CALLBACK)MapInventoryPoolAmmo3xBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[0],
-		L"3x: retirar toda la municion suelta, cargar cada arma y dar 3 cargadores por arma, repartidos por turnos segun el espacio. AP > estandar > otras > HP > Glaser." );
+		L"3x: municion. 3 cargadores; con 2+ armas del mismo calibre, max. 4 compartidos. AP > estandar > otras > HP > Glaser." );
 
 	guiMapInvenLoadoutButton[1] = CreateTextButton( L"SMK", SMALLCOMPFONT, FONT_WHITE, DEFAULT_SHADOW,
 		BUTTON_USE_DEFAULT, sLoadoutButtonX + 30, INVEN_POOL_Y + 24 + yResOffset, 28, 13,
 		BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST, NULL, (GUI_CALLBACK)MapInventoryPoolSmokeBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[1],
 		L"SMK: dar una granada de humo de mano a cada mercenario del sector." );
-
-	guiMapInvenLoadoutButton[2] = CreateTextButton( L"GRN", SMALLCOMPFONT, FONT_WHITE, DEFAULT_SHADOW,
-		BUTTON_USE_DEFAULT, sLoadoutButtonX + 60, INVEN_POOL_Y + 24 + yResOffset, 28, 13,
-		BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST, NULL, (GUI_CALLBACK)MapInventoryPoolGrenadeBtn );
-	SetButtonFastHelpText( guiMapInvenLoadoutButton[2],
-		L"GRN: reunir granadas de mano (sin humo) y repartirlas por igual; max. 4 por mercenario. Matt y Buns no reciben." );
 
 	//reset the current inventory page to be the first page
 	iCurrentInventoryPoolPage = 0;
@@ -2120,7 +2695,6 @@ void DestroyMapInventoryButtons( void )
 	// Vengeance: squad logistics text buttons own no external image resource.
 	RemoveButton( guiMapInvenLoadoutButton[0] );
 	RemoveButton( guiMapInvenLoadoutButton[1] );
-	RemoveButton( guiMapInvenLoadoutButton[2] );
 
 	// HEADROCK HAM 5: Filter button
 	for (INT32 iCounter = 0; iCounter < MAP_INVENTORY_FILTER_BUTTONS; iCounter++)
@@ -3503,7 +4077,6 @@ void HandleButtonStatesWhileMapInventoryActive( void )
 		DisableButton( guiMapInvenSortButton[ 3 ] );
 		DisableButton( guiMapInvenLoadoutButton[0] );
 		DisableButton( guiMapInvenLoadoutButton[1] );
-		DisableButton( guiMapInvenLoadoutButton[2] );
 	}
 	else
 	{
@@ -3514,7 +4087,6 @@ void HandleButtonStatesWhileMapInventoryActive( void )
 		EnableButton( guiMapInvenSortButton[ 3 ] );
 		EnableButton( guiMapInvenLoadoutButton[0] );
 		EnableButton( guiMapInvenLoadoutButton[1] );
-		EnableButton( guiMapInvenLoadoutButton[2] );
 	}
 
 	// Selected Merc is in sector? Or is in combat?
@@ -3530,7 +4102,6 @@ void HandleButtonStatesWhileMapInventoryActive( void )
 		DisableButton( guiMapInvenSortButton[ 3 ] );
 		DisableButton( guiMapInvenLoadoutButton[0] );
 		DisableButton( guiMapInvenLoadoutButton[1] );
-		DisableButton( guiMapInvenLoadoutButton[2] );
 	}
 }
 
