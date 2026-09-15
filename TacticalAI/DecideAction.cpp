@@ -115,6 +115,8 @@ static void VRPlannerTraceCandidate(SOLDIERTYPE *pSoldier, UINT32 uiDecision,
 	VRAnalyticsStateInt(uiDecision, "candidate_route_cost", iRouteCost);
 	VRAnalyticsStateInt(uiDecision, "candidate_support", iSupport);
 	VRAnalyticsStateInt(uiDecision, "candidate_crossfire", iCrossfire);
+	VRAnalyticsStateInt(uiDecision, "candidate_setback_penalty",
+		pSoldier ? AITacticalSetbackPenalty(pSoldier, sGrid) : 0);
 	VRAnalyticsCandidate(uiDecision, pSource, sGrid, iScore, iScore - iRouteCost, true, pReason);
 }
 
