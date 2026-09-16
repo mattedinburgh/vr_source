@@ -98,6 +98,7 @@ UINT8 gubAICounter;
 // until combat resolves or the player explicitly requests control back.
 static UINT8 gubAIPlayerTeamCommand = AI_PLAYER_COMMAND_NONE;
 static BOOLEAN gfAIPlayerControlReturnRequested = FALSE;
+static BOOLEAN gfAIPlayerCommandFastForward = FALSE;
 
 BOOLEAN AIPlayerTeamCommandActive(void)
 {
@@ -112,6 +113,18 @@ UINT8 AIPlayerTeamCommand(void)
 BOOLEAN AIPlayerControlReturnRequested(void)
 {
 	return gfAIPlayerControlReturnRequested;
+}
+
+BOOLEAN AIPlayerCommandFastForward(void)
+{
+	return gfAIPlayerCommandFastForward;
+}
+
+void AITogglePlayerCommandFastForward(void)
+{
+	gfAIPlayerCommandFastForward = !gfAIPlayerCommandFastForward;
+	if (AIPlayerTeamCommandActive())
+		SetFastForwardMode(gfAIPlayerCommandFastForward);
 }
 
 void AIRequestPlayerControl(void)
@@ -135,6 +148,9 @@ void AIResetPlayerTeamCommand(void)
 	// subsystem actually owned the player team.
 	if (!fWasPlayerCommandActive)
 		return;
+
+	gfAIPlayerCommandFastForward = FALSE;
+	SetFastForwardMode(FALSE);
 
 	for (INT32 bID = gTacticalStatus.Team[gbPlayerNum].bFirstID;
 		bID <= gTacticalStatus.Team[gbPlayerNum].bLastID; ++bID)
@@ -198,6 +214,8 @@ static BOOLEAN AIStartPlayerTeamCommandTurn(BOOLEAN fAnnounce)
 	}
 
 	FreezeInterfaceForEnemyTurn();
+	if (gfAIPlayerCommandFastForward)
+		SetFastForwardMode(TRUE);
 
 	// A fully spent, collapsed, or exhausted squad may legitimately have nobody in
 	// the AI list this round. Persistent takeover means we simply end the player
@@ -3295,6 +3313,16 @@ extern FACETYPE	*gpCurrentTalkingFace;
 
 void UpdateFastForwardMode(SOLDIERTYPE* pSoldier, INT8 bAction)
 {
+	if (AIPlayerTeamCommandActive() && AIPlayerCommandFastForward() && pSoldier &&
+		pSoldier->bTeam == gbPlayerNum &&
+		(pSoldier->flags.uiStatusFlags & SOLDIER_PCUNDERAICONTROL) &&
+		gTacticalStatus.bBoxingState == NOT_BOXING &&
+		!(gTacticalStatus.uiFlags & ENGAGED_IN_CONV))
+	{
+		SetFastForwardMode(TRUE);
+		return;
+	}
+
 	BOOLEAN action = FALSE;
 
 	// check if fast forward mode disabled - do nothing
