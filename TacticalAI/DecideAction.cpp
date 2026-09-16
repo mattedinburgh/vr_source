@@ -13225,7 +13225,7 @@ INT8 DecideCombatDispersion(SOLDIERTYPE *pSoldier)
 		return AI_ACTION_NONE;
 	}
 
-	INT32 sThreatSpot = AIPrimaryPlanningThreatSpot(pSoldier);
+	INT32 sThreatSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
 	UINT32 uiDispersionDecision = VRPlannerTraceBeginDecision(
 		pSoldier, "combat_dispersion", sThreatSpot,
 		AI_INTENT_HOLD, AI_ROLE_RESERVE);
