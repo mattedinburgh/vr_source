@@ -464,6 +464,24 @@ static INT16 gsBattleLogInspectorDamage = 0;
 static UINT32 guiBattleLogHoverSequence = 0;
 static UINT8 gubBattleLogHoverMode = BATTLELOG_INSPECTOR_NONE;
 
+static STR16 BattleLogDisplayName( UINT8 ubSoldierID )
+{
+	static CHAR16 zNameBuffers[8][MAX_ENEMY_NAMES_CHARS];
+	static UINT8 ubNextNameBuffer = 0;
+
+	CHAR16 *pName = zNameBuffers[ubNextNameBuffer];
+	ubNextNameBuffer = (UINT8)((ubNextNameBuffer + 1) % 8);
+	pName[0] = 0;
+
+	if ( ubSoldierID != NOBODY && ubSoldierID < TOTAL_SOLDIERS && MercPtrs[ubSoldierID] != NULL )
+		BuildTacticalSoldierDisplayName( MercPtrs[ubSoldierID], pName );
+
+	if ( pName[0] == 0 )
+		swprintf( pName, L"unknown" );
+
+	return pName;
+}
+
 static void BattleLogRebuildOverlay( void );
 static void BattleLogUpdateRegions( void );
 
@@ -1096,8 +1114,8 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 			INT16 iy = inspectorY;
 			CHAR16 z[256];
 			INT16 sy = iy + BATTLE_LOG_HEADER_H + 3;
-			const CHAR16 *pAttackerName = ( md.ubAttackerID != NOBODY && MercPtrs[md.ubAttackerID] ) ? MercPtrs[md.ubAttackerID]->GetName() : L"unknown";
-			const CHAR16 *pTargetName = ( md.ubTargetID != NOBODY && MercPtrs[md.ubTargetID] ) ? MercPtrs[md.ubTargetID]->GetName() : L"target";
+			const CHAR16 *pAttackerName = ( md.ubAttackerID != NOBODY && MercPtrs[md.ubAttackerID] ) ? BattleLogDisplayName( md.ubAttackerID ) : L"unknown";
+			const CHAR16 *pTargetName = ( md.ubTargetID != NOBODY && MercPtrs[md.ubTargetID] ) ? BattleLogDisplayName( md.ubTargetID ) : L"target";
 			const CHAR16 *pAttackType = md.fBlade ? L"BLADE" : L"HAND-TO-HAND";
 			const CHAR16 *pHitLocation = L"torso";
 			if ( md.ubAimLocation == AIM_SHOT_HEAD ) pHitLocation = L"head";
@@ -1125,8 +1143,8 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 			INT16 iy = inspectorY;
 			CHAR16 z[256];
 			INT16 sy = iy + BATTLE_LOG_HEADER_H + 3;
-			const CHAR16 *pAttackerName = ( md.ubAttackerID != NOBODY && MercPtrs[md.ubAttackerID] ) ? MercPtrs[md.ubAttackerID]->GetName() : L"unknown";
-			const CHAR16 *pTargetName = ( md.ubTargetID != NOBODY && MercPtrs[md.ubTargetID] ) ? MercPtrs[md.ubTargetID]->GetName() : L"target";
+			const CHAR16 *pAttackerName = ( md.ubAttackerID != NOBODY && MercPtrs[md.ubAttackerID] ) ? BattleLogDisplayName( md.ubAttackerID ) : L"unknown";
+			const CHAR16 *pTargetName = ( md.ubTargetID != NOBODY && MercPtrs[md.ubTargetID] ) ? BattleLogDisplayName( md.ubTargetID ) : L"target";
 			const CHAR16 *pHitLocation = L"torso";
 			if ( md.ubAimLocation == AIM_SHOT_HEAD ) pHitLocation = L"head";
 			else if ( md.ubAimLocation == AIM_SHOT_LEGS ) pHitLocation = L"legs";
@@ -1174,9 +1192,9 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 			const CHAR16 *pHitLocation = L"torso/other";
 
 			if ( dd.ubShooterID != NOBODY && MercPtrs[dd.ubShooterID] )
-				pShooterName = MercPtrs[dd.ubShooterID]->GetName();
+				pShooterName = BattleLogDisplayName( dd.ubShooterID );
 			if ( dd.ubTargetID != NOBODY && MercPtrs[dd.ubTargetID] )
-				pTargetName = MercPtrs[dd.ubTargetID]->GetName();
+				pTargetName = BattleLogDisplayName( dd.ubTargetID );
 			if ( dd.ubHitLocation == AIM_SHOT_HEAD ) pHitLocation = L"head";
 			else if ( dd.ubHitLocation == AIM_SHOT_LEGS ) pHitLocation = L"legs";
 			else if ( dd.ubHitLocation == AIM_SHOT_TORSO ) pHitLocation = L"torso";
@@ -1269,11 +1287,11 @@ static void BlitBattleLog( VIDEO_OVERLAY *pBlitter )
 			const CHAR16 *pTargetName = L"target";
 			const CHAR16 *pActualTargetName = L"someone";
 			if ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] )
-				pShooterName = MercPtrs[d.ubShooterID]->GetName();
+				pShooterName = BattleLogDisplayName( d.ubShooterID );
 			if ( d.ubTargetID != NOBODY && MercPtrs[d.ubTargetID] )
-				pTargetName = MercPtrs[d.ubTargetID]->GetName();
+				pTargetName = BattleLogDisplayName( d.ubTargetID );
 			if ( gubBattleLogInspectorActualTargetID != NOBODY && MercPtrs[gubBattleLogInspectorActualTargetID] )
-				pActualTargetName = MercPtrs[gubBattleLogInspectorActualTargetID]->GetName();
+				pActualTargetName = BattleLogDisplayName( gubBattleLogInspectorActualTargetID );
 
 			if ( gubBattleLogInspectorOutcome == BATTLELOG_OUTCOME_INTERCEPT )
 				swprintf( z, L"%s aimed at %s -> hit %s | %d dmg", pShooterName, pTargetName, pActualTargetName, gsBattleLogInspectorDamage );
@@ -1482,8 +1500,8 @@ void BattleLogAddMeleeHit( const MELEE_DIAGNOSTIC *pDiagnostic )
 	pEntry->iBullet = -1;
 	pEntry->melee = *pDiagnostic;
 
-	const CHAR16 *pAttackerName = MercPtrs[pDiagnostic->ubAttackerID]->GetName();
-	const CHAR16 *pTargetName = MercPtrs[pDiagnostic->ubTargetID]->GetName();
+	const CHAR16 *pAttackerName = BattleLogDisplayName( pDiagnostic->ubAttackerID );
+	const CHAR16 *pTargetName = BattleLogDisplayName( pDiagnostic->ubTargetID );
 	CHAR16 zDamageToken[64];
 	swprintf( zDamageToken, L"%d dmg", pDiagnostic->sFinalDamage );
 	swprintf( pEntry->zText, L"[%02d:%02d] %s hit %s for %s",
@@ -1518,7 +1536,7 @@ void BattleLogAddExplosionEvent( UINT8 ubOwner, UINT16 usItem )
 	pEntry->ubActualTargetID = NOBODY;
 	pEntry->iBullet = -1;
 
-	const CHAR16 *pOwnerName = MercPtrs[ubOwner]->GetName();
+	const CHAR16 *pOwnerName = BattleLogDisplayName( ubOwner );
 	const CHAR16 *pItemName = L"explosive";
 	if ( usItem < MAXITEMS && ShortItemNames[usItem][0] != 0 )
 		pItemName = ShortItemNames[usItem];
@@ -1560,10 +1578,10 @@ void BattleLogAddExplosionHit( UINT8 ubOwner, UINT8 ubTargetID, UINT16 usItem, I
 	pEntry->iBullet = -1;
 
 	const CHAR16 *pOwnerName = NULL;
-	const CHAR16 *pTargetName = MercPtrs[ubTargetID]->GetName();
+	const CHAR16 *pTargetName = BattleLogDisplayName( ubTargetID );
 	const CHAR16 *pItemName = L"explosion";
 	if ( ubOwner != NOBODY && ubOwner < TOTAL_SOLDIERS && MercPtrs[ubOwner] != NULL )
-		pOwnerName = MercPtrs[ubOwner]->GetName();
+		pOwnerName = BattleLogDisplayName( ubOwner );
 	if ( usItem < MAXITEMS && ShortItemNames[usItem][0] != 0 )
 		pItemName = ShortItemNames[usItem];
 
@@ -1636,9 +1654,9 @@ void BattleLogAddNCTHMiss( INT32 iBullet )
 	const CHAR16 *pName = L"Merc";
 	const CHAR16 *pTargetName = L"target";
 	if ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] )
-		pName = MercPtrs[d.ubShooterID]->GetName();
+		pName = BattleLogDisplayName( d.ubShooterID );
 	if ( d.ubTargetID != NOBODY && MercPtrs[d.ubTargetID] )
-		pTargetName = MercPtrs[d.ubTargetID]->GetName();
+		pTargetName = BattleLogDisplayName( d.ubTargetID );
 
 	swprintf( pEntry->zText, L"[%02d:%02d] %s missed %s",
 		guiHour, guiMin, pName, pTargetName );
@@ -1690,9 +1708,9 @@ void BattleLogAddNCTHBlocked( INT32 iBullet, UINT8 ubReason )
 	const CHAR16 *pBlockReason = L"cover/structure";
 
 	if ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] )
-		pName = MercPtrs[d.ubShooterID]->GetName();
+		pName = BattleLogDisplayName( d.ubShooterID );
 	if ( d.ubTargetID != NOBODY && MercPtrs[d.ubTargetID] )
-		pTargetName = MercPtrs[d.ubTargetID]->GetName();
+		pTargetName = BattleLogDisplayName( d.ubTargetID );
 
 	if ( ubReason == BATTLELOG_BLOCK_GROUND )
 		pBlockReason = L"ground";
@@ -1752,11 +1770,11 @@ void BattleLogAddNCTHHit( INT32 iBullet, UINT8 ubTargetID, INT16 sDamage )
 	const CHAR16 *pIntendedTargetName = L"target";
 	const CHAR16 *pActualTargetName = L"someone";
 	if ( d.ubShooterID != NOBODY && MercPtrs[d.ubShooterID] )
-		pName = MercPtrs[d.ubShooterID]->GetName();
+		pName = BattleLogDisplayName( d.ubShooterID );
 	if ( d.ubTargetID != NOBODY && MercPtrs[d.ubTargetID] )
-		pIntendedTargetName = MercPtrs[d.ubTargetID]->GetName();
+		pIntendedTargetName = BattleLogDisplayName( d.ubTargetID );
 	if ( ubTargetID != NOBODY && MercPtrs[ubTargetID] )
-		pActualTargetName = MercPtrs[ubTargetID]->GetName();
+		pActualTargetName = BattleLogDisplayName( ubTargetID );
 
 	DAMAGE_DIAGNOSTIC damage;
 	if ( DamageGetBulletDiagnostic( iBullet, &damage ) )
