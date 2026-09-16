@@ -3243,7 +3243,10 @@ void BuildStashForSelectedSector( INT16 sMapX, INT16 sMapY, INT16 sMapZ )
 				{
 					//set the flag
 #ifndef _DEBUG
-					pInventoryPoolList[ i ].usFlags |= WORLD_ITEM_GRIDNO_NOT_SET_USE_ENTRY_POINT;
+					// pInventoryPoolList was cleared above and this item has not been
+					// pushed yet. Flag the authoritative world item before copying it;
+					// indexing the empty stash here could corrupt or lose sector loot.
+					gWorldItems[ i ].usFlags |= WORLD_ITEM_GRIDNO_NOT_SET_USE_ENTRY_POINT;
 #endif
 					fNumFlagsSet++;
 				}
