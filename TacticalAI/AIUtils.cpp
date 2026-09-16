@@ -7755,10 +7755,14 @@ UINT16 AIKnownThreatExposure(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		if (bKnowledge == NOT_HEARD_OR_SEEN)
 			continue;
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW))
 		{
 			continue;
 		}
@@ -10164,17 +10168,17 @@ static BOOLEAN AIKnownThreatHasSightToSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, B
 		if (bKnowledge == NOT_HEARD_OR_SEEN)
 			continue;
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
-		{
-			continue;
-		}
-
 		const BOOLEAN fThreatStateKnown =
 			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
 			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
+		if (fThreatStateKnown &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW))
+		{
+			continue;
+		}
 
 		if (fThreatStateKnown && !ValidOpponent(pSoldier, pOpponent))
 			continue;
@@ -10358,17 +10362,17 @@ BOOLEAN CheckDangerousDirection(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		if (bKnowledge == NOT_HEARD_OR_SEEN)
 			continue;
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
-		{
-			continue;
-		}
-
 		const BOOLEAN fThreatStateKnown =
 			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
 			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
+		if (fThreatStateKnown &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW))
+		{
+			continue;
+		}
 
 		if (fThreatStateKnown &&
 			(!ValidOpponent(pSoldier, pOpponent) || pOpponent->IsUnconscious() || pOpponent->IsEmptyVehicle()))
@@ -11033,18 +11037,20 @@ BOOLEAN GuyKnowsEnemyPosition( SOLDIERTYPE * pSoldier )
 		if (bKnowledge == NOT_HEARD_OR_SEEN)
 			continue;
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW))
 		{
 			continue;
 		}
 
 		// Only a current contact may disappear because of its live engine state.
-		if (PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
-			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0 &&
-			!ValidOpponent(pSoldier, pOpponent))
+		if (fDirectVisualContact && !ValidOpponent(pSoldier, pOpponent))
 			continue;
 
 		if (!TileIsOutOfBounds(KnownLocation(pSoldier, pOpponent->ubID)))
@@ -11864,16 +11870,16 @@ BOOLEAN AICheckWeOutnumberSector(SOLDIERTYPE *pSoldier)
 		if (bKnowledge == NOT_HEARD_OR_SEEN)
 			continue;
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
-		{
-			continue;
-		}
-
 		const BOOLEAN fDirectVisualContact =
 			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
 			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW))
+		{
+			continue;
+		}
 
 		// Only direct current observation can remove a known contact because of live
 		// casualty/capture/sector state. Stale contacts remain possible threats until
@@ -12021,17 +12027,17 @@ BOOLEAN AnyCoverAtSpot( SOLDIERTYPE *pSoldier, INT32 sSpot )
 		if (bKnowledge == NOT_HEARD_OR_SEEN)
 			continue;
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
-		{
-			continue;
-		}
-
 		const BOOLEAN fThreatStateKnown =
 			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
 			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
+		if (fThreatStateKnown &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW))
+		{
+			continue;
+		}
 		if (fThreatStateKnown && !ValidOpponent(pSoldier, pOpponent))
 			continue;
 
@@ -12586,16 +12592,19 @@ UINT8 CountKnownEnemiesInDirection(SOLDIERTYPE *pSoldier, UINT8 ubDirection, INT
 			continue;
 		}
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW))
 		{
 			continue;
 		}
 
-		if (PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
-			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0 &&
-			!ValidOpponent(pSoldier, pOpponent))
+		if (fDirectVisualContact && !ValidOpponent(pSoldier, pOpponent))
 		{
 			continue;
 		}
