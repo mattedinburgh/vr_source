@@ -14059,8 +14059,10 @@ static INT8 AISharedIntentVote(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, UINT32 
 		}
 	}
 
-	// A commander/officer carries two votes; otherwise at least two nearby soldiers
-	// must already agree before the blackboard overrides an individual's neutral plan.
+	// Enemy fireteams share intent almost immediately: one valid local plan is enough
+	// to seed the element. Militia retain the more conservative two-vote threshold.
+	if (pSoldier->bTeam == ENEMY_TEAM)
+		return ubBestVotes >= 1 ? bBestIntent : -1;
 	return ubBestVotes >= 2 ? bBestIntent : -1;
 }
 
@@ -14119,6 +14121,11 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 	if (TileIsOutOfBounds(sTargetSpot))
 		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+
+	// If this soldier has no personal/public contact, use the fireteam's recent
+	// legally observed contact as a planning objective. This does not authorize fire.
+	if (TileIsOutOfBounds(sTargetSpot) && pSoldier->bTeam == ENEMY_TEAM)
+		AISharedFireteamContact(pSoldier, &sTargetSpot, NULL, NULL);
 
 	UINT32 uiNow = guiTurnCnt + 1;
 	AITACTICALDECISIONCONTEXT Context;
@@ -14256,9 +14263,9 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 		if (fCanPress && fLocalAdvantage)
 		{
-			BOOLEAN fCunning = pSoldier->aiData.bAttitude == CUNNINGSOLO ||
-				pSoldier->aiData.bAttitude == CUNNINGAID;
-			BOOLEAN fAdvancedFlank = fCunning &&
+			// Tactical intelligence is universal. Personality affects risk/tempo, not
+			// whether the soldier understands coordinated flanking.
+			BOOLEAN fAdvancedFlank =
 				AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED,
 					(UINT32)(sTargetSpot + 211));
 			BOOLEAN fBasicFlank = fBasicFireteamManeuver &&
@@ -14300,10 +14307,10 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		else if (bIntent != AI_INTENT_FALLBACK && bIntent != AI_INTENT_DISENGAGE &&
 			iRisk <= iTolerance + 5)
 		{
-			// Lower-quality troops do not automatically become a hive mind merely because
-			// nearby soldiers found a sophisticated plan. HOLD/PRESS remain simple; FLANK
-			// requires the competence layer to accept coordinated execution.
-			if (bSharedIntent != AI_INTENT_FLANK ||
+			// The local enemy fireteam deliberately behaves like a shared tactical brain.
+			// The shared target still came only from legal observation/communication.
+			if (pSoldier->bTeam == ENEMY_TEAM ||
+				bSharedIntent != AI_INTENT_FLANK ||
 				fBasicFireteamManeuver ||
 				AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED, (UINT32)(sTargetSpot + 307)))
 			{
