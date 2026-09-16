@@ -613,6 +613,8 @@ void BeginTeamTurn( UINT8 ubTeam )
 {
 	DebugMsg (TOPIC_JA2INTERRUPT,DBG_LEVEL_3,"BeginTeamTurn");
 	VR_TacticalTelemetryTurnStart( ubTeam );
+	if( VR_SelfPlayShouldAbortCurrentBattle() )
+		return;
 	INT32 cnt;
 	UINT8	ubID;
 	SOLDIERTYPE		*pSoldier;
@@ -655,7 +657,10 @@ void BeginTeamTurn( UINT8 ubTeam )
 		}		
 	}
 	if( !is_networked && ubTeam != OUR_TEAM )
-		SetClockSpeedPercent(gGameExternalOptions.fEnemyClockSpeedPercent);		// sevenfm: set clock speed for enemy turn
+		SetClockSpeedPercent(gGameExternalOptions.fEnemyClockSpeedPercent);
+	// Self-play keeps both sides on the same accelerated tactical clock.
+	if( VR_SelfPlayActive() )
+		SetClockSpeedPercent( 5000.0f );		// sevenfm: set clock speed for enemy turn
 
 	while( 1 )
 	{
@@ -724,7 +729,7 @@ void BeginTeamTurn( UINT8 ubTeam )
 
 		RecalculateSoldiersAniSpeed();
 
-		if (ubTeam == gbPlayerNum )
+		if (ubTeam == gbPlayerNum && !VR_SelfPlayActive() )
 		{
 			// ATE: Check if we are still in a valid battle...
 			// ( they could have blead to death above )
