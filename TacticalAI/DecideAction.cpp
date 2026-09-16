@@ -11770,22 +11770,27 @@ static INT32 AIClosestKnownThreatSpotForEscape(SOLDIERTYPE *pSoldier)
 		if (!pOpponent || pOpponent == pSoldier)
 			continue;
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
-
-		const BOOLEAN fDirectVisualContact =
-			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
-			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
-		if (fDirectVisualContact &&
-			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			 pSoldier->bSide == pOpponent->bSide ||
-			 pOpponent->ubBodyType == CROW))
+		INT32 sKnownSpot = NOWHERE;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sKnownSpot, NULL, NULL, &bKnowledge))
 		{
 			continue;
 		}
 
-		INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 pOpponent->ubBodyType == CROW ||
+			 !ValidOpponent(pSoldier, pOpponent)))
+		{
+			continue;
+		}
+
 		if (TileIsOutOfBounds(sKnownSpot))
 			continue;
 
@@ -11799,7 +11804,6 @@ static INT32 AIClosestKnownThreatSpotForEscape(SOLDIERTYPE *pSoldier)
 
 	return sBestSpot;
 }
-
 static INT32 AINearestUsableOuterEdgepoint(SOLDIERTYPE *pSoldier, INT8 bDirection)
 {
 	INT32 *psEdgepoints = NULL;
