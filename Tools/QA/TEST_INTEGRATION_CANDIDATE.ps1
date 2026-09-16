@@ -62,7 +62,7 @@ try {
         $conflictPaths | ForEach-Object { Write-Host "  $_" }
         exit 2
     }
-    $check = Invoke-Git @("diff", "--check", $canonicalSha) $tempRoot
+    $check = Invoke-Git @("-c", "core.whitespace=cr-at-eol", "diff", "--check", $canonicalSha) $tempRoot
     if ($check.ExitCode -ne 0) {
         Write-Host "DIFF_CHECK_FAILED"
         $check.Output | ForEach-Object { Write-Host $_ }
