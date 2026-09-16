@@ -1768,7 +1768,7 @@ void BuildTacticalSoldierDisplayName( SOLDIERTYPE *pSoldier, CHAR16 *pOut )
 				 pSoldier->sSectorX == zEnemyName[i].SectorX &&
 				 pSoldier->sSectorY == zEnemyName[i].SectorY )
 			{
-				swprintf( pOut, zEnemyName[i].szCurGroup );
+				swprintf( pOut, L"%s", zEnemyName[i].szCurGroup );
 				return;
 			}
 		}
