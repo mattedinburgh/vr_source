@@ -5799,6 +5799,25 @@ struct AIPLANNINGCONTACTSNAPSHOT
 	BOOLEAN fObservedRecentFire;
 };
 
+#define AI_DECISION_ROUTE_CACHE_SIZE 12
+
+struct AIDECISIONROUTECACHEENTRY
+{
+	BOOLEAN fValid;
+	INT32 sStartGrid;
+	INT8 bLevel;
+	UINT8 ubDirection;
+	INT16 sActionPoints;
+	INT32 sDestination;
+	UINT16 usMovementMode;
+	INT16 sAPBudget;
+	UINT8 ubDistLimit;
+	INT32 iPathSteps;
+	BOOLEAN fExposureCostValid;
+	INT32 iExposureCost;
+	UINT32 *pPath;
+};
+
 struct AIDECISIONTHREATSNAPSHOT
 {
 	BOOLEAN fActive;
@@ -5814,6 +5833,8 @@ struct AIDECISIONTHREATSNAPSHOT
 	UINT32 uiReactionCalls;
 	UINT32 uiPathSearchCount;
 	UINT32 uiPathCostReuses;
+	UINT32 uiRouteCacheHits;
+	UINT32 uiRouteCacheMisses;
 	UINT32 uiDetailedCandidateCount;
 	UINT32 uiLookaheadNodes;
 	UINT32 uiCacheHits;
@@ -5826,10 +5847,28 @@ struct AIDECISIONTHREATSNAPSHOT
 	BOOLEAN fGeometryValid;
 	INT32 sGeometryAnchor;
 	AITACTICALGEOMETRY Geometry;
+	UINT8 ubRouteCacheNext;
+	AIDECISIONROUTECACHEENTRY RouteCache[AI_DECISION_ROUTE_CACHE_SIZE];
 	AIPLANNINGCONTACTSNAPSHOT Contact[MAX_NUM_SOLDIERS];
 };
 
 static AIDECISIONTHREATSNAPSHOT gAIDecisionThreatSnapshot[MAX_NUM_SOLDIERS];
+
+static void AIFreeDecisionRouteStorage(AIDECISIONTHREATSNAPSHOT *pSnapshot)
+{
+	if (!pSnapshot)
+		return;
+
+	for (UINT8 i = 0; i < AI_DECISION_ROUTE_CACHE_SIZE; ++i)
+	{
+		if (pSnapshot->RouteCache[i].pPath)
+		{
+			MemFree(pSnapshot->RouteCache[i].pPath);
+			pSnapshot->RouteCache[i].pPath = NULL;
+		}
+		pSnapshot->RouteCache[i].fValid = FALSE;
+	}
+}
 
 static AIDECISIONTHREATSNAPSHOT *AIGetDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
 {
@@ -5848,6 +5887,104 @@ static AIDECISIONTHREATSNAPSHOT *AIGetDecisionThreatSnapshot(SOLDIERTYPE *pSoldi
 	return pSnapshot;
 }
 
+static AIDECISIONROUTECACHEENTRY *AIGetDecisionRoute(
+	SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMovementMode,
+	BOOLEAN *pfCacheHit)
+{
+	if (pfCacheHit) *pfCacheHit = FALSE;
+	AIDECISIONTHREATSNAPSHOT *pSnapshot =
+		AIGetDecisionThreatSnapshot(pSoldier);
+	if (!pSnapshot || TileIsOutOfBounds(sDestination))
+		return NULL;
+
+	const INT16 sAPBudget = (INT16)gubNPCAPBudget;
+	const UINT8 ubDistLimit = gubNPCDistLimit;
+	for (UINT8 i = 0; i < AI_DECISION_ROUTE_CACHE_SIZE; ++i)
+	{
+		AIDECISIONROUTECACHEENTRY *pEntry =
+			&pSnapshot->RouteCache[i];
+		if (!pEntry->fValid ||
+			pEntry->sStartGrid != pSoldier->sGridNo ||
+			pEntry->bLevel != pSoldier->pathing.bLevel ||
+			pEntry->ubDirection != pSoldier->ubDirection ||
+			pEntry->sActionPoints != pSoldier->bActionPoints ||
+			pEntry->sDestination != sDestination ||
+			pEntry->usMovementMode != usMovementMode ||
+			pEntry->sAPBudget != sAPBudget ||
+			pEntry->ubDistLimit != ubDistLimit)
+		{
+			continue;
+		}
+
+		++pSnapshot->uiRouteCacheHits;
+		if (pfCacheHit) *pfCacheHit = TRUE;
+		return pEntry;
+	}
+
+	++pSnapshot->uiRouteCacheMisses;
+	UINT8 ubSlot = AI_DECISION_ROUTE_CACHE_SIZE;
+	for (UINT8 i = 0; i < AI_DECISION_ROUTE_CACHE_SIZE; ++i)
+	{
+		if (!pSnapshot->RouteCache[i].fValid)
+		{
+			ubSlot = i;
+			break;
+		}
+	}
+	if (ubSlot >= AI_DECISION_ROUTE_CACHE_SIZE)
+	{
+		ubSlot = pSnapshot->ubRouteCacheNext;
+		pSnapshot->ubRouteCacheNext =
+			(UINT8)((pSnapshot->ubRouteCacheNext + 1) %
+				AI_DECISION_ROUTE_CACHE_SIZE);
+	}
+
+	AIDECISIONROUTECACHEENTRY *pEntry =
+		&pSnapshot->RouteCache[ubSlot];
+	if (pEntry->pPath)
+		MemFree(pEntry->pPath);
+	memset(pEntry, 0, sizeof(*pEntry));
+	pEntry->sStartGrid = pSoldier->sGridNo;
+	pEntry->bLevel = pSoldier->pathing.bLevel;
+	pEntry->ubDirection = pSoldier->ubDirection;
+	pEntry->sActionPoints = pSoldier->bActionPoints;
+	pEntry->sDestination = sDestination;
+	pEntry->usMovementMode = usMovementMode;
+	pEntry->sAPBudget = sAPBudget;
+	pEntry->ubDistLimit = ubDistLimit;
+
+	const UINT32 uiPathStart = GetJA2Clock();
+	INT32 iPathSteps = FindBestPath(
+		pSoldier, sDestination, pSoldier->pathing.bLevel,
+		usMovementMode, NO_COPYROUTE, 0);
+	++pSnapshot->uiPathSearchCount;
+	pSnapshot->uiPathfindingMs += GetJA2Clock() - uiPathStart;
+
+	if (iPathSteps > 0 && guiPathingData)
+	{
+		const INT32 iCopySteps =
+			__min(iPathSteps, (INT32)MAX_PATH_DATA_LENGTH);
+		pEntry->pPath = (UINT32*)MemAlloc(
+			iCopySteps * sizeof(UINT32));
+		if (pEntry->pPath)
+		{
+			pEntry->iPathSteps = iCopySteps;
+			memcpy(pEntry->pPath, guiPathingData,
+				iCopySteps * sizeof(UINT32));
+		}
+		else
+		{
+			pEntry->iPathSteps = 0;
+		}
+	}
+	else
+	{
+		pEntry->iPathSteps = 0;
+	}
+	pEntry->fValid = TRUE;
+	return pEntry;
+}
+
 void AIBeginDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
 {
 	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS || !AICombatTeam(pSoldier))
@@ -5855,6 +5992,7 @@ void AIBeginDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
 
 	AIDECISIONTHREATSNAPSHOT *pSnapshot =
 		&gAIDecisionThreatSnapshot[pSoldier->ubID];
+	AIFreeDecisionRouteStorage(pSnapshot);
 	memset(pSnapshot, 0, sizeof(*pSnapshot));
 	pSnapshot->ubSoldierID = pSoldier->ubID;
 	pSnapshot->uiSoldierIdentity = pSoldier->uiUniqueSoldierIdValue;
@@ -6023,6 +6161,7 @@ void AIEndDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
 	DebugAI(AI_MSG_INFO, pSoldier,
 		String("[AI-PERF] total_ms=%lu threat_build_ms=%lu pathfinding_ms=%lu exposure_ms=%lu reaction_ms=%lu geometry_ms=%lu "
 			"contacts=%u detailed_candidates=%lu path_searches=%lu path_reuses=%lu "
+			"route_hits=%lu route_misses=%lu "
 			"exposure_calls=%lu reaction_calls=%lu cache_hits=%lu cache_misses=%lu "
 			"shared_contact_hits=%lu shared_contact_misses=%lu "
 			"geometry_hits=%lu geometry_misses=%lu lookahead_nodes=%lu",
@@ -6036,6 +6175,8 @@ void AIEndDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
 			(unsigned long)pSnapshot->uiDetailedCandidateCount,
 			(unsigned long)pSnapshot->uiPathSearchCount,
 			(unsigned long)pSnapshot->uiPathCostReuses,
+			(unsigned long)pSnapshot->uiRouteCacheHits,
+			(unsigned long)pSnapshot->uiRouteCacheMisses,
 			(unsigned long)pSnapshot->uiExposureCalls,
 			(unsigned long)pSnapshot->uiReactionCalls,
 			(unsigned long)pSnapshot->uiCacheHits,
@@ -6046,6 +6187,7 @@ void AIEndDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
 			(unsigned long)pSnapshot->uiGeometryMisses,
 			(unsigned long)pSnapshot->uiLookaheadNodes));
 
+	AIFreeDecisionRouteStorage(pSnapshot);
 	pSnapshot->fActive = FALSE;
 }
 
@@ -8772,10 +8914,25 @@ BOOLEAN AIKnownRouteExposureAcceptable(
 		return FALSE;
 	}
 
-	INT32 iPathSteps = FindBestPath(
-		pSoldier, sDestination, pSoldier->pathing.bLevel,
-		DetermineMovementMode(pSoldier, bAction), NO_COPYROUTE, 0);
-	if (iPathSteps <= 0 || !guiPathingData)
+	const UINT16 usMovementMode =
+		DetermineMovementMode(pSoldier, bAction);
+	const UINT32 *pPathData = guiPathingData;
+	INT32 iPathSteps = 0;
+	AIDECISIONROUTECACHEENTRY *pRoute =
+		AIGetDecisionRoute(pSoldier, sDestination, usMovementMode, NULL);
+	if (pRoute)
+	{
+		iPathSteps = pRoute->iPathSteps;
+		pPathData = pRoute->pPath;
+	}
+	else
+	{
+		iPathSteps = FindBestPath(
+			pSoldier, sDestination, pSoldier->pathing.bLevel,
+			usMovementMode, NO_COPYROUTE, 0);
+		pPathData = guiPathingData;
+	}
+	if (iPathSteps <= 0 || !pPathData)
 		return FALSE;
 
 	UINT16 usCurrentExposure = AIKnownThreatExposure(
@@ -8788,7 +8945,7 @@ BOOLEAN AIKnownRouteExposureAcceptable(
 	for (INT32 iStep = 0; iStep < iPathLimit; ++iStep)
 	{
 		INT32 sNext = NewGridNo(
-			sRouteSpot, DirectionInc((UINT8)guiPathingData[iStep]));
+			sRouteSpot, DirectionInc((UINT8)pPathData[iStep]));
 		if (sNext == sRouteSpot || TileIsOutOfBounds(sNext))
 			return FALSE;
 
@@ -8826,7 +8983,8 @@ BOOLEAN AIKnownRouteExposureAcceptable(
 	}
 
 	if (ubSamples > 0 &&
-		uiExposureTotal / ubSamples > (UINT32)usCurrentExposure + usAverageIncrease)
+		uiExposureTotal / ubSamples >
+			(UINT32)usCurrentExposure + usAverageIncrease)
 	{
 		return FALSE;
 	}
@@ -15185,6 +15343,8 @@ void AIResetTacticalPlannerStateForLoad(void)
 	if (AIPlayerTeamCommandActive())
 		AIResetPlayerTeamCommand();
 	AIResetTacticalReasoningStateForLoad();
+	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
+		AIFreeDecisionRouteStorage(&gAIDecisionThreatSnapshot[i]);
 	memset(gAIDecisionThreatSnapshot, 0, sizeof(gAIDecisionThreatSnapshot));
 	memset(gAIFireteamThreatSnapshot, 0, sizeof(gAIFireteamThreatSnapshot));
 
@@ -15864,86 +16024,106 @@ INT32 AIPathExposureCost(SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMov
 	gubNPCAPBudget = 0;
 	gubNPCDistLimit = 0;
 
-	// Use the non-copying route query: it gives us the full generated path through
-	// guiPathingData without replacing the soldier's prepared execution route.
-	AIDECISIONTHREATSNAPSHOT *pDecisionSnapshot =
-		AIGetDecisionThreatSnapshot(pSoldier);
-	const UINT32 uiPathStart =
-		pDecisionSnapshot ? GetJA2Clock() : 0;
-	INT32 iPathSteps = FindBestPath(pSoldier, sDestination, pSoldier->pathing.bLevel,
-		usMovementMode, NO_COPYROUTE, 0);
-	if (pDecisionSnapshot)
+	const UINT32 *pPathData = guiPathingData;
+	INT32 iPathSteps = 0;
+	AIDECISIONROUTECACHEENTRY *pRoute =
+		AIGetDecisionRoute(pSoldier, sDestination, usMovementMode, NULL);
+	if (pRoute)
 	{
-		++pDecisionSnapshot->uiPathSearchCount;
-		pDecisionSnapshot->uiPathfindingMs += GetJA2Clock() - uiPathStart;
+		if (pRoute->fExposureCostValid)
+		{
+			gubNPCAPBudget = sOldAPBudget;
+			gubNPCDistLimit = ubOldDistLimit;
+			return pRoute->iExposureCost;
+		}
+		iPathSteps = pRoute->iPathSteps;
+		pPathData = pRoute->pPath;
+	}
+	else
+	{
+		// Outside the unified planner there is no decision cache; retain the
+		// legacy non-copying path query exactly as before.
+		iPathSteps = FindBestPath(
+			pSoldier, sDestination, pSoldier->pathing.bLevel,
+			usMovementMode, NO_COPYROUTE, 0);
+		pPathData = guiPathingData;
 	}
 
 	gubNPCAPBudget = sOldAPBudget;
 	gubNPCDistLimit = ubOldDistLimit;
 
-	if (iPathSteps <= 0 || !guiPathingData)
-		return 10000;
-
-	INT32 sPathSpot = pSoldier->sGridNo;
-	INT32 iCost = 0;
-	INT32 iExposedStreak = 0;
-	INT32 iPathLimit = __min(iPathSteps, (INT32)MAX_PATH_DATA_LENGTH);
-
-	for (INT32 iStep = 0; iStep < iPathLimit; ++iStep)
+	INT32 iResult = 10000;
+	if (iPathSteps > 0 && pPathData)
 	{
-		INT32 sNext = NewGridNo(
-			sPathSpot, DirectionInc((UINT8)guiPathingData[iStep]));
-		if (sNext == sPathSpot || TileIsOutOfBounds(sNext))
-			return 10000;
+		INT32 sPathSpot = pSoldier->sGridNo;
+		INT32 iCost = 0;
+		INT32 iExposedStreak = 0;
+		INT32 iPathLimit =
+			__min(iPathSteps, (INT32)MAX_PATH_DATA_LENGTH);
 
-		sPathSpot = sNext;
-
-		// Environmental hazards are hard route penalties, not merely endpoint checks.
-		if (InGas(pSoldier, sPathSpot) ||
-			RedSmokeDanger(sPathSpot, pSoldier->pathing.bLevel) ||
-			FindBombNearby(pSoldier, sPathSpot, BOMB_DETECTION_RANGE))
+		for (INT32 iStep = 0; iStep < iPathLimit; ++iStep)
 		{
-			return 10000;
+			INT32 sNext = NewGridNo(
+				sPathSpot, DirectionInc((UINT8)pPathData[iStep]));
+			if (sNext == sPathSpot || TileIsOutOfBounds(sNext))
+			{
+				iCost = 10000;
+				break;
+			}
+
+			sPathSpot = sNext;
+
+			// Environmental hazards are hard route penalties, not merely
+			// endpoint checks.
+			if (InGas(pSoldier, sPathSpot) ||
+				RedSmokeDanger(sPathSpot, pSoldier->pathing.bLevel) ||
+				FindBombNearby(pSoldier, sPathSpot, BOMB_DETECTION_RANGE))
+			{
+				iCost = 10000;
+				break;
+			}
+
+			UINT16 usExposure = AIKnownThreatExposure(
+				pSoldier, sPathSpot, pSoldier->pathing.bLevel);
+
+			if (InSmoke(sPathSpot, pSoldier->pathing.bLevel))
+				usExposure /= 3;
+
+			if (usExposure > 0)
+			{
+				++iExposedStreak;
+				iCost += __min((INT32)45, (INT32)usExposure / 8);
+				iCost += AIInferredReactionRisk(
+					pSoldier, sPathSpot, pSoldier->pathing.bLevel) / 6;
+
+				if (!SightCoverAtSpot(pSoldier, sPathSpot, FALSE))
+					iCost += 6;
+				if (!AnyCoverAtSpot(pSoldier, sPathSpot))
+					iCost += 4;
+
+				iCost += __min((INT32)16, 2 * iExposedStreak);
+
+				if (InLightAtNight(sPathSpot, pSoldier->pathing.bLevel))
+					iCost += 4;
+			}
+			else
+			{
+				iExposedStreak = 0;
+			}
+
+			iCost += __min(
+				(INT32)18,
+				AITacticalSetbackPenalty(pSoldier, sPathSpot) / 4);
 		}
 
-		UINT16 usExposure = AIKnownThreatExposure(
-			pSoldier, sPathSpot, pSoldier->pathing.bLevel);
-
-		if (InSmoke(sPathSpot, pSoldier->pathing.bLevel))
-			usExposure /= 3;
-
-		if (usExposure > 0)
-		{
-			++iExposedStreak;
-			iCost += __min((INT32)45, (INT32)usExposure / 8);
-
-			// Richer route reasoning is intentionally allowed here. We sample inferred
-			// reaction risk on every step, but never inspect hidden enemy AP/state.
-			iCost += AIInferredReactionRisk(
-				pSoldier, sPathSpot, pSoldier->pathing.bLevel) / 6;
-
-			if (!SightCoverAtSpot(pSoldier, sPathSpot, FALSE))
-				iCost += 6;
-			if (!AnyCoverAtSpot(pSoldier, sPathSpot))
-				iCost += 4;
-
-			iCost += __min((INT32)16, 2 * iExposedStreak);
-
-			if (InLightAtNight(sPathSpot, pSoldier->pathing.bLevel))
-				iCost += 4;
-		}
-		else
-		{
-			iExposedStreak = 0;
-		}
-
-		// Battle-local experience also applies to the route itself. A destination
-		// can be attractive while the direct path crosses the corner/doorway where
-		// this fireteam was just surprised or had an approach rejected.
-		iCost += __min(
-			(INT32)18,
-			AITacticalSetbackPenalty(pSoldier, sPathSpot) / 4);
+		if (iCost < 10000)
+			iResult = __min((INT32)700, iCost);
 	}
 
-	return __min((INT32)700, iCost);
+	if (pRoute)
+	{
+		pRoute->iExposureCost = iResult;
+		pRoute->fExposureCostValid = TRUE;
+	}
+	return iResult;
 }
