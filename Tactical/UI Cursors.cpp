@@ -2791,14 +2791,23 @@ void HandleRightClickAdjustCursor( SOLDIERTYPE *pSoldier, INT32 usMapPos )
 			break;
 
 		case TOSSCURS:
-			// Deliberate hand-grenade aiming. Right click cycles through four aim
-			// levels and back to a snap throw, subject to available AP.
+			// Deliberate hand-grenade aiming. Clamp at the valid 0..max range:
+			// extra RMB clicks at maximum aim must not wrap back to a snap throw.
+			if ( pSoldier->aiData.bShownAimTime < 0 )
+				pSoldier->aiData.bShownAimTime = 0;
+
+			if ( pSoldier->aiData.bShownAimTime >= maxAimLevels )
+			{
+				pSoldier->aiData.bShownAimTime = maxAimLevels;
+				gfDisplayFullCountRing = FALSE;
+				break;
+			}
+
 			bFutureAim = (INT8)( pSoldier->aiData.bShownAimTime + 1 );
-			if ( bFutureAim > maxAimLevels )
-				bFutureAim = 0;
+			bFutureAim = __min( bFutureAim, maxAimLevels );
 
 			sAPCosts = CalcTotalAPsToAttack( pSoldier, usMapPos, TRUE, bFutureAim );
-			if ( bFutureAim == 0 || EnoughPoints( pSoldier, sAPCosts, 0, FALSE ) )
+			if ( EnoughPoints( pSoldier, sAPCosts, 0, FALSE ) )
 			{
 				pSoldier->aiData.bShownAimTime = bFutureAim;
 				gfDisplayFullCountRing = FALSE;
