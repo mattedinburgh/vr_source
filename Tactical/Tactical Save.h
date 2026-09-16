@@ -86,6 +86,7 @@ BOOLEAN AddRottingCorpseToUnloadedSectorsRottingCorpseFile( INT16 sMapX, INT16 s
 
 #define		ADD_DEAD_SOLDIER__USE_JFK_HEADSHOT_CORPSE		0x00000040				// Will ue the JFK headshot
 #define		ADD_DEAD_SOLDIER_PLAYER_AUTORESOLVE_LOOT		0x00000080				// Merc-won autoresolve: preserve most items that tactical combat would have dropped
+#define		ADD_DEAD_SOLDIER_NO_LOOT							0x00000100				// Autoresolve without a surviving participating merc: corpse only, no enemy loot
 
 
 
