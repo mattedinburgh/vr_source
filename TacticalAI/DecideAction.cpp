@@ -4127,6 +4127,21 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 			 AIFriendWithdrawingNeedsCover(pSoldier, BestShot.ubOpponent) ||
 			 AIFriendAdvancingNeedsCover(pSoldier, BestShot.ubOpponent));
 		BOOLEAN fDoctrineProactiveSupport = AIAllowsProactiveSupport(pSoldier);
+		BOOLEAN fAssignedFireteamSuppressor = FALSE;
+		if (pSoldier->bTeam == ENEMY_TEAM &&
+			BestShot.ubPossible &&
+			BestShot.bWeaponIn != NO_SLOT &&
+			!TileIsOutOfBounds(BestShot.sTarget) &&
+			IsGunAutofireCapable(&pSoldier->inv[BestShot.bWeaponIn]))
+		{
+			// Role evaluation owns the reservation; this read only asks whether this
+			// soldier is the fireteam's designated base-of-fire shooter for this contact.
+			INT8 bLocalRole = AITacticalRole(pSoldier, BestShot.sTarget);
+			fAssignedFireteamSuppressor =
+				bLocalRole == AI_ROLE_SUPPORT &&
+				AIHasTacticalTaskReservation(
+					pSoldier, AI_TASK_SUPPRESS, BestShot.sTarget, NOBODY);
+		}
 
 		// WarmSteel - Because of suppression fire, we need enough ammo to even consider suppressing
 		// This means we need to reload. Also reload if we're just plainly low on bullets.
@@ -4134,10 +4149,12 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 		if( BestShot.bWeaponIn != NO_SLOT &&
 			!TANK(pSoldier) &&
 			pSoldier->bActionPoints > APBPConstants[AP_MINIMUM] &&
-			(fCoveringFireSupport || fDoctrineProactiveSupport &&
-			 (!pSoldier->aiData.bUnderFire && !GuySawEnemy(pSoldier, SEEN_LAST_TURN) &&
-			  (TileIsOutOfBounds(sClosestOpponent) || PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 2) ||
-			  AICheckIsMachinegunner(pSoldier) && Chance(25) || Chance(10))) &&
+			(fCoveringFireSupport ||
+			 fAssignedFireteamSuppressor ||
+			 (pSoldier->bTeam != ENEMY_TEAM && fDoctrineProactiveSupport &&
+			  (!pSoldier->aiData.bUnderFire && !GuySawEnemy(pSoldier, SEEN_LAST_TURN) &&
+			   (TileIsOutOfBounds(sClosestOpponent) || PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 2) ||
+			   AICheckIsMachinegunner(pSoldier) && Chance(25) || Chance(10)))) &&
 			IsGunAutofireCapable(&pSoldier->inv[BestShot.bWeaponIn]) &&
 			Weapon[pSoldier->inv[BestShot.bWeaponIn].usItem].swapClips &&
 			pSoldier->inv[BestShot.bWeaponIn][0]->data.gun.ubGunShotsLeft < gGameExternalOptions.ubAISuppressionMinimumAmmo &&
@@ -4175,12 +4192,14 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 			}
 		}
 
-		// Security/ordinary line troops suppress reactively (direct contact, return fire,
-		// or a specific covering-fire task). Veterans/elites may establish fire proactively.
+		// Enemy proactive suppression is now an explicit fireteam responsibility.
+		// Unassigned soldiers still return fire or cover an exposed buddy, but they do
+		// not independently decide that everybody should become the base of fire.
 		BOOLEAN fDoctrineSuppressionTask = fCoveringFireSupport ||
+			fAssignedFireteamSuppressor ||
 			pSoldier->aiData.bUnderFire ||
 			GuySawEnemy(pSoldier, SEEN_LAST_TURN) ||
-			fDoctrineProactiveSupport;
+			(pSoldier->bTeam != ENEMY_TEAM && fDoctrineProactiveSupport);
 
 		//must have a small chance to hit and the opponent must be on the ground (can't suppress guys on the roof)
 		// HEADROCK HAM BETA2.4: Adjusted this for a random chance to suppress regardless of chance. This augments
@@ -4206,6 +4225,8 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 			// check cover
 			(AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||																				// safe position
 			fCoveringFireSupport ||																				// cover a nearby ally's movement/withdrawal
+			(fAssignedFireteamSuppressor &&
+			 AIPersonalRisk(pSoldier) <= AIPersonalRiskTolerance(pSoldier) + 5) ||
 			NightLight() && CountFriendsFlankSameSpot(pSoldier) && Chance(50) ||
 			TANK(pSoldier) ||																		// tanks don't need cover
 			pSoldier->aiData.bUnderFire && (pSoldier->ubPreviousAttackerID == BestShot.ubOpponent || pSoldier->ubNextToPreviousAttackerID == BestShot.ubOpponent) ||	// return fire
@@ -4214,6 +4235,9 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 			// reduce chance to shoot if target is beyond weapon range
 			(AICheckIsMachinegunner(pSoldier) ||
 			fCoveringFireSupport ||
+			(fAssignedFireteamSuppressor &&
+			 PythSpacesAway(pSoldier->sGridNo, BestShot.sTarget) <=
+			 (3 * __max(1, (INT32)(GunRange(&pSoldier->inv[BestShot.bWeaponIn], pSoldier) / CELL_X_SIZE))) / 2) ||
 			TANK(pSoldier) ||
 			AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
 			pSoldier->aiData.bUnderFire && (pSoldier->ubPreviousAttackerID == BestShot.ubOpponent || pSoldier->ubNextToPreviousAttackerID == BestShot.ubOpponent) ||	// return fire
@@ -4261,7 +4285,7 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 
 			// Deliberate movement-support fire should be controlled, not a full
 			// magazine dump just because the shooter happens to be behind cover.
-			if (fCoveringFireSupport)
+			if (fCoveringFireSupport || fAssignedFireteamSuppressor)
 			{
 				ubMinAuto = AICheckIsMachinegunner(pSoldier) ? 7 : 5;
 			}
