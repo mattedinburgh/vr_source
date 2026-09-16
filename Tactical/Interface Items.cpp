@@ -9549,8 +9549,10 @@ BOOLEAN HandleItemPointerClick( INT32 usMapPos )
 
 			// Given our gridno, throw grenate!
 			// sevenfm: use target level to calculate throw params
-			CalculateLaunchItemParamsForThrow(gpItemPointerSoldier, sGridNo, (UINT8)gsInterfaceLevel, (INT16)((gsInterfaceLevel * 256) + sEndZ), gpItemPointer, 0, ubThrowActionCode, uiThrowActionData);
-			//CalculateLaunchItemParamsForThrow(gpItemPointerSoldier, sGridNo, gpItemPointerSoldier->pathing.bLevel, (INT16)((gsInterfaceLevel * 256) + sEndZ), gpItemPointer, 0, ubThrowActionCode, uiThrowActionData);
+			// Trajectory preview is deterministic: 100 CTH prevents the real-shot
+			// dispersion model from randomly moving the preview target.
+			CalculateLaunchItemParamsForThrow(gpItemPointerSoldier, sGridNo, (UINT8)gsInterfaceLevel, (INT16)((gsInterfaceLevel * 256) + sEndZ), gpItemPointer, 100, ubThrowActionCode, uiThrowActionData, gpItemPointer->usItem);
+			//CalculateLaunchItemParamsForThrow(gpItemPointerSoldier, sGridNo, gpItemPointerSoldier->pathing.bLevel, (INT16)((gsInterfaceLevel * 256) + sEndZ), gpItemPointer, 100, ubThrowActionCode, uiThrowActionData, gpItemPointer->usItem);
 
 			// OK, goto throw animation
 			gpItemPointerSoldier->usGrenadeItem = 0;
