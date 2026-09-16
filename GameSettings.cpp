@@ -1983,6 +1983,8 @@ void LoadGameExternalOptions()
 	gGameExternalOptions.iMeleeDamageModifier				= iniReader.ReadInteger("Item Property Settings","MELEE_DAMAGE_MODIFIER",100, 0, 1000);
 	gGameExternalOptions.iGunDamageModifier					= iniReader.ReadInteger("Item Property Settings","GUN_DAMAGE_MODIFIER",100, 0, 1000);
 	gGameExternalOptions.iGunRangeModifier					= iniReader.ReadInteger("Item Property Settings","GUN_RANGE_MODIFIER",100, 0, 1000);
+	// 1.0 keeps the current penetration model unchanged. >1.0 increases penetration; <1.0 reduces it.
+	gGameExternalOptions.fGlobalPenetrationMultiplier		= (FLOAT)iniReader.ReadDouble("Item Property Settings","GLOBAL_PENETRATION_MULTIPLIER",1.0, 0.10, 10.0);
 
 	// Enables the "Coverage" value of armor items.
 	gGameExternalOptions.fEnableArmorCoverage				= iniReader.ReadBoolean("Item Property Settings", "ENABLE_ARMOR_COVERAGE", FALSE); // ShadoWarrior for Captain J's armor coverage
