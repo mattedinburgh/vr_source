@@ -43,6 +43,7 @@
 #include "../VRAnalytics.h"
 
 #include "connect.h"
+#include "PATHAI.H"
 
 //forward declarations of common classes to eliminate includes
 class OBJECTTYPE;
@@ -81,7 +82,7 @@ static BOOLEAN PhysicsReferenceGridMatchesMapHeight( INT32 sGridNo )
 #define	GET_OBJECT_LEVEL( z )						( (INT8)( ( z + 10 ) / HEIGHT_UNITS ) )
 //#define	OBJECT_DETONATE_ON_IMPACT( object )	( ( object->Obj.usItem == MORTAR_SHELL ) ) // && ( object->ubActionCode == THROW_ARM_ITEM || pObject->fTestObject ) )
 // HEADROCK HAM 5: Enabled "Explode on Impact" flag for explosive items
-#define	OBJECT_DETONATE_ON_IMPACT( object )	( ( Item[object->Obj.usItem].usItemClass == IC_BOMB ) || ( Explosive[Item[object->Obj.usItem].ubClassIndex ].fExplodeOnImpact ) ) // && ( object->ubActionCode == THROW_ARM_ITEM || pObject->fTestObject ) )
+#define	OBJECT_DETONATE_ON_IMPACT( object )	( ( Item[object->Obj.usItem].usItemClass == IC_BOMB ) || ( ( Item[object->Obj.usItem].usItemClass & IC_EXPLOSV ) && Explosive[Item[object->Obj.usItem].ubClassIndex ].fExplodeOnImpact ) ) // && ( object->ubActionCode == THROW_ARM_ITEM || pObject->fTestObject ) )
 
 
 #define	MAX_INTEGRATIONS				8
@@ -126,7 +127,7 @@ BOOLEAN					PhysicsCheckForCollisions( REAL_OBJECT *pObject, INT32 *piCollisionI
 void						PhysicsResolveCollision( REAL_OBJECT *pObject, vector_3 *pVelocity, vector_3 *pNormal, real CoefficientOfRestitution );
 void						PhysicsDeleteObject( REAL_OBJECT *pObject );
 BOOLEAN					PhysicsHandleCollisions( REAL_OBJECT *pObject, INT32 *piCollisionID, real DeltaTime );
-FLOAT						CalculateForceFromRange( UINT16 usItem, INT16 sRange, FLOAT dDegrees );
+FLOAT						CalculateForceFromRange( UINT16 usItem, INT16 sRange, FLOAT dDegrees, INT32 sTargetSpot = NOWHERE, UINT8 ubTargetLevel = 0 );
 
 // Parameters for item throwing
 #define MAX_MISS_BY			30
@@ -140,7 +141,7 @@ void ObjectHitWindow( INT32 sGridNo, UINT16 usStructureID, BOOLEAN fBlowWindowSo
 FLOAT CalculateObjectTrajectory( INT16 sTargetZ, OBJECTTYPE *pItem, vector_3 *vPosition, vector_3 *vForce, INT32 *psFinalGridNo );
 vector_3 FindBestForceForTrajectory( INT32 sSrcGridNo, INT32 sGridNo,INT16 sStartZ, INT16 sEndZ, real dzDegrees, OBJECTTYPE *pItem, INT32 *psGridNo, FLOAT *pzMagForce );
 INT32 ChanceToGetThroughObjectTrajectory( INT16 sTargetZ, OBJECTTYPE *pItem, vector_3 *vPosition, vector_3 *vForce, INT32 *psFinalGridNo, INT8 *pbLevel, BOOLEAN fFromUI );
-FLOAT CalculateSoldierMaxForce( SOLDIERTYPE *pSoldier,	FLOAT dDegrees, OBJECTTYPE *pObject, BOOLEAN fArmed );
+FLOAT CalculateSoldierMaxForce( SOLDIERTYPE *pSoldier,	FLOAT dDegrees, OBJECTTYPE *pObject, BOOLEAN fArmed, INT32 sTargetSpot = NOWHERE, UINT8 ubTargetLevel = 0 );
 BOOLEAN AttemptToCatchObject( REAL_OBJECT *pObject );
 BOOLEAN CheckForCatchObject( REAL_OBJECT *pObject );
 BOOLEAN DoCatchObject( REAL_OBJECT *pObject );
@@ -2064,7 +2065,7 @@ void CalculateLaunchItemBasicParams(SOLDIERTYPE *pSoldier, OBJECTTYPE *pItem, IN
 	FindBestForceForTrajectory(pSoldier->sGridNo, sGridNo, sStartZ, sEndZ, dDegrees, pItem, psFinalGridNo, &dMagForce);
 
 	// Adjust due to max range....
-	dMaxForce = CalculateSoldierMaxForce(pSoldier, dDegrees, pItem, fArmed);
+	dMaxForce = CalculateSoldierMaxForce(pSoldier, dDegrees, pItem, fArmed, sGridNo, ubLevel);
 
 	if (fIndoors)
 	{
@@ -2080,7 +2081,7 @@ void CalculateLaunchItemBasicParams(SOLDIERTYPE *pSoldier, OBJECTTYPE *pItem, IN
 	if (fMortar || fGLauncher)
 	{
 		// find min force
-		dMinForce = CalculateForceFromRange(pItem->usItem, (INT16)(sMinRange / 10), (FLOAT)(PI / 4));
+		dMinForce = CalculateForceFromRange(pItem->usItem, (INT16)(sMinRange / 10), (FLOAT)(PI / 4), sGridNo, ubLevel);
 
 		if (dMagForce < dMinForce)
 		{
@@ -2091,6 +2092,96 @@ void CalculateLaunchItemBasicParams(SOLDIERTYPE *pSoldier, OBJECTTYPE *pItem, IN
 	(*pdMagForce) = dMagForce;
 	(*pdDegrees) = dDegrees;
 }
+
+BOOLEAN GrenadeRollingPossible(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 *sXPos, INT16 *sYPos)
+{
+	if (!(pSoldier->bWeaponMode == WM_ATTACHED_GL || pSoldier->bWeaponMode == WM_ATTACHED_GL_BURST || pSoldier->bWeaponMode == WM_ATTACHED_GL_AUTO))
+	{
+		UINT8 ubDirection = GetDirectionFromGridNo(sGridNo, pSoldier);
+		if (ubDirection % 2 == 1)
+		{
+			return FALSE;
+		}
+		INT32 sTestGridNo = NewGridNo(pSoldier->sGridNo, DirectionInc(ubDirection));
+
+		if (gubWorldMovementCosts[sTestGridNo][ubDirection][pSoldier->pathing.bLevel] == TRAVELCOST_WALL)
+		{
+			BOOLEAN obstacle = FALSE;
+			INT16 newDir = (ubDirection != 2 && ubDirection != 6) ? EAST : SOUTH;
+			INT32 newLoc = NewGridNo(pSoldier->sGridNo, DirectionInc(newDir));
+			STRUCTURE *pStruct = gpWorldLevelData[newLoc].pStructureHead;
+			while (pStruct)
+			{
+				if ((pStruct->fFlags & STRUCTURE_ANYDOOR) && (pStruct->fFlags & STRUCTURE_OPEN))
+				{
+					if (gubWorldMovementCosts[newLoc][newDir][pSoldier->pathing.bLevel] >= 220)
+						return FALSE;
+					ConvertGridNoToCenterCellXY(newLoc, sXPos, sYPos);
+					return TRUE;
+				}
+				pStruct = pStruct->pNext;
+			}
+			newLoc = NewGridNo(sTestGridNo, DirectionInc(newDir));
+			pStruct = gpWorldLevelData[newLoc].pStructureHead;
+			while (pStruct)
+			{
+				if ((pStruct->fFlags & STRUCTURE_ANYDOOR) && (pStruct->fFlags & STRUCTURE_OPEN))
+				{
+					ConvertGridNoToCenterCellXY(newLoc, sXPos, sYPos);
+					return TRUE;
+				}
+				else if ((pStruct->fFlags & STRUCTURE_OBSTACLE))
+				{
+					obstacle = TRUE;
+				}
+				pStruct = pStruct->pNext;
+			}
+			if (!obstacle)
+			{
+				ConvertGridNoToCenterCellXY(newLoc, sXPos, sYPos);
+				return TRUE;
+			}
+
+			obstacle = FALSE;
+			newDir = (ubDirection != 2 && ubDirection != 6) ? WEST : NORTH;
+			newLoc = NewGridNo(pSoldier->sGridNo, DirectionInc(newDir));
+			pStruct = gpWorldLevelData[newLoc].pStructureHead;
+			while (pStruct)
+			{
+				if ((pStruct->fFlags & STRUCTURE_ANYDOOR) && (pStruct->fFlags & STRUCTURE_OPEN))
+				{
+					if (gubWorldMovementCosts[newLoc][newDir][pSoldier->pathing.bLevel] >= 220)
+						return FALSE;
+					ConvertGridNoToCenterCellXY(newLoc, sXPos, sYPos);
+					return TRUE;
+				}
+				pStruct = pStruct->pNext;
+			}
+			newLoc = NewGridNo(sTestGridNo, DirectionInc(newDir));
+			pStruct = gpWorldLevelData[newLoc].pStructureHead;
+			while (pStruct)
+			{
+				if ((pStruct->fFlags & STRUCTURE_ANYDOOR) && (pStruct->fFlags & STRUCTURE_OPEN))
+				{
+					ConvertGridNoToCenterCellXY(newLoc, sXPos, sYPos);
+					return TRUE;
+				}
+				else if ((pStruct->fFlags & STRUCTURE_OBSTACLE))
+				{
+					obstacle = TRUE;
+				}
+				pStruct = pStruct->pNext;
+			}
+			if (!obstacle)
+			{
+				ConvertGridNoToCenterCellXY(newLoc, sXPos, sYPos);
+				return TRUE;
+			}
+		}
+	}
+	return FALSE;
+}
+
 
 BOOLEAN CalculateLaunchItemChanceToGetThrough( SOLDIERTYPE *pSoldier, OBJECTTYPE *pItem, INT32 sGridNo, UINT8 ubLevel, INT16 sEndZ,	INT32 *psFinalGridNo, BOOLEAN fArmed, INT8 *pbLevel, BOOLEAN fFromUI )
 {
@@ -2111,6 +2202,11 @@ BOOLEAN CalculateLaunchItemChanceToGetThrough( SOLDIERTYPE *pSoldier, OBJECTTYPE
 	// Get XY from gridno
 	ConvertGridNoToCenterCellXY( sGridNo, &sDestX, &sDestY );
 	ConvertGridNoToCenterCellXY( pSoldier->sGridNo, &sSrcX, &sSrcY );
+	if (GrenadeRollingPossible(pSoldier, sGridNo, &sSrcX, &sSrcY))
+	{
+		dForce /= 2;
+	}
+
 
 	// Set position
 	vPosition.x = sSrcX;
@@ -2154,7 +2250,7 @@ BOOLEAN CalculateLaunchItemChanceToGetThrough( SOLDIERTYPE *pSoldier, OBJECTTYPE
 
 
 
-FLOAT CalculateForceFromRange(UINT16 usItem, INT16 sRange, FLOAT dDegrees )
+FLOAT CalculateForceFromRange(UINT16 usItem, INT16 sRange, FLOAT dDegrees, INT32 sTargetSpot, UINT8 ubTargetLevel )
 {
 	FLOAT				dMagForce;
 	INT32 sSrcGridNo, sDestGridNo;
@@ -2180,7 +2276,9 @@ FLOAT CalculateForceFromRange(UINT16 usItem, INT16 sRange, FLOAT dDegrees )
 
 	// Buggler: impact explosives requiring larger force to reach desired range due to no bounce
 	// Please change the if conditions too when definition of OBJECT_DETONATE_ON_IMPACT( object ) changes
-	if ( ( Item[ usItem ].usItemClass == IC_BOMB ) || ( Explosive[ Item[ usItem ].ubClassIndex ].fExplodeOnImpact ) ) // && ( object->ubActionCode == THROW_ARM_ITEM || pObject->fTestObject ) )
+	if ( ( Item[ usItem ].usItemClass == IC_BOMB ) ||
+		 ( ( Item[ usItem ].usItemClass & IC_EXPLOSV ) && Explosive[ Item[ usItem ].ubClassIndex ].fExplodeOnImpact ) ||
+		 ( !TileIsOutOfBounds( sTargetSpot ) && Water( sTargetSpot, ubTargetLevel ) ) )
 		// Use a mortar shell objecttype to simulate impact explosives
 		CreateItem( MORTAR_SHELL, 100, &gTempObject );
 	else
@@ -2196,7 +2294,7 @@ FLOAT CalculateForceFromRange(UINT16 usItem, INT16 sRange, FLOAT dDegrees )
 }
 
 
-FLOAT CalculateSoldierMaxForce( SOLDIERTYPE *pSoldier, FLOAT dDegrees , OBJECTTYPE *pItem , BOOLEAN fArmed )
+FLOAT CalculateSoldierMaxForce( SOLDIERTYPE *pSoldier, FLOAT dDegrees , OBJECTTYPE *pItem , BOOLEAN fArmed, INT32 sTargetSpot, UINT8 ubTargetLevel )
 {
 	DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"CalculateSoldierMaxForce");
 
@@ -2207,14 +2305,14 @@ FLOAT CalculateSoldierMaxForce( SOLDIERTYPE *pSoldier, FLOAT dDegrees , OBJECTTY
 
 	uiMaxRange = CalcMaxTossRange( pSoldier, pItem->usItem, fArmed, pItem );
 
-	dMagForce = CalculateForceFromRange( pItem->usItem, (INT16) uiMaxRange, dDegrees );
+	dMagForce = CalculateForceFromRange( pItem->usItem, (INT16) uiMaxRange, dDegrees, sTargetSpot, ubTargetLevel );
 
 	DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"CalculateSoldierMaxForce: done");
 	return( dMagForce );
 }
 
 
-void CalculateLaunchItemParamsForThrow( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubLevel, INT16 sEndZ, OBJECTTYPE *pItem, INT8 bMissBy, UINT8 ubActionCode, UINT32 uiActionData )
+void CalculateLaunchItemParamsForThrow( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubLevel, INT16 sEndZ, OBJECTTYPE *pItem, UINT32 uiHitChance, UINT8 ubActionCode, UINT32 uiActionData, UINT16 usItemNum )
 {
 	FLOAT				dForce, dDegrees;
 	INT16				sDestX, sDestY, sSrcX, sSrcY;
@@ -2224,7 +2322,6 @@ void CalculateLaunchItemParamsForThrow( SOLDIERTYPE *pSoldier, INT32 sGridNo, UI
 	UINT16			usLauncher;
 	INT16				sStartZ;
 	INT8		bMinMissRadius, bMaxMissRadius, bMaxRadius;
-	FLOAT		fScale;
 
 	DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"CalculateLaunchItemParamsForThrow");
 
@@ -2236,74 +2333,29 @@ void CalculateLaunchItemParamsForThrow( SOLDIERTYPE *pSoldier, INT32 sGridNo, UI
 		fArmed = TRUE;
 	}
 
-	if ( bMissBy < 0 )
+	// Modern 1.13: convert actual CTH into a continuous landing-dispersion envelope.
+	// Mortars deliberately use a wider configurable miss radius than hand/launcher grenades.
+	if (Item[usItemNum].mortar)
 	{
-		// then we hit!
-		bMissBy = 0;
-
-		// SANDRO - new merc records
-		if( pSoldier->bTeam == 0 && pSoldier->ubProfile != NO_PROFILE )
-		{
-			gMercProfiles[ pSoldier->ubProfile ].records.usShotsHit++;
-		}
+		bMaxRadius = gItemSettings.usMissMaxRadiusMortar;
+	}
+	else
+	{
+		bMaxRadius = gItemSettings.usMissMaxRadiusGrenade;
 	}
 
-	//if ( 0 )
-	if ( bMissBy > 0 )
-	{
-		// Max the miss variance
-		if ( bMissBy > MAX_MISS_BY )
-		{
-			bMissBy = MAX_MISS_BY;
-		}
+	uiHitChance = __min((UINT32)100, uiHitChance);
+	bMinMissRadius = (INT8)((FLOAT)bMaxRadius * (10.0f - sqrt((FLOAT)uiHitChance)) / 10.0f);
+	bMaxMissRadius = (INT8)(bMaxRadius * (100 - uiHitChance) / 100);
 
-		// Min the miss varience...
-		if ( bMissBy < MIN_MISS_BY )
-		{
-			bMissBy = MIN_MISS_BY;
-		}
+	// Small luck variation, matching the modern 1.13 landing model.
+	bMinMissRadius = __max((bMinMissRadius - (INT8)Random(2)), 0);
+	bMinMissRadius = __min((bMinMissRadius + (INT8)Random(2)), bMaxRadius);
+	bMaxMissRadius = __max((bMaxMissRadius - (INT8)Random(2)), 0);
+	bMaxMissRadius = __min((bMaxMissRadius + (INT8)Random(2)), bMaxRadius);
+	bMinMissRadius = __min(bMinMissRadius, bMaxMissRadius);
 
-		// Adjust position, force, angle
-#ifdef JA2TESTVERSION
-		ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_TESTVERSION, L"Throw miss by: %d", bMissBy );
-#endif
-
-		// Default to max radius...
-		bMaxRadius = 5;
-
-		// scale if pyth spaces away is too far
-		if ( PythSpacesAway( sGridNo, pSoldier->sGridNo ) < ( (float)bMaxRadius / (float)1.5 ) )
-		{
-			bMaxRadius = PythSpacesAway( sGridNo, pSoldier->sGridNo ) / 2;
-		}
-
-
-		// Get radius
-		fScale = ( (float)bMissBy / (float) MAX_MISS_BY );
-
-		bMaxMissRadius = (INT8)( bMaxRadius * fScale );
-
-		// Limit max radius...
-		if ( bMaxMissRadius > 4 )
-		{
-			bMaxMissRadius = 4;
-		}
-
-
-		bMinMissRadius = bMaxMissRadius - 1;
-
-		if ( bMinMissRadius < 2 )
-		{
-			bMinMissRadius = 2;
-		}
-
-		if ( bMaxMissRadius < bMinMissRadius )
-		{
-			bMaxMissRadius = bMinMissRadius;
-		}
-
-		sGridNo = RandomGridFromRadius( sGridNo, bMinMissRadius, bMaxMissRadius );
-	}
+	sGridNo = RandomGridFromRadius(sGridNo, bMinMissRadius, bMaxMissRadius);
 
 	// Get basic launch params...
 	CalculateLaunchItemBasicParams( pSoldier, pItem, sGridNo, ubLevel, sEndZ, &dForce, &dDegrees, &sFinalGridNo, fArmed );
@@ -2311,6 +2363,11 @@ void CalculateLaunchItemParamsForThrow( SOLDIERTYPE *pSoldier, INT32 sGridNo, UI
 	// Get XY from gridno
 	ConvertGridNoToCenterCellXY( sGridNo, &sDestX, &sDestY );
 	ConvertGridNoToCenterCellXY( pSoldier->sGridNo, &sSrcX, &sSrcY );
+
+	if (GrenadeRollingPossible(pSoldier, sGridNo, &sSrcX, &sSrcY))
+	{
+		dForce /= 2;
+	}
 
 	// OK, get direction normal
 	vDirNormal.x = (float)(sDestX - sSrcX);

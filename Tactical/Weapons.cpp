@@ -4254,7 +4254,7 @@ BOOLEAN UseThrown( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo )
 	}
 	/////////////////////////////////////////////////////////////////////////////////////
 
-	CalculateLaunchItemParamsForThrow( pSoldier, sTargetGridNo, pSoldier->bTargetLevel, (INT16)(pSoldier->bTargetLevel * 256 ), &(pSoldier->inv[ HANDPOS ] ), (INT8)(uiDiceRoll - uiHitChance), THROW_ARM_ITEM, 0 );
+	CalculateLaunchItemParamsForThrow( pSoldier, sTargetGridNo, pSoldier->bTargetLevel, (INT16)(pSoldier->bTargetLevel * 256 ), &(pSoldier->inv[ HANDPOS ] ), uiHitChance, THROW_ARM_ITEM, 0, pSoldier->inv[HANDPOS].usItem );
 
 	// anv: knife throw attack noise
 	UINT16 usItem = pSoldier->GetUsedWeaponNumber(&pSoldier->inv[pSoldier->ubAttackingHand]);
@@ -4466,7 +4466,7 @@ BOOLEAN UseLauncher( SOLDIERTYPE *pSoldier, INT32 sTargetGridNo )
 	}
 	/////////////////////////////////////////////////////////////////////////////////////
 
-	CalculateLaunchItemParamsForThrow( pSoldier, sTargetGridNo, pSoldier->bTargetLevel, 0, &Launchable, (INT8)(uiDiceRoll - uiHitChance), THROW_ARM_ITEM, 0 );
+	CalculateLaunchItemParamsForThrow( pSoldier, sTargetGridNo, pSoldier->bTargetLevel, 0, &Launchable, uiHitChance, THROW_ARM_ITEM, 0, usItemNum );
 
 	iID = CreatePhysicalObject( pSoldier->pTempObject, pSoldier->pThrowParams->dLifeSpan,  pSoldier->pThrowParams->dX, pSoldier->pThrowParams->dY, pSoldier->pThrowParams->dZ, pSoldier->pThrowParams->dForceX, pSoldier->pThrowParams->dForceY, pSoldier->pThrowParams->dForceZ, pSoldier->ubID, pSoldier->pThrowParams->ubActionCode, pSoldier->pThrowParams->uiActionData, FALSE );
 
@@ -10522,23 +10522,12 @@ UINT32 CalcThrownChanceToHit(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTi
 	}
 
 	// ADJUST FOR EXTRA AIMING TIME
+	// Modern 1.13 baseline: thrown/launcher attacks use the same linear per-aim-level
+	// accuracy bonus. AP charging for deliberate hand-grenade aim remains explicit in
+	// CalcTotalAPsToAttack so player and AI pay consistently for the extra accuracy.
 	if (ubAimTime)
 	{
-		if ( Item[usHandItem].usItemClass & ( IC_GRENADE | IC_THROWN ) )
-		{
-			// Deliberate grenade aiming has diminishing returns.  The first moment spent
-			// settling the throw matters most; later clicks refine rather than laser-guide it.
-			INT16 bThrowAim = __min( 4, ubAimTime );
-			INT32 iAimBonus = AIM_BONUS_PER_AP;
-			if ( bThrowAim > 1 ) iAimBonus += ( AIM_BONUS_PER_AP * 3 ) / 4;
-			if ( bThrowAim > 2 ) iAimBonus += AIM_BONUS_PER_AP / 2;
-			if ( bThrowAim > 3 ) iAimBonus += AIM_BONUS_PER_AP / 4;
-			iChance += iAimBonus;
-		}
-		else
-		{
-			iChance += (AIM_BONUS_PER_AP * ubAimTime); // existing knife/launcher behaviour
-		}
+		iChance += (AIM_BONUS_PER_AP * ubAimTime);
 	}
 
 /*
