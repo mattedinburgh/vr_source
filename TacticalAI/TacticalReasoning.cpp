@@ -376,14 +376,19 @@ static void AIRefreshThreatMemoryFromKnowledge(SOLDIERTYPE *pSoldier)
 	for (UINT16 i = 0; i < TOTAL_SOLDIERS && i < MAX_NUM_SOLDIERS; ++i)
 	{
 		SOLDIERTYPE *pOpponent = MercPtrs[i];
-		if (!pOpponent ||
-			CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide)
+		if (!pOpponent)
+			continue;
+
+		INT8 bKnowledge = Knowledge(pSoldier, (UINT8)i);
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, (UINT8)i) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide))
 		{
 			continue;
 		}
-
-		INT8 bKnowledge = Knowledge(pSoldier, (UINT8)i);
 		if (bKnowledge <= NOT_HEARD_OR_SEEN)
 			continue;
 
