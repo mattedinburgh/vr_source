@@ -12587,50 +12587,6 @@ UINT8 SOLDIERTYPE::SoldierTakeDamage( INT8 bHeight, INT16 sLifeDeduct, INT16 sPo
 extern BOOLEAN IsMercSayingDialogue( UINT8 ubProfileID );
 
 
-// VR: local militia combat pain/distress stays Spanish. Player mercs are
-// professionals using their profile battle voice (normally English, with any
-// character-specific bilingual/custom material preserved).
-static BOOLEAN IsSpanishMilitiaCombatReactionSound( UINT8 ubBattleSoundID )
-{
-	switch ( ubBattleSoundID )
-	{
-		case BATTLE_SOUND_HIT1:
-		case BATTLE_SOUND_HIT2:
-		case BATTLE_SOUND_DIE1:
-		case BATTLE_SOUND_DIE2:
-		case BATTLE_SOUND_AGONY:
-		case BATTLE_SOUND_MEDIC:
-			return TRUE;
-		default:
-			return FALSE;
-	}
-}
-
-static BOOLEAN PlaySpanishMilitiaCombatReaction( SOLDIERTYPE *pSoldier, UINT8 ubBattleSoundID )
-{
-	if ( !pSoldier || pSoldier->bTeam != MILITIA_TEAM )
-		return FALSE;
-
-	TAUNTTYPE iTauntType = TAUNT_GOT_HIT_GUNFIRE;
-	if ( ubBattleSoundID == BATTLE_SOUND_HIT2 )
-		iTauntType = TAUNT_GOT_HIT;
-	else if ( ubBattleSoundID == BATTLE_SOUND_DIE1 ||
-		ubBattleSoundID == BATTLE_SOUND_DIE2 ||
-		ubBattleSoundID == BATTLE_SOUND_AGONY ||
-		ubBattleSoundID == BATTLE_SOUND_MEDIC ||
-		pSoldier->stats.bLife < OKLIFE ||
-		pSoldier->bBleeding > 15 )
-	{
-		iTauntType = TAUNT_GOT_HIT_BLOODLOSS;
-	}
-
-	// Route through the same per-voice selector used by normal militia speech.
-	// This preserves Spanish actor identity and enables controlled/distressed/
-	// panicked recordings without a second casualty-only audio system.
-	return PlayVoiceTaunt( pSoldier, iTauntType, NULL );
-}
-
-
 BOOLEAN SOLDIERTYPE::InternalDoMercBattleSound( UINT8 ubBattleSoundID, INT8 bSpecialCode )
 {
 	//in this function, pSoldier stands in for the this pointer, since
@@ -12904,15 +12860,9 @@ BOOLEAN SOLDIERTYPE::InternalDoMercBattleSound( UINT8 ubBattleSoundID, INT8 bSpe
 			fSpeechSound = TRUE;
 	}
 
-	// Local militia use Spanish combat reactions. Player mercs intentionally
-	// fall through to their profile-specific BATTLESNDS: normally English, while
-	// preserving any established character-specific bilingual/custom material.
-	if ( pSoldier->bTeam == MILITIA_TEAM &&
-		IsSpanishMilitiaCombatReactionSound( ubSoundID ) )
-	{
-		PlaySpanishMilitiaCombatReaction( pSoldier, ubSoundID );
-		return( TRUE );
-	}
+	// Keep pain/death/agony/medic reactions on the normal BATTLESNDS path.
+	// This prevents militia combat screams from being forced through the
+	// Spanish situational-voice bank and restores the English/default reactions.
 
 	// Randomize between sounds, if appropriate
 	// anv: but only randomize between files that do exist!
