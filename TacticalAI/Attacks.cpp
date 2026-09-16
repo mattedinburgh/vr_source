@@ -327,6 +327,9 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			continue;
 
 		INT8 bThreatKnowledge = Knowledge(pSoldier, pThreat->ubID);
+		BOOLEAN fThreatStateKnown =
+			PersonalKnowledge(pSoldier, pThreat->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pThreat, CALC_FROM_ALL_DIRS) > 0;
 		if (fThreatStateKnown &&
 			(CONSIDERED_NEUTRAL(pSoldier, pThreat) ||
 			 pSoldier->bSide == pThreat->bSide ||
@@ -350,9 +353,6 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		if (!fRecentKnowledge)
 			continue;
 
-		BOOLEAN fThreatStateKnown =
-			PersonalKnowledge(pSoldier, pThreat->ubID) == SEEN_CURRENTLY &&
-			LOS_Raised(pSoldier, pThreat, CALC_FROM_ALL_DIRS) > 0;
 		if (fThreatStateKnown &&
 			(!ValidOpponent(pSoldier, pThreat) ||
 			 IsBleedoutCasualty(pThreat) ||
