@@ -511,6 +511,9 @@ void InitEnemyUIBar( UINT8 ubNumEnemies, UINT8 ubDoneEnemies );
 
 STR16 GetSoldierHealthString( SOLDIERTYPE *pSoldier );
 
+// Vengeance: one tactical display identity used consistently by hover labels and combat UI.
+void BuildTacticalSoldierDisplayName( SOLDIERTYPE *pSoldier, CHAR16 *pOut );
+
 
 void GetLaunchItemParamsFromUI( );
 void RenderAimCubeUI( );
