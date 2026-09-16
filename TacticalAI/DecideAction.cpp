@@ -7589,8 +7589,24 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			}
 
 			//////////////////////////////////////////////////////////////////////////
-			// IF ENOUGH APs TO BURST, RANDOM CHANCE OF DOING SO
+			// IF ENOUGH APs TO BURST, CHOOSE FIRE MODE FROM TACTICAL VALUE
 			//////////////////////////////////////////////////////////////////////////
+
+			// Enemy fire-mode selection is skill-neutral: every enemy evaluates the same
+			// range/CTH/ammo board. Soldier class/difficulty may change equipment and raw
+			// capabilities elsewhere, but never whether this soldier understands when a
+			// controlled burst or suppression assignment is appropriate.
+			const INT32 iTacticalFireDistance =
+				PythSpacesAway(pSoldier->sGridNo, BestAttack.sTarget);
+			BOOLEAN fEnemyAssignedSuppression = FALSE;
+			if (pSoldier->bTeam == ENEMY_TEAM && !TileIsOutOfBounds(BestAttack.sTarget))
+			{
+				INT8 bFireRole = AITacticalRole(pSoldier, BestAttack.sTarget);
+				fEnemyAssignedSuppression =
+					bFireRole == AI_ROLE_SUPPORT &&
+					AIHasTacticalTaskReservation(
+						pSoldier, AI_TASK_SUPPRESS, BestAttack.sTarget, NOBODY);
+			}
 
 			if (IsGunBurstCapable( &pSoldier->inv[BestAttack.bWeaponIn], FALSE, pSoldier ) &&
 				(!fBestAttackTargetStateKnown || !(Menptr[BestShot.ubOpponent].stats.bLife < OKLIFE)) && // only suppress visible downed targets
@@ -7659,7 +7675,18 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 						}
 					}
 
-					if ( (INT32) PreRandom( 100 ) < iChance)
+					// A grandmaster enemy does not roll to decide whether it understands the
+					// fire mode. Use controlled bursts when expected hit quality and distance
+					// justify the extra rounds; designated suppressors preserve autofire for the
+					// suppression block below.
+					BOOLEAN fEnemyControlledBurst =
+						pSoldier->bTeam == ENEMY_TEAM &&
+						!fEnemyAssignedSuppression &&
+						((iTacticalFireDistance <= 10 && BestAttack.ubChanceToReallyHit >= 25) ||
+						 (iTacticalFireDistance <= 15 && BestAttack.ubChanceToReallyHit >= 40));
+					if (fEnemyControlledBurst ||
+						(pSoldier->bTeam != ENEMY_TEAM &&
+						 (INT32)PreRandom(100) < iChance))
 					{
 						BestAttack.ubAPCost += ubBurstAPs + sActualAimAP;//dnl ch58 130913
 						// check for spread burst possibilities
@@ -7783,7 +7810,14 @@ L_NEWAIM:
 							}
 						}
 
-						if ((INT32) PreRandom( 100 ) < iChance || Weapon[pSoldier->inv[BestAttack.bWeaponIn].usItem].NoSemiAuto)
+						BOOLEAN fEnemyUseAutofire =
+							pSoldier->bTeam == ENEMY_TEAM &&
+							(fEnemyAssignedSuppression ||
+							 (iTacticalFireDistance <= 8 && BestAttack.ubChanceToReallyHit >= 18) ||
+							 (iTacticalFireDistance <= 12 && BestAttack.ubChanceToReallyHit >= 30));
+						if (fEnemyUseAutofire ||
+							(pSoldier->bTeam != ENEMY_TEAM && (INT32)PreRandom(100) < iChance) ||
+							Weapon[pSoldier->inv[BestAttack.bWeaponIn].usItem].NoSemiAuto)
 						{
 							//dnl ch69 140913 return aiming for autofire with halfautofire fix
 							pSoldier->bDoBurst = 1;
@@ -7796,9 +7830,18 @@ L_NEWAIM:
 								if(Weapon[pSoldier->inv[BestAttack.bWeaponIn].usItem].NoSemiAuto)
 									iChance = 35;
 							}
-							if((INT32)PreRandom(100) < iChance && pSoldier->bActionPoints > (2 * BestAttack.ubAPCost + ubHalfBurstAPs + sActualAimAP))
+							BOOLEAN fEnemyShortAutofire =
+								pSoldier->bTeam == ENEMY_TEAM &&
+								!fEnemyAssignedSuppression &&
+								pSoldier->bDoAutofire > 4 &&
+								BestAttack.ubChanceToReallyHit >= 25;
+							if((fEnemyShortAutofire ||
+								(pSoldier->bTeam != ENEMY_TEAM && (INT32)PreRandom(100) < iChance)) &&
+								pSoldier->bActionPoints > (2 * BestAttack.ubAPCost + ubHalfBurstAPs + sActualAimAP))
 							{
-								// Try short autofire to enhance chance of hitting
+								// Precision fire uses a short, controlled string; the assigned
+								// suppressor deliberately keeps the longer affordable burst.
+
 								pSoldier->bDoAutofire = 4;
 								BestAttack.ubAPCost += ubHalfBurstAPs + sActualAimAP;
 //SendFmtMsg("HALF-Auto=%d ubAPCost=%d iChance=%d ubBurstAPs=%d,%d", pSoldier->bDoAutofire, BestAttack.ubAPCost, iChance, ubHalfBurstAPs, sActualAimTime);
