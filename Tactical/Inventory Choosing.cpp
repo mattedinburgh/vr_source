@@ -1223,7 +1223,7 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 
 
 	//Now actually choose the equipment!
-	ChooseWeaponForSoldierCreateStruct( pp, bWeaponClass, bAmmoClips, bAttachClass );
+	ChooseWeaponForSoldierCreateStruct( pp, bWeaponClass, bAmmoClips, bAttachClass, fAttachment );
 	// Headrock: This is where the program calls LBE choosing
 	if ( SOLDIER_CLASS_ENEMY( bSoldierClass )) // BUT ONLY FOR ENEMIES, NOT MILITIA - SANDRO
 	{
@@ -1475,7 +1475,7 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 //selection for that particular type of item, and 1-11 means to choose an item if possible.  1 is
 //the worst class of item, while 11 is the best.
 
-void ChooseWeaponForSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp, INT8 bWeaponClass, INT8 bAmmoClips, INT8 bAttachClass )
+void ChooseWeaponForSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp, INT8 bWeaponClass, INT8 bAmmoClips, INT8 bAttachClass, BOOLEAN fAttachment )
 {
 	UINT16 i;
 	UINT16	usGunIndex = 0;
