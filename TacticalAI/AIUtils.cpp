@@ -14540,9 +14540,9 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		bRole = AI_ROLE_SUPPORT;
 	}
 
-	// Convert implicit role-count coordination into an explicit, fireteam-local task
-	// claim. This prevents independent sequential decisions from duplicating the same
-	// flank/maneuver/screen responsibility without creating a sector-wide hive mind.
+	// Convert implicit role-count coordination into explicit, fireteam-local task
+	// claims. Movers, flankers and screens cannot silently duplicate each other, while
+	// the best automatic-rifle/LMG support soldier owns the base-of-fire assignment.
 	BOOLEAN fTaskReserved = TRUE;
 	if (bRole == AI_ROLE_FLANKER)
 		fTaskReserved = AIReserveTacticalTask(
@@ -14553,6 +14553,25 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	else if (bRole == AI_ROLE_SCREEN)
 		fTaskReserved = AIReserveTacticalTask(
 			pSoldier, AI_TASK_SCREEN, sTargetSpot, NOBODY, 2, 1);
+	else if (bRole == AI_ROLE_SUPPORT &&
+		pSoldier->bTeam == ENEMY_TEAM &&
+		(bIntent == AI_INTENT_PRESS || bIntent == AI_INTENT_FLANK) &&
+		!TileIsOutOfBounds(sTargetSpot) &&
+		AICheckHasGun(pSoldier) &&
+		AIGunAutofireCapable(pSoldier) &&
+		AIGunAmmo(pSoldier) >= gGameExternalOptions.ubAISuppressionMinimumAmmo)
+	{
+		UINT8 ubSuppressorLimit =
+			AIFireteamCombatReadyCount(pSoldier) >= 6 ? 2 : 1;
+		// Failure does not make a support specialist abandon a good firing position;
+		// it simply means another teammate already owns deliberate suppression.
+		if (!AIReserveTacticalTask(
+			pSoldier, AI_TASK_SUPPRESS, sTargetSpot, NOBODY,
+			ubSuppressorLimit, 1))
+		{
+			AIReleaseTacticalTask(pSoldier);
+		}
+	}
 	else
 		AIReleaseTacticalTask(pSoldier);
 
@@ -14562,6 +14581,20 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		// to support rather than creating duplicate movers or rear guards.
 		bRole = AI_ROLE_SUPPORT;
 		AIReleaseTacticalTask(pSoldier);
+
+		if (pSoldier->bTeam == ENEMY_TEAM &&
+			(bIntent == AI_INTENT_PRESS || bIntent == AI_INTENT_FLANK) &&
+			!TileIsOutOfBounds(sTargetSpot) &&
+			AICheckHasGun(pSoldier) &&
+			AIGunAutofireCapable(pSoldier) &&
+			AIGunAmmo(pSoldier) >= gGameExternalOptions.ubAISuppressionMinimumAmmo)
+		{
+			UINT8 ubSuppressorLimit =
+				AIFireteamCombatReadyCount(pSoldier) >= 6 ? 2 : 1;
+			AIReserveTacticalTask(
+				pSoldier, AI_TASK_SUPPRESS, sTargetSpot, NOBODY,
+				ubSuppressorLimit, 1);
+		}
 	}
 
 	gbAITacticalRolePlan[ubID] = bRole;
