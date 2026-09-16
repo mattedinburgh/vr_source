@@ -216,8 +216,15 @@ static BOOLEAN AIShouldAvoidFinishingDownedTarget(
 	if (!pSoldier || !pOpponent || !fCurrentContact || !AICombatTeam(pSoldier))
 		return FALSE;
 
-	// Current contact can come from personal sight or a current team report.
-	// Never re-authorize casualty state from stale cached opponent-list data.
+	// Enemy casualty state is legal only under the shooter's own current sight.
+	// Do not let any legacy/public CURRENT marker become a back door to hidden HP,
+	// collapse or POW state. Non-enemy AI preserves the legacy current-team-report rule.
+	if (pSoldier->bTeam == ENEMY_TEAM &&
+		(PersonalKnowledge(pSoldier, pOpponent->ubID) != SEEN_CURRENTLY ||
+		 LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) <= 0))
+	{
+		return FALSE;
+	}
 
 	// Preserve explicitly scripted killer behaviour and non-human threats.
 	if (pSoldier->aiData.bAttitude == ATTACKSLAYONLY ||
