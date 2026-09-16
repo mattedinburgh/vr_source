@@ -1,0 +1,44 @@
+name: Integration branch audit
+
+on:
+  push:
+    branches:
+      - integration/qa-gates-2026-09-16
+    paths:
+      - 'Tools/QA/**'
+      - '.github/workflows/integration-branch-audit.yml'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Fetch branch refs
+        shell: pwsh
+        run: git fetch origin '+refs/heads/*:refs/remotes/origin/*' --prune
+
+      - name: Parse QA scripts
+        shell: pwsh
+        run: |
+          $errorsFound = $false
+          Get-ChildItem './Tools/QA' -Filter '*.ps1' -File | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors.Count -gt 0) {
+              $errorsFound = $true
+              Write-Host "Parse errors in $($_.Name)"
+              $errors | Format-List
+            }
+          }
+          if ($errorsFound) { exit 1 }
+
+      - name: Audit integration branches
+        shell: pwsh
+        run: ./Tools/QA/AUDIT_INTEGRATION_BRANCHES.ps1 -RemoteRefs
