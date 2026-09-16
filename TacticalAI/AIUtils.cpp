@@ -5478,21 +5478,25 @@ BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridN
 		if (!pCandidate || pCandidate == pSoldier)
 			continue;
 
-		INT8 bCandidateKnowledge = Knowledge(pSoldier, pCandidate->ubID);
-		if (bCandidateKnowledge != SEEN_CURRENTLY &&
-			bCandidateKnowledge != SEEN_THIS_TURN &&
-			bCandidateKnowledge != SEEN_LAST_TURN &&
-			bCandidateKnowledge != SEEN_2_TURNS_AGO &&
-			bCandidateKnowledge != HEARD_THIS_TURN &&
-			bCandidateKnowledge != HEARD_LAST_TURN &&
-			bCandidateKnowledge != HEARD_2_TURNS_AGO)
+		INT32 sCandidateSpot = NOWHERE;
+		INT8 bCandidateLevel = 0;
+		INT8 bCandidateKnowledge = NOT_HEARD_OR_SEEN;
+		UINT8 ubCandidateConfidence = 0;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pCandidate->ubID, &sCandidateSpot, &bCandidateLevel,
+			&ubCandidateConfidence, &bCandidateKnowledge))
 		{
 			continue;
 		}
 
+		// Do not spend scarce indirect fire on very weak/old single contact reports.
+		if (ubCandidateConfidence < 38 || TileIsOutOfBounds(sCandidateSpot))
+			continue;
+
 		const BOOLEAN fCandidateDirect =
 			PersonalKnowledge(pSoldier, pCandidate->ubID) == SEEN_CURRENTLY &&
 			LOS_Raised(pSoldier, pCandidate, CALC_FROM_ALL_DIRS) > 0;
+
 		if (fCandidateDirect &&
 			(CONSIDERED_NEUTRAL(pSoldier, pCandidate) ||
 			 pSoldier->bSide == pCandidate->bSide ||
@@ -5502,10 +5506,6 @@ BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridN
 		}
 
 		if (AIPersonallyConfirmedNonThreat(pSoldier, pCandidate))
-			continue;
-
-		INT32 sCandidateSpot = KnownLocation(pSoldier, pCandidate->ubID);
-		if (TileIsOutOfBounds(sCandidateSpot))
 			continue;
 
 		BOOLEAN fFriendlyDanger = FALSE;
@@ -5527,9 +5527,6 @@ BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridN
 				break;
 			}
 
-			// Artillery is ordered against an area, not an instantaneous bullet path.
-			// Protect a friendly's already-committed movement destination as well as his
-			// current tile so support is not called onto an advancing/withdrawing element.
 			if (pFriend->aiData.bAction >= FIRST_MOVEMENT_ACTION &&
 				pFriend->aiData.bAction <= LAST_MOVEMENT_ACTION &&
 				!TileIsOutOfBounds(pFriend->aiData.usActionData) &&
@@ -5552,14 +5549,13 @@ BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridN
 			if (!pOpponent || pOpponent == pSoldier)
 				continue;
 
-			INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-			if (bKnowledge != SEEN_CURRENTLY &&
-				bKnowledge != SEEN_THIS_TURN &&
-				bKnowledge != SEEN_LAST_TURN &&
-				bKnowledge != SEEN_2_TURNS_AGO &&
-				bKnowledge != HEARD_THIS_TURN &&
-				bKnowledge != HEARD_LAST_TURN &&
-				bKnowledge != HEARD_2_TURNS_AGO)
+			INT32 sKnownSpot = NOWHERE;
+			INT8 bKnownLevel = 0;
+			INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+			UINT8 ubConfidence = 0;
+			if (!AIPlanningContactForOpponent(
+				pSoldier, pOpponent->ubID, &sKnownSpot, &bKnownLevel,
+				&ubConfidence, &bKnowledge))
 			{
 				continue;
 			}
@@ -5578,26 +5574,23 @@ BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridN
 			if (AIPersonallyConfirmedNonThreat(pSoldier, pOpponent))
 				continue;
 
-			INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
 			if (TileIsOutOfBounds(sKnownSpot) ||
 				PythSpacesAway(sKnownSpot, sCandidateSpot) > iStrikeRadius)
 			{
 				continue;
 			}
 
-			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
-			iScore += iCertainty;
-			if (iCertainty >= 50)
+			iScore += ubConfidence;
+			if (ubConfidence >= 50)
 				++ubCredibleContacts;
 		}
 
-		// Artillery is a scarce area weapon: require at least two credible reported
-		// contacts, not one speculative/stale enemy location.
+		// Require a cluster: local spotters can call the strike, but one speculative
+		// remembered contact is not enough.
 		if (ubCredibleContacts < 2)
 			continue;
 
-		// Dense local terrain reduces expected effect, consistent with RedSmokeDanger().
-		iScore -= TerrainDensity(sCandidateSpot, 0, 2, FALSE);
+		iScore -= TerrainDensity(sCandidateSpot, bCandidateLevel, 2, FALSE);
 
 		if (iScore > iBestScore)
 		{
@@ -12111,17 +12104,17 @@ BOOLEAN AICheckWeOutnumberSector(SOLDIERTYPE *pSoldier)
 	UINT8 ubNumFriends = 0;
 	UINT8 ubNumOpponents = 0;
 
-	// Sector strength must reflect what this soldier/team can actually know.
-	// Friendly condition is legitimate team information; enemy condition is not.
 	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
 	{
 		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
 		if (!pOpponent)
 			continue;
 
-		if (pOpponent->bTeam == pSoldier->bTeam || pOpponent->bSide == pSoldier->bSide)
+		if (pOpponent->bTeam == pSoldier->bTeam ||
+			pOpponent->bSide == pSoldier->bSide)
 		{
-			if (pOpponent->bActive && pOpponent->bInSector && pOpponent->stats.bLife >= OKLIFE &&
+			if (pOpponent->bActive && pOpponent->bInSector &&
+				pOpponent->stats.bLife >= OKLIFE &&
 				!(pOpponent->usSoldierFlagMask & SOLDIER_POW))
 			{
 				++ubNumFriends;
@@ -12129,33 +12122,30 @@ BOOLEAN AICheckWeOutnumberSector(SOLDIERTYPE *pSoldier)
 			continue;
 		}
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
-
-		const BOOLEAN fDirectVisualContact =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
-			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
-		if (fDirectVisualContact &&
-			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			 pOpponent->ubBodyType == CROW))
+		INT32 sKnownSpot = NOWHERE;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sKnownSpot, NULL, NULL, &bKnowledge))
 		{
 			continue;
 		}
 
-		// Only direct current observation can remove a known contact because of live
-		// casualty/capture/sector state. Stale contacts remain possible threats until
-		// knowledge itself expires.
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+
 		if (fDirectVisualContact &&
-			(!ValidOpponent(pSoldier, pOpponent) ||
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW ||
+			 !ValidOpponent(pSoldier, pOpponent) ||
 			 pOpponent->IsUnconscious() ||
 			 (pOpponent->usSoldierFlagMask & SOLDIER_POW)))
 		{
 			continue;
 		}
 
-		if (TileIsOutOfBounds(KnownLocation(pSoldier, pOpponent->ubID)))
+		if (TileIsOutOfBounds(sKnownSpot))
 			continue;
 
 		++ubNumOpponents;
