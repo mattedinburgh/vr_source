@@ -2988,7 +2988,8 @@ void StartEnemyTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTar
 			if ( gbPublicOpplist[gbPlayerNum][pCiv->ubID] == SEEN_CURRENTLY ||
 				gTauntsSettings.fTauntAlwaysShowPopupBox == TRUE )
 			{
-				ShowTauntPopupBox( pCiv, gzTauntQuote );
+				const BOOLEAN fScreamPopup = ( iTauntType >= TAUNT_GOT_HIT && iTauntType <= TAUNT_GOT_HIT_THROWING_KNIFE );
+				ShowTauntPopupBox( pCiv, gzTauntQuote, fScreamPopup );
 			}
 		}
 
@@ -3015,7 +3016,7 @@ void StartEnemyTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTar
 
 }
 
-void ShowTauntPopupBox( SOLDIERTYPE *pCiv, STR16 gzTauntQuote )
+void ShowTauntPopupBox( SOLDIERTYPE *pCiv, STR16 gzTauntQuote, BOOLEAN fScreamPopup )
 {
 	INT16	sX, sY;
 	INT16	sScreenX, sScreenY;
@@ -3092,6 +3093,8 @@ void ShowTauntPopupBox( SOLDIERTYPE *pCiv, STR16 gzTauntQuote )
 	gCivQuoteData.uiTimeOfCreation = GetJA2Clock( );
 	
 	gCivQuoteData.uiDelayTime = min( gTauntsSettings.sMaxDelay , max( gTauntsSettings.sMinDelay, FindDelayForString( gzTauntQuote ) + gTauntsSettings.sModDelay ) );
+	if ( fScreamPopup )
+		gCivQuoteData.uiDelayTime *= 2;
 
 	gCivQuoteData.pCiv = pCiv;
 }

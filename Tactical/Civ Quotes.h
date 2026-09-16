@@ -167,7 +167,7 @@ enum TAUNTTYPE//enemy taunts - SANDRO
 
 void PossiblyStartEnemyTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, UINT32 uiTargetID = NOBODY );
 void StartEnemyTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTarget = NULL ); //enemy taunts - SANDRO // anv: added pTarget argument
-void ShowTauntPopupBox( SOLDIERTYPE *pCiv, STR16 gzTauntQuote );
+void ShowTauntPopupBox( SOLDIERTYPE *pCiv, STR16 gzTauntQuote, BOOLEAN fScreamPopup = FALSE );
 
 // VR battlefield communication layer. These are semantic events, separate
 // from audio taunt filenames and from the AI action enum.
