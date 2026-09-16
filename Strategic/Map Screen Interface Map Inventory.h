@@ -49,7 +49,9 @@ void HandleFlashForHighLightedItem( void );
 extern std::vector<WORLDITEM> pInventoryPoolList;
 
 // autoplace down object
-BOOLEAN AutoPlaceObjectInInventoryStash( OBJECTTYPE *pItemPtr, INT32 sGridNo=0, INT8 ubLevel=0 );
+// Unknown placement uses -1 so the implementation marks the item for sector-entry placement;
+// 0 is a real grid value and leaves a newly allocated WORLDITEM without persistence metadata.
+BOOLEAN AutoPlaceObjectInInventoryStash( OBJECTTYPE *pItemPtr, INT32 sGridNo=-1, INT8 ubLevel=0 );
 
 // the current inventory item
 extern INT32 iCurrentlyHighLightedItem;

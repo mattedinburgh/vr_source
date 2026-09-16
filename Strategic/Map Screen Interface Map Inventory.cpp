@@ -2227,7 +2227,10 @@ void SaveSeenAndUnseenItems( void )
 	WORLDITEM *pipl;
 
 	// Idea of this change is avoiding resize and clear of pInventoryPool and pUnSeenItems and twice loading tempfile to increase inventory closing time
-	uiNumOfSlots = min(MAP_INVENTORY_POOL_SLOT_COUNT * ((UINT32)iLastInventoryPoolPage + 1), pInventoryPoolList.size());// Best guess without going into loop
+	// Persistence must follow the backing inventory, not the current UI page count.
+	// Page bookkeeping can legitimately lag after resize/autoplace/filter operations;
+	// truncating here would silently discard valid items beyond the displayed page.
+	uiNumOfSlots = pInventoryPoolList.size();
 	uiNumberOfSeenItems = 0;
 	uiTotalNumberOfVisibleItems = 0;
 	for(i=0; i<uiNumOfSlots; i++)// Calculate total number of objects and throw out empty item slots
@@ -3835,16 +3838,17 @@ BOOLEAN AutoPlaceObjectInInventoryStash( OBJECTTYPE *pItemPtr, INT32 sGridNo, IN
 		else if(pInventorySlot->exists() == false)
 		{
 			pItemPtr->MoveThisObjectTo(*pInventorySlot);
-			if(sGridNo != 0)
-			{
-				pInventoryPoolList[cnt].sGridNo = sGridNo;
-				pInventoryPoolList[cnt].usFlags |= WORLD_ITEM_REACHABLE;
-				pInventoryPoolList[cnt].ubLevel = ubLevel;
-				pInventoryPoolList[cnt].bVisible = 1;
-				pInventoryPoolList[cnt].fExists = TRUE;
-			}
 
-			// r8690
+			// A non-empty stash slot must always be a valid WORLDITEM. Historically
+			// grid 0 doubled as "unspecified", leaving fExists/bVisible unset and
+			// allowing a real object to disappear when the sector inventory was saved.
+			pInventoryPoolList[cnt].sGridNo = sGridNo;
+			pInventoryPoolList[cnt].usFlags |= WORLD_ITEM_REACHABLE;
+			pInventoryPoolList[cnt].ubLevel = ubLevel;
+			pInventoryPoolList[cnt].bVisible = 1;
+			pInventoryPoolList[cnt].fExists = TRUE;
+
+			// -1 is the explicit unknown-grid sentinel; load it at sector entry.
 			if (sGridNo == -1)
 			{
 				pInventoryPoolList[cnt].usFlags |= WORLD_ITEM_GRIDNO_NOT_SET_USE_ENTRY_POINT;

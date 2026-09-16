@@ -2975,9 +2975,9 @@ BOOLEAN AddDeadSoldierToUnLoadedSector( INT16 sMapX, INT16 sMapY, UINT8 bMapZ, S
 		if( pSoldier->inv[ i ].exists() == true )
 		{
 			// If not a player soldier, unloaded strategic deaths normally lose most gear.
-			// Autoresolve is explicit: only a victory with a surviving participating merc
-			// may create reduced enemy loot; militia-only victories, defeats and retreats
-			// create corpses but no enemy loot.
+			// Autoresolve is explicit: a victory with player-merc participation may create
+			// reduced enemy loot; militia-only victories, defeats and retreats create
+			// corpses but no enemy loot.
 			if ( pSoldier->bTeam != gbPlayerNum )
 			{
 				if ( uiFlags & ADD_DEAD_SOLDIER_NO_LOOT )
