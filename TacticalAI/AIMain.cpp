@@ -1302,7 +1302,6 @@ static BOOLEAN VRRejectRedundantSelectedAIAction(SOLDIERTYPE *pSoldier)
 		return FALSE;
 
 	VRRecordSelectedAIAction(pSoldier);
-		VR_SelfPlayDecision(pSoldier);
 	VRAnalyticsTacticalActionRejected(
 		pSoldier->ubID, bRejectedAction, pSoldier->aiData.usActionData, pReason );
 	pSoldier->aiData.bLastAction = bRejectedAction;
@@ -1772,6 +1771,7 @@ void TurnBasedHandleNPCAI(SOLDIERTYPE *pSoldier)
 
 		// to get here, we MUST have an action selected, but not in progress...
 		VRRecordSelectedAIAction(pSoldier);
+		VR_SelfPlayDecision(pSoldier);
 
 		// see if we can afford to do this action
 		if (IsActionAffordable(pSoldier))
