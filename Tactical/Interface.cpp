@@ -5731,6 +5731,79 @@ INT32     gsMultiPurposeLocatorGridNo;
 INT8		gbMultiPurposeLocatorLevel;
 INT8		gbMultiPurposeLocatorCycles;
 
+#define MAX_UNSEEN_FIRE_BEARING_CUES 4
+
+typedef struct
+{
+	BOOLEAN fActive;
+	INT32 sGridNo;
+	INT8 bLevel;
+	UINT8 ubDirection;
+	UINT32 uiLastFrameUpdate;
+	UINT32 uiLastEvent;
+	INT8 bFrame;
+	INT8 bCycles;
+} UNSEEN_FIRE_BEARING_CUE;
+
+static UNSEEN_FIRE_BEARING_CUE gUnseenFireBearingCues[MAX_UNSEEN_FIRE_BEARING_CUES];
+
+void BeginUnseenFireBearingCue( INT32 sGridNo, INT8 bLevel, UINT8 ubDirection )
+{
+	if ( TileIsOutOfBounds( sGridNo ) || ubDirection >= NUM_WORLD_DIRECTIONS )
+		return;
+
+	UINT32 uiNow = GetJA2Clock();
+	INT8 bSlot = -1;
+	INT8 bOldestSlot = 0;
+	UINT32 uiOldestEvent = 0xFFFFFFFF;
+
+	for ( INT8 i = 0; i < MAX_UNSEEN_FIRE_BEARING_CUES; ++i )
+	{
+		if ( gUnseenFireBearingCues[i].fActive )
+		{
+			if ( gUnseenFireBearingCues[i].ubDirection == ubDirection )
+			{
+				bSlot = i;
+				break;
+			}
+
+			if ( gUnseenFireBearingCues[i].uiLastEvent < uiOldestEvent )
+			{
+				uiOldestEvent = gUnseenFireBearingCues[i].uiLastEvent;
+				bOldestSlot = i;
+			}
+		}
+		else if ( bSlot == -1 )
+		{
+			bSlot = i;
+		}
+	}
+
+	if ( bSlot == -1 )
+		bSlot = bOldestSlot;
+
+	UNSEEN_FIRE_BEARING_CUE *pCue = &gUnseenFireBearingCues[bSlot];
+
+	// Repeated reports from one coarse direction reinforce the existing cue.
+	// Keep its original synthetic grid stable so several listeners cannot make
+	// the marker jump toward the hidden shooter's true position.
+	if ( pCue->fActive && pCue->ubDirection == ubDirection )
+	{
+		pCue->bCycles = 0;
+		pCue->uiLastEvent = uiNow;
+		return;
+	}
+
+	pCue->fActive = TRUE;
+	pCue->sGridNo = sGridNo;
+	pCue->bLevel = bLevel;
+	pCue->ubDirection = ubDirection;
+	pCue->uiLastFrameUpdate = uiNow;
+	pCue->uiLastEvent = uiNow;
+	pCue->bFrame = 0;
+	pCue->bCycles = 0;
+}
+
 void BeginMultiPurposeLocator( INT32 sGridNo, INT8 bLevel, BOOLEAN fSlideTo )
 {
 	guiMultiPurposeLocatorLastUpdate = 0;
@@ -5794,54 +5867,97 @@ void HandleMultiPurposeLocator( )
 
 
 
-void RenderTopmostMultiPurposeLocator( )
+void HandleUnseenFireBearingCues( )
 {
-	FLOAT				dOffsetX, dOffsetY;
-	FLOAT				dTempX_S, dTempY_S;
-	INT16				sX, sY, sXPos, sYPos;
-	INT32				iBack;
+	UINT32 uiNow = GetJA2Clock();
 
-	if ( !gfMultipurposeLocatorOn )
+	for ( INT8 i = 0; i < MAX_UNSEEN_FIRE_BEARING_CUES; ++i )
 	{
-	return;
-	}
+		UNSEEN_FIRE_BEARING_CUE *pCue = &gUnseenFireBearingCues[i];
+		if ( !pCue->fActive )
+			continue;
 
-	ConvertGridNoToCenterCellXY( gsMultiPurposeLocatorGridNo, &sX, &sY );
+		if ( ( uiNow - pCue->uiLastFrameUpdate ) > 80 )
+		{
+			pCue->uiLastFrameUpdate = uiNow;
+			pCue->bFrame++;
+
+			if ( pCue->bFrame == 5 )
+			{
+				pCue->bFrame = 0;
+				pCue->bCycles++;
+			}
+
+			if ( pCue->bCycles == 8 )
+				pCue->fActive = FALSE;
+		}
+	}
+}
+
+
+static void RenderTopmostLocatorAtGrid( INT32 sGridNo, INT8 bLevel, INT8 bFrame )
+{
+	FLOAT dOffsetX, dOffsetY;
+	FLOAT dTempX_S, dTempY_S;
+	INT16 sX, sY, sXPos, sYPos;
+	INT32 iBack;
+
+	if ( TileIsOutOfBounds( sGridNo ) )
+		return;
+
+	ConvertGridNoToCenterCellXY( sGridNo, &sX, &sY );
 
 	dOffsetX = (FLOAT)( sX - gsRenderCenterX );
 	dOffsetY = (FLOAT)( sY - gsRenderCenterY );
-
-	// Calculate guy's position
 	FloatFromCellToScreenCoordinates( dOffsetX, dOffsetY, &dTempX_S, &dTempY_S );
 
 	sXPos = ( ( gsVIEWPORT_END_X - gsVIEWPORT_START_X ) /2 ) + (INT16)dTempX_S;
-	sYPos = ( ( gsVIEWPORT_END_Y - gsVIEWPORT_START_Y ) /2 ) + (INT16)dTempY_S - VHDScaleScreenValue( gpWorldLevelData[ gsMultiPurposeLocatorGridNo ].sHeight );
+	sYPos = ( ( gsVIEWPORT_END_Y - gsVIEWPORT_START_Y ) /2 ) + (INT16)dTempY_S -
+		VHDScaleScreenValue( gpWorldLevelData[ sGridNo ].sHeight );
 
-	// Adjust for offset position on screen
 	sXPos -= gsRenderWorldOffsetX;
 	sYPos -= gsRenderWorldOffsetY;
-
-	// Adjust for render height
 	sYPos += gsRenderHeight;
 
-	// Adjust for level height
-	if ( gbMultiPurposeLocatorLevel )
-	{
+	if ( bLevel )
 		sYPos -= VHDScaleScreenValue( ROOF_LEVEL_HEIGHT );
-	}
 
-	// Center circle!
 	sXPos -= 20;
 	sYPos -= 20;
 
-	iBack = RegisterBackgroundRect( BGND_FLAG_SINGLE, NULL, sXPos, sYPos, (INT16)(sXPos +40 ), (INT16)(sYPos + 40 ) );
+	iBack = RegisterBackgroundRect( BGND_FLAG_SINGLE, NULL, sXPos, sYPos,
+		(INT16)(sXPos + 40), (INT16)(sYPos + 40) );
 	if ( iBack != -1 )
-	{
 		SetBackgroundRectFilled( iBack );
-	}
 
-	BltVideoObjectFromIndex(	FRAME_BUFFER, guiRADIO, gbMultiPurposeLocatorFrame, sXPos, sYPos, VO_BLT_SRCTRANSPARENCY, NULL );
+	BltVideoObjectFromIndex( FRAME_BUFFER, guiRADIO, bFrame, sXPos, sYPos,
+		VO_BLT_SRCTRANSPARENCY, NULL );
 }
+
+
+void RenderTopmostMultiPurposeLocator( )
+{
+	if ( !gfMultipurposeLocatorOn )
+		return;
+
+	RenderTopmostLocatorAtGrid( gsMultiPurposeLocatorGridNo,
+		gbMultiPurposeLocatorLevel, gbMultiPurposeLocatorFrame );
+}
+
+
+void RenderTopmostUnseenFireBearingCues( )
+{
+	for ( INT8 i = 0; i < MAX_UNSEEN_FIRE_BEARING_CUES; ++i )
+	{
+		if ( gUnseenFireBearingCues[i].fActive )
+		{
+			RenderTopmostLocatorAtGrid( gUnseenFireBearingCues[i].sGridNo,
+				gUnseenFireBearingCues[i].bLevel,
+				gUnseenFireBearingCues[i].bFrame );
+		}
+	}
+}
+
 
 void DrawBar( INT32 x, INT32 y, INT32 width, INT32 height, UINT16 color16, UINT8 *pDestBuf )
 {
