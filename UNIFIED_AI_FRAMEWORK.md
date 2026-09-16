@@ -20,11 +20,12 @@ this framework, never merged wholesale.
    - Beliefs represent uncertainty; they never reveal hidden live opponent state.
    - Surprise is created by genuinely new personal sight, not by omniscient prediction.
 
-3. **Competence / friction**
-   - Administrators and green militia use simpler/noisier reasoning.
-   - Regular army and militia use coordinated tactics inconsistently.
-   - Elites can reliably exploit deeper candidate evaluation.
-   - Competence changes reasoning and execution, never CTH/AP.
+3. **Universal enemy competence / non-enemy friction**
+   - Every ENEMY_TEAM combatant uses elite/top-end tactical reasoning.
+   - Enemy mission/doctrine labels may change posture, role or objective; they must not deliberately reduce reasoning quality.
+   - Enemy planning has no competence-failure roll and no artificial utility noise.
+   - Militia/non-enemy AI may still use BASIC / REGULAR / ELITE execution-friction tiers where appropriate.
+   - Competence never grants CTH/AP/damage/vision/perception bonuses.
 
 4. **Battle state**
    - casualties, perceived force balance, stress, risk, morale, isolation and rout pressure.
@@ -80,8 +81,9 @@ this framework, never merged wholesale.
     - setback state is transient, identity/sector-bound, reset on load/rewind, and never creates opponent knowledge.
 
 14. **Execution friction**
-    - lower-quality troops may fall back to a simpler legal action instead of executing
-      the mathematically best complex plan.
+    - ENEMY_TEAM does not receive artificial tactical mistakes or complexity failures to simulate lower training.
+    - stress, suppression, wounds, legal uncertainty and mission role can change the correct enemy decision, but do not make the enemy forget advanced tactics.
+    - militia/non-enemy combatants may still fall back to simpler legal actions according to their competence tier.
 
 15. **Outcome feedback**
     - Black Box records raw facts, candidate scores, setback penalties and selections; Companion reconstructs plans,
@@ -187,3 +189,22 @@ first-class evidence for behavior quality, especially for suppression, flanking,
 combat, retreat, danger avoidance, pathing deadlocks and large-battle performance.
 
 Research completion does not increase implementation completion percentage.
+
+
+## Mandatory Upgrade Army AI doctrine gate
+
+Before a material Tactical AI behavior is implemented or retuned, consult
+`Tools/AI/UPGRADE_ARMY_AI_DOCTRINE_2026-09-16.md`.
+
+For ENEMY_TEAM this doctrine supersedes older heterogeneous-intelligence concepts:
+- every enemy reasons at elite/top-tier special-operations level;
+- equipment/resources/mission role may differ, intelligence quality does not;
+- local fireteams share bounded, confidence-decayed planning information without creating direct-fire authorization;
+- bravery means accepting useful risk, not ignoring self-preservation;
+- fireteam intent, complementary roles, reservations, bounding, rescue, covering withdrawal, remnant reattachment and staged response are first-class requirements;
+- strategic/campaign AI remains read-only.
+
+The JA2+AI dossier remains the primary historical external benchmark. The governing integration rule is:
+**unified planner for team cognition + mature Vengeance/sevenfm code for low-level legal execution**.
+
+Planner changes must be checked for accidental veto of strong mature behavior and exposed through Black Box / Companion telemetry.
