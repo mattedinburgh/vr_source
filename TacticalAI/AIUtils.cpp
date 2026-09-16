@@ -5458,6 +5458,38 @@ BOOLEAN AIPlanningContactForOpponent(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID,
 	return TRUE;
 }
 
+static INT32 AIPrimaryPlanningThreatSpot(
+	SOLDIERTYPE *pSoldier, INT8 *pbLevel = NULL, UINT8 *pubConfidence = NULL)
+{
+	if (pbLevel) *pbLevel = 0;
+	if (pubConfidence) *pubConfidence = 0;
+	if (!pSoldier)
+		return NOWHERE;
+
+	// Enemy planning follows the best bounded local fireteam report, including this
+	// soldier's own contact. This creates one shared tactical picture without writing
+	// anything into Knowledge()/the legacy public opplist.
+	if (pSoldier->bTeam == ENEMY_TEAM)
+	{
+		INT32 sShared = NOWHERE;
+		INT8 bSharedLevel = 0;
+		UINT8 ubSharedConfidence = 0;
+		if (AISharedFireteamContact(
+			pSoldier, &sShared, &bSharedLevel, &ubSharedConfidence) &&
+			!TileIsOutOfBounds(sShared))
+		{
+			if (pbLevel) *pbLevel = bSharedLevel;
+			if (pubConfidence) *pubConfidence = ubSharedConfidence;
+			return sShared;
+		}
+	}
+
+	INT8 bKnownLevel = 0;
+	INT32 sKnown = ClosestKnownOpponent(pSoldier, NULL, &bKnownLevel);
+	if (pbLevel) *pbLevel = bKnownLevel;
+	return sKnown;
+}
+
 static BOOLEAN AIPersonallyConfirmedNonThreat(
 	SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent)
 {
@@ -6299,16 +6331,13 @@ BOOLEAN AIBuildTacticalDecisionContext(SOLDIERTYPE *pSoldier, AITACTICALDECISION
 
 	// Build one knowledge-safe snapshot so higher-level reasoners do not independently
 	// rescan and reinterpret the same battlefield state during a single decision.
-	pContext->sPrimaryThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
 	UINT8 ubSharedPrimaryConfidence = 0;
-	BOOLEAN fSharedPrimary = FALSE;
-	if (TileIsOutOfBounds(pContext->sPrimaryThreat) &&
-		pSoldier->bTeam == ENEMY_TEAM)
-	{
-		fSharedPrimary = AISharedFireteamContact(
-			pSoldier, &pContext->sPrimaryThreat, NULL,
-			&ubSharedPrimaryConfidence);
-	}
+	pContext->sPrimaryThreat =
+		AIPrimaryPlanningThreatSpot(pSoldier, NULL, &ubSharedPrimaryConfidence);
+	BOOLEAN fSharedPrimary =
+		pSoldier->bTeam == ENEMY_TEAM &&
+		!TileIsOutOfBounds(pContext->sPrimaryThreat) &&
+		ubSharedPrimaryConfidence > 0;
 	pContext->usPerceivedFriendlyStrength = AIPerceivedFriendlyStrength(pSoldier);
 	pContext->usPerceivedEnemyStrength = AIPerceivedEnemyStrength(pSoldier);
 	pContext->ubFriendlyCasualtyPercent = AIFriendlyCasualtyPercent(pSoldier);
@@ -8656,9 +8685,7 @@ INT32 AISupportRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	}
 
 	if (TileIsOutOfBounds(sTargetSpot))
-		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
-	if (TileIsOutOfBounds(sTargetSpot) && pSoldier->bTeam == ENEMY_TEAM)
-		AISharedFireteamContact(pSoldier, &sTargetSpot, NULL, NULL);
+		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 
 	INT32 iScore = 20;
 	INT32 iGunRange = __max(1, (INT32)AIGunRange(pSoldier) / CELL_X_SIZE);
@@ -8748,9 +8775,7 @@ INT32 AIManeuverRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	}
 
 	if (TileIsOutOfBounds(sTargetSpot))
-		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
-	if (TileIsOutOfBounds(sTargetSpot) && pSoldier->bTeam == ENEMY_TEAM)
-		AISharedFireteamContact(pSoldier, &sTargetSpot, NULL, NULL);
+		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 
 	INT32 iHealthPercent = pSoldier->stats.bLifeMax > 0 ?
 		(100 * pSoldier->stats.bLife) / pSoldier->stats.bLifeMax : 0;
@@ -8864,9 +8889,7 @@ INT32 AICrossfirePositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT3
 			continue;
 		}
 
-		INT32 sFriendThreat = ClosestKnownOpponent(pFriend, NULL, NULL);
-		if (TileIsOutOfBounds(sFriendThreat) && pFriend->bTeam == ENEMY_TEAM)
-			AISharedFireteamContact(pFriend, &sFriendThreat, NULL, NULL);
+		INT32 sFriendThreat = AIPrimaryPlanningThreatSpot(pFriend);
 		if (TileIsOutOfBounds(sFriendThreat) || PythSpacesAway(sFriendThreat, sTargetSpot) > 3)
 			continue;
 
@@ -8909,7 +8932,7 @@ INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		return 0;
 
 	if (TileIsOutOfBounds(sTargetSpot))
-		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 
 	UINT8 ubNearbyFriends = 0;
 	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
@@ -9072,9 +9095,7 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 				continue;
 			}
 
-			INT32 sCandidateThreat = ClosestKnownOpponent(pCandidate, NULL, NULL);
-			if (TileIsOutOfBounds(sCandidateThreat) && pCandidate->bTeam == ENEMY_TEAM)
-				AISharedFireteamContact(pCandidate, &sCandidateThreat, NULL, NULL);
+			INT32 sCandidateThreat = AIPrimaryPlanningThreatSpot(pCandidate);
 			if (TileIsOutOfBounds(sCandidateThreat) ||
 				PythSpacesAway(sCandidateThreat, sTargetSpot) > 3)
 			{
@@ -9386,7 +9407,7 @@ INT8 AIEngagementRangeModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		return 0;
 
 	if (TileIsOutOfBounds(sTargetSpot))
-		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 
 	if (TileIsOutOfBounds(sTargetSpot))
 		return 0;
@@ -9514,9 +9535,7 @@ UINT8 AIFireteamEffectiveFireSupport(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		return 0;
 
 	if (TileIsOutOfBounds(sTargetSpot))
-		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
-	if (TileIsOutOfBounds(sTargetSpot) && pSoldier->bTeam == ENEMY_TEAM)
-		AISharedFireteamContact(pSoldier, &sTargetSpot, NULL, NULL);
+		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 	if (TileIsOutOfBounds(sTargetSpot))
 		return 0;
 
@@ -9577,9 +9596,7 @@ BOOLEAN AIBasicFireteamManeuverReady(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	}
 
 	if (TileIsOutOfBounds(sTargetSpot))
-		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
-	if (TileIsOutOfBounds(sTargetSpot) && pSoldier->bTeam == ENEMY_TEAM)
-		AISharedFireteamContact(pSoldier, &sTargetSpot, NULL, NULL);
+		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 	if (TileIsOutOfBounds(sTargetSpot))
 		return FALSE;
 
@@ -9689,9 +9706,7 @@ static BOOLEAN AIEligibleWithdrawalCoverer(SOLDIERTYPE *pCandidate, SOLDIERTYPE 
 		return FALSE;
 	}
 
-	INT32 sThreat = ClosestKnownOpponent(pCandidate, NULL, NULL);
-	if (TileIsOutOfBounds(sThreat) && pCandidate->bTeam == ENEMY_TEAM)
-		AISharedFireteamContact(pCandidate, &sThreat, NULL, NULL);
+	INT32 sThreat = AIPrimaryPlanningThreatSpot(pCandidate);
 	if (TileIsOutOfBounds(sThreat))
 		return FALSE;
 
@@ -14665,7 +14680,7 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	}
 
 	if (TileIsOutOfBounds(sTargetSpot))
-		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 
 	// If this soldier has no personal/public contact, use the fireteam's recent
 	// legally observed contact as a planning objective. This does not authorize fire.
@@ -14931,9 +14946,7 @@ static BOOLEAN AIPreferredSuppressorCandidate(
 			continue;
 		}
 
-		INT32 sCandidateTarget = ClosestKnownOpponent(pCandidate, NULL, NULL);
-		if (TileIsOutOfBounds(sCandidateTarget))
-			AISharedFireteamContact(pCandidate, &sCandidateTarget, NULL, NULL);
+		INT32 sCandidateTarget = AIPrimaryPlanningThreatSpot(pCandidate);
 		if (TileIsOutOfBounds(sCandidateTarget) ||
 			PythSpacesAway(sCandidateTarget, sTargetSpot) > 3)
 		{
@@ -14960,9 +14973,7 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 	UINT8 ubID = pSoldier->ubID;
 	if (TileIsOutOfBounds(sTargetSpot))
-		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
-	if (TileIsOutOfBounds(sTargetSpot) && pSoldier->bTeam == ENEMY_TEAM)
-		AISharedFireteamContact(pSoldier, &sTargetSpot, NULL, NULL);
+		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 
 	INT8 bIntent = AITacticalIntent(pSoldier, sTargetSpot);
 	INT32 iSupport = AISupportRoleScore(pSoldier, sTargetSpot);
@@ -15100,9 +15111,7 @@ INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 		return -10000;
 
 	if (TileIsOutOfBounds(sTargetSpot))
-		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
-	if (TileIsOutOfBounds(sTargetSpot) && pSoldier->bTeam == ENEMY_TEAM)
-		AISharedFireteamContact(pSoldier, &sTargetSpot, NULL, NULL);
+		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 	if (bIntent < AI_INTENT_HOLD || bIntent > AI_INTENT_RESCUE)
 		bIntent = AITacticalIntent(pSoldier, sTargetSpot);
 	if (bRole < AI_ROLE_SUPPORT || bRole > AI_ROLE_RESERVE)
