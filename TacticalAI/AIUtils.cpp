@@ -63,6 +63,10 @@ extern BOOLEAN gfHaveSeenSomeone;
 extern UINT8 ubRealAmbientLightLevel;
 //end rain
 
+// Planning-only shared threat picture. This never changes firearm target legality.
+static INT32 AIPrimaryPlanningThreatSpot(
+	SOLDIERTYPE *pSoldier, INT8 *pbLevel, UINT8 *pubConfidence);
+
 UINT8 Urgency[NUM_STATUS_STATES][NUM_MORALE_STATES] =
 {
 	{URGENCY_LOW,  URGENCY_LOW,  URGENCY_LOW,  URGENCY_LOW,  URGENCY_LOW}, // green
@@ -179,7 +183,7 @@ BOOLEAN ConsiderProne( SOLDIERTYPE * pSoldier )
 	}
 
 	// We don't want to go prone if there is a nearby enemy
-	sOpponentGridNo = ClosestKnownOpponent( pSoldier, NULL, NULL );
+	sOpponentGridNo = AIPrimaryPlanningThreatSpot( pSoldier );
 	if( !TileIsOutOfBounds(sOpponentGridNo) && 
 		PythSpacesAway( pSoldier->sGridNo, sOpponentGridNo ) < DAY_VISION_RANGE / 4 )
 	{
@@ -438,7 +442,7 @@ UINT16 DetermineMovementMode( SOLDIERTYPE * pSoldier, INT8 bAction )
 		else
 		{
 			// sevenfm: movement mode tweaks
-			INT32 sClosestThreat =	ClosestKnownOpponent( pSoldier, NULL, NULL );
+			INT32 sClosestThreat =	AIPrimaryPlanningThreatSpot( pSoldier );
 
 			// use walking mode if no enemy known
 			if (pSoldier->aiData.bAlertStatus < STATUS_RED &&
@@ -4143,7 +4147,7 @@ UINT8 CountFriendsBlack( SOLDIERTYPE *pSoldier, INT32 sClosestOpponent )
 	// by default, use closest known opponent
 	if( sClosestOpponent == NOWHERE )
 	{
-		sClosestOpponent = ClosestKnownOpponent( pSoldier, NULL, NULL );
+		sClosestOpponent = AIPrimaryPlanningThreatSpot( pSoldier );
 	}
 
 	if(TileIsOutOfBounds(sClosestOpponent))
@@ -6220,26 +6224,11 @@ UINT16 AIPerceivedEnemyStrength(SOLDIERTYPE *pSoldier)
 		INT32 sKnownSpot = NOWHERE;
 		UINT8 ubContactConfidence = 0;
 
-		if (pSoldier->bTeam == ENEMY_TEAM)
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sKnownSpot, NULL,
+			&ubContactConfidence, &bKnowledge))
 		{
-			// Local fireteam reports contribute to force-ratio planning without entering
-			// Knowledge()/the public opplist, so they cannot authorize direct fire.
-			if (!AISharedFireteamOpponentContact(
-				pSoldier, pOpponent->ubID, &sKnownSpot, NULL,
-				&ubContactConfidence, &bKnowledge))
-			{
-				continue;
-			}
-		}
-		else
-		{
-			bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-			if (bKnowledge == NOT_HEARD_OR_SEEN)
-				continue;
-
-			sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
-			ubContactConfidence =
-				(UINT8)ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+			continue;
 		}
 
 		const BOOLEAN fDirectVisualContact =
@@ -8063,24 +8052,11 @@ UINT16 AIKnownThreatExposure(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
 		UINT8 ubConfidence = 0;
 
-		if (pSoldier->bTeam == ENEMY_TEAM)
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sKnownSpot, &bKnownLevel,
+			&ubConfidence, &bKnowledge))
 		{
-			if (!AISharedFireteamOpponentContact(
-				pSoldier, pOpponent->ubID, &sKnownSpot, &bKnownLevel,
-				&ubConfidence, &bKnowledge))
-			{
-				continue;
-			}
-		}
-		else
-		{
-			bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-			if (bKnowledge == NOT_HEARD_OR_SEEN)
-				continue;
-			sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
-			bKnownLevel = KnownLevel(pSoldier, pOpponent->ubID);
-			ubConfidence =
-				(UINT8)ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+			continue;
 		}
 
 		const BOOLEAN fDirectVisualContact =
@@ -12146,7 +12122,7 @@ BOOLEAN AICheckSuccessfulAttack(SOLDIERTYPE *pSoldier, BOOLEAN fGroup)
 		return TRUE;
 	}
 
-	INT32 sClosestOpponent = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	INT32 sClosestOpponent = AIPrimaryPlanningThreatSpot(pSoldier);
 	if (fGroup &&
 		!TileIsOutOfBounds(sClosestOpponent) &&
 		CountFriendsLastAttackHit(pSoldier, sClosestOpponent, DAY_VISION_RANGE))
@@ -14680,10 +14656,6 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	if (TileIsOutOfBounds(sTargetSpot))
 		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 
-	// If this soldier has no personal/public contact, use the fireteam's recent
-	// legally observed contact as a planning objective. This does not authorize fire.
-	if (TileIsOutOfBounds(sTargetSpot) && pSoldier->bTeam == ENEMY_TEAM)
-		AISharedFireteamContact(pSoldier, &sTargetSpot, NULL, NULL);
 
 	UINT32 uiNow = guiTurnCnt + 1;
 	AITACTICALDECISIONCONTEXT Context;
