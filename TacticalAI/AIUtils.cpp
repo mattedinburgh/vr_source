@@ -9572,15 +9572,30 @@ BOOLEAN AIFriendWithdrawingNeedsCover(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID)
 		}
 
 		INT8 bKnowledge = PersonalKnowledge(pFriend, ubOpponentID);
-		if (bKnowledge != SEEN_CURRENTLY &&
-			bKnowledge != SEEN_THIS_TURN &&
-			bKnowledge != SEEN_LAST_TURN &&
-			bKnowledge != HEARD_THIS_TURN)
+		INT32 sThreat = NOWHERE;
+		if (bKnowledge == SEEN_CURRENTLY ||
+			bKnowledge == SEEN_THIS_TURN ||
+			bKnowledge == SEEN_LAST_TURN ||
+			bKnowledge == HEARD_THIS_TURN)
 		{
-			continue;
+			sThreat = KnownPersonalLocation(pFriend, ubOpponentID);
 		}
-
-		INT32 sThreat = KnownPersonalLocation(pFriend, ubOpponentID);
+		else if (pFriend->bTeam == ENEMY_TEAM)
+		{
+			// The withdrawing soldier may act on the fireteam's shared contact without
+			// learning an opponent identity. The covering shooter still needs its own
+			// legal knowledge of ubOpponentID before this helper can result in fire.
+			INT32 sSharedThreat = NOWHERE;
+			UINT8 ubSharedConfidence = 0;
+			INT32 sShooterThreat = KnownLocation(pSoldier, ubOpponentID);
+			if (AISharedFireteamContact(pFriend, &sSharedThreat, NULL, &ubSharedConfidence) &&
+				ubSharedConfidence >= 50 &&
+				!TileIsOutOfBounds(sShooterThreat) &&
+				PythSpacesAway(sSharedThreat, sShooterThreat) <= 3)
+			{
+				sThreat = sSharedThreat;
+			}
+		}
 		if (TileIsOutOfBounds(sThreat))
 			continue;
 
@@ -9641,19 +9656,30 @@ BOOLEAN AIFriendAdvancingNeedsCover(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID)
 			continue;
 		}
 
-		// Require recent personal knowledge of this exact opponent. The covering
-		// soldier can react to what his teammate is visibly doing, but the mover
-		// must have his own recent contact rather than borrowing omniscient sector data.
+		// The mover can use a local shared contact for coordination, but not for attack
+		// authorization. The covering shooter still owns the exact opponent identity.
 		INT8 bKnowledge = PersonalKnowledge(pFriend, ubOpponentID);
-		if (bKnowledge != SEEN_CURRENTLY &&
-			bKnowledge != SEEN_THIS_TURN &&
-			bKnowledge != SEEN_LAST_TURN &&
-			bKnowledge != HEARD_THIS_TURN)
+		INT32 sKnownThreat = NOWHERE;
+		if (bKnowledge == SEEN_CURRENTLY ||
+			bKnowledge == SEEN_THIS_TURN ||
+			bKnowledge == SEEN_LAST_TURN ||
+			bKnowledge == HEARD_THIS_TURN)
 		{
-			continue;
+			sKnownThreat = KnownPersonalLocation(pFriend, ubOpponentID);
 		}
-
-		INT32 sKnownThreat = KnownPersonalLocation(pFriend, ubOpponentID);
+		else if (pFriend->bTeam == ENEMY_TEAM)
+		{
+			INT32 sSharedThreat = NOWHERE;
+			UINT8 ubSharedConfidence = 0;
+			INT32 sShooterThreat = KnownLocation(pSoldier, ubOpponentID);
+			if (AISharedFireteamContact(pFriend, &sSharedThreat, NULL, &ubSharedConfidence) &&
+				ubSharedConfidence >= 50 &&
+				!TileIsOutOfBounds(sShooterThreat) &&
+				PythSpacesAway(sSharedThreat, sShooterThreat) <= 3)
+			{
+				sKnownThreat = sSharedThreat;
+			}
+		}
 		if (TileIsOutOfBounds(sKnownThreat))
 			continue;
 
