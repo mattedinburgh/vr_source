@@ -5153,17 +5153,24 @@ BOOLEAN AISharedFireteamContact(SOLDIERTYPE *pSoldier, INT32 *psGridNo,
 		for (UINT16 uiOpponent = 0; uiOpponent < TOTAL_SOLDIERS; ++uiOpponent)
 		{
 			SOLDIERTYPE *pOpponent = MercPtrs[uiOpponent];
-			if (!pOpponent || !pOpponent->bActive || !pOpponent->bInSector ||
-				CONSIDERED_NEUTRAL(pFriend, pOpponent) ||
-				pFriend->bSide == pOpponent->bSide)
-			{
+			if (!pOpponent)
 				continue;
-			}
 
 			INT8 bKnowledge = PersonalKnowledge(pFriend, (UINT8)uiOpponent);
 			INT32 iConfidence = 0;
+			// Once contact is stale/heard, never inspect the target's current active,
+			// in-sector, neutral, side, health or action state. Those are hidden facts.
+			// For a genuinely current sighting the normal current relation is legal.
 			if (bKnowledge == SEEN_CURRENTLY)
+			{
+				if (!pOpponent->bActive || !pOpponent->bInSector ||
+					CONSIDERED_NEUTRAL(pFriend, pOpponent) ||
+					pFriend->bSide == pOpponent->bSide)
+				{
+					continue;
+				}
 				iConfidence = 100;
+			}
 			else if (bKnowledge == SEEN_THIS_TURN)
 				iConfidence = 90;
 			else if (bKnowledge == SEEN_LAST_TURN)
@@ -5286,7 +5293,8 @@ BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridN
 			if (!pFriend || !pFriend->bActive || !pFriend->bInSector ||
 				pFriend->stats.bLife <= 0 ||
 				pFriend->aiData.bNeutral ||
-				pFriend->bSide != pSoldier->bSide)
+				pFriend->bSide != pSoldier->bSide ||
+				(pSoldier->bTeam == ENEMY_TEAM && !AISameFireteam(pSoldier, pFriend)))
 			{
 				continue;
 			}
@@ -14052,10 +14060,15 @@ INT32 AIInferredReactionRisk(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT8 b
 		else if (bKnowledge == SEEN_LAST_TURN)
 			iContactRisk += 6;
 
-		if ((bKnowledge == SEEN_CURRENTLY || bKnowledge == SEEN_THIS_TURN) &&
+		const BOOLEAN fPersonallySeeingNow =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+		if (fPersonallySeeingNow &&
 			(pOpponent->aiData.bAction == AI_ACTION_FIRE_GUN ||
 			 pOpponent->aiData.bLastAction == AI_ACTION_FIRE_GUN))
 		{
+			// A visible opponent who has just committed to firing is less likely to
+			// interrupt the candidate move immediately. Never infer this from stale/public contact.
 			iContactRisk -= 8;
 		}
 
