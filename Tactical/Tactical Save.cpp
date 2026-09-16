@@ -2700,20 +2700,28 @@ BOOLEAN AddRottingCorpseToUnloadedSectorsRottingCorpseFile( INT16 sMapX, INT16 s
 	//CHECK TO SEE if the file exist
 	if( FileExists( zMapName ) )
 	{
-		//Open the file for reading
-		hFile = FileOpen( zMapName, FILE_ACCESS_READWRITE | FILE_OPEN_EXISTING, FALSE );
+		// Read the current count with a read-only handle. The VFS layer does not
+		// provide a true shared read/write cursor for legacy FileMan handles.
+		hFile = FileOpen( zMapName, FILE_ACCESS_READ | FILE_OPEN_EXISTING, FALSE );
 		if( hFile == 0 )
 		{
-			//Error opening map modification file,
 			return( FALSE );
 		}
 
-		// Load the number of Rotting corpses
-		FileRead( hFile, &uiNumberOfCorpses, sizeof( UINT32 ), &uiNumBytesRead );
-		if( uiNumBytesRead != sizeof( UINT32 ) )
+		// Load the number of Rotting corpses.
+		if( !FileRead( hFile, &uiNumberOfCorpses, sizeof( UINT32 ), &uiNumBytesRead ) ||
+			uiNumBytesRead != sizeof( UINT32 ) )
 		{
-			//Error Writing size of array to disk
 			FileClose( hFile );
+			return( FALSE );
+		}
+		FileClose( hFile );
+
+		// Reopen for update. The code below explicitly seeks before each write,
+		// so splitting ownership by access mode preserves the legacy behavior.
+		hFile = FileOpen( zMapName, FILE_ACCESS_WRITE | FILE_OPEN_EXISTING, FALSE );
+		if( hFile == 0 )
+		{
 			return( FALSE );
 		}
 	}

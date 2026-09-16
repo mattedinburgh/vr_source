@@ -385,14 +385,43 @@ HWFILE FileOpen( STR strFilename, UINT32 uiOptions, BOOLEAN fDeleteOnClose, STR 
 #ifdef USE_VFS
 	vfs::Path path(strFilename);
 	vfs::IBaseFile *pFile = NULL;
+
+	// bfVFS exposes separate read and write open states over one underlying file
+	// object, not a safe legacy read/write cursor. Fail explicitly rather than
+	// registering a combined handle as write-only and letting later reads misbehave.
+	if((uiOptions & FILE_ACCESS_READWRITE) == FILE_ACCESS_READWRITE)
+	{
+		SGP_ERROR( "FileOpen: FILE_ACCESS_READWRITE is unsupported by the VFS bridge" );
+		return 0;
+	}
+
 	try
 	{
 		if(uiOptions & FILE_ACCESS_WRITE)
 		{
-			// 'vfs::CVirtualFile::SF_TOP' should be enough, but if for some strange reason
-			// file creation fails, we will stop at a writable profile 
-			// and won't unintentionally mess up a file from another profile
-			vfs::COpenWriteFile open_w( path, true, false, vfs::CVirtualFile::SF_STOP_ON_WRITABLE_PROFILE);
+			// Preserve the legacy FileOpen creation semantics at the VFS boundary.
+			// In particular, FILE_CREATE_ALWAYS must truncate an existing file;
+			// previously every VFS write used (create=true, truncate=false), which
+			// could leave stale trailing bytes when a shorter file replaced a longer one.
+			const bool fExplicitOpenExisting = (uiOptions & FILE_OPEN_EXISTING) != 0;
+			const bool fCreateNew = (uiOptions & FILE_CREATE_NEW) != 0;
+			const bool fCreateAlways = (uiOptions & FILE_CREATE_ALWAYS) != 0;
+			const bool fOpenAlways = (uiOptions & FILE_OPEN_ALWAYS) != 0;
+			const bool fTruncateExisting = (uiOptions & FILE_TRUNCATE_EXISTING) != 0;
+
+			if(fCreateNew && getVFS()->fileExists(path))
+			{
+				return 0;
+			}
+
+			// Legacy FileOpen defaults a write with no explicit creation flag to OPEN_ALWAYS.
+			const bool fCreateWhenMissing = fCreateNew || fCreateAlways || fOpenAlways ||
+				(!fExplicitOpenExisting && !fTruncateExisting);
+			const bool fTruncate = fCreateAlways || fTruncateExisting;
+
+			// Stop at a writable profile so a write never mutates a lower-priority/read-only layer.
+			vfs::COpenWriteFile open_w( path, fCreateWhenMissing, fTruncate,
+				vfs::CVirtualFile::SF_STOP_ON_WRITABLE_PROFILE);
 			pFile = &open_w.file();
 			open_w.release();
 			s_mapFiles[pFile].op = SOperation::WRITE;
@@ -590,10 +619,11 @@ void FileClose( HWFILE hFile )
 {
 #ifdef USE_VFS
 	vfs::IBaseFile *pFile = (vfs::IBaseFile*)hFile;
-	if(pFile)
+	tFILEMAP::iterator fileIt = s_mapFiles.find(pFile);
+	if(pFile && fileIt != s_mapFiles.end())
 	{
 		pFile->close();
-		s_mapFiles.erase(pFile);
+		s_mapFiles.erase(fileIt);
 	}
 #else
 	INT16 sLibraryID;
@@ -681,7 +711,8 @@ BOOLEAN FileRead( HWFILE hFile, PTR pDest, UINT32 uiBytesToRead, UINT32 *puiByte
 	TimeCounter timer;
 #endif
 	vfs::IBaseFile *pFile = (vfs::IBaseFile*)hFile;
-	if(pFile && (s_mapFiles[pFile].op == SOperation::READ))
+	tFILEMAP::const_iterator fileIt = s_mapFiles.find(pFile);
+	if(pFile && fileIt != s_mapFiles.end() && fileIt->second.op == SOperation::READ)
 	{
 		vfs::tReadableFile *pRF = vfs::tReadableFile::cast(pFile);
 		if(pRF)
@@ -812,11 +843,15 @@ BOOLEAN FileWrite( HWFILE hFile, PTR pDest, UINT32 uiBytesToWrite, UINT32 *puiBy
 #ifdef USE_VFS
 	if(uiBytesToWrite == 0)//dnl ch38 110909
 	{
-		*puiBytesWritten = 0;
+		if(puiBytesWritten)
+		{
+			*puiBytesWritten = 0;
+		}
 		return(TRUE);
 	}
 	vfs::IBaseFile *pFile = (vfs::IBaseFile*)hFile;
-	if(pFile && (s_mapFiles[pFile].op == SOperation::WRITE))
+	tFILEMAP::const_iterator fileIt = s_mapFiles.find(pFile);
+	if(pFile && fileIt != s_mapFiles.end() && fileIt->second.op == SOperation::WRITE)
 	{
 		vfs::tWritableFile *pWF = vfs::tWritableFile::cast(pFile);
 		if(pWF)
@@ -1074,7 +1109,13 @@ BOOLEAN FileSeek( HWFILE hFile, UINT32 uiDistance, UINT8 uiHow )
 			eSD = vfs::IBaseFile::SD_CURRENT;
 		}
 
-		if(s_mapFiles[pFile].op == SOperation::WRITE)
+		tFILEMAP::const_iterator fileIt = s_mapFiles.find(pFile);
+		if(fileIt == s_mapFiles.end())
+		{
+			return FALSE;
+		}
+
+		if(fileIt->second.op == SOperation::WRITE)
 		{
 			vfs::tWritableFile *pWF = vfs::tWritableFile::cast(pFile);
 			if(pWF)
@@ -1083,7 +1124,7 @@ BOOLEAN FileSeek( HWFILE hFile, UINT32 uiDistance, UINT8 uiHow )
 				return TRUE;
 			}
 		}
-		else if(s_mapFiles[pFile].op == SOperation::READ)
+		else if(fileIt->second.op == SOperation::READ)
 		{
 			vfs::tReadableFile *pRF = vfs::tReadableFile::cast(pFile);
 			if(pRF)
@@ -1171,7 +1212,8 @@ INT32 FileGetPos( HWFILE hFile )
 {
 #ifdef USE_VFS
 	vfs::IBaseFile *pFile = (vfs::IBaseFile*)hFile;
-	if(pFile && (s_mapFiles[pFile].op == SOperation::WRITE))
+	tFILEMAP::const_iterator fileIt = s_mapFiles.find(pFile);
+	if(pFile && fileIt != s_mapFiles.end() && fileIt->second.op == SOperation::WRITE)
 	{
 		vfs::tWritableFile *pWF = vfs::tWritableFile::cast(pFile);
 		if(pWF)
@@ -1179,7 +1221,7 @@ INT32 FileGetPos( HWFILE hFile )
 			return pWF->getWritePosition();
 		}
 	}
-	else if(pFile && (s_mapFiles[pFile].op == SOperation::READ))
+	else if(pFile && fileIt != s_mapFiles.end() && fileIt->second.op == SOperation::READ)
 	{
 		vfs::tReadableFile *pRF = vfs::tReadableFile::cast(pFile);
 		if(pRF)
@@ -2213,8 +2255,9 @@ BOOLEAN	FileCheckEndOfFile( HWFILE hFile )
 #ifdef USE_VFS
 	vfs::size_t current_position, max_position;
 	vfs::IBaseFile *pFile = (vfs::IBaseFile*)hFile;
+	tFILEMAP::const_iterator fileIt = s_mapFiles.find(pFile);
 
-	if(pFile && (s_mapFiles[pFile].op == SOperation::WRITE))
+	if(pFile && fileIt != s_mapFiles.end() && fileIt->second.op == SOperation::WRITE)
 	{
 		vfs::tWritableFile *pWF = vfs::tWritableFile::cast(pFile);
 		if(pWF)
@@ -2224,7 +2267,7 @@ BOOLEAN	FileCheckEndOfFile( HWFILE hFile )
 			return current_position >= max_position;
 		}
 	}
-	else if(pFile && (s_mapFiles[pFile].op == SOperation::READ))
+	else if(pFile && fileIt != s_mapFiles.end() && fileIt->second.op == SOperation::READ)
 	{
 		vfs::tReadableFile *pRF = vfs::tReadableFile::cast(pFile);
 		if(pRF)
