@@ -7651,7 +7651,8 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 							iChance += 20;
 
 						// increase chance based on proximity and difficulty of enemy
-						if ( PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) < 15 )
+						if ( pSoldier->bTeam != ENEMY_TEAM &&
+							 PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) < 15 )
 						{
 							DebugMsg(TOPIC_JA2AI,DBG_LEVEL_3,String("DecideActionBlack: check chance to burst"));
 							iChance += ( 15 - PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) ) * ( 1 + SoldierDifficultyLevel( pSoldier ) );
@@ -7665,7 +7666,8 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 						// Close range favours a controlled burst, but difficulty no longer
 						// forces one with a +100 override. Better troops get a bounded bonus
 						// and still respect aim quality, ammo state and the normal fire-mode roll.
-						if (PythSpacesAway(pSoldier->sGridNo, BestAttack.sTarget) < 10 &&
+						if (pSoldier->bTeam != ENEMY_TEAM &&
+							PythSpacesAway(pSoldier->sGridNo, BestAttack.sTarget) < 10 &&
 							gGameOptions.ubDifficultyLevel > DIF_LEVEL_EASY)
 						{
 							iChance += 15 + 5 * SoldierDifficultyLevel(pSoldier);
@@ -7788,7 +7790,8 @@ L_NEWAIM:
 								iChance += 50; //Madd: extra chance of going nuts and autofiring if stuck in gas
 
 							// increase chance based on proximity and difficulty of enemy
-							if ( PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) < 15 )
+							if ( pSoldier->bTeam != ENEMY_TEAM &&
+							 PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) < 15 )
 							{
 								DebugMsg(TOPIC_JA2AI,DBG_LEVEL_3,String("DecideActionBlack: check chance to autofire"));
 								iChance += ( 15 - PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) ) * ( 1 + SoldierDifficultyLevel( pSoldier ) );
@@ -7800,7 +7803,8 @@ L_NEWAIM:
 							}
 							// Close-range autofire is attractive, not mandatory. This keeps Elite
 							// troops aggressive without making difficulty synonymous with ammo waste.
-							if (PythSpacesAway(pSoldier->sGridNo, BestAttack.sTarget) < 10 &&
+							if (pSoldier->bTeam != ENEMY_TEAM &&
+								PythSpacesAway(pSoldier->sGridNo, BestAttack.sTarget) < 10 &&
 								gGameOptions.ubDifficultyLevel > DIF_LEVEL_EASY)
 							{
 								iChance += 15 + 5 * SoldierDifficultyLevel(pSoldier);
