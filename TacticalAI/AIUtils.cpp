@@ -15097,104 +15097,6 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	return bRole;
 }
 
-static INT32 AIFuturePositionPotential(
-	SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT32 sTargetSpot,
-	INT8 bIntent, INT8 bRole)
-{
-	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM ||
-		TileIsOutOfBounds(sCandidateSpot))
-	{
-		return 0;
-	}
-
-	const INT8 bLevel = pSoldier->pathing.bLevel;
-	const UINT16 usCandidateExposure =
-		AIKnownThreatExposure(pSoldier, sCandidateSpot, bLevel);
-	const INT32 iCandidateDistance = TileIsOutOfBounds(sTargetSpot) ?
-		0 : PythSpacesAway(sCandidateSpot, sTargetSpot);
-
-	INT32 iBestFollowup = -10000;
-	UINT8 ubSafeOptions = 0;
-	UINT8 ubCoveredOptions = 0;
-
-	for (UINT8 ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ++ubDirection)
-	{
-		INT32 sNext = NewGridNo(sCandidateSpot, DirectionInc(ubDirection));
-		if (sNext == sCandidateSpot || TileIsOutOfBounds(sNext))
-			continue;
-
-		UINT8 ubMovementCost =
-			gubWorldMovementCosts[sNext][ubDirection][bLevel];
-		if (ubMovementCost >= TRAVELCOST_BLOCKED ||
-			!IsLocationSittableExcludingPeople(sNext, bLevel))
-		{
-			continue;
-		}
-
-		if (InGas(pSoldier, sNext) ||
-			RedSmokeDanger(sNext, bLevel) ||
-			FindBombNearby(pSoldier, sNext, BOMB_DETECTION_RANGE))
-		{
-			continue;
-		}
-
-		UINT16 usExposure = AIKnownThreatExposure(pSoldier, sNext, bLevel);
-		INT32 iReactionRisk = AIInferredReactionRisk(pSoldier, sNext, bLevel);
-		BOOLEAN fCover = AnyCoverAtSpot(pSoldier, sNext);
-		BOOLEAN fSightCover = SightCoverAtSpot(pSoldier, sNext, FALSE);
-
-		INT32 iFollowup = 0;
-		if (fCover) iFollowup += 14;
-		if (fSightCover) iFollowup += 12;
-		iFollowup -= __min((INT32)30, (INT32)usExposure / 7);
-		iFollowup -= __min((INT32)24, iReactionRisk / 5);
-
-		if (!TileIsOutOfBounds(sTargetSpot))
-		{
-			INT32 iNextDistance = PythSpacesAway(sNext, sTargetSpot);
-			INT32 iProgress = iCandidateDistance - iNextDistance;
-
-			if (bIntent == AI_INTENT_PRESS || bIntent == AI_INTENT_FLANK)
-				iFollowup += __max(-12, __min(12, 4 * iProgress));
-			else if (bIntent == AI_INTENT_FALLBACK ||
-				bIntent == AI_INTENT_DISENGAGE)
-				iFollowup += __max(-12, __min(12, -4 * iProgress));
-
-			if (bRole == AI_ROLE_FLANKER)
-			{
-				INT32 iCrossfire =
-					AICrossfirePositionScore(pSoldier, sNext, sTargetSpot);
-				iFollowup += __max(-8, __min(12, iCrossfire / 2));
-			}
-		}
-
-		const BOOLEAN fSafeContinuation =
-			usExposure <= usCandidateExposure + 20 &&
-			iReactionRisk <= 55;
-		if (fSafeContinuation)
-			++ubSafeOptions;
-		if (fSafeContinuation && (fCover || fSightCover))
-			++ubCoveredOptions;
-
-		iBestFollowup = __max(iBestFollowup, iFollowup);
-	}
-
-	INT32 iOptionValue = 0;
-	if (ubSafeOptions == 0)
-		iOptionValue -= 22;
-	else
-		iOptionValue += __min((INT32)16, 4 * (INT32)ubSafeOptions);
-
-	iOptionValue += __min((INT32)12, 4 * (INT32)ubCoveredOptions);
-	if (bRole == AI_ROLE_FLANKER || bRole == AI_ROLE_MANEUVER)
-		iOptionValue += __min((INT32)8, 2 * (INT32)ubSafeOptions);
-
-	if (iBestFollowup > -10000)
-		iOptionValue += __max(-14, __min(14, iBestFollowup / 3));
-
-	return __max(-35, __min(40, iOptionValue));
-}
-
 INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 	INT32 sTargetSpot, INT8 bIntent, INT8 bRole)
 {
@@ -15224,16 +15126,8 @@ INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 		return -10000;
 	}
 
-	INT32 iScore = AIScoreTacticalPosition(
+	return AIScoreTacticalPosition(
 		pSoldier, &Features, sCandidateSpot, sTargetSpot, bIntent, bRole);
-
-	// Second ply: value the legal option set this move creates after the likely
-	// enemy response. This uses only map geometry and the bounded local threat picture.
-	if (pSoldier->bTeam == ENEMY_TEAM)
-		iScore += AIFuturePositionPotential(
-			pSoldier, sCandidateSpot, sTargetSpot, bIntent, bRole);
-
-	return __max(-250, __min(250, iScore));
 }
 
 INT32 AIPathExposureCost(SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMovementMode)
