@@ -645,9 +645,10 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 		NewOKDestination(pSoldier, Change.sPreviousGridNo, FALSE, pSoldier->pathing.bLevel) &&
 		CheckNPCDestination(pSoldier, Change.sPreviousGridNo))
 	{
+		INT32 iRouteCost = 0;
 		INT32 iScore = AIUtilityPositionScore(
 			pSoldier, Change.sPreviousGridNo, Context.sPrimaryThreat,
-			AI_INTENT_FALLBACK, bRole);
+			AI_INTENT_FALLBACK, bRole, &iRouteCost);
 
 		// A just-vacated tile is known terrain and needs less cognitive commitment
 		// than inventing a new maneuver under surprise.
@@ -656,8 +657,7 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 
 		VRPlannerTraceCandidate(pSoldier, uiDecision, "contact_reassessment",
 			AI_ACTION_WITHDRAW, Change.sPreviousGridNo, iScore,
-			AIPathExposureCost(pSoldier, Change.sPreviousGridNo,
-				DetermineMovementMode(pSoldier, AI_ACTION_WITHDRAW)),
+			iRouteCost,
 			CountNearbyFriends(pSoldier, Change.sPreviousGridNo, DAY_VISION_RANGE / 3),
 			AICrossfirePositionScore(pSoldier, Change.sPreviousGridNo, Context.sPrimaryThreat),
 			"return to last known-safe position");
@@ -681,14 +681,14 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 		pSoldier, pSoldier->aiData.bAIMorale, &iCoverPercentBetter);
 	if (!TileIsOutOfBounds(sCover) && sCover != pSoldier->sGridNo)
 	{
+		INT32 iRouteCost = 0;
 		INT32 iScore = AIUtilityPositionScore(
 			pSoldier, sCover, Context.sPrimaryThreat,
-			AI_INTENT_HOLD, bRole);
+			AI_INTENT_HOLD, bRole, &iRouteCost);
 
 		VRPlannerTraceCandidate(pSoldier, uiDecision, "contact_reassessment",
 			AI_ACTION_TAKE_COVER, sCover, iScore,
-			AIPathExposureCost(pSoldier, sCover,
-				DetermineMovementMode(pSoldier, AI_ACTION_TAKE_COVER)),
+			iRouteCost,
 			CountNearbyFriends(pSoldier, sCover, DAY_VISION_RANGE / 3),
 			AICrossfirePositionScore(pSoldier, sCover, Context.sPrimaryThreat),
 			"nearby cover after surprise");
@@ -710,14 +710,14 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 	INT32 sRetreat = FindRetreatSpot(pSoldier);
 	if (!TileIsOutOfBounds(sRetreat) && sRetreat != pSoldier->sGridNo)
 	{
+		INT32 iRouteCost = 0;
 		INT32 iScore = AIUtilityPositionScore(
 			pSoldier, sRetreat, Context.sPrimaryThreat,
-			AI_INTENT_FALLBACK, bRole);
+			AI_INTENT_FALLBACK, bRole, &iRouteCost);
 
 		VRPlannerTraceCandidate(pSoldier, uiDecision, "contact_reassessment",
 			AI_ACTION_WITHDRAW, sRetreat, iScore,
-			AIPathExposureCost(pSoldier, sRetreat,
-				DetermineMovementMode(pSoldier, AI_ACTION_WITHDRAW)),
+			iRouteCost,
 			CountNearbyFriends(pSoldier, sRetreat, DAY_VISION_RANGE / 3),
 			AICrossfirePositionScore(pSoldier, sRetreat, Context.sPrimaryThreat),
 			"dedicated retreat candidate");
@@ -747,17 +747,17 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 	}
 	if (!TileIsOutOfBounds(sFallback) && sFallback != pSoldier->sGridNo)
 	{
+		INT32 iRouteCost = 0;
 		INT32 iScore = AIUtilityPositionScore(
 			pSoldier, sFallback, Context.sPrimaryThreat,
-			AI_INTENT_FALLBACK, bRole);
+			AI_INTENT_FALLBACK, bRole, &iRouteCost);
 
 		if (Change.fEncirclementPressure)
 			iScore += 4;
 
 		VRPlannerTraceCandidate(pSoldier, uiDecision, "contact_reassessment",
 			AI_ACTION_WITHDRAW, sFallback, iScore,
-			AIPathExposureCost(pSoldier, sFallback,
-				DetermineMovementMode(pSoldier, AI_ACTION_WITHDRAW)),
+			iRouteCost,
 			CountNearbyFriends(pSoldier, sFallback, DAY_VISION_RANGE / 3),
 			AICrossfirePositionScore(pSoldier, sFallback, Context.sPrimaryThreat),
 			"weakest-sector breakout candidate");

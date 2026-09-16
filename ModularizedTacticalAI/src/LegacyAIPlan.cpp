@@ -78,6 +78,10 @@ namespace AI
                 AIUpdateDisengagementState(get_npc());
             }
 
+            // Build the legal fireteam threat picture once for this decision. Expensive
+            // exposure/reaction-risk queries reuse it until the selected action is known.
+            AIBeginDecisionThreatSnapshot(get_npc());
+
             // if status override is set, bypass RED/YELLOW and go directly to GREEN!
             if ((get_npc()->aiData.bBypassToGreen) && (get_npc()->aiData.bAlertStatus < STATUS_BLACK))
             {
@@ -106,6 +110,8 @@ namespace AI
                         break;
                 }
             }
+
+            AIEndDecisionThreatSnapshot(get_npc());
 			DebugAI(AI_MSG_DECIDE, get_npc(), String(""), get_npc()->aiData.bAction);
             DEBUGAIMSG("Deciding for guynum "<<(int)get_npc()->ubID<<" at gridno "<<get_npc()->sGridNo<<", APs "<<get_npc()->bActionPoints<<
                     ", decided action: "<<(int)get_npc()->aiData.bAction<<", data "<<(int)get_npc()->aiData.usActionData);

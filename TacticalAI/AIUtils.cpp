@@ -5549,6 +5549,162 @@ BOOLEAN AIPlanningContactForOpponent(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID,
 	return TRUE;
 }
 
+// Decision-scoped, read-only threat snapshot. Each soldier owns a cache slot so
+// the data layout is compatible with future reentrant/finalist evaluation work.
+// The snapshot contains only information legally available through the existing
+// personal/fireteam contact model; it never grants attack authorization.
+struct AIPLANNINGCONTACTSNAPSHOT
+{
+	BOOLEAN fValid;
+	INT32 sKnownSpot;
+	INT8 bKnownLevel;
+	UINT8 ubConfidence;
+	INT8 bKnowledge;
+	BOOLEAN fExposureEligible;
+	BOOLEAN fReactionEligible;
+	BOOLEAN fPersonallySeeingNow;
+	BOOLEAN fObservedRecentFire;
+};
+
+struct AIDECISIONTHREATSNAPSHOT
+{
+	BOOLEAN fActive;
+	UINT8 ubSoldierID;
+	UINT32 uiSoldierIdentity;
+	UINT32 uiDecisionStartMs;
+	UINT32 uiBuildMs;
+	UINT32 uiExposureMs;
+	UINT32 uiReactionMs;
+	UINT32 uiPathfindingMs;
+	UINT32 uiExposureCalls;
+	UINT32 uiReactionCalls;
+	UINT32 uiPathSearchCount;
+	UINT32 uiPathCostReuses;
+	UINT32 uiDetailedCandidateCount;
+	UINT32 uiLookaheadNodes;
+	UINT32 uiCacheHits;
+	UINT32 uiCacheMisses;
+	UINT16 usContactCount;
+	AIPLANNINGCONTACTSNAPSHOT Contact[MAX_NUM_SOLDIERS];
+};
+
+static AIDECISIONTHREATSNAPSHOT gAIDecisionThreatSnapshot[MAX_NUM_SOLDIERS];
+
+static AIDECISIONTHREATSNAPSHOT *AIGetDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return NULL;
+
+	AIDECISIONTHREATSNAPSHOT *pSnapshot =
+		&gAIDecisionThreatSnapshot[pSoldier->ubID];
+	if (!pSnapshot->fActive ||
+		pSnapshot->ubSoldierID != pSoldier->ubID ||
+		pSnapshot->uiSoldierIdentity != pSoldier->uiUniqueSoldierIdValue)
+	{
+		return NULL;
+	}
+
+	return pSnapshot;
+}
+
+void AIBeginDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS || !AICombatTeam(pSoldier))
+		return;
+
+	AIDECISIONTHREATSNAPSHOT *pSnapshot =
+		&gAIDecisionThreatSnapshot[pSoldier->ubID];
+	memset(pSnapshot, 0, sizeof(*pSnapshot));
+	pSnapshot->ubSoldierID = pSoldier->ubID;
+	pSnapshot->uiSoldierIdentity = pSoldier->uiUniqueSoldierIdValue;
+	pSnapshot->uiDecisionStartMs = GetJA2Clock();
+
+	const UINT32 uiBuildStart = GetJA2Clock();
+	for (UINT16 uiLoop = 0; uiLoop < MAX_NUM_SOLDIERS; ++uiLoop)
+	{
+		SOLDIERTYPE *pOpponent = MercPtrs[uiLoop];
+		if (!pOpponent || pOpponent == pSoldier)
+			continue;
+
+		AIPLANNINGCONTACTSNAPSHOT *pContact = &pSnapshot->Contact[uiLoop];
+		INT32 sKnownSpot = NOWHERE;
+		INT8 bKnownLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		UINT8 ubConfidence = 0;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sKnownSpot, &bKnownLevel,
+			&ubConfidence, &bKnowledge))
+		{
+			continue;
+		}
+
+		pContact->fValid = TRUE;
+		pContact->sKnownSpot = sKnownSpot;
+		pContact->bKnownLevel = bKnownLevel;
+		pContact->ubConfidence = ubConfidence;
+		pContact->bKnowledge = bKnowledge;
+		pContact->fExposureEligible = TRUE;
+		pContact->fReactionEligible = TRUE;
+		++pSnapshot->usContactCount;
+
+		pContact->fPersonallySeeingNow =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+
+		if (pContact->fPersonallySeeingNow)
+		{
+			if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+				pSoldier->bSide == pOpponent->bSide)
+			{
+				pContact->fExposureEligible = FALSE;
+				pContact->fReactionEligible = FALSE;
+			}
+			else if ((pSoldier->aiData.bAttitude == ATTACKSLAYONLY &&
+				pOpponent->ubProfile != SLAY) ||
+				pOpponent->ubBodyType == CROW)
+			{
+				pContact->fExposureEligible = FALSE;
+			}
+
+			pContact->fObservedRecentFire =
+				pOpponent->aiData.bAction == AI_ACTION_FIRE_GUN ||
+				pOpponent->aiData.bLastAction == AI_ACTION_FIRE_GUN;
+		}
+	}
+
+	pSnapshot->uiBuildMs = GetJA2Clock() - uiBuildStart;
+	pSnapshot->fActive = TRUE;
+}
+
+void AIEndDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
+{
+	AIDECISIONTHREATSNAPSHOT *pSnapshot = AIGetDecisionThreatSnapshot(pSoldier);
+	if (!pSnapshot)
+		return;
+
+	const UINT32 uiTotalMs = GetJA2Clock() - pSnapshot->uiDecisionStartMs;
+	DebugAI(AI_MSG_INFO, pSoldier,
+		String("[AI-PERF] total_ms=%lu threat_build_ms=%lu pathfinding_ms=%lu exposure_ms=%lu reaction_ms=%lu "
+			"contacts=%u detailed_candidates=%lu path_searches=%lu path_reuses=%lu "
+			"exposure_calls=%lu reaction_calls=%lu cache_hits=%lu cache_misses=%lu lookahead_nodes=%lu",
+			(unsigned long)uiTotalMs,
+			(unsigned long)pSnapshot->uiBuildMs,
+			(unsigned long)pSnapshot->uiPathfindingMs,
+			(unsigned long)pSnapshot->uiExposureMs,
+			(unsigned long)pSnapshot->uiReactionMs,
+			(unsigned int)pSnapshot->usContactCount,
+			(unsigned long)pSnapshot->uiDetailedCandidateCount,
+			(unsigned long)pSnapshot->uiPathSearchCount,
+			(unsigned long)pSnapshot->uiPathCostReuses,
+			(unsigned long)pSnapshot->uiExposureCalls,
+			(unsigned long)pSnapshot->uiReactionCalls,
+			(unsigned long)pSnapshot->uiCacheHits,
+			(unsigned long)pSnapshot->uiCacheMisses,
+			(unsigned long)pSnapshot->uiLookaheadNodes));
+
+	pSnapshot->fActive = FALSE;
+}
+
 static INT32 AIPrimaryPlanningThreatSpot(
 	SOLDIERTYPE *pSoldier, INT8 *pbLevel, UINT8 *pubConfidence)
 {
@@ -8137,6 +8293,37 @@ UINT16 AIKnownThreatExposure(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 {
 	if (!AICombatTeam(pSoldier) || TileIsOutOfBounds(sSpot))
 		return 0;
+
+	AIDECISIONTHREATSNAPSHOT *pSnapshot = AIGetDecisionThreatSnapshot(pSoldier);
+	if (pSnapshot)
+	{
+		const UINT32 uiStart = GetJA2Clock();
+		++pSnapshot->uiExposureCalls;
+		++pSnapshot->uiCacheHits;
+
+		UINT32 uiCachedExposure = 0;
+		for (UINT16 uiLoop = 0; uiLoop < MAX_NUM_SOLDIERS; ++uiLoop)
+		{
+			const AIPLANNINGCONTACTSNAPSHOT *pContact =
+				&pSnapshot->Contact[uiLoop];
+			if (!pContact->fValid || !pContact->fExposureEligible ||
+				TileIsOutOfBounds(pContact->sKnownSpot))
+			{
+				continue;
+			}
+
+			if (PythSpacesAway(pContact->sKnownSpot, sSpot) <= MAX_VISION_RANGE &&
+				LocationToLocationLineOfSightTest(
+					pContact->sKnownSpot, pContact->bKnownLevel, sSpot, bLevel,
+					TRUE, MAX_VISION_RANGE))
+			{
+				uiCachedExposure += pContact->ubConfidence;
+			}
+		}
+
+		pSnapshot->uiExposureMs += GetJA2Clock() - uiStart;
+		return (UINT16)__min((UINT32)65535, uiCachedExposure);
+	}
 
 	UINT32 uiExposure = 0;
 	for (UINT16 uiLoop = 0; uiLoop < MAX_NUM_SOLDIERS; ++uiLoop)
@@ -14479,6 +14666,52 @@ INT32 AIInferredReactionRisk(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT8 b
 	if (!AICombatTeam(pSoldier) || TileIsOutOfBounds(sCandidateSpot))
 		return 0;
 
+	AIDECISIONTHREATSNAPSHOT *pSnapshot = AIGetDecisionThreatSnapshot(pSoldier);
+	if (pSnapshot)
+	{
+		const UINT32 uiStart = GetJA2Clock();
+		++pSnapshot->uiReactionCalls;
+		++pSnapshot->uiCacheHits;
+
+		INT32 iCachedRisk = 0;
+		for (UINT16 uiLoop = 0; uiLoop < MAX_NUM_SOLDIERS; ++uiLoop)
+		{
+			const AIPLANNINGCONTACTSNAPSHOT *pContact =
+				&pSnapshot->Contact[uiLoop];
+			if (!pContact->fValid || !pContact->fReactionEligible ||
+				TileIsOutOfBounds(pContact->sKnownSpot) ||
+				pContact->bKnownLevel != bLevel)
+			{
+				continue;
+			}
+
+			if (PythSpacesAway(pContact->sKnownSpot, sCandidateSpot) > MAX_VISION_RANGE ||
+				!LocationToLocationLineOfSightTest(
+					pContact->sKnownSpot, pContact->bKnownLevel,
+					sCandidateSpot, bLevel, TRUE, MAX_VISION_RANGE))
+			{
+				continue;
+			}
+
+			INT32 iContactRisk = 8 + (INT32)pContact->ubConfidence / 5;
+			if (pContact->ubConfidence >= 85)
+				iContactRisk += 12;
+			else if (pContact->ubConfidence >= 60)
+				iContactRisk += 6;
+
+			if (pContact->fPersonallySeeingNow && pContact->fObservedRecentFire)
+				iContactRisk -= 8;
+
+			iCachedRisk += __max(0, iContactRisk);
+		}
+
+		if (InSmoke(sCandidateSpot, bLevel))
+			iCachedRisk /= 3;
+
+		pSnapshot->uiReactionMs += GetJA2Clock() - uiStart;
+		return __min((INT32)120, iCachedRisk);
+	}
+
 	INT32 iRisk = 0;
 	for (UINT16 uiLoop = 0; uiLoop < MAX_NUM_SOLDIERS; ++uiLoop)
 	{
@@ -15184,10 +15417,17 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 }
 
 INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
-	INT32 sTargetSpot, INT8 bIntent, INT8 bRole)
+	INT32 sTargetSpot, INT8 bIntent, INT8 bRole, INT32 *piPathExposureCost)
 {
+	if (piPathExposureCost)
+		*piPathExposureCost = 0;
 	if (!AICombatTeam(pSoldier) || TileIsOutOfBounds(sCandidateSpot))
 		return -10000;
+
+	AIDECISIONTHREATSNAPSHOT *pDecisionSnapshot =
+		AIGetDecisionThreatSnapshot(pSoldier);
+	if (pDecisionSnapshot)
+		++pDecisionSnapshot->uiDetailedCandidateCount;
 
 	if (TileIsOutOfBounds(sTargetSpot))
 		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
@@ -15212,6 +15452,13 @@ INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 		return -10000;
 	}
 
+	if (piPathExposureCost)
+	{
+		*piPathExposureCost = (INT32)Features.sPathExposure;
+		if (pDecisionSnapshot)
+			++pDecisionSnapshot->uiPathCostReuses;
+	}
+
 	return AIScoreTacticalPosition(
 		pSoldier, &Features, sCandidateSpot, sTargetSpot, bIntent, bRole);
 }
@@ -15228,8 +15475,17 @@ INT32 AIPathExposureCost(SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMov
 
 	// Use the non-copying route query: it gives us the full generated path through
 	// guiPathingData without replacing the soldier's prepared execution route.
+	AIDECISIONTHREATSNAPSHOT *pDecisionSnapshot =
+		AIGetDecisionThreatSnapshot(pSoldier);
+	const UINT32 uiPathStart =
+		pDecisionSnapshot ? GetJA2Clock() : 0;
 	INT32 iPathSteps = FindBestPath(pSoldier, sDestination, pSoldier->pathing.bLevel,
 		usMovementMode, NO_COPYROUTE, 0);
+	if (pDecisionSnapshot)
+	{
+		++pDecisionSnapshot->uiPathSearchCount;
+		pDecisionSnapshot->uiPathfindingMs += GetJA2Clock() - uiPathStart;
+	}
 
 	gubNPCAPBudget = sOldAPBudget;
 	gubNPCDistLimit = ubOldDistLimit;

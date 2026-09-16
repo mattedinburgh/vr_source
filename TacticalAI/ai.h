@@ -612,10 +612,13 @@ struct AITACTICALDECISIONCONTEXT
 };
 
 BOOLEAN AIBuildTacticalDecisionContext(SOLDIERTYPE *pSoldier, AITACTICALDECISIONCONTEXT *pContext);
+void AIBeginDecisionThreatSnapshot(SOLDIERTYPE *pSoldier);
+void AIEndDecisionThreatSnapshot(SOLDIERTYPE *pSoldier);
 void AIResetTacticalPlannerStateForLoad(void);
 INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
-INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT32 sTargetSpot, INT8 bIntent, INT8 bRole);
+INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT32 sTargetSpot, INT8 bIntent, INT8 bRole,
+	INT32 *piPathExposureCost = NULL);
 INT32 AIPathExposureCost(SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMovementMode);
 INT8 DecideSuppressionResponse(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
 // Shared enemy/militia fireteam coordination. Fireteams are transient sector-local
