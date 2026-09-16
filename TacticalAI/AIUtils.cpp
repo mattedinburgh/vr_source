@@ -5937,12 +5937,16 @@ UINT16 AIPerceivedEnemyStrength(SOLDIERTYPE *pSoldier)
 		if (bKnowledge == NOT_HEARD_OR_SEEN)
 			continue;
 
-		// Do not use ValidOpponent() here: it checks actual current life/sector state.
-		// Once a contact is known, relation filters are safe; hidden existence is not.
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+		// Current relation state is hidden after contact is lost. Remembered hostility
+		// persists until direct observation establishes a change.
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW))
 		{
 			continue;
 		}
@@ -5961,8 +5965,7 @@ UINT16 AIPerceivedEnemyStrength(SOLDIERTYPE *pSoldier)
 		// A personally observed incapacitated human is still a residual threat because
 		// he may recover or be revived, but he should not count like an active rifleman.
 		// Public/stale contacts keep their normal uncertainty weight.
-		if (PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
-			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0 &&
+		if (fDirectVisualContact &&
 			IS_MERC_BODY_TYPE(pOpponent) &&
 			!pOpponent->IsZombie() &&
 			(pOpponent->stats.bLife < OKLIFE ||
@@ -13726,10 +13729,14 @@ BOOLEAN EnemyCanAttackSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		if (bKnowledge == NOT_HEARD_OR_SEEN)
 			continue;
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
+		const BOOLEAN fThreatStateKnown =
+			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
+			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
+		if (fThreatStateKnown &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW))
 		{
 			continue;
 		}
@@ -13738,10 +13745,6 @@ BOOLEAN EnemyCanAttackSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		INT8 bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
 		if (TileIsOutOfBounds(sThreatLoc))
 			continue;
-
-		const BOOLEAN fThreatStateKnown =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
-			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
 
 		INT32 iAttackRange;
 		if (fThreatStateKnown)
