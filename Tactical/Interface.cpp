@@ -1742,6 +1742,28 @@ static void BuildEnemyHoverIdentity( SOLDIERTYPE *pSoldier, CHAR16 *pOut )
 	if ( pSoldier == NULL || pOut == NULL )
 		return;
 
+	// Preserve authored/profile naming first. The deterministic identity is only a
+	// fallback for regular enemies that otherwise have no individual display name.
+	if ( gGameExternalOptions.fSoldierProfiles_Enemy && pSoldier->usSoldierProfile )
+	{
+		swprintf( pOut, pSoldier->GetName() );
+		return;
+	}
+
+	if ( gGameExternalOptions.fEnemyNames )
+	{
+		for ( UINT16 i = 0; i < 500; ++i )
+		{
+			if ( zEnemyName[i].Enabled == 1 &&
+				 pSoldier->sSectorX == zEnemyName[i].SectorX &&
+				 pSoldier->sSectorY == zEnemyName[i].SectorY )
+			{
+				swprintf( pOut, zEnemyName[i].szCurGroup );
+				return;
+			}
+		}
+	}
+
 	static const wchar_t *maleNames[] =
 	{
 		L"Rafa", L"Diego", L"Marco", L"Tomas", L"Luis", L"Ivan", L"Nico", L"Jorge",
@@ -2387,12 +2409,9 @@ void DrawSelectedUIAboveGuy( UINT16 usSoldierID )
 			}
 			else if ( pSoldier->bTeam == ENEMY_TEAM )
 			{
-				// Explicit profiles keep authored names. Regular enemy soldiers get a
-				// deterministic display identity from their saved unique soldier ID.
-				if ( gGameExternalOptions.fSoldierProfiles_Enemy && pSoldier->usSoldierProfile )
-					swprintf( NameStr, pSoldier->GetName() );
-				else
-					BuildEnemyHoverIdentity( pSoldier, NameStr );
+				// Authored/profile/configured names are preserved; deterministic identity
+				// is used only as a fallback so every regular enemy remains identifiable.
+				BuildEnemyHoverIdentity( pSoldier, NameStr );
 
 				SetFontForeground( FONT_YELLOW );
 				FindFontCenterCoordinates( sXPos, (INT16)( sYPos + 20 ), (INT16)(80), 1, NameStr, TINYFONT1, &sX, &sY );
