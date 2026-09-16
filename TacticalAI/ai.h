@@ -604,6 +604,10 @@ UINT8 AIFireteamId(SOLDIERTYPE *pSoldier);
 UINT8 AIFireteamAliveCount(SOLDIERTYPE *pSoldier);
 UINT8 AIFireteamCombatReadyCount(SOLDIERTYPE *pSoldier);
 BOOLEAN AISameFireteam(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend);
+// Local fireteam contact blackboard. It shares a recently seen contact location
+// for planning/coordination only; attack legality still uses each actor's JA2 knowledge.
+BOOLEAN AISharedFireteamContact(SOLDIERTYPE *pSoldier, INT32 *psGridNo,
+	INT8 *pbLevel = NULL, UINT8 *pubConfidence = NULL);
 BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, UINT8 ubResponseLimit);
 BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridNo);
 INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
