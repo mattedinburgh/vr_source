@@ -798,13 +798,13 @@ BOOLEAN CreateCorpsePalette( ROTTING_CORPSE *pCorpse )
 }
 
 
-// Do not let the tactical one-item floor override an explicit 0% category
-// in the externalized enemy-drop tables. When the legacy drop system or
-// "drop all" is active, retain the legacy fallback behaviour.
-static BOOLEAN EnemyItemEligibleForMinimumDrop( UINT16 usItem )
+// Return the normal enemy drop percentage for the item's externalized category.
+// A zero rate is a hard exclusion from the tactical minimum-drop fallback. The
+// legacy drop system has no comparable per-category rate, so use equal weight.
+static UINT8 EnemyItemMinimumDropWeight( UINT16 usItem )
 {
 	if ( gGameOptions.fEnemiesDropAllItems || gGameExternalOptions.ubEnemiesItemDrop != 1 )
-		return TRUE;
+		return 1;
 
 	UINT32 uiItemClass = Item[ usItem ].usItemClass;
 
@@ -816,9 +816,9 @@ static BOOLEAN EnemyItemEligibleForMinimumDrop( UINT16 usItem )
 			if ( j > 0 && gEnemyWeaponDrops[j].uiIndex == 0 )
 				break;
 			if ( gEnemyWeaponDrops[j].ubWeaponType == ubWeaponType )
-				return gEnemyWeaponDrops[j].ubEnemyDropRate > 0;
+				return gEnemyWeaponDrops[j].ubEnemyDropRate;
 		}
-		return FALSE;
+		return 0;
 	}
 
 	if ( uiItemClass == IC_AMMO )
@@ -829,9 +829,9 @@ static BOOLEAN EnemyItemEligibleForMinimumDrop( UINT16 usItem )
 			if ( j > 0 && gEnemyAmmoDrops[j].uiIndex == 0 )
 				break;
 			if ( gEnemyAmmoDrops[j].uiType == uiAmmoType )
-				return gEnemyAmmoDrops[j].ubEnemyDropRate > 0;
+				return gEnemyAmmoDrops[j].ubEnemyDropRate;
 		}
-		return FALSE;
+		return 0;
 	}
 
 	if ( uiItemClass == IC_GRENADE || uiItemClass == IC_BOMB )
@@ -842,9 +842,9 @@ static BOOLEAN EnemyItemEligibleForMinimumDrop( UINT16 usItem )
 			if ( j > 0 && gEnemyExplosiveDrops[j].uiIndex == 0 )
 				break;
 			if ( gEnemyExplosiveDrops[j].ubType == ubExplosiveType )
-				return gEnemyExplosiveDrops[j].ubEnemyDropRate > 0;
+				return gEnemyExplosiveDrops[j].ubEnemyDropRate;
 		}
-		return FALSE;
+		return 0;
 	}
 
 	if ( uiItemClass == IC_ARMOUR )
@@ -855,9 +855,9 @@ static BOOLEAN EnemyItemEligibleForMinimumDrop( UINT16 usItem )
 			if ( j > 0 && gEnemyArmourDrops[j].uiIndex == 0 )
 				break;
 			if ( gEnemyArmourDrops[j].ubArmourClass == ubArmourClass )
-				return gEnemyArmourDrops[j].ubEnemyDropRate > 0;
+				return gEnemyArmourDrops[j].ubEnemyDropRate;
 		}
-		return FALSE;
+		return 0;
 	}
 
 	for ( UINT32 j = 0; j < MAX_DROP_ITEMS; ++j )
@@ -865,10 +865,10 @@ static BOOLEAN EnemyItemEligibleForMinimumDrop( UINT16 usItem )
 		if ( j > 0 && gEnemyMiscDrops[j].uiIndex == 0 )
 			break;
 		if ( gEnemyMiscDrops[j].usItemClass == uiItemClass )
-			return gEnemyMiscDrops[j].ubEnemyDropRate > 0;
+			return gEnemyMiscDrops[j].ubEnemyDropRate;
 	}
 
-	return FALSE;
+	return 0;
 }
 
 // Vengeance: tactical battles won with militia assistance should still leave
@@ -886,7 +886,8 @@ static BOOLEAN EnemyWasKilledByMilitia( SOLDIERTYPE *pSoldier )
 
 static void ReduceLootForMilitiaKill( SOLDIERTYPE *pSoldier )
 {
-	if ( !EnemyWasKilledByMilitia( pSoldier ) )
+	// An explicit global "drop all" setting remains authoritative.
+	if ( gGameOptions.fEnemiesDropAllItems || !EnemyWasKilledByMilitia( pSoldier ) )
 		return;
 
 	UINT32 invsize = pSoldier->inv.size();
@@ -913,7 +914,9 @@ static void ReduceLootForMilitiaKill( SOLDIERTYPE *pSoldier )
 
 // Vengeance: guarantee that a normal enemy does not leave an empty loot result
 // merely because every legitimate carried item failed its normal drop roll.
-// Quest/special items marked default-undroppable remain protected.
+// Quest/special items marked default-undroppable remain protected. The fallback
+// remains weighted by the XML enemy drop rate so rare categories do not become
+// artificially common merely because the minimum-drop rule fired.
 static void EnsureMinimumEnemyLootDrop( SOLDIERTYPE *pSoldier )
 {
 	if ( pSoldier == NULL || pSoldier->bTeam != ENEMY_TEAM )
@@ -922,18 +925,18 @@ static void EnsureMinimumEnemyLootDrop( SOLDIERTYPE *pSoldier )
 	UINT32 invsize = pSoldier->inv.size();
 	BOOLEAN fHasNormalDrop = FALSE;
 	INT32 iFallbackSlot = -1;
-	UINT32 uiFallbackCandidates = 0;
+	UINT32 uiFallbackWeightTotal = 0;
 
 	for ( UINT32 uiLootSlot = 0; uiLootSlot < invsize; ++uiLootSlot )
 	{
 		OBJECTTYPE *pLootObj = &( pSoldier->inv[ uiLootSlot ] );
 
-		if ( pLootObj->exists() == false ||
-			Item[ pLootObj->usItem ].defaultundroppable ||
-			!EnemyItemEligibleForMinimumDrop( pLootObj->usItem ) )
-		{
+		if ( pLootObj->exists() == false || Item[ pLootObj->usItem ].defaultundroppable )
 			continue;
-		}
+
+		UINT32 uiDropWeight = EnemyItemMinimumDropWeight( pLootObj->usItem );
+		if ( uiDropWeight == 0 )
+			continue;
 
 		if ( !( pLootObj->fFlags & OBJECT_UNDROPPABLE ) )
 		{
@@ -941,9 +944,10 @@ static void EnsureMinimumEnemyLootDrop( SOLDIERTYPE *pSoldier )
 			break;
 		}
 
-		// Reservoir sampling keeps every eligible carried item equally likely.
-		++uiFallbackCandidates;
-		if ( Random( uiFallbackCandidates ) == 0 )
+		// Weighted reservoir sampling: selection probability is proportional to
+		// the configured enemy drop rate without allocating a temporary list.
+		uiFallbackWeightTotal += uiDropWeight;
+		if ( Random( uiFallbackWeightTotal ) < uiDropWeight )
 			iFallbackSlot = (INT32)uiLootSlot;
 	}
 

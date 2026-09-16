@@ -3243,7 +3243,10 @@ void BuildStashForSelectedSector( INT16 sMapX, INT16 sMapY, INT16 sMapZ )
 				{
 					//set the flag
 #ifndef _DEBUG
-					pInventoryPoolList[ i ].usFlags |= WORLD_ITEM_GRIDNO_NOT_SET_USE_ENTRY_POINT;
+					// The stash vector was cleared above and this world item has not been
+					// pushed yet. Update the authoritative loaded-sector item before copying
+					// it; indexing pInventoryPoolList[i] here is an out-of-bounds write.
+					gWorldItems[ i ].usFlags |= WORLD_ITEM_GRIDNO_NOT_SET_USE_ENTRY_POINT;
 #endif
 					fNumFlagsSet++;
 				}
