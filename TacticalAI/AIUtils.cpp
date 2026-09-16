@@ -156,9 +156,12 @@ BOOLEAN ConsiderProne( SOLDIERTYPE * pSoldier )
 	//INT8		bOpponentLevel;
 	//INT32		iRange;
 
-	// sevenfm: admins/green militia go prone only when wounded or under fire
-	if( pSoldier->ubSoldierClass == SOLDIER_CLASS_ADMINISTRATOR ||
-		pSoldier->ubSoldierClass == SOLDIER_CLASS_GREEN_MILITIA )
+	// Enemy equipment class no longer controls tactical understanding. An enemy
+	// administrator uses prone exactly as intelligently as an enemy elite; only
+	// non-enemy legacy formations retain the old class-specific restraint.
+	if( pSoldier->bTeam != ENEMY_TEAM &&
+		(pSoldier->ubSoldierClass == SOLDIER_CLASS_ADMINISTRATOR ||
+		 pSoldier->ubSoldierClass == SOLDIER_CLASS_GREEN_MILITIA) )
 	{
 		if( pSoldier->stats.bLife > 3*pSoldier->stats.bLifeMax/4 &&
 			!pSoldier->aiData.bUnderFire )
