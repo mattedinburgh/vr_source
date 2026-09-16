@@ -1505,6 +1505,26 @@ BOOLEAN VR_SelfPlayArenaActive()
 	return VR_SelfPlayActive() && gfVRArenaMode;
 }
 
+BOOLEAN VR_SelfPlayArenaSideADefeated()
+{
+	if( !VR_SelfPlayArenaActive() )
+		return FALSE;
+
+	for( UINT8 ubID = gTacticalStatus.Team[OUR_TEAM].bFirstID;
+		ubID <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++ubID )
+	{
+		SOLDIERTYPE *pSoldier = MercPtrs[ubID];
+		if( pSoldier &&
+			pSoldier->bActive &&
+			pSoldier->bInSector &&
+			pSoldier->stats.bLife >= OKLIFE )
+		{
+			return FALSE;
+		}
+	}
+	return TRUE;
+}
+
 BOOLEAN VR_SelfPlayShouldAbortCurrentBattle()
 {
 	return gfVRSelfPlayConfigured && giVRSelfPlayState == VR_SELFPLAY_STATE_RELOAD_PENDING;
