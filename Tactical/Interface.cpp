@@ -1737,16 +1737,26 @@ void DrawLocatorAboveGuy( UINT16 usSoldierID )
 // Vengeance 2026: deterministic display-only identities for regular enemy soldiers.
 // uiUniqueSoldierIdValue is serialized with SOLDIERTYPE, so the same soldier keeps the
 // same identity across save/load without enabling the heavier soldier-profile system.
-static void BuildEnemyHoverIdentity( SOLDIERTYPE *pSoldier, CHAR16 *pOut )
+void BuildTacticalSoldierDisplayName( SOLDIERTYPE *pSoldier, CHAR16 *pOut )
 {
-	if ( pSoldier == NULL || pOut == NULL )
+	if ( pOut == NULL )
 		return;
+	pOut[0] = 0;
+
+	if ( pSoldier == NULL )
+		return;
+
+	if ( pSoldier->bTeam != ENEMY_TEAM )
+	{
+		swprintf( pOut, L"%s", pSoldier->GetName() );
+		return;
+	}
 
 	// Preserve authored/profile naming first. The deterministic identity is only a
 	// fallback for regular enemies that otherwise have no individual display name.
 	if ( gGameExternalOptions.fSoldierProfiles_Enemy && pSoldier->usSoldierProfile )
 	{
-		swprintf( pOut, pSoldier->GetName() );
+		swprintf( pOut, L"%s", pSoldier->GetName() );
 		return;
 	}
 
@@ -2411,7 +2421,7 @@ void DrawSelectedUIAboveGuy( UINT16 usSoldierID )
 			{
 				// Authored/profile/configured names are preserved; deterministic identity
 				// is used only as a fallback so every regular enemy remains identifiable.
-				BuildEnemyHoverIdentity( pSoldier, NameStr );
+				BuildTacticalSoldierDisplayName( pSoldier, NameStr );
 
 				SetFontForeground( FONT_YELLOW );
 				FindFontCenterCoordinates( sXPos, (INT16)( sYPos + 20 ), (INT16)(80), 1, NameStr, TINYFONT1, &sX, &sY );
