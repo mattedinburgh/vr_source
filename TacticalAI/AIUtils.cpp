@@ -5549,6 +5549,239 @@ BOOLEAN AIPlanningContactForOpponent(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID,
 	return TRUE;
 }
 
+// Fireteam-level source report cache. This is the shared "what does our local
+// element know?" layer. It stores only personal reports from legitimate fireteam
+// members. A receiving soldier still applies the local relay graph before using
+// any report, so this cache never turns the fireteam into an omniscient hive mind.
+#define AI_FIRETEAM_THREAT_CACHE_SLOTS 16
+
+struct AIFIRETEAMCONTACTREPORT
+{
+	BOOLEAN fValid;
+	UINT8 ubSourceID;
+	INT32 sKnownSpot;
+	INT8 bKnownLevel;
+	UINT8 ubBaseConfidence;
+	INT8 bKnowledge;
+	BOOLEAN fObservedRecentFire;
+};
+
+struct AIFIRETEAMTHREATSNAPSHOT
+{
+	BOOLEAN fValid;
+	INT16 sSectorX;
+	INT16 sSectorY;
+	INT8 bSectorZ;
+	UINT8 ubFireteam;
+	INT8 bTeam;
+	UINT32 uiCommSignature;
+	UINT32 uiKnowledgeSignature;
+	UINT32 uiBuildMs;
+	UINT16 usReportCount;
+	UINT8 ubMemberCount;
+	UINT8 ubMemberID[AI_FIRETEAM_MAX_MERGED];
+	AIFIRETEAMCONTACTREPORT Report[AI_FIRETEAM_MAX_MERGED][MAX_NUM_SOLDIERS];
+};
+
+static AIFIRETEAMTHREATSNAPSHOT
+	gAIFireteamThreatSnapshot[AI_FIRETEAM_THREAT_CACHE_SLOTS];
+
+static UINT8 AIBasePlanningConfidence(INT8 bKnowledge)
+{
+	if (bKnowledge == SEEN_CURRENTLY) return 100;
+	if (bKnowledge == SEEN_THIS_TURN) return 90;
+	if (bKnowledge == SEEN_LAST_TURN) return 70;
+	if (bKnowledge == SEEN_2_TURNS_AGO) return 50;
+	if (bKnowledge == HEARD_THIS_TURN) return 55;
+	if (bKnowledge == HEARD_LAST_TURN) return 38;
+	if (bKnowledge == HEARD_2_TURNS_AGO) return 22;
+	return 0;
+}
+
+static void AIThreatHashMix(UINT32 *pHash, UINT32 uiValue)
+{
+	*pHash ^= uiValue;
+	*pHash *= 16777619u;
+}
+
+static UINT32 AIFireteamThreatKnowledgeSignature(
+	SOLDIERTYPE *pSoldier, UINT8 ubFireteam)
+{
+	if (!pSoldier || ubFireteam == AI_FIRETEAM_NONE)
+		return 0;
+
+	UINT32 uiHash = 2166136261u;
+	AIThreatHashMix(&uiHash, (UINT32)guiTurnCnt);
+	AIThreatHashMix(&uiHash, (UINT32)gTacticalStatus.ubCurrentTeam);
+	AIThreatHashMix(&uiHash, (UINT32)ubFireteam);
+	AIThreatHashMix(&uiHash, (UINT32)(UINT8)pSoldier->bTeam);
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || !AIEnemyFireteamEligible(pFriend) ||
+			!AISameFireteam(pSoldier, pFriend))
+		{
+			continue;
+		}
+
+		AIThreatHashMix(&uiHash, pFriend->uiUniqueSoldierIdValue);
+		for (UINT16 uiOpponent = 0; uiOpponent < MAX_NUM_SOLDIERS; ++uiOpponent)
+		{
+			SOLDIERTYPE *pOpponent = MercPtrs[uiOpponent];
+			if (!pOpponent)
+				continue;
+
+			const INT8 bKnowledge =
+				PersonalKnowledge(pFriend, (UINT8)uiOpponent);
+			if (AIBasePlanningConfidence(bKnowledge) == 0)
+				continue;
+
+			AIThreatHashMix(&uiHash,
+				((UINT32)uiOpponent << 8) ^ (UINT32)(UINT8)bKnowledge);
+			AIThreatHashMix(&uiHash,
+				(UINT32)KnownPersonalLocation(pFriend, (UINT8)uiOpponent));
+			AIThreatHashMix(&uiHash,
+				(UINT32)(UINT8)KnownPersonalLevel(pFriend, (UINT8)uiOpponent));
+
+			// These current-state fields are read only for a genuine current
+			// sighting, where they are already legally observable by pFriend.
+			if (bKnowledge == SEEN_CURRENTLY)
+			{
+				UINT32 uiCurrentState = pOpponent->uiUniqueSoldierIdValue;
+				if (pOpponent->bActive) uiCurrentState ^= 0x00010000u;
+				if (pOpponent->bInSector) uiCurrentState ^= 0x00020000u;
+				if (pOpponent->aiData.bNeutral) uiCurrentState ^= 0x00040000u;
+				uiCurrentState ^=
+					((UINT32)(UINT8)pOpponent->bSide << 24);
+				uiCurrentState ^=
+					((UINT32)(UINT8)pOpponent->aiData.bAction << 8);
+				uiCurrentState ^=
+					(UINT32)(UINT8)pOpponent->aiData.bLastAction;
+				AIThreatHashMix(&uiHash, uiCurrentState);
+			}
+		}
+	}
+
+	return uiHash;
+}
+
+static AIFIRETEAMTHREATSNAPSHOT *AIGetFireteamThreatSnapshot(
+	SOLDIERTYPE *pSoldier, BOOLEAN *pfReused)
+{
+	if (pfReused) *pfReused = FALSE;
+	if (!pSoldier || !AICombatTeam(pSoldier) ||
+		!pSoldier->bActive || !pSoldier->bInSector)
+	{
+		return NULL;
+	}
+
+	const UINT8 ubFireteam = AIFireteamId(pSoldier);
+	if (ubFireteam == AI_FIRETEAM_NONE)
+		return NULL;
+
+	const UINT32 uiCommSignature =
+		AILocalFireteamCommSignature(pSoldier);
+	const UINT32 uiKnowledgeSignature =
+		AIFireteamThreatKnowledgeSignature(pSoldier, ubFireteam);
+	AIFIRETEAMTHREATSNAPSHOT *pShared =
+		&gAIFireteamThreatSnapshot[
+			ubFireteam % AI_FIRETEAM_THREAT_CACHE_SLOTS];
+
+	if (pShared->fValid &&
+		pShared->sSectorX == gWorldSectorX &&
+		pShared->sSectorY == gWorldSectorY &&
+		pShared->bSectorZ == gbWorldSectorZ &&
+		pShared->ubFireteam == ubFireteam &&
+		pShared->bTeam == pSoldier->bTeam &&
+		pShared->uiCommSignature == uiCommSignature &&
+		pShared->uiKnowledgeSignature == uiKnowledgeSignature)
+	{
+		if (pfReused) *pfReused = TRUE;
+		return pShared;
+	}
+
+	memset(pShared, 0, sizeof(*pShared));
+	pShared->sSectorX = gWorldSectorX;
+	pShared->sSectorY = gWorldSectorY;
+	pShared->bSectorZ = gbWorldSectorZ;
+	pShared->ubFireteam = ubFireteam;
+	pShared->bTeam = pSoldier->bTeam;
+	pShared->uiCommSignature = uiCommSignature;
+	pShared->uiKnowledgeSignature = uiKnowledgeSignature;
+
+	const UINT32 uiBuildStart = GetJA2Clock();
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID &&
+		pShared->ubMemberCount < AI_FIRETEAM_MAX_MERGED; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || !AIEnemyFireteamEligible(pFriend) ||
+			!AISameFireteam(pSoldier, pFriend))
+		{
+			continue;
+		}
+
+		const UINT8 ubSlot = pShared->ubMemberCount++;
+		pShared->ubMemberID[ubSlot] = pFriend->ubID;
+
+		for (UINT16 uiOpponent = 0; uiOpponent < MAX_NUM_SOLDIERS; ++uiOpponent)
+		{
+			SOLDIERTYPE *pOpponent = MercPtrs[uiOpponent];
+			if (!pOpponent)
+				continue;
+
+			const INT8 bKnowledge =
+				PersonalKnowledge(pFriend, (UINT8)uiOpponent);
+			const UINT8 ubBaseConfidence =
+				AIBasePlanningConfidence(bKnowledge);
+			if (ubBaseConfidence == 0)
+				continue;
+
+			const INT32 sKnownSpot =
+				KnownPersonalLocation(pFriend, (UINT8)uiOpponent);
+			if (TileIsOutOfBounds(sKnownSpot))
+				continue;
+
+			// For stale/heard reports, stop here: never inspect the target's
+			// hidden current state. A current sighting may be validated normally.
+			if (bKnowledge == SEEN_CURRENTLY)
+			{
+				if (!pOpponent->bActive || !pOpponent->bInSector ||
+					CONSIDERED_NEUTRAL(pFriend, pOpponent) ||
+					pFriend->bSide == pOpponent->bSide ||
+					LOS_Raised(pFriend, pOpponent, CALC_FROM_ALL_DIRS) <= 0)
+				{
+					continue;
+				}
+			}
+
+			AIFIRETEAMCONTACTREPORT *pReport =
+				&pShared->Report[ubSlot][uiOpponent];
+			pReport->fValid = TRUE;
+			pReport->ubSourceID = pFriend->ubID;
+			pReport->sKnownSpot = sKnownSpot;
+			pReport->bKnownLevel =
+				KnownPersonalLevel(pFriend, (UINT8)uiOpponent);
+			pReport->ubBaseConfidence = ubBaseConfidence;
+			pReport->bKnowledge = bKnowledge;
+			if (bKnowledge == SEEN_CURRENTLY)
+			{
+				pReport->fObservedRecentFire =
+					pOpponent->aiData.bAction == AI_ACTION_FIRE_GUN ||
+					pOpponent->aiData.bLastAction == AI_ACTION_FIRE_GUN;
+			}
+			++pShared->usReportCount;
+		}
+	}
+
+	pShared->uiBuildMs = GetJA2Clock() - uiBuildStart;
+	pShared->fValid = TRUE;
+	return pShared;
+}
+
 // Decision-scoped, read-only threat snapshot. Each soldier owns a cache slot so
 // the data layout is compatible with future reentrant/finalist evaluation work.
 // The snapshot contains only information legally available through the existing
@@ -5576,6 +5809,7 @@ struct AIDECISIONTHREATSNAPSHOT
 	UINT32 uiExposureMs;
 	UINT32 uiReactionMs;
 	UINT32 uiPathfindingMs;
+	UINT32 uiGeometryBuildMs;
 	UINT32 uiExposureCalls;
 	UINT32 uiReactionCalls;
 	UINT32 uiPathSearchCount;
@@ -5584,7 +5818,14 @@ struct AIDECISIONTHREATSNAPSHOT
 	UINT32 uiLookaheadNodes;
 	UINT32 uiCacheHits;
 	UINT32 uiCacheMisses;
+	UINT32 uiSharedContactHits;
+	UINT32 uiSharedContactMisses;
+	UINT32 uiGeometryHits;
+	UINT32 uiGeometryMisses;
 	UINT16 usContactCount;
+	BOOLEAN fGeometryValid;
+	INT32 sGeometryAnchor;
+	AITACTICALGEOMETRY Geometry;
 	AIPLANNINGCONTACTSNAPSHOT Contact[MAX_NUM_SOLDIERS];
 };
 
@@ -5617,58 +5858,154 @@ void AIBeginDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
 	memset(pSnapshot, 0, sizeof(*pSnapshot));
 	pSnapshot->ubSoldierID = pSoldier->ubID;
 	pSnapshot->uiSoldierIdentity = pSoldier->uiUniqueSoldierIdValue;
+	pSnapshot->sGeometryAnchor = NOWHERE;
 	pSnapshot->uiDecisionStartMs = GetJA2Clock();
 
 	const UINT32 uiBuildStart = GetJA2Clock();
-	for (UINT16 uiLoop = 0; uiLoop < MAX_NUM_SOLDIERS; ++uiLoop)
+	BOOLEAN fSharedReused = FALSE;
+	AIFIRETEAMTHREATSNAPSHOT *pShared =
+		AIGetFireteamThreatSnapshot(pSoldier, &fSharedReused);
+	const UINT8 *ubCommHops = AILocalFireteamCommHops(pSoldier);
+
+	if (pShared && ubCommHops)
 	{
-		SOLDIERTYPE *pOpponent = MercPtrs[uiLoop];
-		if (!pOpponent || pOpponent == pSoldier)
-			continue;
+		if (fSharedReused)
+			++pSnapshot->uiSharedContactHits;
+		else
+			++pSnapshot->uiSharedContactMisses;
 
-		AIPLANNINGCONTACTSNAPSHOT *pContact = &pSnapshot->Contact[uiLoop];
-		INT32 sKnownSpot = NOWHERE;
-		INT8 bKnownLevel = 0;
-		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
-		UINT8 ubConfidence = 0;
-		if (!AIPlanningContactForOpponent(
-			pSoldier, pOpponent->ubID, &sKnownSpot, &bKnownLevel,
-			&ubConfidence, &bKnowledge))
+		for (UINT16 uiOpponent = 0; uiOpponent < MAX_NUM_SOLDIERS; ++uiOpponent)
 		{
-			continue;
-		}
+			const AIFIRETEAMCONTACTREPORT *pBestReport = NULL;
+			UINT8 ubBestConfidence = 0;
+			INT32 iBestScore = -1000000;
 
-		pContact->fValid = TRUE;
-		pContact->sKnownSpot = sKnownSpot;
-		pContact->bKnownLevel = bKnownLevel;
-		pContact->ubConfidence = ubConfidence;
-		pContact->bKnowledge = bKnowledge;
-		pContact->fExposureEligible = TRUE;
-		pContact->fReactionEligible = TRUE;
-		++pSnapshot->usContactCount;
-
-		pContact->fPersonallySeeingNow =
-			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
-			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
-
-		if (pContact->fPersonallySeeingNow)
-		{
-			if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-				pSoldier->bSide == pOpponent->bSide)
+			for (UINT8 ubSlot = 0; ubSlot < pShared->ubMemberCount; ++ubSlot)
 			{
-				pContact->fExposureEligible = FALSE;
-				pContact->fReactionEligible = FALSE;
-			}
-			else if ((pSoldier->aiData.bAttitude == ATTACKSLAYONLY &&
-				pOpponent->ubProfile != SLAY) ||
-				pOpponent->ubBodyType == CROW)
-			{
-				pContact->fExposureEligible = FALSE;
+				const UINT8 ubSourceID = pShared->ubMemberID[ubSlot];
+				if (ubSourceID >= MAX_NUM_SOLDIERS ||
+					ubCommHops[ubSourceID] == 255 ||
+					ubCommHops[ubSourceID] > 2)
+				{
+					continue;
+				}
+
+				const AIFIRETEAMCONTACTREPORT *pReport =
+					&pShared->Report[ubSlot][uiOpponent];
+				if (!pReport->fValid)
+					continue;
+
+				INT32 iConfidence = (INT32)pReport->ubBaseConfidence -
+					4 * (INT32)ubCommHops[ubSourceID];
+				iConfidence = __max(1, __min(100, iConfidence));
+				const INT32 iScore =
+					iConfidence * 4 - 2 * (INT32)ubCommHops[ubSourceID];
+
+				if (iScore > iBestScore)
+				{
+					iBestScore = iScore;
+					ubBestConfidence = (UINT8)iConfidence;
+					pBestReport = pReport;
+				}
 			}
 
+			if (!pBestReport)
+				continue;
+
+			AIPLANNINGCONTACTSNAPSHOT *pContact =
+				&pSnapshot->Contact[uiOpponent];
+			pContact->fValid = TRUE;
+			pContact->sKnownSpot = pBestReport->sKnownSpot;
+			pContact->bKnownLevel = pBestReport->bKnownLevel;
+			pContact->ubConfidence = ubBestConfidence;
+			pContact->bKnowledge = pBestReport->bKnowledge;
+			pContact->fExposureEligible = TRUE;
+			pContact->fReactionEligible = TRUE;
+			++pSnapshot->usContactCount;
+
+			pContact->fPersonallySeeingNow =
+				pBestReport->ubSourceID == pSoldier->ubID &&
+				pBestReport->bKnowledge == SEEN_CURRENTLY;
 			pContact->fObservedRecentFire =
-				pOpponent->aiData.bAction == AI_ACTION_FIRE_GUN ||
-				pOpponent->aiData.bLastAction == AI_ACTION_FIRE_GUN;
+				pContact->fPersonallySeeingNow &&
+				pBestReport->fObservedRecentFire;
+
+			if (pContact->fPersonallySeeingNow)
+			{
+				SOLDIERTYPE *pOpponent = MercPtrs[uiOpponent];
+				if (!pOpponent)
+					continue;
+
+				if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+					pSoldier->bSide == pOpponent->bSide)
+				{
+					pContact->fExposureEligible = FALSE;
+					pContact->fReactionEligible = FALSE;
+				}
+				else if ((pSoldier->aiData.bAttitude == ATTACKSLAYONLY &&
+					pOpponent->ubProfile != SLAY) ||
+					pOpponent->ubBodyType == CROW)
+				{
+					pContact->fExposureEligible = FALSE;
+				}
+			}
+		}
+	}
+	else
+	{
+		// Conservative fallback for any unusual AI team/fireteam state.
+		++pSnapshot->uiSharedContactMisses;
+		for (UINT16 uiLoop = 0; uiLoop < MAX_NUM_SOLDIERS; ++uiLoop)
+		{
+			SOLDIERTYPE *pOpponent = MercPtrs[uiLoop];
+			if (!pOpponent || pOpponent == pSoldier)
+				continue;
+
+			AIPLANNINGCONTACTSNAPSHOT *pContact =
+				&pSnapshot->Contact[uiLoop];
+			INT32 sKnownSpot = NOWHERE;
+			INT8 bKnownLevel = 0;
+			INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+			UINT8 ubConfidence = 0;
+			if (!AIPlanningContactForOpponent(
+				pSoldier, pOpponent->ubID, &sKnownSpot, &bKnownLevel,
+				&ubConfidence, &bKnowledge))
+			{
+				continue;
+			}
+
+			pContact->fValid = TRUE;
+			pContact->sKnownSpot = sKnownSpot;
+			pContact->bKnownLevel = bKnownLevel;
+			pContact->ubConfidence = ubConfidence;
+			pContact->bKnowledge = bKnowledge;
+			pContact->fExposureEligible = TRUE;
+			pContact->fReactionEligible = TRUE;
+			++pSnapshot->usContactCount;
+
+			pContact->fPersonallySeeingNow =
+				PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+				LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+
+			if (pContact->fPersonallySeeingNow)
+			{
+				if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+					pSoldier->bSide == pOpponent->bSide)
+				{
+					pContact->fExposureEligible = FALSE;
+					pContact->fReactionEligible = FALSE;
+				}
+				else if ((pSoldier->aiData.bAttitude == ATTACKSLAYONLY &&
+					pOpponent->ubProfile != SLAY) ||
+					pOpponent->ubBodyType == CROW)
+				{
+					pContact->fExposureEligible = FALSE;
+				}
+
+				pContact->fObservedRecentFire =
+					pOpponent->aiData.bAction == AI_ACTION_FIRE_GUN ||
+					pOpponent->aiData.bLastAction == AI_ACTION_FIRE_GUN;
+			}
 		}
 	}
 
@@ -5684,14 +6021,17 @@ void AIEndDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
 
 	const UINT32 uiTotalMs = GetJA2Clock() - pSnapshot->uiDecisionStartMs;
 	DebugAI(AI_MSG_INFO, pSoldier,
-		String("[AI-PERF] total_ms=%lu threat_build_ms=%lu pathfinding_ms=%lu exposure_ms=%lu reaction_ms=%lu "
+		String("[AI-PERF] total_ms=%lu threat_build_ms=%lu pathfinding_ms=%lu exposure_ms=%lu reaction_ms=%lu geometry_ms=%lu "
 			"contacts=%u detailed_candidates=%lu path_searches=%lu path_reuses=%lu "
-			"exposure_calls=%lu reaction_calls=%lu cache_hits=%lu cache_misses=%lu lookahead_nodes=%lu",
+			"exposure_calls=%lu reaction_calls=%lu cache_hits=%lu cache_misses=%lu "
+			"shared_contact_hits=%lu shared_contact_misses=%lu "
+			"geometry_hits=%lu geometry_misses=%lu lookahead_nodes=%lu",
 			(unsigned long)uiTotalMs,
 			(unsigned long)pSnapshot->uiBuildMs,
 			(unsigned long)pSnapshot->uiPathfindingMs,
 			(unsigned long)pSnapshot->uiExposureMs,
 			(unsigned long)pSnapshot->uiReactionMs,
+			(unsigned long)pSnapshot->uiGeometryBuildMs,
 			(unsigned int)pSnapshot->usContactCount,
 			(unsigned long)pSnapshot->uiDetailedCandidateCount,
 			(unsigned long)pSnapshot->uiPathSearchCount,
@@ -5700,9 +6040,58 @@ void AIEndDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
 			(unsigned long)pSnapshot->uiReactionCalls,
 			(unsigned long)pSnapshot->uiCacheHits,
 			(unsigned long)pSnapshot->uiCacheMisses,
+			(unsigned long)pSnapshot->uiSharedContactHits,
+			(unsigned long)pSnapshot->uiSharedContactMisses,
+			(unsigned long)pSnapshot->uiGeometryHits,
+			(unsigned long)pSnapshot->uiGeometryMisses,
 			(unsigned long)pSnapshot->uiLookaheadNodes));
 
 	pSnapshot->fActive = FALSE;
+}
+
+BOOLEAN AIGetDecisionTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
+	AITACTICALGEOMETRY *pGeometry)
+{
+	if (!pGeometry || !pSoldier || TileIsOutOfBounds(sAnchorGridNo))
+		return FALSE;
+
+	AIDECISIONTHREATSNAPSHOT *pSnapshot =
+		AIGetDecisionThreatSnapshot(pSoldier);
+
+	if (pSnapshot &&
+		pSnapshot->fGeometryValid &&
+		pSnapshot->sGeometryAnchor == sAnchorGridNo)
+	{
+		*pGeometry = pSnapshot->Geometry;
+		++pSnapshot->uiGeometryHits;
+		++pSnapshot->uiCacheHits;
+		return TRUE;
+	}
+
+	const UINT32 uiBuildStart = pSnapshot ? GetJA2Clock() : 0;
+	AITACTICALGEOMETRY Geometry;
+	const BOOLEAN fBuilt =
+		AIBuildTacticalGeometry(pSoldier, sAnchorGridNo, &Geometry);
+
+	if (pSnapshot)
+	{
+		++pSnapshot->uiGeometryMisses;
+		++pSnapshot->uiCacheMisses;
+		pSnapshot->uiGeometryBuildMs += GetJA2Clock() - uiBuildStart;
+
+		if (fBuilt)
+		{
+			pSnapshot->Geometry = Geometry;
+			pSnapshot->sGeometryAnchor = sAnchorGridNo;
+			pSnapshot->fGeometryValid = TRUE;
+		}
+	}
+
+	if (!fBuilt)
+		return FALSE;
+
+	*pGeometry = Geometry;
+	return TRUE;
 }
 
 static INT32 AIPrimaryPlanningThreatSpot(
@@ -14796,6 +15185,8 @@ void AIResetTacticalPlannerStateForLoad(void)
 	if (AIPlayerTeamCommandActive())
 		AIResetPlayerTeamCommand();
 	AIResetTacticalReasoningStateForLoad();
+	memset(gAIDecisionThreatSnapshot, 0, sizeof(gAIDecisionThreatSnapshot));
+	memset(gAIFireteamThreatSnapshot, 0, sizeof(gAIFireteamThreatSnapshot));
 
 	// The legacy ENEMY_TEAM public opponent list is a sector-wide exact-contact
 	// channel. It is no longer authoritative for the local-hive-mind AI. Personal

@@ -519,6 +519,8 @@ void AIRegisterThreatNoiseEvidence(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo,
 	INT8 bNoiseLevel, INT32 iRelevance, UINT8 ubNoiseVolume, BOOLEAN fPublic);
 BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 	AITACTICALGEOMETRY *pGeometry);
+BOOLEAN AIGetDecisionTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
+	AITACTICALGEOMETRY *pGeometry);
 INT32 AIGeometryPositionScore(SOLDIERTYPE *pSoldier,
 	const AITACTICALGEOMETRY *pGeometry, INT32 sCandidateSpot,
 	INT32 sTargetSpot, INT8 bIntent, INT8 bRole);

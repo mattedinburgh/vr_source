@@ -1744,7 +1744,7 @@ BOOLEAN AIEvaluateTacticalPosition(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 		AITacticalSetbackPenalty(pSoldier, sCandidateSpot));
 
 	AITACTICALGEOMETRY Geometry;
-	if (AIBuildTacticalGeometry(pSoldier, pSoldier->sGridNo, &Geometry))
+	if (AIGetDecisionTacticalGeometry(pSoldier, pSoldier->sGridNo, &Geometry))
 	{
 		INT8 bGeometryIntent = AI_INTENT_HOLD;
 		INT8 bGeometryRole = AI_ROLE_SUPPORT;
@@ -1863,7 +1863,7 @@ INT32 AIScoreTacticalPosition(SOLDIERTYPE *pSoldier, const AITACTICALPOSITIONFEA
 	iScore -= __min((INT32)70, (INT32)pFeatures->sSetbackPenalty);
 
 	AITACTICALGEOMETRY Geometry;
-	if (AIBuildTacticalGeometry(pSoldier, pSoldier->sGridNo, &Geometry))
+	if (AIGetDecisionTacticalGeometry(pSoldier, pSoldier->sGridNo, &Geometry))
 	{
 		iScore += AIGeometryPositionScore(
 			pSoldier, &Geometry, sCandidateSpot, sTargetSpot, bIntent, bRole);
