@@ -675,12 +675,15 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 			if( Chance( 15 ) )
 				bKnifeClass = bRating;
 
-			bAmmoClips = (INT8)(2 + Random( 2 ));
+			// 1.13 parity: green militia carry the same basic ammunition reserve as
+			// the administrator equipment tier, while retaining militia-specific quality.
+			bAmmoClips = (INT8)(3 + Random( 2 ));
 
 			if( bRating >= GOOD_ADMINISTRATOR_EQUIPMENT_RATING )
 			{
 				bAmmoClips++;
 
+				bKitClass = bRating;
 				bMiscClass = bRating;
 			}
 
@@ -833,8 +836,14 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 			bVestClass = bRating;
 			bHelmetClass = bRating;
 			bGrenadeClass = bRating;
-			//WarmSteel - attachments don't need to be as high a class, controversional and might be better to externalize?
-			bAttachClass = bRating / 4;
+			// 1.13 parity: regular militia use the army-tier attachment curve.
+			bAttachClass = bRating * 3 / 8;
+
+			if( ( bRating >= GOOD_ARMY_EQUIPMENT_RATING ) && Chance( 33 ) )
+			{
+				fAttachment = TRUE;
+				bAttachClass = bRating * 5 / 8;
+			}
 
 			bAmmoClips = (INT8)(3 + Random( 2 ));
 
@@ -890,7 +899,7 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 						{
 							//grenade launcher
 							fGrenadeLauncher = TRUE;
-							bGrenades = 3 + (INT8)(Random(3 + gGameOptions.ubDifficultyLevel)); //3-5
+							bGrenades = 3 + (INT8)(Random( 3 )); //3-5; difficulty affects gear quality, not ammo quantity
 						}
 						break;
 
@@ -1023,7 +1032,8 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 			bHelmetClass = bRating;
 			bVestClass = bRating;
 			bLeggingClass = bRating;
-			bAttachClass = bRating / 2;
+			// 1.13 parity: veteran militia are allowed near-elite attachment quality.
+			bAttachClass = bRating * 7 / 8;
 			bGrenadeClass = bRating;
 			bKitClass = bRating;
 			bMiscClass = bRating;
@@ -1040,13 +1050,19 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 
 			bAmmoClips = (INT8)(3 + Random( 2 ));
 			bGrenades = (INT8)(2 + Random( 3 ));
+
+			if( ( bRating >= AVERAGE_ELITE_EQUIPMENT_RATING ) && Chance( 75 ) )
+			{
+				fAttachment = TRUE;
+				bAttachClass = bRating;
+			}
 			
-			if( Chance( 50 ) )
+			if( Chance( 25 ) )
 				bKnifeClass = bRating;
 
 			if( ( bRating > MIN_EQUIPMENT_CLASS ) && bRating < MAX_EQUIPMENT_CLASS )
 			{
-				UINT32 uiRange = ((UsingNewInventorySystem() == false)) ? Random(10) : Random(11);
+				UINT32 uiRange = ((UsingNewInventorySystem() == false)) ? Random(11) : Random(12);
 				switch( uiRange )
 				{
 					case 4:		bWeaponClass++, bVestClass--;		break;
@@ -1056,7 +1072,7 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 					case 8:		bHelmetClass++;						break;
 					case 9:		bVestClass++;						break;
 					case 10:	bWeaponClass++;						break;
-					//case 11:	bLBEClass++;						break;
+					case 11:	bLBEClass++;						break;
 				}
 			}
 
@@ -1070,7 +1086,7 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 					case 0:
 						//grenade launcher
 						fGrenadeLauncher = TRUE;
-						bGrenades = 4 + (INT8)(Random(4 + gGameOptions.ubDifficultyLevel)); //4-7
+						bGrenades = 4 + (INT8)(Random( 4 )); //4-7; difficulty affects gear quality, not ammo quantity
 						break;
 					case 1:
 					case 2:
@@ -1092,7 +1108,7 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 							guiMortarsRolledByTeam++;
 
 							// the grenades will actually represent mortar shells in this case
-							bGrenades = 3 + (INT8)(Random(5 + gGameOptions.ubDifficultyLevel)); //3-7
+							bGrenades = 3 + (INT8)(Random( 5 )); //3-7; difficulty affects gear quality, not ammo quantity
 							bGrenadeClass = MORTAR_GRENADE_CLASS;
 						}
 						else
