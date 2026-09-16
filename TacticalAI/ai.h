@@ -610,6 +610,12 @@ BOOLEAN AISameFireteam(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend);
 // for planning/coordination only; attack legality still uses each actor's JA2 knowledge.
 BOOLEAN AISharedFireteamContact(SOLDIERTYPE *pSoldier, INT32 *psGridNo,
 	INT8 *pbLevel = NULL, UINT8 *pubConfidence = NULL);
+// Opponent-specific local report for planning/risk evaluation. Unlike Knowledge(),
+// this never authorizes direct fire; it only exposes what a connected fireteam member
+// personally saw/heard, with bounded relay distance and confidence decay.
+BOOLEAN AISharedFireteamOpponentContact(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID,
+	INT32 *psGridNo, INT8 *pbLevel = NULL, UINT8 *pubConfidence = NULL,
+	INT8 *pbKnowledge = NULL);
 BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, UINT8 ubResponseLimit);
 BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridNo);
 INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
