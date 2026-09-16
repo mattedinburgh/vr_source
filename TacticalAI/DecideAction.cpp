@@ -4800,7 +4800,9 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 			RangeChangeDesire(pSoldier) >= 4 &&
 			!TileIsOutOfBounds(sClosestOpponent) &&
 			PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 4 &&
-			(Chance(10 + SoldierDifficultyLevel(pSoldier) * 10) + Chance(20 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10))) &&
+			(pSoldier->bTeam == ENEMY_TEAM ||
+			 Chance(10 + SoldierDifficultyLevel(pSoldier) * 10) ||
+			 Chance(20 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10))) &&
 			pSoldier->bActionPoints >= APBPConstants[AP_MINIMUM] &&
 			FindFenceAroundSpot(pSoldier->sGridNo))
 		{
@@ -9996,13 +9998,13 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 	if (pSoldier->numFlanks == 0 &&
 		pSoldier->bActionPoints >= APBPConstants[AP_MINIMUM] &&
 		pSoldier->CheckInitialAP() &&
-		(pSoldier->aiData.bAttitude == CUNNINGAID || pSoldier->aiData.bAttitude == CUNNINGSOLO ||
+		(pSoldier->bTeam == ENEMY_TEAM ||
+		 pSoldier->aiData.bAttitude == CUNNINGAID || pSoldier->aiData.bAttitude == CUNNINGSOLO ||
 		((pSoldier->aiData.bAttitude == BRAVESOLO || pSoldier->aiData.bAttitude == BRAVEAID) && ubNearbyFireteamClose > 2) ||
 		fBasicFireteamManeuver) &&
 		AICombatTeam(pSoldier) &&
 		!AIShouldAvoidAdvance(pSoldier) &&
 		(fBasicFireteamManeuver || AIAllowsIndependentFlank(pSoldier)) &&
-		pSoldier->ubSoldierClass != SOLDIER_CLASS_ADMINISTRATOR &&
 		!AICheckSpecialRole(pSoldier) &&		
 		gAnimControl[pSoldier->usAnimState].ubHeight != ANIM_PRONE &&
 		(!pSoldier->aiData.bUnderFire ||
@@ -11115,7 +11117,8 @@ INT8 DecideUseWirecutters(SOLDIERTYPE *pSoldier)
 		pSoldier->aiData.bAIMorale >= MORALE_CONFIDENT &&
 		!TileIsOutOfBounds(sClosestOpponent) &&
 		PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 4 &&
-		Chance(20 + SoldierDifficultyLevel(pSoldier) * 15) &&
+		(pSoldier->bTeam == ENEMY_TEAM ||
+		 Chance(20 + SoldierDifficultyLevel(pSoldier) * 15)) &&
 		pSoldier->bActionPoints >= GetAPsToCutFence(pSoldier) + GetAPsToLook(pSoldier) &&
 		FindFenceAroundSpot(pSoldier->sGridNo))
 	{
