@@ -65,7 +65,7 @@ extern UINT8 ubRealAmbientLightLevel;
 
 // Planning-only shared threat picture. This never changes firearm target legality.
 static INT32 AIPrimaryPlanningThreatSpot(
-	SOLDIERTYPE *pSoldier, INT8 *pbLevel, UINT8 *pubConfidence);
+	SOLDIERTYPE *pSoldier, INT8 *pbLevel = NULL, UINT8 *pubConfidence = NULL);
 
 UINT8 Urgency[NUM_STATUS_STATES][NUM_MORALE_STATES] =
 {
@@ -5463,7 +5463,7 @@ BOOLEAN AIPlanningContactForOpponent(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID,
 }
 
 static INT32 AIPrimaryPlanningThreatSpot(
-	SOLDIERTYPE *pSoldier, INT8 *pbLevel = NULL, UINT8 *pubConfidence = NULL)
+	SOLDIERTYPE *pSoldier, INT8 *pbLevel, UINT8 *pubConfidence)
 {
 	if (pbLevel) *pbLevel = 0;
 	if (pubConfidence) *pubConfidence = 0;
