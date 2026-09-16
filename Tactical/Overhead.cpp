@@ -7028,6 +7028,19 @@ BOOLEAN CheckForEndOfBattle( BOOLEAN fAnEnemyRetreated )
         fBattleLost = TRUE;
     }
 
+    // Generated arena battles are self-contained tactical experiments.
+    // Resolve them before normal strategic pending-enemy/reinforcement checks,
+    // otherwise the campaign layer can inject extra soldiers into the lab.
+    if( (fBattleLost || fBattleWon) && VR_SelfPlayArenaActive() )
+    {
+        VR_SelfPlayInterceptBattleEnd( fBattleWon, fBattleLost, fAnEnemyRetreated );
+        EndAllAITurns();
+        if( gTacticalStatus.uiFlags & INCOMBAT )
+            ExitCombatMode();
+        gfBlitBattleSectorLocator = FALSE;
+        return TRUE;
+    }
+
     //NEW (Nov 24, 98)  by Kris
     if( !gbWorldSectorZ && fBattleWon )
     { 
