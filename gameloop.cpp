@@ -35,6 +35,7 @@
 #include "SaveLoadScreen.h"
 #include "Standard Gaming Platform/ExceptionHandling.h"
 #include "Strategic/Strategic Movement.h"
+#include "Tactical/Campaign Tactical Telemetry.h"
 
 #include "Lua Interpreter.h"
 //**ddd direct link libraries
@@ -257,6 +258,12 @@ void GameLoop(void)
 	// Recorder v3 heartbeat: cheap lock-free state updated every loop.
 	BlackBoxFramePhase( BLACKBOX_PHASE_FRAME_BEGIN );
 	BlackBoxHeartbeat( guiCurrentScreen );
+
+	// Unattended tactical self-play orchestration. It hides presentation and
+	// repeatedly reloads the configured tactical fixture between measured runs.
+	VR_SelfPlayGameLoop();
+	if( !gfProgramIsRunning )
+		return;
 
 	if(_LeftButtonDown | _RightButtonDown)//dnl ch77 191113 to prevent memory corruption during resize
 		ResizeWorldItems();
