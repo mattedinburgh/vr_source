@@ -7808,11 +7808,10 @@ UINT32 AICalcChanceToHitGun(SOLDIERTYPE *pSoldier, INT32 sGridNo, INT16 ubAimTim
 	}
 	else
 	{
-		// sevenfm: allow small CTH for AI for suppression fire
-		if( Weapon[ pSoldier->usAttackingWeapon ].bAutofireShotsPerFiveAP > 0 )
-			uiChance = __max(1, CalcChanceToHitGun(pSoldier, sGridNo, ubAimTime, ubAimPos));
-		else
-			uiChance = CalcChanceToHitGun(pSoldier, sGridNo, ubAimTime, ubAimPos);
+		// Match current 1.13: the base AI NCTH evaluation must use the real
+		// muzzle-alignment value. Suppression policy belongs to the AI layer;
+		// do not grant autofire weapons a hidden minimum CTH here.
+		uiChance = CalcChanceToHitGun(pSoldier, sGridNo, ubAimTime, ubAimPos);
 	}
 	pSoldier->usAnimState = usTrueState;
 	pSoldier->bTargetLevel = bTrueLevel;
