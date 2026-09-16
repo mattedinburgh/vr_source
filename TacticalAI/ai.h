@@ -305,7 +305,7 @@ enum
 	AI_BATTLE_CATASTROPHIC
 };
 
-// Enemy doctrine describes training/initiative, not hidden combat bonuses.
+// Legacy enemy doctrine labels describe mission/posture only. ENEMY_TEAM tactical\n// reasoning is universally elite; doctrine never grants hidden combat bonuses or lowers intelligence.
 enum
 {
 	AI_DOCTRINE_SECURITY = 0,
