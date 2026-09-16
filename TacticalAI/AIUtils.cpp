@@ -14468,6 +14468,60 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	return bIntent;
 }
 
+static BOOLEAN AIPreferredSuppressorCandidate(
+	SOLDIERTYPE *pSoldier, INT32 sTargetSpot, UINT8 ubSuppressorLimit)
+{
+	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM ||
+		TileIsOutOfBounds(sTargetSpot) || ubSuppressorLimit == 0 ||
+		!AICheckHasGun(pSoldier) || !AIGunAutofireCapable(pSoldier) ||
+		AIGunAmmo(pSoldier) < gGameExternalOptions.ubAISuppressionMinimumAmmo)
+	{
+		return FALSE;
+	}
+
+	INT32 iMyScore = AISupportRoleScore(pSoldier, sTargetSpot);
+	UINT8 ubBetterCandidates = 0;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pCandidate = MercPtrs[iCounter];
+		if (!pCandidate || pCandidate == pSoldier ||
+			!pCandidate->bActive || !pCandidate->bInSector ||
+			!AISameFireteam(pSoldier, pCandidate) ||
+			pCandidate->stats.bLife < OKLIFE ||
+			pCandidate->bCollapsed || pCandidate->bBreathCollapsed ||
+			(pCandidate->usSoldierFlagMask & SOLDIER_POW) ||
+			(pCandidate->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			AIDisengagementActive(pCandidate) || AIEscapeActive(pCandidate) ||
+			!AICheckHasGun(pCandidate) || !AIGunAutofireCapable(pCandidate) ||
+			AIGunAmmo(pCandidate) < gGameExternalOptions.ubAISuppressionMinimumAmmo)
+		{
+			continue;
+		}
+
+		INT32 sCandidateTarget = ClosestKnownOpponent(pCandidate, NULL, NULL);
+		if (TileIsOutOfBounds(sCandidateTarget))
+			AISharedFireteamContact(pCandidate, &sCandidateTarget, NULL, NULL);
+		if (TileIsOutOfBounds(sCandidateTarget) ||
+			PythSpacesAway(sCandidateTarget, sTargetSpot) > 3)
+		{
+			continue;
+		}
+
+		INT32 iCandidateScore = AISupportRoleScore(pCandidate, sTargetSpot);
+		if (iCandidateScore > iMyScore ||
+			(iCandidateScore == iMyScore && pCandidate->ubID < pSoldier->ubID))
+		{
+			++ubBetterCandidates;
+			if (ubBetterCandidates >= ubSuppressorLimit)
+				return FALSE;
+		}
+	}
+
+	return TRUE;
+}
+
 INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 {
 	if (!AICombatTeam(pSoldier))
@@ -14563,11 +14617,13 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	{
 		UINT8 ubSuppressorLimit =
 			AIFireteamCombatReadyCount(pSoldier) >= 6 ? 2 : 1;
-		// Failure does not make a support specialist abandon a good firing position;
-		// it simply means another teammate already owns deliberate suppression.
-		if (!AIReserveTacticalTask(
-			pSoldier, AI_TASK_SUPPRESS, sTargetSpot, NOBODY,
-			ubSuppressorLimit, 1))
+		// Compare the whole local element before claiming the job. Sequential turn
+		// order must not let a mediocre rifleman steal the LMG's base-of-fire role.
+		if (!AIPreferredSuppressorCandidate(
+				pSoldier, sTargetSpot, ubSuppressorLimit) ||
+			!AIReserveTacticalTask(
+				pSoldier, AI_TASK_SUPPRESS, sTargetSpot, NOBODY,
+				ubSuppressorLimit, 1))
 		{
 			AIReleaseTacticalTask(pSoldier);
 		}
@@ -14591,9 +14647,13 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		{
 			UINT8 ubSuppressorLimit =
 				AIFireteamCombatReadyCount(pSoldier) >= 6 ? 2 : 1;
-			AIReserveTacticalTask(
-				pSoldier, AI_TASK_SUPPRESS, sTargetSpot, NOBODY,
-				ubSuppressorLimit, 1);
+			if (AIPreferredSuppressorCandidate(
+					pSoldier, sTargetSpot, ubSuppressorLimit))
+			{
+				AIReserveTacticalTask(
+					pSoldier, AI_TASK_SUPPRESS, sTargetSpot, NOBODY,
+					ubSuppressorLimit, 1);
+			}
 		}
 	}
 
