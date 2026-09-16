@@ -631,6 +631,8 @@ BOOLEAN VRCQB_BuildContext(SOLDIERTYPE *pSoldier, VRCQB_CONTEXT *pContext)
 
 	memset(pContext, 0, sizeof(VRCQB_CONTEXT));
 	pContext->sPrimaryKnownThreat = NOWHERE;
+	pContext->sMemoryThreat = NOWHERE;
+	pContext->bMemoryThreatLevel = pSoldier->pathing.bLevel;
 	pContext->sPreferredEntry = NOWHERE;
 	pContext->sPreferredFoothold = NOWHERE;
 	pContext->sPreferredFallback = NOWHERE;
@@ -661,6 +663,36 @@ BOOLEAN VRCQB_BuildContext(SOLDIERTYPE *pSoldier, VRCQB_CONTEXT *pContext)
 	}
 
 	VRCQBKnownThreatSummary(pSoldier, pContext);
+
+	// Once exact JA2 knowledge decays, retain only a weaker building-search
+	// hypothesis. It can sustain SECURE/HOLD behaviour but never authorize an
+	// assault, attack or counterattack against an unseen remembered opponent.
+	AITHREATMEMORYCUE MemoryCue;
+	if (AIBuildThreatMemoryCue(pSoldier, &MemoryCue) &&
+		MemoryCue.ubConfidence >= 30 &&
+		!TileIsOutOfBounds(MemoryCue.sGridNo))
+	{
+		pContext->sMemoryThreat = MemoryCue.sGridNo;
+		pContext->bMemoryThreatLevel = MemoryCue.bLevel;
+		pContext->ubMemoryThreatConfidence = MemoryCue.ubConfidence;
+
+		UINT16 usMemoryRoom = NO_ROOM;
+		const BOOLEAN fMemoryIndoor =
+			VRCQBGetRoom(MemoryCue.sGridNo, &usMemoryRoom);
+		const UINT8 ubMemoryBuilding =
+			VRCQBGetBuildingId(MemoryCue.sGridNo);
+
+		pContext->fMemoryThreatInSameRoom =
+			pContext->fInsideRoom &&
+			fMemoryIndoor &&
+			MemoryCue.bLevel == pSoldier->pathing.bLevel &&
+			usMemoryRoom == pContext->usRoomNo;
+
+		pContext->fMemoryThreatInSameBuilding =
+			pContext->ubBuildingID != NO_BUILDING &&
+			ubMemoryBuilding != NO_BUILDING &&
+			ubMemoryBuilding == pContext->ubBuildingID;
+	}
 
 	const UINT16 usCurrentExposure = AIKnownThreatExposure(
 		pSoldier, pSoldier->sGridNo, pSoldier->pathing.bLevel);
@@ -778,6 +810,33 @@ static INT32 VRCQBScorePositionInternal(SOLDIERTYPE *pSoldier, const VRCQB_CONTE
 		}
 	}
 
+	else if (!TileIsOutOfBounds(pContext->sMemoryThreat) &&
+		(pContext->fMemoryThreatInSameRoom ||
+		 pContext->fMemoryThreatInSameBuilding) &&
+		(eState == VRCQB_STATE_HOLD ||
+		 eState == VRCQB_STATE_SECURE))
+	{
+		const INT32 iMemoryDistance =
+			PythSpacesAway(sCandidateGridNo, pContext->sMemoryThreat);
+
+		// Secure/search positions observe the remembered area from a short
+		// standoff rather than marching onto the old exact tile.
+		iScore += __max((INT32)0,
+			22 - 4 * abs(iMemoryDistance - 4));
+
+		if (fDetailed &&
+			LocationToLocationLineOfSightTest(
+				sCandidateGridNo, pSoldier->pathing.bLevel,
+				pContext->sMemoryThreat, pContext->bMemoryThreatLevel,
+				TRUE, CALC_FROM_ALL_DIRS))
+		{
+			iScore += 12;
+		}
+
+		if (iMemoryDistance <= 1)
+			iScore -= 24;
+	}
+
 	if ((eState == VRCQB_STATE_HOLD ||
 		 eState == VRCQB_STATE_SECURE ||
 		 eState == VRCQB_STATE_DELAY_FALLBACK) &&
@@ -794,6 +853,53 @@ static INT32 VRCQBScorePositionInternal(SOLDIERTYPE *pSoldier, const VRCQB_CONTE
 		!fNearDoor)
 	{
 		iScore += 8;
+	}
+
+	if (fDetailed)
+	{
+		AITACTICALGEOMETRY Geometry;
+		if (AIBuildTacticalGeometry(
+			pSoldier, pSoldier->sGridNo, &Geometry))
+		{
+			INT8 bIntent = AI_INTENT_HOLD;
+			INT8 bRole = AI_ROLE_SUPPORT;
+
+			if (eState == VRCQB_STATE_ASSAULT ||
+				eState == VRCQB_STATE_COUNTERATTACK)
+				bIntent = AI_INTENT_PRESS;
+			else if (eState == VRCQB_STATE_DELAY_FALLBACK)
+				bIntent = AI_INTENT_FALLBACK;
+
+			switch (eRole)
+			{
+			case VRCQB_ROLE_POINT:
+				bRole = AI_ROLE_MANEUVER;
+				break;
+			case VRCQB_ROLE_SECURITY:
+			case VRCQB_ROLE_HOLD:
+				bRole = AI_ROLE_SCREEN;
+				break;
+			case VRCQB_ROLE_RESERVE:
+				bRole = AI_ROLE_RESERVE;
+				break;
+			default:
+				bRole = AI_ROLE_SUPPORT;
+				break;
+			}
+
+			const INT32 sGeometryThreat =
+				!TileIsOutOfBounds(pContext->sPrimaryKnownThreat) ?
+				pContext->sPrimaryKnownThreat :
+				pContext->sMemoryThreat;
+
+			const INT32 iGeometry = AIGeometryPositionScore(
+				pSoldier, &Geometry, sCandidateGridNo,
+				sGeometryThreat, bIntent, bRole);
+
+			// CQB has additional doorway/room geometry of its own, so shared
+			// battlefield geometry is influential but not allowed to dominate it.
+			iScore += (3 * iGeometry) / 4;
+		}
 	}
 
 	iScore -= PythSpacesAway(pSoldier->sGridNo, sCandidateGridNo);
@@ -1001,6 +1107,13 @@ BOOLEAN VRCQB_Assess(SOLDIERTYPE *pSoldier, const VRCQB_CONTEXT *pContext,
 			pAssessment->eReason = VRCQB_REASON_APPROACH_INDOOR_THREAT;
 		}
 	}
+	else if ((pContext->fMemoryThreatInSameRoom ||
+			  pContext->fMemoryThreatInSameBuilding) &&
+			 pContext->ubMemoryThreatConfidence >= 30)
+	{
+		pAssessment->eState = VRCQB_STATE_SECURE;
+		pAssessment->eReason = VRCQB_REASON_UNRESOLVED_CONTACT_MEMORY;
+	}
 	else if (pContext->fInsideRoom || pContext->ubBuildingID != NO_BUILDING)
 	{
 		const VRCQB_STATE ePrevious = VRCQBPreviousState(pSoldier);
@@ -1078,6 +1191,15 @@ BOOLEAN VRCQB_Assess(SOLDIERTYPE *pSoldier, const VRCQB_CONTEXT *pContext,
 	pAssessment->ubConfidence = VRCQBClampU8(
 		((INT32)pAssessment->ubEffectiveSkill + (INT32)Model.ubReplanSkill) / 2 -
 		(pContext->fEntryExposed ? Model.ubThresholdMistakeChance / 4 : 0));
+
+	if (pAssessment->eReason == VRCQB_REASON_UNRESOLVED_CONTACT_MEMORY)
+	{
+		// Training determines execution quality, but weak memory cannot magically
+		// become high-confidence knowledge merely because the soldier is elite.
+		pAssessment->ubConfidence = (UINT8)__min(
+			(INT32)pAssessment->ubConfidence,
+			30 + (INT32)pContext->ubMemoryThreatConfidence / 2);
+	}
 
 	VRCQBRememberAssessment(pSoldier, pContext, pAssessment);
 	return pAssessment->eState != VRCQB_STATE_NONE;
@@ -1168,6 +1290,25 @@ static INT8 VRCQBTryProactiveEntrySmoke(SOLDIERTYPE *pSoldier,
 		pSoldier->pathing.bLevel, EXPLOSV_SMOKE);
 	if (!BestThrow.ubPossible)
 		return AI_ACTION_NONE;
+
+	// Entry smoke is a fireteam resource, not a private CQB side effect. Claim the
+	// same local smoke task used by the rest of the tactical planner so two soldiers
+	// do not independently spend smoke on the same threshold.
+	if (!AIReserveTacticalTask(
+		pSoldier, AI_TASK_SMOKE,
+		sSmokeGrid, NOBODY, 1, 1))
+	{
+		return AI_ACTION_NONE;
+	}
+
+	// Smoke is the first step of the entry sequence. Preserve the CQB commitment
+	// through a stance change/throw so the next decision can continue the entry plan.
+	const INT32 sCQBPlanTarget =
+		!TileIsOutOfBounds(pAssessment->sTargetGridNo) ?
+		pAssessment->sTargetGridNo : sSmokeGrid;
+	AIBeginShortPlan(
+		pSoldier, AI_SHORT_PLAN_CQB,
+		sCQBPlanTarget, NOBODY, 2);
 
 	if (BestThrow.bWeaponIn != HANDPOS)
 		RearrangePocket(pSoldier, HANDPOS, BestThrow.bWeaponIn, FOREVER);
@@ -1280,6 +1421,20 @@ static INT8 VRCQBTryAlternateWindowEntry(SOLDIERTYPE *pSoldier,
 	if (bBestDirection < 0 || TileIsOutOfBounds(sBestLanding))
 		return AI_ACTION_NONE;
 
+	// Window entry returns before the normal doorway reservation bridge below, so it
+	// must claim its own threshold here. Different windows can be used in parallel,
+	// but two point men cannot independently commit to the same landing.
+	if (!AIReserveTacticalTask(
+		pSoldier, AI_TASK_ENTRY_POINT,
+		sBestLanding, NOBODY, 1, 1))
+	{
+		return AI_ACTION_NONE;
+	}
+
+	AIBeginShortPlan(
+		pSoldier, AI_SHORT_PLAN_CQB,
+		sBestLanding, NOBODY, 2);
+
 	// A deliberate entry faces the opening first. This also prevents the jump
 	// executor from selecting a different adjacent window from stale facing.
 	if (pSoldier->ubDirection != bBestDirection)
@@ -1349,6 +1504,21 @@ static UINT32 VRCQBTraceBegin(SOLDIERTYPE *pSoldier,
 	VRAnalyticsStateInt(uiDecision, "cqb_risk", pAssessment->iRiskScore);
 	VRAnalyticsStateInt(uiDecision, "cqb_target_exposure", pAssessment->usKnownThreatExposure);
 
+	AITACTICALGEOMETRY Geometry;
+	if (AIBuildTacticalGeometry(pSoldier, pSoldier->sGridNo, &Geometry))
+	{
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_primary_threat_dir", Geometry.ubPrimaryThreatDir);
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_safest_dir", Geometry.ubSafestDirection);
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_left_flank", Geometry.sLeftFlankOpportunity);
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_right_flank", Geometry.sRightFlankOpportunity);
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_rear_safety", Geometry.sRearSafety);
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_remembered_contacts", Geometry.ubRememberedContacts);
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_memory_sector_mask", Geometry.ubMemoryDirectionMask);
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_corroborated_cues", Geometry.ubCorroboratedCues);
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_corroborated_sector_mask", Geometry.ubCorroboratedDirectionMask);
+		VRAnalyticsStateInt(uiDecision, "cqb_geometry_encirclement", Geometry.fEncirclementPressure ? 1 : 0);
+	}
+
 	return uiDecision;
 }
 
@@ -1392,11 +1562,17 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 
 	VRCQB_CONTEXT Context;
 	if (!VRCQB_BuildContext(pSoldier, &Context))
+	{
+		VRCQB_InvalidateSoldierPlan(pSoldier);
 		return AI_ACTION_NONE;
+	}
 
 	VRCQB_ASSESSMENT Assessment;
 	if (!VRCQB_Assess(pSoldier, &Context, &Assessment))
+	{
+		VRCQB_InvalidateSoldierPlan(pSoldier);
 		return AI_ACTION_NONE;
+	}
 
 	UINT32 uiDecision = VRCQBTraceBegin(pSoldier, &Context, &Assessment);
 
@@ -1531,6 +1707,65 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 		bAction = AI_ACTION_TAKE_COVER;
 	}
 
+	if (bAction != AI_ACTION_NONE && !TileIsOutOfBounds(sDesiredSpot))
+	{
+		// CQB participates in the same fireteam-local task board as outdoor maneuver.
+		// AIReserveTacticalTask() replaces this soldier's old claim only after the new
+		// CQB claim succeeds, so merely evaluating CQB cannot erase a valid role task.
+		const INT32 sTaskTarget =
+			!TileIsOutOfBounds(Assessment.sEntryGridNo) ?
+			Assessment.sEntryGridNo : sDesiredSpot;
+
+		if (fAggressiveCQB && eMovementRole == VRCQB_ROLE_POINT)
+		{
+			if (!AIReserveTacticalTask(
+				pSoldier, AI_TASK_ENTRY_POINT,
+				sTaskTarget, NOBODY, 1, 1))
+			{
+				// Another point man already owns this threshold. Become the support
+				// element instead of forming a doorway queue.
+				eMovementState = VRCQB_STATE_HOLD;
+				eMovementRole = VRCQB_ROLE_SUPPORT;
+				sDesiredSpot = VRCQBFindBestLocalPosition(
+					pSoldier, &Context, &Model,
+					eMovementState, eMovementRole);
+				bAction = AI_ACTION_TAKE_COVER;
+				pActionReason = "CQB entry claimed: establish support";
+				if (!AIReserveTacticalTask(
+					pSoldier, AI_TASK_ENTRY_SUPPORT,
+					sTaskTarget, NOBODY, 2, 1))
+				{
+					eMovementRole = VRCQB_ROLE_RESERVE;
+					sDesiredSpot = VRCQBFindBestLocalPosition(
+						pSoldier, &Context, &Model,
+						VRCQB_STATE_HOLD, eMovementRole);
+					bAction = AI_ACTION_TAKE_COVER;
+					pActionReason = "CQB entry support saturated: hold reserve";
+					AIReleaseTacticalTask(pSoldier);
+				}
+			}
+		}
+		else if (fAggressiveCQB ||
+			eMovementRole == VRCQB_ROLE_SUPPORT ||
+			eMovementRole == VRCQB_ROLE_COVER ||
+			eMovementRole == VRCQB_ROLE_SECURITY)
+		{
+			if (!AIReserveTacticalTask(
+				pSoldier, AI_TASK_ENTRY_SUPPORT,
+				sTaskTarget, NOBODY, 2, 1))
+			{
+				eMovementState = VRCQB_STATE_HOLD;
+				eMovementRole = VRCQB_ROLE_RESERVE;
+				sDesiredSpot = VRCQBFindBestLocalPosition(
+					pSoldier, &Context, &Model,
+					eMovementState, eMovementRole);
+				bAction = AI_ACTION_TAKE_COVER;
+				pActionReason = "CQB support saturated: hold local reserve";
+				AIReleaseTacticalTask(pSoldier);
+			}
+		}
+	}
+
 	if (bAction == AI_ACTION_NONE ||
 		TileIsOutOfBounds(sDesiredSpot) ||
 		sDesiredSpot == pSoldier->sGridNo)
@@ -1578,6 +1813,10 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 
 	if (TileIsOutOfBounds(sMoveSpot) || sMoveSpot == pSoldier->sGridNo)
 	{
+		AIRegisterTacticalSetback(
+			pSoldier, AI_SETBACK_ROUTE,
+			sDesiredSpot, 28, 2);
+		AIReleaseTacticalTask(pSoldier);
 		VRCQB_InvalidateSoldierPlan(pSoldier);
 		return VRCQBTraceNoAction(pSoldier, uiDecision, &Assessment,
 			pSoldier->sGridNo, iCurrentScore,
@@ -1609,6 +1848,10 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 		pSoldier, sMoveSpot, bAction,
 		usPeakIncrease, usUncoveredIncrease, usAverageIncrease))
 	{
+		AIRegisterTacticalSetback(
+			pSoldier, AI_SETBACK_CQB_ENTRY,
+			sMoveSpot, 58, 4);
+		AIReleaseTacticalTask(pSoldier);
 		VRCQB_InvalidateSoldierPlan(pSoldier);
 		return VRCQBTraceNoAction(pSoldier, uiDecision, &Assessment,
 			pSoldier->sGridNo, iCurrentScore,
@@ -1619,6 +1862,13 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 	if (bAction == AI_ACTION_SEEK_OPPONENT)
 		pSoldier->sAbsoluteFinalDestination = sDesiredSpot;
 
+	// The CQB module keeps its rich room/entry assessment, while the common short-plan
+	// layer now owns the generic "continue this tactical commitment unless invalidated"
+	// semantics used by the rest of the AI.
+	AIBeginShortPlan(
+		pSoldier, AI_SHORT_PLAN_CQB,
+		sDesiredSpot, NOBODY, 2);
+
 	if (uiDecision)
 	{
 		VRAnalyticsStateInt(uiDecision, "selected_action", bAction);
@@ -1626,6 +1876,10 @@ INT8 VRCQB_DecideAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove, BOOLEAN fAllowA
 		VRAnalyticsStateInt(uiDecision, "cqb_desired_move", sDesiredSpot);
 		VRAnalyticsStateInt(uiDecision, "cqb_current_score", iCurrentScore);
 		VRAnalyticsStateInt(uiDecision, "cqb_desired_score", iDesiredScore);
+		VRAnalyticsStateInt(uiDecision, "cqb_current_setback_penalty",
+			AITacticalSetbackPenalty(pSoldier, pSoldier->sGridNo));
+		VRAnalyticsStateInt(uiDecision, "cqb_desired_setback_penalty",
+			AITacticalSetbackPenalty(pSoldier, sDesiredSpot));
 		VRAnalyticsCandidate(uiDecision, "cqb_building", sMoveSpot,
 			iDesiredScore, iDesiredScore, true, pActionReason);
 		VRAnalyticsCommitDecision(uiDecision, "cqb_building",
@@ -1679,7 +1933,8 @@ const CHAR8 *VRCQB_ReasonName(VRCQB_REASON eReason)
 		"local_counterattack",
 		"security_refuses_complex_assault",
 		"insufficient_entry_support",
-		"assault_hesitation"
+		"assault_hesitation",
+		"unresolved_contact_memory"
 	};
 	return (eReason >= 0 && eReason < VRCQB_REASON_MAX) ?
 		pNames[eReason] : "unknown";
@@ -1691,6 +1946,15 @@ void VRCQB_InvalidateSoldierPlan(SOLDIERTYPE *pSoldier)
 		return;
 
 	memset(&gVRCQBPlan[pSoldier->ubID], 0, sizeof(VRCQB_PLAN_SLOT));
+
+	// CQB owns invalidation of its shared short-plan wrapper. Do not cancel a
+	// fallback/disengage/rescue plan that may already have superseded CQB.
+	AISHORTPLANSTATE SharedPlan;
+	if (AIGetShortPlan(pSoldier, &SharedPlan) &&
+		SharedPlan.ubType == AI_SHORT_PLAN_CQB)
+	{
+		AICancelShortPlan(pSoldier);
+	}
 }
 
 void VRCQB_ResetTransientState(void)

@@ -81,6 +81,27 @@ static UINT32 VRPlannerTraceBeginDecision(SOLDIERTYPE *pSoldier, const CHAR8 *pS
 		VRAnalyticsStateInt(uiDecision, "shock", ShockLevelPercent(pSoldier));
 		VRAnalyticsStateInt(uiDecision, "competence", AICompetenceTier(pSoldier));
 		VRAnalyticsStateInt(uiDecision, "planner_reliability", AIPlannerReliability(pSoldier));
+
+		AITACTICALGEOMETRY Geometry;
+		if (AIBuildTacticalGeometry(pSoldier, pSoldier->sGridNo, &Geometry))
+		{
+			VRAnalyticsStateInt(uiDecision, "geometry_primary_threat_dir", Geometry.ubPrimaryThreatDir);
+			VRAnalyticsStateInt(uiDecision, "geometry_secondary_threat_dir", Geometry.ubSecondaryThreatDir);
+			VRAnalyticsStateInt(uiDecision, "geometry_safest_dir", Geometry.ubSafestDirection);
+			VRAnalyticsStateInt(uiDecision, "geometry_friendly_base_dir", Geometry.ubStrongestFriendlyDir);
+			VRAnalyticsStateInt(uiDecision, "geometry_left_flank", Geometry.sLeftFlankOpportunity);
+			VRAnalyticsStateInt(uiDecision, "geometry_right_flank", Geometry.sRightFlankOpportunity);
+			VRAnalyticsStateInt(uiDecision, "geometry_rear_safety", Geometry.sRearSafety);
+			VRAnalyticsStateInt(uiDecision, "geometry_known_contacts", Geometry.ubKnownContacts);
+			VRAnalyticsStateInt(uiDecision, "geometry_visible_contacts", Geometry.ubVisibleContacts);
+			VRAnalyticsStateInt(uiDecision, "geometry_remembered_contacts", Geometry.ubRememberedContacts);
+			VRAnalyticsStateInt(uiDecision, "geometry_visible_sector_mask", Geometry.ubVisibleDirectionMask);
+			VRAnalyticsStateInt(uiDecision, "geometry_memory_sector_mask", Geometry.ubMemoryDirectionMask);
+			VRAnalyticsStateInt(uiDecision, "geometry_corroborated_cues", Geometry.ubCorroboratedCues);
+			VRAnalyticsStateInt(uiDecision, "geometry_corroborated_sector_mask", Geometry.ubCorroboratedDirectionMask);
+			VRAnalyticsStateInt(uiDecision, "geometry_multi_angle", Geometry.fMultiAngleThreat ? 1 : 0);
+			VRAnalyticsStateInt(uiDecision, "geometry_encirclement", Geometry.fEncirclementPressure ? 1 : 0);
+		}
 	}
 	return uiDecision;
 }
@@ -94,6 +115,8 @@ static void VRPlannerTraceCandidate(SOLDIERTYPE *pSoldier, UINT32 uiDecision,
 	VRAnalyticsStateInt(uiDecision, "candidate_route_cost", iRouteCost);
 	VRAnalyticsStateInt(uiDecision, "candidate_support", iSupport);
 	VRAnalyticsStateInt(uiDecision, "candidate_crossfire", iCrossfire);
+	VRAnalyticsStateInt(uiDecision, "candidate_setback_penalty",
+		pSoldier ? AITacticalSetbackPenalty(pSoldier, sGrid) : 0);
 	VRAnalyticsCandidate(uiDecision, pSource, sGrid, iScore, iScore - iRouteCost, true, pReason);
 }
 
@@ -550,6 +573,17 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 	if (!AIObserveContactChange(pSoldier, &Change))
 		return AI_ACTION_NONE;
 
+	// Remember the tile where a movement plan unexpectedly broke down. This is
+	// transient experience, not extra enemy knowledge: it is created only after
+	// personally visible contacts made the geometry materially worse.
+	UINT8 ubSetbackSeverity = (UINT8)__min(
+		(INT32)85,
+		40 + 10 * __min((UINT8)3, Change.ubNewContacts) +
+		(Change.fEncirclementPressure ? 15 : 0));
+	AIRegisterTacticalSetback(
+		pSoldier, AI_SETBACK_SURPRISE,
+		pSoldier->sGridNo, ubSetbackSeverity, 5);
+
 	// Existing hard break-contact state already owns movement once committed.
 	if (AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier))
 		return AI_ACTION_NONE;
@@ -701,10 +735,16 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 		}
 	}
 
-	// Candidate 4: lateral/backward bounded maneuver. This matters when the soldier
-	// is not merely surprised but has entered a multi-angle threat geometry.
-	INT32 sFallback = FindFlankingSpot(
-		pSoldier, Context.sPrimaryThreat, AI_ACTION_WITHDRAW);
+	// Candidate 4: weakest-sector breakout. Unlike a simple "backwards" retreat,
+	// this can choose a lateral/diagonal exit when a second threat axis makes the
+	// nominal rear dangerous.
+	INT32 sFallback = FindGeometryBreakoutSpot(
+		pSoldier, Context.sPrimaryThreat);
+	if (TileIsOutOfBounds(sFallback))
+	{
+		sFallback = FindFlankingSpot(
+			pSoldier, Context.sPrimaryThreat, AI_ACTION_WITHDRAW);
+	}
 	if (!TileIsOutOfBounds(sFallback) && sFallback != pSoldier->sGridNo)
 	{
 		INT32 iScore = AIUtilityPositionScore(
@@ -720,7 +760,7 @@ static INT8 DecideContactSurpriseReposition(SOLDIERTYPE *pSoldier, BOOLEAN fCanM
 				DetermineMovementMode(pSoldier, AI_ACTION_WITHDRAW)),
 			CountNearbyFriends(pSoldier, sFallback, DAY_VISION_RANGE / 3),
 			AICrossfirePositionScore(pSoldier, sFallback, Context.sPrimaryThreat),
-			"lateral or backward break-contact candidate");
+			"weakest-sector breakout candidate");
 
 		if (iScore > iBestScore)
 		{
@@ -2197,6 +2237,329 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 	return(AI_ACTION_NONE);
 }
 
+static INT8 DecideThreatHypothesisSearch(
+	SOLDIERTYPE *pSoldier, BOOLEAN fCanMove,
+	INT32 sEvidenceSpot, INT8 bEvidenceLevel)
+{
+	if (!pSoldier || !AICombatTeam(pSoldier) ||
+		pSoldier->stats.bLife < OKLIFE ||
+		pSoldier->bCollapsed || pSoldier->bBreathCollapsed ||
+		pSoldier->aiData.bUnderFire ||
+		GuySawEnemy(pSoldier, SEEN_LAST_TURN))
+	{
+		return -1;
+	}
+
+	// Normal JA2 personal/public knowledge owns ordinary pursuit. This helper is
+	// specifically for the weaker post-contact hypothesis after exact knowledge decays.
+	if (!TileIsOutOfBounds(ClosestKnownOpponent(pSoldier, NULL, NULL)))
+		return -1;
+
+	AITHREATMEMORYCUE Cue;
+	if (!AIBuildThreatMemoryCue(pSoldier, &Cue) ||
+		TileIsOutOfBounds(Cue.sGridNo) ||
+		Cue.ubConfidence < 25)
+	{
+		return -1;
+	}
+
+	const INT32 sHypothesisAnchor = Cue.sGridNo;
+	INT32 sFocus = Cue.sGridNo;
+	INT8 bFocusLevel = Cue.bLevel;
+	INT32 iNoiseRelevance = 0;
+
+	BOOLEAN fCorroborated =
+		Cue.fNoiseCorroborated &&
+		!TileIsOutOfBounds(Cue.sCorroboratingGridNo) &&
+		Cue.ubCorroborationStrength >= 10 &&
+		Cue.ubCorroborationAge <= 4;
+
+	// A caller may pass MostImportantNoiseHeard()'s result. That result can itself
+	// be the memory fallback, so the grid argument is NOT proof of a fresh sound.
+	// Only a registered age-zero evidence slot can upgrade this decision as a new cue.
+	BOOLEAN fFreshCorroboration =
+		fCorroborated &&
+		Cue.ubCorroborationAge == 0;
+
+	if (!TileIsOutOfBounds(sEvidenceSpot))
+	{
+		iNoiseRelevance = AIMemoryNoiseRelevance(
+			pSoldier, sEvidenceSpot, bEvidenceLevel);
+
+		BOOLEAN fEvidenceMatchesRegisteredCue = FALSE;
+		if (fFreshCorroboration &&
+			bEvidenceLevel == Cue.bCorroboratingLevel &&
+			PythSpacesAway(
+				sEvidenceSpot, Cue.sCorroboratingGridNo) <= 3)
+		{
+			fEvidenceMatchesRegisteredCue = TRUE;
+		}
+
+		if (fEvidenceMatchesRegisteredCue && iNoiseRelevance >= 10)
+		{
+			// Follow the fresh anonymous evidence, not the stale exact memory tile.
+			// This redirects search without claiming the unseen opponent is exactly here.
+			sFocus = Cue.sCorroboratingGridNo;
+			bFocusLevel = Cue.bCorroboratingLevel;
+		}
+		else
+		{
+			// If the supplied grid is simply the memory fallback, continue as a
+			// memory-only search. An unrelated real noise belongs to normal YELLOW AI.
+			const BOOLEAN fLooksLikeMemoryFallback =
+				bEvidenceLevel == Cue.bLevel &&
+				PythSpacesAway(sEvidenceSpot, Cue.sGridNo) <= 1;
+			if (!fLooksLikeMemoryFallback)
+				return -1;
+		}
+	}
+	else if (fCorroborated)
+	{
+		// A still-recent corroborating cue can keep the search oriented toward its
+		// sector for a few turns, with strength decaying in TacticalReasoning.
+		sFocus = Cue.sCorroboratingGridNo;
+		bFocusLevel = Cue.bCorroboratingLevel;
+	}
+
+	INT32 iEffectiveConfidence = (INT32)Cue.ubConfidence;
+	if (fCorroborated)
+	{
+		iEffectiveConfidence += (INT32)Cue.ubCorroborationStrength / 3;
+		iEffectiveConfidence +=
+			4 * __min((UINT8)2, Cue.ubCorroboratedCues);
+	}
+	iEffectiveConfidence +=
+		3 * __min((UINT8)2, Cue.ubMatchedMemories);
+	iEffectiveConfidence = __max(0, __min(100, iEffectiveConfidence));
+
+	UINT8 ubSearchers = 1;
+	if (AICompetenceTier(pSoldier) >= AI_COMPETENCE_REGULAR &&
+		AIFireteamCombatReadyCount(pSoldier) >= 4 &&
+		(iEffectiveConfidence >= 60 ||
+		 (fFreshCorroboration && Cue.ubCorroborationStrength >= 35)))
+	{
+		ubSearchers = 2;
+	}
+
+	// Reserve against the underlying remembered hypothesis, not the latest sound
+	// coordinate. Otherwise a moving/noisy contact can create several nominally
+	// different search tasks and pull the whole element forward.
+	if (!AIReserveTacticalTask(
+		pSoldier, AI_TASK_SEARCH, sHypothesisAnchor,
+		NOBODY, ubSearchers, 1))
+	{
+		UINT8 ubExistingSupport = AICountTacticalTaskReservations(
+			pSoldier, AI_TASK_SEARCH_SUPPORT,
+			sHypothesisAnchor, NOBODY);
+
+		if (!AIReserveTacticalTask(
+			pSoldier, AI_TASK_SEARCH_SUPPORT, sHypothesisAnchor,
+			NOBODY, 3, 1))
+		{
+			// The investigation element is already fully staffed. Do not fall
+			// through to legacy seek-noise and recreate the conga line we just capped.
+			AIReleaseTacticalTask(pSoldier);
+			return AI_ACTION_NONE;
+		}
+
+		UINT32 uiDecision = VRPlannerTraceBeginDecision(
+			pSoldier, "memory_search_support",
+			sFocus, AI_INTENT_HOLD, AI_ROLE_SUPPORT);
+		if (uiDecision)
+		{
+			VRAnalyticsStateInt(uiDecision, "memory_confidence", Cue.ubConfidence);
+			VRAnalyticsStateInt(uiDecision, "memory_effective_confidence", iEffectiveConfidence);
+			VRAnalyticsStateInt(uiDecision, "memory_age", Cue.ubAgeTurns);
+			VRAnalyticsStateInt(uiDecision, "memory_matches", Cue.ubMatchedMemories);
+			VRAnalyticsStateInt(uiDecision, "memory_corroborated", fCorroborated ? 1 : 0);
+			VRAnalyticsStateInt(uiDecision, "corroboration_strength", Cue.ubCorroborationStrength);
+			VRAnalyticsStateInt(uiDecision, "corroboration_cues", Cue.ubCorroboratedCues);
+			VRAnalyticsStateInt(uiDecision, "corroboration_age", Cue.ubCorroborationAge);
+			VRAnalyticsStateInt(uiDecision, "hypothesis_anchor", sHypothesisAnchor);
+			VRAnalyticsStateInt(uiDecision, "search_focus", sFocus);
+		}
+
+		UINT8 ubFocusDir =
+			AIDirection(pSoldier->sGridNo, sFocus);
+
+		// Spread up to three support soldiers across centre/left/right watch arcs.
+		// They secure the uncertain sector instead of all aiming at one remembered tile.
+		if (ubFocusDir < NUM_WORLD_DIRECTIONS)
+		{
+			INT8 bWatchOffset = 0;
+			switch (ubExistingSupport % 3)
+			{
+			case 1: bWatchOffset = -1; break;
+			case 2: bWatchOffset = 1; break;
+			default: break;
+			}
+
+			INT32 iWatchDir =
+				((INT32)ubFocusDir + (INT32)bWatchOffset) %
+				NUM_WORLD_DIRECTIONS;
+			if (iWatchDir < 0)
+				iWatchDir += NUM_WORLD_DIRECTIONS;
+			ubFocusDir = (UINT8)iWatchDir;
+		}
+
+		if (ubFocusDir < NUM_WORLD_DIRECTIONS &&
+			pSoldier->ubDirection != ubFocusDir &&
+			(!gfTurnBasedAI ||
+			 GetAPsToLook(pSoldier) <= pSoldier->bActionPoints) &&
+			pSoldier->InternalIsValidStance(
+				ubFocusDir,
+				gAnimControl[pSoldier->usAnimState].ubEndHeight))
+		{
+			pSoldier->aiData.usActionData = ubFocusDir;
+			VRPlannerTraceSelect(
+				pSoldier, uiDecision, "memory_search_support",
+				AI_ACTION_CHANGE_FACING, pSoldier->sGridNo,
+				0, 0, FALSE,
+				"support covers a deconflicted unresolved-contact arc");
+			return AI_ACTION_CHANGE_FACING;
+		}
+
+		if (AICheckHasGun(pSoldier) &&
+			!WeaponReady(pSoldier) &&
+			PickSoldierReadyAnimation(
+				pSoldier, FALSE, FALSE) != INVALID_ANIMATION &&
+			(!gfTurnBasedAI ||
+			 GetAPsToReadyWeapon(
+				pSoldier,
+				PickSoldierReadyAnimation(
+					pSoldier, FALSE, FALSE)) <=
+			 pSoldier->bActionPoints))
+		{
+			VRPlannerTraceSelect(
+				pSoldier, uiDecision, "memory_search_support",
+				AI_ACTION_RAISE_GUN, pSoldier->sGridNo,
+				0, 0, FALSE,
+				"support prepares weapon on unresolved contact sector");
+			return AI_ACTION_RAISE_GUN;
+		}
+
+		VRPlannerTraceSelect(
+			pSoldier, uiDecision, "memory_search_support",
+			AI_ACTION_NONE, pSoldier->sGridNo,
+			0, 0, FALSE,
+			"support holds while bounded investigators clear hypothesis");
+		return AI_ACTION_NONE;
+	}
+
+	// Uncertainty comes from both memory age and confidence. Genuine corroborating
+	// evidence narrows the sector, but never to a zero-radius exact target claim.
+	INT32 iUncertainty =
+		3 +
+		(INT32)Cue.ubAgeTurns / 2 +
+		__max(0, 50 - (INT32)Cue.ubConfidence) / 15;
+
+	if (fCorroborated)
+	{
+		iUncertainty -= (INT32)Cue.ubCorroborationStrength / 30;
+		if (fFreshCorroboration)
+			--iUncertainty;
+	}
+
+	UINT8 ubUncertainty =
+		(UINT8)__max(2, __min(8, iUncertainty));
+
+	INT32 sObservation = FindThreatSearchObservationSpot(
+		pSoldier, sFocus, bFocusLevel, ubUncertainty);
+	if (TileIsOutOfBounds(sObservation))
+	{
+		AIReleaseTacticalTask(pSoldier);
+		return -1;
+	}
+
+	UINT32 uiDecision = VRPlannerTraceBeginDecision(
+		pSoldier, "memory_search",
+		sFocus, AI_INTENT_HOLD, AI_ROLE_MANEUVER);
+	if (uiDecision)
+	{
+		VRAnalyticsStateInt(uiDecision, "memory_grid", Cue.sGridNo);
+		VRAnalyticsStateInt(uiDecision, "memory_confidence", Cue.ubConfidence);
+		VRAnalyticsStateInt(uiDecision, "memory_effective_confidence", iEffectiveConfidence);
+		VRAnalyticsStateInt(uiDecision, "memory_age", Cue.ubAgeTurns);
+		VRAnalyticsStateInt(uiDecision, "memory_matches", Cue.ubMatchedMemories);
+		VRAnalyticsStateInt(uiDecision, "memory_corroborated", fCorroborated ? 1 : 0);
+		VRAnalyticsStateInt(uiDecision, "corroboration_strength", Cue.ubCorroborationStrength);
+		VRAnalyticsStateInt(uiDecision, "corroboration_cues", Cue.ubCorroboratedCues);
+		VRAnalyticsStateInt(uiDecision, "corroboration_age", Cue.ubCorroborationAge);
+		VRAnalyticsStateInt(uiDecision, "hypothesis_anchor", sHypothesisAnchor);
+		VRAnalyticsStateInt(uiDecision, "search_focus", sFocus);
+		VRAnalyticsStateInt(uiDecision, "search_focus_level", bFocusLevel);
+		VRAnalyticsStateInt(uiDecision, "search_uncertainty_radius", ubUncertainty);
+	}
+
+	if (!fCanMove || sObservation == pSoldier->sGridNo)
+	{
+		UINT8 ubFocusDir =
+			AIDirection(pSoldier->sGridNo, sFocus);
+		if (ubFocusDir < NUM_WORLD_DIRECTIONS &&
+			pSoldier->ubDirection != ubFocusDir &&
+			(!gfTurnBasedAI ||
+			 GetAPsToLook(pSoldier) <= pSoldier->bActionPoints))
+		{
+			pSoldier->aiData.usActionData = ubFocusDir;
+			VRPlannerTraceSelect(
+				pSoldier, uiDecision, "memory_search",
+				AI_ACTION_CHANGE_FACING, pSoldier->sGridNo,
+				0, 0, FALSE,
+				"investigator observes unresolved evidence sector");
+			return AI_ACTION_CHANGE_FACING;
+		}
+
+		VRPlannerTraceSelect(
+			pSoldier, uiDecision, "memory_search",
+			AI_ACTION_NONE, pSoldier->sGridNo,
+			0, 0, FALSE,
+			"investigator already at useful observation position");
+		return AI_ACTION_NONE;
+	}
+
+	INT16 sReserveAP =
+		(INT16)(GetAPsCrouch(pSoldier, TRUE) +
+			GetAPsToLook(pSoldier));
+
+	INT32 sMoveSpot = InternalGoAsFarAsPossibleTowards(
+		pSoldier, sObservation, sReserveAP,
+		AI_ACTION_SEEK_NOISE, FLAG_CAUTIOUS);
+
+	if (TileIsOutOfBounds(sMoveSpot))
+	{
+		AIReleaseTacticalTask(pSoldier);
+		return -1;
+	}
+
+	pSoldier->aiData.usActionData = sMoveSpot;
+	pSoldier->aiData.fAIFlags |= AI_CAUTIOUS;
+
+	INT32 iRouteCost = AIPathExposureCost(
+		pSoldier, sMoveSpot,
+		DetermineMovementMode(
+			pSoldier, AI_ACTION_SEEK_NOISE));
+	INT32 iScore = AIUtilityPositionScore(
+		pSoldier, sMoveSpot, sFocus,
+		AI_INTENT_HOLD, AI_ROLE_MANEUVER);
+
+	VRPlannerTraceCandidate(
+		pSoldier, uiDecision, "memory_search",
+		AI_ACTION_SEEK_NOISE, sMoveSpot,
+		iScore, iRouteCost,
+		AICountNearbyOperationalFriends(
+			pSoldier, sMoveSpot, DAY_VISION_RANGE / 3),
+		AICrossfirePositionScore(
+			pSoldier, sMoveSpot, sFocus),
+		"covered observation approach to unresolved evidence sector");
+	VRPlannerTraceSelect(
+		pSoldier, uiDecision, "memory_search",
+		AI_ACTION_SEEK_NOISE, sMoveSpot,
+		iScore, 0, FALSE,
+		"investigator advances to a bounded observation position");
+
+	return AI_ACTION_SEEK_NOISE;
+}
+
 INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 {
 	INT32 iDummy;
@@ -2793,6 +3156,18 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 					!fClimb &&
 					!GuySawEnemy(pSoldier, SEEN_LAST_TURN) &&
 					!pSoldier->aiData.bUnderFire;
+
+				if (fUnconfirmedInvestigation)
+				{
+					INT8 bMemorySearchAction =
+						DecideThreatHypothesisSearch(
+							pSoldier,
+							pSoldier->bActionPoints >= MinPtsToMove(pSoldier),
+							sNoiseGridNo,
+							pSoldier->pathing.bLevel);
+					if (bMemorySearchAction != -1)
+						return bMemorySearchAction;
+				}
 
 				// Investigation is not an assault. A soldier responding to a reported
 				// contact that he has not personally confirmed should establish a covered
@@ -9576,8 +9951,17 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 
 	UINT32 uiTraceDecision = VRPlannerTraceBeginDecision(pSoldier, "flank",
 		sClosestDisturbance, bPlanIntent, bPlanRole);
-	if (!AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED,
-		(UINT32)(sClosestDisturbance + 701)))
+	BOOLEAN fBasicFireteamManeuver =
+		AIBasicFireteamManeuverReady(pSoldier, sClosestDisturbance);
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "fireteam_effective_fire_support",
+		(long)AIFireteamEffectiveFireSupport(pSoldier, sClosestDisturbance));
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "shared_approach_pressure",
+		(long)AISharedApproachPressure(pSoldier, sClosestDisturbance));
+	VRAnalyticsTacticalStateInt(pSoldier->ubID, "basic_fireteam_maneuver",
+		fBasicFireteamManeuver ? 1L : 0L);
+	if (!fBasicFireteamManeuver &&
+		!AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED,
+			(UINT32)(sClosestDisturbance + 701)))
 	{
 		VRPlannerTraceReject(pSoldier, uiTraceDecision, "flank", AI_ACTION_NONE,
 			pSoldier->sGridNo, "competence/doctrine friction rejected coordinated flank");
@@ -9613,10 +9997,11 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		pSoldier->bActionPoints >= APBPConstants[AP_MINIMUM] &&
 		pSoldier->CheckInitialAP() &&
 		(pSoldier->aiData.bAttitude == CUNNINGAID || pSoldier->aiData.bAttitude == CUNNINGSOLO ||
-		(pSoldier->aiData.bAttitude == BRAVESOLO || pSoldier->aiData.bAttitude == BRAVEAID) && ubNearbyFireteamClose > 2) &&
+		((pSoldier->aiData.bAttitude == BRAVESOLO || pSoldier->aiData.bAttitude == BRAVEAID) && ubNearbyFireteamClose > 2) ||
+		fBasicFireteamManeuver) &&
 		AICombatTeam(pSoldier) &&
 		!AIShouldAvoidAdvance(pSoldier) &&
-		AIAllowsIndependentFlank(pSoldier) &&
+		(fBasicFireteamManeuver || AIAllowsIndependentFlank(pSoldier)) &&
 		pSoldier->ubSoldierClass != SOLDIER_CLASS_ADMINISTRATOR &&
 		!AICheckSpecialRole(pSoldier) &&		
 		gAnimControl[pSoldier->usAnimState].ubHeight != ANIM_PRONE &&
@@ -9641,6 +10026,8 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 			AISupportRoleScore(pSoldier, sClosestDisturbance) >
 			AIManeuverRoleScore(pSoldier, sClosestDisturbance) + 15)
 		{
+			VRPlannerTraceReject(pSoldier, uiTraceDecision, "flank", AI_ACTION_NONE,
+				pSoldier->sGridNo, "support-role deconfliction kept soldier in fire base");
 			return -1;
 		}
 
@@ -9687,10 +10074,18 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 			ubFlankLimit = 3;
 		}
 
+		VRAnalyticsStateInt(uiTraceDecision, "active_left_flankers", ubActiveLeftFlankers);
+		VRAnalyticsStateInt(uiTraceDecision, "active_right_flankers", ubActiveRightFlankers);
+		VRAnalyticsStateInt(uiTraceDecision, "flank_commitment_limit", ubFlankLimit);
+
 		// Keep a genuine support base. Most elements commit only two flankers;
 		// a large, locally superior and composed element may commit a third.
 		if (ubActiveFlankers >= ubFlankLimit)
+		{
+			VRPlannerTraceReject(pSoldier, uiTraceDecision, "flank", AI_ACTION_NONE,
+				pSoldier->sGridNo, "fireteam flank commitment limit reached");
 			return -1;
+		}
 
 		BOOLEAN fLeftFlankPossible = FALSE;
 		BOOLEAN fRightFlankPossible = FALSE;
@@ -9708,7 +10103,13 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		INT32 sFlankingSpot = NOWHERE;
 		INT8 bAction = AI_ACTION_NONE;
 
-		// decide flanking direction
+		// Decide flank side from the shared battlefield geometry first, then use
+		// existing commitment/body-count deconfliction as a constraint rather than
+		// as the tactical brain. Random left/right tie-breaking is deliberately gone.
+		const INT8 bGeometryPreference =
+			AIFireteamPreferredFlankAction(pSoldier, sClosestDisturbance);
+		VRAnalyticsStateInt(uiTraceDecision, "fireteam_flank_axis", bGeometryPreference);
+
 		if (fLeftFlankPossible && !fRightFlankPossible)
 		{
 			bAction = AI_ACTION_FLANK_LEFT;
@@ -9719,9 +10120,18 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		}
 		else if (fLeftFlankPossible && fRightFlankPossible)
 		{
-			// Deconflict flank commitments first. If both sides are equally committed,
-			// prefer the side with fewer friendly bodies already occupying that arc.
-			if (ubActiveLeftFlankers < ubActiveRightFlankers)
+			// A side already carrying materially more committed flankers should normally
+			// be avoided, even if geometry alone would prefer it.
+			if (ubActiveLeftFlankers + 1 < ubActiveRightFlankers)
+				bAction = AI_ACTION_FLANK_LEFT;
+			else if (ubActiveRightFlankers + 1 < ubActiveLeftFlankers)
+				bAction = AI_ACTION_FLANK_RIGHT;
+			else if (bGeometryPreference == AI_ACTION_FLANK_LEFT ||
+				bGeometryPreference == AI_ACTION_FLANK_RIGHT)
+			{
+				bAction = bGeometryPreference;
+			}
+			else if (ubActiveLeftFlankers < ubActiveRightFlankers)
 				bAction = AI_ACTION_FLANK_LEFT;
 			else if (ubActiveRightFlankers < ubActiveLeftFlankers)
 				bAction = AI_ACTION_FLANK_RIGHT;
@@ -9729,18 +10139,76 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 				bAction = AI_ACTION_FLANK_LEFT;
 			else if (ubFriendsRight < ubFriendsLeft)
 				bAction = AI_ACTION_FLANK_RIGHT;
-			else if (Random(6) < 3)
-				bAction = AI_ACTION_FLANK_LEFT;
 			else
-				bAction = AI_ACTION_FLANK_RIGHT;
+			{
+				// True tie: compare the actual reachable left/right positions through
+				// the common utility model instead of flipping a coin.
+				INT32 sLeftSpot = FindFlankingSpot(
+					pSoldier, sClosestDisturbance, AI_ACTION_FLANK_LEFT);
+				INT32 sRightSpot = FindFlankingSpot(
+					pSoldier, sClosestDisturbance, AI_ACTION_FLANK_RIGHT);
+
+				BOOLEAN fLeftRoute =
+					!TileIsOutOfBounds(sLeftSpot) &&
+					AITacticalRouteExposureAcceptable(
+						pSoldier, sLeftSpot, AI_ACTION_FLANK_LEFT);
+				BOOLEAN fRightRoute =
+					!TileIsOutOfBounds(sRightSpot) &&
+					AITacticalRouteExposureAcceptable(
+						pSoldier, sRightSpot, AI_ACTION_FLANK_RIGHT);
+
+				INT32 iLeftScore = fLeftRoute ?
+					AIUtilityPositionScore(
+						pSoldier, sLeftSpot, sClosestDisturbance,
+						AI_INTENT_FLANK, AI_ROLE_FLANKER) : -10000;
+				INT32 iRightScore = fRightRoute ?
+					AIUtilityPositionScore(
+						pSoldier, sRightSpot, sClosestDisturbance,
+						AI_INTENT_FLANK, AI_ROLE_FLANKER) : -10000;
+
+				if (fLeftRoute)
+					VRPlannerTraceCandidate(pSoldier, uiTraceDecision, "flank",
+						AI_ACTION_FLANK_LEFT, sLeftSpot, iLeftScore,
+						AIPathExposureCost(pSoldier, sLeftSpot,
+							DetermineMovementMode(pSoldier, AI_ACTION_FLANK_LEFT)),
+						CountNearbyFriends(pSoldier, sLeftSpot, DAY_VISION_RANGE / 3),
+						AICrossfirePositionScore(pSoldier, sLeftSpot, sClosestDisturbance),
+						"left flank geometry");
+				if (fRightRoute)
+					VRPlannerTraceCandidate(pSoldier, uiTraceDecision, "flank",
+						AI_ACTION_FLANK_RIGHT, sRightSpot, iRightScore,
+						AIPathExposureCost(pSoldier, sRightSpot,
+							DetermineMovementMode(pSoldier, AI_ACTION_FLANK_RIGHT)),
+						CountNearbyFriends(pSoldier, sRightSpot, DAY_VISION_RANGE / 3),
+						AICrossfirePositionScore(pSoldier, sRightSpot, sClosestDisturbance),
+						"right flank geometry");
+
+				if (iLeftScore > iRightScore && fLeftRoute)
+				{
+					bAction = AI_ACTION_FLANK_LEFT;
+					sFlankingSpot = sLeftSpot;
+				}
+				else if (fRightRoute)
+				{
+					bAction = AI_ACTION_FLANK_RIGHT;
+					sFlankingSpot = sRightSpot;
+				}
+				else if (fLeftRoute)
+				{
+					bAction = AI_ACTION_FLANK_LEFT;
+					sFlankingSpot = sLeftSpot;
+				}
+			}
 		}
 
 		// If left or right flanking is possible, search for a flank whose route does
 		// not cross a substantially worse known fire lane.
 		if (bAction != AI_ACTION_NONE)
 		{
-			pSoldier->aiData.usActionData = FindFlankingSpot(
-				pSoldier, sClosestDisturbance, bAction);
+			pSoldier->aiData.usActionData =
+				!TileIsOutOfBounds(sFlankingSpot) ?
+				sFlankingSpot :
+				FindFlankingSpot(pSoldier, sClosestDisturbance, bAction);
 
 			if (!TileIsOutOfBounds(pSoldier->aiData.usActionData) &&
 				!AITacticalRouteExposureAcceptable(
@@ -9789,11 +10257,20 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 					pSoldier->aiData.bOrders = FARPATROL;
 				}
 
+				INT32 iSelectedScore = AIUtilityPositionScore(
+					pSoldier, pSoldier->aiData.usActionData, sClosestDisturbance,
+					AI_INTENT_FLANK, AI_ROLE_FLANKER);
+				VRPlannerTraceSelect(pSoldier, uiTraceDecision, "flank", bAction,
+					pSoldier->aiData.usActionData, iSelectedScore, -10000, FALSE,
+					"shared fireteam axis with legal individual route");
+
 				return(bAction);
 			}
 		}
 	}
 
+	VRPlannerTraceReject(pSoldier, uiTraceDecision, "flank", AI_ACTION_NONE,
+		pSoldier->sGridNo, "flank start conditions or legal route unavailable");
 	return -1;
 }
 
@@ -12104,6 +12581,30 @@ INT8 DecideDisengagementAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (!AIHasUsedTacticalFallback(pSoldier))
 	{
 		INT32 sFallback = FindRetreatSpot(pSoldier);
+
+		AITACTICALGEOMETRY Geometry;
+		if (AIBuildTacticalGeometry(
+			pSoldier, pSoldier->sGridNo, &Geometry) &&
+			(Geometry.fMultiAngleThreat || Geometry.fEncirclementPressure))
+		{
+			INT32 sBreakout = FindGeometryBreakoutSpot(pSoldier, sThreat);
+			if (!TileIsOutOfBounds(sBreakout))
+			{
+				INT32 iBreakoutScore = AIUtilityPositionScore(
+					pSoldier, sBreakout, sThreat,
+					AI_INTENT_DISENGAGE, AI_ROLE_SCREEN);
+				INT32 iRetreatScore = TileIsOutOfBounds(sFallback) ?
+					-10000 :
+					AIUtilityPositionScore(
+						pSoldier, sFallback, sThreat,
+						AI_INTENT_DISENGAGE, AI_ROLE_SCREEN);
+				if (iBreakoutScore > iRetreatScore)
+					sFallback = sBreakout;
+			}
+		}
+
+		if (TileIsOutOfBounds(sFallback))
+			sFallback = FindGeometryBreakoutSpot(pSoldier, sThreat);
 		if (TileIsOutOfBounds(sFallback))
 			sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
 		if (!TileIsOutOfBounds(sFallback))
@@ -12239,6 +12740,14 @@ INT8 DecideSuppressionResponse(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		VRPlannerTraceSelect(pSoldier, uiSuppressionDecision, "suppression_response",
 			bBestAction, sBestSpot, iBestScore, iCurrentScore, FALSE,
 			"safer response exceeded required utility gain");
+
+		// A real suppression-driven displacement is useful fireteam experience:
+		// nearby teammates should remember that this approach just proved costly.
+		UINT8 ubExposureSetback = (UINT8)__min((INT32)80,
+			28 + iShock / 2 + (INT32)usCurrentExposure / 10);
+		AIRegisterTacticalSetback(pSoldier, AI_SETBACK_EXPOSURE,
+			pSoldier->sGridNo, ubExposureSetback, 4);
+
 		pSoldier->aiData.usActionData = sBestSpot;
 		return bBestAction;
 	}
@@ -12263,6 +12772,33 @@ INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		return AI_ACTION_NONE;
 
 	INT32 sFallback = FindRetreatSpot(pSoldier);
+
+	AITACTICALGEOMETRY Geometry;
+	const BOOLEAN fHasGeometry =
+		AIBuildTacticalGeometry(pSoldier, pSoldier->sGridNo, &Geometry);
+
+	if (fHasGeometry &&
+		(Geometry.fMultiAngleThreat || Geometry.fEncirclementPressure))
+	{
+		INT32 sBreakout = FindGeometryBreakoutSpot(pSoldier, sThreat);
+		if (!TileIsOutOfBounds(sBreakout))
+		{
+			INT32 iBreakoutScore = AIUtilityPositionScore(
+				pSoldier, sBreakout, sThreat,
+				AI_INTENT_FALLBACK, AI_ROLE_SCREEN);
+			INT32 iRetreatScore = TileIsOutOfBounds(sFallback) ?
+				-10000 :
+				AIUtilityPositionScore(
+					pSoldier, sFallback, sThreat,
+					AI_INTENT_FALLBACK, AI_ROLE_SCREEN);
+
+			if (iBreakoutScore > iRetreatScore)
+				sFallback = sBreakout;
+		}
+	}
+
+	if (TileIsOutOfBounds(sFallback))
+		sFallback = FindGeometryBreakoutSpot(pSoldier, sThreat);
 	if (TileIsOutOfBounds(sFallback))
 		sFallback = FindFlankingSpot(pSoldier, sThreat, AI_ACTION_WITHDRAW);
 	if (TileIsOutOfBounds(sFallback))
@@ -12316,6 +12852,17 @@ INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		pSoldier, sFallback, AI_ACTION_WITHDRAW, 180, 90, 115))
 	{
 		return AI_ACTION_NONE;
+	}
+
+	// If the fallback was forced by local pressure, record the abandoned position
+	// as an exposure setback so this fireteam does not feed the next soldier down
+	// the same approach as though nothing happened.
+	if (pSoldier->aiData.bUnderFire || AILocalStress(pSoldier) >= 40 || usCurrentExposure >= 120)
+	{
+		UINT8 ubExposureSetback = (UINT8)__min((INT32)80,
+			30 + AILocalStress(pSoldier) / 2 + (INT32)usCurrentExposure / 12);
+		AIRegisterTacticalSetback(pSoldier, AI_SETBACK_EXPOSURE,
+			pSoldier->sGridNo, ubExposureSetback, 4);
 	}
 
 	pSoldier->aiData.usActionData = sFallback;

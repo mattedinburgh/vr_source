@@ -258,6 +258,9 @@ INT16 WhatIKnowThatPublicDont(SOLDIERTYPE *pSoldier, UINT8 ubInSightOnly);
 
 INT32 FindClosestClimbPoint (SOLDIERTYPE *pSoldier, BOOLEAN fClimbUp );
 INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction );
+INT32 FindGeometryBreakoutSpot(SOLDIERTYPE *pSoldier, INT32 sThreatSpot);
+INT32 FindThreatSearchObservationSpot(SOLDIERTYPE *pSoldier, INT32 sEvidenceSpot,
+	INT8 bEvidenceLevel, UINT8 ubUncertaintyRadius);
 BOOLEAN CanClimbFromHere (SOLDIERTYPE * pSoldier, BOOLEAN fUp );
 
 // HEADROCK HAM 3.6: Adding includes for A* cover calculations
@@ -367,7 +370,9 @@ enum
 	AI_TASK_RESCUE,
 	AI_TASK_SMOKE,
 	AI_TASK_ENTRY_POINT,
-	AI_TASK_ENTRY_SUPPORT
+	AI_TASK_ENTRY_SUPPORT,
+	AI_TASK_SEARCH,
+	AI_TASK_SEARCH_SUPPORT
 };
 
 enum
@@ -380,6 +385,15 @@ enum
 	AI_SHORT_PLAN_CQB
 };
 
+enum
+{
+	AI_SETBACK_NONE = 0,
+	AI_SETBACK_SURPRISE,
+	AI_SETBACK_EXPOSURE,
+	AI_SETBACK_CQB_ENTRY,
+	AI_SETBACK_ROUTE
+};
+
 struct AICONTACTBELIEF
 {
 	UINT8 ubOpponentID;
@@ -390,6 +404,51 @@ struct AICONTACTBELIEF
 	UINT8 ubConfidence;
 	UINT8 ubAgeTurns;
 	BOOLEAN fDirectlyVisible;
+};
+
+// Coarse post-contact memory. This is deliberately weaker than normal JA2
+// personal/public knowledge: it may guide search and geometry, never authorize
+// an attack against an unseen opponent.
+struct AITHREATMEMORYCUE
+{
+	INT32 sGridNo;
+	INT8 bLevel;
+	UINT8 ubDirection;
+	UINT8 ubConfidence;
+	UINT8 ubAgeTurns;
+	UINT8 ubMatchedMemories;
+	INT32 sCorroboratingGridNo;
+	INT8 bCorroboratingLevel;
+	UINT8 ubCorroborationStrength;
+	UINT8 ubCorroboratedCues;
+	UINT8 ubCorroborationAge;
+	BOOLEAN fNoiseCorroborated;
+};
+
+// Local 8-sector battlefield geometry. It is derived only from legal opponent
+// beliefs plus friendly positions, and is rebuilt transiently during decisions.
+struct AITACTICALGEOMETRY
+{
+	UINT16 usThreatPressure[NUM_WORLD_DIRECTIONS];
+	UINT16 usFriendlyPressure[NUM_WORLD_DIRECTIONS];
+	UINT8 ubThreatDirectionMask;
+	UINT8 ubVisibleDirectionMask;
+	UINT8 ubFriendlyDirectionMask;
+	UINT8 ubKnownContacts;
+	UINT8 ubVisibleContacts;
+	UINT8 ubRememberedContacts;
+	UINT8 ubMemoryDirectionMask;
+	UINT8 ubCorroboratedCues;
+	UINT8 ubCorroboratedDirectionMask;
+	UINT8 ubPrimaryThreatDir;
+	UINT8 ubSecondaryThreatDir;
+	UINT8 ubSafestDirection;
+	UINT8 ubStrongestFriendlyDir;
+	INT16 sLeftFlankOpportunity;
+	INT16 sRightFlankOpportunity;
+	INT16 sRearSafety;
+	BOOLEAN fMultiAngleThreat;
+	BOOLEAN fEncirclementPressure;
 };
 
 struct AITACTICALPOSITIONFEATURES
@@ -408,6 +467,8 @@ struct AITACTICALPOSITIONFEATURES
 	INT16 sRangeError;
 	INT16 sReactionRisk;
 	INT16 sPathExposure;
+	INT16 sGeometryScore;
+	INT16 sSetbackPenalty;
 };
 
 struct AISHORTPLANSTATE
@@ -434,6 +495,17 @@ struct AICONTACTCHANGE
 
 BOOLEAN AIBuildContactBelief(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID, AICONTACTBELIEF *pBelief);
 BOOLEAN AIBuildPrimaryContactBelief(SOLDIERTYPE *pSoldier, INT32 sPreferredGridNo, AICONTACTBELIEF *pBelief);
+BOOLEAN AIBuildThreatMemoryCue(SOLDIERTYPE *pSoldier, AITHREATMEMORYCUE *pCue);
+INT32 AIMemoryNoiseRelevance(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo, INT8 bNoiseLevel);
+void AIRegisterThreatNoiseEvidence(SOLDIERTYPE *pSoldier, INT32 sNoiseGridNo,
+	INT8 bNoiseLevel, INT32 iRelevance, UINT8 ubNoiseVolume, BOOLEAN fPublic);
+BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
+	AITACTICALGEOMETRY *pGeometry);
+INT32 AIGeometryPositionScore(SOLDIERTYPE *pSoldier,
+	const AITACTICALGEOMETRY *pGeometry, INT32 sCandidateSpot,
+	INT32 sTargetSpot, INT8 bIntent, INT8 bRole);
+INT8 AIPreferredFlankAction(SOLDIERTYPE *pSoldier, INT32 sTargetSpot);
+INT8 AIFireteamPreferredFlankAction(SOLDIERTYPE *pSoldier, INT32 sTargetSpot);
 BOOLEAN AIEvaluateTacticalPosition(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 	INT32 sTargetSpot, UINT16 usMovementMode, AITACTICALPOSITIONFEATURES *pFeatures);
 INT32 AIScoreTacticalPosition(SOLDIERTYPE *pSoldier, const AITACTICALPOSITIONFEATURES *pFeatures,
@@ -450,6 +522,9 @@ void AIAdvanceShortPlan(SOLDIERTYPE *pSoldier);
 void AICancelShortPlan(SOLDIERTYPE *pSoldier);
 void AIResetTacticalReasoningStateForLoad(void);
 BOOLEAN AIObserveContactChange(SOLDIERTYPE *pSoldier, AICONTACTCHANGE *pChange);
+void AIRegisterTacticalSetback(SOLDIERTYPE *pSoldier, UINT8 ubType,
+	INT32 sGridNo, UINT8 ubSeverity, UINT8 ubTurns);
+INT32 AITacticalSetbackPenalty(SOLDIERTYPE *pSoldier, INT32 sCandidateGridNo);
 
 // Functional command hierarchy. The visible rank ladder mirrors 1.13 EnemyRank.xml
 // (experience levels 1-10); GENERAL is reserved for exceptional explicit commanders.
@@ -576,6 +651,9 @@ INT32 AISupportRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT32 AIManeuverRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT32 sTargetSpot, INT8 bTargetLevel);
+UINT8 AIFireteamEffectiveFireSupport(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
+INT32 AISharedApproachPressure(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
+BOOLEAN AIBasicFireteamManeuverReady(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT8 AIEngagementRangeModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 UINT8 AITargetSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot);
 BOOLEAN AIFriendNeedsCoveringFire(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID);

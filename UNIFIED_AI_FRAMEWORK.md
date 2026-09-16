@@ -45,9 +45,13 @@ this framework, never merged wholesale.
    - FLANK, FALLBACK, DISENGAGE, RESCUE and CQB-style sequences can persist briefly.
    - plans are revalidated against fresh risk/battle state and are cancelled by emergencies/new information.
 
-9. **Shared spatial intelligence**
+9. **Shared spatial intelligence / local battlefield geometry**
    - candidate evaluation uses reusable features: cover, sight/prone cover, known-threat exposure,
      support, crowding, crossfire, range fit, smoke, mission progress, route exposure and inferred reaction risk.
+   - an 8-sector geometry model summarizes the primary/secondary known threat axes, local friendly
+     pressure, open left/right flanks, rear safety, and the weakest breakout direction.
+   - flank side selection, flank/fallback tile search, CQB position scoring and break-contact movement
+     consume the same geometry instead of maintaining separate directional heuristics.
    - full route analysis is allowed when it materially improves the decision.
    - analysis uses non-destructive path queries so evaluation does not corrupt execution state.
 
@@ -55,6 +59,10 @@ this framework, never merged wholesale.
     - movement that unexpectedly reveals new personal contacts invalidates the old movement commitment.
     - the soldier can hold, return to the last decision tile, seek cover, withdraw or make a lateral/backward move.
     - multi-angle visible pressure can also trigger repositioning when the geometry worsens.
+    - under multi-angle pressure, fallback/disengagement can search the weakest sector instead of assuming
+      the correct retreat direction is directly away from the closest opponent.
+    - remembered/heard contacts influence caution, but an encirclement conclusion requires personally visible
+      separated threat sectors.
     - the response is scored rather than hard-scripted; if no candidate is materially better, the soldier fights where he is.
 
 11. **Local fire plan**
@@ -64,12 +72,19 @@ this framework, never merged wholesale.
     - legacy Vengeance / 1.13 behaviours remain the execution library.
     - the planner decides when those behaviours are appropriate.
 
-13. **Execution friction**
+13. **Battle-local setback memory**
+    - genuinely bad tactical outcomes create short-lived local memory of the affected ground.
+    - surprise/encirclement tiles and exposure-rejected CQB approaches are remembered briefly.
+    - destination and route scoring penalize those areas while the memory decays.
+    - nearby members of the same fireteam may use the lesson at reduced strength; there is no sector-wide danger map.
+    - setback state is transient, identity/sector-bound, reset on load/rewind, and never creates opponent knowledge.
+
+14. **Execution friction**
     - lower-quality troops may fall back to a simpler legal action instead of executing
       the mathematically best complex plan.
 
-14. **Outcome feedback**
-    - Black Box records raw facts, candidate scores and selections; Companion reconstructs plans,
+15. **Outcome feedback**
+    - Black Box records raw facts, candidate scores, setback penalties and selections; Companion reconstructs plans,
       reasons and outcomes.
 
 ### Performance policy
@@ -98,12 +113,15 @@ The unified line now includes the professor-architecture foundation:
 
 - explicit legal contact beliefs with confidence/source/age;
 - shared spatial feature evaluation and utility scoring;
+- an 8-sector local battlefield geometry model with threat axes, open flanks, rear safety and weakest-sector breakout;
 - safe full-route exposure/reaction-risk analysis via `NO_COPYROUTE`;
-- fireteam-local task reservations;
-- identity-bound interruptible short plans;
-- contact-surprise and encirclement reassessment that can stop/reverse a bad advance;
+- geometry-driven flank selection and flank/fallback candidate scoring instead of random left/right tie-breaking;
+- fireteam-local task reservations, including CQB point/support entry claims;
+- identity-bound interruptible short plans, including a CQB wrapper owned/invalidation-controlled by the CQB planner;
+- contact-surprise and visible-encirclement reassessment that can stop/reverse a bad advance or break through the safer sector;
 - Black Box candidate/selection telemetry for surprise repositioning;
-- quickload/reset hardening for all new transient reasoning state.
+- short-lived fireteam-local setback memory so ambush tiles and rejected CQB approaches are not mechanically retried;
+- quickload/turn-rewind/reset hardening for all new transient reasoning state.
 
 The older tactical feature branches whose unique behavior was already represented on canonical were
 deleted after function-level review. Strategic reference branches remain only where the staging manifest

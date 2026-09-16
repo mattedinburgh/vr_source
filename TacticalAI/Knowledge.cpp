@@ -273,6 +273,16 @@ INT32 MostImportantNoiseHeard( SOLDIERTYPE *pSoldier, INT32 *piRetValue, BOOLEAN
 			iDistAway = SpacesAway(pSoldier->sGridNo,pSoldier->aiData.sNoiseGridno);
 			iNoiseValue = ((pSoldier->aiData.ubNoiseVolume / 2) - 6) * iDistAway;
 
+			// Correlate the sound with visually established contact memory.
+			// A matched sound also becomes short-lived anonymous directional evidence.
+			INT32 iMemoryRelevance = AIMemoryNoiseRelevance(
+				pSoldier, pSoldier->aiData.sNoiseGridno, pSoldier->bNoiseLevel);
+			iNoiseValue += iMemoryRelevance;
+			AIRegisterThreatNoiseEvidence(
+				pSoldier, pSoldier->aiData.sNoiseGridno,
+				pSoldier->bNoiseLevel, iMemoryRelevance,
+				pSoldier->aiData.ubNoiseVolume, FALSE);
+
 			if (iNoiseValue > iBestValue)
 			{
 				iBestValue = iNoiseValue;
@@ -300,6 +310,12 @@ INT32 MostImportantNoiseHeard( SOLDIERTYPE *pSoldier, INT32 *piRetValue, BOOLEAN
 				// calculate how far this noise was, and its relative "importance"
 				iDistAway = SpacesAway(pSoldier->sGridNo,*psNoiseGridNo);
 				iNoiseValue = ((*pubNoiseVolume / 2) - 6) * iDistAway;
+				INT32 iMemoryRelevance = AIMemoryNoiseRelevance(
+					pSoldier, *psNoiseGridNo, *pbNoiseLevel);
+				iNoiseValue += iMemoryRelevance;
+				AIRegisterThreatNoiseEvidence(
+					pSoldier, *psNoiseGridNo, *pbNoiseLevel,
+					iMemoryRelevance, *pubNoiseVolume, TRUE);
 
 				if (iNoiseValue > iBestValue)
 				{
@@ -312,6 +328,28 @@ INT32 MostImportantNoiseHeard( SOLDIERTYPE *pSoldier, INT32 *piRetValue, BOOLEAN
 
 	}
 	
+	// If every normal JA2 contact/noise cue has decayed, a combatant may
+	// still investigate the last visually established area for a limited time.
+	// Any fresh sound or heard/public contact above always outranks this memory.
+	if (TileIsOutOfBounds(sBestGridNo) && AICombatTeam(pSoldier))
+	{
+		AITHREATMEMORYCUE MemoryCue;
+		if (AIBuildThreatMemoryCue(pSoldier, &MemoryCue) &&
+			MemoryCue.ubConfidence >= 25)
+		{
+			sBestGridNo = MemoryCue.sGridNo;
+			bBestLevel = MemoryCue.bLevel;
+			iBestValue =
+				-80 +
+				(INT32)MemoryCue.ubConfidence / 2 -
+				(INT32)MemoryCue.ubAgeTurns * 2 +
+				(INT32)__min((UINT8)3, MemoryCue.ubMatchedMemories) * 6 +
+				__min((INT32)22,
+					(INT32)MemoryCue.ubCorroborationStrength / 4) +
+				2 * __min((UINT8)3, MemoryCue.ubCorroboratedCues);
+		}
+	}
+
 	if (!TileIsOutOfBounds(sBestGridNo) && pfReachable )
 	{
 		*pfReachable = TRUE;

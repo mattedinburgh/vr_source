@@ -126,6 +126,13 @@ $ownedDefinitions = [ordered]@{
     "AIKnownRouteExposureAcceptable"    = "AIUtils.cpp"
     "AIBuildContactBelief"              = "TacticalReasoning.cpp"
     "AIBuildPrimaryContactBelief"       = "TacticalReasoning.cpp"
+    "AIBuildThreatMemoryCue"            = "TacticalReasoning.cpp"
+    "AIMemoryNoiseRelevance"            = "TacticalReasoning.cpp"
+    "AIRegisterThreatNoiseEvidence"      = "TacticalReasoning.cpp"
+    "AIBuildTacticalGeometry"           = "TacticalReasoning.cpp"
+    "AIGeometryPositionScore"           = "TacticalReasoning.cpp"
+    "AIPreferredFlankAction"            = "TacticalReasoning.cpp"
+    "AIFireteamPreferredFlankAction"    = "TacticalReasoning.cpp"
     "AIEvaluateTacticalPosition"        = "TacticalReasoning.cpp"
     "AIScoreTacticalPosition"           = "TacticalReasoning.cpp"
     "AIReserveTacticalTask"             = "TacticalReasoning.cpp"
@@ -133,7 +140,11 @@ $ownedDefinitions = [ordered]@{
     "AIBeginShortPlan"                  = "TacticalReasoning.cpp"
     "AIGetShortPlan"                    = "TacticalReasoning.cpp"
     "AIObserveContactChange"            = "TacticalReasoning.cpp"
+    "AIRegisterTacticalSetback"           = "TacticalReasoning.cpp"
+    "AITacticalSetbackPenalty"            = "TacticalReasoning.cpp"
     "AIResetTacticalReasoningStateForLoad" = "TacticalReasoning.cpp"
+    "FindGeometryBreakoutSpot"          = "FindLocations.cpp"
+    "FindThreatSearchObservationSpot"   = "FindLocations.cpp"
     "DecideFireteamCohesionAction"      = "AIUtils.cpp"
     "DecideDisengagementAction"         = "DecideAction.cpp"
     "DecideSuppressionResponse"         = "DecideAction.cpp"
@@ -237,6 +248,11 @@ if (-not $cqbProjectText.Contains('ClInclude Include="CQBBuildingDoctrine.h"')) 
 if (-not $cqbText.Contains("VRAnalyticsBeginDecision") -or
     -not $cqbText.Contains("VRAnalyticsCommitDecision")) {
     Fail "Active CQB planner is not connected to canonical VRAnalytics telemetry."
+}
+if (-not $cqbText.Contains("AI_TASK_ENTRY_POINT") -or
+    -not $cqbText.Contains("AI_TASK_ENTRY_SUPPORT") -or
+    -not $cqbText.Contains("AI_SHORT_PLAN_CQB")) {
+    Fail "CQB planner is no longer integrated with shared reservations/short-plan state."
 }
 
 $redStart = $decideText.IndexOf("INT8 DecideActionRed(SOLDIERTYPE *pSoldier)")

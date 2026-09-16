@@ -48,6 +48,76 @@ The belief layer never estimates hidden current health, AP, stance, weapon, move
 current position. It is a normalized view over the existing JA2 information model, not a second
 perception system.
 
+## Decaying contact memory and evidence fusion
+
+The shared reasoning layer retains a short-lived, identity-bound memory of **visually established**
+last-known contact locations after normal JA2 opponent knowledge expires.
+
+Rules:
+- only visual knowledge refreshes an exact contact-memory location;
+- memory confidence decays every tactical turn and expires automatically;
+- personally established memory persists more strongly than public/team-reported visual memory;
+- reaching and visibly checking the remembered location sharply reduces or clears the hypothesis;
+- remembered locations may influence search, facing, route choice, flank evaluation and local geometry;
+- memory alone may **never** authorize aimed fire, grenades, exact unseen targeting, or an encirclement conclusion.
+
+Fresh legitimate miscellaneous noise is compared with remembered sectors. A sound from the same
+or adjacent direction, especially near the last-known area, receives a bounded investigation-priority
+boost. Matching evidence also creates a **short-lived anonymous directional threat cue**: up to three
+independent cues per observer, retained for at most four tactical turns. Cue strength is weighted by
+the volume actually heard, reduced for public/team-reported noise, and smeared into adjacent sectors
+when tactical geometry is rebuilt. This lets loud gunfire reinforce a remembered danger sector more
+than weak incidental noise without pretending the listener knows the shooter.
+
+This is **evidence fusion, not identification**. A corroborated cue:
+- may affect search priority, facing, route choice, flank side, fallback direction and CQB geometry;
+- may keep an unresolved remembered sector salient for a short time;
+- never assigns the sound to a specific unseen opponent;
+- never moves an old contact memory to the noise tile;
+- never authorizes aimed fire, grenades or exact unseen targeting;
+- never creates encirclement by itself, because encirclement still requires personal visible geometry.
+
+If no normal heard/public/noise cue remains, combatants may briefly investigate a sufficiently
+confident last-known visual area. A recently corroborated memory receives a small salience bonus,
+but fresh legal evidence always outranks this fallback memory.
+
+## Memory-driven search doctrine
+
+Expired contact knowledge may sustain a **search hypothesis**, never a firing solution.
+
+When a last-known contact remains unresolved:
+- the remembered grid defines an uncertainty area rather than an exact destination;
+- `FindThreatSearchObservationSpot` selects reachable covered positions that can observe/clear that area;
+- route exposure, cover, friendly support, crowding, doorway funnels, lighting and battlefield geometry all influence the observation point;
+- one investigator is normal; a second is permitted only for a sufficiently capable, supported fireteam and stronger/corroborated evidence;
+- other fireteam members reserve `AI_TASK_SEARCH_SUPPORT`, face the likely sector and preserve overwatch instead of following the investigators;
+- a compatible fresh sound can move the shared search focus and reduce uncertainty, but it remains anonymous directional evidence;
+- seeing the remembered area empty decays/clears the hypothesis;
+- CQB may use unresolved memory only for SECURE/HOLD/search positioning. It cannot promote stale memory into ASSAULT, COUNTERATTACK or an attack against an unseen opponent.
+
+Fresh ordinary JA2 sight/hearing knowledge always supersedes this weaker memory layer.
+
+## Battle-local setback memory fairness
+
+The AI may retain a short-lived memory that **its own recent tactical experience made a location undesirable**.
+This is outcome memory, not opponent knowledge.
+
+Current high-confidence producers are deliberately narrow:
+- a soldier personally reveals unexpected contacts / multi-angle danger while moving;
+- a CQB approach is rejected by the existing route-exposure safety logic;
+- a CQB route is locally unusable.
+
+The resulting setback:
+- stores only a grid, coarse reason/severity and expiry;
+- decays over a few tactical turns;
+- affects destination and route utility rather than authorizing an action;
+- can be reused only by the same soldier and nearby members of the same fireteam, at reduced strength;
+- is cleared on sector change, reasoning reset and abandoned-future turn rewinds;
+- never reveals who caused the setback, where an unseen opponent moved, or whether the danger still contains an enemy.
+
+Do not create setback memory from ordinary misses, random pathfinding failures or hidden opponent state.
+The purpose is to avoid mechanical repetition of clearly bad recent tactical choices, not to build a magical danger map.
+
 ## Surprise / encirclement fairness
 
 A contact-surprise event is permitted only when a combatant gains **personal current sight** of
@@ -60,9 +130,11 @@ The surprise tracker may remember:
 - coarse directions of those personally visible contacts;
 - legal known-threat exposure at the soldier's own position.
 
-It may not use hidden enemies to decide that a soldier is surrounded. Multi-angle or encirclement
-pressure is derived only from personally visible opponents. Public/radio knowledge can still affect
-ordinary tactical planning, but cannot manufacture a surprise reaction.
+It may not use hidden enemies to decide that a soldier is surrounded. The shared 8-sector geometry
+may use stale/heard/public contacts as lower-confidence pressure for ordinary caution, route choice,
+and flank evaluation, but **encirclement pressure requires personally visible multi-angle geometry**.
+Public/radio knowledge can therefore influence where a soldier prefers to move without manufacturing
+a false "I can see that I am surrounded" conclusion.
 
 ## Hard anti-cheat rules
 
@@ -97,6 +169,26 @@ Prefer existing JA2 concepts:
 - known-opponent distances
 
 Movement goals should select a better tactical position, not a hard-coded number of tiles backward.
+
+## Shared local battlefield geometry
+
+`AIBuildTacticalGeometry` converts legal contact beliefs and local friendly positions into an
+eight-direction tactical picture around the deciding soldier. It records pressure by direction,
+the primary/secondary known threat axes, strongest local friendly sector, left/right flank
+opportunity, rear safety, and the currently safest breakout direction.
+
+Opponent-sector pressure is confidence-weighted by the existing JA2 knowledge model. Friendly
+pressure for combat teams is fireteam-local, preventing sector-wide perfect coordination.
+
+The geometry layer may guide:
+- flank-side choice;
+- flank/fallback tile scoring;
+- CQB position utility;
+- surprise reassessment;
+- weakest-sector breakout under multi-angle pressure.
+
+A remembered contact may make a direction less attractive. It may not, by itself, create an
+encirclement state. That stronger conclusion requires personally visible, separated threat sectors.
 
 ## Implication for later chunks
 

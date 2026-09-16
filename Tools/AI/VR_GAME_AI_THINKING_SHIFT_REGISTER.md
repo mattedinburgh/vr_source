@@ -73,13 +73,16 @@ A real-looking squad should not consist of:
 
 Use local coordination:
 - shared intent;
+- shared decision frame (for example the fireteam's current attack axis);
 - roles;
 - claims;
 - reservations;
 - confidence;
 - legal public knowledge.
 
-Individuals retain local autonomy and emergency override.
+Shared intent alone is not enough. If several soldiers agree to flank but independently choose opposing sides, the team still behaves like isolated individuals. Coordinate the coarse frame first (hold/press/flank and, when relevant, centre/left/right), then let each actor choose its own legal route, position and execution details.
+
+Individuals retain local autonomy and emergency override. Surprise, collapse, personal danger and invalidated knowledge must be able to break the shared frame immediately.
 
 ---
 

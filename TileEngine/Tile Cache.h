@@ -11,9 +11,11 @@ typedef struct
 	CHAR8					zName[ 128 ];			// Name of tile ( filename and directory here )
 	CHAR8					zRootName[ 30 ];	// Root name
 	TILE_IMAGERY	*pImagery;				// Tile imagery
-	INT16					sHits;
+	INT16					sHits;				// Active reference count (legacy field name preserved)
 	UINT8					ubNumFrames;
 	INT16					sStructRefID;
+	UINT32					uiLastAccessTick;	// LRU ordering for resident-but-unreferenced tiles
+	UINT32					uiResidentBytes;	// Estimated resident renderer memory for this entry
 
 } TILE_CACHE_ELEMENT;
 
@@ -37,6 +39,9 @@ void DeleteTileCache( );
 INT32 GetCachedTile( const STR8 cFilename );
 
 BOOLEAN RemoveCachedTile( INT32 iCachedTile );
+
+// VHD residency is smoke-tested at startup; cache teardown precedes master JSD teardown.
+BOOLEAN RunVHDTileCacheSelfTest( const STR8 cFilename );
 
 STRUCTURE_FILE_REF *GetCachedTileStructureRefFromFilename( const STR8 cFilename );
 

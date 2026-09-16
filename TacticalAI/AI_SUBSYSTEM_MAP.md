@@ -11,12 +11,12 @@ implemented in several places or on several permanent branches.
 | --- | --- | --- |
 | Public AI interface | `TacticalAI/ai.h` | Declarations only; no second public AI header |
 | Shared evaluation/state | `TacticalAI/AIUtils.cpp` | Doctrine, command, fireteams, risk, battle state, route exposure, compatibility utility wrapper |
-| Shared tactical reasoning | `TacticalAI/TacticalReasoning.cpp` | Legal contact beliefs, spatial feature evaluation/scoring, task reservations, short plans, contact-change/surprise tracking |
+| Shared tactical reasoning | `TacticalAI/TacticalReasoning.cpp` | Legal contact beliefs, decaying visual memory, anonymous sound corroboration, 8-sector local battlefield geometry, battle-local setback memory, spatial feature evaluation/scoring, task reservations, short plans, contact-change/surprise tracking |
 | Decision orchestration | `TacticalAI/DecideAction.cpp` | Alert-state entry points, planner priority, suppression/contact-surprise responses, planner analytics adapters |
 | Casualty/medical AI | `TacticalAI/Medical.cpp` | Evacuation, medic rescue, buddy aid, self-aid |
 | Attack evaluation/execution helpers | `TacticalAI/Attacks.cpp` | Attack candidates and weapon-use execution support |
-| Movement candidate generation | `TacticalAI/FindLocations.cpp` | Cover/advance/retreat/flank location search |
-| CQB/building planner | `TacticalAI/CQBBuildingDoctrine.cpp/.h` | Building context/utility/action adapter; top-level priority remains owned by `DecideAction.cpp` |
+| Movement candidate generation | `TacticalAI/FindLocations.cpp` | Cover/advance/retreat/flank search plus weakest-sector geometry breakout search |
+| CQB/building planner | `TacticalAI/CQBBuildingDoctrine.cpp/.h` | Building context/utility/action adapter; consumes shared geometry, entry reservations and CQB short-plan state; top-level priority remains owned by `DecideAction.cpp` |
 | Shared analytics | `VRAnalytics.cpp`, `VRAnalytics.h` | Tactical + strategic Black Box event stream |
 | Architecture policy | `UNIFIED_AI_FRAMEWORK.md` | Single-source architecture and branch rules |
 | Strategic staged work | `Strategic/STRATEGIC_AI_STAGING_MANIFEST.md` | Inactive strategic-AI forward-port plan |
@@ -34,15 +34,19 @@ A behaviour may call helpers from several files, but it has exactly one orchestr
 | Fireteam identity/cohesion | `AIUtils.cpp` |
 | Tactical intent / role | `AIUtils.cpp` (persistent posture/role) + `TacticalReasoning.cpp` (short-plan/task state) |
 | Contact belief / uncertainty | `TacticalReasoning.cpp` |
+| Contact memory / sound evidence fusion | `TacticalReasoning.cpp`; `Knowledge.cpp` supplies only legitimate personal/public noise observations |
+| Local battlefield geometry | `TacticalReasoning.cpp` (threat/friendly sectors, remembered/corroborated danger, open flanks, safest direction, encirclement) |
+| Geometry-aware breakout search | `FindLocations.cpp::FindGeometryBreakoutSpot` |
 | Position utility / spatial features | `TacticalReasoning.cpp`; `AIUtils.cpp::AIUtilityPositionScore` is the compatibility wrapper |
+| Battle-local setback memory | `TacticalReasoning.cpp`; producers register only high-confidence local setbacks, shared position/route scoring consumes them |
 | Task reservations | `TacticalReasoning.cpp` |
 | Short tactical plans | `TacticalReasoning.cpp` |
 | Contact surprise / encirclement reassessment | `DecideAction.cpp` (decision) + `TacticalReasoning.cpp` (legal observation state) |
 | Disengagement / escape state | `DecideAction.cpp` (decision) + `AIUtils.cpp` (state/helpers) |
 | Suppression response | `DecideAction.cpp` |
 | Alert-state priority | `DecideAction.cpp` |
-| Flank decision gate | `DecideAction.cpp` |
-| Building/CQB behavior | `DecideAction.cpp` (priority) + `CQBBuildingDoctrine.cpp` (building planner) |
+| Flank decision gate | `DecideAction.cpp`; `TacticalReasoning.cpp::AIFireteamPreferredFlankAction` owns shared left/right attack-axis preference |
+| Building/CQB behavior | `DecideAction.cpp` (priority) + `CQBBuildingDoctrine.cpp` (building planner); shared task/short-plan primitives remain owned by `TacticalReasoning.cpp` |
 | Casualty response | `Medical.cpp` through `DecideCombatCasualtyResponse` |
 | Medic rescue | `Medical.cpp` |
 | Buddy aid | `Medical.cpp` |
@@ -112,7 +116,7 @@ Before merging an AI change:
 3. Confirm it uses only legal AI information.
 4. Place it deliberately in the decision priority.
 5. Reuse `VRAnalytics`; material position choices must expose candidate/selection evidence.
-6. Reuse `TacticalReasoning.cpp` for beliefs, spatial scoring, task claims and short plans instead of creating parallel state.
+6. Reuse `TacticalReasoning.cpp` for beliefs, spatial scoring, task claims, short plans and setback memory instead of creating parallel state.
 7. Run `Tools/AI/VERIFY_AI_INTEGRITY.ps1`.
 8. Run `Tools/AI/VERIFY_AI_BRANCH_CONSOLIDATION.ps1` when branch topology changed.
 9. Complete the canonical integration build.

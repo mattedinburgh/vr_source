@@ -158,35 +158,51 @@ void ProfileStatChange(MERCPROFILESTRUCT *pProfile, UINT8 ubStat, UINT16 usNumCh
 }
 
 
-// VR mastery learning curve.
-// Return value is in hundredths of a percent: 10000 = 100.00%, 100 = 1.00%.
-// Becoming competent should be comparatively easy; improvement slows sharply as a stat
-// approaches mastery. This depends only on CURRENT ability, never on how many points
-// the merc has already gained during the campaign.
+// VR competence-based stat growth curve.
+// Return value is in hundredths of a percent: 10000 = 100.00% of the normal JA2
+// learning probability. Values above 10000 provide a modest novice catch-up bonus.
+// The normal JA2 rule already slows improvement as current ability rises; this curve
+// accelerates only the basics, then adds diminishing returns for expertise and mastery.
+//
+// Methodology:
+//   - <= 30: 125% novice catch-up; basic competence should be learned quickly.
+//   - 30-60: smoothly taper the catch-up bonus back to the normal JA2 pace.
+//   - 60-70: normal JA2 progression, with no extra modifier.
+//   - 70-85: gentle diminishing returns.
+//   - 85-95: increasingly difficult expert progression.
+//   - 95-99: mastery progression becomes deliberately rare.
+//   - Use CURRENT effective competence only. Never penalize a merc because of how much
+//     that merc has already improved during this campaign.
+//   - Apply uniformly to every non-experience stat/skill. Experience level keeps its
+//     separate JA2 progression curve.
 static UINT16 StatGrowthMasteryMultiplier(UINT16 usRating)
 {
+	if (usRating <= 30)
+		return 12500;
+	if (usRating <= 40)
+		return (UINT16)(12500 - ((usRating - 30) * 1000) / 10); // 125% -> 115%
+	if (usRating <= 50)
+		return (UINT16)(11500 - ((usRating - 40) * 1000) / 10); // 115% -> 105%
 	if (usRating <= 60)
-		return 10000;
+		return (UINT16)(10500 - ((usRating - 50) * 500) / 10);  // 105% -> 100%
 	if (usRating <= 70)
-		return (UINT16)(10000 - ((usRating - 60) * 2000) / 10); // 100% -> 80%
+		return 10000;
 	if (usRating <= 75)
-		return (UINT16)(8000 - ((usRating - 70) * 1500) / 5);   // 80% -> 65%
+		return (UINT16)(10000 - ((usRating - 70) * 1000) / 5); // 100% -> 90%
 	if (usRating <= 80)
-		return (UINT16)(6500 - ((usRating - 75) * 2000) / 5);   // 65% -> 45%
+		return (UINT16)(9000 - ((usRating - 75) * 1000) / 5);  // 90% -> 80%
 	if (usRating <= 85)
-		return (UINT16)(4500 - ((usRating - 80) * 1700) / 5);   // 45% -> 28%
+		return (UINT16)(8000 - ((usRating - 80) * 1500) / 5);  // 80% -> 65%
 	if (usRating <= 90)
-		return (UINT16)(2800 - ((usRating - 85) * 1400) / 5);   // 28% -> 14%
-	if (usRating <= 92)
-		return (UINT16)(1400 - ((usRating - 90) * 400) / 2);    // 14% -> 10%
+		return (UINT16)(6500 - ((usRating - 85) * 2000) / 5);  // 65% -> 45%
 	if (usRating <= 95)
-		return (UINT16)(1000 - ((usRating - 92) * 500) / 3);    // 10% -> 5%
-	if (usRating <= 97)
-		return (UINT16)(500 - ((usRating - 95) * 250) / 2);     // 5% -> 2.5%
+		return (UINT16)(4500 - ((usRating - 90) * 2000) / 5);  // 45% -> 25%
+	if (usRating <= 98)
+		return (UINT16)(2500 - ((usRating - 95) * 1500) / 3);  // 25% -> 10%
 	if (usRating <= 99)
-		return (UINT16)(250 - ((usRating - 97) * 150) / 2);     // 2.5% -> 1%
+		return (UINT16)(1000 - ((usRating - 98) * 500));       // 10% -> 5%
 
-	return 100;
+	return 500;
 }
 
 void ProcessStatChange(MERCPROFILESTRUCT *pProfile, UINT8 ubStat, UINT16 usNumChances, UINT8 ubReason)
@@ -372,10 +388,10 @@ void ProcessStatChange(MERCPROFILESTRUCT *pProfile, UINT8 ubStat, UINT16 usNumCh
 
 			BOOLEAN fStatGainRollSuccess = FALSE;
 
-			// VR: NEW_STAT_GAIN_MODE now means a smooth mastery curve based on CURRENT
-			// ability. Do not punish a merc simply because he has already improved a lot
-			// in this campaign. Experience level retains its own existing progression curve
-			// (chance falls by level and subpoints required rise with level).
+			// VR: NEW_STAT_GAIN_MODE uses the competence-based progression methodology
+			// for every non-experience stat/skill. The normal JA2 probability remains the
+			// baseline; the mastery multiplier only adds diminishing returns at high current
+			// competence. Experience level retains its own progression curve.
 			if (gGameExternalOptions.fNewStatGainMode && ubStat != EXPERAMT && usChance > 0)
 			{
 				UINT16 usEffectiveRating = (UINT16)(bCurrentRating + (*psStatGainPtr / usSubpointsPerPoint));

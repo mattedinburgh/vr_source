@@ -2750,6 +2750,22 @@ INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction )
 	BOOLEAN fCurrentWithdrawSightCover = FALSE;
 	INT32 iCurrentWithdrawSupport = 0;
 	INT8 bCurrentWithdrawRangePreference = 0;
+	AITACTICALGEOMETRY TacticalGeometry;
+	const BOOLEAN fHasTacticalGeometry =
+		AIBuildTacticalGeometry(pSoldier, pSoldier->sGridNo, &TacticalGeometry);
+
+	INT8 bGeometryIntent = AI_INTENT_PRESS;
+	INT8 bGeometryRole = AI_ROLE_MANEUVER;
+	if (bAction == AI_ACTION_FLANK_LEFT || bAction == AI_ACTION_FLANK_RIGHT)
+	{
+		bGeometryIntent = AI_INTENT_FLANK;
+		bGeometryRole = AI_ROLE_FLANKER;
+	}
+	else if (bAction == AI_ACTION_WITHDRAW)
+	{
+		bGeometryIntent = AI_INTENT_FALLBACK;
+		bGeometryRole = AI_ROLE_SCREEN;
+	}
 	if (bAction == AI_ACTION_WITHDRAW)
 	{
 		fCurrentWithdrawCover = AnyCoverAtSpot(pSoldier, pSoldier->sGridNo);
@@ -2952,6 +2968,15 @@ INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction )
 			{
 				sTempDist += AICrossfirePositionScore(pSoldier, sGridNo, sPos);
 			}
+
+			// Shared geometry shapes the tile search itself: flank/fallback positions
+			// prefer the safe/open side of the local battle rather than distance alone.
+			if (fHasTacticalGeometry)
+			{
+				sTempDist += AIGeometryPositionScore(
+					pSoldier, &TacticalGeometry, sGridNo, sPos,
+					bGeometryIntent, bGeometryRole);
+			}
 			// if this is better than the best place found so far
 			if ( sTempDist > sBestDist )
 			{
@@ -2969,6 +2994,412 @@ INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction )
 
 	return( sBestSpot );
 }
+
+INT32 FindGeometryBreakoutSpot(SOLDIERTYPE *pSoldier, INT32 sThreatSpot)
+{
+	if (!pSoldier || !AICombatTeam(pSoldier) ||
+		TileIsOutOfBounds(pSoldier->sGridNo))
+	{
+		return NOWHERE;
+	}
+
+	if (TileIsOutOfBounds(sThreatSpot))
+		sThreatSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+
+	AITACTICALGEOMETRY Geometry;
+	if (!AIBuildTacticalGeometry(
+		pSoldier, pSoldier->sGridNo, &Geometry) ||
+		Geometry.ubSafestDirection >= NUM_WORLD_DIRECTIONS)
+	{
+		return NOWHERE;
+	}
+
+	const INT32 iSearchRange = __max(4, TACTICAL_RANGE / 4);
+	const INT16 sMaxLeft = min(iSearchRange, (pSoldier->sGridNo % MAXCOL));
+	const INT16 sMaxRight = min(iSearchRange,
+		MAXCOL - ((pSoldier->sGridNo % MAXCOL) + 1));
+	const INT16 sMaxUp = min(iSearchRange, (pSoldier->sGridNo / MAXROW));
+	const INT16 sMaxDown = min(iSearchRange,
+		MAXROW - ((pSoldier->sGridNo / MAXROW) + 1));
+
+	const INT16 sOldAPBudget = gubNPCAPBudget;
+	const UINT8 ubOldDistLimit = gubNPCDistLimit;
+	gubNPCAPBudget = min(pSoldier->bInitialActionPoints, APBPConstants[AP_MAXIMUM]);
+	gubNPCDistLimit = (UINT8)iSearchRange;
+
+	for (INT16 sYOffset = -sMaxUp; sYOffset <= sMaxDown; ++sYOffset)
+	{
+		for (INT16 sXOffset = -sMaxLeft; sXOffset <= sMaxRight; ++sXOffset)
+		{
+			const INT32 sGridNo =
+				pSoldier->sGridNo + sXOffset + MAXCOL * sYOffset;
+			if (sGridNo >= 0 && sGridNo < WORLD_MAX)
+				gpWorldLevelData[sGridNo].uiFlags &= ~(MAPELEMENT_REACHABLE);
+		}
+	}
+
+	FindBestPath(
+		pSoldier, GRIDSIZE, pSoldier->pathing.bLevel,
+		DetermineMovementMode(pSoldier, AI_ACTION_WITHDRAW),
+		COPYREACHABLE, 0);
+	gpWorldLevelData[pSoldier->sGridNo].uiFlags &= ~(MAPELEMENT_REACHABLE);
+
+	const UINT8 ubTopCount = 4;
+	INT32 sTopSpot[ubTopCount] = { NOWHERE, NOWHERE, NOWHERE, NOWHERE };
+	INT32 iTopCheapScore[ubTopCount] =
+		{ -1000000, -1000000, -1000000, -1000000 };
+
+	const INT32 iCurrentThreatDistance =
+		TileIsOutOfBounds(sThreatSpot) ? 0 :
+		PythSpacesAway(pSoldier->sGridNo, sThreatSpot);
+
+	for (INT16 sYOffset = -sMaxUp; sYOffset <= sMaxDown; ++sYOffset)
+	{
+		for (INT16 sXOffset = -sMaxLeft; sXOffset <= sMaxRight; ++sXOffset)
+		{
+			const INT32 sGridNo =
+				pSoldier->sGridNo + sXOffset + MAXCOL * sYOffset;
+			if (sGridNo < 0 || sGridNo >= WORLD_MAX ||
+				!(gpWorldLevelData[sGridNo].uiFlags & MAPELEMENT_REACHABLE) ||
+				sGridNo == pSoldier->pathing.sBlackList)
+			{
+				continue;
+			}
+
+			if (InGas(pSoldier, sGridNo) ||
+				RedSmokeDanger(sGridNo, pSoldier->pathing.bLevel) ||
+				FindBombNearby(pSoldier, sGridNo, BOMB_DETECTION_RANGE))
+			{
+				continue;
+			}
+
+			if (DeepWater(sGridNo, pSoldier->pathing.bLevel) &&
+				!DeepWater(pSoldier->sGridNo, pSoldier->pathing.bLevel))
+			{
+				continue;
+			}
+
+			UINT8 ubMoveDir = AIDirection(pSoldier->sGridNo, sGridNo);
+			if (ubMoveDir >= NUM_WORLD_DIRECTIONS)
+				continue;
+
+			UINT8 ubDirDelta =
+				(UINT8)abs((INT32)ubMoveDir -
+					(INT32)Geometry.ubSafestDirection);
+			ubDirDelta = __min(
+				ubDirDelta,
+				(UINT8)(NUM_WORLD_DIRECTIONS - ubDirDelta));
+
+			// Prefer the weakest sector and its immediate neighbors. Under genuine
+			// encirclement allow a wider lateral exit because "straight back" can be
+			// exactly where the second threat axis lies.
+			const UINT8 ubMaxDelta =
+				Geometry.fEncirclementPressure ? 2 : 1;
+			if (ubDirDelta > ubMaxDelta)
+				continue;
+
+			if (!TileIsOutOfBounds(sThreatSpot))
+			{
+				const INT32 iCandidateThreatDistance =
+					PythSpacesAway(sGridNo, sThreatSpot);
+
+				// A breakout may be lateral, but should not deliberately close several
+				// tiles toward the principal known threat.
+				if (iCandidateThreatDistance + 1 < iCurrentThreatDistance)
+					continue;
+			}
+
+			const UINT16 usExposure = AIKnownThreatExposure(
+				pSoldier, sGridNo, pSoldier->pathing.bLevel);
+
+			INT32 iCheapScore = AIGeometryPositionScore(
+				pSoldier, &Geometry, sGridNo, sThreatSpot,
+				AI_INTENT_FALLBACK, AI_ROLE_SCREEN);
+
+			iCheapScore -= __min((INT32)55, (INT32)usExposure / 3);
+			iCheapScore -= 12 * (INT32)ubDirDelta;
+			iCheapScore += 2 * PythSpacesAway(
+				pSoldier->sGridNo, sGridNo);
+
+			if (AnyCoverAtSpot(pSoldier, sGridNo))
+				iCheapScore += 24;
+			if (SightCoverAtSpot(pSoldier, sGridNo, FALSE))
+				iCheapScore += 18;
+			if (InSmoke(sGridNo, pSoldier->pathing.bLevel))
+				iCheapScore += 8;
+
+			iCheapScore += 6 * __min(
+				(INT32)3,
+				(INT32)AICountNearbyOperationalFriends(
+					pSoldier, sGridNo, DAY_VISION_RANGE / 3));
+
+			for (UINT8 ubSlot = 0; ubSlot < ubTopCount; ++ubSlot)
+			{
+				if (iCheapScore <= iTopCheapScore[ubSlot])
+					continue;
+
+				for (INT8 bMove = (INT8)ubTopCount - 1;
+					bMove > (INT8)ubSlot; --bMove)
+				{
+					iTopCheapScore[bMove] = iTopCheapScore[bMove - 1];
+					sTopSpot[bMove] = sTopSpot[bMove - 1];
+				}
+
+				iTopCheapScore[ubSlot] = iCheapScore;
+				sTopSpot[ubSlot] = sGridNo;
+				break;
+			}
+		}
+	}
+
+	gubNPCAPBudget = sOldAPBudget;
+	gubNPCDistLimit = ubOldDistLimit;
+
+	INT32 sBestSpot = NOWHERE;
+	INT32 iBestDetailedScore = -10000;
+
+	for (UINT8 ubSlot = 0; ubSlot < ubTopCount; ++ubSlot)
+	{
+		if (TileIsOutOfBounds(sTopSpot[ubSlot]))
+			continue;
+
+		if (!AIKnownRouteExposureAcceptable(
+			pSoldier, sTopSpot[ubSlot], AI_ACTION_WITHDRAW,
+			190, 100, 120))
+		{
+			continue;
+		}
+
+		const INT32 iDetailedScore = AIUtilityPositionScore(
+			pSoldier, sTopSpot[ubSlot], sThreatSpot,
+			AI_INTENT_FALLBACK, AI_ROLE_SCREEN);
+
+		if (iDetailedScore > iBestDetailedScore)
+		{
+			iBestDetailedScore = iDetailedScore;
+			sBestSpot = sTopSpot[ubSlot];
+		}
+	}
+
+	return sBestSpot;
+}
+
+INT32 FindThreatSearchObservationSpot(SOLDIERTYPE *pSoldier, INT32 sEvidenceSpot,
+	INT8 bEvidenceLevel, UINT8 ubUncertaintyRadius)
+{
+	if (!pSoldier || !AICombatTeam(pSoldier) ||
+		TileIsOutOfBounds(sEvidenceSpot) ||
+		bEvidenceLevel != pSoldier->pathing.bLevel)
+	{
+		return NOWHERE;
+	}
+
+	const INT32 iRadius = __max(2, __min(7, (INT32)ubUncertaintyRadius));
+	const INT32 iPreferredStandOff = __max(3, __min(6, 2 + iRadius / 2));
+	const INT32 iSearchRadius = iRadius + 2;
+	const INT16 sCenterX = (INT16)(sEvidenceSpot % MAXCOL);
+	const INT16 sCenterY = (INT16)(sEvidenceSpot / MAXCOL);
+
+	const UINT8 ubTopCount = 6;
+	INT32 sTopSpot[ubTopCount] =
+		{ NOWHERE, NOWHERE, NOWHERE, NOWHERE, NOWHERE, NOWHERE };
+	INT32 iTopScore[ubTopCount] =
+		{ -1000000, -1000000, -1000000, -1000000, -1000000, -1000000 };
+
+	AITACTICALGEOMETRY Geometry;
+	const BOOLEAN fHasGeometry =
+		AIBuildTacticalGeometry(pSoldier, pSoldier->sGridNo, &Geometry);
+
+	UINT8 ubApproachDir =
+		AIDirection(sEvidenceSpot, pSoldier->sGridNo);
+	INT8 bArcOffset = 0;
+	switch (pSoldier->ubID % 3)
+	{
+	case 0: bArcOffset = -1; break;
+	case 2: bArcOffset = 1; break;
+	default: break;
+	}
+	UINT8 ubPreferredArc = ubApproachDir;
+	if (ubApproachDir < NUM_WORLD_DIRECTIONS)
+	{
+		INT32 iDir = ((INT32)ubApproachDir + bArcOffset) % NUM_WORLD_DIRECTIONS;
+		if (iDir < 0) iDir += NUM_WORLD_DIRECTIONS;
+		ubPreferredArc = (UINT8)iDir;
+	}
+
+	for (INT16 sYOffset = -iSearchRadius; sYOffset <= iSearchRadius; ++sYOffset)
+	{
+		const INT16 sY = sCenterY + sYOffset;
+		if (sY < 0 || sY >= MAXROW)
+			continue;
+
+		for (INT16 sXOffset = -iSearchRadius; sXOffset <= iSearchRadius; ++sXOffset)
+		{
+			const INT16 sX = sCenterX + sXOffset;
+			if (sX < 0 || sX >= MAXCOL)
+				continue;
+
+			const INT32 sCandidate = sY * MAXCOL + sX;
+			if (sCandidate == sEvidenceSpot ||
+				sCandidate == pSoldier->sGridNo ||
+				!NewOKDestination(pSoldier, sCandidate, FALSE, pSoldier->pathing.bLevel))
+			{
+				continue;
+			}
+
+			const INT32 iEvidenceDistance =
+				PythSpacesAway(sCandidate, sEvidenceSpot);
+			if (iEvidenceDistance < 2 ||
+				iEvidenceDistance > iSearchRadius)
+			{
+				continue;
+			}
+
+			if (InGas(pSoldier, sCandidate) ||
+				RedSmokeDanger(sCandidate, pSoldier->pathing.bLevel) ||
+				FindBombNearby(pSoldier, sCandidate, BOMB_DETECTION_RANGE))
+			{
+				continue;
+			}
+
+			if (DeepWater(sCandidate, pSoldier->pathing.bLevel) &&
+				!DeepWater(pSoldier->sGridNo, pSoldier->pathing.bLevel))
+			{
+				continue;
+			}
+
+			INT32 iScore = 0;
+
+			const BOOLEAN fCover = AnyCoverAtSpot(pSoldier, sCandidate);
+			const BOOLEAN fSightCover =
+				SightCoverAtSpot(pSoldier, sCandidate, FALSE);
+			const BOOLEAN fProneCover =
+				ProneSightCoverAtSpot(pSoldier, sCandidate, FALSE);
+
+			if (fCover) iScore += 30;
+			if (fSightCover) iScore += 24;
+			if (fProneCover) iScore += 6;
+			if (!fCover && !fSightCover) iScore -= 20;
+
+			// Search positions should observe the hypothesis, not stand on it.
+			if (LocationToLocationLineOfSightTest(
+				sCandidate, pSoldier->pathing.bLevel,
+				sEvidenceSpot, bEvidenceLevel,
+				TRUE, CALC_FROM_ALL_DIRS))
+			{
+				iScore += 34;
+			}
+			else
+			{
+				iScore -= 14;
+			}
+
+			iScore -= 5 * abs(iEvidenceDistance - iPreferredStandOff);
+
+			const UINT16 usExposure = AIKnownThreatExposure(
+				pSoldier, sCandidate, pSoldier->pathing.bLevel);
+			iScore -= __min((INT32)60, (INT32)usExposure / 3);
+
+			const UINT8 ubSupport = AICountNearbyOperationalFriends(
+				pSoldier, sCandidate, DAY_VISION_RANGE / 3);
+			iScore += 7 * __min((UINT8)3, ubSupport);
+
+			const UINT8 ubAdjacent =
+				NumberOfTeamMatesAdjacent(pSoldier, sCandidate);
+			if (ubAdjacent > 1)
+				iScore -= 12 * ((INT32)ubAdjacent - 1);
+
+			if (CheckDoorAtGridno((UINT32)sCandidate))
+				iScore -= 35;
+			else if (CheckDoorNearGridno((UINT32)sCandidate))
+				iScore -= 8;
+
+			if (InLightAtNight(sCandidate, pSoldier->pathing.bLevel) &&
+				!fSightCover)
+			{
+				iScore -= 12;
+			}
+
+			UINT8 ubCandidateArc =
+				AIDirection(sEvidenceSpot, sCandidate);
+			if (ubPreferredArc < NUM_WORLD_DIRECTIONS &&
+				ubCandidateArc < NUM_WORLD_DIRECTIONS)
+			{
+				UINT8 ubDelta =
+					(UINT8)abs((INT32)ubCandidateArc - (INT32)ubPreferredArc);
+				ubDelta = __min(
+					ubDelta,
+					(UINT8)(NUM_WORLD_DIRECTIONS - ubDelta));
+				iScore += __max(-10, 12 - 6 * (INT32)ubDelta);
+			}
+
+			if (fHasGeometry)
+			{
+				iScore += AIGeometryPositionScore(
+					pSoldier, &Geometry, sCandidate, sEvidenceSpot,
+					AI_INTENT_HOLD, AI_ROLE_MANEUVER);
+			}
+
+			for (UINT8 ubSlot = 0; ubSlot < ubTopCount; ++ubSlot)
+			{
+				if (iScore <= iTopScore[ubSlot])
+					continue;
+
+				for (INT8 bMove = (INT8)ubTopCount - 1;
+					bMove > (INT8)ubSlot; --bMove)
+				{
+					iTopScore[bMove] = iTopScore[bMove - 1];
+					sTopSpot[bMove] = sTopSpot[bMove - 1];
+				}
+
+				iTopScore[ubSlot] = iScore;
+				sTopSpot[ubSlot] = sCandidate;
+				break;
+			}
+		}
+	}
+
+	INT32 sBestSpot = NOWHERE;
+	INT32 iBestScore = -1000000;
+	const UINT16 usMovementMode =
+		DetermineMovementMode(pSoldier, AI_ACTION_SEEK_NOISE);
+
+	for (UINT8 ubSlot = 0; ubSlot < ubTopCount; ++ubSlot)
+	{
+		const INT32 sCandidate = sTopSpot[ubSlot];
+		if (TileIsOutOfBounds(sCandidate))
+			continue;
+
+		const INT32 iRouteCost =
+			AIPathExposureCost(pSoldier, sCandidate, usMovementMode);
+		if (iRouteCost >= 10000)
+			continue;
+
+		if (!AIKnownRouteExposureAcceptable(
+			pSoldier, sCandidate, AI_ACTION_SEEK_NOISE,
+			150, 80, 95))
+		{
+			continue;
+		}
+
+		INT32 iDetailedScore =
+			iTopScore[ubSlot] -
+			__min((INT32)55, iRouteCost / 7);
+
+		iDetailedScore += AIUtilityPositionScore(
+			pSoldier, sCandidate, sEvidenceSpot,
+			AI_INTENT_HOLD, AI_ROLE_MANEUVER) / 3;
+
+		if (iDetailedScore > iBestScore)
+		{
+			iBestScore = iDetailedScore;
+			sBestSpot = sCandidate;
+		}
+	}
+
+	return sBestSpot;
+}
+
 
 INT32 FindClosestClimbPoint (SOLDIERTYPE *pSoldier, BOOLEAN fClimbUp )
 {
