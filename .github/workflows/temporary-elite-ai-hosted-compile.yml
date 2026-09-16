@@ -1,0 +1,35 @@
+name: temporary-elite-ai-hosted-compile
+
+on:
+  push:
+    branches:
+      - ai/elite-local-hivemind-2026
+  workflow_dispatch:
+
+concurrency:
+  group: temporary-elite-ai-hosted-compile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hosted-compile:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Generate VR build info
+        shell: powershell
+        run: |
+          & '.\\GENERATE_VR_BUILD_INFO.ps1' -RepoRoot '.' -OutputPath '.\\.generated\\VRBuildInfo.generated.h' -Configuration 'Release' -Platform 'Win32' -TargetName 'JA2_EN_Release.exe'
+
+      - name: Compile translation units
+        shell: powershell
+        run: |
+          msbuild '.\\ja2_VS2013.vcxproj' /m /t:ClCompile /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
