@@ -327,15 +327,15 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			continue;
 
 		INT8 bThreatKnowledge = Knowledge(pSoldier, pThreat->ubID);
-		if (CONSIDERED_NEUTRAL(pSoldier, pThreat) ||
-			pSoldier->bSide == pThreat->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pThreat->ubProfile != SLAY) ||
-			(gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pThreat->IsBoxer()) ||
-			pThreat->ubBodyType == CROW)
+		if (fThreatStateKnown &&
+			(CONSIDERED_NEUTRAL(pSoldier, pThreat) ||
+			 pSoldier->bSide == pThreat->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pThreat->ubProfile != SLAY) ||
+			 (gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pThreat->IsBoxer()) ||
+			 pThreat->ubBodyType == CROW))
 		{
 			continue;
 		}
-
 		BOOLEAN fRecentKnowledge =
 			bThreatKnowledge == SEEN_CURRENTLY ||
 			bThreatKnowledge == SEEN_THIS_TURN ||
@@ -385,18 +385,18 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		bPersonalKnowledge = PersonalKnowledge(pSoldier, pOpponent->ubID);
 		bPublicKnowledge = PublicKnowledge(pSoldier->bTeam, pOpponent->ubID);
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			(gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
-			pOpponent->ubBodyType == CROW)
-		{
-			continue;
-		}
-
 		const BOOLEAN fDirectVisualContact =
 			(bPersonalKnowledge == SEEN_CURRENTLY) &&
 			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 (gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
+			 pOpponent->ubBodyType == CROW))
+		{
+			continue;
+		}
 		const BOOLEAN fCurrentTeamReport = (bPublicKnowledge == SEEN_CURRENTLY);
 		const BOOLEAN fCurrentContact = fDirectVisualContact || fCurrentTeamReport;
 		if (fDirectVisualContact && !ValidOpponent(pSoldier, pOpponent))
