@@ -5168,6 +5168,14 @@ BOOLEAN AISharedFireteamContact(SOLDIERTYPE *pSoldier, INT32 *psGridNo,
 				iConfidence = 90;
 			else if (bKnowledge == SEEN_LAST_TURN)
 				iConfidence = 70;
+			else if (bKnowledge == SEEN_2_TURNS_AGO)
+				iConfidence = 50;
+			else if (bKnowledge == HEARD_THIS_TURN)
+				iConfidence = 55;
+			else if (bKnowledge == HEARD_LAST_TURN)
+				iConfidence = 38;
+			else if (bKnowledge == HEARD_2_TURNS_AGO)
+				iConfidence = 22;
 			else
 				continue;
 
