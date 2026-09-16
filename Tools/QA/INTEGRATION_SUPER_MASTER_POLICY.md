@@ -17,15 +17,20 @@ explicitly requested automated refresh.
 
 Never integrate from a dirty feature checkout or from `00000` when it contains active stream edits,
 IDE retargeting, build outputs, or generated files. Use clean stream worktrees and disposable QA worktrees.
+
 ## Integration method
 
 1. Run `AUDIT_INTEGRATION_BRANCHES.ps1` to classify streams as AHEAD, DIVERGED, ALIGNED, or CONTAINED.
 2. DIVERGED streams must be forward-ported onto the pinned canonical baseline before integration.
-3. Run `TEST_INTEGRATION_CANDIDATE.ps1` on every AHEAD stream individually.
-4. Run `TEST_INTEGRATION_BATCH.ps1` on the exact intended merge set and merge order. The gate resolves every candidate ref to an immutable SHA before testing and merges those SHAs, so parallel workstreams cannot move underneath the batch.
-5. Only after both static gates pass may the set be considered merge-eligible.
-6. A successful compile/build is still required before anything is called playtest-ready.
-7. Preserve a rollback anchor before broad or high-risk integration.
+3. Run `TEST_INTEGRATION_BATCH.ps1` once with the exact intended candidate set and merge order. This is now the single integration gate:
+   - it resolves every candidate ref to an immutable SHA before testing;
+   - it runs the full individual candidate gate for each item against the pinned canonical baseline;
+   - it then merges that same candidate into a cumulative disposable batch worktree;
+   - it waits 60 seconds between completed batch items by default (`-InterItemDelaySeconds 60`), with no delay before the first item or after the last;
+   - after all items pass, it runs the final combined static gate over the full cumulative batch.
+4. Only after the unified gate passes may the set be considered merge-eligible.
+5. A successful compile/build is still required before anything is called playtest-ready.
+6. Preserve a rollback anchor before broad or high-risk integration.
 
 A clean textual merge is necessary but not sufficient. Behavioural overlap in tactical AI, LOS, weapons,
 physics, rendering, inventory, audio, progression, and UI requires subsystem-specific regression checks.
@@ -38,6 +43,7 @@ physics, rendering, inventory, audio, progression, and UI requires subsystem-spe
 - Tactical-AI changes that fail the unified AI integrity audit.
 - Strategic/campaign-layer changes unless Matt explicitly requested them.
 - Candidate history that is not based on the pinned canonical tip.
+- Duplicate candidate SHAs in the same batch.
 
 ## Ownership boundary
 
