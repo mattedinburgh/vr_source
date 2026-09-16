@@ -5066,34 +5066,86 @@ BOOLEAN AISharedFireteamContact(SOLDIERTYPE *pSoldier, INT32 *psGridNo,
 	if (pubConfidence) *pubConfidence = 0;
 
 	if (!pSoldier || !AICombatTeam(pSoldier) ||
-		!pSoldier->bActive || !pSoldier->bInSector)
+		!pSoldier->bActive || !pSoldier->bInSector ||
+		pSoldier->ubID >= MAX_NUM_SOLDIERS)
 	{
 		return FALSE;
+	}
+
+	const INT32 iCommRadius = __max(8, DAY_VISION_RANGE);
+	const UINT8 ubMaxRelayHops = 2;
+	UINT8 ubCommHops[MAX_NUM_SOLDIERS];
+	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
+		ubCommHops[i] = 255;
+	ubCommHops[pSoldier->ubID] = 0;
+
+	// Build a small connected communication graph. Information can relay through at
+	// most two healthy fireteam members, so a cohesive local element shares a picture
+	// while separated elements never become a sector-wide telepathic network.
+	for (UINT8 ubHop = 0; ubHop < ubMaxRelayHops; ++ubHop)
+	{
+		for (UINT8 ubCandidateID = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+			ubCandidateID <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++ubCandidateID)
+		{
+			SOLDIERTYPE *pCandidate = MercPtrs[ubCandidateID];
+			if (!pCandidate || pCandidate->ubID >= MAX_NUM_SOLDIERS ||
+				ubCommHops[pCandidate->ubID] != 255 ||
+				!pCandidate->bActive || !pCandidate->bInSector ||
+				pCandidate->stats.bLife < OKLIFE || pCandidate->bCollapsed ||
+				pCandidate->bBreathCollapsed ||
+				(pCandidate->usSoldierFlagMask & SOLDIER_POW) ||
+				(pCandidate->flags.uiStatusFlags & SOLDIER_COWERING) ||
+				AIDisengagementActive(pCandidate) || AIEscapeActive(pCandidate) ||
+				!AISameFireteam(pSoldier, pCandidate))
+			{
+				continue;
+			}
+
+			for (UINT8 ubRelayID = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+				ubRelayID <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++ubRelayID)
+			{
+				SOLDIERTYPE *pRelay = MercPtrs[ubRelayID];
+				if (!pRelay || pRelay->ubID >= MAX_NUM_SOLDIERS ||
+					ubCommHops[pRelay->ubID] != ubHop ||
+					!pRelay->bActive || !pRelay->bInSector ||
+					pRelay->stats.bLife < OKLIFE || pRelay->bCollapsed ||
+					pRelay->bBreathCollapsed ||
+					(pRelay->usSoldierFlagMask & SOLDIER_POW) ||
+					(pRelay->flags.uiStatusFlags & SOLDIER_COWERING) ||
+					!AISameFireteam(pSoldier, pRelay))
+				{
+					continue;
+				}
+
+				if (PythSpacesAway(pRelay->sGridNo, pCandidate->sGridNo) <= iCommRadius)
+				{
+					ubCommHops[pCandidate->ubID] = ubHop + 1;
+					break;
+				}
+			}
+		}
 	}
 
 	INT32 sBestGrid = NOWHERE;
 	INT8 bBestLevel = 0;
 	UINT8 ubBestConfidence = 0;
 	INT32 iBestScore = -1000000;
-	const INT32 iCommRadius = __max(8, DAY_VISION_RANGE);
 
 	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
 	{
 		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
-		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
-			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
+		if (!pFriend || pFriend->ubID >= MAX_NUM_SOLDIERS ||
+			ubCommHops[pFriend->ubID] == 255 ||
+			ubCommHops[pFriend->ubID] > ubMaxRelayHops ||
+			!pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed ||
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
-			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
-			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend) ||
-			!AISameFireteam(pSoldier, pFriend))
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING))
 		{
 			continue;
 		}
-
-		INT32 iFriendDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
-		if (iFriendDistance > iCommRadius)
-			continue;
 
 		for (UINT16 uiOpponent = 0; uiOpponent < TOTAL_SOLDIERS; ++uiOpponent)
 		{
@@ -5121,12 +5173,15 @@ BOOLEAN AISharedFireteamContact(SOLDIERTYPE *pSoldier, INT32 *psGridNo,
 				continue;
 
 			INT8 bKnownLevel = KnownPersonalLevel(pFriend, (UINT8)uiOpponent);
-			iConfidence -= __min((INT32)20, iFriendDistance);
+			iConfidence -= 8 * (INT32)ubCommHops[pFriend->ubID];
+			iConfidence -= __min((INT32)12,
+				PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) / 2);
 			if (bKnownLevel != pSoldier->pathing.bLevel)
-				iConfidence -= 10;
+				iConfidence -= 8;
 			iConfidence = __max(1, __min(100, iConfidence));
 
-			INT32 iScore = iConfidence * 4 - iFriendDistance;
+			INT32 iScore = iConfidence * 4 -
+				4 * (INT32)ubCommHops[pFriend->ubID];
 			if (iScore > iBestScore)
 			{
 				iBestScore = iScore;
