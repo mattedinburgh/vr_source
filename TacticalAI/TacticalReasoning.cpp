@@ -12,6 +12,7 @@
 	#include "los.h"
 #endif
 
+#include "Buildings.h"
 #include <string.h>
 
 extern UINT32 guiTurnCnt;
