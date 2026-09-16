@@ -6756,6 +6756,30 @@ static INT32 GetUnseenFireBearingGrid( SOLDIERTYPE *pListener, UINT8 ubDirection
 	return sBearingGridNo;
 }
 
+// Cluster repeated reports from the same coarse direction into one short-lived cue.
+// TellPlayerAboutNoise can run for several listeners and for successive rounds in a
+// burst; without this gate the global multi-purpose locator is constantly restarted.
+static BOOLEAN ShouldEmitUnseenFireBearingCue( UINT8 ubDirection )
+{
+	static UINT32 sLastCueTick[ NUM_WORLD_DIRECTIONS ] = { 0 };
+	static BOOLEAN sCueValid[ NUM_WORLD_DIRECTIONS ] = { FALSE };
+	const UINT32 uiNow = GetJA2Clock();
+	const UINT32 uiBurstClusterWindowMs = 450;
+
+	if ( ubDirection >= NUM_WORLD_DIRECTIONS )
+		return FALSE;
+
+	if ( sCueValid[ ubDirection ] &&
+		 ( uiNow - sLastCueTick[ ubDirection ] ) < uiBurstClusterWindowMs )
+	{
+		return FALSE;
+	}
+
+	sLastCueTick[ ubDirection ] = uiNow;
+	sCueValid[ ubDirection ] = TRUE;
+	return TRUE;
+}
+
 
 void TellPlayerAboutNoise( SOLDIERTYPE *pSoldier, UINT8 ubNoiseMaker, INT32 sGridNo, INT8 bLevel, UINT8 ubVolume, UINT8 ubNoiseType, UINT8 ubNoiseDir, STR16 zNoiseMessage )
 {
@@ -6908,7 +6932,7 @@ void TellPlayerAboutNoise( SOLDIERTYPE *pSoldier, UINT8 ubNoiseMaker, INT32 sGri
 			if ( ubNoiseType == NOISE_GUNFIRE && !fNoiseMakerSeen )
 			{
 				INT32 sBearingGridNo = GetUnseenFireBearingGrid( pSoldier, ubNoiseDir );
-				if ( !TileIsOutOfBounds( sBearingGridNo ) )
+				if ( !TileIsOutOfBounds( sBearingGridNo ) && ShouldEmitUnseenFireBearingCue( ubNoiseDir ) )
 					BeginMultiPurposeLocator( sBearingGridNo, pSoldier->pathing.bLevel, FALSE );
 			}
 			else if ( ubNoiseMaker < NOBODY )
