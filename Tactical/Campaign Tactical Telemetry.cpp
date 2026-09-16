@@ -749,7 +749,7 @@ static void VR_SelfPlayEnsureHeaders()
 		if( ftell( fp ) == 0 )
 		{
 			fprintf( fp,
-				"schema_version\tframework_version\tbuild_label\tfixture_slot\trun\tseed\tteam_turn\tsector_x\tsector_y\tsector_z\t"
+				"schema_version\tframework_version\tbuild_label\tselected_map\tfixture_slot\trun\tseed\tteam_turn\tsector_x\tsector_y\tsector_z\t"
 				"team\tsoldier_id\tprofile\tgrid\tlevel\tlife\tap\tbreath\tshock\talert\tmorale\t"
 				"action\taction_data\tnext_action\tnext_data\tunder_fire\n" );
 		}
@@ -936,21 +936,26 @@ static BOOLEAN VR_SelfPlayStartLoadedFixture()
 			pSoldier->flags.uiStatusFlags |= SOLDIER_PCUNDERAICONTROL;
 	}
 
-	if( gfVRSelfPlayMapSelected )
-		gfVRSelfPlayMapFixtureResolved = TRUE;
-
 	giVRSelfPlaySideAStart = VR_SelfPlayAliveOnTeam( gbPlayerNum );
 	giVRSelfPlaySideBStart = VR_SelfPlayAliveOnTeam( ENEMY_TEAM );
 	if( giVRSelfPlaySideAStart <= 0 || giVRSelfPlaySideBStart <= 0 )
 	{
-		++guiVRSelfPlayErrors;
 		VR_SelfPlayWriteBatchLine(
-			"ERROR fixture=%d run=%u seed=%u reason=missing_combat_side side_a=%d side_b=%d\n",
-			giVRSelfPlaySaveSlot, guiVRSelfPlayRunIndex + 1, VR_SelfPlayCurrentSeed(),
+			"REJECT fixture=%d map=%s reason=missing_combat_side side_a=%d side_b=%d\n",
+			giVRSelfPlaySaveSlot, gzVRSelfPlayMapSpec,
 			giVRSelfPlaySideAStart, giVRSelfPlaySideBStart );
+
+		VR_SelfPlayClearPlayerAIFlags();
+		if( VR_SelfPlayTryNextMapFixture( "missing_combat_side" ) )
+			return FALSE;
+
+		++guiVRSelfPlayErrors;
 		VR_SelfPlayFinishBatch( "missing_combat_side" );
 		return FALSE;
 	}
+
+	if( gfVRSelfPlayMapSelected )
+		gfVRSelfPlayMapFixtureResolved = TRUE;
 
 	SetClockSpeedPercent( 5000.0f );
 	gVRSelfPlayRunClockStart = clock();
@@ -1207,7 +1212,7 @@ void VR_SelfPlayDecision( SOLDIERTYPE *pSoldier )
 		VR_AI_SELFPLAY_SCHEMA_VERSION,
 		VR_AI_FRAMEWORK_VERSION,
 		gzVRSelfPlayBuildLabel,
-			gzVRSelfPlayMapSpec,
+		gzVRSelfPlayMapSpec,
 		giVRSelfPlaySaveSlot,
 		guiVRSelfPlayRunIndex + 1,
 		VR_SelfPlayCurrentSeed(),
