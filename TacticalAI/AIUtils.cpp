@@ -6279,6 +6279,15 @@ BOOLEAN AIBuildTacticalDecisionContext(SOLDIERTYPE *pSoldier, AITACTICALDECISION
 	// Build one knowledge-safe snapshot so higher-level reasoners do not independently
 	// rescan and reinterpret the same battlefield state during a single decision.
 	pContext->sPrimaryThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	UINT8 ubSharedPrimaryConfidence = 0;
+	BOOLEAN fSharedPrimary = FALSE;
+	if (TileIsOutOfBounds(pContext->sPrimaryThreat) &&
+		pSoldier->bTeam == ENEMY_TEAM)
+	{
+		fSharedPrimary = AISharedFireteamContact(
+			pSoldier, &pContext->sPrimaryThreat, NULL,
+			&ubSharedPrimaryConfidence);
+	}
 	pContext->usPerceivedFriendlyStrength = AIPerceivedFriendlyStrength(pSoldier);
 	pContext->usPerceivedEnemyStrength = AIPerceivedEnemyStrength(pSoldier);
 	pContext->ubFriendlyCasualtyPercent = AIFriendlyCasualtyPercent(pSoldier);
@@ -6301,6 +6310,21 @@ BOOLEAN AIBuildTacticalDecisionContext(SOLDIERTYPE *pSoldier, AITACTICALDECISION
 		pContext->ubPrimaryThreatAge = PrimaryBelief.ubAgeTurns;
 		pContext->fPrimaryThreatPersonal =
 			(PrimaryBelief.ubSource == AI_BELIEF_SOURCE_PERSONAL);
+	}
+	else if (fSharedPrimary && !TileIsOutOfBounds(pContext->sPrimaryThreat))
+	{
+		// Shared fireteam contact has no personal opponent identity here. Carry only
+		// the communication-degraded confidence into the high-level plan.
+		pContext->ubPrimaryThreatConfidence = ubSharedPrimaryConfidence;
+		pContext->fPrimaryThreatPersonal = FALSE;
+		if (ubSharedPrimaryConfidence >= 85)
+			pContext->ubPrimaryThreatAge = 0;
+		else if (ubSharedPrimaryConfidence >= 60)
+			pContext->ubPrimaryThreatAge = 1;
+		else if (ubSharedPrimaryConfidence >= 35)
+			pContext->ubPrimaryThreatAge = 2;
+		else
+			pContext->ubPrimaryThreatAge = 3;
 	}
 
 	pContext->fHasCover = AnyCoverAtSpot(pSoldier, pSoldier->sGridNo);
