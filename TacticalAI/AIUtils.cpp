@@ -4356,9 +4356,12 @@ static void AIClearEscapeState(SOLDIERTYPE *pSoldier);
 // Shared enemy/militia fireteam coordination. This state is sector-local and intentionally lives
 // outside SOLDIERTYPE so it does not change the savegame structure.
 #define AI_FIRETEAM_NONE 0
-#define AI_FIRETEAM_TARGET 8
-#define AI_FIRETEAM_MAX_NORMAL 9
-#define AI_FIRETEAM_MAX_MERGED 10
+// Keep the local coordination unit small enough to maintain distinct fire and
+// manoeuvre elements. Larger groups remain mutually supporting, but are split
+// into separate cells instead of behaving like one tactical blob.
+#define AI_FIRETEAM_TARGET 5
+#define AI_FIRETEAM_MAX_NORMAL 6
+#define AI_FIRETEAM_MAX_MERGED 8
 
 extern UINT32 guiTurnCnt;
 
@@ -4590,7 +4593,8 @@ static void AISeedEnemyFireteams(void)
 		}
 		if (usCount == 0) continue;
 
-		UINT16 usGroups = (usCount <= 10) ? 1 : (usCount + AI_FIRETEAM_TARGET - 1) / AI_FIRETEAM_TARGET;
+		UINT16 usGroups = (usCount <= AI_FIRETEAM_MAX_NORMAL) ? 1 :
+			(usCount + AI_FIRETEAM_TARGET - 1) / AI_FIRETEAM_TARGET;
 		UINT16 usRemaining = usCount;
 		for (UINT16 usGroup = 0; usGroup < usGroups && usRemaining > 0; ++usGroup)
 		{
@@ -6783,6 +6787,10 @@ INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	INT8 bReserveAP = fCautiousMove ?
 		(GetAPsCrouch(pSoldier, TRUE) + GetAPsToLook(pSoldier)) : 0;
 	UINT8 ubFlags = fCautiousMove ? FLAG_CAUTIOUS : 0;
+	// Cohesion means entering mutual-support distance, not occupying the anchor's
+	// immediate position. Stop short so several responders form depth around the
+	// engaged element instead of streaming into the same grenade-sized cluster.
+	ubFlags |= FLAG_STOPSHORT;
 
 	pSoldier->aiData.usActionData = InternalGoAsFarAsPossibleTowards(
 		pSoldier, pAnchor->sGridNo, bReserveAP, AI_ACTION_SEEK_FRIEND, ubFlags);
@@ -15466,6 +15474,8 @@ static INT8 AISharedIntentVote(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, UINT32 
 		return -1;
 
 	UINT8 ubVotes[AI_INTENT_RESCUE + 1] = { 0 };
+	UINT8 ubSupporters[AI_INTENT_RESCUE + 1] = { 0 };
+
 	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
 	{
@@ -15483,29 +15493,52 @@ static INT8 AISharedIntentVote(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, UINT32 
 			continue;
 
 		INT8 bFriendIntent = gbAITacticalIntentPlan[pFriend->ubID];
-		if (bFriendIntent >= AI_INTENT_HOLD && bFriendIntent <= AI_INTENT_RESCUE)
+
+		// Fireteam consensus is an objective-level signal, not an order for everybody
+		// to perform the same manoeuvre. A flanker therefore votes PRESS for the common
+		// objective while keeping FLANK as his individual role/short plan. Rescue is
+		// likewise left to the medic/screen allocation rather than propagated wholesale.
+		if (bFriendIntent == AI_INTENT_FLANK)
+			bFriendIntent = AI_INTENT_PRESS;
+		if (bFriendIntent == AI_INTENT_HOLD || bFriendIntent == AI_INTENT_RESCUE)
+			continue;
+
+		if (bFriendIntent >= AI_INTENT_PRESS && bFriendIntent <= AI_INTENT_DISENGAGE)
 		{
-			UINT8 ubWeight = (AICheckIsCommander(pFriend) || AICheckIsOfficer(pFriend)) ? 2 : 1;
+			UINT8 ubWeight =
+				(AICheckIsCommander(pFriend) || AICheckIsOfficer(pFriend)) ? 2 : 1;
 			ubVotes[bFriendIntent] += ubWeight;
+			++ubSupporters[bFriendIntent];
 		}
 	}
 
 	INT8 bBestIntent = -1;
 	UINT8 ubBestVotes = 0;
-	for (INT8 bIntent = AI_INTENT_HOLD; bIntent <= AI_INTENT_RESCUE; ++bIntent)
+	UINT8 ubBestSupporters = 0;
+	for (INT8 bIntent = AI_INTENT_PRESS; bIntent <= AI_INTENT_DISENGAGE; ++bIntent)
 	{
-		if (ubVotes[bIntent] > ubBestVotes)
+		if (ubSupporters[bIntent] == 0)
+			continue;
+
+		if (ubVotes[bIntent] > ubBestVotes ||
+			(ubVotes[bIntent] == ubBestVotes &&
+			 ubSupporters[bIntent] > ubBestSupporters))
 		{
 			ubBestVotes = ubVotes[bIntent];
+			ubBestSupporters = ubSupporters[bIntent];
 			bBestIntent = bIntent;
 		}
 	}
 
-	// Enemy fireteams share intent almost immediately: one valid local plan is enough
-	// to seed the element. Militia retain the more conservative two-vote threshold.
-	if (pSoldier->bTeam == ENEMY_TEAM)
-		return ubBestVotes >= 1 ? bBestIntent : -1;
-	return ubBestVotes >= 2 ? bBestIntent : -1;
+	if (bBestIntent < 0)
+		return -1;
+
+	// One teammate must never turn a full enemy element into a hive mind. Normal
+	// fireteams need agreement from at least two distinct soldiers. A two-man remnant
+	// may coordinate from its sole partner because there is no third opinion to sample.
+	UINT8 ubReady = AIFireteamCombatReadyCount(pSoldier);
+	UINT8 ubRequiredSupporters = (ubReady <= 2) ? 1 : 2;
+	return ubBestSupporters >= ubRequiredSupporters ? bBestIntent : -1;
 }
 
 static UINT8 AIPlannedRoleCount(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bRole, UINT32 uiNow)
@@ -15767,18 +15800,13 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 			if (bIntent != AI_INTENT_RESCUE && bSituation != AI_BATTLE_WINNING)
 				bIntent = bSharedIntent;
 		}
-		else if (bIntent != AI_INTENT_FALLBACK && bIntent != AI_INTENT_DISENGAGE &&
+		else if ((bIntent == AI_INTENT_HOLD || bIntent == AI_INTENT_PRESS) &&
 			iRisk <= iTolerance + 5)
 		{
-			// The local enemy fireteam deliberately behaves like a shared tactical brain.
-			// The shared target still came only from legal observation/communication.
-			if (pSoldier->bTeam == ENEMY_TEAM ||
-				bSharedIntent != AI_INTENT_FLANK ||
-				fBasicFireteamManeuver ||
-				AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED, (UINT32)(sTargetSpot + 307)))
-			{
-				bIntent = bSharedIntent;
-			}
+			// Consensus aligns the objective only. It must not erase a valid local
+			// specialist plan such as FLANK; role/task allocation owns who manoeuvres,
+			// who supports and who screens.
+			bIntent = bSharedIntent;
 		}
 	}
 

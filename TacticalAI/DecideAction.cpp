@@ -82,6 +82,25 @@ static UINT32 VRPlannerTraceBeginDecision(SOLDIERTYPE *pSoldier, const CHAR8 *pS
 		VRAnalyticsStateInt(uiDecision, "competence", AICompetenceTier(pSoldier));
 		VRAnalyticsStateInt(uiDecision, "planner_reliability", AIPlannerReliability(pSoldier));
 
+		// Cell identity is essential for diagnosing apparent "group" behavior. It lets
+		// post-battle analysis distinguish one fireteam crowding itself from several
+		// independent cells converging on the same piece of ground.
+		VRAnalyticsStateInt(uiDecision, "fireteam_id", AIFireteamId(pSoldier));
+		VRAnalyticsStateInt(uiDecision, "fireteam_alive", AIFireteamAliveCount(pSoldier));
+		VRAnalyticsStateInt(uiDecision, "fireteam_ready", AIFireteamCombatReadyCount(pSoldier));
+
+		UINT8 ubCurrentCloseFriends = 0;
+		UINT8 ubCurrentLocalFriends = 0;
+		UINT8 ubCurrentDestinationCompetition = 0;
+		AIFriendlyDensityAtSpot(
+			pSoldier, pSoldier->sGridNo,
+			&ubCurrentCloseFriends, &ubCurrentLocalFriends,
+			&ubCurrentDestinationCompetition);
+		VRAnalyticsStateInt(uiDecision, "current_close_friends", ubCurrentCloseFriends);
+		VRAnalyticsStateInt(uiDecision, "current_local_friends", ubCurrentLocalFriends);
+		VRAnalyticsStateInt(uiDecision, "current_destination_competition",
+			ubCurrentDestinationCompetition);
+
 		AITACTICALGEOMETRY Geometry;
 		if (AIBuildTacticalGeometry(pSoldier, pSoldier->sGridNo, &Geometry))
 		{
@@ -117,6 +136,21 @@ static void VRPlannerTraceCandidate(SOLDIERTYPE *pSoldier, UINT32 uiDecision,
 	VRAnalyticsStateInt(uiDecision, "candidate_crossfire", iCrossfire);
 	VRAnalyticsStateInt(uiDecision, "candidate_setback_penalty",
 		pSoldier ? AITacticalSetbackPenalty(pSoldier, sGrid) : 0);
+
+	UINT8 ubCloseFriends = 0;
+	UINT8 ubLocalFriends = 0;
+	UINT8 ubDestinationCompetition = 0;
+	if (pSoldier && !TileIsOutOfBounds(sGrid))
+	{
+		AIFriendlyDensityAtSpot(
+			pSoldier, sGrid,
+			&ubCloseFriends, &ubLocalFriends, &ubDestinationCompetition);
+	}
+	VRAnalyticsStateInt(uiDecision, "candidate_close_friends", ubCloseFriends);
+	VRAnalyticsStateInt(uiDecision, "candidate_local_friends", ubLocalFriends);
+	VRAnalyticsStateInt(uiDecision, "candidate_destination_competition",
+		ubDestinationCompetition);
+
 	VRAnalyticsCandidate(uiDecision, pSource, sGrid, iScore, iScore - iRouteCost, true, pReason);
 }
 
@@ -13129,9 +13163,9 @@ INT8 DecideHopelessSurvivorAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 
 	return AI_ACTION_NONE;
 }
-// Break dangerous clusters under fire. Existing cover scoring already dislikes
-// adjacent teammates; this decision makes that preference urgent when several soldiers
-// are packed together and the local group is taking fire.
+// Break dangerous concentrations before they become grenade/crossfire traps.
+// This is not random scattering: a soldier only disperses into a position that
+// materially reduces local density without increasing known exposure.
 INT8 DecideCombatDispersion(SOLDIERTYPE *pSoldier)
 {
 	if (!gfTurnBasedAI || !pSoldier || !AICombatTeam(pSoldier) ||
@@ -13147,7 +13181,18 @@ INT8 DecideCombatDispersion(SOLDIERTYPE *pSoldier)
 	}
 
 	UINT8 ubAdjacent = NumberOfTeamMatesAdjacent(pSoldier, pSoldier->sGridNo);
-	if (ubAdjacent < 2)
+	UINT8 ubClose = 0;
+	UINT8 ubLocal = 0;
+	UINT8 ubDestinationCompetition = 0;
+	AIFriendlyDensityAtSpot(
+		pSoldier, pSoldier->sGridNo,
+		&ubClose, &ubLocal, &ubDestinationCompetition);
+
+	BOOLEAN fClustered =
+		ubAdjacent >= 2 || ubClose >= 3 || ubLocal >= 6;
+	BOOLEAN fSeverelyClustered =
+		ubAdjacent >= 3 || ubClose >= 4 || ubLocal >= 7;
+	if (!fClustered)
 		return AI_ACTION_NONE;
 
 	BOOLEAN fLocalPressure = pSoldier->aiData.bUnderFire;
@@ -13165,24 +13210,90 @@ INT8 DecideCombatDispersion(SOLDIERTYPE *pSoldier)
 			continue;
 		}
 
-		if (PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) <= 2 &&
+		if (PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) <= 3 &&
 			(pFriend->aiData.bUnderFire || ShockLevelPercent(pFriend) >= 30))
 		{
 			fLocalPressure = TRUE;
 		}
 	}
 
-	if (!fLocalPressure)
+	// A very dense combat formation is a tactical liability even before the first
+	// bullet lands. Do not, however, rearrange peaceful patrols merely for spacing.
+	if (!fLocalPressure &&
+		(!fSeverelyClustered || pSoldier->aiData.bAlertStatus < STATUS_RED))
+	{
 		return AI_ACTION_NONE;
+	}
+
+	INT32 sThreatSpot = AIPrimaryPlanningThreatSpot(pSoldier);
+	UINT32 uiDispersionDecision = VRPlannerTraceBeginDecision(
+		pSoldier, "combat_dispersion", sThreatSpot,
+		AI_INTENT_HOLD, AI_ROLE_RESERVE);
+	if (uiDispersionDecision)
+	{
+		VRAnalyticsStateInt(uiDispersionDecision, "dispersion_current_adjacent", ubAdjacent);
+		VRAnalyticsStateInt(uiDispersionDecision, "dispersion_current_close", ubClose);
+		VRAnalyticsStateInt(uiDispersionDecision, "dispersion_current_local", ubLocal);
+		VRAnalyticsStateInt(uiDispersionDecision, "dispersion_under_pressure",
+			fLocalPressure ? 1 : 0);
+		VRAnalyticsStateInt(uiDispersionDecision, "dispersion_severe_cluster",
+			fSeverelyClustered ? 1 : 0);
+	}
 
 	INT32 iCoverPercentBetter = 0;
-	INT32 sDisperseSpot = FindBestNearbyCover(pSoldier, pSoldier->aiData.bAIMorale, &iCoverPercentBetter);
-	if (TileIsOutOfBounds(sDisperseSpot))
+	INT32 sDisperseSpot = FindBestNearbyCover(
+		pSoldier, pSoldier->aiData.bAIMorale, &iCoverPercentBetter);
+	if (TileIsOutOfBounds(sDisperseSpot) || sDisperseSpot == pSoldier->sGridNo)
+	{
+		VRPlannerTraceReject(
+			pSoldier, uiDispersionDecision, "combat_dispersion",
+			AI_ACTION_TAKE_COVER, pSoldier->sGridNo,
+			"cluster detected but no distinct nearby cover candidate");
 		return AI_ACTION_NONE;
+	}
 
 	UINT8 ubNewAdjacent = NumberOfTeamMatesAdjacent(pSoldier, sDisperseSpot);
-	if (ubNewAdjacent >= ubAdjacent)
+	UINT8 ubNewClose = 0;
+	UINT8 ubNewLocal = 0;
+	UINT8 ubNewDestinationCompetition = 0;
+	AIFriendlyDensityAtSpot(
+		pSoldier, sDisperseSpot,
+		&ubNewClose, &ubNewLocal, &ubNewDestinationCompetition);
+
+	INT32 iCurrentDensity =
+		14 * (INT32)ubAdjacent +
+		6 * (INT32)ubClose +
+		2 * (INT32)ubLocal;
+	INT32 iNewDensity =
+		14 * (INT32)ubNewAdjacent +
+		6 * (INT32)ubNewClose +
+		2 * (INT32)ubNewLocal +
+		18 * (INT32)ubNewDestinationCompetition;
+	INT32 iDensityGain = iCurrentDensity - iNewDensity;
+
+	if (uiDispersionDecision)
+	{
+		VRAnalyticsStateInt(uiDispersionDecision, "dispersion_candidate_grid", sDisperseSpot);
+		VRAnalyticsStateInt(uiDispersionDecision, "dispersion_new_adjacent", ubNewAdjacent);
+		VRAnalyticsStateInt(uiDispersionDecision, "dispersion_new_close", ubNewClose);
+		VRAnalyticsStateInt(uiDispersionDecision, "dispersion_new_local", ubNewLocal);
+		VRAnalyticsStateInt(uiDispersionDecision, "dispersion_destination_competition",
+			ubNewDestinationCompetition);
+		VRAnalyticsStateInt(uiDispersionDecision, "dispersion_current_density", iCurrentDensity);
+		VRAnalyticsStateInt(uiDispersionDecision, "dispersion_new_density", iNewDensity);
+		VRAnalyticsStateInt(uiDispersionDecision, "dispersion_density_gain", iDensityGain);
+	}
+
+	// Require a meaningful spacing improvement; one tile of cosmetic separation
+	// is not worth spending a turn or breaking a good firing position.
+	if (iNewDensity + 8 >= iCurrentDensity)
+	{
+		VRPlannerTraceReject(
+			pSoldier, uiDispersionDecision, "combat_dispersion",
+			AI_ACTION_TAKE_COVER, sDisperseSpot,
+			"candidate did not materially reduce friendly concentration");
 		return AI_ACTION_NONE;
+	}
 
 	// Do not break a cluster by moving from a protected tile into a position the
 	// known enemy can attack. Dispersion is useful only if it is not tactically worse.

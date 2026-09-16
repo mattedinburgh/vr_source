@@ -476,6 +476,9 @@ struct AITACTICALPOSITIONFEATURES
 	INT16 sExposureDelta;
 	UINT8 ubSupport;
 	UINT8 ubAdjacentFriends;
+	UINT8 ubCloseFriends;
+	UINT8 ubLocalFriends;
+	UINT8 ubDestinationCompetition;
 	BOOLEAN fCover;
 	BOOLEAN fSightCover;
 	BOOLEAN fProneCover;
@@ -526,6 +529,8 @@ INT32 AIGeometryPositionScore(SOLDIERTYPE *pSoldier,
 	INT32 sTargetSpot, INT8 bIntent, INT8 bRole);
 INT8 AIPreferredFlankAction(SOLDIERTYPE *pSoldier, INT32 sTargetSpot);
 INT8 AIFireteamPreferredFlankAction(SOLDIERTYPE *pSoldier, INT32 sTargetSpot);
+void AIFriendlyDensityAtSpot(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
+	UINT8 *pubCloseFriends, UINT8 *pubLocalFriends, UINT8 *pubDestinationCompetition);
 BOOLEAN AIEvaluateTacticalPosition(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 	INT32 sTargetSpot, UINT16 usMovementMode, AITACTICALPOSITIONFEATURES *pFeatures);
 INT32 AIScoreTacticalPosition(SOLDIERTYPE *pSoldier, const AITACTICALPOSITIONFEATURES *pFeatures,

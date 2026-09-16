@@ -1420,12 +1420,12 @@ INT8 AIFireteamPreferredFlankAction(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
 			pFriend->bBreathCollapsed || (pFriend->usSoldierFlagMask & SOLDIER_POW) ||
 			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
-			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend) ||
-			!AISameFireteam(pSoldier, pFriend))
+			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend))
 		{
 			continue;
 		}
 
+		BOOLEAN fSameFireteam = AISameFireteam(pSoldier, pFriend);
 		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
 		if (iDistance > DAY_VISION_RANGE)
 			continue;
@@ -1446,6 +1446,11 @@ INT8 AIFireteamPreferredFlankAction(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 				++ubRightCommitted;
 		}
 
+		// Nearby sister fireteams contribute only deconfliction information. They do
+		// not vote on this element's anchor, intent, or target knowledge.
+		if (!fSameFireteam)
+			continue;
+
 		// Leadership stabilizes the element's shared frame; proximity breaks equal
 		// command-rank ties inside the same local coordination radius.
 		INT32 iAnchorScore = 100 * (INT32)AICommandAuthority(pFriend) -
@@ -1457,12 +1462,35 @@ INT8 AIFireteamPreferredFlankAction(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		}
 	}
 
-	// Once a manoeuvre element has genuinely committed to one side, nearby members
-	// reinforce that axis instead of independently rediscovering left/right every turn.
+	// Existing commitment should create crossfire, not a column. If one side is
+	// already occupied by a flanker, prefer the complementary viable arc unless the
+	// anchor's geometry says that opposite side is materially worse or impossible.
+	AITACTICALGEOMETRY AnchorGeometry;
+	BOOLEAN fAnchorGeometry = AIBuildTacticalGeometry(
+		pAnchor, pAnchor->sGridNo, &AnchorGeometry);
+
 	if (ubLeftCommitted > ubRightCommitted)
+	{
+		if (fAnchorGeometry &&
+			AnchorGeometry.sRightFlankOpportunity > -10 &&
+			AnchorGeometry.sRightFlankOpportunity >=
+				AnchorGeometry.sLeftFlankOpportunity - 12)
+		{
+			return AI_ACTION_FLANK_RIGHT;
+		}
 		return AI_ACTION_FLANK_LEFT;
+	}
 	if (ubRightCommitted > ubLeftCommitted)
+	{
+		if (fAnchorGeometry &&
+			AnchorGeometry.sLeftFlankOpportunity > -10 &&
+			AnchorGeometry.sLeftFlankOpportunity >=
+				AnchorGeometry.sRightFlankOpportunity - 12)
+		{
+			return AI_ACTION_FLANK_LEFT;
+		}
 		return AI_ACTION_FLANK_RIGHT;
+	}
 
 	INT8 bSharedPreference = AIPreferredFlankAction(pAnchor, sTargetSpot);
 	if (bSharedPreference != AI_ACTION_NONE)
@@ -1712,6 +1740,48 @@ INT32 AISharedApproachPressure(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 }
 
 
+void AIFriendlyDensityAtSpot(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
+	UINT8 *pubCloseFriends, UINT8 *pubLocalFriends, UINT8 *pubDestinationCompetition)
+{
+	if (pubCloseFriends) *pubCloseFriends = 0;
+	if (pubLocalFriends) *pubLocalFriends = 0;
+	if (pubDestinationCompetition) *pubDestinationCompetition = 0;
+
+	if (!pSoldier || TileIsOutOfBounds(sCandidateSpot))
+		return;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed || (pFriend->usSoldierFlagMask & SOLDIER_POW))
+		{
+			continue;
+		}
+
+		INT32 iDistance = PythSpacesAway(sCandidateSpot, pFriend->sGridNo);
+		if (pubCloseFriends && iDistance <= 3 && *pubCloseFriends < 255)
+			++(*pubCloseFriends);
+		if (pubLocalFriends && iDistance <= 6 && *pubLocalFriends < 255)
+			++(*pubLocalFriends);
+
+		// Sequential JA2 turns make destination duplication especially dangerous:
+		// later soldiers can otherwise choose the same patch of cover/corridor that
+		// an earlier teammate has already committed to.
+		if (pubDestinationCompetition &&
+			pFriend->aiData.bAction >= FIRST_MOVEMENT_ACTION &&
+			pFriend->aiData.bAction <= LAST_MOVEMENT_ACTION &&
+			!TileIsOutOfBounds(pFriend->aiData.usActionData) &&
+			PythSpacesAway(sCandidateSpot, pFriend->aiData.usActionData) <= 3 &&
+			*pubDestinationCompetition < 255)
+		{
+			++(*pubDestinationCompetition);
+		}
+	}
+}
+
 BOOLEAN AIEvaluateTacticalPosition(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 	INT32 sTargetSpot, UINT16 usMovementMode, AITACTICALPOSITIONFEATURES *pFeatures)
 {
@@ -1737,6 +1807,11 @@ BOOLEAN AIEvaluateTacticalPosition(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 		pSoldier, sCandidateSpot, DAY_VISION_RANGE / 3);
 	pFeatures->ubAdjacentFriends =
 		NumberOfTeamMatesAdjacent(pSoldier, sCandidateSpot);
+	AIFriendlyDensityAtSpot(
+		pSoldier, sCandidateSpot,
+		&pFeatures->ubCloseFriends,
+		&pFeatures->ubLocalFriends,
+		&pFeatures->ubDestinationCompetition);
 	pFeatures->sReactionRisk = (INT16)__min(32767,
 		AIInferredReactionRisk(pSoldier, sCandidateSpot, pSoldier->pathing.bLevel));
 	pFeatures->sSetbackPenalty = (INT16)__min(
@@ -1805,8 +1880,32 @@ INT32 AIScoreTacticalPosition(SOLDIERTYPE *pSoldier, const AITACTICALPOSITIONFEA
 
 	iScore += 6 * __min((UINT8)3, pFeatures->ubSupport);
 	if (pFeatures->ubSupport == 0) iScore -= 14;
+
+	// Cohesion is useful; concentration is not. Penalize local density on several
+	// spatial scales and strongly penalize destinations already claimed by another
+	// moving teammate. This is intentionally role-sensitive: manoeuvre/flank elements
+	// need more lateral separation, while a support pair may work somewhat closer.
+	INT32 iCongestionPenalty = 0;
 	if (pFeatures->ubAdjacentFriends > 1)
-		iScore -= 12 * (pFeatures->ubAdjacentFriends - 1);
+		iCongestionPenalty += 12 * (pFeatures->ubAdjacentFriends - 1);
+	if (pFeatures->ubCloseFriends > 2)
+		iCongestionPenalty += 7 * (pFeatures->ubCloseFriends - 2);
+	if (pFeatures->ubLocalFriends > 4)
+		iCongestionPenalty += 3 * (pFeatures->ubLocalFriends - 4);
+	iCongestionPenalty += 18 * pFeatures->ubDestinationCompetition;
+
+	if (bRole == AI_ROLE_FLANKER || bRole == AI_ROLE_MANEUVER)
+		iCongestionPenalty = (5 * iCongestionPenalty) / 4;
+	else if (bRole == AI_ROLE_SUPPORT || bRole == AI_ROLE_SCREEN)
+		iCongestionPenalty = (4 * iCongestionPenalty) / 5;
+
+	// Indoors, geometry itself can force close spacing. Relax ordinary density there,
+	// but never relax destination competition: two soldiers should still not reserve
+	// essentially the same tile/corner in sequential turn order.
+	if (InARoom(sCandidateSpot, NULL) && pFeatures->ubDestinationCompetition == 0)
+		iCongestionPenalty = (2 * iCongestionPenalty) / 3;
+
+	iScore -= __min((INT32)70, iCongestionPenalty);
 
 	switch (bIntent)
 	{
