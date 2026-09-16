@@ -5746,16 +5746,36 @@ typedef struct
 } UNSEEN_FIRE_BEARING_CUE;
 
 static UNSEEN_FIRE_BEARING_CUE gUnseenFireBearingCues[MAX_UNSEEN_FIRE_BEARING_CUES];
+static INT16 gsUnseenFireCueSectorX = -1;
+static INT16 gsUnseenFireCueSectorY = -1;
+static INT8 gbUnseenFireCueSectorZ = -1;
+
+static void SyncUnseenFireBearingCueSector( )
+{
+	if ( gsUnseenFireCueSectorX == gWorldSectorX &&
+		 gsUnseenFireCueSectorY == gWorldSectorY &&
+		 gbUnseenFireCueSectorZ == gbWorldSectorZ )
+	{
+		return;
+	}
+
+	memset( gUnseenFireBearingCues, 0, sizeof(gUnseenFireBearingCues) );
+	gsUnseenFireCueSectorX = gWorldSectorX;
+	gsUnseenFireCueSectorY = gWorldSectorY;
+	gbUnseenFireCueSectorZ = gbWorldSectorZ;
+}
 
 void BeginUnseenFireBearingCue( INT32 sGridNo, INT8 bLevel, UINT8 ubDirection )
 {
+	SyncUnseenFireBearingCueSector();
+
 	if ( TileIsOutOfBounds( sGridNo ) || ubDirection >= NUM_WORLD_DIRECTIONS )
 		return;
 
 	UINT32 uiNow = GetJA2Clock();
 	INT8 bSlot = -1;
 	INT8 bOldestSlot = 0;
-	UINT32 uiOldestEvent = 0xFFFFFFFF;
+	UINT32 uiOldestEvent = 0xFFFFFFFFu;
 
 	for ( INT8 i = 0; i < MAX_UNSEEN_FIRE_BEARING_CUES; ++i )
 	{
@@ -5869,6 +5889,7 @@ void HandleMultiPurposeLocator( )
 
 void HandleUnseenFireBearingCues( )
 {
+	SyncUnseenFireBearingCueSector();
 	UINT32 uiNow = GetJA2Clock();
 
 	for ( INT8 i = 0; i < MAX_UNSEEN_FIRE_BEARING_CUES; ++i )
