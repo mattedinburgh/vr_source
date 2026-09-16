@@ -251,6 +251,8 @@ void StartNPCAI(SOLDIERTYPE *pSoldier);
 BOOLEAN AIPlayerTeamCommandActive(void);
 UINT8 AIPlayerTeamCommand(void);
 BOOLEAN AIPlayerControlReturnRequested(void);
+BOOLEAN AIPlayerCommandFastForward(void);
+void AITogglePlayerCommandFastForward(void);
 BOOLEAN AIStartPlayerTeamCommand(UINT8 ubCommand);
 BOOLEAN AIContinuePlayerTeamCommand(void);
 void AIRequestPlayerControl(void);
