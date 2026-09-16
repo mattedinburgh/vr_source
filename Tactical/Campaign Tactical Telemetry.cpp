@@ -631,6 +631,8 @@ static INT32 giVRSelfPlaySideAStart = 0;
 static INT32 giVRSelfPlaySideBStart = 0;
 static clock_t gVRSelfPlayRunClockStart = 0;
 static BOOLEAN gfVRSelfPlayWindowHidden = FALSE;
+static CHAR8 gzVRSelfPlayBuildLabel[64] = "current";
+static UINT32 guiVRSelfPlayWallStart = 0;
 
 static UINT32 VR_SelfPlayCurrentSeed()
 {
@@ -720,7 +722,7 @@ static void VR_SelfPlayEnsureHeaders()
 		if( ftell( fp ) == 0 )
 		{
 			fprintf( fp,
-				"schema_version\tframework_version\tfixture_slot\trun\tseed\tsector_x\tsector_y\tsector_z\tresult\tteam_turns\twall_ms\t"
+				"schema_version\tframework_version\tbuild_label\tfixture_slot\trun\tseed\tsector_x\tsector_y\tsector_z\tresult\tteam_turns\twall_ms\t"
 				"side_a_start\tside_b_start\tside_a_alive\tside_b_alive\t"
 				"a_shots\ta_hits\ta_misses\ta_damage\ta_kills\ta_deaths\ta_moves\ta_suppression_ap\ta_explosions\ta_smoke\t"
 				"b_shots\tb_hits\tb_misses\tb_damage\tb_kills\tb_deaths\tb_moves\tb_suppression_ap\tb_explosions\tb_smoke\tstate_hash\n" );
@@ -735,7 +737,7 @@ static void VR_SelfPlayEnsureHeaders()
 		if( ftell( fp ) == 0 )
 		{
 			fprintf( fp,
-				"schema_version\tframework_version\tfixture_slot\trun\tseed\tteam_turn\tsector_x\tsector_y\tsector_z\t"
+				"schema_version\tframework_version\tbuild_label\tfixture_slot\trun\tseed\tteam_turn\tsector_x\tsector_y\tsector_z\t"
 				"team\tsoldier_id\tprofile\tgrid\tlevel\tlife\tap\tbreath\tshock\talert\tmorale\t"
 				"action\taction_data\tnext_action\tnext_data\tunder_fire\n" );
 		}
@@ -763,21 +765,20 @@ static void VR_SelfPlayWriteRun( const CHAR8 *pResult )
 	const INT32 iAAlive = VR_SelfPlayAliveOnTeam( gbPlayerNum );
 	const INT32 iBAlive = VR_SelfPlayAliveOnTeam( ENEMY_TEAM );
 	const UINT32 uiStateHash = VR_SelfPlayStateHash();
-	UINT32 uiWallMs = 0;
-	if( gVRSelfPlayRunClockStart )
-		uiWallMs = (UINT32)( ( (double)(clock() - gVRSelfPlayRunClockStart) * 1000.0 ) / CLOCKS_PER_SEC );
+	UINT32 uiWallMs = guiVRSelfPlayWallStart ? (GetTickCount() - guiVRSelfPlayWallStart) : 0;
 
 	VR_SelfPlayEnsureHeaders();
 	FILE *fp = fopen( "AI SelfPlay Runs.tsv", "a" );
 	if( fp )
 	{
 		fprintf( fp,
-			"%u\t%s\t%d\t%u\t%u\t%d\t%d\t%d\t%s\t%u\t%u\t"
+			"%u\t%s\t%s\t%d\t%u\t%u\t%d\t%d\t%d\t%s\t%u\t%u\t"
 			"%d\t%d\t%d\t%d\t"
 			"%u\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t"
 			"%u\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%08X\n",
 			VR_AI_SELFPLAY_SCHEMA_VERSION,
 			VR_AI_FRAMEWORK_VERSION,
+			gzVRSelfPlayBuildLabel,
 			giVRSelfPlaySaveSlot,
 			guiVRSelfPlayRunIndex + 1,
 			VR_SelfPlayCurrentSeed(),
@@ -843,8 +844,8 @@ static void VR_SelfPlayFinishRun( const CHAR8 *pResult, BOOLEAN fEnemyRetreated 
 static void VR_SelfPlayFinishBatch( const CHAR8 *pReason )
 {
 	VR_SelfPlayWriteBatchLine(
-		"END fixture=%d requested_runs=%u completed=%u base_seed=%u side_a_wins=%u side_b_wins=%u stalemates=%u errors=%u reason=%s\n",
-		giVRSelfPlaySaveSlot,
+		"END label=%s fixture=%d requested_runs=%u completed=%u base_seed=%u side_a_wins=%u side_b_wins=%u stalemates=%u errors=%u reason=%s\n",
+		gzVRSelfPlayBuildLabel, giVRSelfPlaySaveSlot,
 		guiVRSelfPlayRuns,
 		guiVRSelfPlayRunIndex + (giVRSelfPlayState == VR_SELFPLAY_STATE_RELOAD_PENDING ? 1 : 0),
 		guiVRSelfPlayBaseSeed,
@@ -933,14 +934,15 @@ static BOOLEAN VR_SelfPlayStartLoadedFixture()
 
 	SetClockSpeedPercent( 5000.0f );
 	gVRSelfPlayRunClockStart = clock();
+	guiVRSelfPlayWallStart = GetTickCount();
 	giVRSelfPlayState = VR_SELFPLAY_STATE_RUNNING;
 
 	if( !VR_TacticalTelemetryBattleActive() )
 		VR_TacticalTelemetryBattleStart( gTacticalStatus.ubCurrentTeam );
 
 	VR_SelfPlayWriteBatchLine(
-		"RUN fixture=%d run=%u/%u seed=%u sector=%d,%d,%d side_a=%d side_b=%d\n",
-		giVRSelfPlaySaveSlot, guiVRSelfPlayRunIndex + 1, guiVRSelfPlayRuns,
+		"RUN label=%s fixture=%d run=%u/%u seed=%u sector=%d,%d,%d side_a=%d side_b=%d\n",
+		gzVRSelfPlayBuildLabel, giVRSelfPlaySaveSlot, guiVRSelfPlayRunIndex + 1, guiVRSelfPlayRuns,
 		VR_SelfPlayCurrentSeed(), gWorldSectorX, gWorldSectorY, gbWorldSectorZ,
 		giVRSelfPlaySideAStart, giVRSelfPlaySideBStart );
 
@@ -963,10 +965,11 @@ BOOLEAN VR_SelfPlayConfigureFromCommandLine( const CHAR8 *pCommandLine )
 	UINT32 uiRuns = 40;
 	UINT32 uiSeed = 1000;
 	UINT32 uiMaxTurns = 1200;
+	CHAR8 zBuildLabel[64] = "current";
 
 	pSelfPlay += 10;
-	const INT32 iRead = sscanf( pSelfPlay, "%d,%u,%u,%u",
-		&iSlot, &uiRuns, &uiSeed, &uiMaxTurns );
+	const INT32 iRead = sscanf( pSelfPlay, "%d,%u,%u,%u,%63[^,\t\r\n ]",
+		&iSlot, &uiRuns, &uiSeed, &uiMaxTurns, zBuildLabel );
 	if( iRead < 1 || iSlot < 0 || iSlot >= NUM_SAVE_GAMES )
 		return FALSE;
 	if( iRead < 2 || uiRuns == 0 )
@@ -980,6 +983,8 @@ BOOLEAN VR_SelfPlayConfigureFromCommandLine( const CHAR8 *pCommandLine )
 	guiVRSelfPlayRuns = uiRuns;
 	guiVRSelfPlayBaseSeed = uiSeed;
 	guiVRSelfPlayMaxTeamTurns = uiMaxTurns;
+	strncpy( gzVRSelfPlayBuildLabel, iRead >= 5 ? zBuildLabel : "current", sizeof(gzVRSelfPlayBuildLabel) - 1 );
+	gzVRSelfPlayBuildLabel[sizeof(gzVRSelfPlayBuildLabel) - 1] = 0;
 	guiVRSelfPlayRunIndex = 0;
 	guiVRSelfPlaySideAWins = 0;
 	guiVRSelfPlaySideBWins = 0;
@@ -990,8 +995,8 @@ BOOLEAN VR_SelfPlayConfigureFromCommandLine( const CHAR8 *pCommandLine )
 
 	VR_SelfPlayEnsureHeaders();
 	VR_SelfPlayWriteBatchLine(
-		"BEGIN schema=%u framework=%s fixture=%d runs=%u base_seed=%u max_team_turns=%u\n",
-		VR_AI_SELFPLAY_SCHEMA_VERSION, VR_AI_FRAMEWORK_VERSION,
+		"BEGIN schema=%u framework=%s label=%s fixture=%d runs=%u base_seed=%u max_team_turns=%u\n",
+		VR_AI_SELFPLAY_SCHEMA_VERSION, VR_AI_FRAMEWORK_VERSION, gzVRSelfPlayBuildLabel,
 		giVRSelfPlaySaveSlot, guiVRSelfPlayRuns,
 		guiVRSelfPlayBaseSeed, guiVRSelfPlayMaxTeamTurns );
 
@@ -1038,11 +1043,12 @@ void VR_SelfPlayDecision( SOLDIERTYPE *pSoldier )
 		return;
 
 	fprintf( fp,
-		"%u\t%s\t%d\t%u\t%u\t%u\t%d\t%d\t%d\t"
+		"%u\t%s\t%s\t%d\t%u\t%u\t%u\t%d\t%d\t%d\t"
 		"%d\t%u\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t"
 		"%d\t%d\t%d\t%d\t%d\n",
 		VR_AI_SELFPLAY_SCHEMA_VERSION,
 		VR_AI_FRAMEWORK_VERSION,
+		gzVRSelfPlayBuildLabel,
 		giVRSelfPlaySaveSlot,
 		guiVRSelfPlayRunIndex + 1,
 		VR_SelfPlayCurrentSeed(),
