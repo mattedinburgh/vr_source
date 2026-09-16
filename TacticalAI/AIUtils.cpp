@@ -12475,35 +12475,50 @@ UINT8 CountPublicKnownEnemies( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDis
 		if (!pOpponent)
 			continue;
 
-		// Public enemy counts must be driven by public knowledge, not by the hidden
-		// current HP/capture/sector state of an opponent whose contact is stale.
-		INT8 bPublicKnowledge = gbPublicOpplist[pSoldier->bTeam][pOpponent->ubID];
-		if (bPublicKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
+		INT32 sThreatLoc = NOWHERE;
+		INT8 bReportedKnowledge = NOT_HEARD_OR_SEEN;
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide)
+		if (pSoldier->bTeam == ENEMY_TEAM)
 		{
-			continue;
+			// Enemy "public" counting is now fireteam-local. This restores coordinated
+			// force estimates without repopulating the legacy sector-wide public opplist.
+			if (!AISharedFireteamOpponentContact(
+				pSoldier, pOpponent->ubID, &sThreatLoc, NULL, NULL,
+				&bReportedKnowledge))
+			{
+				continue;
+			}
+		}
+		else
+		{
+			bReportedKnowledge =
+				gbPublicOpplist[pSoldier->bTeam][pOpponent->ubID];
+			if (bReportedKnowledge == NOT_HEARD_OR_SEEN)
+				continue;
+			sThreatLoc =
+				gsPublicLastKnownOppLoc[pSoldier->bTeam][pOpponent->ubID];
 		}
 
-		// If this soldier personally sees the target right now, live state is known
-		// and may invalidate the threat. Team-only knowledge does not grant that.
-		if (PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
-			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0 &&
-			(!ValidOpponent(pSoldier, pOpponent) ||
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+
+		// Current relation/casualty state is legal only under this soldier's own sight.
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 !ValidOpponent(pSoldier, pOpponent) ||
 			 pOpponent->IsUnconscious() ||
 			 (pOpponent->usSoldierFlagMask & SOLDIER_POW)))
 		{
 			continue;
 		}
 
-		INT32 sThreatLoc = gsPublicLastKnownOppLoc[pSoldier->bTeam][pOpponent->ubID];
-		if (TileIsOutOfBounds(sThreatLoc))
+		if (TileIsOutOfBounds(sThreatLoc) ||
+			PythSpacesAway(sThreatLoc, sGridNo) > ubDistance)
+		{
 			continue;
-
-		if (PythSpacesAway(sThreatLoc, sGridNo) > ubDistance)
-			continue;
+		}
 
 		++ubNum;
 	}
