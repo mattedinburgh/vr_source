@@ -4245,10 +4245,11 @@ UINT8 AIFireteamEffectiveFireSupport(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	return ubSupport;
 }
 
-// Basic fire-and-manoeuvre is ordinary unit behaviour, not an elite trick. The
-// sophisticated parts (deep flank, exposed improvisation, breach doctrine) remain
-// competence-gated; this helper only authorizes a local covered manoeuvre when the
-// fireteam has a credible reason to act together.
+// Basic fire-and-manoeuvre is ordinary enemy unit behaviour, not an elite-only trick.
+// Deep flank, exposed improvisation and breach actions may still be rejected by mission
+// role, route safety or missing support, but ENEMY_TEAM is never competence-gated.
+// This helper authorizes a local covered manoeuvre when the fireteam has a credible
+// reason to act together.
 BOOLEAN AIBasicFireteamManeuverReady(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 {
 	if (!pSoldier || !AICombatTeam(pSoldier) ||
@@ -8916,9 +8917,9 @@ BOOLEAN TerrainDark(INT32 sSpot, INT8 bLevel)
 	return FALSE;
 }
 
-// Unified competence/friction adapter. Doctrine remains the authoritative training
-// model; these helpers translate it into planner complexity/reliability without
-// granting AP, CTH or hidden-information bonuses.
+// Unified competence/friction adapter. ENEMY_TEAM reasoning is fixed at the elite
+// ceiling; competence tiers remain only for militia/non-enemy execution friction.
+// No tier grants AP, CTH, damage, vision or hidden-information bonuses.
 static UINT32 AIStableDecisionHash(SOLDIERTYPE *pSoldier, UINT32 uiSalt)
 {
 	if (!pSoldier)
@@ -8972,16 +8973,6 @@ UINT8 AIPlannerReliability(SOLDIERTYPE *pSoldier)
 	case AI_COMPETENCE_BASIC:   iReliability = 52; break;
 	case AI_COMPETENCE_REGULAR: iReliability = 76; break;
 	case AI_COMPETENCE_ELITE:   iReliability = 93; break;
-	}
-
-	if (pSoldier->bTeam == ENEMY_TEAM)
-	{
-		switch (AIGetDoctrineProfile(pSoldier))
-		{
-		case AI_DOCTRINE_VETERAN: iReliability -= 5; break;
-		case AI_DOCTRINE_ELITE_GUARD: iReliability -= 2; break;
-		default: break;
-		}
 	}
 
 	if (pSoldier->aiData.bAIMorale == MORALE_HOPELESS)
