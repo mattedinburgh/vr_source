@@ -2791,16 +2791,21 @@ void HandleRightClickAdjustCursor( SOLDIERTYPE *pSoldier, INT32 usMapPos )
 			break;
 
 		case TOSSCURS:
-			// Deliberate hand-grenade aiming. Right click cycles through four aim
-			// levels and back to a snap throw, subject to available AP.
-			bFutureAim = (INT8)( pSoldier->aiData.bShownAimTime + 1 );
-			if ( bFutureAim > maxAimLevels )
-				bFutureAim = 0;
-
-			sAPCosts = CalcTotalAPsToAttack( pSoldier, usMapPos, TRUE, bFutureAim );
-			if ( bFutureAim == 0 || EnoughPoints( pSoldier, sAPCosts, 0, FALSE ) )
+			// Vengeance 2026: grenade aiming is a clamped level selector.
+			// Extra increment clicks at the maximum must not wrap back to zero.
+			if ( pSoldier->aiData.bShownAimTime >= maxAimLevels )
 			{
-				pSoldier->aiData.bShownAimTime = bFutureAim;
+				pSoldier->aiData.bShownAimTime = maxAimLevels;
+				gfDisplayFullCountRing = FALSE;
+				gfUIForceReExamineCursorData = TRUE;
+				break;
+			}
+
+			bFutureAim = (INT8)( pSoldier->aiData.bShownAimTime + 1 );
+			sAPCosts = CalcTotalAPsToAttack( pSoldier, usMapPos, TRUE, bFutureAim );
+			if ( EnoughPoints( pSoldier, sAPCosts, 0, FALSE ) )
+			{
+				pSoldier->aiData.bShownAimTime = __min( bFutureAim, (INT8)maxAimLevels );
 				gfDisplayFullCountRing = FALSE;
 				gfUIForceReExamineCursorData = TRUE;
 			}
@@ -2809,7 +2814,6 @@ void HandleRightClickAdjustCursor( SOLDIERTYPE *pSoldier, INT32 usMapPos )
 				gfDisplayFullCountRing = TRUE;
 			}
 			break;
-
 		default:
 
 			ErasePath( TRUE );
