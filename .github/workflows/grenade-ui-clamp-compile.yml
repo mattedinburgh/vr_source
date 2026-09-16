@@ -1,0 +1,38 @@
+name: Grenade UI clamp compile
+
+on:
+  push:
+    branches:
+      - combat/grenade-ui-clamp-2026-09-16
+    paths:
+      - 'Tactical/UI Cursors.cpp'
+      - 'ja2_VS2013.vcxproj'
+      - 'ja2_VS2013.sln'
+      - 'GENERATE_VR_BUILD_INFO.ps1'
+      - '.github/workflows/grenade-ui-clamp-compile.yml'
+  workflow_dispatch:
+
+jobs:
+  hosted-compile:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Generate VR build info
+        shell: powershell
+        run: |
+          & '.\GENERATE_VR_BUILD_INFO.ps1' -RepoRoot '.' -OutputPath '.\.generated\VRBuildInfo.generated.h' -Configuration 'Release' -Platform 'Win32' -TargetName 'JA2_EN_Release.exe'
+
+      - name: Compile
+        shell: powershell
+        run: |
+          msbuild '.\ja2_VS2013.vcxproj' /m /t:ClCompile /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
