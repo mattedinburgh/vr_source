@@ -29,6 +29,7 @@
 #include "AIList.h"
 #include "Soldier macros.h"
 #include <stdlib.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -633,6 +634,17 @@ static clock_t gVRSelfPlayRunClockStart = 0;
 static BOOLEAN gfVRSelfPlayWindowHidden = FALSE;
 static CHAR8 gzVRSelfPlayBuildLabel[64] = "current";
 static UINT32 guiVRSelfPlayWallStart = 0;
+static BOOLEAN gfVRSelfPlayMapSelected = FALSE;
+static BOOLEAN gfVRSelfPlayMapFixtureResolved = FALSE;
+static INT16 gsVRSelfPlayMapX = 0;
+static INT16 gsVRSelfPlayMapY = 0;
+static INT8 gbVRSelfPlayMapZ = 0;
+static CHAR8 gzVRSelfPlayMapSpec[16] = "slot";
+static INT32 giVRSelfPlayMapCandidateSlots[NUM_SAVE_GAMES];
+static UINT32 guiVRSelfPlayMapCandidateTime[NUM_SAVE_GAMES];
+static UINT16 gusVRSelfPlayMapCandidateCount = 0;
+static UINT16 gusVRSelfPlayMapCandidateIndex = 0;
+
 
 static UINT32 VR_SelfPlayCurrentSeed()
 {
@@ -722,7 +734,7 @@ static void VR_SelfPlayEnsureHeaders()
 		if( ftell( fp ) == 0 )
 		{
 			fprintf( fp,
-				"schema_version\tframework_version\tbuild_label\tfixture_slot\trun\tseed\tsector_x\tsector_y\tsector_z\tresult\tteam_turns\twall_ms\t"
+				"schema_version\tframework_version\tbuild_label\tselected_map\tfixture_slot\trun\tseed\tsector_x\tsector_y\tsector_z\tresult\tteam_turns\twall_ms\t"
 				"side_a_start\tside_b_start\tside_a_alive\tside_b_alive\t"
 				"a_shots\ta_hits\ta_misses\ta_damage\ta_kills\ta_deaths\ta_moves\ta_suppression_ap\ta_explosions\ta_smoke\t"
 				"b_shots\tb_hits\tb_misses\tb_damage\tb_kills\tb_deaths\tb_moves\tb_suppression_ap\tb_explosions\tb_smoke\tstate_hash\n" );
@@ -772,13 +784,14 @@ static void VR_SelfPlayWriteRun( const CHAR8 *pResult )
 	if( fp )
 	{
 		fprintf( fp,
-			"%u\t%s\t%s\t%d\t%u\t%u\t%d\t%d\t%d\t%s\t%u\t%u\t"
+			"%u\t%s\t%s\t%s\t%d\t%u\t%u\t%d\t%d\t%d\t%s\t%u\t%u\t"
 			"%d\t%d\t%d\t%d\t"
 			"%u\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t"
 			"%u\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%08X\n",
 			VR_AI_SELFPLAY_SCHEMA_VERSION,
 			VR_AI_FRAMEWORK_VERSION,
 			gzVRSelfPlayBuildLabel,
+			gzVRSelfPlayMapSpec,
 			giVRSelfPlaySaveSlot,
 			guiVRSelfPlayRunIndex + 1,
 			VR_SelfPlayCurrentSeed(),
@@ -844,8 +857,8 @@ static void VR_SelfPlayFinishRun( const CHAR8 *pResult, BOOLEAN fEnemyRetreated 
 static void VR_SelfPlayFinishBatch( const CHAR8 *pReason )
 {
 	VR_SelfPlayWriteBatchLine(
-		"END label=%s fixture=%d requested_runs=%u completed=%u base_seed=%u side_a_wins=%u side_b_wins=%u stalemates=%u errors=%u reason=%s\n",
-		gzVRSelfPlayBuildLabel, giVRSelfPlaySaveSlot,
+		"END label=%s selected_map=%s fixture=%d requested_runs=%u completed=%u base_seed=%u side_a_wins=%u side_b_wins=%u stalemates=%u errors=%u reason=%s\n",
+		gzVRSelfPlayBuildLabel, gzVRSelfPlayMapSpec, giVRSelfPlaySaveSlot,
 		guiVRSelfPlayRuns,
 		guiVRSelfPlayRunIndex + (giVRSelfPlayState == VR_SELFPLAY_STATE_RELOAD_PENDING ? 1 : 0),
 		guiVRSelfPlayBaseSeed,
@@ -898,11 +911,15 @@ static BOOLEAN VR_SelfPlayStartLoadedFixture()
 
 	if( !(gTacticalStatus.uiFlags & INCOMBAT) )
 	{
-		++guiVRSelfPlayErrors;
 		VR_SelfPlayWriteBatchLine(
-			"ERROR fixture=%d run=%u seed=%u reason=fixture_not_in_tactical_combat screen=%u sector=%d,%d,%d\n",
-			giVRSelfPlaySaveSlot, guiVRSelfPlayRunIndex + 1, VR_SelfPlayCurrentSeed(),
+			"REJECT fixture=%d map=%s reason=fixture_not_in_tactical_combat screen=%u sector=%d,%d,%d\n",
+			giVRSelfPlaySaveSlot, gzVRSelfPlayMapSpec,
 			guiCurrentScreen, gWorldSectorX, gWorldSectorY, gbWorldSectorZ );
+
+		if( VR_SelfPlayTryNextMapFixture( "not_in_tactical_combat" ) )
+			return FALSE;
+
+		++guiVRSelfPlayErrors;
 		VR_SelfPlayFinishBatch( "fixture_not_in_tactical_combat" );
 		return FALSE;
 	}
@@ -918,6 +935,9 @@ static BOOLEAN VR_SelfPlayStartLoadedFixture()
 		if( pSoldier && pSoldier->bActive && pSoldier->bInSector )
 			pSoldier->flags.uiStatusFlags |= SOLDIER_PCUNDERAICONTROL;
 	}
+
+	if( gfVRSelfPlayMapSelected )
+		gfVRSelfPlayMapFixtureResolved = TRUE;
 
 	giVRSelfPlaySideAStart = VR_SelfPlayAliveOnTeam( gbPlayerNum );
 	giVRSelfPlaySideBStart = VR_SelfPlayAliveOnTeam( ENEMY_TEAM );
@@ -941,12 +961,126 @@ static BOOLEAN VR_SelfPlayStartLoadedFixture()
 		VR_TacticalTelemetryBattleStart( gTacticalStatus.ubCurrentTeam );
 
 	VR_SelfPlayWriteBatchLine(
-		"RUN label=%s fixture=%d run=%u/%u seed=%u sector=%d,%d,%d side_a=%d side_b=%d\n",
-		gzVRSelfPlayBuildLabel, giVRSelfPlaySaveSlot, guiVRSelfPlayRunIndex + 1, guiVRSelfPlayRuns,
+		"RUN label=%s selected_map=%s fixture=%d run=%u/%u seed=%u sector=%d,%d,%d side_a=%d side_b=%d\n",
+		gzVRSelfPlayBuildLabel, gzVRSelfPlayMapSpec, giVRSelfPlaySaveSlot, guiVRSelfPlayRunIndex + 1, guiVRSelfPlayRuns,
 		VR_SelfPlayCurrentSeed(), gWorldSectorX, gWorldSectorY, gbWorldSectorZ,
 		giVRSelfPlaySideAStart, giVRSelfPlaySideBStart );
 
 	VR_SelfPlayStartCurrentTeamAI();
+	return TRUE;
+}
+
+
+static BOOLEAN VR_SelfPlayParseMapSpec( const CHAR8 *pSpec, INT16 *psX, INT16 *psY, INT8 *pbZ )
+{
+	if( !pSpec || !pSpec[0] || !isalpha((unsigned char)pSpec[0]) )
+		return FALSE;
+
+	const INT16 sY = (INT16)(toupper((unsigned char)pSpec[0]) - 'A' + 1);
+	if( sY < 1 || sY > 16 )
+		return FALSE;
+
+	CHAR8 *pEnd = NULL;
+	long lX = strtol( pSpec + 1, &pEnd, 10 );
+	if( pEnd == pSpec + 1 || lX < 1 || lX > 16 )
+		return FALSE;
+
+	long lZ = 0;
+	if( *pEnd == '-' || *pEnd == ':' )
+	{
+		++pEnd;
+		CHAR8 *pZEnd = NULL;
+		lZ = strtol( pEnd, &pZEnd, 10 );
+		if( pZEnd == pEnd || *pZEnd != 0 || lZ < 0 || lZ > 9 )
+			return FALSE;
+	}
+	else if( *pEnd != 0 )
+	{
+		return FALSE;
+	}
+
+	*psX = (INT16)lX;
+	*psY = sY;
+	*pbZ = (INT8)lZ;
+	return TRUE;
+}
+
+static UINT32 VR_SelfPlaySaveHeaderMinute( const SAVED_GAME_HEADER *pHeader )
+{
+	if( !pHeader )
+		return 0;
+	return pHeader->uiDay * 24u * 60u +
+		(UINT32)pHeader->ubHour * 60u +
+		(UINT32)pHeader->ubMin;
+}
+
+static BOOLEAN VR_SelfPlayBuildMapCandidates()
+{
+	gusVRSelfPlayMapCandidateCount = 0;
+	gusVRSelfPlayMapCandidateIndex = 0;
+
+	for( INT32 iSlot = 0; iSlot < NUM_SAVE_GAMES; ++iSlot )
+	{
+		if( !gbSaveGameArray[iSlot] )
+			continue;
+
+		SAVED_GAME_HEADER Header;
+		memset( &Header, 0, sizeof(Header) );
+		if( !LoadSavedGameHeader( iSlot, &Header ) )
+			continue;
+
+		if( !Header.fWorldLoaded ||
+			Header.uiCurrentScreen != GAME_SCREEN ||
+			Header.sSectorX != gsVRSelfPlayMapX ||
+			Header.sSectorY != gsVRSelfPlayMapY ||
+			Header.bSectorZ != gbVRSelfPlayMapZ )
+		{
+			continue;
+		}
+
+		const UINT32 uiMinute = VR_SelfPlaySaveHeaderMinute( &Header );
+		UINT16 insertAt = gusVRSelfPlayMapCandidateCount;
+		while( insertAt > 0 && guiVRSelfPlayMapCandidateTime[insertAt - 1] < uiMinute )
+		{
+			giVRSelfPlayMapCandidateSlots[insertAt] = giVRSelfPlayMapCandidateSlots[insertAt - 1];
+			guiVRSelfPlayMapCandidateTime[insertAt] = guiVRSelfPlayMapCandidateTime[insertAt - 1];
+			--insertAt;
+		}
+
+		giVRSelfPlayMapCandidateSlots[insertAt] = iSlot;
+		guiVRSelfPlayMapCandidateTime[insertAt] = uiMinute;
+		++gusVRSelfPlayMapCandidateCount;
+	}
+
+	if( !gusVRSelfPlayMapCandidateCount )
+		return FALSE;
+
+	giVRSelfPlaySaveSlot = giVRSelfPlayMapCandidateSlots[0];
+	VR_SelfPlayWriteBatchLine(
+		"MAP_SELECT map=%s candidates=%u initial_fixture=%d\n",
+		gzVRSelfPlayMapSpec, gusVRSelfPlayMapCandidateCount, giVRSelfPlaySaveSlot );
+	return TRUE;
+}
+
+static BOOLEAN VR_SelfPlayTryNextMapFixture( const CHAR8 *pReason )
+{
+	if( !gfVRSelfPlayMapSelected || gfVRSelfPlayMapFixtureResolved )
+		return FALSE;
+
+	if( gusVRSelfPlayMapCandidateIndex + 1 >= gusVRSelfPlayMapCandidateCount )
+		return FALSE;
+
+	++gusVRSelfPlayMapCandidateIndex;
+	giVRSelfPlaySaveSlot = giVRSelfPlayMapCandidateSlots[gusVRSelfPlayMapCandidateIndex];
+	giVRSelfPlayState = VR_SELFPLAY_STATE_NEED_LOAD;
+
+	VR_SelfPlayWriteBatchLine(
+		"MAP_RETRY map=%s fixture=%d candidate=%u/%u reason=%s\n",
+		gzVRSelfPlayMapSpec,
+		giVRSelfPlaySaveSlot,
+		(UINT32)gusVRSelfPlayMapCandidateIndex + 1,
+		(UINT32)gusVRSelfPlayMapCandidateCount,
+		pReason ? pReason : "invalid_fixture" );
 	return TRUE;
 }
 
@@ -961,17 +1095,38 @@ BOOLEAN VR_SelfPlayConfigureFromCommandLine( const CHAR8 *pCommandLine )
 	if( !pSelfPlay )
 		return FALSE;
 
-	INT32 iSlot = 0;
+	INT32 iSlot = -1;
 	UINT32 uiRuns = 40;
 	UINT32 uiSeed = 1000;
 	UINT32 uiMaxTurns = 1200;
 	CHAR8 zBuildLabel[64] = "current";
+	CHAR8 zFixtureSpec[32] = "";
 
 	pSelfPlay += 10;
-	const INT32 iRead = sscanf( pSelfPlay, "%d,%u,%u,%u,%63[^,\t\r\n ]",
-		&iSlot, &uiRuns, &uiSeed, &uiMaxTurns, zBuildLabel );
-	if( iRead < 1 || iSlot < 0 || iSlot >= NUM_SAVE_GAMES )
+	const INT32 iRead = sscanf( pSelfPlay, "%31[^,],%u,%u,%u,%63[^,\t\r\n ]",
+		zFixtureSpec, &uiRuns, &uiSeed, &uiMaxTurns, zBuildLabel );
+	if( iRead < 1 )
 		return FALSE;
+
+	gfVRSelfPlayMapSelected = VR_SelfPlayParseMapSpec(
+		zFixtureSpec, &gsVRSelfPlayMapX, &gsVRSelfPlayMapY, &gbVRSelfPlayMapZ );
+
+	if( gfVRSelfPlayMapSelected )
+	{
+		strncpy( gzVRSelfPlayMapSpec, zFixtureSpec, sizeof(gzVRSelfPlayMapSpec) - 1 );
+		gzVRSelfPlayMapSpec[sizeof(gzVRSelfPlayMapSpec) - 1] = 0;
+		for( CHAR8 *p = gzVRSelfPlayMapSpec; *p; ++p )
+			*p = (CHAR8)toupper((unsigned char)*p);
+	}
+	else
+	{
+		CHAR8 *pEnd = NULL;
+		long lSlot = strtol( zFixtureSpec, &pEnd, 10 );
+		if( pEnd == zFixtureSpec || *pEnd != 0 || lSlot < 0 || lSlot >= NUM_SAVE_GAMES )
+			return FALSE;
+		iSlot = (INT32)lSlot;
+		strcpy( gzVRSelfPlayMapSpec, "slot" );
+	}
 	if( iRead < 2 || uiRuns == 0 )
 		uiRuns = 40;
 	if( iRead < 3 || uiSeed == 0 )
@@ -980,6 +1135,9 @@ BOOLEAN VR_SelfPlayConfigureFromCommandLine( const CHAR8 *pCommandLine )
 		uiMaxTurns = 1200;
 
 	giVRSelfPlaySaveSlot = iSlot;
+	gfVRSelfPlayMapFixtureResolved = FALSE;
+	gusVRSelfPlayMapCandidateCount = 0;
+	gusVRSelfPlayMapCandidateIndex = 0;
 	guiVRSelfPlayRuns = uiRuns;
 	guiVRSelfPlayBaseSeed = uiSeed;
 	guiVRSelfPlayMaxTeamTurns = uiMaxTurns;
@@ -995,9 +1153,9 @@ BOOLEAN VR_SelfPlayConfigureFromCommandLine( const CHAR8 *pCommandLine )
 
 	VR_SelfPlayEnsureHeaders();
 	VR_SelfPlayWriteBatchLine(
-		"BEGIN schema=%u framework=%s label=%s fixture=%d runs=%u base_seed=%u max_team_turns=%u\n",
+		"BEGIN schema=%u framework=%s label=%s selected_map=%s fixture=%d runs=%u base_seed=%u max_team_turns=%u\n",
 		VR_AI_SELFPLAY_SCHEMA_VERSION, VR_AI_FRAMEWORK_VERSION, gzVRSelfPlayBuildLabel,
-		giVRSelfPlaySaveSlot, guiVRSelfPlayRuns,
+		gzVRSelfPlayMapSpec, giVRSelfPlaySaveSlot, guiVRSelfPlayRuns,
 		guiVRSelfPlayBaseSeed, guiVRSelfPlayMaxTeamTurns );
 
 	return TRUE;
@@ -1043,12 +1201,13 @@ void VR_SelfPlayDecision( SOLDIERTYPE *pSoldier )
 		return;
 
 	fprintf( fp,
-		"%u\t%s\t%s\t%d\t%u\t%u\t%u\t%d\t%d\t%d\t"
+		"%u\t%s\t%s\t%s\t%d\t%u\t%u\t%u\t%d\t%d\t%d\t"
 		"%d\t%u\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t"
 		"%d\t%d\t%d\t%d\t%d\n",
 		VR_AI_SELFPLAY_SCHEMA_VERSION,
 		VR_AI_FRAMEWORK_VERSION,
 		gzVRSelfPlayBuildLabel,
+			gzVRSelfPlayMapSpec,
 		giVRSelfPlaySaveSlot,
 		guiVRSelfPlayRunIndex + 1,
 		VR_SelfPlayCurrentSeed(),
@@ -1138,25 +1297,51 @@ void VR_SelfPlayGameLoop()
 		if( guiCurrentScreen != MAINMENU_SCREEN && guiCurrentScreen != GAME_SCREEN )
 			return;
 
-		if( !InitSaveGameArray() ||
-			giVRSelfPlaySaveSlot < 0 ||
+		if( !InitSaveGameArray() )
+		{
+			++guiVRSelfPlayErrors;
+			VR_SelfPlayFinishBatch( "save_array_init_failed" );
+			return;
+		}
+
+		if( gfVRSelfPlayMapSelected && !gfVRSelfPlayMapFixtureResolved &&
+			gusVRSelfPlayMapCandidateCount == 0 )
+		{
+			if( !VR_SelfPlayBuildMapCandidates() )
+			{
+				++guiVRSelfPlayErrors;
+				VR_SelfPlayWriteBatchLine(
+					"ERROR map=%s reason=no_saved_fixture_for_selected_map\n",
+					gzVRSelfPlayMapSpec );
+				VR_SelfPlayFinishBatch( "no_saved_fixture_for_selected_map" );
+				return;
+			}
+		}
+
+		if( giVRSelfPlaySaveSlot < 0 ||
 			giVRSelfPlaySaveSlot >= NUM_SAVE_GAMES ||
 			!gbSaveGameArray[giVRSelfPlaySaveSlot] )
 		{
+			if( VR_SelfPlayTryNextMapFixture( "save_slot_not_available" ) )
+				return;
+
 			++guiVRSelfPlayErrors;
 			VR_SelfPlayWriteBatchLine(
-				"ERROR fixture=%d reason=save_slot_not_available screen=%u\n",
-				giVRSelfPlaySaveSlot, guiCurrentScreen );
+				"ERROR fixture=%d map=%s reason=save_slot_not_available screen=%u\n",
+				giVRSelfPlaySaveSlot, gzVRSelfPlayMapSpec, guiCurrentScreen );
 			VR_SelfPlayFinishBatch( "save_slot_not_available" );
 			return;
 		}
 
 		if( !LoadSavedGame( giVRSelfPlaySaveSlot ) )
 		{
+			if( VR_SelfPlayTryNextMapFixture( "load_failed" ) )
+				return;
+
 			++guiVRSelfPlayErrors;
 			VR_SelfPlayWriteBatchLine(
-				"ERROR fixture=%d run=%u reason=load_failed\n",
-				giVRSelfPlaySaveSlot, guiVRSelfPlayRunIndex + 1 );
+				"ERROR fixture=%d map=%s run=%u reason=load_failed\n",
+				giVRSelfPlaySaveSlot, gzVRSelfPlayMapSpec, guiVRSelfPlayRunIndex + 1 );
 			VR_SelfPlayFinishBatch( "load_failed" );
 			return;
 		}
