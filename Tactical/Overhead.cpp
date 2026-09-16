@@ -116,6 +116,7 @@
 #include "connect.h"
 #include "Strategic Movement.h"
 #include "VRAnalytics.h"
+#include "Campaign Tactical Telemetry.h"
 
 #include "Luaglobal.h"
 #include "LuaInitNPCs.h"
@@ -7041,7 +7042,21 @@ BOOLEAN CheckForEndOfBattle( BOOLEAN fAnEnemyRetreated )
         }
     }
 
-    if ( fBattleLost || fBattleWon )
+    
+	// Laboratory battles are observational only. Capture the tactical result and
+	// exit combat before any sector ownership, loyalty, morale, quest, records or
+	// strategic-force consequences are applied.
+	if( (fBattleLost || fBattleWon) && VR_SelfPlayActive() )
+	{
+		VR_SelfPlayInterceptBattleEnd( fBattleWon, fBattleLost, fAnEnemyRetreated );
+		EndAllAITurns();
+		if( gTacticalStatus.uiFlags & INCOMBAT )
+			ExitCombatMode();
+		gfBlitBattleSectorLocator = FALSE;
+		return TRUE;
+	}
+
+if ( fBattleLost || fBattleWon )
     {
 		if( !gbWorldSectorZ && fBattleWon )
 		{
