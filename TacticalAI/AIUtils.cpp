@@ -1287,14 +1287,16 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 		BOOLEAN fThreatStateKnown =
 			(*pbPersOL == SEEN_CURRENTLY) &&
 			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			(gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
-			pOpponent->ubBodyType == CROW)
-		{
-			continue;
-		}
-		if (fThreatStateKnown && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
+		// Current relation/existence is legal only while the contact is directly seen.
+		// A stale memory remains a plausible hostile at the last known location.
+		if (fThreatStateKnown &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 (gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
+			 pOpponent->ubBodyType == CROW ||
+			 !pOpponent->bActive || !pOpponent->bInSector ||
+			 pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
 		{
 			continue;
 		}
@@ -1555,14 +1557,16 @@ INT32 ClosestKnownOpponent(SOLDIERTYPE *pSoldier, INT32 * psGridNo, INT8 * pbLev
 		BOOLEAN fThreatStateKnown =
 			(*pbPersOL == SEEN_CURRENTLY) &&
 			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			(gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
-			pOpponent->ubBodyType == CROW)
-		{
-			continue;
-		}
-		if (fThreatStateKnown && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
+		// Current relation/existence is legal only while the contact is directly seen.
+		// A stale memory remains a plausible hostile at the last known location.
+		if (fThreatStateKnown &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 (gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
+			 pOpponent->ubBodyType == CROW ||
+			 !pOpponent->bActive || !pOpponent->bInSector ||
+			 pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
 		{
 			continue;
 		}
