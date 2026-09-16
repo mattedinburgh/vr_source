@@ -628,6 +628,8 @@ typedef struct
 	INT32 iGunDamageModifier;
 	INT32 iGunRangeModifier;
 	INT32 iMeleeDamageModifier;
+	// Vengeance 2026: global ballistic penetration tuning. 1.0 preserves legacy behaviour.
+	FLOAT fGlobalPenetrationMultiplier;
 
 	UINT32 ubEasyEnemyStartingAlertLevel;
 	UINT32 ubNormalEnemyStartingAlertLevel;
