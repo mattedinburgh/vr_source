@@ -7236,7 +7236,9 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		!TileIsOutOfBounds(sClosestOpponent) &&
 		PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 4 &&
 		(ubBestAttackAction == AI_ACTION_NONE || ubBestAttackAction == AI_ACTION_FIRE_GUN && Random(25) > (UINT8)BestAttack.ubChanceToReallyHit) &&
-		(Chance(15 + 15 * SoldierDifficultyLevel(pSoldier) + 10 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10))) &&
+		(pSoldier->bTeam == ENEMY_TEAM ||
+		 Chance(15 + 15 * SoldierDifficultyLevel(pSoldier) +
+			10 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10))) &&
 		FindFenceAroundSpot(pSoldier->sGridNo))
 	{
 		CheckTossOpponentFence(pSoldier, &BestThrow);
@@ -7889,9 +7891,13 @@ L_NEWAIM:
 					pSoldier->aiData.bLastAttackHit ) &&
 				pSoldier->aiData.bOrders > ONGUARD &&
 				pSoldier->aiData.bOrders != SNIPER &&
-				// elites should not advance
-				RangeChangeDesire(pSoldier) >= 3 + SoldierDifficultyLevel( pSoldier ) / 2 &&
-				pSoldier->aiData.bOppCnt <= 5 - SoldierDifficultyLevel( pSoldier ) &&
+				// Enemy equipment class/difficulty never decides whether the soldier
+				// understands range closure. The tactical gates above/below (range quality,
+				// risk, support, route exposure and mutual support) own that decision.
+				(pSoldier->bTeam == ENEMY_TEAM ||
+				 RangeChangeDesire(pSoldier) >= 3 + SoldierDifficultyLevel(pSoldier) / 2) &&
+				(pSoldier->bTeam == ENEMY_TEAM ||
+				 pSoldier->aiData.bOppCnt <= 5 - SoldierDifficultyLevel(pSoldier)) &&
 				// only when standing
 				gAnimControl[ pSoldier->usAnimState ].ubEndHeight > ANIM_CROUCH &&
 				// only short range weapons
