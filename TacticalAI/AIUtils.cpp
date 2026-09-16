@@ -9207,7 +9207,7 @@ UINT8 AIFireteamEffectiveFireSupport(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
 			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend) ||
-			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > __max(6, DAY_VISION_RANGE / 2))
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > __max(8, DAY_VISION_RANGE))
 		{
 			continue;
 		}
@@ -9303,7 +9303,7 @@ for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 			pFriend->bCollapsed ||
 			pFriend->bBreathCollapsed ||
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
-			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE / 2)
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE)
 		{
 			continue;
 		}
@@ -9366,6 +9366,8 @@ static BOOLEAN AIEligibleWithdrawalCoverer(SOLDIERTYPE *pCandidate, SOLDIERTYPE 
 	}
 
 	INT32 sThreat = ClosestKnownOpponent(pCandidate, NULL, NULL);
+	if (TileIsOutOfBounds(sThreat) && pCandidate->bTeam == ENEMY_TEAM)
+		AISharedFireteamContact(pCandidate, &sThreat, NULL, NULL);
 	if (TileIsOutOfBounds(sThreat))
 		return FALSE;
 
@@ -9450,10 +9452,13 @@ static INT32 AIWithdrawalCoverScore(SOLDIERTYPE *pCandidate, SOLDIERTYPE *pRetre
 	iScore -= __min((INT32)20,
 		PythSpacesAway(pCandidate->sGridNo, pRetreating->sGridNo));
 
-	// Close candidates should not always resolve to the same rear guard. The
-	// jitter is stable for this tactical turn, so repeated AI checks do not thrash.
-	iScore += AIBoundedDecisionJitter(pCandidate,
-		pRetreating->uiUniqueSoldierIdValue + 17u, 6);
+	// Enemy rear guards are chosen by tactical merit, not by an artificial mistake
+	// roll. Non-enemy AI keeps bounded variation among otherwise close candidates.
+	if (pCandidate->bTeam != ENEMY_TEAM)
+	{
+		iScore += AIBoundedDecisionJitter(pCandidate,
+			pRetreating->uiUniqueSoldierIdValue + 17u, 6);
+	}
 
 	return iScore;
 }
