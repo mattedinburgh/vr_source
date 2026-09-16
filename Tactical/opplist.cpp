@@ -939,15 +939,12 @@ void HandleSight(SOLDIERTYPE *pSoldier, UINT8 ubSightFlags)
 				// revealing roofs and looking for items handled here, too
 				RevealRoofsAndItems(pSoldier,TRUE, TRUE, pSoldier->pathing.bLevel, FALSE );
 		}
-		// unless in easy mode allow alerted enemies to radio
+		// Enemy exact contact knowledge is no longer promoted to the sector-wide
+		// public opplist here. Alert state may be global, but tactical sightings are
+		// shared only through the bounded local fireteam network.
 		else if ( gGameOptions.ubDifficultyLevel >= DIF_LEVEL_MEDIUM )
 		{
-			// don't allow admins to radio
-			//Madd: Huh?	why not admins?	removed.
-			if ( pSoldier->bTeam == ENEMY_TEAM && gTacticalStatus.Team[ ENEMY_TEAM ].bAwareOfOpposition ) //&& pSoldier->ubSoldierClass != 	SOLDIER_CLASS_ADMINISTRATOR )
-			{
-				RadioSightings(pSoldier,EVERYBODY, pSoldier->bTeam );
-			}
+			// Intentionally no RadioSightings() for ENEMY_TEAM.
 		}
 
 		pSoldier->bNewOppCnt = 0;
@@ -986,15 +983,11 @@ void HandleSight(SOLDIERTYPE *pSoldier, UINT8 ubSightFlags)
 #endif
 						RadioSightings(pThem,pSoldier->ubID, pThem->bTeam);
 				}
-				// unless in easy mode allow alerted enemies to radio
+				// Enemy observers keep their sightings personal/local. The fireteam
+				// blackboard relays them with bounded range and confidence decay.
 				else if ( gGameOptions.ubDifficultyLevel >= DIF_LEVEL_MEDIUM )
 				{
-					// don't allow admins to radio
-					// sevenfm: why not?
-					if (pThem->bTeam == ENEMY_TEAM && gTacticalStatus.Team[ENEMY_TEAM].bAwareOfOpposition) //&& pThem->ubSoldierClass != SOLDIER_CLASS_ADMINISTRATOR )
-					{
-						RadioSightings(pThem,EVERYBODY, pThem->bTeam );
-					}
+					// Intentionally no sector-wide enemy public-opplist update.
 				}
 
 				pThem->bNewOppCnt = 0;
