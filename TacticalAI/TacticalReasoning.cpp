@@ -438,7 +438,7 @@ static BOOLEAN AIUsableContactMemory(
 	// reacquiring the opponent, sharply retire that hypothesis instead of pacing
 	// back to the same empty tile forever.
 	if (fApplyInspectionDecay &&
-		Knowledge(pSoldier, ubOpponentID) == NOT_HEARD_OR_SEEN &&
+		!AIPlanningContactForOpponent(pSoldier, ubOpponentID, NULL) &&
 		pSlot->bLevel == pSoldier->pathing.bLevel &&
 		PythSpacesAway(pSoldier->sGridNo, pSlot->sLastKnownGridNo) <= 4 &&
 		SoldierTo3DLocationLineOfSightTest(
@@ -526,7 +526,7 @@ BOOLEAN AIBuildThreatMemoryCue(
 	{
 		// Normal legal knowledge is stronger than memory and should be handled by
 		// the ordinary JA2 opponent/noise logic.
-		if (Knowledge(pSoldier, (UINT8)i) != NOT_HEARD_OR_SEEN)
+		if (AIPlanningContactForOpponent(pSoldier, (UINT8)i, NULL))
 			continue;
 
 		AICONTACTMEMORYSLOT *pSlot = NULL;
@@ -596,7 +596,7 @@ BOOLEAN AIBuildThreatMemoryCue(
 	{
 		// The supporting-memory count is a measure of unresolved old contacts,
 		// not a back door for fresh JA2 knowledge to inflate a stale hypothesis.
-		if (Knowledge(pSoldier, (UINT8)i) != NOT_HEARD_OR_SEEN)
+		if (AIPlanningContactForOpponent(pSoldier, (UINT8)i, NULL))
 			continue;
 
 		AICONTACTMEMORYSLOT *pSlot = NULL;
@@ -954,7 +954,7 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 	// caution/search/flank choice but is too weak to authorize an attack.
 	for (UINT16 i = 0; i < TOTAL_SOLDIERS && i < MAX_NUM_SOLDIERS; ++i)
 	{
-		if (Knowledge(pSoldier, (UINT8)i) != NOT_HEARD_OR_SEEN)
+		if (AIPlanningContactForOpponent(pSoldier, (UINT8)i, NULL))
 			continue;
 
 		AICONTACTMEMORYSLOT *pSlot = NULL;
