@@ -37,6 +37,7 @@ UINT32 VR_TacticalTelemetryTurnID();
 BOOLEAN VR_SelfPlayConfigureFromCommandLine( const CHAR8 *pCommandLine );
 BOOLEAN VR_SelfPlayConfigured();
 BOOLEAN VR_SelfPlayActive();
+BOOLEAN VR_SelfPlayArenaActive();
 BOOLEAN VR_SelfPlayShouldAbortCurrentBattle();
 void VR_SelfPlayGameLoop();
 void VR_SelfPlayDecision( SOLDIERTYPE *pSoldier );
