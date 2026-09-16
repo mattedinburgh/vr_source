@@ -9135,7 +9135,7 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 				continue;
 			}
 
-			INT32 sFriendThreat = ClosestKnownOpponent(pFriend, NULL, NULL);
+			INT32 sFriendThreat = AIPrimaryPlanningThreatSpot(pFriend);
 			if (TileIsOutOfBounds(sFriendThreat) ||
 				PythSpacesAway(sFriendThreat, sTargetSpot) > 3)
 			{
@@ -9225,7 +9225,7 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 
 		// The covering soldier must independently know about essentially the same
 		// contact. This prevents a hidden-information squad hive mind.
-		INT32 sFriendThreat = ClosestKnownOpponent(pFriend, NULL, NULL);
+		INT32 sFriendThreat = AIPrimaryPlanningThreatSpot(pFriend);
 		if (TileIsOutOfBounds(sFriendThreat) ||
 			PythSpacesAway(sFriendThreat, sTargetSpot) > 3)
 		{
@@ -10189,7 +10189,7 @@ UINT8 CountFriendsFlankSameSpot(SOLDIERTYPE *pSoldier, INT32 sSpot)
 
 	if (TileIsOutOfBounds(sSpot))
 	{
-		sSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		sSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 	}
 
 	if (TileIsOutOfBounds(sSpot))
@@ -13506,7 +13506,7 @@ BOOLEAN AbortFinalSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bAction, INT32 s
 
 	INT32	sOpponentGridNo;
 	INT8	bOpponentLevel;
-	INT32	sClosestOpponent = ClosestKnownOpponent(pSoldier, &sOpponentGridNo, &bOpponentLevel);
+	INT32	sClosestOpponent = AIPrimaryPlanningThreatSpot(pSoldier, &bOpponentLevel);
 
 	if (TileIsOutOfBounds(sClosestDisturbance))
 	{
@@ -13618,7 +13618,7 @@ BOOLEAN AbortPath(SOLDIERTYPE *pSoldier, INT8 bAction, INT32 sClosestDisturbance
 
 	INT32	sOpponentGridNo;
 	INT8	bOpponentLevel;
-	INT32	sClosestOpponent = ClosestKnownOpponent(pSoldier, &sOpponentGridNo, &bOpponentLevel);
+	INT32	sClosestOpponent = AIPrimaryPlanningThreatSpot(pSoldier, &bOpponentLevel);
 
 	if (TileIsOutOfBounds(sClosestDisturbance))
 	{
@@ -14567,7 +14567,7 @@ static UINT8 AIActiveManeuverCount(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 		if (!TileIsOutOfBounds(sTargetSpot))
 		{
-			INT32 sFriendTarget = ClosestKnownOpponent(pFriend, NULL, NULL);
+			INT32 sFriendTarget = AIPrimaryPlanningThreatSpot(pFriend);
 			if (!TileIsOutOfBounds(sFriendTarget) && PythSpacesAway(sFriendTarget, sTargetSpot) > 5)
 				continue;
 		}
