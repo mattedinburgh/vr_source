@@ -7966,6 +7966,11 @@ static INT8 AIProfessionalismModifier(SOLDIERTYPE *pSoldier)
 	if (!pSoldier)
 		return 0;
 
+	// Enemy class no longer encodes training quality. Every live enemy combatant
+	// represents the same exceptionally drilled force; class only changes resources.
+	if (pSoldier->bTeam == ENEMY_TEAM)
+		return 12;
+
 	INT32 iModifier = 0;
 
 	switch (pSoldier->ubSoldierClass)
@@ -8285,6 +8290,8 @@ INT32 AISupportRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 	if (TileIsOutOfBounds(sTargetSpot))
 		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	if (TileIsOutOfBounds(sTargetSpot) && pSoldier->bTeam == ENEMY_TEAM)
+		AISharedFireteamContact(pSoldier, &sTargetSpot, NULL, NULL);
 
 	INT32 iScore = 20;
 	INT32 iGunRange = __max(1, (INT32)AIGunRange(pSoldier) / CELL_X_SIZE);
@@ -8375,6 +8382,8 @@ INT32 AIManeuverRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 	if (TileIsOutOfBounds(sTargetSpot))
 		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	if (TileIsOutOfBounds(sTargetSpot) && pSoldier->bTeam == ENEMY_TEAM)
+		AISharedFireteamContact(pSoldier, &sTargetSpot, NULL, NULL);
 
 	INT32 iHealthPercent = pSoldier->stats.bLifeMax > 0 ?
 		(100 * pSoldier->stats.bLife) / pSoldier->stats.bLifeMax : 0;
@@ -9116,6 +9125,8 @@ UINT8 AIFireteamEffectiveFireSupport(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 	if (TileIsOutOfBounds(sTargetSpot))
 		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	if (TileIsOutOfBounds(sTargetSpot) && pSoldier->bTeam == ENEMY_TEAM)
+		AISharedFireteamContact(pSoldier, &sTargetSpot, NULL, NULL);
 	if (TileIsOutOfBounds(sTargetSpot))
 		return 0;
 
@@ -9177,6 +9188,8 @@ BOOLEAN AIBasicFireteamManeuverReady(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 	if (TileIsOutOfBounds(sTargetSpot))
 		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	if (TileIsOutOfBounds(sTargetSpot) && pSoldier->bTeam == ENEMY_TEAM)
+		AISharedFireteamContact(pSoldier, &sTargetSpot, NULL, NULL);
 	if (TileIsOutOfBounds(sTargetSpot))
 		return FALSE;
 
@@ -13453,6 +13466,10 @@ BOOLEAN UseSightCoverAdvance(SOLDIERTYPE *pSoldier)
 		return FALSE;
 	}
 
+	// Every enemy understands sight-cover movement regardless of soldier class.
+	if (pSoldier->bTeam == ENEMY_TEAM)
+		return TRUE;
+
 	switch (pSoldier->ubSoldierClass)
 	{
 	case SOLDIER_CLASS_ELITE:
@@ -14362,6 +14379,8 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	UINT8 ubID = pSoldier->ubID;
 	if (TileIsOutOfBounds(sTargetSpot))
 		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	if (TileIsOutOfBounds(sTargetSpot) && pSoldier->bTeam == ENEMY_TEAM)
+		AISharedFireteamContact(pSoldier, &sTargetSpot, NULL, NULL);
 
 	INT8 bIntent = AITacticalIntent(pSoldier, sTargetSpot);
 	INT32 iSupport = AISupportRoleScore(pSoldier, sTargetSpot);
@@ -14461,6 +14480,8 @@ INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 
 	if (TileIsOutOfBounds(sTargetSpot))
 		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	if (TileIsOutOfBounds(sTargetSpot) && pSoldier->bTeam == ENEMY_TEAM)
+		AISharedFireteamContact(pSoldier, &sTargetSpot, NULL, NULL);
 	if (bIntent < AI_INTENT_HOLD || bIntent > AI_INTENT_RESCUE)
 		bIntent = AITacticalIntent(pSoldier, sTargetSpot);
 	if (bRole < AI_ROLE_SUPPORT || bRole > AI_ROLE_RESERVE)
