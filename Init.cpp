@@ -86,6 +86,7 @@
 #include "BriefingRoom_Data.h"
 #include "AimArchives.h"
 #include "connect.h"
+#include "Tactical/Campaign Tactical Telemetry.h"
 
 extern INT16 APBPConstants[TOTAL_APBP_VALUES] = {0};
 extern INT16 gubMaxActionPoints[28];//MAXBODYTYPES = 28... JUST GETTING IT TO WORK NOW.  GOTTHARD 7/2/08
@@ -1649,6 +1650,9 @@ UINT32 InitializeJA2(void)
 	{
 		return( ERROR_SCREEN );
 	}
+
+	// Optional unattended tactical AI-vs-AI laboratory.
+	VR_SelfPlayConfigureFromCommandLine( gzCommandLine );
 
 	//ADB When a merc calcs CTGT for a thrown item he uses a GLOCK temp item
 	//but we don't want to recreate it every single time CTGT is called, so init the GLOCK here
