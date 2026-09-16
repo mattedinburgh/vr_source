@@ -9955,6 +9955,14 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		AIBasicFireteamManeuverReady(pSoldier, sClosestDisturbance);
 	VRAnalyticsStateInt(uiTraceDecision, "turn", (long)guiTurnCnt);
 	VRAnalyticsStateInt(uiTraceDecision, "fireteam_id", (long)AIFireteamId(pSoldier));
+	if (!TileIsOutOfBounds(sClosestDisturbance))
+	{
+		INT16 sTraceTargetX = 0;
+		INT16 sTraceTargetY = 0;
+		ConvertGridNoToXY(sClosestDisturbance, &sTraceTargetX, &sTraceTargetY);
+		VRAnalyticsStateInt(uiTraceDecision, "target_x", (long)sTraceTargetX);
+		VRAnalyticsStateInt(uiTraceDecision, "target_y", (long)sTraceTargetY);
+	}
 	VRAnalyticsStateInt(uiTraceDecision, "fireteam_effective_fire_support",
 		(long)AIFireteamEffectiveFireSupport(pSoldier, sClosestDisturbance));
 	VRAnalyticsStateInt(uiTraceDecision, "shared_approach_pressure",

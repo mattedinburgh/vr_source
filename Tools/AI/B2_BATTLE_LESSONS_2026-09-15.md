@@ -63,6 +63,27 @@ The next B2-style playtest should test the change as a hypothesis, not as a pres
 
 A failed shared route must still allow the individual execution layer to use the opposite legal flank when necessary. The shared axis is tactical inertia, not a command that overrides route safety.
 
+## Phase-2 evidence methodology hardening - 2026-09-16
+
+No additional combat heuristic was added in this pass. The correct next step is to validate the shared-axis/fireteam changes before layering more doctrine on top.
+
+Telemetry and analysis were hardened instead:
+- flank planner decisions now record target map coordinates (`target_x` / `target_y`) on the same planner decision as the fireteam ID, turn, shared axis, support and approach-pressure state;
+- Companion groups same-session/battle/turn/fireteam decisions only when their contact coordinates are within a 4-tile radius, so minor contact-location drift does not erase a valid coordination sample;
+- spatially distinct contacts in the same turn remain separate rather than being treated as disagreement;
+- older logs without coordinate telemetry fall back to exact target-grid matching;
+- shared-axis agreement is now pair-weighted, so larger comparison groups contribute proportionally more evidence than two-soldier groups;
+- selected-action alignment remains a separate measure, preserving the distinction between team preference and an individual route-safety override.
+
+Regression status:
+- unified AI integrity audit: PASS;
+- Companion regression suite: 19 tests PASS;
+- Python syntax compilation: PASS;
+- git diff whitespace check: PASS;
+- retained pre-Phase-2 Black Box remains correctly classified as lacking coordination telemetry: 168 flank planner decisions, 41 competence/doctrine rejections, 0 shared-axis samples, agreement = n/a.
+
+This means the next real battle can answer the Phase-2 hypothesis cleanly. Behavioural tuning should wait for post-Phase-2 evidence rather than being stacked onto an unvalidated change.
+
 ## Pre-Phase-2 baseline captured 2026-09-16
 
 The last real Black Box before the shared-axis pass stopped at approximately 02:02 local time, before commits `7e9311cf` (shared fireteam attack-axis decisions, 02:06) and `fcff6a92` (flank coordination outcome tracing, 02:09). Treat it as a baseline, not as evidence about the current implementation.

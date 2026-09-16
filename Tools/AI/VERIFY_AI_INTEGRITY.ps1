@@ -205,6 +205,8 @@ if (-not $decideText.Contains("VRAnalyticsCommitDecision")) {
 $flankPlannerTelemetry = @(
     'VRAnalyticsStateInt(uiTraceDecision, "turn"',
     'VRAnalyticsStateInt(uiTraceDecision, "fireteam_id"',
+    'VRAnalyticsStateInt(uiTraceDecision, "target_x"',
+    'VRAnalyticsStateInt(uiTraceDecision, "target_y"',
     'VRAnalyticsStateInt(uiTraceDecision, "fireteam_effective_fire_support"',
     'VRAnalyticsStateInt(uiTraceDecision, "shared_approach_pressure"',
     'VRAnalyticsStateInt(uiTraceDecision, "basic_fireteam_maneuver"',

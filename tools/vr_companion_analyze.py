@@ -355,7 +355,17 @@ def fireteam_flank_summary(
         decision for decision in tactical
         if (decision.get("begin") or {}).get("decision_type") == "flank"
     ]
-    grouped_axes: Dict[Tuple[Any, Any, int, int, int], List[int]] = defaultdict(list)
+
+    # New builds log target map coordinates so coordination can be compared across
+    # small contact-location drift without conflating genuinely separate contacts.
+    # Older logs fall back to the deliberately strict exact-target-grid grouping.
+    grouped_contacts: Dict[
+        Tuple[Any, Any, int, int], List[Tuple[int, int, int]]
+    ] = defaultdict(list)
+    legacy_grouped_axes: Dict[
+        Tuple[Any, Any, int, int, int], List[int]
+    ] = defaultdict(list)
+
     axis_samples = 0
     axis_selected_samples = 0
     axis_selected_matches = 0
@@ -371,12 +381,26 @@ def fireteam_flank_summary(
             turn = states.get("turn")
             fireteam_id = states.get("fireteam_id")
             target_grid = states.get("target_grid")
-            if all(isinstance(v, (int, float)) for v in (turn, fireteam_id, target_grid)) and int(fireteam_id) != 0:
-                key = (
-                    decision.get("session"), begin.get("battle_id"), int(turn),
-                    int(fireteam_id), int(target_grid),
+            target_x = states.get("target_x")
+            target_y = states.get("target_y")
+
+            if (
+                isinstance(turn, (int, float))
+                and isinstance(fireteam_id, (int, float))
+                and int(fireteam_id) != 0
+            ):
+                base_key = (
+                    decision.get("session"), begin.get("battle_id"),
+                    int(turn), int(fireteam_id),
                 )
-                grouped_axes[key].append(int(axis))
+                if isinstance(target_x, (int, float)) and isinstance(target_y, (int, float)):
+                    grouped_contacts[base_key].append(
+                        (int(target_x), int(target_y), int(axis))
+                    )
+                elif isinstance(target_grid, (int, float)):
+                    legacy_grouped_axes[
+                        base_key + (int(target_grid),)
+                    ].append(int(axis))
 
             selected = states.get("selected_action")
             if isinstance(selected, (int, float)) and int(selected) != 0:
@@ -390,8 +414,47 @@ def fireteam_flank_summary(
             if candidate.get("candidate") == "flank" and not candidate.get("eligible", False):
                 rejection_reasons[str(candidate.get("reason", "unknown"))] += 1
 
-    comparison_groups = [axes for axes in grouped_axes.values() if len(axes) >= 2]
+    comparison_groups: List[List[int]] = []
+    multi_contact_turn_groups = 0
+    clustered_target_samples = 0
+    contact_cluster_radius = 4
+
+    for records in grouped_contacts.values():
+        clustered_target_samples += len(records)
+        remaining = sorted(records, key=lambda item: (item[0], item[1], item[2]))
+        contact_clusters: List[List[Tuple[int, int, int]]] = []
+        while remaining:
+            seed = remaining.pop(0)
+            cluster = [seed]
+            outside = []
+            for record in remaining:
+                if max(abs(record[0] - seed[0]), abs(record[1] - seed[1])) <= contact_cluster_radius:
+                    cluster.append(record)
+                else:
+                    outside.append(record)
+            remaining = outside
+            contact_clusters.append(cluster)
+
+        if len(contact_clusters) > 1:
+            multi_contact_turn_groups += 1
+        for cluster in contact_clusters:
+            if len(cluster) >= 2:
+                comparison_groups.append([record[2] for record in cluster])
+
+    comparison_groups.extend(
+        axes for axes in legacy_grouped_axes.values() if len(axes) >= 2
+    )
+
     unanimous_groups = sum(1 for axes in comparison_groups if len(set(axes)) == 1)
+    comparison_pairs = 0
+    same_axis_pairs = 0
+    for axes in comparison_groups:
+        comparison_pairs += len(axes) * (len(axes) - 1) // 2
+        axis_counts = Counter(axes)
+        same_axis_pairs += sum(
+            count * (count - 1) // 2 for count in axis_counts.values()
+        )
+
     coordination_telemetry_available = axis_samples > 0
     return {
         "decisions": len(flank_decisions),
@@ -400,10 +463,22 @@ def fireteam_flank_summary(
         "committed": committed,
         "comparison_groups": len(comparison_groups),
         "unanimous_groups": unanimous_groups,
-        "axis_agreement_rate": (
+        "unanimous_group_rate": (
             pct(unanimous_groups, len(comparison_groups))
             if comparison_groups else None
         ),
+        "axis_pairwise_comparisons": comparison_pairs,
+        "same_axis_pairs": same_axis_pairs,
+        "axis_agreement_rate": (
+            pct(same_axis_pairs, comparison_pairs)
+            if comparison_pairs else None
+        ),
+        "clustered_target_samples": clustered_target_samples,
+        "legacy_exact_target_samples": sum(
+            len(axes) for axes in legacy_grouped_axes.values()
+        ),
+        "multi_contact_turn_groups": multi_contact_turn_groups,
+        "contact_cluster_radius": contact_cluster_radius,
         "axis_selected_samples": axis_selected_samples,
         "axis_selected_alignment_rate": (
             pct(axis_selected_matches, axis_selected_samples)
@@ -1366,15 +1441,22 @@ def render_markdown(
         f"| Coordination telemetry available | {'yes' if flank['coordination_telemetry_available'] else 'no'} |",
         f"| Decisions with shared-axis evidence | {flank['shared_axis_samples']} |",
         f"| Observed flank commit events | {flank['committed']} |",
-        f"| Comparable same-fireteam groups | {flank['comparison_groups']} |",
-        f"| Same-axis groups | {flank['unanimous_groups']} |",
-        f"| Shared-axis agreement | {fmt(flank['axis_agreement_rate'])}{'%' if flank['axis_agreement_rate'] is not None else ''} |",
+        f"| Comparable same-fireteam contact groups | {flank['comparison_groups']} |",
+        f"| Pairwise axis comparisons | {flank['axis_pairwise_comparisons']} |",
+        f"| Same-axis pairs | {flank['same_axis_pairs']} |",
+        f"| Shared-axis pair agreement | {fmt(flank['axis_agreement_rate'])}{'%' if flank['axis_agreement_rate'] is not None else ''} |",
+        f"| Fully unanimous contact groups | {flank['unanimous_groups']} ({fmt(flank['unanimous_group_rate'])}{'%' if flank['unanimous_group_rate'] is not None else ''}) |",
+        f"| Coordinate-clustered target samples | {flank['clustered_target_samples']} |",
+        f"| Legacy exact-grid target samples | {flank['legacy_exact_target_samples']} |",
+        f"| Fireteam-turn groups with multiple contact clusters | {flank['multi_contact_turn_groups']} |",
         f"| Selected action aligned with shared axis | {fmt(flank['axis_selected_alignment_rate'])}{'%' if flank['axis_selected_alignment_rate'] is not None else ''} ({flank['axis_selected_samples']} samples) |",
         f"| Rejected flank candidates | {flank_rejection_total} |",
         f"| Top rejection reasons | {flank_rejection_text} |",
         "",
-        "Groups compare same session/battle/turn/fireteam/target-grid only. This is deliberately conservative: "
-        "it measures coordination without inferring agreement across unrelated contacts. "
+        f"New telemetry clusters same-session/battle/turn/fireteam flank decisions whose target coordinates are within {flank['contact_cluster_radius']} map tiles, "
+        "so small contact-location drift does not erase a valid coordination sample. Distinct contact clusters remain separate. "
+        "Older logs without target coordinates fall back to exact target-grid matching. "
+        "Agreement is pair-weighted rather than group-weighted, so a five-soldier comparison contributes more evidence than a two-soldier comparison. "
         "A pre-coordination build reports n/a rather than converting missing telemetry into a false 0% result.",
         "",
         "### Battle outcomes",

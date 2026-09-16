@@ -145,26 +145,30 @@ class CompanionAnalysisTests(unittest.TestCase):
 
 
     def test_fireteam_flank_coordination_summary_tracks_axis_agreement(self):
-        def flank_decision(turn, target, axis, selected):
+        def flank_decision(turn, target, axis, selected, target_x=None, target_y=None):
+            states = {
+                "turn": turn,
+                "fireteam_id": 2,
+                "target_grid": target,
+                "fireteam_flank_axis": axis,
+                "selected_action": selected,
+            }
+            if target_x is not None and target_y is not None:
+                states["target_x"] = target_x
+                states["target_y"] = target_y
             return {
                 "session": 10,
                 "begin": {"decision_type": "flank", "battle_id": 3},
-                "states": {
-                    "turn": turn,
-                    "fireteam_id": 2,
-                    "target_grid": target,
-                    "fireteam_flank_axis": axis,
-                    "selected_action": selected,
-                },
+                "states": states,
                 "commits": [{"selection": "flank"}],
                 "candidates": [],
             }
 
         tactical = [
-            flank_decision(4, 100, 9, 9),
-            flank_decision(4, 100, 9, 9),
-            flank_decision(5, 101, 9, 9),
-            flank_decision(5, 101, 10, 9),
+            flank_decision(4, 100, 9, 9, 20, 30),
+            flank_decision(4, 101, 9, 9, 22, 31),
+            flank_decision(5, 200, 9, 9, 40, 45),
+            flank_decision(5, 201, 10, 9, 42, 44),
         ]
         tactical[3]["candidates"].append({
             "candidate": "flank",
@@ -178,12 +182,50 @@ class CompanionAnalysisTests(unittest.TestCase):
         self.assertEqual(4, result["committed"])
         self.assertEqual(2, result["comparison_groups"])
         self.assertEqual(1, result["unanimous_groups"])
+        self.assertEqual(50.0, result["unanimous_group_rate"])
+        self.assertEqual(2, result["axis_pairwise_comparisons"])
+        self.assertEqual(1, result["same_axis_pairs"])
         self.assertEqual(50.0, result["axis_agreement_rate"])
+        self.assertEqual(4, result["clustered_target_samples"])
+        self.assertEqual(0, result["legacy_exact_target_samples"])
         self.assertEqual(75.0, result["axis_selected_alignment_rate"])
         self.assertEqual(
             1,
             result["rejection_reasons"]["fireteam flank commitment limit reached"],
         )
+
+    def test_fireteam_flank_coordination_separates_distinct_contacts(self):
+        def decision(x, y, axis):
+            return {
+                "session": 11,
+                "begin": {"decision_type": "flank", "battle_id": 7},
+                "states": {
+                    "turn": 8,
+                    "fireteam_id": 3,
+                    "target_grid": 1000 + x + y,
+                    "target_x": x,
+                    "target_y": y,
+                    "fireteam_flank_axis": axis,
+                    "selected_action": axis,
+                },
+                "commits": [{"selection": "flank"}],
+                "candidates": [],
+            }
+
+        tactical = [
+            decision(10, 10, 9),
+            decision(13, 11, 9),
+            decision(40, 40, 10),
+            decision(42, 43, 10),
+        ]
+        result = companion.fireteam_flank_summary(tactical)
+        self.assertEqual(2, result["comparison_groups"])
+        self.assertEqual(2, result["unanimous_groups"])
+        self.assertEqual(2, result["axis_pairwise_comparisons"])
+        self.assertEqual(2, result["same_axis_pairs"])
+        self.assertEqual(100.0, result["axis_agreement_rate"])
+        self.assertEqual(100.0, result["unanimous_group_rate"])
+        self.assertEqual(1, result["multi_contact_turn_groups"])
 
 
     def test_fireteam_flank_coordination_missing_telemetry_is_not_zero_percent(self):
