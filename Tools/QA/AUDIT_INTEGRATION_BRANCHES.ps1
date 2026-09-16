@@ -1,6 +1,7 @@
 param(
     [string]$CanonicalRef = "origin/install/all-2026-09-12",
-    [string[]]$ExcludePrefixes = @("archive/", "master", "playtest/")
+    [string[]]$ExcludePrefixes = @("archive/", "master", "playtest/"),
+    [switch]$RemoteRefs
 )
 
 $ErrorActionPreference = "Stop"
@@ -49,11 +50,112 @@ $canonicalSha = ($canonical.Output | Select-Object -First 1).Trim()
 Write-Host "Canonical: $CanonicalRef @ $canonicalSha"
 Write-Host "Read-only audit: no fetch, merge, checkout, reset, build, or push is performed."
 
-$branchResult = Invoke-Git @("for-each-ref", "--format=%(refname:short)", "refs/heads") $repo
-if ($branchResult.ExitCode -ne 0) { throw "Unable to list local branches." }
-$branches = @($branchResult.Output | Where-Object { $_ })
+$refNamespace = if ($RemoteRefs) { "refs/remotes/origin" } else { "refs/heads" }
+$branchResult = Invoke-Git @("for-each-ref", "--format=%(refname:short)", $refNamespace) $repo
+if ($branchResult.ExitCode -ne 0) { throw "Unable to list branches in $refNamespace." }
+$branches = @($branchResult.Output | Where-Object { $_ -and $_ -notmatch '/HEAD
+    $excluded = $false
+    foreach ($prefix in $ExcludePrefixes) {
+        if ($branch -eq $prefix -or $branch.StartsWith($prefix)) {
+            $excluded = $true
+            break
+        }
+    }
+    if ($excluded) { continue }
+
+    $shaResult = Invoke-Git @("rev-parse", "--verify", $ref) $repo
+    if ($shaResult.ExitCode -ne 0) { continue }
+    $sha = ($shaResult.Output | Select-Object -First 1).Trim()
+
+    $countsResult = Invoke-Git @("rev-list", "--left-right", "--count", "$CanonicalRef...$ref") $repo
+    if ($countsResult.ExitCode -ne 0) { continue }
+    $parts = (($countsResult.Output | Select-Object -First 1) -split "\s+")
+    $behind = [int]$parts[0]
+    $ahead = [int]$parts[1]
+
+    if ($sha -eq $canonicalSha) {
+        $relation = "ALIGNED"
+    }
+    elseif ($behind -eq 0 -and $ahead -gt 0) {
+        $relation = "AHEAD"
+    }
+    elseif ($behind -gt 0 -and $ahead -eq 0) {
+        $relation = "CONTAINED"
+    }
+    else {
+        $relation = "DIVERGED"
+    }
+    $diffResult = Invoke-Git @("diff", "--name-only", "$CanonicalRef...$ref") $repo
+    $paths = @()
+    if ($diffResult.ExitCode -eq 0) {
+        $paths = @($diffResult.Output | Where-Object { $_ })
+    }
+
+    $hot = @($paths | Where-Object {
+        $_ -match '^(TacticalAI|ModularizedTacticalAI|Tactical|TileEngine|Strategic|Laptop|Utils)/'
+    }).Count
+
+    $strategic = @($paths | Where-Object { $_ -match '^Strategic/' }).Count
+
+    $noise = @($paths | Where-Object {
+        $_ -match '(^|/)(bin|build|Debug|Release|ipch|\.vs)(/|$)' -or
+        $_ -match '(\.vcxproj\.user|\.suo|\.obj|\.pdb|\.ilk|\.tlog|\.log)$'
+    }).Count
+
+    $recommendation = switch ($relation) {
+        "ALIGNED"   { "No delta" }
+        "CONTAINED" { "Already represented by canonical history" }
+        "DIVERGED"  { "Forward-port onto canonical before gate" }
+        "AHEAD"     { "Run candidate gate" }
+        default     { "Review" }
+    }
+
+    if ($strategic -gt 0) {
+        $recommendation += "; strategic change requires explicit approval"
+    }
+    if ($noise -gt 0) {
+        $recommendation += "; remove generated/IDE noise"
+    }
+    $rows += [pscustomobject]@{
+        Branch = $branch
+        Relation = $relation
+        Ahead = $ahead
+        Behind = $behind
+        Files = $paths.Count
+        Hot = $hot
+        Strategic = $strategic
+        Noise = $noise
+        Recommendation = $recommendation
+    }
+}
+
+$rows = @($rows | Sort-Object @{Expression = {
+    switch ($_.Relation) {
+        "AHEAD" { 0 }
+        "DIVERGED" { 1 }
+        "ALIGNED" { 2 }
+        "CONTAINED" { 3 }
+        default { 4 }
+    }
+}}, Branch)
+
+$rows | Format-Table -AutoSize
+
+Write-Host ""
+Write-Host "Summary:"
+foreach ($status in @("AHEAD", "DIVERGED", "ALIGNED", "CONTAINED")) {
+    $count = @($rows | Where-Object { $_.Relation -eq $status }).Count
+    Write-Host ("  {0,-10} {1}" -f $status, $count)
+}
+
+$blocked = @($rows | Where-Object {
+    $_.Relation -eq "DIVERGED" -or $_.Strategic -gt 0 -or $_.Noise -gt 0
+}).Count
+Write-Host "  BLOCKED/RISK $blocked"
+ })
 $rows = @()
-foreach ($branch in $branches) {
+foreach ($ref in $branches) {
+    $branch = $ref -replace '^origin/', ''
     if ($branch -eq "install/all-2026-09-12") { continue }
 
     $excluded = $false
