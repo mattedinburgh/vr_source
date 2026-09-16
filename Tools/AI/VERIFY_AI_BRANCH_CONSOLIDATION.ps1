@@ -72,6 +72,14 @@ foreach ($entry in $registry.branches) {
         continue
     }
 
+    # Active workstreams and explicit working snapshots are expected to move.
+    # Registration prevents accidental parallel AI lines; pinning is reserved
+    # for historical/reference branches that are supposed to stay frozen.
+    if ($entry.classification -eq "active-workstream" -or $entry.classification -eq "working-snapshot") {
+        Write-Host ("ACTIVE     {0} [{1}] @ {2}" -f $branch, $entry.classification, $actualSha)
+        continue
+    }
+
     if ($actualSha -ne [string]$entry.pinned_sha) {
         Write-Warning ("ARCHIVE MOVED {0}: pinned={1} actual={2}" -f $branch, $entry.pinned_sha, $actualSha)
         $failed = $true
