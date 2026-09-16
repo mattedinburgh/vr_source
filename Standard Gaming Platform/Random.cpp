@@ -92,6 +92,24 @@ void InitializeRandom(void)
 	guiPreRandomIndex = 0;
 }
 
+
+// Deterministic tactical seed used by the self-play battle lab.
+// Both mt19937 and legacy rand() are seeded because old code paths still
+// consume rand()/GetRndNum while BMP_RANDOM gameplay calls use mt19937.
+void SetRandomSeed(UINT32 seed)
+{
+	if (!seed)
+		seed = 1;
+
+	srand((unsigned)seed);
+	gRandomNumberGenerator.seed(seed);
+
+	for (guiPreRandomIndex = 0; guiPreRandomIndex < MAX_PREGENERATED_NUMS; ++guiPreRandomIndex)
+		guiPreRandomNums[guiPreRandomIndex] = gRandomNumberGenerator();
+
+	guiPreRandomIndex = 0;
+}
+
 #else
 
 UINT32 guiPreRandomIndex = 0;
@@ -110,5 +128,19 @@ void InitializeRandom()
 	}
 	guiPreRandomIndex = 0;
 }
+
+
+#ifndef BMP_RANDOM
+void SetRandomSeed(UINT32 seed)
+{
+	if (!seed)
+		seed = 1;
+
+	srand((unsigned)seed);
+	for (guiPreRandomIndex = 0; guiPreRandomIndex < MAX_PREGENERATED_NUMS; ++guiPreRandomIndex)
+		guiPreRandomNums[guiPreRandomIndex] = rand();
+	guiPreRandomIndex = 0;
+}
+#endif
 
 #endif
