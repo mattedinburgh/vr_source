@@ -6104,15 +6104,35 @@ UINT16 AIPerceivedEnemyStrength(SOLDIERTYPE *pSoldier)
 		if (!pOpponent || pOpponent == pSoldier)
 			continue;
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		INT32 sKnownSpot = NOWHERE;
+		UINT8 ubContactConfidence = 0;
+
+		if (pSoldier->bTeam == ENEMY_TEAM)
+		{
+			// Local fireteam reports contribute to force-ratio planning without entering
+			// Knowledge()/the public opplist, so they cannot authorize direct fire.
+			if (!AISharedFireteamOpponentContact(
+				pSoldier, pOpponent->ubID, &sKnownSpot, NULL,
+				&ubContactConfidence, &bKnowledge))
+			{
+				continue;
+			}
+		}
+		else
+		{
+			bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+			if (bKnowledge == NOT_HEARD_OR_SEEN)
+				continue;
+
+			sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
+			ubContactConfidence =
+				(UINT8)ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+		}
 
 		const BOOLEAN fDirectVisualContact =
 			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
 			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
-		// Current relation state is hidden after contact is lost. Remembered hostility
-		// persists until direct observation establishes a change.
 		if (fDirectVisualContact &&
 			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
 			 pSoldier->bSide == pOpponent->bSide ||
@@ -6122,20 +6142,15 @@ UINT16 AIPerceivedEnemyStrength(SOLDIERTYPE *pSoldier)
 			continue;
 		}
 
-		INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
 		if (TileIsOutOfBounds(sKnownSpot) ||
 			PythSpacesAway(pSoldier->sGridNo, sKnownSpot) > TACTICAL_RANGE)
 		{
 			continue;
 		}
 
-		// ThreatPercent already encodes JA2's confidence in seen/heard information:
-		// current sight is strongest; stale contacts count progressively less.
-		UINT32 uiContactStrength = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+		UINT32 uiContactStrength = ubContactConfidence;
 
-		// A personally observed incapacitated human is still a residual threat because
-		// he may recover or be revived, but he should not count like an active rifleman.
-		// Public/stale contacts keep their normal uncertainty weight.
+		// Only personal current sight can reveal that the contact is incapacitated.
 		if (fDirectVisualContact &&
 			IS_MERC_BODY_TYPE(pOpponent) &&
 			!pOpponent->IsZombie() &&
