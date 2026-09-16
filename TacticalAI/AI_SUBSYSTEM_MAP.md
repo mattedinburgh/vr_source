@@ -33,6 +33,7 @@ A behaviour may call helpers from several files, but it has exactly one orchestr
 | Command / rank | `AIUtils.cpp` |
 | Fireteam identity/cohesion | `AIUtils.cpp` |
 | Tactical intent / role | `AIUtils.cpp` (persistent posture/role) + `TacticalReasoning.cpp` (short-plan/task state) |
+| Player tactical command mode | `AIMain.cpp` (turn handoff/transient ownership) + `AIUtils.cpp` (forced PRESS/FALLBACK objective) + `DecideAction.cpp` (command-aware execution) + `Interface Panels.cpp` (buttons) |
 | Contact belief / uncertainty | `TacticalReasoning.cpp` |
 | Contact memory / sound evidence fusion | `TacticalReasoning.cpp`; `Knowledge.cpp` supplies only legitimate personal/public noise observations |
 | Local battlefield geometry | `TacticalReasoning.cpp` (threat/friendly sectors, remembered/corroborated danger, open flanks, safest direction, encirclement) |

@@ -6096,6 +6096,11 @@ void ExitCombatMode( )
     // Leave combat mode
     gTacticalStatus.uiFlags &= (~INCOMBAT);
 
+    // Tactical resolution is the natural end of persistent player AI takeover.
+    // Clear transient command ownership before returning to realtime/manual play.
+    if (AIPlayerTeamCommandActive())
+        AIResetPlayerTeamCommand();
+
     EndTopMessage( );
 
     ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE, pMessageStrings[ MSG_FTM_EXIT_COMBAT ] );// ary-05/05/2009 : add forced turn mode

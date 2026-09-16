@@ -195,6 +195,16 @@ BOOLEAN SatisfiesAIListConditions( SOLDIERTYPE * pSoldier, UINT8 * pubDoneCount,
 		return( FALSE );
 	}
 
+	// Player-team soldiers enter the ordinary AI list only through an explicit
+	// tactical command. This prevents the generic AI-list machinery from ever
+	// stealing manual control in normal play.
+	if (pSoldier->bTeam == gbPlayerNum &&
+		(!AIPlayerTeamCommandActive() ||
+		 !(pSoldier->flags.uiStatusFlags & SOLDIER_PCUNDERAICONTROL)))
+	{
+		return FALSE;
+	}
+
 	if ( ! ( pSoldier->stats.bLife >= OKLIFE && pSoldier->bBreath >= OKBREATH ) )
 	{
 		return( FALSE );

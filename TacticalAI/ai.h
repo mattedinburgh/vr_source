@@ -248,6 +248,13 @@ void SetNewSituation( SOLDIERTYPE * pSoldier );
 UINT8 SoldierDifficultyLevel( SOLDIERTYPE * pSoldier );
 void SoldierTriesToContinueAlongPath(SOLDIERTYPE *pSoldier);
 void StartNPCAI(SOLDIERTYPE *pSoldier);
+BOOLEAN AIPlayerTeamCommandActive(void);
+UINT8 AIPlayerTeamCommand(void);
+BOOLEAN AIPlayerControlReturnRequested(void);
+BOOLEAN AIStartPlayerTeamCommand(UINT8 ubCommand);
+BOOLEAN AIContinuePlayerTeamCommand(void);
+void AIRequestPlayerControl(void);
+void AIResetPlayerTeamCommand(void);
 void TempHurt(SOLDIERTYPE *pVictim, SOLDIERTYPE *pAttacker);
 int TryToResumeMovement(SOLDIERTYPE *pSoldier, INT32 sGridNo);
 
@@ -325,6 +332,15 @@ enum
 	AI_INTENT_FALLBACK,
 	AI_INTENT_DISENGAGE,
 	AI_INTENT_RESCUE
+};
+
+// Player-issued tactical command mode. This is transient turn-level control state;
+// it does not alter SOLDIERTYPE or the savegame layout.
+enum
+{
+	AI_PLAYER_COMMAND_NONE = 0,
+	AI_PLAYER_COMMAND_ATTACK,
+	AI_PLAYER_COMMAND_WITHDRAW
 };
 
 enum
@@ -656,6 +672,7 @@ BOOLEAN AIKnownRouteExposureAcceptable(SOLDIERTYPE *pSoldier, INT32 sDestination
 BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier);
 BOOLEAN AIHasUsedTacticalFallback(SOLDIERTYPE *pSoldier);
 void AIRegisterTacticalFallback(SOLDIERTYPE *pSoldier);
+void AIClearTacticalFallbackState(SOLDIERTYPE *pSoldier);
 void AIRegisterCoverMoveIntent(SOLDIERTYPE *pSoldier, INT32 sFromGrid, INT32 sToGrid);
 BOOLEAN AIShouldRejectCoverOscillation(SOLDIERTYPE *pSoldier, INT32 sCandidateGrid);
 INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);

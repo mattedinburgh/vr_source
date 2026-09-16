@@ -1447,6 +1447,15 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 			return bForcedRetreat;
 	}
 
+	if (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive() &&
+		AIPlayerTeamCommand() == AI_PLAYER_COMMAND_WITHDRAW)
+	{
+		INT8 bCommandWithdraw = DecideTacticalFallback(
+			pSoldier, pSoldier->bActionPoints >= MinPtsToMove(pSoldier));
+		if (bCommandWithdraw != AI_ACTION_NONE)
+			return bCommandWithdraw;
+	}
+
 	BOOLEAN fCivilian = (PTR_CIVILIAN && (pSoldier->ubCivilianGroup == NON_CIV_GROUP || pSoldier->aiData.bNeutral || (pSoldier->ubBodyType >= FATCIV && pSoldier->ubBodyType <= CRIPPLECIV) ) );
 	BOOLEAN fCivilianOrMilitia = PTR_CIV_OR_MILITIA;
 
@@ -1497,8 +1506,11 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 							{
 								pTeamSoldier=MercPtrs[bLoop]; 
 
-								if (pTeamSoldier->flags.uiStatusFlags & SOLDIER_PCUNDERAICONTROL)
+								if (!AIPlayerTeamCommandActive() &&
+									(pTeamSoldier->flags.uiStatusFlags & SOLDIER_PCUNDERAICONTROL))
+								{
 									pTeamSoldier->flags.uiStatusFlags &= (~SOLDIER_PCUNDERAICONTROL);
+								}
 
 								pTeamSoldier->DeleteBoxingFlag( );
 							}
@@ -2602,6 +2614,15 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 			return bForcedRetreat;
 	}
 
+	if (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive() &&
+		AIPlayerTeamCommand() == AI_PLAYER_COMMAND_WITHDRAW)
+	{
+		INT8 bCommandWithdraw = DecideTacticalFallback(
+			pSoldier, pSoldier->bActionPoints >= MinPtsToMove(pSoldier));
+		if (bCommandWithdraw != AI_ACTION_NONE)
+			return bCommandWithdraw;
+	}
+
 	bInWater = DeepWater( pSoldier->sGridNo, pSoldier->pathing.bLevel );
 	bInGas = InGas( pSoldier, pSoldier->sGridNo );
 
@@ -3571,6 +3592,14 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 
 	// can this guy move to any of the neighbouring squares ? (sets TRUE/FALSE)
 	ubCanMove = (pSoldier->bActionPoints >= MinPtsToMove(pSoldier));
+
+	if (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive() &&
+		AIPlayerTeamCommand() == AI_PLAYER_COMMAND_WITHDRAW)
+	{
+		INT8 bCommandWithdraw = DecideTacticalFallback(pSoldier, ubCanMove);
+		if (bCommandWithdraw != AI_ACTION_NONE)
+			return bCommandWithdraw;
+	}
 
 	// if we're an alerted enemy, and there are panic bombs or a trigger around
 	if ( (!PTR_CIVILIAN || pSoldier->ubProfile == WARDEN) && ( ( gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition || (pSoldier->ubID == gTacticalStatus.ubTheChosenOne) || (pSoldier->ubProfile == WARDEN) ) &&
@@ -6168,6 +6197,14 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 
 	// can this guy move to any of the neighbouring squares ? (sets TRUE/FALSE)
 	ubCanMove = (pSoldier->bActionPoints >= MinPtsToMove(pSoldier));
+
+	if (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive() &&
+		AIPlayerTeamCommand() == AI_PLAYER_COMMAND_WITHDRAW)
+	{
+		INT8 bCommandWithdraw = DecideTacticalFallback(pSoldier, ubCanMove);
+		if (bCommandWithdraw != AI_ACTION_NONE)
+			return bCommandWithdraw;
+	}
 
 	if ( (pSoldier->bTeam == ENEMY_TEAM || pSoldier->ubProfile == WARDEN) && (gTacticalStatus.fPanicFlags & PANIC_TRIGGERS_HERE) && (gTacticalStatus.ubTheChosenOne == NOBODY) )
 	{
@@ -12902,11 +12939,23 @@ INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		return AI_ACTION_NONE;
 	}
 
+	BOOLEAN fPlayerWithdraw =
+		pSoldier->bTeam == gbPlayerNum &&
+		AIPlayerTeamCommandActive() &&
+		AIPlayerTeamCommand() == AI_PLAYER_COMMAND_WITHDRAW;
+
 	INT32 sThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
 	if (TileIsOutOfBounds(sThreat))
 		return AI_ACTION_NONE;
 
-	INT32 sFallback = FindRetreatSpot(pSoldier);
+	// An explicit team withdrawal starts with the geometry-aware breakout solver:
+	// move away from the principal known threat while preferring the safest/weakest
+	// pressure sector. Normal autonomous AI keeps its legacy retreat-first ordering.
+	INT32 sFallback = fPlayerWithdraw ?
+		FindGeometryBreakoutSpot(pSoldier, sThreat) :
+		FindRetreatSpot(pSoldier);
+	if (fPlayerWithdraw && TileIsOutOfBounds(sFallback))
+		sFallback = FindRetreatSpot(pSoldier);
 
 	AITACTICALGEOMETRY Geometry;
 	const BOOLEAN fHasGeometry =
@@ -12980,8 +13029,24 @@ INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (pSoldier->aiData.bOrders == SEEKENEMY && fCurrentCover)
 		iRequiredGain += 2;
 
-	if (iGain < iRequiredGain)
+	if (fPlayerWithdraw)
+	{
+		// The command itself supplies the reason to give ground. Still reject a move
+		// that neither increases separation nor improves exposure/cover/support:
+		// "withdraw" must be a real tactical improvement, not blind backwards motion.
+		BOOLEAN fWithdrawalProgress =
+			iFallbackDistance > iCurrentDistance ||
+			usFallbackExposure < usCurrentExposure ||
+			(fFallbackCover && !fCurrentCover) ||
+			(fFallbackSightCover && !fCurrentSightCover) ||
+			iFallbackSupport > iCurrentSupport;
+		if (!fWithdrawalProgress)
+			return AI_ACTION_NONE;
+	}
+	else if (iGain < iRequiredGain)
+	{
 		return AI_ACTION_NONE;
+	}
 
 	if (!AIKnownRouteExposureAcceptable(
 		pSoldier, sFallback, AI_ACTION_WITHDRAW, 180, 90, 115))

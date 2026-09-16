@@ -553,6 +553,10 @@ void BtnOptionsCallback(GUI_BUTTON *btn,INT32 reason);
 void BtnBurstModeCallback(GUI_BUTTON *btn,INT32 reason);
 void BtnLookCallback(GUI_BUTTON *btn,INT32 reason);
 void BtnPositionShowCallback(GUI_BUTTON *btn,INT32 reason);
+void BtnAIAttackTeamCallback(GUI_BUTTON *btn,INT32 reason);
+void BtnAIWithdrawTeamCallback(GUI_BUTTON *btn,INT32 reason);
+BOOLEAN CanIssueAIPlayerTeamCommand(void);
+void UpdateAIPlayerCommandButtons(INT32 iAttackButton, INT32 iWithdrawButton);
 void InvPanelButtonClickCallback( MOUSE_REGION * pRegion, INT32 iReason );
 
 // TEAM PANEL BUTTON CALLBACKS
@@ -832,6 +836,9 @@ void UpdateSMPanel( )
 	{
 		return;
 	}
+
+	UpdateAIPlayerCommandButtons(iSMPanelButtons[AI_ATTACK_TEAM_BUTTON],
+		iSMPanelButtons[AI_WITHDRAW_TEAM_BUTTON]);
 
 	// Stance
 	ubStanceState = gpSMCurrentMerc->ubDesiredHeight;
@@ -1409,6 +1416,17 @@ void EnableSMPanelButtons( BOOLEAN fEnable , BOOLEAN fFromItemPickup )
 
 			//disable the radar map
 			MSYS_DisableRegion(&gRadarRegion);
+		}
+
+		if (fEnable)
+		{
+			UpdateAIPlayerCommandButtons(iSMPanelButtons[AI_ATTACK_TEAM_BUTTON],
+				iSMPanelButtons[AI_WITHDRAW_TEAM_BUTTON]);
+		}
+		else
+		{
+			DisableButton(iSMPanelButtons[AI_ATTACK_TEAM_BUTTON]);
+			DisableButton(iSMPanelButtons[AI_WITHDRAW_TEAM_BUTTON]);
 		}
 
 		gfAllDisabled = !fEnable;
@@ -2393,6 +2411,30 @@ BOOLEAN CreateSMPanelButtons( )
 	//SetButtonFastHelpText( iSMPanelButtons[ LOOK_BUTTON ],L"Change Stance Down");
 	SetButtonFastHelpText( iSMPanelButtons[ LOOK_BUTTON ], TacticalStr[ LOOK_CURSOR_POPUPTEXT ] );
 	SetBtnHelpEndCallback( iSMPanelButtons[ LOOK_BUTTON ], HelpTextDoneCallback );
+
+	// Tactical team-command buttons sit just above the bottom panel so they remain
+	// visible without consuming inventory/squad-face space.
+	iSMPanelButtons[ AI_ATTACK_TEAM_BUTTON ] =
+		CreateTextButton(L"AI ATTACK", FONT10ARIAL, FONT_MCOLOR_WHITE, DEFAULT_SHADOW,
+			BUTTON_USE_DEFAULT, INTERFACE_START_X + INTERFACE_WIDTH - 276,
+			INV_INTERFACE_START_Y - 22, 132, 20, BUTTON_TOGGLE, MSYS_PRIORITY_HIGH - 1,
+			DEFAULT_MOVE_CALLBACK, (GUI_CALLBACK)BtnAIAttackTeamCallback);
+	if (iSMPanelButtons[ AI_ATTACK_TEAM_BUTTON ] == -1)
+		return FALSE;
+	SetButtonFastHelpText(iSMPanelButtons[ AI_ATTACK_TEAM_BUTTON ],
+		L"Attack as team: AI controls until combat ends; press ESC to take control");
+
+	iSMPanelButtons[ AI_WITHDRAW_TEAM_BUTTON ] =
+		CreateTextButton(L"AI WITHDRAW", FONT10ARIAL, FONT_MCOLOR_WHITE, DEFAULT_SHADOW,
+			BUTTON_USE_DEFAULT, INTERFACE_START_X + INTERFACE_WIDTH - 138,
+			INV_INTERFACE_START_Y - 22, 132, 20, BUTTON_TOGGLE, MSYS_PRIORITY_HIGH - 1,
+			DEFAULT_MOVE_CALLBACK, (GUI_CALLBACK)BtnAIWithdrawTeamCallback);
+	if (iSMPanelButtons[ AI_WITHDRAW_TEAM_BUTTON ] == -1)
+		return FALSE;
+	SetButtonFastHelpText(iSMPanelButtons[ AI_WITHDRAW_TEAM_BUTTON ],
+		L"Withdraw as team: AI controls until combat ends; press ESC to take control");
+	UpdateAIPlayerCommandButtons(iSMPanelButtons[AI_ATTACK_TEAM_BUTTON],
+		iSMPanelButtons[AI_WITHDRAW_TEAM_BUTTON]);
 
 	return( TRUE );
 }
@@ -5239,6 +5281,86 @@ void BtnPositionShowCallback(GUI_BUTTON *btn,INT32 reason)
 
 }
 
+BOOLEAN CanIssueAIPlayerTeamCommand(void)
+{
+	if (AIPlayerTeamCommandActive() ||
+		!(gTacticalStatus.uiFlags & TURNBASED) ||
+		!(gTacticalStatus.uiFlags & INCOMBAT) ||
+		gTacticalStatus.ubCurrentTeam != gbPlayerNum ||
+		gTacticalStatus.bBoxingState != NOT_BOXING ||
+		gTacticalStatus.ubAttackBusyCount > 0 ||
+		gfDisableTacticalPanelButtons)
+	{
+		return FALSE;
+	}
+
+	for (INT32 bID = gTacticalStatus.Team[gbPlayerNum].bFirstID;
+		bID <= gTacticalStatus.Team[gbPlayerNum].bLastID; ++bID)
+	{
+		SOLDIERTYPE *pSoldier = MercPtrs[bID];
+		if (pSoldier && pSoldier->bActive && pSoldier->bInSector &&
+			pSoldier->stats.bLife >= OKLIFE && pSoldier->bBreath >= OKBREATH &&
+			!pSoldier->aiData.bMoved &&
+			!(pSoldier->flags.uiStatusFlags & SOLDIER_VEHICLE))
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+void UpdateAIPlayerCommandButtons(INT32 iAttackButton, INT32 iWithdrawButton)
+{
+	if (iAttackButton < 0 || iWithdrawButton < 0)
+		return;
+
+	if (CanIssueAIPlayerTeamCommand())
+	{
+		EnableButton(iAttackButton);
+		EnableButton(iWithdrawButton);
+	}
+	else
+	{
+		DisableButton(iAttackButton);
+		DisableButton(iWithdrawButton);
+	}
+}
+
+void BtnAIAttackTeamCallback(GUI_BUTTON *btn,INT32 reason)
+{
+	if (reason & MSYS_CALLBACK_REASON_LBUTTON_DWN)
+	{
+		btn->uiFlags |= BUTTON_CLICKED_ON;
+	}
+	else if (reason & MSYS_CALLBACK_REASON_LBUTTON_UP)
+	{
+		btn->uiFlags &= (~BUTTON_CLICKED_ON);
+		AIStartPlayerTeamCommand(AI_PLAYER_COMMAND_ATTACK);
+	}
+	else if (reason & MSYS_CALLBACK_REASON_LOST_MOUSE)
+	{
+		btn->uiFlags &= (~BUTTON_CLICKED_ON);
+	}
+}
+
+void BtnAIWithdrawTeamCallback(GUI_BUTTON *btn,INT32 reason)
+{
+	if (reason & MSYS_CALLBACK_REASON_LBUTTON_DWN)
+	{
+		btn->uiFlags |= BUTTON_CLICKED_ON;
+	}
+	else if (reason & MSYS_CALLBACK_REASON_LBUTTON_UP)
+	{
+		btn->uiFlags &= (~BUTTON_CLICKED_ON);
+		AIStartPlayerTeamCommand(AI_PLAYER_COMMAND_WITHDRAW);
+	}
+	else if (reason & MSYS_CALLBACK_REASON_LOST_MOUSE)
+	{
+		btn->uiFlags &= (~BUTTON_CLICKED_ON);
+	}
+}
+
 BOOLEAN InitializeTEAMPanelCoords( )
 {
 	TM_FACE_WIDTH		= 48;
@@ -6015,6 +6137,28 @@ CHAR8	ubString[48];
 	}
 	SetButtonFastHelpText( iTEAMPanelButtons[ CHANGE_SQUAD_BUTTON ], TacticalStr[ CHANGE_SQUAD_POPUPTEXT ] );
 
+	iTEAMPanelButtons[ TEAM_AI_ATTACK_BUTTON ] =
+		CreateTextButton(L"AI ATTACK", FONT10ARIAL, FONT_MCOLOR_WHITE, DEFAULT_SHADOW,
+			BUTTON_USE_DEFAULT, INTERFACE_START_X + INTERFACE_WIDTH - 276,
+			INTERFACE_START_Y - 22, 132, 20, BUTTON_TOGGLE, MSYS_PRIORITY_HIGH - 1,
+			DEFAULT_MOVE_CALLBACK, (GUI_CALLBACK)BtnAIAttackTeamCallback);
+	if (iTEAMPanelButtons[ TEAM_AI_ATTACK_BUTTON ] == -1)
+		return FALSE;
+	SetButtonFastHelpText(iTEAMPanelButtons[ TEAM_AI_ATTACK_BUTTON ],
+		L"Attack as team: AI controls until combat ends; press ESC to take control");
+
+	iTEAMPanelButtons[ TEAM_AI_WITHDRAW_BUTTON ] =
+		CreateTextButton(L"AI WITHDRAW", FONT10ARIAL, FONT_MCOLOR_WHITE, DEFAULT_SHADOW,
+			BUTTON_USE_DEFAULT, INTERFACE_START_X + INTERFACE_WIDTH - 138,
+			INTERFACE_START_Y - 22, 132, 20, BUTTON_TOGGLE, MSYS_PRIORITY_HIGH - 1,
+			DEFAULT_MOVE_CALLBACK, (GUI_CALLBACK)BtnAIWithdrawTeamCallback);
+	if (iTEAMPanelButtons[ TEAM_AI_WITHDRAW_BUTTON ] == -1)
+		return FALSE;
+	SetButtonFastHelpText(iTEAMPanelButtons[ TEAM_AI_WITHDRAW_BUTTON ],
+		L"Withdraw as team: AI controls until combat ends; press ESC to take control");
+	UpdateAIPlayerCommandButtons(iTEAMPanelButtons[TEAM_AI_ATTACK_BUTTON],
+		iTEAMPanelButtons[TEAM_AI_WITHDRAW_BUTTON]);
+
 	return( TRUE );
 }
 
@@ -6112,6 +6256,9 @@ void SetTEAMPanelCurrentMerc( UINT8 ubNewID )
 void UpdateTEAMPanel( )
 {
 	INT32		cnt;
+
+	UpdateAIPlayerCommandButtons(iTEAMPanelButtons[TEAM_AI_ATTACK_BUTTON],
+		iTEAMPanelButtons[TEAM_AI_WITHDRAW_BUTTON]);
 
 // WANNE: In editor mode, always disable the Done button, because we dont have any merc!
 #ifdef JA2EDITOR
