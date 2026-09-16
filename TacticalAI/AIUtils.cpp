@@ -10283,8 +10283,8 @@ UINT8 SpotDangerLevel(SOLDIERTYPE *pSoldier, INT32 sGridNo)
 	}
 
 	// Once alerted, stepping into illumination at night is a meaningful exposure cost.
-	if ((pSoldier->aiData.bAlertStatus >= STATUS_RED ||
-		 pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE ||
+	if ((pSoldier->bTeam == ENEMY_TEAM ||
+		 pSoldier->aiData.bAlertStatus >= STATUS_RED ||
 		 pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA) &&
 		(InLightAtNight(sGridNo, pSoldier->pathing.bLevel) ||
 		 FindNearbyExplosiveStructure(sGridNo, pSoldier->pathing.bLevel)))
@@ -10661,7 +10661,11 @@ UINT32 CountSuspicionValue( SOLDIERTYPE *pSoldier )
 			// -----------------------------------------------------------------------------------------------------
 			// calculate basic value 
 
-			uiValue = 1 + SoldierDifficultyLevel( pOpponent );
+			// Suspicion is reasoning over information already perceived, not a vision
+			// bonus. Every enemy therefore scrutinizes the same evidence at the top
+			// tactical level; non-enemy legacy AI keeps its configured difficulty tier.
+			uiValue = 1 + ((pOpponent->bTeam == ENEMY_TEAM) ?
+				4 : SoldierDifficultyLevel(pOpponent));
 			// Command personnel scrutinise suspicious behaviour more effectively.
 			if (HAS_SKILL_TRAIT( pOpponent, SQUADLEADER_NT ) )
 			{
