@@ -8053,35 +8053,23 @@ static INT8 AIProfessionalismModifier(SOLDIERTYPE *pSoldier)
 // initiative and coordination the soldier's formation plausibly possesses.
 UINT8 AIGetDoctrineProfile(SOLDIERTYPE *pSoldier)
 {
-	// Deidranna doctrine is an ENEMY_TEAM identity layer only. Militia shares the
-	// human-like tactical core, but must not inherit Deidranna command/initiative
-	// restrictions merely because AICombatTeam() also includes MILITIA_TEAM.
+	// Doctrine now describes the mission, not intelligence/training. Every ENEMY_TEAM
+	// combatant uses the same elite tactical brain. Fixed guards remain guard elements
+	// so map assignments still matter; mobile troops use the same elite mobile doctrine
+	// regardless of administrator/army/elite equipment class.
 	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
 		return AI_DOCTRINE_LINE;
 
-	switch (pSoldier->ubSoldierClass)
+	if ((pSoldier->usSoldierFlagMask & SOLDIER_VIP) ||
+		(pSoldier->usSoldierFlagMask & SOLDIER_BODYGUARD) ||
+		pSoldier->aiData.bOrders == STATIONARY ||
+		pSoldier->aiData.bOrders == ONGUARD ||
+		pSoldier->aiData.bOrders == SNIPER)
 	{
-	case SOLDIER_CLASS_ADMINISTRATOR:
-		return AI_DOCTRINE_SECURITY;
-
-	case SOLDIER_CLASS_ELITE:
-		if (pSoldier->aiData.bOrders == STATIONARY ||
-			pSoldier->aiData.bOrders == ONGUARD ||
-			pSoldier->aiData.bOrders == SNIPER)
-			return AI_DOCTRINE_ELITE_GUARD;
-		return AI_DOCTRINE_ELITE_MOBILE;
-
-	case SOLDIER_CLASS_ARMY:
-		// Training/doctrine must come from rank/experience, not a randomly assigned
-		// tactical personality. CUNNING still affects risk/decision style elsewhere,
-		// but it does not promote a line soldier into the veteran doctrine layer.
-		if (AICheckIsLeader(pSoldier) || pSoldier->stats.bExpLevel >= 6)
-			return AI_DOCTRINE_VETERAN;
-		return AI_DOCTRINE_LINE;
-
-	default:
-		return AI_DOCTRINE_LINE;
+		return AI_DOCTRINE_ELITE_GUARD;
 	}
+
+	return AI_DOCTRINE_ELITE_MOBILE;
 }
 
 BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier)
