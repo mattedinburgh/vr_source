@@ -5058,6 +5058,94 @@ BOOLEAN AISameFireteam(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend)
 	return ubMine != AI_FIRETEAM_NONE && ubMine == AIFireteamId(pFriend);
 }
 
+BOOLEAN AISharedFireteamContact(SOLDIERTYPE *pSoldier, INT32 *psGridNo,
+	INT8 *pbLevel, UINT8 *pubConfidence)
+{
+	if (psGridNo) *psGridNo = NOWHERE;
+	if (pbLevel) *pbLevel = 0;
+	if (pubConfidence) *pubConfidence = 0;
+
+	if (!pSoldier || !AICombatTeam(pSoldier) ||
+		!pSoldier->bActive || !pSoldier->bInSector)
+	{
+		return FALSE;
+	}
+
+	INT32 sBestGrid = NOWHERE;
+	INT8 bBestLevel = 0;
+	UINT8 ubBestConfidence = 0;
+	INT32 iBestScore = -1000000;
+	const INT32 iCommRadius = __max(8, DAY_VISION_RANGE);
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend == pSoldier || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed || pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend) ||
+			!AISameFireteam(pSoldier, pFriend))
+		{
+			continue;
+		}
+
+		INT32 iFriendDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
+		if (iFriendDistance > iCommRadius)
+			continue;
+
+		for (UINT16 uiOpponent = 0; uiOpponent < TOTAL_SOLDIERS; ++uiOpponent)
+		{
+			SOLDIERTYPE *pOpponent = MercPtrs[uiOpponent];
+			if (!pOpponent || !pOpponent->bActive || !pOpponent->bInSector ||
+				CONSIDERED_NEUTRAL(pFriend, pOpponent) ||
+				pFriend->bSide == pOpponent->bSide)
+			{
+				continue;
+			}
+
+			INT8 bKnowledge = PersonalKnowledge(pFriend, (UINT8)uiOpponent);
+			INT32 iConfidence = 0;
+			if (bKnowledge == SEEN_CURRENTLY)
+				iConfidence = 100;
+			else if (bKnowledge == SEEN_THIS_TURN)
+				iConfidence = 90;
+			else if (bKnowledge == SEEN_LAST_TURN)
+				iConfidence = 70;
+			else
+				continue;
+
+			INT32 sKnownGrid = KnownPersonalLocation(pFriend, (UINT8)uiOpponent);
+			if (TileIsOutOfBounds(sKnownGrid))
+				continue;
+
+			INT8 bKnownLevel = KnownPersonalLevel(pFriend, (UINT8)uiOpponent);
+			iConfidence -= __min((INT32)20, iFriendDistance);
+			if (bKnownLevel != pSoldier->pathing.bLevel)
+				iConfidence -= 10;
+			iConfidence = __max(1, __min(100, iConfidence));
+
+			INT32 iScore = iConfidence * 4 - iFriendDistance;
+			if (iScore > iBestScore)
+			{
+				iBestScore = iScore;
+				sBestGrid = sKnownGrid;
+				bBestLevel = bKnownLevel;
+				ubBestConfidence = (UINT8)iConfidence;
+			}
+		}
+	}
+
+	if (TileIsOutOfBounds(sBestGrid))
+		return FALSE;
+
+	if (psGridNo) *psGridNo = sBestGrid;
+	if (pbLevel) *pbLevel = bBestLevel;
+	if (pubConfidence) *pubConfidence = ubBestConfidence;
+	return TRUE;
+}
+
 static BOOLEAN AIPersonallyConfirmedNonThreat(
 	SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent)
 {
@@ -13669,23 +13757,10 @@ INT8 AICompetenceTier(SOLDIERTYPE *pSoldier)
 	if (!pSoldier)
 		return AI_COMPETENCE_BASIC;
 
+	// Every live enemy uses the same top-end tactical reasoning. Unit identity is
+	// expressed by equipment/mission role, not by deliberately dumbing decisions down.
 	if (pSoldier->bTeam == ENEMY_TEAM)
-	{
-		switch (AIGetDoctrineProfile(pSoldier))
-		{
-		case AI_DOCTRINE_SECURITY:
-			return (AICheckIsCommander(pSoldier) || AICheckIsOfficer(pSoldier)) ?
-				AI_COMPETENCE_REGULAR : AI_COMPETENCE_BASIC;
-		case AI_DOCTRINE_LINE:
-			return AI_COMPETENCE_REGULAR;
-		case AI_DOCTRINE_VETERAN:
-		case AI_DOCTRINE_ELITE_MOBILE:
-		case AI_DOCTRINE_ELITE_GUARD:
-			return AI_COMPETENCE_ELITE;
-		default:
-			return AI_COMPETENCE_REGULAR;
-		}
-	}
+		return AI_COMPETENCE_ELITE;
 
 	switch (pSoldier->ubSoldierClass)
 	{
@@ -13704,6 +13779,11 @@ UINT8 AIPlannerReliability(SOLDIERTYPE *pSoldier)
 {
 	if (!pSoldier)
 		return 50;
+
+	// Stress can change the correct decision, but it must not make enemy soldiers
+	// randomly fail to execute a legal plan they already selected.
+	if (pSoldier->bTeam == ENEMY_TEAM)
+		return 100;
 
 	INT32 iReliability = 76;
 	switch (AICompetenceTier(pSoldier))
@@ -13742,15 +13822,17 @@ BOOLEAN AIAllowsPlanComplexity(SOLDIERTYPE *pSoldier, INT8 bComplexity, UINT32 u
 	if (!pSoldier || bComplexity <= AI_PLAN_BASIC)
 		return TRUE;
 
+	if (pSoldier->bTeam == ENEMY_TEAM)
+	{
+		// Coordinated reasoning is universal. Only explicit mission-role restrictions
+		// may veto an advanced manoeuvre; there is no artificial failure roll.
+		if (bComplexity >= AI_PLAN_ADVANCED && !AIAllowsComplexManeuver(pSoldier))
+			return FALSE;
+		return TRUE;
+	}
+
 	INT8 bTier = AICompetenceTier(pSoldier);
 	INT32 iChance = AIPlannerReliability(pSoldier);
-
-	if (pSoldier->bTeam == ENEMY_TEAM && !AIAllowsComplexManeuver(pSoldier))
-	{
-		if (bComplexity >= AI_PLAN_ADVANCED)
-			return FALSE;
-		iChance = __min(iChance, 42);
-	}
 
 	if (bComplexity == AI_PLAN_COORDINATED)
 	{
@@ -13776,6 +13858,11 @@ BOOLEAN AIAllowsPlanComplexity(SOLDIERTYPE *pSoldier, INT8 bComplexity, UINT32 u
 INT32 AICompetenceUtilityNoise(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, UINT32 uiSalt)
 {
 	if (!pSoldier)
+		return 0;
+
+	// Grandmaster target: enemies do not select inferior positions because of an
+	// artificial competence-noise roll. Real uncertainty is represented elsewhere.
+	if (pSoldier->bTeam == ENEMY_TEAM)
 		return 0;
 
 	INT32 iAmplitude = 5;
