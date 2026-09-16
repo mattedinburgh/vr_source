@@ -5054,30 +5054,77 @@ BOOLEAN AISameFireteam(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend)
 	return ubMine != AI_FIRETEAM_NONE && ubMine == AIFireteamId(pFriend);
 }
 
-BOOLEAN AISharedFireteamContact(SOLDIERTYPE *pSoldier, INT32 *psGridNo,
-	INT8 *pbLevel, UINT8 *pubConfidence)
+static UINT32 AILocalFireteamCommSignature(SOLDIERTYPE *pSoldier)
 {
-	if (psGridNo) *psGridNo = NOWHERE;
-	if (pbLevel) *pbLevel = 0;
-	if (pubConfidence) *pubConfidence = 0;
+	if (!pSoldier || !AICombatTeam(pSoldier))
+		return 0;
+
+	UINT32 uiHash = 2166136261u;
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		uiHash ^= (UINT32)iCounter;
+		uiHash *= 16777619u;
+		if (!pFriend)
+			continue;
+
+		UINT32 uiState = 0;
+		if (pFriend->bActive) uiState |= 0x0001;
+		if (pFriend->bInSector) uiState |= 0x0002;
+		if (pFriend->stats.bLife >= OKLIFE) uiState |= 0x0004;
+		if (pFriend->bCollapsed) uiState |= 0x0008;
+		if (pFriend->bBreathCollapsed) uiState |= 0x0010;
+		if (pFriend->usSoldierFlagMask & SOLDIER_POW) uiState |= 0x0020;
+		if (pFriend->flags.uiStatusFlags & SOLDIER_COWERING) uiState |= 0x0040;
+		if (AIDisengagementActive(pFriend)) uiState |= 0x0080;
+		if (AIEscapeActive(pFriend)) uiState |= 0x0100;
+		if (AISameFireteam(pSoldier, pFriend)) uiState |= 0x0200;
+
+		uiHash ^= pFriend->uiUniqueSoldierIdValue;
+		uiHash *= 16777619u;
+		uiHash ^= (UINT32)pFriend->sGridNo;
+		uiHash *= 16777619u;
+		uiHash ^= ((UINT32)(UINT8)pFriend->pathing.bLevel << 24) ^ uiState;
+		uiHash *= 16777619u;
+	}
+	return uiHash;
+}
+
+static const UINT8 *AILocalFireteamCommHops(SOLDIERTYPE *pSoldier)
+{
+	static UINT8 ubCachedHops[MAX_NUM_SOLDIERS];
+	static UINT8 ubCachedObserver = NOBODY;
+	static UINT32 uiCachedObserverIdentity = 0;
+	static UINT32 uiCachedSignature = 0;
+	static INT16 sCachedSectorX = -1;
+	static INT16 sCachedSectorY = -1;
+	static INT8 bCachedSectorZ = -1;
 
 	if (!pSoldier || !AICombatTeam(pSoldier) ||
 		!pSoldier->bActive || !pSoldier->bInSector ||
 		pSoldier->ubID >= MAX_NUM_SOLDIERS)
 	{
-		return FALSE;
+		return NULL;
 	}
+
+	UINT32 uiSignature = AILocalFireteamCommSignature(pSoldier);
+	if (ubCachedObserver == pSoldier->ubID &&
+		uiCachedObserverIdentity == pSoldier->uiUniqueSoldierIdValue &&
+		uiCachedSignature == uiSignature &&
+		sCachedSectorX == gWorldSectorX &&
+		sCachedSectorY == gWorldSectorY &&
+		bCachedSectorZ == gbWorldSectorZ)
+	{
+		return ubCachedHops;
+	}
+
+	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
+		ubCachedHops[i] = 255;
+	ubCachedHops[pSoldier->ubID] = 0;
 
 	const INT32 iCommRadius = __max(8, DAY_VISION_RANGE);
 	const UINT8 ubMaxRelayHops = 2;
-	UINT8 ubCommHops[MAX_NUM_SOLDIERS];
-	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
-		ubCommHops[i] = 255;
-	ubCommHops[pSoldier->ubID] = 0;
-
-	// Build a small connected communication graph. Information can relay through at
-	// most two healthy fireteam members, so a cohesive local element shares a picture
-	// while separated elements never become a sector-wide telepathic network.
 	for (UINT8 ubHop = 0; ubHop < ubMaxRelayHops; ++ubHop)
 	{
 		for (UINT8 ubCandidateID = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
@@ -5085,7 +5132,7 @@ BOOLEAN AISharedFireteamContact(SOLDIERTYPE *pSoldier, INT32 *psGridNo,
 		{
 			SOLDIERTYPE *pCandidate = MercPtrs[ubCandidateID];
 			if (!pCandidate || pCandidate->ubID >= MAX_NUM_SOLDIERS ||
-				ubCommHops[pCandidate->ubID] != 255 ||
+				ubCachedHops[pCandidate->ubID] != 255 ||
 				!pCandidate->bActive || !pCandidate->bInSector ||
 				pCandidate->stats.bLife < OKLIFE || pCandidate->bCollapsed ||
 				pCandidate->bBreathCollapsed ||
@@ -5102,7 +5149,7 @@ BOOLEAN AISharedFireteamContact(SOLDIERTYPE *pSoldier, INT32 *psGridNo,
 			{
 				SOLDIERTYPE *pRelay = MercPtrs[ubRelayID];
 				if (!pRelay || pRelay->ubID >= MAX_NUM_SOLDIERS ||
-					ubCommHops[pRelay->ubID] != ubHop ||
+					ubCachedHops[pRelay->ubID] != ubHop ||
 					!pRelay->bActive || !pRelay->bInSector ||
 					pRelay->stats.bLife < OKLIFE || pRelay->bCollapsed ||
 					pRelay->bBreathCollapsed ||
@@ -5115,12 +5162,40 @@ BOOLEAN AISharedFireteamContact(SOLDIERTYPE *pSoldier, INT32 *psGridNo,
 
 				if (PythSpacesAway(pRelay->sGridNo, pCandidate->sGridNo) <= iCommRadius)
 				{
-					ubCommHops[pCandidate->ubID] = ubHop + 1;
+					ubCachedHops[pCandidate->ubID] = ubHop + 1;
 					break;
 				}
 			}
 		}
 	}
+
+	ubCachedObserver = pSoldier->ubID;
+	uiCachedObserverIdentity = pSoldier->uiUniqueSoldierIdValue;
+	uiCachedSignature = uiSignature;
+	sCachedSectorX = gWorldSectorX;
+	sCachedSectorY = gWorldSectorY;
+	bCachedSectorZ = gbWorldSectorZ;
+	return ubCachedHops;
+}
+
+BOOLEAN AISharedFireteamContact(SOLDIERTYPE *pSoldier, INT32 *psGridNo,
+	INT8 *pbLevel, UINT8 *pubConfidence)
+{
+	if (psGridNo) *psGridNo = NOWHERE;
+	if (pbLevel) *pbLevel = 0;
+	if (pubConfidence) *pubConfidence = 0;
+
+	if (!pSoldier || !AICombatTeam(pSoldier) ||
+		!pSoldier->bActive || !pSoldier->bInSector ||
+		pSoldier->ubID >= MAX_NUM_SOLDIERS)
+	{
+		return FALSE;
+	}
+
+	const UINT8 ubMaxRelayHops = 2;
+	const UINT8 *ubCommHops = AILocalFireteamCommHops(pSoldier);
+	if (!ubCommHops)
+		return FALSE;
 
 	INT32 sBestGrid = NOWHERE;
 	INT8 bBestLevel = 0;
@@ -5232,59 +5307,10 @@ BOOLEAN AISharedFireteamOpponentContact(SOLDIERTYPE *pSoldier, UINT8 ubOpponentI
 	if (!pOpponent)
 		return FALSE;
 
-	const INT32 iCommRadius = __max(8, DAY_VISION_RANGE);
 	const UINT8 ubMaxRelayHops = 2;
-	UINT8 ubCommHops[MAX_NUM_SOLDIERS];
-	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
-		ubCommHops[i] = 255;
-	ubCommHops[pSoldier->ubID] = 0;
-
-	// Build exactly the same bounded local communication graph as the aggregate
-	// fireteam blackboard. This reports one named contact without creating a global
-	// public-opplist entry or changing attack legality.
-	for (UINT8 ubHop = 0; ubHop < ubMaxRelayHops; ++ubHop)
-	{
-		for (UINT8 ubCandidateID = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
-			ubCandidateID <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++ubCandidateID)
-		{
-			SOLDIERTYPE *pCandidate = MercPtrs[ubCandidateID];
-			if (!pCandidate || pCandidate->ubID >= MAX_NUM_SOLDIERS ||
-				ubCommHops[pCandidate->ubID] != 255 ||
-				!pCandidate->bActive || !pCandidate->bInSector ||
-				pCandidate->stats.bLife < OKLIFE || pCandidate->bCollapsed ||
-				pCandidate->bBreathCollapsed ||
-				(pCandidate->usSoldierFlagMask & SOLDIER_POW) ||
-				(pCandidate->flags.uiStatusFlags & SOLDIER_COWERING) ||
-				AIDisengagementActive(pCandidate) || AIEscapeActive(pCandidate) ||
-				!AISameFireteam(pSoldier, pCandidate))
-			{
-				continue;
-			}
-
-			for (UINT8 ubRelayID = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
-				ubRelayID <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++ubRelayID)
-			{
-				SOLDIERTYPE *pRelay = MercPtrs[ubRelayID];
-				if (!pRelay || pRelay->ubID >= MAX_NUM_SOLDIERS ||
-					ubCommHops[pRelay->ubID] != ubHop ||
-					!pRelay->bActive || !pRelay->bInSector ||
-					pRelay->stats.bLife < OKLIFE || pRelay->bCollapsed ||
-					pRelay->bBreathCollapsed ||
-					(pRelay->usSoldierFlagMask & SOLDIER_POW) ||
-					(pRelay->flags.uiStatusFlags & SOLDIER_COWERING) ||
-					!AISameFireteam(pSoldier, pRelay))
-				{
-					continue;
-				}
-
-				if (PythSpacesAway(pRelay->sGridNo, pCandidate->sGridNo) <= iCommRadius)
-				{
-					ubCommHops[pCandidate->ubID] = ubHop + 1;
-					break;
-				}
-			}
-		}
-	}
+	const UINT8 *ubCommHops = AILocalFireteamCommHops(pSoldier);
+	if (!ubCommHops)
+		return FALSE;
 
 	INT32 sBestGrid = NOWHERE;
 	INT8 bBestLevel = 0;
