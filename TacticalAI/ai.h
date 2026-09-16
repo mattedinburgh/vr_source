@@ -514,6 +514,8 @@ BOOLEAN AIReserveTacticalTask(SOLDIERTYPE *pSoldier, UINT8 ubTask, INT32 sTarget
 	UINT8 ubTargetID, UINT8 ubMaxOwners, UINT8 ubTurns);
 UINT8 AICountTacticalTaskReservations(SOLDIERTYPE *pSoldier, UINT8 ubTask,
 	INT32 sTargetGridNo, UINT8 ubTargetID);
+BOOLEAN AIHasTacticalTaskReservation(SOLDIERTYPE *pSoldier, UINT8 ubTask,
+	INT32 sTargetGridNo, UINT8 ubTargetID);
 void AIReleaseTacticalTask(SOLDIERTYPE *pSoldier);
 BOOLEAN AIBeginShortPlan(SOLDIERTYPE *pSoldier, UINT8 ubPlanType, INT32 sTargetGridNo,
 	UINT8 ubTargetID, UINT8 ubTurns);
