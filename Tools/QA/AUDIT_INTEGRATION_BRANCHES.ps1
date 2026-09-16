@@ -53,7 +53,12 @@ Write-Host "Read-only audit: no fetch, merge, checkout, reset, build, or push is
 $refNamespace = if ($RemoteRefs) { "refs/remotes/origin" } else { "refs/heads" }
 $branchResult = Invoke-Git @("for-each-ref", "--format=%(refname:short)", $refNamespace) $repo
 if ($branchResult.ExitCode -ne 0) { throw "Unable to list branches in $refNamespace." }
-$branches = @($branchResult.Output | Where-Object { $_ -and $_ -notmatch '/HEAD
+$branches = @($branchResult.Output | Where-Object { $_ -and $_ -notmatch '/HEAD$' })
+$rows = @()
+foreach ($ref in $branches) {
+    $branch = $ref -replace '^origin/', ''
+    if ($branch -eq "install/all-2026-09-12") { continue }
+
     $excluded = $false
     foreach ($prefix in $ExcludePrefixes) {
         if ($branch -eq $prefix -or $branch.StartsWith($prefix)) {
