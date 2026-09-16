@@ -1,0 +1,74 @@
+name: VHD Iteration 2 validation-only gate
+
+on:
+  push:
+    branches:
+      - 'engine/vhd-validation-iter2-*'
+    paths:
+      - '.github/workflows/vhd-iter2-validation.yml'
+      - 'Tools/QA/VERIFY_ENGINE_VHD_ITER2.ps1'
+      - 'docs/ENGINE_VHD_MODERNIZATION_2026.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-invariants:
+    runs-on: windows-2022
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out validation candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify canonical ancestry and VHD invariants
+        shell: powershell
+        run: |
+          & '.\Tools\QA\VERIFY_ENGINE_VHD_ITER2.ps1' -CandidateRef 'HEAD'
+
+  hosted-release:
+    needs: static-invariants
+    runs-on: windows-2022
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out validation candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Compile full Release Win32 with hosted MSVC
+        shell: powershell
+        run: |
+          $log = Join-Path $env:GITHUB_WORKSPACE 'vhd-iter2-hosted-msbuild.log'
+
+          # RakNetLibStatic.lib was built against the VS2013 CRT and still references
+          # legacy stdio exports. Keep this compatibility shim CI-only.
+          $env:LINK = '/DEFAULTLIB:legacy_stdio_definitions.lib'
+
+          msbuild '.\ja2_VS2013.sln' /m /t:ja2 /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /fl "/flp:logfile=$log;verbosity=normal"
+          $buildExit = $LASTEXITCODE
+
+          if (Test-Path $log) {
+            Write-Host '----- Hosted MSBuild tail -----'
+            Get-Content $log -Tail 250
+          }
+
+          if ($buildExit -ne 0) { exit $buildExit }
+
+      - name: Upload Iteration 2 hosted build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vhd-iter2-hosted-msbuild-${{ github.run_number }}
+          path: vhd-iter2-hosted-msbuild.log
+          if-no-files-found: warn
