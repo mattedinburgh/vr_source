@@ -11294,27 +11294,29 @@ BOOLEAN GuyKnowsEnemyPosition( SOLDIERTYPE * pSoldier )
 		if (!pOpponent)
 			continue;
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
-
-		const BOOLEAN fDirectVisualContact =
-			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
-			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
-		if (fDirectVisualContact &&
-			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			 pSoldier->bSide == pOpponent->bSide ||
-			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			 pOpponent->ubBodyType == CROW))
+		INT32 sKnownSpot = NOWHERE;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sKnownSpot, NULL, NULL, &bKnowledge))
 		{
 			continue;
 		}
 
-		// Only a current contact may disappear because of its live engine state.
-		if (fDirectVisualContact && !ValidOpponent(pSoldier, pOpponent))
-			continue;
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
 
-		if (!TileIsOutOfBounds(KnownLocation(pSoldier, pOpponent->ubID)))
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW ||
+			 !ValidOpponent(pSoldier, pOpponent)))
+		{
+			continue;
+		}
+
+		if (!TileIsOutOfBounds(sKnownSpot))
 			return TRUE;
 	}
 
@@ -12268,15 +12270,61 @@ BOOLEAN AnyCoverAtSpot( SOLDIERTYPE *pSoldier, INT32 sSpot )
 	CHECKF(pSoldier);
 	CHECKF(!TileIsOutOfBounds(sSpot));
 
-	INT32 sOpponentSpot;
-	INT8 bOpponentLevel;
-	INT32 sClosestOpponent = ClosestKnownOpponent(pSoldier, &sOpponentSpot, &bOpponentLevel);
-	if (TileIsOutOfBounds(sClosestOpponent))
+	INT32 sClosestThreat = NOWHERE;
+	INT8 bClosestThreatLevel = 0;
+	INT32 iClosestRange = 0x7FFFFFFF;
+
+	// First establish the nearest believed threat using the same planning-only
+	// contact model used by the movement/risk system.
+	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
+	{
+		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
+		if (!pOpponent)
+			continue;
+
+		INT32 sThreatLoc = NOWHERE;
+		INT8 bThreatLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sThreatLoc, &bThreatLevel, NULL, &bKnowledge))
+		{
+			continue;
+		}
+
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW ||
+			 !ValidOpponent(pSoldier, pOpponent)))
+		{
+			continue;
+		}
+
+		if (TileIsOutOfBounds(sThreatLoc))
+			continue;
+
+		INT32 iRange = PythSpacesAway(sSpot, sThreatLoc);
+		if (iRange < iClosestRange)
+		{
+			iClosestRange = iRange;
+			sClosestThreat = sThreatLoc;
+			bClosestThreatLevel = bThreatLevel;
+		}
+	}
+
+	if (TileIsOutOfBounds(sClosestThreat))
 		return FALSE;
 
-	// There must at least be physical cover from the closest believed threat.
-	if (!AnyCoverFromSpot(sSpot, pSoldier->pathing.bLevel, sOpponentSpot, bOpponentLevel))
+	if (!AnyCoverFromSpot(
+		sSpot, pSoldier->pathing.bLevel,
+		sClosestThreat, bClosestThreatLevel))
+	{
 		return FALSE;
+	}
 
 	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
 	{
@@ -12284,67 +12332,82 @@ BOOLEAN AnyCoverAtSpot( SOLDIERTYPE *pSoldier, INT32 sSpot )
 		if (!pOpponent)
 			continue;
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
+		INT32 sThreatLoc = NOWHERE;
+		INT8 bThreatLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		UINT8 ubConfidence = 0;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sThreatLoc, &bThreatLevel,
+			&ubConfidence, &bKnowledge))
+		{
 			continue;
+		}
 
 		const BOOLEAN fThreatStateKnown =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
-			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+
 		if (fThreatStateKnown &&
 			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
 			 pSoldier->bSide == pOpponent->bSide ||
 			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			 pOpponent->ubBodyType == CROW))
+			 pOpponent->ubBodyType == CROW ||
+			 !ValidOpponent(pSoldier, pOpponent)))
 		{
 			continue;
 		}
-		if (fThreatStateKnown && !ValidOpponent(pSoldier, pOpponent))
-			continue;
 
-		INT32 sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		INT8 bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
 		if (TileIsOutOfBounds(sThreatLoc))
 			continue;
 
 		INT32 iVisibilityRange;
 		if (fThreatStateKnown)
 		{
-			iVisibilityRange = pOpponent->GetMaxDistanceVisible(sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
+			iVisibilityRange =
+				pOpponent->GetMaxDistanceVisible(
+					sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
 		}
 		else
 		{
-			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
-			iVisibilityRange = max(1, (MAX_VISION_RANGE * iCertainty) / 100);
+			iVisibilityRange = max(1,
+				(MAX_VISION_RANGE * (INT32)ubConfidence) / 100);
 		}
 
-		if (!AnyCoverFromSpot(sSpot, pSoldier->pathing.bLevel, sThreatLoc, bThreatLevel) &&
+		if (!AnyCoverFromSpot(
+				sSpot, pSoldier->pathing.bLevel,
+				sThreatLoc, bThreatLevel) &&
 			PythSpacesAway(sSpot, sThreatLoc) <= iVisibilityRange &&
-			LocationToLocationLineOfSightTest(sThreatLoc, bThreatLevel, sSpot, pSoldier->pathing.bLevel,
+			LocationToLocationLineOfSightTest(
+				sThreatLoc, bThreatLevel, sSpot, pSoldier->pathing.bLevel,
 				TRUE, iVisibilityRange, STANDING_LOS_POS, PRONE_LOS_POS))
 		{
 			return FALSE;
 		}
 
-		// Only an actually observed opponent gets one-tile movement prediction.
+		// Predict one tile of movement only for an opponent personally observed now.
 		if (fThreatStateKnown && gfTurnBasedAI)
 		{
 			for (UINT8 ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ++ubDirection)
 			{
-				INT32 sTempGridNo = NewGridNo(sThreatLoc, DirectionInc(ubDirection));
+				INT32 sTempGridNo =
+					NewGridNo(sThreatLoc, DirectionInc(ubDirection));
 				if (sTempGridNo == sThreatLoc)
 					continue;
 
-				UINT8 ubMovementCost = gubWorldMovementCosts[sTempGridNo][ubDirection][bThreatLevel];
+				UINT8 ubMovementCost =
+					gubWorldMovementCosts[sTempGridNo][ubDirection][bThreatLevel];
 				if (ubMovementCost >= TRAVELCOST_BLOCKED ||
 					!NewOKDestination(pOpponent, sTempGridNo, FALSE, bThreatLevel))
 				{
 					continue;
 				}
 
-				if (!AnyCoverFromSpot(sSpot, pSoldier->pathing.bLevel, sTempGridNo, bThreatLevel) &&
+				if (!AnyCoverFromSpot(
+						sSpot, pSoldier->pathing.bLevel,
+						sTempGridNo, bThreatLevel) &&
 					PythSpacesAway(sSpot, sTempGridNo) <= iVisibilityRange &&
-					LocationToLocationLineOfSightTest(sTempGridNo, bThreatLevel, sSpot, pSoldier->pathing.bLevel,
+					LocationToLocationLineOfSightTest(
+						sTempGridNo, bThreatLevel, sSpot, pSoldier->pathing.bLevel,
 						TRUE, iVisibilityRange, STANDING_LOS_POS, PRONE_LOS_POS))
 				{
 					return FALSE;
@@ -12847,26 +12910,19 @@ UINT8 CountKnownEnemiesInDirection(SOLDIERTYPE *pSoldier, UINT8 ubDirection, INT
 {
 	CHECKF(pSoldier);
 
-	UINT32		uiLoop;
-	SOLDIERTYPE *pOpponent;
+	UINT8 ubNum = 0;
 
-	INT32		sThreatLoc;
-	INT8		iThreatLevel;
-
-	UINT8		ubNum = 0;
-
-	// loop through all the enemies
-	for (uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
+	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
 	{
-		pOpponent = MercSlots[uiLoop];
-
+		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
 		if (!pOpponent)
-		{
 			continue;
-		}
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
+		INT32 sThreatLoc = NOWHERE;
+		INT8 bThreatLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sThreatLoc, &bThreatLevel, NULL, &bKnowledge))
 		{
 			continue;
 		}
@@ -12874,40 +12930,33 @@ UINT8 CountKnownEnemiesInDirection(SOLDIERTYPE *pSoldier, UINT8 ubDirection, INT
 		const BOOLEAN fDirectVisualContact =
 			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
 			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+
 		if (fDirectVisualContact &&
 			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
 			 pSoldier->bSide == pOpponent->bSide ||
 			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			 pOpponent->ubBodyType == CROW))
+			 pOpponent->ubBodyType == CROW ||
+			 !ValidOpponent(pSoldier, pOpponent)))
 		{
 			continue;
 		}
 
-		if (fDirectVisualContact && !ValidOpponent(pSoldier, pOpponent))
+		if (TileIsOutOfBounds(sThreatLoc) ||
+			PythSpacesAway(pSoldier->sGridNo, sThreatLoc) > sDistance)
 		{
 			continue;
 		}
 
-		sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		iThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
-
-		if (TileIsOutOfBounds(sThreatLoc))
+		UINT8 ubThreatDirection = AIDirection(pSoldier->sGridNo, sThreatLoc);
+		if (ubThreatDirection != ubDirection &&
+			(!fAdjacent ||
+			 (ubThreatDirection != gOneCDirection[ubDirection] &&
+			  ubThreatDirection != gOneCCDirection[ubDirection])))
 		{
 			continue;
 		}
 
-		if (PythSpacesAway(pSoldier->sGridNo, sThreatLoc) > sDistance)
-		{
-			continue;
-		}
-
-		if (AIDirection(pSoldier->sGridNo, sThreatLoc) != ubDirection &&
-			(!fAdjacent || AIDirection(pSoldier->sGridNo, sThreatLoc) != gOneCDirection[ubDirection] && AIDirection(pSoldier->sGridNo, sThreatLoc) != gOneCCDirection[ubDirection]))
-		{
-			continue;
-		}
-
-		ubNum++;
+		++ubNum;
 	}
 
 	return ubNum;
