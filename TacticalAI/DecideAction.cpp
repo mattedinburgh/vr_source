@@ -10026,6 +10026,8 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 			AISupportRoleScore(pSoldier, sClosestDisturbance) >
 			AIManeuverRoleScore(pSoldier, sClosestDisturbance) + 15)
 		{
+			VRPlannerTraceReject(pSoldier, uiTraceDecision, "flank", AI_ACTION_NONE,
+				pSoldier->sGridNo, "support-role deconfliction kept soldier in fire base");
 			return -1;
 		}
 
@@ -10072,10 +10074,18 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 			ubFlankLimit = 3;
 		}
 
+		VRAnalyticsStateInt(uiTraceDecision, "active_left_flankers", ubActiveLeftFlankers);
+		VRAnalyticsStateInt(uiTraceDecision, "active_right_flankers", ubActiveRightFlankers);
+		VRAnalyticsStateInt(uiTraceDecision, "flank_commitment_limit", ubFlankLimit);
+
 		// Keep a genuine support base. Most elements commit only two flankers;
 		// a large, locally superior and composed element may commit a third.
 		if (ubActiveFlankers >= ubFlankLimit)
+		{
+			VRPlannerTraceReject(pSoldier, uiTraceDecision, "flank", AI_ACTION_NONE,
+				pSoldier->sGridNo, "fireteam flank commitment limit reached");
 			return -1;
+		}
 
 		BOOLEAN fLeftFlankPossible = FALSE;
 		BOOLEAN fRightFlankPossible = FALSE;
@@ -10259,6 +10269,8 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		}
 	}
 
+	VRPlannerTraceReject(pSoldier, uiTraceDecision, "flank", AI_ACTION_NONE,
+		pSoldier->sGridNo, "flank start conditions or legal route unavailable");
 	return -1;
 }
 
