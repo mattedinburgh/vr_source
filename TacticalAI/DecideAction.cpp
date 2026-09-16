@@ -10762,7 +10762,8 @@ INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 
 					if (pSoldier->aiData.bOrders == SEEKENEMY &&
 						//WeAttack(pSoldier->bTeam)) //&&
-						Chance(20 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10)))
+						(pSoldier->bTeam == ENEMY_TEAM ||
+						Chance(20 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10))))
 					{
 						CheckTossFlankFence(pSoldier, &BestThrow);
 
@@ -10967,7 +10968,8 @@ INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 
 					if (pSoldier->aiData.bOrders == SEEKENEMY &&
 						//WeAttack(pSoldier->bTeam)) &&
-						Chance(20 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10)))
+						(pSoldier->bTeam == ENEMY_TEAM ||
+						Chance(20 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10))))
 					{
 						CheckTossFlankFence(pSoldier, &BestThrow);
 
@@ -11284,11 +11286,13 @@ INT8 DecideUseGrenadeSpecial(SOLDIERTYPE *pSoldier)
 		pSoldier->bActionPoints == pSoldier->bInitialActionPoints &&
 		pSoldier->aiData.bOrders != STATIONARY &&
 		pSoldier->aiData.bAIMorale >= MORALE_CONFIDENT &&
-		Chance(15 + 15 * SoldierDifficultyLevel(pSoldier) + 10 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10)))
+		(pSoldier->bTeam == ENEMY_TEAM ||
+		 Chance(15 + 15 * SoldierDifficultyLevel(pSoldier) + 10 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10))))
 	{
 		CheckTossGrenadeSpecial(pSoldier, &BestThrow);
 
-		if (BestThrow.ubPossible  && Chance(BestThrow.iAttackValue))
+		if (BestThrow.ubPossible &&
+			(pSoldier->bTeam == ENEMY_TEAM || Chance(BestThrow.iAttackValue)))
 		{
 			// Final safety net for player-aligned AI: special obstacle-clearing throws
 			// must not bypass civilian protection. Enemy troops intentionally do not
