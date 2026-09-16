@@ -1960,6 +1960,17 @@ UINT8 AICountTacticalTaskReservations(SOLDIERTYPE *pSoldier, UINT8 ubTask,
 	return ubCount;
 }
 
+BOOLEAN AIHasTacticalTaskReservation(SOLDIERTYPE *pSoldier, UINT8 ubTask,
+	INT32 sTargetGridNo, UINT8 ubTargetID)
+{
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS || ubTask == AI_TASK_NONE)
+		return FALSE;
+
+	const AITASKRESERVATIONSLOT *pMine = &gAITaskReservations[pSoldier->ubID];
+	return AIValidReservationOwner(pSoldier, pSoldier->ubID, pMine) &&
+		AISameTaskTarget(pMine, ubTask, sTargetGridNo, ubTargetID);
+}
+
 BOOLEAN AIReserveTacticalTask(SOLDIERTYPE *pSoldier, UINT8 ubTask, INT32 sTargetGridNo,
 	UINT8 ubTargetID, UINT8 ubMaxOwners, UINT8 ubTurns)
 {
