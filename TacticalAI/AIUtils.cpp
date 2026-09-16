@@ -2612,44 +2612,65 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 		pbPublOL = gbPublicOpplist[pSoldier->bTeam] + pOpponent->ubID;
 		pSeenOpp = (UINT8 *)gbSeenOpponents[pSoldier->ubID] + pOpponent->ubID;
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
-		{
-			continue;
-		}
-
 		BOOLEAN fThreatStateKnown =
 			(*pbPersOL == SEEN_CURRENTLY) &&
 			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
-		if (fThreatStateKnown && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
+
+		// Current relation/existence may invalidate a threat only under personal LOS.
+		if (fThreatStateKnown &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW ||
+			 !pOpponent->bActive || !pOpponent->bInSector ||
+			 pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
 		{
 			continue;
 		}
 
-		// if this opponent is unknown to me personally AND unknown to my team, too
-		if ((*pbPersOL == NOT_HEARD_OR_SEEN) && (*pbPublOL == NOT_HEARD_OR_SEEN))
+		BOOLEAN fPlanningContact = FALSE;
+		UINT8 ubPlanningConfidence = 0;
+		INT8 bPlanningKnowledge = NOT_HEARD_OR_SEEN;
+		INT32 sPlanningContact = NOWHERE;
+
+		if (pSoldier->bTeam == ENEMY_TEAM)
 		{
-			// if I have never seen him before anywhere in this sector, either
+			fPlanningContact = AIPlanningContactForOpponent(
+				pSoldier, pOpponent->ubID, &sPlanningContact, NULL,
+				&ubPlanningConfidence, &bPlanningKnowledge);
+		}
+
+		if (fPlanningContact)
+		{
+			// Local reports influence threat awareness only through contact confidence.
+			// They do not reveal live HP/AP/weapon/stance to this soldier.
+			bMostRecentOpplistValue = bPlanningKnowledge;
+			iPercent = ubPlanningConfidence;
+		}
+		else if ((*pbPersOL == NOT_HEARD_OR_SEEN) && (*pbPublOL == NOT_HEARD_OR_SEEN))
+		{
 			if (!(*pSeenOpp))
-				continue;		// next merc
+				continue;
 
-			// have seen him in the past, so he remains something of a threat
-			bMostRecentOpplistValue = 0;		// uses the free slot for 0 opplist
+			bMostRecentOpplistValue = 0;
+			iPercent = ThreatPercent[bMostRecentOpplistValue - OLDEST_HEARD_VALUE];
 		}
-		else		 // decide which opplist is more current
+		else
 		{
-			// if personal knowledge is more up to date or at least equal
-			if ((gubKnowledgeValue[*pbPublOL - OLDEST_HEARD_VALUE][*pbPersOL - OLDEST_HEARD_VALUE] > 0) || (*pbPersOL == *pbPublOL))
-				bMostRecentOpplistValue = *pbPersOL;		// use personal
+			if ((gubKnowledgeValue[*pbPublOL - OLDEST_HEARD_VALUE][*pbPersOL - OLDEST_HEARD_VALUE] > 0) ||
+				(*pbPersOL == *pbPublOL))
+			{
+				bMostRecentOpplistValue = *pbPersOL;
+			}
 			else
-				bMostRecentOpplistValue = *pbPublOL;		// use public
+			{
+				bMostRecentOpplistValue = *pbPublOL;
+			}
+			iPercent = ThreatPercent[bMostRecentOpplistValue - OLDEST_HEARD_VALUE];
 		}
 
-		iPercent = ThreatPercent[bMostRecentOpplistValue - OLDEST_HEARD_VALUE];
-
-		// A stale contact contributes according to remembered certainty, not hidden
-		// current wounds/AP/weapon state. Current contacts keep the detailed threat model.
+		// Unseen/reported contacts use a neutral threat prior. Detailed live target
+		// state is consulted only when this soldier personally sees the opponent.
 		INT32 iOpponentThreat = fThreatStateKnown ?
 			CalcManThreatValue(pOpponent,pSoldier->sGridNo,FALSE,pSoldier) : 100;
 		if (iOpponentThreat < 1)
