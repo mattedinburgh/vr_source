@@ -1764,24 +1764,58 @@ void BuildTacticalSoldierDisplayName( SOLDIERTYPE *pSoldier, CHAR16 *pOut )
 	// not a per-soldier identity source. Do not let it suppress the deterministic
 	// individual name requested for regular enemies.
 
-	static const wchar_t *maleNames[] =
+	static const wchar_t *maleLegends[] =
 	{
-		L"Rafa", L"Diego", L"Marco", L"Tomas", L"Luis", L"Ivan", L"Nico", L"Jorge",
-		L"Mateo", L"Pablo", L"Carlos", L"Bruno", L"Victor", L"Raul", L"Emil", L"Leon"
+		L"Pope Francis", L"Sean Connery", L"Ringo the Beatle", L"Elvis Presley",
+		L"Johnny Cash", L"David Bowie", L"Freddie Mercury", L"Frank Sinatra",
+		L"Bruce Lee", L"Clint Eastwood", L"Jackie Chan", L"Chuck Norris",
+		L"Al Pacino", L"Robert De Niro", L"Jack Nicholson", L"Steve McQueen",
+		L"Patrick Swayze", L"Mr T", L"Rowan Atkinson", L"Gene Hackman",
+		L"Diego Maradona", L"Pele", L"Zinedine Zidane", L"George Best",
+		L"Lemmy", L"Ozzy Osbourne", L"Sting", L"Mick Jagger",
+		L"Keith Richards", L"Tom Jones", L"David Hasselhoff", L"Jean Reno"
 	};
-	static const wchar_t *femaleNames[] =
+	static const wchar_t *femaleLegends[] =
 	{
-		L"Ana", L"Rosa", L"Lucia", L"Mara", L"Sofia", L"Elena", L"Nina", L"Clara",
-		L"Vera", L"Lina", L"Inez", L"Paula", L"Alma", L"Eva", L"Rita", L"Isla"
+		L"Mother Teresa", L"Edyta Gorniak", L"Audrey Hepburn", L"Sophia Loren",
+		L"Tina Turner", L"Dolly Parton", L"Cher", L"Madonna",
+		L"Cyndi Lauper", L"Whitney Houston", L"Aretha Franklin", L"Grace Jones",
+		L"Joan Jett", L"Stevie Nicks", L"Janis Joplin", L"Sade",
+		L"Bjork", L"Nina Simone", L"Monica Bellucci", L"Brigitte Bardot",
+		L"Sigourney Weaver", L"Uma Thurman", L"Lucy Liu", L"Annie Lennox",
+		L"Debbie Harry", L"Kate Bush", L"Shirley Bassey", L"Jane Fonda",
+		L"Whoopi Goldberg", L"Goldie Hawn", L"Kim Basinger", L"Joanna Lumley"
 	};
-	static const wchar_t *surnames[] =
+	static const wchar_t *aliases[] =
 	{
-		L"Cruz", L"Vega", L"Reyes", L"Silva", L"Rojas", L"Torres", L"Diaz", L"Mora",
-		L"Soto", L"Leon", L"Vidal", L"Luna", L"Ramos", L"Ortiz", L"Serra", L"Flores"
+		L"Speedy", L"Big Cheese", L"El Presidente", L"Professor", L"Disco",
+		L"Lucky", L"Noodles", L"Mongo", L"Potato", L"Doc", L"Preacher", L"Grandpa",
+		L"Cobra", L"Ghost", L"Viper", L"Raven", L"Jackal", L"Rook",
+		L"Mad Dog", L"Blue Eyes", L"Red Beard", L"Two Socks", L"Shorty", L"Big Al",
+		L"Lefty", L"Smiley", L"Snake", L"Biscuit", L"Hollywood", L"Turbo",
+		L"Batman", L"Captain Fantastic"
 	};
-	static const wchar_t *callsigns[] =
+	static const wchar_t *maleRegulars[] =
 	{
-		L"Fox", L"Rook", L"Wolf", L"Viper", L"Hawk", L"Ghost", L"Jackal", L"Raven"
+		L"Rafa Cruz", L"Diego Vega", L"Marco Reyes", L"Tomas Silva",
+		L"Luis Rojas", L"Ivan Torres", L"Nico Diaz", L"Jorge Mora",
+		L"Mateo Soto", L"Pablo Leon", L"Carlos Vidal", L"Bruno Luna",
+		L"Victor Ramos", L"Raul Ortiz", L"Emil Serra", L"Leon Flores",
+		L"Felix Navarro", L"Gabriel Santos", L"Hector Salas", L"Julio Mendez",
+		L"Ramon Castro", L"Adrian Costa", L"Manuel Bravo", L"Rico Valdez",
+		L"Esteban Fuentes", L"Damian Acosta", L"Arturo Molina", L"Simon Paredes",
+		L"Alex Romero", L"Daniel Paz", L"Miguel Suarez", L"Leo Cabrera"
+	};
+	static const wchar_t *femaleRegulars[] =
+	{
+		L"Ana Cruz", L"Rosa Vega", L"Lucia Reyes", L"Mara Silva",
+		L"Sofia Rojas", L"Elena Torres", L"Nina Diaz", L"Clara Mora",
+		L"Vera Soto", L"Lina Leon", L"Inez Vidal", L"Paula Luna",
+		L"Alma Ramos", L"Eva Ortiz", L"Rita Serra", L"Isla Flores",
+		L"Camila Navarro", L"Gabriela Santos", L"Helena Salas", L"Julia Mendez",
+		L"Renata Castro", L"Adriana Costa", L"Manuela Bravo", L"Rica Valdez",
+		L"Estela Fuentes", L"Diana Acosta", L"Alicia Molina", L"Simona Paredes",
+		L"Alexandra Romero", L"Daniela Paz", L"Mica Suarez", L"Lea Cabrera"
 	};
 
 	UINT32 seed = pSoldier->uiUniqueSoldierIdValue;
@@ -1794,12 +1828,19 @@ void BuildTacticalSoldierDisplayName( SOLDIERTYPE *pSoldier, CHAR16 *pOut )
 	seed *= 0x846ca68b;
 	seed ^= seed >> 16;
 
-	const wchar_t **names = ( pSoldier->ubBodyType == REGFEMALE ) ? femaleNames : maleNames;
-	const wchar_t *first = names[ seed & 15 ];
-	const wchar_t *last = surnames[ ( seed >> 8 ) & 15 ];
-	const wchar_t *call = callsigns[ ( seed >> 16 ) & 7 ];
+	const BOOLEAN female = ( pSoldier->ubBodyType == REGFEMALE );
+	const UINT32 flavour = seed % 10;
+	const wchar_t *displayName;
 
-	swprintf( pOut, L"%s \"%s\" %s", first, call, last );
+	// 40% famous/recognizable, 30% pure aliases, 30% plausible mercenary names.
+	if ( flavour < 4 )
+		displayName = female ? femaleLegends[(seed >> 8) & 31] : maleLegends[(seed >> 8) & 31];
+	else if ( flavour < 7 )
+		displayName = aliases[(seed >> 8) & 31];
+	else
+		displayName = female ? femaleRegulars[(seed >> 8) & 31] : maleRegulars[(seed >> 8) & 31];
+
+	swprintf( pOut, L"%s", displayName );
 }
 
 void DrawSelectedUIAboveGuy( UINT16 usSoldierID )
