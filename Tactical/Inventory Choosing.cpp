@@ -1620,6 +1620,14 @@ void ChooseWeaponForSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp, INT8 bWeaponC
 	}
 
 	DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"ChooseWeaponForSoldierCreateStruct: Gun Created");
+
+	// Keep militia attachment distribution aligned with the current 1.13 semantics
+	// without changing Vengeance's deliberately richer enemy attachment behaviour.
+	const BOOLEAN fMilitiaAttachmentParity =
+		( pp->ubSoldierClass == SOLDIER_CLASS_GREEN_MILITIA ||
+		  pp->ubSoldierClass == SOLDIER_CLASS_REG_MILITIA ||
+		  pp->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA );
+
 	if( !(pp->Inv[ HANDPOS ].fFlags & OBJECT_NO_OVERWRITE) )
 	{ 
 		//slot not locked, so add attachments to it
@@ -1648,7 +1656,7 @@ void ChooseWeaponForSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp, INT8 bWeaponC
 			}
 
 			//Choose attachment
-			if( bAttachClass )
+			if( bAttachClass && ( !fMilitiaAttachmentParity || fAttachment ) )
 			{
 				usAttachIndex = PickARandomAttachment(ATTACHMENTS, pp->ubSoldierClass, usGunIndex,bAttachClass,FALSE);
 			}
@@ -1682,7 +1690,7 @@ void ChooseWeaponForSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp, INT8 bWeaponC
 		else 
 		{
 			//The total pool of coolness we have for all the attachments. If fAttachment is true, the chance of getting an attachment is boosted.
-			INT8 iMiscAttachmentChance = 60;
+			INT8 iMiscAttachmentChance = fMilitiaAttachmentParity ? (40 + (fAttachment * 20)) : 60;
 			//Add a value equal to the avarage amount of attachments that will be on this gun.
 			//Because the guns scope does not subtract from this value, -1.
 			INT16 iAttachmentCoolnessPool = (bAttachClass * (gGameExternalOptions.iMaxEnemyAttachments-1) * iMiscAttachmentChance) / 100;
@@ -1704,7 +1712,7 @@ void ChooseWeaponForSoldierCreateStruct( SOLDIERCREATE_STRUCT *pp, INT8 bWeaponC
 			//Guns should have a fairly good chance of having a scope. Even when they're not sniper rifles.
 			//They're likely to be crappier, though.
 			} 
-			else if (Chance(ubScopeChance))
+			else if ( fMilitiaAttachmentParity ? ( Chance(75) && fAttachment ) : Chance(ubScopeChance) )
 			{
 				usScopeIndex = PickARandomAttachment(SCOPE, pp->ubSoldierClass, usGunIndex,bAttachClass-1,FALSE);
 			}
