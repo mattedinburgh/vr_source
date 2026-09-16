@@ -199,6 +199,23 @@ if (-not $decideText.Contains("VRAnalyticsCommitDecision")) {
     Fail "DecideAction.cpp planner adapters are not connected to VRAnalyticsCommitDecision"
 }
 
+# Flank coordination telemetry must stay on the same planner decision.  Sending
+# these states through VRAnalyticsTacticalStateInt would silently create/use the
+# legacy per-soldier decision and split the evidence needed by Companion.
+$flankPlannerTelemetry = @(
+    'VRAnalyticsStateInt(uiTraceDecision, "turn"',
+    'VRAnalyticsStateInt(uiTraceDecision, "fireteam_id"',
+    'VRAnalyticsStateInt(uiTraceDecision, "fireteam_effective_fire_support"',
+    'VRAnalyticsStateInt(uiTraceDecision, "shared_approach_pressure"',
+    'VRAnalyticsStateInt(uiTraceDecision, "basic_fireteam_maneuver"',
+    'VRAnalyticsStateInt(uiTraceDecision, "fireteam_flank_axis"'
+)
+foreach ($snippet in $flankPlannerTelemetry) {
+    if (-not $decideText.Contains($snippet)) {
+        Fail "Flank planner telemetry contract is missing: $snippet"
+    }
+}
+
 # 5. Canonical architecture declaration must remain explicit.
 if (-not $frameworkText.Contains("install/all-2026-09-12")) {
     Fail "UNIFIED_AI_FRAMEWORK.md no longer names install/all-2026-09-12 as canonical"

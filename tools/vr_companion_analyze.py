@@ -348,10 +348,76 @@ def grenade_throw_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def fireteam_flank_summary(
+    tactical: Iterable[Dict[str, Any]]
+) -> Dict[str, Any]:
+    flank_decisions = [
+        decision for decision in tactical
+        if (decision.get("begin") or {}).get("decision_type") == "flank"
+    ]
+    grouped_axes: Dict[Tuple[Any, Any, int, int, int], List[int]] = defaultdict(list)
+    axis_samples = 0
+    axis_selected_samples = 0
+    axis_selected_matches = 0
+    committed = 0
+    rejection_reasons = Counter()
+
+    for decision in flank_decisions:
+        states = decision.get("states", {})
+        begin = decision.get("begin") or {}
+        axis = states.get("fireteam_flank_axis")
+        if isinstance(axis, (int, float)) and int(axis) != 0:
+            axis_samples += 1
+            turn = states.get("turn")
+            fireteam_id = states.get("fireteam_id")
+            target_grid = states.get("target_grid")
+            if all(isinstance(v, (int, float)) for v in (turn, fireteam_id, target_grid)) and int(fireteam_id) != 0:
+                key = (
+                    decision.get("session"), begin.get("battle_id"), int(turn),
+                    int(fireteam_id), int(target_grid),
+                )
+                grouped_axes[key].append(int(axis))
+
+            selected = states.get("selected_action")
+            if isinstance(selected, (int, float)) and int(selected) != 0:
+                axis_selected_samples += 1
+                if int(selected) == int(axis):
+                    axis_selected_matches += 1
+
+        if any(commit.get("selection") == "flank" for commit in decision.get("commits", [])):
+            committed += 1
+        for candidate in decision.get("candidates", []):
+            if candidate.get("candidate") == "flank" and not candidate.get("eligible", False):
+                rejection_reasons[str(candidate.get("reason", "unknown"))] += 1
+
+    comparison_groups = [axes for axes in grouped_axes.values() if len(axes) >= 2]
+    unanimous_groups = sum(1 for axes in comparison_groups if len(set(axes)) == 1)
+    coordination_telemetry_available = axis_samples > 0
+    return {
+        "decisions": len(flank_decisions),
+        "coordination_telemetry_available": coordination_telemetry_available,
+        "shared_axis_samples": axis_samples,
+        "committed": committed,
+        "comparison_groups": len(comparison_groups),
+        "unanimous_groups": unanimous_groups,
+        "axis_agreement_rate": (
+            pct(unanimous_groups, len(comparison_groups))
+            if comparison_groups else None
+        ),
+        "axis_selected_samples": axis_selected_samples,
+        "axis_selected_alignment_rate": (
+            pct(axis_selected_matches, axis_selected_samples)
+            if axis_selected_samples else None
+        ),
+        "rejection_reasons": dict(rejection_reasons.most_common()),
+    }
+
+
 def tactical_summary(
     events: List[Dict[str, Any]], decisions: Dict[Tuple[Any, int], Dict[str, Any]]
 ) -> Dict[str, Any]:
     tactical = [d for d in decisions.values() if d.get("layer") == "tactical"]
+    flank_coordination = fireteam_flank_summary(tactical)
     commits = [c for d in tactical for c in d["commits"] if "action" in c]
     outcomes = [o for d in tactical for o in d["outcomes"]]
 
@@ -565,6 +631,7 @@ def tactical_summary(
         "peak_disengaging": peak_disengaging,
         "peak_cowering": peak_cowering,
         "diagnostics": dict(diagnostics.most_common()),
+        "flank_coordination": flank_coordination,
     }
 
 
@@ -1154,6 +1221,12 @@ def render_markdown(
     battle = summary["battle"]
     interaction = summary["interaction"]
     tac = summary["tactical"]
+    flank = tac["flank_coordination"]
+    flank_rejections = flank["rejection_reasons"]
+    flank_rejection_total = sum(flank_rejections.values())
+    flank_rejection_text = ", ".join(
+        f"{reason}: {count}" for reason, count in list(flank_rejections.items())[:5]
+    ) or "none"
     grenades = summary["grenades"]
     mobility = summary["strategic_mobility"]
     strat = summary["strategic"]
@@ -1284,6 +1357,25 @@ def render_markdown(
         "",
         "Omniscient formation snapshots are reported separately from actor perception. "
         "Use decision IDs to inspect a soldier's perceived force strength, stress, risk, cover, leadership, weapon state and collapse streak before attributing a retreat to bad AI.",
+        "",
+        "### Fireteam flank coordination",
+        "",
+        "| Metric | Result |",
+        "|---|---:|",
+        f"| Flank planner decisions | {flank['decisions']} |",
+        f"| Coordination telemetry available | {'yes' if flank['coordination_telemetry_available'] else 'no'} |",
+        f"| Decisions with shared-axis evidence | {flank['shared_axis_samples']} |",
+        f"| Observed flank commit events | {flank['committed']} |",
+        f"| Comparable same-fireteam groups | {flank['comparison_groups']} |",
+        f"| Same-axis groups | {flank['unanimous_groups']} |",
+        f"| Shared-axis agreement | {fmt(flank['axis_agreement_rate'])}{'%' if flank['axis_agreement_rate'] is not None else ''} |",
+        f"| Selected action aligned with shared axis | {fmt(flank['axis_selected_alignment_rate'])}{'%' if flank['axis_selected_alignment_rate'] is not None else ''} ({flank['axis_selected_samples']} samples) |",
+        f"| Rejected flank candidates | {flank_rejection_total} |",
+        f"| Top rejection reasons | {flank_rejection_text} |",
+        "",
+        "Groups compare same session/battle/turn/fireteam/target-grid only. This is deliberately conservative: "
+        "it measures coordination without inferring agreement across unrelated contacts. "
+        "A pre-coordination build reports n/a rather than converting missing telemetry into a false 0% result.",
         "",
         "### Battle outcomes",
         "",
