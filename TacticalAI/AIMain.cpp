@@ -63,6 +63,7 @@
 #include "Strategic Movement.h"	// enemy retreat destination battles
 #include "Strategic Operational AI.h"	// persistent enemy retreat formations
 #include "VRAnalytics.h"
+#include "Tactical/Campaign Tactical Telemetry.h"
 // needed to use the modularized tactical AI:
 #include "ModularizedTacticalAI/include/Plan.h"
 #include "ModularizedTacticalAI/include/PlanFactoryLibrary.h"
@@ -365,7 +366,7 @@ void HandleSoldierAI( SOLDIERTYPE *pSoldier ) // FIXME - this function is named 
 		return;
 	}
 
-	if (pSoldier->flags.uiStatusFlags & SOLDIER_PC)
+	if ((pSoldier->flags.uiStatusFlags & SOLDIER_PC) && !VR_SelfPlayActive())
 	{
 		// if we're in autobandage, or the AI control flag is set and the player has a quote record to perform, or is a boxer,
 		// let AI process this merc; otherwise abort
@@ -951,7 +952,10 @@ void EndAIDeadlock(void)
 
 	if (!bFound)
 	{
-		StartPlayerTeamTurn( TRUE, FALSE );
+		if( VR_SelfPlayActive() )
+			EndAITurn();
+		else
+			StartPlayerTeamTurn( TRUE, FALSE );
 	}
 }
 
@@ -1298,6 +1302,7 @@ static BOOLEAN VRRejectRedundantSelectedAIAction(SOLDIERTYPE *pSoldier)
 		return FALSE;
 
 	VRRecordSelectedAIAction(pSoldier);
+		VR_SelfPlayDecision(pSoldier);
 	VRAnalyticsTacticalActionRejected(
 		pSoldier->ubID, bRejectedAction, pSoldier->aiData.usActionData, pReason );
 	pSoldier->aiData.bLastAction = bRejectedAction;
