@@ -3145,6 +3145,14 @@ UINT32 ChanceOfBulletHittingStructure( INT32 iDistance, INT32 iDistanceToTarget,
 	}
 }
 
+INT32 ApplyGlobalPenetrationMultiplierToStructureResistance( INT32 iImpactReduction )
+{
+	// Penetration is the inverse of structure resistance. Keep this isolated from damage,
+	// armour, suppression and accuracy. The INI reader clamps the value to a safe range.
+	const FLOAT fPenetration = __max( 0.10f, gGameExternalOptions.fGlobalPenetrationMultiplier );
+	return __max( 0, (INT32)( (FLOAT)iImpactReduction / fPenetration + 0.5f ) );
+}
+
 INT32 StructureResistanceIncreasedByRange( INT32 iImpactReduction, INT32 iGunRange, INT32 iDistance )
 {
 	return( iImpactReduction * ( 100 + PERCENT_BULLET_SLOWED_BY_RANGE * (iDistance - iGunRange) / iGunRange ) / 100 );
@@ -3297,6 +3305,7 @@ INT32 HandleBulletStructureInteraction( BULLET * pBullet, STRUCTURE * pStructure
 		iImpactReduction = StructureResistanceIncreasedByRange( iImpactReduction, pBullet->iRange, pBullet->iLoop );
 
 		iImpactReduction = (INT32) (iImpactReduction * AmmoTypes[ubAmmoType].structureImpactReductionMultiplier / max(1,AmmoTypes[ubAmmoType].structureImpactReductionDivisor));
+		iImpactReduction = ApplyGlobalPenetrationMultiplierToStructureResistance( iImpactReduction );
 
 		//switch (pBullet->pFirer->inv[ pBullet->pFirer->ubAttackingHand ][0]->data.gun.ubGunAmmoType)
 		//{
@@ -3385,6 +3394,7 @@ INT32 CTGTHandleBulletStructureInteraction( BULLET * pBullet, STRUCTURE * pStruc
 	iImpactReduction = StructureResistanceIncreasedByRange( iImpactReduction, pBullet->iRange, pBullet->iLoop );
 
 	iImpactReduction = (INT32)(iImpactReduction * AmmoTypes[pBullet->pFirer->inv[ pBullet->pFirer->ubAttackingHand ][0]->data.gun.ubGunAmmoType].structureImpactReductionMultiplier / max(1,AmmoTypes[pBullet->pFirer->inv[ pBullet->pFirer->ubAttackingHand ][0]->data.gun.ubGunAmmoType].structureImpactReductionDivisor));
+	iImpactReduction = ApplyGlobalPenetrationMultiplierToStructureResistance( iImpactReduction );
 
 	//switch (pBullet->pFirer->inv[ pBullet->pFirer->ubAttackingHand ][0]->data.gun.ubGunAmmoType)
 	//{
