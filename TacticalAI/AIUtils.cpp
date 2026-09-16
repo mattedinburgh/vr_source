@@ -10423,34 +10423,37 @@ static BOOLEAN AIKnownThreatHasSightToSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, B
 		if (!pOpponent)
 			continue;
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
-
-		const BOOLEAN fThreatStateKnown =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
-			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
-		if (fThreatStateKnown &&
-			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			 pSoldier->bSide == pOpponent->bSide ||
-			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			 pOpponent->ubBodyType == CROW))
+		INT32 sThreatLoc = NOWHERE;
+		INT8 bThreatLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		UINT8 ubConfidence = 0;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sThreatLoc, &bThreatLevel,
+			&ubConfidence, &bKnowledge))
 		{
 			continue;
 		}
 
-		if (fThreatStateKnown && !ValidOpponent(pSoldier, pOpponent))
-			continue;
+		const BOOLEAN fThreatStateKnown =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
 
-		INT32 sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		INT8 bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
+		if (fThreatStateKnown &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW ||
+			 !ValidOpponent(pSoldier, pOpponent)))
+		{
+			continue;
+		}
+
 		if (TileIsOutOfBounds(sThreatLoc))
 			continue;
 
 		UINT16 usAdjustedSight;
 		if (fThreatStateKnown)
 		{
-			// Personal sight can legitimately use the observer's actual vision state.
 			INT16 sSightAdjustment =
 				GetSightAdjustment(pOpponent, pSoldier, sSpot, pSoldier->pathing.bLevel, ubTargetStance);
 
@@ -10464,10 +10467,9 @@ static BOOLEAN AIKnownThreatHasSightToSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, B
 		}
 		else
 		{
-			// Stale/heard contacts have a believed firing/observation sector, not access
-			// to hidden current optics, stance, breath, wounds or weapon-ready state.
-			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
-			usAdjustedSight = (UINT16)max(1, (MAX_VISION_RANGE * iCertainty) / 100);
+			// Teammate reports and stale contacts use only reported confidence.
+			usAdjustedSight = (UINT16)max(1,
+				(MAX_VISION_RANGE * (INT32)ubConfidence) / 100);
 		}
 
 		if ((fUnlimited &&
@@ -10481,8 +10483,7 @@ static BOOLEAN AIKnownThreatHasSightToSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, B
 			return TRUE;
 		}
 
-		// Predict a one-tile reposition only for a currently observed opponent. Doing
-		// this for stale contacts lets hidden current movement/body state leak into cover.
+		// Predict movement only for an opponent this soldier personally sees.
 		if (fThreatStateKnown && gfTurnBasedAI)
 		{
 			for (UINT8 ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ++ubDirection)
@@ -10617,30 +10618,33 @@ BOOLEAN CheckDangerousDirection(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		if (!pOpponent)
 			continue;
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
+		INT32 sThreatLoc = NOWHERE;
+		INT8 bThreatLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		UINT8 ubConfidence = 0;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sThreatLoc, &bThreatLevel,
+			&ubConfidence, &bKnowledge))
+		{
 			continue;
+		}
 
 		const BOOLEAN fThreatStateKnown =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
-			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+
 		if (fThreatStateKnown &&
 			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
 			 pSoldier->bSide == pOpponent->bSide ||
 			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			 pOpponent->ubBodyType == CROW))
+			 pOpponent->ubBodyType == CROW ||
+			 !ValidOpponent(pSoldier, pOpponent) ||
+			 pOpponent->IsUnconscious() ||
+			 pOpponent->IsEmptyVehicle()))
 		{
 			continue;
 		}
 
-		if (fThreatStateKnown &&
-			(!ValidOpponent(pSoldier, pOpponent) || pOpponent->IsUnconscious() || pOpponent->IsEmptyVehicle()))
-		{
-			continue;
-		}
-
-		INT32 sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		INT8 bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
 		if (TileIsOutOfBounds(sThreatLoc))
 			continue;
 
@@ -10649,19 +10653,17 @@ BOOLEAN CheckDangerousDirection(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		{
 			INT16 sSightAdjustment =
 				GetSightAdjustment(pOpponent, pSoldier, sSpot, pSoldier->pathing.bLevel, ANIM_STAND);
-
 			gbForceWeaponNotReady = true;
 			UINT16 usSightLimit =
 				pOpponent->GetMaxDistanceVisible(sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
 			gbForceWeaponNotReady = false;
-
 			usAdjustedSight = max((UINT16)1,
 				(UINT16)(usSightLimit + usSightLimit * sSightAdjustment / 100));
 		}
 		else
 		{
-			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
-			usAdjustedSight = (UINT16)max(1, (MAX_VISION_RANGE * iCertainty) / 100);
+			usAdjustedSight = (UINT16)max(1,
+				(MAX_VISION_RANGE * (INT32)ubConfidence) / 100);
 		}
 
 		UINT8 ubDirection = AIDirection(sThreatLoc, sSpot);
@@ -12496,30 +12498,31 @@ INT8 FindMaxEnemyInterruptLevel( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 blev
 		if (!pOpponent)
 			continue;
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
-
-		const BOOLEAN fDirectVisualContact =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
-			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
-		if (fDirectVisualContact &&
-			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			 pSoldier->bSide == pOpponent->bSide))
+		INT32 sThreatLoc = NOWHERE;
+		INT8 bThreatLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		UINT8 ubConfidence = 0;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sThreatLoc, &bThreatLevel,
+			&ubConfidence, &bKnowledge))
 		{
 			continue;
 		}
 
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+
 		if (fDirectVisualContact &&
-			(!ValidOpponent(pSoldier, pOpponent) ||
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 !ValidOpponent(pSoldier, pOpponent) ||
 			 pOpponent->IsUnconscious() ||
 			 (pOpponent->usSoldierFlagMask & SOLDIER_POW)))
 		{
 			continue;
 		}
 
-		INT32 sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		INT8 bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
 		if (TileIsOutOfBounds(sThreatLoc) ||
 			PythSpacesAway(sThreatLoc, sGridNo) > ubDistance ||
 			bThreatLevel != blevel)
@@ -12530,15 +12533,14 @@ INT8 FindMaxEnemyInterruptLevel( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 blev
 		INT8 bInterruptLevel;
 		if (fDirectVisualContact)
 		{
-			// Current direct observation permits the real combat-state estimate.
 			bInterruptLevel = AIEstimateInterruptLevel(pOpponent);
 		}
 		else
 		{
-			// An unseen contact must not reveal hidden experience, agility or shock.
-			// Use a neutral competent-soldier prior and reduce it as information ages.
-			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
-			bInterruptLevel = (INT8)__max(1, (6 * iCertainty + 50) / 100);
+			// Reported/stale threats use a neutral competent prior scaled only by
+			// communication/contact confidence.
+			bInterruptLevel = (INT8)__max(1,
+				(6 * (INT32)ubConfidence + 50) / 100);
 		}
 
 		if (bInterruptLevel > bMaxInterruptLevel)
@@ -14023,13 +14025,21 @@ BOOLEAN EnemyCanAttackSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		if (!pOpponent)
 			continue;
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
+		INT32 sThreatLoc = NOWHERE;
+		INT8 bThreatLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		UINT8 ubConfidence = 0;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sThreatLoc, &bThreatLevel,
+			&ubConfidence, &bKnowledge))
+		{
 			continue;
+		}
 
 		const BOOLEAN fThreatStateKnown =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
-			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+
 		if (fThreatStateKnown &&
 			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
 			 pSoldier->bSide == pOpponent->bSide ||
@@ -14039,37 +14049,39 @@ BOOLEAN EnemyCanAttackSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 			continue;
 		}
 
-		INT32 sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		INT8 bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
 		if (TileIsOutOfBounds(sThreatLoc))
 			continue;
 
 		INT32 iAttackRange;
 		if (fThreatStateKnown)
 		{
-			if (!ValidOpponent(pSoldier, pOpponent) || pOpponent->IsUnconscious() || pOpponent->IsEmptyVehicle())
+			if (!ValidOpponent(pSoldier, pOpponent) ||
+				pOpponent->IsUnconscious() || pOpponent->IsEmptyVehicle() ||
+				!pOpponent->CanInterrupt())
+			{
 				continue;
+			}
 
-			if (!pOpponent->CanInterrupt())
+			if (!AICheckHasGun(pOpponent) &&
+				PythSpacesAway(sThreatLoc, sSpot) > DAY_VISION_RANGE / 2)
+			{
 				continue;
+			}
 
-			// For an observed opponent we legitimately know whether his current weapon
-			// can threaten the tile.
-			if (!AICheckHasGun(pOpponent) && PythSpacesAway(sThreatLoc, sSpot) > DAY_VISION_RANGE / 2)
-				continue;
-
-			iAttackRange = AICheckHasGun(pOpponent) ? AIGunRange(pOpponent) * 3 / 2 : DAY_VISION_RANGE / 2;
+			iAttackRange = AICheckHasGun(pOpponent) ?
+				AIGunRange(pOpponent) * 3 / 2 : DAY_VISION_RANGE / 2;
 		}
 		else
 		{
-			// For a stale contact, represent uncertainty through the knowledge age.
-			// Do not inspect hidden current weapon, AP, shock, stance or consciousness.
-			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
-			iAttackRange = max(DAY_VISION_RANGE / 4, (MAX_VISION_RANGE * iCertainty) / 100);
+			// No hidden weapon/AP/consciousness reads for a reported or stale contact.
+			iAttackRange = max(DAY_VISION_RANGE / 4,
+				(MAX_VISION_RANGE * (INT32)ubConfidence) / 100);
 		}
 
 		if (PythSpacesAway(sThreatLoc, sSpot) <= iAttackRange &&
-			LocationToLocationLineOfSightTest(sThreatLoc, bThreatLevel, sSpot, bLevel, TRUE, MAX_VISION_RANGE))
+			LocationToLocationLineOfSightTest(
+				sThreatLoc, bThreatLevel, sSpot, bLevel,
+				TRUE, MAX_VISION_RANGE))
 		{
 			return TRUE;
 		}
@@ -14324,13 +14336,21 @@ INT32 AIInferredReactionRisk(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT8 b
 		if (!pOpponent || pOpponent == pSoldier)
 			continue;
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
+		INT32 sKnownSpot = NOWHERE;
+		INT8 bKnownLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		UINT8 ubConfidence = 0;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sKnownSpot, &bKnownLevel,
+			&ubConfidence, &bKnowledge))
+		{
 			continue;
+		}
 
 		const BOOLEAN fPersonallySeeingNow =
 			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
 			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+
 		if (fPersonallySeeingNow &&
 			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
 			 pSoldier->bSide == pOpponent->bSide))
@@ -14338,30 +14358,27 @@ INT32 AIInferredReactionRisk(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT8 b
 			continue;
 		}
 
-		INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
-		INT8 bKnownLevel = KnownLevel(pSoldier, pOpponent->ubID);
 		if (TileIsOutOfBounds(sKnownSpot) || bKnownLevel != bLevel)
 			continue;
 
 		if (PythSpacesAway(sKnownSpot, sCandidateSpot) > MAX_VISION_RANGE ||
-			!LocationToLocationLineOfSightTest(sKnownSpot, bKnownLevel,
-				sCandidateSpot, bLevel, TRUE, MAX_VISION_RANGE))
+			!LocationToLocationLineOfSightTest(
+				sKnownSpot, bKnownLevel, sCandidateSpot, bLevel,
+				TRUE, MAX_VISION_RANGE))
 		{
 			continue;
 		}
 
-		INT32 iContactRisk = 8 + ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE] / 5;
-		if (bKnowledge == SEEN_CURRENTLY || bKnowledge == SEEN_THIS_TURN)
+		INT32 iContactRisk = 8 + (INT32)ubConfidence / 5;
+		if (ubConfidence >= 85)
 			iContactRisk += 12;
-		else if (bKnowledge == SEEN_LAST_TURN)
+		else if (ubConfidence >= 60)
 			iContactRisk += 6;
 
 		if (fPersonallySeeingNow &&
 			(pOpponent->aiData.bAction == AI_ACTION_FIRE_GUN ||
 			 pOpponent->aiData.bLastAction == AI_ACTION_FIRE_GUN))
 		{
-			// A visible opponent who has just committed to firing is less likely to
-			// interrupt the candidate move immediately. Never infer this from stale/public contact.
 			iContactRisk -= 8;
 		}
 
@@ -14373,7 +14390,6 @@ INT32 AIInferredReactionRisk(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT8 b
 
 	return __min((INT32)120, iRisk);
 }
-
 
 // -----------------------------------------------------------------------------
 // Layered squad tactical planner
