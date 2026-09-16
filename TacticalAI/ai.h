@@ -505,6 +505,7 @@ INT32 AIGeometryPositionScore(SOLDIERTYPE *pSoldier,
 	const AITACTICALGEOMETRY *pGeometry, INT32 sCandidateSpot,
 	INT32 sTargetSpot, INT8 bIntent, INT8 bRole);
 INT8 AIPreferredFlankAction(SOLDIERTYPE *pSoldier, INT32 sTargetSpot);
+INT8 AIFireteamPreferredFlankAction(SOLDIERTYPE *pSoldier, INT32 sTargetSpot);
 BOOLEAN AIEvaluateTacticalPosition(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 	INT32 sTargetSpot, UINT16 usMovementMode, AITACTICALPOSITIONFEATURES *pFeatures);
 INT32 AIScoreTacticalPosition(SOLDIERTYPE *pSoldier, const AITACTICALPOSITIONFEATURES *pFeatures,

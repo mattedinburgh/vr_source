@@ -12,8 +12,19 @@ function Test-Ancestor([string]$Older, [string]$Newer) {
 }
 
 function Get-CommitSha([string]$Ref) {
-    $value = & git rev-parse --verify $Ref 2>$null
-    if ($LASTEXITCODE -ne 0) {
+    # Missing archived refs are expected after branch cleanup. On some PowerShell
+    # hosts native stderr becomes a terminating error when ErrorActionPreference is
+    # Stop, so probe under Continue and interpret Git's exit code explicitly.
+    $savedErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $value = & git rev-parse --verify $Ref 2>$null
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+    }
+    if ($exitCode -ne 0) {
         return $null
     }
     return ($value | Select-Object -First 1).Trim()

@@ -1410,6 +1410,88 @@ INT8 AIPreferredFlankAction(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	return AI_ACTION_NONE;
 }
 
+// Fireteam-level attack-axis preference.  The individual geometry helper above
+// remains useful for local movement, but a coordinated element should normally
+// agree on which side is the main manoeuvre axis before individual soldiers pick
+// exact tiles.  Existing flank commitment has first priority (hysteresis), then
+// the most authoritative nearby teammate provides the shared geometry viewpoint.
+// No opponent location is shared here: every candidate anchor must independently
+// know a contact near the caller's already-legal target.
+INT8 AIFireteamPreferredFlankAction(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
+{
+	if (!pSoldier || !AICombatTeam(pSoldier) || TileIsOutOfBounds(sTargetSpot))
+		return AI_ACTION_NONE;
+
+	UINT8 ubLeftCommitted = 0;
+	UINT8 ubRightCommitted = 0;
+	SOLDIERTYPE *pAnchor = pSoldier;
+	INT32 iBestAnchorScore = -1000000;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || !pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed || (pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend) ||
+			!AISameFireteam(pSoldier, pFriend))
+		{
+			continue;
+		}
+
+		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
+		if (iDistance > DAY_VISION_RANGE)
+			continue;
+
+		INT32 sFriendTarget = ClosestKnownOpponent(pFriend, NULL, NULL);
+		if (TileIsOutOfBounds(sFriendTarget) ||
+			PythSpacesAway(sFriendTarget, sTargetSpot) > 5)
+		{
+			continue;
+		}
+
+		if (pFriend->IsFlanking() && !TileIsOutOfBounds(pFriend->lastFlankSpot) &&
+			PythSpacesAway(pFriend->lastFlankSpot, sTargetSpot) <= 5)
+		{
+			if (pFriend->flags.lastFlankLeft)
+				++ubLeftCommitted;
+			else
+				++ubRightCommitted;
+		}
+
+		// Leadership stabilizes the element's shared frame; proximity breaks equal
+		// command-rank ties inside the same local coordination radius.
+		INT32 iAnchorScore = 100 * (INT32)AICommandAuthority(pFriend) -
+			2 * iDistance - (INT32)pFriend->ubID;
+		if (iAnchorScore > iBestAnchorScore)
+		{
+			iBestAnchorScore = iAnchorScore;
+			pAnchor = pFriend;
+		}
+	}
+
+	// Once a manoeuvre element has genuinely committed to one side, nearby members
+	// reinforce that axis instead of independently rediscovering left/right every turn.
+	if (ubLeftCommitted > ubRightCommitted)
+		return AI_ACTION_FLANK_LEFT;
+	if (ubRightCommitted > ubLeftCommitted)
+		return AI_ACTION_FLANK_RIGHT;
+
+	INT8 bSharedPreference = AIPreferredFlankAction(pAnchor, sTargetSpot);
+	if (bSharedPreference != AI_ACTION_NONE)
+		return bSharedPreference;
+
+	// If the anchor sees an almost exact geometry tie, keep the caller's own
+	// legitimate perspective as a fallback.  This preserves bounded autonomy rather
+	// than forcing an arbitrary coin-flip or a global omniscient side assignment.
+	if (pAnchor != pSoldier)
+		return AIPreferredFlankAction(pSoldier, sTargetSpot);
+
+	return AI_ACTION_NONE;
+}
+
 
 void AIRegisterTacticalSetback(SOLDIERTYPE *pSoldier, UINT8 ubType,
 	INT32 sGridNo, UINT8 ubSeverity, UINT8 ubTurns)

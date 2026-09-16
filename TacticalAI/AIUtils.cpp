@@ -14194,7 +14194,7 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 					(UINT32)(sTargetSpot + 211));
 			BOOLEAN fBasicFlank = fBasicFireteamManeuver &&
 				(iSharedApproachPressure >= 30 || ubEffectiveFireSupport > 0) &&
-				AIPreferredFlankAction(pSoldier, sTargetSpot) != AI_ACTION_NONE;
+				AIFireteamPreferredFlankAction(pSoldier, sTargetSpot) != AI_ACTION_NONE;
 
 			if (!pSoldier->aiData.bUnderFire &&
 				AIManeuverRoleScore(pSoldier, sTargetSpot) >= AISupportRoleScore(pSoldier, sTargetSpot) - 5 &&

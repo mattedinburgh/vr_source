@@ -1,8 +1,8 @@
 # B2 Tactical AI Battle Lessons ΓÇö 2026-09-15
 
-Status: PHASE 1 IMPLEMENTED / STATIC QA PASSED ΓÇö REQUIRES BUILD + PLAYTEST
+Status: PHASE 2 IMPLEMENTED / STATIC QA PASSED ΓÇö REQUIRES BUILD + PLAYTEST
 
-Implementation now covers the first B2 team-reasoning pass: local directional contact callouts, effective-fire movement windows, shared attack-axis setback pressure, base-of-fire/mover role pairing, and a basic fireteam flank path that does not require the advanced-doctrine gate. Strategic/campaign movement remains untouched. Black Box now records the key flank-enabling inputs for the next playtest.
+Implementation now covers two B2 team-reasoning passes. Phase 1 added local directional contact callouts, effective-fire movement windows, shared attack-axis setback pressure, base-of-fire/mover role pairing, and a basic fireteam flank path that does not require the advanced-doctrine gate. Phase 2 adds a shared fireteam flank-axis preference so soldiers that agree on manoeuvre also tend to agree on left versus right, while exact tile choice and emergency self-preservation remain individual. Strategic/campaign movement remains untouched. Black Box remains the evidence source for the next playtest.
 
 ## Scope
 Black Box battle_id=3, B2, including reload/retry branches.
@@ -51,6 +51,17 @@ This is the clearest current symptom of good individual reasoning failing to bec
 "Centre is heavy -> go around" should be a team-level inference, not a hard scripted flank.
 Evidence must come from legitimate knowledge: visible contacts, reported contacts, incoming fire, suppression, casualties, failed advances and remembered firing lanes.
 The team should become progressively less willing to reuse an approach that repeatedly produces suppression/casualties without progress.
+
+## Phase 2 validation targets
+The next B2-style playtest should test the change as a hypothesis, not as a presumed improvement. Black Box should show:
+- lower disagreement between same-fireteam flankers on left versus right for the same contact;
+- successful flank selections committed with `fireteam_flank_axis` plus the actually selected action/grid;
+- support soldiers remaining in the base of fire while one or two movers exploit the chosen side;
+- fewer repeated advances through an axis carrying recent shared setback pressure;
+- immediate abandonment of the shared axis when surprise, collapse, unacceptable personal danger, or an invalid route triggers a higher-priority response;
+- no increase in cross-fire bunching, unsupported rushes, or hidden-information use.
+
+A failed shared route must still allow the individual execution layer to use the opposite legal flank when necessary. The shared axis is tactical inertia, not a command that overrides route safety.
 
 ## Morale / operational context
 Do not globally raise enemy morale from this battle.

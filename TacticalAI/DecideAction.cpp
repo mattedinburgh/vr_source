@@ -10097,7 +10097,8 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 		// existing commitment/body-count deconfliction as a constraint rather than
 		// as the tactical brain. Random left/right tie-breaking is deliberately gone.
 		const INT8 bGeometryPreference =
-			AIPreferredFlankAction(pSoldier, sClosestDisturbance);
+			AIFireteamPreferredFlankAction(pSoldier, sClosestDisturbance);
+		VRAnalyticsStateInt(uiTraceDecision, "fireteam_flank_axis", bGeometryPreference);
 
 		if (fLeftFlankPossible && !fRightFlankPossible)
 		{
@@ -10245,6 +10246,13 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 				{
 					pSoldier->aiData.bOrders = FARPATROL;
 				}
+
+				INT32 iSelectedScore = AIUtilityPositionScore(
+					pSoldier, pSoldier->aiData.usActionData, sClosestDisturbance,
+					AI_INTENT_FLANK, AI_ROLE_FLANKER);
+				VRPlannerTraceSelect(pSoldier, uiTraceDecision, "flank", bAction,
+					pSoldier->aiData.usActionData, iSelectedScore, -10000, FALSE,
+					"shared fireteam axis with legal individual route");
 
 				return(bAction);
 			}
