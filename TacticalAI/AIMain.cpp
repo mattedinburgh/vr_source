@@ -2583,10 +2583,10 @@ INT8 ExecuteAction(SOLDIERTYPE *pSoldier)
             pSoldier->SoldierReadyWeapon();
             HandleSight(pSoldier, SIGHT_LOOK | SIGHT_RADIO);
 
-            // The old sniper deadlock guard converted a repeated ready-weapon
-            // action directly into END_TURN. With the unified planner that turns
-            // a harmless duplicate setup choice into lost combat tempo. Preserve
-            // any meaningful queued follow-up and otherwise force a clean replan.
+            // Emergency no-progress guard. A repeated ready-weapon action can
+            // consume no AP and immediately send the soldier through the full planner
+            // again. Preserve a meaningful queued follow-up, but if there is none,
+            // terminate this soldier's turn instead of creating an expensive replan loop.
             if (pSoldier->aiData.bLastAction == AI_ACTION_RAISE_GUN)
             {
 				if (pSoldier->aiData.bNextAction == AI_ACTION_RAISE_GUN)
@@ -2596,9 +2596,10 @@ INT8 ExecuteAction(SOLDIERTYPE *pSoldier)
 				}
 				if (pSoldier->aiData.bNextAction == AI_ACTION_NONE)
 				{
-					pSoldier->aiData.bNewSituation = IS_NEW_SITUATION;
+					pSoldier->aiData.bNextAction = AI_ACTION_END_TURN;
+					pSoldier->aiData.usNextActionData = 0;
 				}
-				DebugAI(AI_MSG_INFO, pSoldier, String("repeated AI_ACTION_RAISE_GUN: replan without ending turn"));
+				DebugAI(AI_MSG_INFO, pSoldier, String("repeated AI_ACTION_RAISE_GUN: emergency end-turn guard"));
             }
 
             ActionDone( pSoldier );
