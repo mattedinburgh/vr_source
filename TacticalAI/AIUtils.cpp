@@ -5397,7 +5397,7 @@ BOOLEAN AISharedFireteamOpponentContact(SOLDIERTYPE *pSoldier, UINT8 ubOpponentI
 	return TRUE;
 }
 
-static BOOLEAN AIPlanningContactForOpponent(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID,
+BOOLEAN AIPlanningContactForOpponent(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID,
 	INT32 *psGridNo, INT8 *pbLevel, UINT8 *pubConfidence, INT8 *pbKnowledge)
 {
 	if (psGridNo) *psGridNo = NOWHERE;
