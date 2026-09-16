@@ -1752,27 +1752,17 @@ void BuildTacticalSoldierDisplayName( SOLDIERTYPE *pSoldier, CHAR16 *pOut )
 		return;
 	}
 
-	// Preserve authored/profile naming first. The deterministic identity is only a
-	// fallback for regular enemies that otherwise have no individual display name.
+	// Preserve authored profile naming first. Regular non-profile enemies then receive
+	// a deterministic individual identity; sector/group labels are not personal names.
 	if ( gGameExternalOptions.fSoldierProfiles_Enemy && pSoldier->usSoldierProfile )
 	{
 		swprintf( pOut, L"%s", pSoldier->GetName() );
 		return;
 	}
 
-	if ( gGameExternalOptions.fEnemyNames )
-	{
-		for ( UINT16 i = 0; i < 500; ++i )
-		{
-			if ( zEnemyName[i].Enabled == 1 &&
-				 pSoldier->sSectorX == zEnemyName[i].SectorX &&
-				 pSoldier->sSectorY == zEnemyName[i].SectorY )
-			{
-				swprintf( pOut, L"%s", zEnemyName[i].szCurGroup );
-				return;
-			}
-		}
-	}
+	// EnemyNames.xml is sector/group metadata (for example "Enemy Soldier"),
+	// not a per-soldier identity source. Do not let it suppress the deterministic
+	// individual name requested for regular enemies.
 
 	static const wchar_t *maleNames[] =
 	{
