@@ -1781,7 +1781,11 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 	// spare only when soldier is not under attack
 	// need 1/2 health for 0 difficulty, 5/6 health for max difficulty
 	// need 3 opponents for 0 difficulty, 1 opponent for max difficulty
-	if ( fSpare &&				
+	// Legacy difficulty used to decide whether a soldier was clever enough to
+	// consider spending a lethal grenade. Elite enemy reasoning always evaluates the
+	// legal throw and lets attack value, CTH, friendly safety and saturation decide.
+	if ( fSpare &&
+		pSoldier->bTeam != ENEMY_TEAM &&
 		ubOpponentCnt < 3 - ubDiff / 2 &&
 		!(pSoldier->aiData.bUnderFire &&
 			pSoldier->stats.bLife < (ubDiff + 1) * pSoldier->stats.bLifeMax / (ubDiff + 2) ) )
