@@ -7925,9 +7925,30 @@ UINT16 AIKnownThreatExposure(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		if (!pOpponent || pOpponent == pSoldier)
 			continue;
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
+		INT32 sKnownSpot = NOWHERE;
+		INT8 bKnownLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		UINT8 ubConfidence = 0;
+
+		if (pSoldier->bTeam == ENEMY_TEAM)
+		{
+			if (!AISharedFireteamOpponentContact(
+				pSoldier, pOpponent->ubID, &sKnownSpot, &bKnownLevel,
+				&ubConfidence, &bKnowledge))
+			{
+				continue;
+			}
+		}
+		else
+		{
+			bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
+			if (bKnowledge == NOT_HEARD_OR_SEEN)
+				continue;
+			sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
+			bKnownLevel = KnownLevel(pSoldier, pOpponent->ubID);
+			ubConfidence =
+				(UINT8)ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+		}
 
 		const BOOLEAN fDirectVisualContact =
 			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
@@ -7941,19 +7962,17 @@ UINT16 AIKnownThreatExposure(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 			continue;
 		}
 
-		INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
 		if (TileIsOutOfBounds(sKnownSpot))
 			continue;
 
-		INT8 bKnownLevel = KnownLevel(pSoldier, pOpponent->ubID);
-		INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
-
-		// Stale/heard contacts still influence caution, but only if their last-known
-		// line could plausibly cover the position within the engine's vision scale.
+		// Reported/stale contacts influence movement only through believed geometry and
+		// confidence. No target weapon, AP, stance, wounds or current position is read.
 		if (PythSpacesAway(sKnownSpot, sSpot) <= MAX_VISION_RANGE &&
-			LocationToLocationLineOfSightTest(sKnownSpot, bKnownLevel, sSpot, bLevel, TRUE, MAX_VISION_RANGE))
+			LocationToLocationLineOfSightTest(
+				sKnownSpot, bKnownLevel, sSpot, bLevel,
+				TRUE, MAX_VISION_RANGE))
 		{
-			uiExposure += iCertainty;
+			uiExposure += ubConfidence;
 		}
 	}
 
