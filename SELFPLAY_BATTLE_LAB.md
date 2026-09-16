@@ -21,24 +21,43 @@ This is an experimentation harness, not a second combat simulator. The measured 
 ## Command line
 
 ```
-ja2.exe -SELFPLAY=<saveSlot>,<runs>,<baseSeed>,<maxTeamTurns>,<buildLabel>
+ja2.exe -SELFPLAY=<map-or-saveSlot>,<runs>,<baseSeed>,<maxTeamTurns>,<buildLabel>
 ```
 
 Example:
 
 ```
-ja2.exe -SELFPLAY=3,100,50000,1200,baseline
+ja2.exe -SELFPLAY=A9,100,50000,1200,baseline
 ```
 
-The process hides its game window, loads save slot 3, runs 100 battles using seeds 50000..50099, writes the corpus, then exits.
+The process hides its game window, scans save headers for tactical fixtures on map A9, chooses the newest valid in-combat fixture, runs 100 battles using seeds 50000..50099, writes the corpus, then exits.
 
 For the candidate AI build, use the same fixture and seed range:
 
 ```
-ja2.exe -SELFPLAY=3,100,50000,1200,candidate
+ja2.exe -SELFPLAY=A9,100,50000,1200,candidate
 ```
 
 The optional build label is deliberately stored in every row for paired comparisons.
+
+### Map selection
+
+The first parameter can now be a **sector/map** instead of a save slot:
+
+```
+-SELFPLAY=A9,100,50000,1200,baseline
+-SELFPLAY=B13,100,50000,1200,baseline
+-SELFPLAY=A9-1,100,50000,1200,baseline
+```
+
+- `A9` means surface sector A9.
+- `A9-1` or `A9:1` means underground level 1.
+- A numeric value such as `3` still directly selects save slot 3 for backwards compatibility.
+
+When a map is selected, the lab reads existing save headers, finds saves from that sector, sorts them newest-first, and tests candidates until it finds a valid turn-based tactical battle containing both OUR_TEAM and ENEMY_TEAM. That resolved fixture is then pinned and reloaded for every seed in the batch.
+
+This keeps **map choice explicit** while preserving the exact map state, doors, lighting, inventories, wounds, placements and combat state of a real fixture.
+
 
 ## Fixture requirements
 
