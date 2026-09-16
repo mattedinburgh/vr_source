@@ -1,0 +1,24 @@
+name: Stracciatella VFS QA
+
+on:
+  push:
+    branches:
+      - engine/stracciatella-plumbing-2026
+  pull_request:
+    paths:
+      - "Standard Gaming Platform/FileMan.cpp"
+      - "Tactical/Tactical Save.cpp"
+      - "Tools/QA/Test-FileManVfsSemantics.ps1"
+      - ".github/workflows/stracciatella-vfs-qa.yml"
+  workflow_dispatch:
+
+jobs:
+  fileman-vfs-semantics:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate FileMan VFS semantics
+        shell: pwsh
+        run: ./Tools/QA/Test-FileManVfsSemantics.ps1 -RepoRoot "$env:GITHUB_WORKSPACE"
