@@ -89,6 +89,18 @@ this framework, never merged wholesale.
     - Black Box records raw facts, candidate scores, setback penalties and selections; Companion reconstructs plans,
       reasons and outcomes.
 
+16. **Player tactical command mode**
+    - The player may explicitly hand the squad to the same tactical AI used by the unified planner for the duration of the tactical engagement.
+    - `ATTACK AS TEAM` fixes the team objective at PRESS while leaving emergency self-preservation/casualty logic authoritative.
+    - `WITHDRAW AS TEAM` fixes the team objective at FALLBACK and starts with the geometry-aware weakest-sector breakout search: normally away from the principal legally known threat, but lateral/diagonal when crossfire makes the nominal rear unsafe.
+    - Command mode persists across player/enemy/militia rounds until tactical combat resolves or the player explicitly reclaims control.
+    - `ESC` queues manual takeover at the next clean AI-soldier action boundary, preserving already-spent AP and the remainder of the current player turn.
+    - Player-team interrupts remain under AI command while takeover is active; reclaiming control during an interrupt returns that interrupt to the player.
+    - The player squad is treated as one coordinated element for roles/task deconfliction, but mercs receive no hidden opponent knowledge.
+    - Player command mode never invokes enemy strategic escape or campaign movement. Withdrawal remains inside the current tactical sector.
+    - A fresh player command resets only the commanded mercs' tactical-fallback allowance; enemy/militia anti-kiting state is unchanged.
+    - First implementation is turn-based single-player only and is disabled during boxing/scripted control states.
+
 ### Performance policy
 
 The target machine has enough CPU headroom for deeper tactical search. Prefer better decisions over

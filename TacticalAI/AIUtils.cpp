@@ -4293,7 +4293,17 @@ UINT8 CountNearbyFriendsOnRoof( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDi
 
 BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier)
 {
-	return pSoldier && (pSoldier->bTeam == ENEMY_TEAM || pSoldier->bTeam == MILITIA_TEAM);
+	if (!pSoldier)
+		return FALSE;
+
+	if (pSoldier->bTeam == ENEMY_TEAM || pSoldier->bTeam == MILITIA_TEAM)
+		return TRUE;
+
+	// Player mercs participate in the unified tactical planner only while the
+	// player has explicitly handed the current turn to AI command mode.
+	return pSoldier->bTeam == gbPlayerNum &&
+		AIPlayerTeamCommandActive() &&
+		(pSoldier->flags.uiStatusFlags & SOLDIER_PCUNDERAICONTROL);
 }
 
 UINT8 AICountNearbyOperationalFriends(SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDistance)
@@ -5113,6 +5123,12 @@ UINT8 AIFireteamAliveCount(SOLDIERTYPE *pSoldier)
 UINT8 AIFireteamCombatReadyCount(SOLDIERTYPE *pSoldier)
 {
 	if (!AIEnemyFireteamEligible(pSoldier)) return 0;
+
+	// A player-issued command deliberately coordinates the whole current team rather
+	// than splitting the merc squad into enemy-style autonomous fireteams.
+	if (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive())
+		return AICombatTeamOperationalCount(pSoldier);
+
 	if (AISmallUnitTeamMode(pSoldier))
 		return AICombatTeamOperationalCount(pSoldier);
 	UINT8 ubFireteam = AIFireteamId(pSoldier);
@@ -5134,6 +5150,12 @@ UINT8 AIFireteamCombatReadyCount(SOLDIERTYPE *pSoldier)
 BOOLEAN AISameFireteam(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend)
 {
 	if (!pSoldier || !pFriend || pSoldier->bTeam != pFriend->bTeam) return FALSE;
+
+	// A player-issued team command treats the current squad as one coordinated
+	// element. This is command/role sharing only; opponent knowledge stays local.
+	if (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive())
+		return TRUE;
+
 	if (!AICombatTeam(pSoldier)) return TRUE;
 
 	// Two to five remaining fighters stop acting like unrelated mini-squads.
@@ -7532,6 +7554,17 @@ void AIRegisterTacticalFallback(SOLDIERTYPE *pSoldier)
 	gubAITacticalFallbackUsed[pSoldier->ubID] = 1;
 }
 
+void AIClearTacticalFallbackState(SOLDIERTYPE *pSoldier)
+{
+	AIMaintainDisengagementTimeline();
+
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return;
+
+	gubAITacticalFallbackUsed[pSoldier->ubID] = 0;
+	guiAITacticalFallbackIdentity[pSoldier->ubID] = pSoldier->uiUniqueSoldierIdValue;
+}
+
 static void AIMaintainCoverMoveMemory(void)
 {
 	UINT32 uiTurnStamp = guiTurnCnt + 1;
@@ -8227,9 +8260,24 @@ BOOLEAN AIKnownRouteExposureAcceptable(
 
 BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier)
 {
+	BOOLEAN fPlayerWithdraw = pSoldier &&
+		pSoldier->bTeam == gbPlayerNum &&
+		AIPlayerTeamCommandActive() &&
+		AIPlayerTeamCommand() == AI_PLAYER_COMMAND_WITHDRAW;
+	BOOLEAN fPlayerAttack = pSoldier &&
+		pSoldier->bTeam == gbPlayerNum &&
+		AIPlayerTeamCommandActive() &&
+		AIPlayerTeamCommand() == AI_PLAYER_COMMAND_ATTACK;
+
+	// ATTACK should not be diluted by the ordinary discretionary fallback gate;
+	// true personal-danger/emergency layers still run earlier and may save the merc.
+	if (fPlayerAttack)
+		return FALSE;
+
 	if (!AICombatTeam(pSoldier) || pSoldier->IsZombie() ||
 		AIHasUsedTacticalFallback(pSoldier) ||
-		pSoldier->aiData.bOrders == STATIONARY || AIShouldAvoidAdvance(pSoldier))
+		(!fPlayerWithdraw &&
+		 (pSoldier->aiData.bOrders == STATIONARY || AIShouldAvoidAdvance(pSoldier))))
 	{
 		return FALSE;
 	}
@@ -8240,6 +8288,12 @@ BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier)
 	{
 		return FALSE;
 	}
+
+	// WITHDRAW is an explicit player order, not a morale vote. Once there is a
+	// legally known threat, let the movement solver evaluate the safest opposite/
+	// weakest-sector bound even if the current tile would otherwise be acceptable.
+	if (fPlayerWithdraw)
+		return TRUE;
 
 	// Do not shuffle a soldier who is currently succeeding from a sound position.
 	if (!Context.fUnderFire &&
@@ -14506,6 +14560,8 @@ void AIResetTacticalPlannerStateForLoad(void)
 {
 	// Planner state is intentionally transient and is not serialized. Same-sector
 	// quickloads must not inherit intent/role decisions from the abandoned future.
+	if (AIPlayerTeamCommandActive())
+		AIResetPlayerTeamCommand();
 	AIResetTacticalReasoningStateForLoad();
 
 	// The legacy ENEMY_TEAM public opponent list is a sector-wide exact-contact
@@ -14712,9 +14768,29 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		!pSoldier->aiData.bUnderFire && iRisk + 10 < iTolerance)
 		bEmergencyIntent = AI_INTENT_RESCUE;
 
+	// A player command fixes the team's operational objective while leaving local
+	// survival decisions to the normal AI. ATTACK therefore means PRESS unless an
+	// emergency requires fallback/disengagement/rescue. WITHDRAW means FALLBACK;
+	// an optional medic rescue must not pull the element back toward contact.
+	INT8 bPlayerCommandIntent = -1;
+	if (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive())
+	{
+		if (AIPlayerTeamCommand() == AI_PLAYER_COMMAND_ATTACK)
+			bPlayerCommandIntent = AI_INTENT_PRESS;
+		else if (AIPlayerTeamCommand() == AI_PLAYER_COMMAND_WITHDRAW)
+		{
+			bPlayerCommandIntent = AI_INTENT_FALLBACK;
+			if (bEmergencyIntent == AI_INTENT_RESCUE)
+				bEmergencyIntent = -1;
+		}
+
+		// The explicit command supersedes stale plans from manual/previous AI state.
+		AICancelShortPlan(pSoldier);
+	}
+
 	BOOLEAN fActiveCQBShortPlan = FALSE;
 
-	if (bEmergencyIntent < 0)
+	if (bEmergencyIntent < 0 && bPlayerCommandIntent < 0)
 	{
 		AISHORTPLANSTATE ShortPlan;
 		if (AIGetShortPlan(pSoldier, &ShortPlan))
@@ -14792,7 +14868,7 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		}
 	}
 
-	if (bEmergencyIntent < 0 &&
+	if (bEmergencyIntent < 0 && bPlayerCommandIntent < 0 &&
 		guiAITacticalPlanUntil[ubID] >= uiNow &&
 		!AITacticalTargetChanged(ubID, sTargetSpot))
 	{
@@ -14803,6 +14879,10 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	if (bEmergencyIntent >= 0)
 	{
 		bIntent = bEmergencyIntent;
+	}
+	else if (bPlayerCommandIntent >= 0)
+	{
+		bIntent = bPlayerCommandIntent;
 	}
 	else if (!TileIsOutOfBounds(sTargetSpot))
 	{
@@ -14850,7 +14930,8 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	// Distributed squad blackboard: soldiers fighting the same contact bias toward
 	// a common plan, while personal danger can still veto an aggressive consensus.
 	INT8 bSharedIntent = AISharedIntentVote(pSoldier, sTargetSpot, uiNow);
-	if (bEmergencyIntent < 0 && bSharedIntent >= AI_INTENT_HOLD)
+	if (bEmergencyIntent < 0 && bPlayerCommandIntent < 0 &&
+		bSharedIntent >= AI_INTENT_HOLD)
 	{
 		if (bSharedIntent == AI_INTENT_FALLBACK || bSharedIntent == AI_INTENT_DISENGAGE)
 		{
@@ -14910,7 +14991,10 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 static BOOLEAN AIPreferredSuppressorCandidate(
 	SOLDIERTYPE *pSoldier, INT32 sTargetSpot, UINT8 ubSuppressorLimit)
 {
-	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM ||
+	BOOLEAN fCoordinatedTeam = pSoldier &&
+		(pSoldier->bTeam == ENEMY_TEAM ||
+		 (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive()));
+	if (!fCoordinatedTeam ||
 		TileIsOutOfBounds(sTargetSpot) || ubSuppressorLimit == 0 ||
 		!AICheckHasGun(pSoldier) || !AIGunAutofireCapable(pSoldier) ||
 		AIGunAmmo(pSoldier) < gGameExternalOptions.ubAISuppressionMinimumAmmo)
@@ -15043,7 +15127,8 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		fTaskReserved = AIReserveTacticalTask(
 			pSoldier, AI_TASK_SCREEN, sTargetSpot, NOBODY, 2, 1);
 	else if (bRole == AI_ROLE_SUPPORT &&
-		pSoldier->bTeam == ENEMY_TEAM &&
+		(pSoldier->bTeam == ENEMY_TEAM ||
+		 (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive())) &&
 		(bIntent == AI_INTENT_PRESS || bIntent == AI_INTENT_FLANK) &&
 		!TileIsOutOfBounds(sTargetSpot) &&
 		AICheckHasGun(pSoldier) &&
@@ -15073,7 +15158,8 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		bRole = AI_ROLE_SUPPORT;
 		AIReleaseTacticalTask(pSoldier);
 
-		if (pSoldier->bTeam == ENEMY_TEAM &&
+		if ((pSoldier->bTeam == ENEMY_TEAM ||
+			 (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive())) &&
 			(bIntent == AI_INTENT_PRESS || bIntent == AI_INTENT_FLANK) &&
 			!TileIsOutOfBounds(sTargetSpot) &&
 			AICheckHasGun(pSoldier) &&
