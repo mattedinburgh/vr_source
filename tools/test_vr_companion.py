@@ -144,6 +144,72 @@ class CompanionAnalysisTests(unittest.TestCase):
         self.assertEqual(1.5, result["avg_perceived_force_ratio"])
 
 
+    def test_fireteam_flank_coordination_summary_tracks_axis_agreement(self):
+        def flank_decision(turn, target, axis, selected):
+            return {
+                "session": 10,
+                "begin": {"decision_type": "flank", "battle_id": 3},
+                "states": {
+                    "turn": turn,
+                    "fireteam_id": 2,
+                    "target_grid": target,
+                    "fireteam_flank_axis": axis,
+                    "selected_action": selected,
+                },
+                "commits": [{"selection": "flank"}],
+                "candidates": [],
+            }
+
+        tactical = [
+            flank_decision(4, 100, 9, 9),
+            flank_decision(4, 100, 9, 9),
+            flank_decision(5, 101, 9, 9),
+            flank_decision(5, 101, 10, 9),
+        ]
+        tactical[3]["candidates"].append({
+            "candidate": "flank",
+            "eligible": False,
+            "reason": "fireteam flank commitment limit reached",
+        })
+        result = companion.fireteam_flank_summary(tactical)
+        self.assertEqual(4, result["decisions"])
+        self.assertTrue(result["coordination_telemetry_available"])
+        self.assertEqual(4, result["shared_axis_samples"])
+        self.assertEqual(4, result["committed"])
+        self.assertEqual(2, result["comparison_groups"])
+        self.assertEqual(1, result["unanimous_groups"])
+        self.assertEqual(50.0, result["axis_agreement_rate"])
+        self.assertEqual(75.0, result["axis_selected_alignment_rate"])
+        self.assertEqual(
+            1,
+            result["rejection_reasons"]["fireteam flank commitment limit reached"],
+        )
+
+
+    def test_fireteam_flank_coordination_missing_telemetry_is_not_zero_percent(self):
+        tactical = [{
+            "session": 10,
+            "begin": {"decision_type": "flank", "battle_id": 3},
+            "states": {},
+            "commits": [],
+            "candidates": [{
+                "candidate": "flank",
+                "eligible": False,
+                "reason": "competence/doctrine friction rejected coordinated flank",
+            }],
+        }]
+        result = companion.fireteam_flank_summary(tactical)
+        self.assertFalse(result["coordination_telemetry_available"])
+        self.assertIsNone(result["axis_agreement_rate"])
+        self.assertIsNone(result["axis_selected_alignment_rate"])
+        self.assertEqual(
+            1,
+            result["rejection_reasons"][
+                "competence/doctrine friction rejected coordinated flank"
+            ],
+        )
+
+
     def test_grenade_throw_fairness_pairs_launch_and_landing(self):
         events = [
             {"schema": "vr-blackbox-1", "session": 10, "seq": 1,

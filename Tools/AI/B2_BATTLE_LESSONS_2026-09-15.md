@@ -63,6 +63,20 @@ The next B2-style playtest should test the change as a hypothesis, not as a pres
 
 A failed shared route must still allow the individual execution layer to use the opposite legal flank when necessary. The shared axis is tactical inertia, not a command that overrides route safety.
 
+## Pre-Phase-2 baseline captured 2026-09-16
+
+The last real Black Box before the shared-axis pass stopped at approximately 02:02 local time, before commits `7e9311cf` (shared fireteam attack-axis decisions, 02:06) and `fcff6a92` (flank coordination outcome tracing, 02:09). Treat it as a baseline, not as evidence about the current implementation.
+
+The upgraded Companion found:
+- 168 recorded `flank` planner decisions across the retained sessions;
+- 41 explicit rejections for `competence/doctrine friction rejected coordinated flank`;
+- no `fireteam_flank_axis` samples, because that state did not yet exist in the captured build;
+- no usable shared-axis agreement or selected-axis alignment denominator.
+
+The 41/168 ratio is an event-level diagnostic, not a probability that a soldier fails to flank. The trace contains repeated decisions/retries and predates the commit/axis instrumentation, so zero observed commit events must not be interpreted as zero real flanks. This baseline supports the Phase-2 hypothesis that competence friction was suppressing coordination, but only a post-Phase-2 playtest can show whether the new basic-fireteam bypass and shared-axis logic improve behaviour without making flanking excessive.
+
+Companion now reports missing coordination telemetry as `n/a` rather than a false 0% agreement rate and exposes the dominant flank rejection reasons directly.
+
 ## Morale / operational context
 Do not globally raise enemy morale from this battle.
 The enemy fought almost to annihilation and did not strategically retreat.
