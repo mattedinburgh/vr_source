@@ -2974,17 +2974,24 @@ BOOLEAN AddDeadSoldierToUnLoadedSector( INT16 sMapX, INT16 sMapY, UINT8 bMapZ, S
 	{
 		if( pSoldier->inv[ i ].exists() == true )
 		{
-			// If not a player soldier, unloaded strategic deaths normally lose most gear
-			// that would have been droppable in tactical combat. When player mercs actually
-			// fought and won an autoresolve battle, preserve most of that tactical loot
-			// instead. Militia-only autoresolve keeps the original abstraction.
+			// If not a player soldier, unloaded strategic deaths normally lose most gear.
+			// Autoresolve is explicit: only a victory with a surviving participating merc
+			// may create reduced enemy loot; militia-only victories, defeats and retreats
+			// create corpses but no enemy loot.
 			if ( pSoldier->bTeam != gbPlayerNum )
 			{
-				UINT32 uiExtraLossChance =
-					(uiFlags & ADD_DEAD_SOLDIER_PLAYER_AUTORESOLVE_LOOT) ? 25 : 75;
-				if ( Random( 100 ) < uiExtraLossChance )
+				if ( uiFlags & ADD_DEAD_SOLDIER_NO_LOOT )
 				{
 					pSoldier->inv[ i ].fFlags |= OBJECT_UNDROPPABLE;
+				}
+				else
+				{
+					UINT32 uiExtraLossChance =
+						(uiFlags & ADD_DEAD_SOLDIER_PLAYER_AUTORESOLVE_LOOT) ? 25 : 75;
+					if ( Random( 100 ) < uiExtraLossChance )
+					{
+						pSoldier->inv[ i ].fFlags |= OBJECT_UNDROPPABLE;
+					}
 				}
 			}
 
