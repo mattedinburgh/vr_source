@@ -51,6 +51,7 @@
 #endif
 
 #include "Animation Control.h"
+#include "EnemyItemDrops.h"
 
 //forward declarations of common classes to eliminate includes
 class OBJECTTYPE;
@@ -797,6 +798,79 @@ BOOLEAN CreateCorpsePalette( ROTTING_CORPSE *pCorpse )
 }
 
 
+// Do not let the tactical one-item floor override an explicit 0% category
+// in the externalized enemy-drop tables. When the legacy drop system or
+// "drop all" is active, retain the legacy fallback behaviour.
+static BOOLEAN EnemyItemEligibleForMinimumDrop( UINT16 usItem )
+{
+	if ( gGameOptions.fEnemiesDropAllItems || gGameExternalOptions.ubEnemiesItemDrop != 1 )
+		return TRUE;
+
+	UINT32 uiItemClass = Item[ usItem ].usItemClass;
+
+	if ( uiItemClass == IC_GUN )
+	{
+		UINT8 ubWeaponType = Weapon[ Item[ usItem ].ubClassIndex ].ubWeaponType;
+		for ( UINT32 j = 0; j < MAX_DROP_ITEMS; ++j )
+		{
+			if ( j > 0 && gEnemyWeaponDrops[j].uiIndex == 0 )
+				break;
+			if ( gEnemyWeaponDrops[j].ubWeaponType == ubWeaponType )
+				return gEnemyWeaponDrops[j].ubEnemyDropRate > 0;
+		}
+		return FALSE;
+	}
+
+	if ( uiItemClass == IC_AMMO )
+	{
+		UINT32 uiAmmoType = Magazine[ Item[ usItem ].ubClassIndex ].ubAmmoType;
+		for ( UINT32 j = 0; j < MAX_DROP_ITEMS; ++j )
+		{
+			if ( j > 0 && gEnemyAmmoDrops[j].uiIndex == 0 )
+				break;
+			if ( gEnemyAmmoDrops[j].uiType == uiAmmoType )
+				return gEnemyAmmoDrops[j].ubEnemyDropRate > 0;
+		}
+		return FALSE;
+	}
+
+	if ( uiItemClass == IC_GRENADE || uiItemClass == IC_BOMB )
+	{
+		UINT8 ubExplosiveType = Explosive[ Item[ usItem ].ubClassIndex ].ubType;
+		for ( UINT32 j = 0; j < MAX_DROP_ITEMS; ++j )
+		{
+			if ( j > 0 && gEnemyExplosiveDrops[j].uiIndex == 0 )
+				break;
+			if ( gEnemyExplosiveDrops[j].ubType == ubExplosiveType )
+				return gEnemyExplosiveDrops[j].ubEnemyDropRate > 0;
+		}
+		return FALSE;
+	}
+
+	if ( uiItemClass == IC_ARMOUR )
+	{
+		UINT8 ubArmourClass = Armour[ Item[ usItem ].ubClassIndex ].ubArmourClass;
+		for ( UINT32 j = 0; j < MAX_DROP_ITEMS; ++j )
+		{
+			if ( j > 0 && gEnemyArmourDrops[j].uiIndex == 0 )
+				break;
+			if ( gEnemyArmourDrops[j].ubArmourClass == ubArmourClass )
+				return gEnemyArmourDrops[j].ubEnemyDropRate > 0;
+		}
+		return FALSE;
+	}
+
+	for ( UINT32 j = 0; j < MAX_DROP_ITEMS; ++j )
+	{
+		if ( j > 0 && gEnemyMiscDrops[j].uiIndex == 0 )
+			break;
+		if ( gEnemyMiscDrops[j].usItemClass == uiItemClass )
+			return gEnemyMiscDrops[j].ubEnemyDropRate > 0;
+	}
+
+	return FALSE;
+}
+
 // Vengeance: tactical battles won with militia assistance should still leave
 // useful battlefield salvage, but less than direct merc kills. Keep this
 // modifier in the corpse/drop path so the externalized enemy drop tables remain
@@ -854,8 +928,12 @@ static void EnsureMinimumEnemyLootDrop( SOLDIERTYPE *pSoldier )
 	{
 		OBJECTTYPE *pLootObj = &( pSoldier->inv[ uiLootSlot ] );
 
-		if ( pLootObj->exists() == false || Item[ pLootObj->usItem ].defaultundroppable )
+		if ( pLootObj->exists() == false ||
+			Item[ pLootObj->usItem ].defaultundroppable ||
+			!EnemyItemEligibleForMinimumDrop( pLootObj->usItem ) )
+		{
 			continue;
+		}
 
 		if ( !( pLootObj->fFlags & OBJECT_UNDROPPABLE ) )
 		{
