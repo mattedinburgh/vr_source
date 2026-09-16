@@ -321,6 +321,8 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 	pBestShot->ubOpponent = NOBODY;
 	pBestShot->ubFriendlyFireChance = 0;
 	pSoldier->bAimShotLocation = AIM_SHOT_RANDOM;
+	if (AIPlanningHardBudgetExceeded(pSoldier))
+		return;
 
 	// Count credible alternative threats from the same knowledge window used below.
 	// This lets target-saturation logic distribute fire when the soldier knows about
@@ -329,6 +331,8 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 	UINT8 ubCredibleThreats = 0;
 	for (UINT32 uiThreat = 0; uiThreat < guiNumMercSlots; ++uiThreat)
 	{
+		if (AIPlanningHardBudgetExceeded(pSoldier))
+			break;
 		SOLDIERTYPE *pThreat = MercSlots[uiThreat];
 		if (!pThreat)
 			continue;
@@ -382,6 +386,8 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 	// determine which attack against which target has the greatest attack value
 	for (uiLoop = 0; uiLoop < guiNumMercSlots; uiLoop++)
 	{
+		if (AIPlanningHardBudgetExceeded(pSoldier))
+			break;
 		pOpponent = MercSlots[ uiLoop ];
 		fSuppression = FALSE;
 
@@ -1350,6 +1356,8 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 	pBestThrow->ubPossible = FALSE;
 	pBestThrow->ubChanceToReallyHit = 0;
 	pBestThrow->iAttackValue = 0;
+	if (AIPlanningHardBudgetExceeded(pSoldier))
+		return;
 
 	if ( IsGrenadeLauncherAttached(&pSoldier->inv[HANDPOS]) )
 		usInHand = GetAttachedGrenadeLauncher(&pSoldier->inv[HANDPOS]);
@@ -1837,6 +1845,8 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 	// while avoiding one's friends
 	for (ubLoop = 0; ubLoop < ubOpponentCnt; ubLoop++)
 	{
+		if (AIPlanningHardBudgetExceeded(pSoldier))
+			break;
 		//NumMessage("Checking Guy#",ubOpponentID[ubLoop]);
 
 		// search all tiles within 2 squares of this opponent
@@ -2398,6 +2408,8 @@ void CalcBestStab(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestStab, BOOLEAN fBladeAt
 	pBestStab->iAttackValue = 0;	
 	pBestStab->ubChanceToReallyHit = 0;
 	pBestStab->ubOpponent = NOBODY;
+	if (AIPlanningHardBudgetExceeded(pSoldier))
+		return;
 
 	// temporarily make this guy run so we get a proper AP cost value
 	// from CalcTotalAPsToAttack
@@ -2408,6 +2420,8 @@ void CalcBestStab(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestStab, BOOLEAN fBladeAt
 
 	for (uiLoop = 0; uiLoop < guiNumMercSlots; uiLoop++)
 	{
+		if (AIPlanningHardBudgetExceeded(pSoldier))
+			break;
 		pOpponent = MercSlots[ uiLoop ];
 
 		if (!pOpponent)

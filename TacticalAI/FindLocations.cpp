@@ -675,6 +675,8 @@ UINT8 NumberOfTeamMatesAdjacent( SOLDIERTYPE * pSoldier, INT32 sGridNo )
 INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentBetter)
 {
 	DebugMsg(TOPIC_JA2AI,DBG_LEVEL_3,String("FindBestNearbyCover"));
+	if (AIPlanningHardBudgetExceeded(pSoldier))
+		return NOWHERE;
 
 	// all 32-bit integers for max. speed
 	UINT32 uiLoop;
@@ -1093,6 +1095,8 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 	// reset the "reachable" flags in the region we're looking at
 	for (sYOffset = -sMaxUp; sYOffset <= sMaxDown; sYOffset++)
 	{
+		if (AIPlanningHardBudgetExceeded(pSoldier))
+			break;
 		for (sXOffset = -sMaxLeft; sXOffset <= sMaxRight; sXOffset++)
 		{
 			sGridNo = pSoldier->sGridNo + sXOffset + (MAXCOL * sYOffset);
@@ -1113,6 +1117,8 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 	// SET UP DOUBLE-LOOP TO STEP THROUGH POTENTIAL GRID #s
 	for (sYOffset = -sMaxUp; sYOffset <= sMaxDown; sYOffset++)
 	{
+		if (AIPlanningHardBudgetExceeded(pSoldier))
+			break;
 		for (sXOffset = -sMaxLeft; sXOffset <= sMaxRight; sXOffset++)
 		{
 			//HandleMyMouseCursor(KEYBOARDALSO);

@@ -149,3 +149,6 @@ Battle Arena can immediately scale across separate processes/cores.
 8. Refactor PathAI into reentrant AIPathContext.
 9. Parallelize safe immutable field computation.
 10. Benchmark continuously in AI Battle Arena and live battle logs.
+
+## Release convention
+Every playable game release must be copied into the game root with a timestamp in the filename using JA2_EN_Release_YYYY-MM-DD_HH-MM-SS.exe. The timestamped executable is the canonical test build for log correlation.

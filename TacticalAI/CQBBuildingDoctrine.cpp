@@ -480,6 +480,8 @@ static BOOLEAN VRCQBFindBestEntry(SOLDIERTYPE *pSoldier, VRCQB_CONTEXT *pContext
 	for (INT16 sYOffset = -VRCQB_ENTRY_SEARCH_RADIUS;
 		sYOffset <= VRCQB_ENTRY_SEARCH_RADIUS; ++sYOffset)
 	{
+		if (AIPlanningHardBudgetExceeded(pSoldier))
+			break;
 		const INT16 sY = sCenterY + sYOffset;
 		if (sY < 0 || sY >= MAXROW)
 			continue;
@@ -535,6 +537,8 @@ static BOOLEAN VRCQBFindBestEntry(SOLDIERTYPE *pSoldier, VRCQB_CONTEXT *pContext
 	INT32 iBestDetailed = VRCQB_INVALID_SCORE;
 	for (UINT8 ubSlot = 0; ubSlot < ubTopCount; ++ubSlot)
 	{
+		if (AIPlanningHardBudgetExceeded(pSoldier))
+			break;
 		if (TileIsOutOfBounds(sTopFoothold[ubSlot]))
 			continue;
 
@@ -576,6 +580,8 @@ static INT32 VRCQBFindBestLocalPosition(SOLDIERTYPE *pSoldier,
 	for (INT16 sYOffset = -VRCQB_LOCAL_SEARCH_RADIUS;
 		sYOffset <= VRCQB_LOCAL_SEARCH_RADIUS; ++sYOffset)
 	{
+		if (AIPlanningHardBudgetExceeded(pSoldier))
+			break;
 		const INT16 sY = sCenterY + sYOffset;
 		if (sY < 0 || sY >= MAXROW)
 			continue;
@@ -608,6 +614,8 @@ static INT32 VRCQBFindBestLocalPosition(SOLDIERTYPE *pSoldier,
 	INT32 iBestDetailed = VRCQB_INVALID_SCORE;
 	for (UINT8 ubSlot = 0; ubSlot < ubTopCount; ++ubSlot)
 	{
+		if (AIPlanningHardBudgetExceeded(pSoldier))
+			break;
 		if (TileIsOutOfBounds(sTopSpot[ubSlot]))
 			continue;
 
