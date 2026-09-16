@@ -1,6 +1,6 @@
 # Unseen Fire Bearing — Tactical Combat Feedback
 
-Status: **QUEUED / DESIGN-READY**  
+Status: **ACTIVE / PLAYTEST V1**  
 Owner: **UI / UX — Tactical Combat Feedback**  
 Scope: player-facing combat information only; no AI/NCTH behavior changes.
 
@@ -51,10 +51,16 @@ The visual cue represents a **bearing/confidence sector**, never an exact tile.
 
 ## Burst and multi-shooter handling
 
-- Aggregate rounds by firer + similar bearing + short time window.
-- A burst reinforces one marker instead of spawning one marker per bullet.
-- Maintain a small fixed cue pool and cluster nearby bearings.
-- Preserve distinct cues for materially different shooter directions.
+Current V1:
+- repeated audible gunfire reports from the same coarse direction are clustered for 450 ms;
+- this prevents automatic-fire bursts and multiple listeners from continuously restarting the global locator;
+- materially different coarse directions are not suppressed by that clustering gate.
+
+Still required for the final renderer:
+- aggregate rounds by firer + similar bearing + short time window;
+- maintain a small fixed cue pool so multiple directions can remain visible at once;
+- reinforce an existing bearing cue rather than replacing it;
+- preserve distinct cues for materially different shooter directions.
 
 ## Persistence
 
@@ -80,12 +86,25 @@ The visual cue represents a **bearing/confidence sector**, never an exact tile.
 - `Tactical/LOS.cpp`
 - `Tactical/Interface.cpp` / `Interface Panels.cpp`
 
-## Queue exit criteria
+## Current implementation
 
-Ready to implement when the UI/UX stream is selected for active work. Implementation is complete only after:
+Implemented on the current-base tactical-information stream:
+- unseen audible gunfire is converted to a coarse eight-direction bearing;
+- the displayed locator is offset from the listener rather than placed on the hidden shooter's true grid;
+- the locator is invoked with camera sliding disabled;
+- existing hearing-volume thresholds and hearing-aid logic remain the permission gate;
+- same-direction reports are clustered for 450 ms to reduce burst/listener spam.
+
+V1 deliberately uses the existing single multi-purpose locator. That makes it low-risk and easy to validate, but it also means simultaneous bearings cannot yet remain on screen together.
+
+## Exit criteria
+
+Implementation is complete only after:
 1. hidden shooters never leak exact positions;
-2. burst spam is aggregated;
-3. multiple directions remain readable;
-4. suppressors/hearing/level differences affect cue confidence;
+2. burst spam is aggregated without suppressing materially different bearings;
+3. multiple directions can remain readable simultaneously;
+4. suppressors/hearing/level differences affect cue confidence appropriately;
 5. no unwanted camera movement occurs;
-6. in-game playtest confirms the cue is informative but not arcade-like.
+6. near-miss/hit ballistic information can strengthen a bearing without exposing the shooter;
+7. roof/up/down information is conveyed only when legitimately inferable;
+8. in-game playtest confirms the cue is informative but not arcade-like.
