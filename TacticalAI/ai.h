@@ -505,6 +505,7 @@ INT32 AIGeometryPositionScore(SOLDIERTYPE *pSoldier,
 	const AITACTICALGEOMETRY *pGeometry, INT32 sCandidateSpot,
 	INT32 sTargetSpot, INT8 bIntent, INT8 bRole);
 INT8 AIPreferredFlankAction(SOLDIERTYPE *pSoldier, INT32 sTargetSpot);
+INT8 AIFireteamPreferredFlankAction(SOLDIERTYPE *pSoldier, INT32 sTargetSpot);
 BOOLEAN AIEvaluateTacticalPosition(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 	INT32 sTargetSpot, UINT16 usMovementMode, AITACTICALPOSITIONFEATURES *pFeatures);
 INT32 AIScoreTacticalPosition(SOLDIERTYPE *pSoldier, const AITACTICALPOSITIONFEATURES *pFeatures,
@@ -650,6 +651,9 @@ INT32 AISupportRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT32 AIManeuverRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT32 sTargetSpot, INT8 bTargetLevel);
+UINT8 AIFireteamEffectiveFireSupport(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
+INT32 AISharedApproachPressure(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
+BOOLEAN AIBasicFireteamManeuverReady(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT8 AIEngagementRangeModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 UINT8 AITargetSaturation(SOLDIERTYPE *pSoldier, INT32 sTargetSpot);
 BOOLEAN AIFriendNeedsCoveringFire(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID);

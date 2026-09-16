@@ -5,15 +5,27 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RegistryPath = Join-Path $PSScriptRoot "AI_BRANCH_REGISTRY.json"
+$RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 
 function Test-Ancestor([string]$Older, [string]$Newer) {
-    & git merge-base --is-ancestor $Older $Newer 2>$null
+    & git -C $RepositoryRoot merge-base --is-ancestor $Older $Newer 2>$null
     return ($LASTEXITCODE -eq 0)
 }
 
 function Get-CommitSha([string]$Ref) {
-    $value = & git rev-parse --verify $Ref 2>$null
-    if ($LASTEXITCODE -ne 0) {
+    # Missing archived refs are expected after branch cleanup. On some PowerShell
+    # hosts native stderr becomes a terminating error when ErrorActionPreference is
+    # Stop, so probe under Continue and interpret Git's exit code explicitly.
+    $savedErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $value = & git -C $RepositoryRoot rev-parse --verify $Ref 2>$null
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+    }
+    if ($exitCode -ne 0) {
         return $null
     }
     return ($value | Select-Object -First 1).Trim()
@@ -73,7 +85,7 @@ Write-Host ""
 Write-Host "Searching for unregistered AI integration lines"
 
 $allRefs = @(
-    & git for-each-ref --format="%(refname:short)" refs/remotes/origin/
+    & git -C $RepositoryRoot for-each-ref --format="%(refname:short)" refs/remotes/origin/
 ) | Where-Object { $_ -and $_ -notmatch '/HEAD$' } | Sort-Object -Unique
 
 # Branch names that imply AI architecture, tactical doctrine, Companion/Black Box integration,

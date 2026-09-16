@@ -45,7 +45,7 @@ A behaviour may call helpers from several files, but it has exactly one orchestr
 | Disengagement / escape state | `DecideAction.cpp` (decision) + `AIUtils.cpp` (state/helpers) |
 | Suppression response | `DecideAction.cpp` |
 | Alert-state priority | `DecideAction.cpp` |
-| Flank decision gate | `DecideAction.cpp` |
+| Flank decision gate | `DecideAction.cpp`; `TacticalReasoning.cpp::AIFireteamPreferredFlankAction` owns shared left/right attack-axis preference |
 | Building/CQB behavior | `DecideAction.cpp` (priority) + `CQBBuildingDoctrine.cpp` (building planner); shared task/short-plan primitives remain owned by `TacticalReasoning.cpp` |
 | Casualty response | `Medical.cpp` through `DecideCombatCasualtyResponse` |
 | Medic rescue | `Medical.cpp` |
