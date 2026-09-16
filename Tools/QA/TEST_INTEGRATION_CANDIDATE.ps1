@@ -9,8 +9,15 @@ $ErrorActionPreference = "Stop"
 
 function Invoke-Git {
     param([string[]]$Arguments, [string]$WorkingDirectory = $PSScriptRoot)
-    $output = & git -C $WorkingDirectory @Arguments 2>&1
-    $exitCode = $LASTEXITCODE
+    $savedErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = & git -C $WorkingDirectory @Arguments 2>&1
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+    }
     return [pscustomobject]@{ Output = @($output); ExitCode = $exitCode }
 }
 
@@ -48,10 +55,11 @@ try {
     $merge = Invoke-Git @("merge", "--no-commit", "--no-ff", $CandidateRef) $tempRoot
     $mergeExit = $merge.ExitCode
     $conflicts = Invoke-Git @("diff", "--name-only", "--diff-filter=U") $tempRoot
+    $conflictPaths = @($conflicts.Output | Where-Object { $_ -and $_ -notmatch '^warning:' })
 
     if ($mergeExit -ne 0) {
         Write-Host "MERGE_CONFLICT"
-        $conflicts.Output | ForEach-Object { if ($_){ Write-Host "  $_" } }
+        $conflictPaths | ForEach-Object { Write-Host "  $_" }
         exit 2
     }
     $check = Invoke-Git @("diff", "--check", $canonicalSha) $tempRoot
