@@ -538,6 +538,9 @@ void DirtyTopMessage( );
 void BeginMultiPurposeLocator( INT32 sGridNo, INT8 bLevel, BOOLEAN fSlideTo );
 void HandleMultiPurposeLocator( );
 void RenderTopmostMultiPurposeLocator( );
+void BeginUnseenFireBearingCue( INT32 sGridNo, INT8 bLevel, UINT8 ubDirection );
+void HandleUnseenFireBearingCues( );
+void RenderTopmostUnseenFireBearingCues( );
 
 // sevenfm: draw lines in health bar
 void DrawBar( INT32 x, INT32 y, INT32 width, INT32 height, UINT16 color16, UINT8 *pDestBuf );
