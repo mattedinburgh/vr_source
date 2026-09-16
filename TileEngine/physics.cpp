@@ -2322,6 +2322,8 @@ void CalculateLaunchItemParamsForThrow( SOLDIERTYPE *pSoldier, INT32 sGridNo, UI
 	UINT16			usLauncher;
 	INT16				sStartZ;
 	INT8		bMinMissRadius, bMaxMissRadius, bMaxRadius;
+	const INT32 sOriginalTargetGridNo = sGridNo;
+	BOOLEAN fGrenadeRolling = FALSE;
 
 	DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"CalculateLaunchItemParamsForThrow");
 
@@ -2366,6 +2368,7 @@ void CalculateLaunchItemParamsForThrow( SOLDIERTYPE *pSoldier, INT32 sGridNo, UI
 
 	if (GrenadeRollingPossible(pSoldier, sGridNo, &sSrcX, &sSrcY))
 	{
+		fGrenadeRolling = TRUE;
 		dForce /= 2;
 	}
 
@@ -2431,6 +2434,20 @@ void CalculateLaunchItemParamsForThrow( SOLDIERTYPE *pSoldier, INT32 sGridNo, UI
 	pSoldier->pThrowParams->dLifeSpan = -1;
 	pSoldier->pThrowParams->ubActionCode = ubActionCode;
 	pSoldier->pThrowParams->uiActionData = uiActionData;
+
+	// Preserve the exact real-throw solution for diagnostics at projectile creation.
+	// UI preview calculations may also fill these fields, but no telemetry is emitted
+	// until the animation creates a real physical object.
+	pSoldier->pThrowParams->uiThrowHitChance = uiHitChance;
+	pSoldier->pThrowParams->sOriginalTargetGridNo = sOriginalTargetGridNo;
+	pSoldier->pThrowParams->sDispersedTargetGridNo = sGridNo;
+	pSoldier->pThrowParams->bMinMissRadius = bMinMissRadius;
+	pSoldier->pThrowParams->bMaxMissRadius = bMaxMissRadius;
+	pSoldier->pThrowParams->bMissRadiusCap = bMaxRadius;
+	pSoldier->pThrowParams->ubThrowAimTime = pSoldier->aiData.bAimTime;
+	pSoldier->pThrowParams->fGrenadeRolling = fGrenadeRolling;
+	pSoldier->pThrowParams->fWaterTarget =
+		( !TileIsOutOfBounds( sGridNo ) && Water( sGridNo, ubLevel ) ) ? TRUE : FALSE;
 
 	// Dirty interface
 	DirtyMercPanelInterface( pSoldier, DIRTYLEVEL2 );

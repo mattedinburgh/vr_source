@@ -661,6 +661,19 @@ typedef struct
 	UINT8				ubActionCode;
 	UINT32			uiActionData;
 
+	// Transient throw-solution diagnostics. These fields are never serialized;
+	// they carry the exact CTH/dispersion solution from calculation to the
+	// animation frame that creates the real projectile.
+	UINT32			uiThrowHitChance;
+	INT32				sOriginalTargetGridNo;
+	INT32				sDispersedTargetGridNo;
+	INT8				bMinMissRadius;
+	INT8				bMaxMissRadius;
+	INT8				bMissRadiusCap;
+	UINT8				ubThrowAimTime;
+	BOOLEAN			fGrenadeRolling;
+	BOOLEAN			fWaterTarget;
+
 } THROW_PARAMS;
 
 #define DELAYED_MOVEMENT_FLAG_PATH_THROUGH_PEOPLE 0x01

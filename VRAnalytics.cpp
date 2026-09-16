@@ -1004,7 +1004,15 @@ void VRAnalyticsTacticalGrenadeThrowLaunched(
 	int breathMax,
 	int stance,
 	int throwingTraits,
-	int itemWeight )
+	int itemWeight,
+	int aimTime,
+	int hitChance,
+	int missRadiusCap,
+	int minMissRadius,
+	int maxMissRadius,
+	long dispersedTargetGrid,
+	bool grenadeRolling,
+	bool waterTarget )
 {
 	FILE* file = BeginEvent( VR_ANALYTICS_TACTICAL, "grenade_throw_launch", 0 );
 	if( !file )
@@ -1016,12 +1024,17 @@ void VRAnalyticsTacticalGrenadeThrowLaunched(
 		"\"nearest_player_id\":%d,\"distance_to_nearest_player\":%d,"
 		"\"target_offset_to_nearest_player\":%d,\"max_range\":%d,"
 		"\"effective_strength\":%d,\"breath\":%d,\"breath_max\":%d,"
-		"\"stance\":%d,\"throwing_traits\":%d,\"item_weight\":%d",
+		"\"stance\":%d,\"throwing_traits\":%d,\"item_weight\":%d,"
+		"\"aim_time\":%d,\"hit_chance\":%d,\"miss_radius_cap\":%d,"
+		"\"min_miss_radius\":%d,\"max_miss_radius\":%d,"
+		"\"dispersed_target_grid\":%ld,\"grenade_rolling\":%s,\"water_target\":%s",
 		soldierId, team, projectileId, itemIndex,
 		startGrid, targetGrid, targetDistance,
 		nearestPlayerId, distanceToNearestPlayer, targetOffsetToNearestPlayer,
 		maxRange, effectiveStrength, breath, breathMax, stance,
-		throwingTraits, itemWeight );
+		throwingTraits, itemWeight, aimTime, hitChance, missRadiusCap,
+		minMissRadius, maxMissRadius, dispersedTargetGrid,
+		grenadeRolling ? "true" : "false", waterTarget ? "true" : "false" );
 	EndEvent( file );
 }
 
