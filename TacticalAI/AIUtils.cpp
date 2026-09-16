@@ -14023,16 +14023,22 @@ INT32 AIInferredReactionRisk(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT8 b
 	for (UINT16 uiLoop = 0; uiLoop < MAX_NUM_SOLDIERS; ++uiLoop)
 	{
 		SOLDIERTYPE *pOpponent = MercPtrs[uiLoop];
-		if (!pOpponent || pOpponent == pSoldier ||
-			CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide)
-		{
+		if (!pOpponent || pOpponent == pSoldier)
 			continue;
-		}
 
 		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
 		if (bKnowledge == NOT_HEARD_OR_SEEN)
 			continue;
+
+		const BOOLEAN fPersonallySeeingNow =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+		if (fPersonallySeeingNow &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide))
+		{
+			continue;
+		}
 
 		INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
 		INT8 bKnownLevel = KnownLevel(pSoldier, pOpponent->ubID);
@@ -14052,9 +14058,6 @@ INT32 AIInferredReactionRisk(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT8 b
 		else if (bKnowledge == SEEN_LAST_TURN)
 			iContactRisk += 6;
 
-		const BOOLEAN fPersonallySeeingNow =
-			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
-			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
 		if (fPersonallySeeingNow &&
 			(pOpponent->aiData.bAction == AI_ACTION_FIRE_GUN ||
 			 pOpponent->aiData.bLastAction == AI_ACTION_FIRE_GUN))
