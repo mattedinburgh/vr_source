@@ -28,4 +28,18 @@ UINT32 VR_TacticalTelemetrySessionID();
 UINT32 VR_TacticalTelemetryBattleID();
 UINT32 VR_TacticalTelemetryTurnID();
 
+
+#define VR_AI_SELFPLAY_SCHEMA_VERSION 1
+
+// AI self-play battle laboratory. The first implementation uses a normal
+// tactical save as a reproducible scenario fixture and runs both combat sides
+// through the shipped tactical AI.
+BOOLEAN VR_SelfPlayConfigureFromCommandLine( const CHAR8 *pCommandLine );
+BOOLEAN VR_SelfPlayConfigured();
+BOOLEAN VR_SelfPlayActive();
+BOOLEAN VR_SelfPlayShouldAbortCurrentBattle();
+void VR_SelfPlayGameLoop();
+void VR_SelfPlayDecision( SOLDIERTYPE *pSoldier );
+BOOLEAN VR_SelfPlayInterceptBattleEnd( BOOLEAN fPlayerWon, BOOLEAN fPlayerLost, BOOLEAN fEnemyRetreated );
+
 #endif
