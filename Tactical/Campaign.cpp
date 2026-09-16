@@ -161,16 +161,19 @@ void ProfileStatChange(MERCPROFILESTRUCT *pProfile, UINT8 ubStat, UINT16 usNumCh
 // VR competence-based stat growth curve.
 // Return value is in hundredths of a percent: 10000 = 100.00% of the normal JA2
 // learning probability. Values above 10000 provide a modest novice catch-up bonus.
-// The normal JA2 rule already slows improvement as current ability rises; this curve
-// accelerates only the basics, then adds diminishing returns for expertise and mastery.
+//
+// The base JA2 probability is already 100-current-rating, so expertise naturally
+// slows down very sharply. Do not multiply that slowdown into an effective hard cap.
+// Keep the extra modifier bounded: novice catch-up below 60, normal progression through
+// competent ratings, then only a modest additional mastery penalty. This preserves the
+// value of naturally elite mercs while keeping 95-99 reachable over a long campaign.
 //
 // Methodology:
 //   - <= 30: 125% novice catch-up; basic competence should be learned quickly.
 //   - 30-60: smoothly taper the catch-up bonus back to the normal JA2 pace.
-//   - 60-70: normal JA2 progression, with no extra modifier.
-//   - 70-85: gentle diminishing returns.
-//   - 85-95: increasingly difficult expert progression.
-//   - 95-99: mastery progression becomes deliberately rare.
+//   - 60-75: normal JA2 progression, with no extra modifier.
+//   - 75-90: gradual expertise slowdown.
+//   - 90-99: mastery slowdown remains bounded at 50-75% of JA2's already-low chance.
 //   - Use CURRENT effective competence only. Never penalize a merc because of how much
 //     that merc has already improved during this campaign.
 //   - Apply uniformly to every non-experience stat/skill. Experience level keeps its
@@ -185,24 +188,20 @@ static UINT16 StatGrowthMasteryMultiplier(UINT16 usRating)
 		return (UINT16)(11500 - ((usRating - 40) * 1000) / 10); // 115% -> 105%
 	if (usRating <= 60)
 		return (UINT16)(10500 - ((usRating - 50) * 500) / 10);  // 105% -> 100%
-	if (usRating <= 70)
-		return 10000;
 	if (usRating <= 75)
-		return (UINT16)(10000 - ((usRating - 70) * 1000) / 5); // 100% -> 90%
+		return 10000;
 	if (usRating <= 80)
-		return (UINT16)(9000 - ((usRating - 75) * 1000) / 5);  // 90% -> 80%
+		return (UINT16)(10000 - ((usRating - 75) * 500) / 5);  // 100% -> 95%
 	if (usRating <= 85)
-		return (UINT16)(8000 - ((usRating - 80) * 1500) / 5);  // 80% -> 65%
+		return (UINT16)(9500 - ((usRating - 80) * 1000) / 5);   // 95% -> 85%
 	if (usRating <= 90)
-		return (UINT16)(6500 - ((usRating - 85) * 2000) / 5);  // 65% -> 45%
+		return (UINT16)(8500 - ((usRating - 85) * 1000) / 5);   // 85% -> 75%
 	if (usRating <= 95)
-		return (UINT16)(4500 - ((usRating - 90) * 2000) / 5);  // 45% -> 25%
-	if (usRating <= 98)
-		return (UINT16)(2500 - ((usRating - 95) * 1500) / 3);  // 25% -> 10%
+		return (UINT16)(7500 - ((usRating - 90) * 1500) / 5);   // 75% -> 60%
 	if (usRating <= 99)
-		return (UINT16)(1000 - ((usRating - 98) * 500));       // 10% -> 5%
+		return (UINT16)(6000 - ((usRating - 95) * 1000) / 4);   // 60% -> 50%
 
-	return 500;
+	return 5000;
 }
 
 void ProcessStatChange(MERCPROFILESTRUCT *pProfile, UINT8 ubStat, UINT16 usNumChances, UINT8 ubReason)
