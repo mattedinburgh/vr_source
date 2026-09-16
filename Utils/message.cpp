@@ -477,7 +477,7 @@ static STR16 BattleLogDisplayName( UINT8 ubSoldierID )
 		BuildTacticalSoldierDisplayName( MercPtrs[ubSoldierID], pName );
 
 	if ( pName[0] == 0 )
-		swprintf( pName, L"unknown" );
+		swprintf( pName, L"%s", L"unknown" );
 
 	return pName;
 }
