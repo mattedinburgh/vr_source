@@ -8553,6 +8553,8 @@ INT32 AICrossfirePositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT3
 		}
 
 		INT32 sFriendThreat = ClosestKnownOpponent(pFriend, NULL, NULL);
+		if (TileIsOutOfBounds(sFriendThreat) && pFriend->bTeam == ENEMY_TEAM)
+			AISharedFireteamContact(pFriend, &sFriendThreat, NULL, NULL);
 		if (TileIsOutOfBounds(sFriendThreat) || PythSpacesAway(sFriendThreat, sTargetSpot) > 3)
 			continue;
 
@@ -8704,17 +8706,36 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 		BOOLEAN fSmallTeam = ubSmallTeamReady >= 2 && ubSmallTeamReady <= 5;
 		UINT8 ubMoverLimit = fSmallTeam ? (ubSmallTeamReady >= 4 ? 2 : 1) :
 			(fComplexDoctrine ? 2 : 1);
-		INT32 iMoverJitter = (fComplexDoctrine && !fSmallTeam) ? AIBoundedElementJitter(pSoldier,
-			(UINT32)(sTargetSpot + 101), 6) : 0;
 
-		// Professional/veteran fireteams vary their bound size. Uncommanded line and
-		// security elements use a simple one-mover-at-a-time rule instead.
-		if (fComplexDoctrine && !fSmallTeam && iMoverJitter <= -4)
-			ubMoverLimit = 1;
-		else if (fComplexDoctrine && !fSmallTeam && iMoverJitter >= 5 &&
-			AILocalStress(pSoldier) < 20 &&
-			AICheckWeOutnumberLocal(pSoldier, sTargetSpot))
-			ubMoverLimit = 3;
+		if (pSoldier->bTeam == ENEMY_TEAM && !fSmallTeam)
+		{
+			// Grandmaster-style bounding: the element size follows the board state,
+			// never a random competence roll. Weak/no covering fire means one mover;
+			// a protected local advantage can justify a three-man exploitation bound.
+			if (ubEffectiveFire == 0 &&
+				(!fAdvanceCover || usAdvanceExposure > usCurrentExposure + 40))
+			{
+				ubMoverLimit = 1;
+			}
+			else if (ubEffectiveFire >= 2 &&
+				fAdvanceCover &&
+				AILocalStress(pSoldier) < 20 &&
+				AICheckWeOutnumberLocal(pSoldier, sTargetSpot))
+			{
+				ubMoverLimit = 3;
+			}
+		}
+		else if (fComplexDoctrine && !fSmallTeam)
+		{
+			INT32 iMoverJitter = AIBoundedElementJitter(pSoldier,
+				(UINT32)(sTargetSpot + 101), 6);
+			if (iMoverJitter <= -4)
+				ubMoverLimit = 1;
+			else if (iMoverJitter >= 5 &&
+				AILocalStress(pSoldier) < 20 &&
+				AICheckWeOutnumberLocal(pSoldier, sTargetSpot))
+				ubMoverLimit = 3;
+		}
 
 		// Capability-aware bounding: if enough healthier/more mobile nearby soldiers
 		// are materially better maneuver candidates, this soldier remains part of the
@@ -8740,6 +8761,8 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 			}
 
 			INT32 sCandidateThreat = ClosestKnownOpponent(pCandidate, NULL, NULL);
+			if (TileIsOutOfBounds(sCandidateThreat) && pCandidate->bTeam == ENEMY_TEAM)
+				AISharedFireteamContact(pCandidate, &sCandidateThreat, NULL, NULL);
 			if (TileIsOutOfBounds(sCandidateThreat) ||
 				PythSpacesAway(sCandidateThreat, sTargetSpot) > 3)
 			{
