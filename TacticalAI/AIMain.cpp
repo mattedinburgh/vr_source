@@ -2417,7 +2417,13 @@ INT8 ExecuteAction(SOLDIERTYPE *pSoldier)
             */
             DeductPoints(pSoldier,APBPConstants[AP_RADIO],APBPConstants[BP_RADIO], AFTERACTION_INTERRUPT); // pay for it!
             
-            RadioSightings(pSoldier,EVERYBODY,pSoldier->bTeam);      // about everybody
+            // Enemy contact knowledge is intentionally local. Raising a red alert may
+            // still put the sector on alert through HandleInitialRedAlert above, but
+            // exact sightings/noise are shared by the bounded fireteam blackboard
+            // (AISharedFireteamContact) rather than telepathically copied to every enemy.
+            // Preserve legacy public-radio behavior for militia and other non-enemy AI.
+            if (pSoldier->bTeam != ENEMY_TEAM)
+                RadioSightings(pSoldier,EVERYBODY,pSoldier->bTeam);      // about everybody
             // action completed immediately, cancel it right away
 
             // ATE: Change to an animation!
