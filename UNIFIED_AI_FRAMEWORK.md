@@ -165,3 +165,25 @@ answer:
 - Did the change improve behaviour across battles or only one anecdote?
 
 See `Diagnostics/AI_COMPANION_ANALYSIS_CONTRACT.md`.
+
+
+## Mandatory JA2+AI / sevenfm research gate
+
+Before a material Tactical AI behavior is implemented or materially retuned, consult
+`Tools/AI/JA2_PLUS_AI_PHD_2026-09-16.md`.
+
+Required questions:
+
+1. Is there a JA2+AI/sevenfm precedent and what practical problem was it solving?
+2. Was that behavior later changed, disabled or reverted after player testing?
+3. Is the behavior already inherited in Vengeance or modern 1.13?
+4. Does the unified planner supersede it, or should legacy sevenfm logic remain the execution layer?
+5. Could planner gating suppress a mature behavior that already works well?
+6. Does the change preserve the legal-information contract and local-fireteam boundary?
+7. Which historical JA2+AI failure mode becomes a regression test?
+
+JA2+AI is the primary historical external Tactical AI benchmark. Bear's Pit gameplay evidence is
+first-class evidence for behavior quality, especially for suppression, flanking, smoke, night
+combat, retreat, danger avoidance, pathing deadlocks and large-battle performance.
+
+Research completion does not increase implementation completion percentage.
