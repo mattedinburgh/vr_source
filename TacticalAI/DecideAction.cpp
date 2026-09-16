@@ -2923,7 +2923,10 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 
 	// if we have the action points remaining to RADIO
 	// (we never want NPCs to choose to radio if they would have to wait a turn)
-	if ( !fCivilian && (pSoldier->bActionPoints >= APBPConstants[AP_RADIO]) &&
+	// Enemy heard-contact coordination is handled by the bounded local fireteam net.
+	// A legacy YELLOW radio would now spend AP without adding legitimate information.
+	if ( pSoldier->bTeam != ENEMY_TEAM &&
+		!fCivilian && (pSoldier->bActionPoints >= APBPConstants[AP_RADIO]) &&
 		(gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) )
 	{
 		// base chance depends on how much new info we have to radio to the others
@@ -4534,15 +4537,27 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 
 	// if we're a computer merc, and we have the action points remaining to RADIO
 	// (we never want NPCs to choose to radio if they would have to wait a turn)
-	if ( !(pSoldier->usSoldierFlagMask & SOLDIER_RAISED_REDALERT) && !fCivilian && (pSoldier->bActionPoints >= APBPConstants[AP_RADIO]) && (gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) )
+	if ( !(pSoldier->usSoldierFlagMask & SOLDIER_RAISED_REDALERT) && !fCivilian &&
+		(pSoldier->bActionPoints >= APBPConstants[AP_RADIO]) &&
+		(gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
+		(pSoldier->bTeam != ENEMY_TEAM ||
+		 !gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition ||
+		 NeedToRadioAboutPanicTrigger()) )
 	{
+
+		const BOOLEAN fEnemyInitialAlarm =
+			pSoldier->bTeam == ENEMY_TEAM &&
+			(!gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition ||
+			 NeedToRadioAboutPanicTrigger());
 
 		DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"decideactionred: checking to radio red alert");
 
 		// if there hasn't been an initial RED ALERT yet in this sector
 		if ( !(gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition) || NeedToRadioAboutPanicTrigger() )
-			// since I'm at STATUS RED, I obviously know we're being invaded!
-			iChance = gbDiff[DIFF_RADIO_RED_ALERT][ SoldierDifficultyLevel( pSoldier ) ];
+			// Initial enemy alarm discipline is universal; campaign difficulty does not
+			// decide whether a trained soldier understands the value of warning the force.
+			iChance = (pSoldier->bTeam == ENEMY_TEAM) ?
+				100 : gbDiff[DIFF_RADIO_RED_ALERT][SoldierDifficultyLevel(pSoldier)];
 		else // subsequent radioing (only to update enemy positions, request help)
 			// base chance depends on how much new info we have to radio to the others
 			iChance = 10 * WhatIKnowThatPublicDont(pSoldier,FALSE);  // use 10 * for RED alert
@@ -4593,7 +4608,9 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 				}
 			}
 
-			if ((INT16) PreRandom(100) < iChance)
+			if ((fEnemyInitialAlarm &&
+				 pSoldier->aiData.bAttitude != ATTACKSLAYONLY) ||
+				(INT16)PreRandom(100) < iChance)
 			{
 				DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"decideactionred: decided to radio red alert");
 				return(AI_ACTION_RED_ALERT);
