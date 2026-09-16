@@ -4155,13 +4155,6 @@ BOOLEAN GetBestAoEGridNo(SOLDIERTYPE *pSoldier, INT32* pGridNo, INT16 aRadius, U
 			continue;
 		}
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pFriend) ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pFriend->ubProfile != SLAY) ||
-			pFriend->ubBodyType == CROW)
-		{
-			continue;
-		}
-
 		bKnowledge = Knowledge(pSoldier, pFriend->ubID);
 		if (bKnowledge == NOT_HEARD_OR_SEEN)
 			continue;
@@ -4169,6 +4162,13 @@ BOOLEAN GetBestAoEGridNo(SOLDIERTYPE *pSoldier, INT32* pGridNo, INT16 aRadius, U
 		BOOLEAN fDirectVisualContact =
 			PersonalKnowledge(pSoldier, pFriend->ubID) == SEEN_CURRENTLY &&
 			LOS_Raised(pSoldier, pFriend, CALC_FROM_ALL_DIRS) > 0;
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pFriend) ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pFriend->ubProfile != SLAY) ||
+			 pFriend->ubBodyType == CROW))
+		{
+			continue;
+		}
 
 		if (fDirectVisualContact)
 		{
