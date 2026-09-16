@@ -1359,6 +1359,9 @@ void VR_SelfPlayGameLoop()
 	{
 		if( guiCurrentScreen == ERROR_SCREEN )
 		{
+			if( VR_SelfPlayTryNextMapFixture( "game_error_after_load" ) )
+				return;
+
 			++guiVRSelfPlayErrors;
 			VR_SelfPlayFinishBatch( "game_error_after_load" );
 			return;
