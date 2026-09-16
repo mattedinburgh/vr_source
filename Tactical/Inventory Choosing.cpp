@@ -501,6 +501,7 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 	//special weapons
 	BOOLEAN fMortar = FALSE;
 	BOOLEAN fGrenadeLauncher = FALSE;
+	BOOLEAN fAttachment = FALSE;
 	BOOLEAN fLAW = FALSE;
 	BOOLEAN fRPG = FALSE;
 	UINT32 i;
