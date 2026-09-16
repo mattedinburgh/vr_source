@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "canonical_branch": "install/all-2026-09-12",
-  "policy": "Archived AI branches are frozen. Active workstreams must be registered and pinned. If a pinned branch tip changes, review and forward-port or deliberately update this registry before canonical integration.",
+  "policy": "Historical/reference AI branches are pinned and frozen. Active workstreams and explicit working snapshots must be registered by name but may move while under development. Unique work must still be forward-ported deliberately into install/all-2026-09-12.",
   "branches": [
     {
       "name": "ai/ap-budgeting",
@@ -192,6 +192,16 @@
       "name": "archive/master-pre-ai-playtest-2026-09-15",
       "pinned_sha": "739eac2bacbc8174dc1d81137aa440a3bacd5468",
       "classification": "safety-archive"
+    },
+    {
+      "name": "ai/elite-local-hivemind-2026",
+      "pinned_sha": "moving-active-workstream",
+      "classification": "active-workstream"
+    },
+    {
+      "name": "work/ai-stream-snapshot-2026-09-16",
+      "pinned_sha": "moving-working-snapshot",
+      "classification": "working-snapshot"
     }
   ]
 }
