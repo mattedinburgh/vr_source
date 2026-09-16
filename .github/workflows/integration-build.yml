@@ -17,6 +17,7 @@ on:
       - 'DEPLOY_*.ps1'
       - 'GENERATE_VR_BUILD_INFO.ps1'
       - 'Tools/AI/**'
+      - 'Tools/QA/**'
       - 'UNIFIED_AI_FRAMEWORK.md'
       - 'TacticalAI/AI_SUBSYSTEM_MAP.md'
       - 'Strategic/STRATEGIC_AI_STAGING_MANIFEST.md'
@@ -39,13 +40,14 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 20
 
-      - name: Parse deployment and AI audit PowerShell
+      - name: Parse deployment and QA PowerShell
         if: github.ref == 'refs/heads/install/all-2026-09-12'
         shell: powershell
         run: |
           $scripts = @(
             Get-ChildItem $env:GITHUB_WORKSPACE -Filter 'DEPLOY_*.ps1' -File
             Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE 'Tools\AI') -Filter '*.ps1' -File
+            Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE 'Tools\QA') -Filter '*.ps1' -File
           )
           $scripts | ForEach-Object {
             Write-Host "Parsing $($_.FullName)"
