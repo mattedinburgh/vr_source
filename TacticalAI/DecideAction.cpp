@@ -10082,7 +10082,7 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 			(UINT32)(sClosestDisturbance + 701)))
 	{
 		VRPlannerTraceReject(pSoldier, uiTraceDecision, "flank", AI_ACTION_NONE,
-			pSoldier->sGridNo, "competence/doctrine friction rejected coordinated flank");
+			pSoldier->sGridNo, "plan/mission gate rejected coordinated flank");
 		return -1;
 	}
 
