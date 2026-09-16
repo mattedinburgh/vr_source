@@ -280,19 +280,20 @@ static VHDVisualGrade VHDResolveVisualGrade(
 		}
 	}
 
-	if ( ubProfile == SECTOR_VISUAL_ORONEGRO_TOWN )
+	// Preserve the legacy conservative treatment for every non-special sector.
+	// The pre-E8 code applied this fallback after excluding San Mona, A3 and B1;
+	// it was not restricted to Oronegro town.  Keep REGWATERTEXTURE in the
+	// texture family, but exclude DEEPWATERTEXTURE exactly as LASTTEXTURE did.
+	if ( material == VHD_MATERIAL_TERRAIN || material == VHD_MATERIAL_GREEN_TERRAIN ||
+		 material == VHD_MATERIAL_WATER )
 	{
-		if ( material == VHD_MATERIAL_TERRAIN || material == VHD_MATERIAL_GREEN_TERRAIN ||
-			 material == VHD_MATERIAL_WATER )
-		{
-			grade.saturationPercent += 4;
-			grade.contrastPercent += 2;
-		}
-		else if ( material == VHD_MATERIAL_WALL || material == VHD_MATERIAL_ROOF )
-		{
-			grade.contrastPercent += 2;
-			grade.saturationPercent -= 2;
-		}
+		grade.saturationPercent += 4;
+		grade.contrastPercent += 2;
+	}
+	else if ( material == VHD_MATERIAL_WALL || material == VHD_MATERIAL_ROOF )
+	{
+		grade.contrastPercent += 2;
+		grade.saturationPercent -= 2;
 	}
 
 	return grade;

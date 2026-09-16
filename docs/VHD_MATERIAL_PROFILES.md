@@ -42,6 +42,7 @@ the existing palette renderer and its output contract intact.
 - Only 8-bit tactical tile palettes use this first-stage resolver.
 - True-colour B1TC/VHD imagery remains on its existing per-pixel renderer.
 - STI fallback behaviour is unchanged.
+- The legacy conservative grade for ordinary/default sectors is preserved; E8 must not silently remove it.
 - No tactical or strategic AI files are in scope.
 
 ## Validation gate
