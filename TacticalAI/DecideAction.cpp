@@ -11774,9 +11774,13 @@ static INT32 AIClosestKnownThreatSpotForEscape(SOLDIERTYPE *pSoldier)
 		if (bKnowledge == NOT_HEARD_OR_SEEN)
 			continue;
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide ||
-			pOpponent->ubBodyType == CROW)
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 pOpponent->ubBodyType == CROW))
 		{
 			continue;
 		}
