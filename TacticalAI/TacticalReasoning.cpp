@@ -1047,10 +1047,9 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 			++pGeometry->ubCorroboratedCues;
 	}
 
-	// Very-local fireteam callouts. A nearby teammate may communicate only a coarse
-	// direction ("contact right/front"), never an exact hidden grid. Personal visual
-	// knowledge remains owned by the observer; the receiver gets short-lived,
-	// smeared directional pressure for geometry/plan choice only.
+	// Elite local fireteam callouts. Teammates rapidly share a common directional
+	// picture, but the receiver still does not inherit opponent identity or attack
+	// authorization. This is planning geometry only, never a hidden-information shot.
 	INT32 iSharedContactPressure[NUM_WORLD_DIRECTIONS] = { 0 };
 	for (UINT8 ubFriendID = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 		ubFriendID <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++ubFriendID)
@@ -1066,7 +1065,7 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 		}
 
 		INT32 iFriendDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
-		if (iFriendDistance > __max(6, DAY_VISION_RANGE / 2))
+		if (iFriendDistance > __max(8, DAY_VISION_RANGE))
 			continue;
 
 		for (UINT16 uiOpponent = 0; uiOpponent < TOTAL_SOLDIERS; ++uiOpponent)
@@ -1081,11 +1080,11 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 			INT8 bFriendKnowledge = PersonalKnowledge(pFriend, (UINT8)uiOpponent);
 			INT32 iCalloutStrength = 0;
 			if (bFriendKnowledge == SEEN_CURRENTLY)
-				iCalloutStrength = 45;
+				iCalloutStrength = 60;
 			else if (bFriendKnowledge == SEEN_THIS_TURN)
-				iCalloutStrength = 34;
+				iCalloutStrength = 48;
 			else if (bFriendKnowledge == SEEN_LAST_TURN)
-				iCalloutStrength = 22;
+				iCalloutStrength = 32;
 			else
 				continue;
 
@@ -1097,10 +1096,11 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 			if (ubDir >= NUM_WORLD_DIRECTIONS)
 				continue;
 
-			// Voice/gesture callouts lose precision with separation and across levels.
-			iCalloutStrength -= __min((INT32)18, iFriendDistance * 2);
+			// Local reports remain strong enough to coordinate the element, but
+			// separation and different elevation still degrade confidence.
+			iCalloutStrength -= __min((INT32)16, iFriendDistance);
 			if (KnownPersonalLevel(pFriend, (UINT8)uiOpponent) != pSoldier->pathing.bLevel)
-				iCalloutStrength /= 2;
+				iCalloutStrength = (3 * iCalloutStrength) / 4;
 			if (iCalloutStrength <= 0)
 				continue;
 
