@@ -1730,7 +1730,8 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 				  Random(100) < (MercPtrs[ubPerson]->SuspicionPercent() - 25) ) )
 			{
 				UINT8 ubFriendsNearby = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE/4);
-				UINT8 ubSoldierDifficulty = SoldierDifficultyLevel(pSoldier);				
+				// All enemy officers use the same top-end investigation discipline.
+				UINT8 ubSoldierDifficulty = 4;				
 
 				// come to investigate
 				pSoldier->aiData.usActionData = InternalGoAsFarAsPossibleTowards(pSoldier, MercPtrs[ubPerson]->sGridNo, 0, AI_ACTION_SEEK_NOISE, 0);
@@ -2120,9 +2121,15 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 				 (pSoldier->bBreath > 30 || GetBPCostPer10APsForGunHolding( pSoldier, TRUE ) < 20) )
 			{
 				iChance = 25;
-				if ( pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA || pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE )
+				if (pSoldier->bTeam == ENEMY_TEAM)
+				{
+					// Equipment decides whether the soldier can scan through an optic;
+					// soldier class no longer decides whether he understands readiness.
+					iChance = 40;
+				}
+				else if ( pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA )
 					iChance += 15;
-				else if ( pSoldier->ubSoldierClass == SOLDIER_CLASS_GREEN_MILITIA || pSoldier->ubSoldierClass == SOLDIER_CLASS_ADMINISTRATOR )
+				else if ( pSoldier->ubSoldierClass == SOLDIER_CLASS_GREEN_MILITIA )
 					iChance -= 15;
 				if ( Random(100) < iChance ) 
 				{
@@ -2806,7 +2813,8 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 				  Random(100) < (MercPtrs[ubPerson]->SuspicionPercent() - 25) ) )
 			{
 				UINT8 ubFriendsNearby = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE/4);
-				UINT8 ubSoldierDifficulty = SoldierDifficultyLevel(pSoldier);				
+				// All enemy officers use the same top-end investigation discipline.
+				UINT8 ubSoldierDifficulty = 4;				
 
 				// come to investigate
 				pSoldier->aiData.usActionData = InternalGoAsFarAsPossibleTowards(pSoldier, MercPtrs[ubPerson]->sGridNo, 0, AI_ACTION_SEEK_NOISE, 0);
