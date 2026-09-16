@@ -54,14 +54,14 @@ def pct(a,b):
 def group_runs(rows):
     out=defaultdict(list)
     for r in rows:
-        out[(r.get("build_label","current"), r.get("fixture_slot","?"))].append(r)
+        out[(r.get("build_label","current"), r.get("selected_map","slot"), r.get("fixture_slot","?"))].append(r)
     return out
 
 def action_stats(decisions):
     out=defaultdict(Counter)
     repeats=defaultdict(lambda: [None,0,0])
     for r in decisions:
-        key=(r.get("build_label","current"), r.get("fixture_slot","?"), r.get("team","?"))
+        key=(r.get("build_label","current"), r.get("selected_map","slot"), r.get("fixture_slot","?"), r.get("team","?"))
         try:
             action=int(r.get("action","-1"))
         except ValueError:
@@ -87,7 +87,7 @@ def deterministic_warnings(rows):
     grouped=defaultdict(set)
     counts=Counter()
     for r in rows:
-        key=(r.get("build_label","current"),r.get("fixture_slot","?"),r.get("seed","?"))
+        key=(r.get("build_label","current"),r.get("selected_map","slot"),r.get("fixture_slot","?"),r.get("seed","?"))
         grouped[key].add(r.get("state_hash",""))
         counts[key]+=1
     return [(k,counts[k],hashes) for k,hashes in grouped.items()
@@ -99,7 +99,7 @@ def paired_delta(rows, baseline, candidate):
         label=r.get("build_label","current")
         if label not in (baseline,candidate):
             continue
-        key=(r.get("fixture_slot","?"),r.get("seed","?"))
+        key=(r.get("selected_map","slot"),r.get("fixture_slot","?"),r.get("seed","?"))
         by[key][label]=r
 
     pairs=[(k,v[baseline],v[candidate]) for k,v in by.items()
@@ -125,7 +125,7 @@ def build_report(runs, decisions, baseline=None, candidate=None):
     lines.append("")
 
     groups=group_runs(runs)
-    for (label,fixture), rs in sorted(groups.items()):
+    for (label,map_name,fixture), rs in sorted(groups.items()):
         outcomes=Counter(r.get("result","?") for r in rs)
         turns=[num(r,"team_turns") for r in rs]
         wall=[num(r,"wall_ms") for r in rs]
@@ -134,7 +134,7 @@ def build_report(runs, decisions, baseline=None, candidate=None):
         b_shots=sum(num(r,"b_shots") for r in rs)
         b_hits=sum(num(r,"b_hits") for r in rs)
         stalls=outcomes.get("max_team_turns",0)
-        lines.append(f"[{label}] fixture {fixture}")
+        lines.append(f"[{label}] map {map_name} fixture {fixture}")
         lines.append(f"  runs={len(rs)} outcomes={dict(outcomes)}")
         lines.append(f"  team_turns mean={mean(turns):.1f} median={median(turns):.1f} "
                      f"stall_rate={pct(stalls,len(rs)):.1f}%")
@@ -156,11 +156,11 @@ def build_report(runs, decisions, baseline=None, candidate=None):
         lines.append("ACTION MIX")
         lines.append("-"*10)
         for key,counter in sorted(acts.items()):
-            label,fixture,team=key
+            label,map_name,fixture,team=key
             total=sum(counter.values())
             top=counter.most_common(12)
             pretty=", ".join(f"{ACTION_NAMES.get(a,str(a))}={n} ({pct(n,total):.1f}%)" for a,n in top)
-            lines.append(f"[{label}] fixture {fixture} team {team}: {pretty}")
+            lines.append(f"[{label}] map {map_name} fixture {fixture} team {team}: {pretty}")
         lines.append(f"Repeated identical action+destination loop signals: {repeat_total}")
         lines.append("")
 
@@ -169,8 +169,8 @@ def build_report(runs, decisions, baseline=None, candidate=None):
     lines.append("-"*15)
     if nondet:
         lines.append("WARNING: identical build/fixture/seed produced different final hashes:")
-        for (label,fixture,seed),count,hashes in nondet:
-            lines.append(f"  {label} fixture={fixture} seed={seed} n={count} hashes={sorted(hashes)}")
+        for (label,map_name,fixture,seed),count,hashes in nondet:
+            lines.append(f"  {label} map={map_name} fixture={fixture} seed={seed} n={count} hashes={sorted(hashes)}")
     else:
         lines.append("No conflicting duplicate-seed final hashes found in this corpus.")
     lines.append("")
@@ -179,26 +179,26 @@ def build_report(runs, decisions, baseline=None, candidate=None):
     lines.append("DIAGNOSTIC SIGNALS")
     lines.append("-"*18)
     any_signal=False
-    for (label,fixture),rs in sorted(groups.items()):
+    for (label,map_name,fixture),rs in sorted(groups.items()):
         outcomes=Counter(r.get("result","?") for r in rs)
         stalls=outcomes.get("max_team_turns",0)
         if len(rs) >= 5 and pct(stalls,len(rs)) >= 5:
-            lines.append(f"  {label}/fixture {fixture}: max-turn stalls {pct(stalls,len(rs)):.1f}%")
+            lines.append(f"  {label}/map {map_name}/fixture {fixture}: max-turn stalls {pct(stalls,len(rs)):.1f}%")
             any_signal=True
-    for (label,fixture,team),counter in sorted(acts.items()):
+    for (label,map_name,fixture,team),counter in sorted(acts.items()):
         total=sum(counter.values())
         if total < 30: continue
         wait=counter.get(35,0)
         setup=counter.get(23,0)+counter.get(24,0)+counter.get(50,0)
         flank=counter.get(20,0)+counter.get(21,0)
         if pct(wait,total) > 20:
-            lines.append(f"  {label}/fixture {fixture}/team {team}: WAIT share {pct(wait,total):.1f}%")
+            lines.append(f"  {label}/map {map_name}/fixture {fixture}/team {team}: WAIT share {pct(wait,total):.1f}%")
             any_signal=True
         if pct(setup,total) > 35:
-            lines.append(f"  {label}/fixture {fixture}/team {team}: facing/stance/raise setup share {pct(setup,total):.1f}%")
+            lines.append(f"  {label}/map {map_name}/fixture {fixture}/team {team}: facing/stance/raise setup share {pct(setup,total):.1f}%")
             any_signal=True
         if total >= 100 and flank == 0:
-            lines.append(f"  {label}/fixture {fixture}/team {team}: no flank decisions across {total} actions")
+            lines.append(f"  {label}/map {map_name}/fixture {fixture}/team {team}: no flank decisions across {total} actions")
             any_signal=True
     if repeat_total:
         lines.append(f"  repeated identical action+destination loop signals={repeat_total}")
