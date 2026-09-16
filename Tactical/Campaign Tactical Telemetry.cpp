@@ -652,7 +652,7 @@ static BOOLEAN gfVRArenaMapLoadIssued = FALSE;
 static UINT8 gubVRArenaSideASize = 8;
 static UINT8 gubVRArenaSideBSize = 8;
 static INT8 gbVRArenaRelativeLevel = 2;
-static INT8 gbVRArenaBootstrapSlot = -1;
+static INT32 giVRArenaBootstrapSlot = -1;
 
 
 
@@ -1025,6 +1025,9 @@ static void VR_ArenaRemoveAllTacticalActors()
 	}
 
 	gTacticalStatus.fEnemyInSector = FALSE;
+	gTacticalStatus.bOriginalSizeOfEnemyForce = 0;
+	gTacticalStatus.ubArmyGuysKilled = 0;
+	memset( &(gTacticalStatus.bNumFoughtInBattle), 0, MAXTEAMS );
 	for( INT32 iTeam = 0; iTeam < MAXTEAMS; ++iTeam )
 	{
 		gTacticalStatus.Team[iTeam].bAwareOfOpposition = FALSE;
@@ -1101,7 +1104,7 @@ static INT32 VR_ArenaSelectBootstrapSave()
 		if( !LoadSavedGameHeader( iSlot, &Header ) )
 			continue;
 
-		if( !Header.fWorldLoaded )
+		if( !Header.fWorldLoaded || Header.uiCurrentScreen != GAME_SCREEN )
 			continue;
 
 		const UINT32 uiMinute =
@@ -1195,7 +1198,7 @@ static BOOLEAN VR_ArenaPrepareBattle()
 		gubVRArenaSideASize,
 		gubVRArenaSideBSize,
 		gbVRArenaRelativeLevel,
-		gbVRArenaBootstrapSlot );
+		giVRArenaBootstrapSlot );
 
 	// Starting with ENEMY_TEAM avoids the direct human StartPlayerTeamTurn path.
 	// Once the turn cycles to OUR_TEAM, BeginTeamTurn sees self-play active and
@@ -1377,10 +1380,10 @@ BOOLEAN VR_SelfPlayConfigureFromCommandLine( const CHAR8 *pCommandLine )
 		strncpy( gzVRSelfPlayBuildLabel, iRead >= 7 ? zBuildLabel : "arena", sizeof(gzVRSelfPlayBuildLabel) - 1 );
 		gzVRSelfPlayBuildLabel[sizeof(gzVRSelfPlayBuildLabel) - 1] = 0;
 
-		gbVRArenaBootstrapSlot =
+		giVRArenaBootstrapSlot =
 			(iRead >= 8 && iBootstrap >= 0 && iBootstrap < NUM_SAVE_GAMES) ?
 			(INT8)iBootstrap : -1;
-		giVRSelfPlaySaveSlot = gbVRArenaBootstrapSlot;
+		giVRSelfPlaySaveSlot = giVRArenaBootstrapSlot;
 
 		guiVRSelfPlayRunIndex = 0;
 		guiVRSelfPlaySideAWins = 0;
@@ -1397,7 +1400,7 @@ BOOLEAN VR_SelfPlayConfigureFromCommandLine( const CHAR8 *pCommandLine )
 			gzVRSelfPlayBuildLabel, gzVRSelfPlayMapSpec,
 			gubVRArenaSideASize, gubVRArenaSideBSize,
 			guiVRSelfPlayRuns, guiVRSelfPlayBaseSeed,
-			guiVRSelfPlayMaxTeamTurns, gbVRArenaBootstrapSlot );
+			guiVRSelfPlayMaxTeamTurns, giVRArenaBootstrapSlot );
 		return TRUE;
 	}
 
@@ -1618,6 +1621,25 @@ void VR_SelfPlayGameLoop()
 			return;
 		}
 
+		if( gfVRArenaMode && giVRSelfPlaySaveSlot < 0 )
+		{
+			giVRSelfPlaySaveSlot = VR_ArenaSelectBootstrapSave();
+			giVRArenaBootstrapSlot = giVRSelfPlaySaveSlot;
+			if( giVRSelfPlaySaveSlot < 0 )
+			{
+				++guiVRSelfPlayErrors;
+				VR_SelfPlayWriteBatchLine(
+					"ARENA_ERROR map=%s reason=no_tactical_bootstrap_save_found\n",
+					gzVRSelfPlayMapSpec );
+				VR_SelfPlayFinishBatch( "arena_no_bootstrap_save" );
+				return;
+			}
+
+			VR_SelfPlayWriteBatchLine(
+				"ARENA_BOOTSTRAP map=%s fixture=%d\n",
+				gzVRSelfPlayMapSpec, giVRSelfPlaySaveSlot );
+		}
+
 		if( !gfVRArenaMode && gfVRSelfPlayMapSelected && !gfVRSelfPlayMapFixtureResolved &&
 			gusVRSelfPlayMapCandidateCount == 0 )
 		{
@@ -1693,6 +1715,8 @@ void VR_SelfPlayGameLoop()
 					gWorldSectorY != gsVRSelfPlayMapY ||
 					gbWorldSectorZ != gbVRSelfPlayMapZ )
 				{
+					// Seed map-runtime randomization as well as the subsequent soldier generation.
+					SetRandomSeed( VR_SelfPlayCurrentSeed() );
 					if( !SetCurrentWorldSector(
 						gsVRSelfPlayMapX, gsVRSelfPlayMapY, gbVRSelfPlayMapZ ) )
 					{
