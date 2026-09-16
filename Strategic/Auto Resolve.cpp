@@ -2868,6 +2868,8 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Autoresolve2");
 				UINT32 uiCorpseFlags = ADD_DEAD_SOLDIER_TO_SWEETSPOT;
 				if ( fMercVictoryLoot )
 					uiCorpseFlags |= ADD_DEAD_SOLDIER_PLAYER_AUTORESOLVE_LOOT;
+				else
+					uiCorpseFlags |= ADD_DEAD_SOLDIER_NO_LOOT;
 				AddDeadSoldierToUnLoadedSector( gpAR->ubSectorX, gpAR->ubSectorY, 0,
 					gpEnemies[ i ].pSoldier, RandomGridNo(), uiCorpseFlags );
 			}
