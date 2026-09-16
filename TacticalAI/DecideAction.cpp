@@ -8335,7 +8335,11 @@ L_NEWAIM:
 	// (we never want NPCs to choose to radio if they would have to wait a turn)
 	// and we're not swimming in deep water, and somebody has called for spotters
 	// and we see the location of at least 2 opponents
-	if ( !(pSoldier->usSoldierFlagMask & SOLDIER_RAISED_REDALERT) &&
+	// Enemy spotter information is already present in the local shared-contact
+	// network; a legacy RED_ALERT here would spend AP without broadening legitimate
+	// knowledge. Preserve the old radio behavior only for non-enemy AI.
+	if ( pSoldier->bTeam != ENEMY_TEAM &&
+		!(pSoldier->usSoldierFlagMask & SOLDIER_RAISED_REDALERT) &&
 		!AIDisengagementActive(pSoldier) && !AIEscapeActive(pSoldier) &&
 		(gTacticalStatus.ubSpottersCalledForBy != NOBODY) &&
 		MercPtrs[gTacticalStatus.ubSpottersCalledForBy] &&
