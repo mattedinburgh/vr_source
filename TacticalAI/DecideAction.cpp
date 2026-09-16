@@ -11364,7 +11364,8 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 		CountSeenEnemiesLastTurn(pSoldier) > AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2) ||
 		CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE) > CountFriendsLastAttackHit(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE) ||
 		CountCorpses(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE, TRUE, TRUE) > AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE)) &&
-		(InSmoke(pSoldier->sGridNo, pSoldier->pathing.bLevel) ||
+		(pSoldier->bTeam == ENEMY_TEAM ||
+		InSmoke(pSoldier->sGridNo, pSoldier->pathing.bLevel) ||
 		Chance(10 + SoldierDifficultyLevel(pSoldier) * 10) ||
 		Chance(AIFriendlyCasualtyPercent(pSoldier)) ||
 		Chance(10 * CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE)) ||
@@ -11489,13 +11490,13 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 			continue;
 
 		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
-		if (iDistance > DAY_VISION_RANGE / 2)
-			continue;
-
 		BOOLEAN fSameElement = AISameFireteam(pSoldier, pFriend);
-		if (AICombatTeam(pSoldier) &&
-			!fSameElement &&
-			iDistance > DAY_VISION_RANGE / 4)
+		if (fSameElement)
+		{
+			if (iDistance > DAY_VISION_RANGE)
+				continue;
+		}
+		else if (AICombatTeam(pSoldier) && iDistance > DAY_VISION_RANGE / 4)
 		{
 			continue;
 		}
