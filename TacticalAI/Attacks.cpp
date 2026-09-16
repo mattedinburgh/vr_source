@@ -2072,7 +2072,8 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 				}
 
 				// JA2Gold
-				if( gGameOptions.ubDifficultyLevel == DIF_LEVEL_EASY )
+				if( gGameOptions.ubDifficultyLevel == DIF_LEVEL_EASY &&
+					pSoldier->bTeam != ENEMY_TEAM )
 				{
 					if (fSkipLocation)
 					{
@@ -2108,12 +2109,13 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 				{
 					ubChanceToGetThrough = AISoldierToLocationChanceToGetThrough( pSoldier, sGridNo, bOpponentLevel[ubLoop], 0 );
 					// anv: tanks shouldn't care about chance to get through - can't hit? At least we'll destroy their cover.
-					// sevenfm: elites use rocket launchers to blow up obstacles when shooting at soldiers in buildings
+					// Tactically trained rocket users may deliberately attack blocking cover. This
+					// changes planner willingness only; projectile physics/CTH remain untouched.
 					if( TANK(pSoldier) || 
 						( Item[usInHand].rocketlauncher &&
 						gpWorldLevelData[sOpponentTile[ubLoop]].ubTerrainID == FLAT_FLOOR &&
 						gpWorldLevelData[pSoldier->sGridNo].ubTerrainID != FLAT_FLOOR &&
-						(pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE ||
+						(pSoldier->bTeam == ENEMY_TEAM ||
 						 pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA) ) )
 					{
 						ubChanceToGetThrough = 100;
@@ -2324,9 +2326,10 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 		}
 	}
 
-	// this is try to minimize enemies wasting their (limited) toss attacks:
-	// sevenfm 80-40% depending on soldier difficulty
-	UINT8 ubMinChanceToReallyHit = 80 - 10 * ubDiff;
+	// Every enemy uses the same disciplined throw threshold. Soldier class and
+	// campaign difficulty may change equipment/resources, never tactical understanding.
+	UINT8 ubMinChanceToReallyHit =
+		(pSoldier->bTeam == ENEMY_TEAM) ? 40 : (80 - 10 * ubDiff);
 	if( Item[usGrenade].flare )
 	{
 		ubMinChanceToReallyHit = 30;
