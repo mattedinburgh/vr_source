@@ -1522,6 +1522,75 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 
 INT32 ClosestKnownOpponent(SOLDIERTYPE *pSoldier, INT32 * psGridNo, INT8 * pbLevel)
 {
+	// ENEMY_TEAM uses the bounded local planning picture. This function is a movement/
+	// orientation selector, not a firing-authority function, so teammate reports are
+	// legitimate here. Direct-fire legality remains governed by personal LOS/knowledge.
+	if (pSoldier && pSoldier->bTeam == ENEMY_TEAM)
+	{
+		INT32 sClosestReported = NOWHERE;
+		INT8 bClosestReportedLevel = -1;
+		INT32 iClosestReportedRange = 0x7FFFFFFF;
+
+		for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
+		{
+			SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
+			if (!pOpponent || pOpponent == pSoldier)
+				continue;
+
+			INT32 sReportedGrid = NOWHERE;
+			INT8 bReportedLevel = 0;
+			INT8 bReportedKnowledge = NOT_HEARD_OR_SEEN;
+			UINT8 ubReportedConfidence = 0;
+			if (!AIPlanningContactForOpponent(
+				pSoldier, pOpponent->ubID, &sReportedGrid, &bReportedLevel,
+				&ubReportedConfidence, &bReportedKnowledge))
+			{
+				continue;
+			}
+
+			const BOOLEAN fDirectVisualContact =
+				PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+				LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+			if (fDirectVisualContact &&
+				(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+				 pSoldier->bSide == pOpponent->bSide ||
+				 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+				 (gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
+				 pOpponent->ubBodyType == CROW ||
+				 !ValidOpponent(pSoldier, pOpponent)))
+			{
+				continue;
+			}
+
+			if (TileIsOutOfBounds(sReportedGrid) ||
+				sReportedGrid == pSoldier->sGridNo)
+			{
+				continue;
+			}
+
+			if (bReportedLevel != pSoldier->pathing.bLevel &&
+				SameBuilding(pSoldier->sGridNo, sReportedGrid))
+			{
+				continue;
+			}
+
+			INT32 iRange =
+				GetRangeInCellCoordsFromGridNoDiff(pSoldier->sGridNo, sReportedGrid);
+			if (iRange < iClosestReportedRange)
+			{
+				iClosestReportedRange = iRange;
+				sClosestReported = sReportedGrid;
+				bClosestReportedLevel = bReportedLevel;
+			}
+		}
+
+		if (psGridNo)
+			*psGridNo = sClosestReported;
+		if (pbLevel)
+			*pbLevel = bClosestReportedLevel;
+		return sClosestReported;
+	}
+
 	INT32 *psLastLoc, sGridNo, sClosestOpponent = NOWHERE;
 	UINT32 uiLoop;
 	INT32 iRange, iClosestRange = 1500;
