@@ -32,6 +32,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <stdarg.h>
 
 static BOOLEAN gfVRTacticalTelemetryEnabled = TRUE;
 static BOOLEAN gfVRTacticalBattleActive = FALSE;
@@ -54,6 +55,8 @@ static UINT32 guiVRMoves[MAXTEAMS];
 static UINT32 guiVRSuppressionAPLost[MAXTEAMS];
 static UINT32 guiVRExplosions[MAXTEAMS];
 static UINT32 guiVRSmokeEffects[MAXTEAMS];
+
+static BOOLEAN VR_SelfPlayOnTeamTurnStarted( UINT32 uiTeamTurn );
 
 static INT32 VR_TacticalSafeTeam( INT32 iTeam )
 {
@@ -406,12 +409,8 @@ void VR_TacticalTelemetryTurnStart( UINT8 ubTeam )
 
 	guiVRTacticalTurnSerial++;
 
-	if( VR_SelfPlayActive() && guiVRTacticalTurnSerial >= guiVRSelfPlayMaxTeamTurns )
-	{
-		++guiVRSelfPlayStalemates;
-		VR_SelfPlayFinishRun( "max_team_turns", FALSE );
+	if( VR_SelfPlayOnTeamTurnStarted( guiVRTacticalTurnSerial ) )
 		return;
-	}
 
 
 	for( uiCount = 0; uiCount < TOTAL_SOLDIERS; ++uiCount )
@@ -999,6 +998,20 @@ BOOLEAN VR_SelfPlayConfigureFromCommandLine( const CHAR8 *pCommandLine )
 	return TRUE;
 }
 
+
+static BOOLEAN VR_SelfPlayOnTeamTurnStarted( UINT32 uiTeamTurn )
+{
+	if( gfVRSelfPlayConfigured &&
+		giVRSelfPlayState == VR_SELFPLAY_STATE_RUNNING &&
+		uiTeamTurn >= guiVRSelfPlayMaxTeamTurns )
+	{
+		++guiVRSelfPlayStalemates;
+		VR_SelfPlayFinishRun( "max_team_turns", FALSE );
+		return TRUE;
+	}
+	return FALSE;
+}
+
 BOOLEAN VR_SelfPlayConfigured()
 {
 	return gfVRSelfPlayConfigured;
@@ -1116,7 +1129,7 @@ void VR_SelfPlayGameLoop()
 	{
 		// Initialization must be complete before direct save loading. On subsequent
 		// runs we may already be on GAME_SCREEN, which is also safe for a reload.
-		if( guiCurrentScreen == INIT_SCREEN )
+		if( guiCurrentScreen != MAINMENU_SCREEN && guiCurrentScreen != GAME_SCREEN )
 			return;
 
 		if( !InitSaveGameArray() ||
