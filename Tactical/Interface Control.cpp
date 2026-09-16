@@ -141,6 +141,7 @@ void RenderTacticalInterface( )
 		HandleFlashingItems( );
 
 	HandleMultiPurposeLocator( );
+	HandleUnseenFireBearingCues( );
 
 	}
 
@@ -711,6 +712,7 @@ void RenderTopmostTacticalInterface( )
 	RenderTopmostFlashingItems( );
 
 	RenderTopmostMultiPurposeLocator( );
+	RenderTopmostUnseenFireBearingCues( );
 
 	RenderAccumulatedBurstLocations( );
 
