@@ -666,6 +666,7 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 			bRating = (INT8)max( MIN_EQUIPMENT_CLASS, min( MAX_EQUIPMENT_CLASS, bRating ) );
 
 			bWeaponClass = bRating;
+			bLBEClass = bRating;
 
 			//Note:  in some cases the class of armour and/or helmet won't be high enough to make
 			//			 the lowest level.
@@ -836,6 +837,7 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 			bVestClass = bRating;
 			bHelmetClass = bRating;
 			bGrenadeClass = bRating;
+			bLBEClass = bRating;
 			// 1.13 parity: regular militia use the army-tier attachment curve.
 			bAttachClass = bRating * 3 / 8;
 
@@ -1037,6 +1039,7 @@ void GenerateRandomEquipment( SOLDIERCREATE_STRUCT *pp, INT8 bSoldierClass, INT8
 			bGrenadeClass = bRating;
 			bKitClass = bRating;
 			bMiscClass = bRating;
+			bLBEClass = bRating;
 
 			if( Chance(50) )
 			{
