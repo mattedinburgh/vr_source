@@ -87,6 +87,8 @@ BOOLEAN InitSaveDir();
 
 BOOLEAN SaveGame( int ubSaveGameID, STR16 pGameDesc );
 BOOLEAN LoadSavedGame( int ubSavedGameID );
+// Read only the compact save header; used by tooling to select fixtures by sector.
+BOOLEAN LoadSavedGameHeader( INT32 bEntry, SAVED_GAME_HEADER *pSaveGameHeader );
 
 BOOLEAN CopySavedSoldierInfoToNewSoldier( SOLDIERTYPE *pDestSourceInfo, SOLDIERTYPE *pSourceInfo );
 
