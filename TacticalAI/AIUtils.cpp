@@ -3224,15 +3224,10 @@ UINT8 AIDoctrineResponseLimit(SOLDIERTYPE *pSoldier)
 		return 4;
 
 	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
-	UINT8 ubLimit = 4;
-	switch (ubDoctrine)
-	{
-	case AI_DOCTRINE_SECURITY:     ubLimit = 2; break;
-	case AI_DOCTRINE_LINE:         ubLimit = 4; break;
-	case AI_DOCTRINE_VETERAN:      ubLimit = 5; break;
-	case AI_DOCTRINE_ELITE_MOBILE: ubLimit = 6; break;
-	case AI_DOCTRINE_ELITE_GUARD:  ubLimit = 4; break;
-	}
+	// ENEMY_TEAM doctrine has only two live tactical meanings now:
+	// mobile elite element or objective-bound elite guard/command element.
+	// Old SECURITY/LINE/VETERAN response limits represented obsolete competence tiers.
+	UINT8 ubLimit = (ubDoctrine == AI_DOCTRINE_ELITE_GUARD) ? 4 : 6;
 
 	// ONCALL is the natural QRF order. SEEKENEMY has more freedom, but does not
 	// empty a garrison as aggressively as a designated response element.
@@ -3249,8 +3244,6 @@ UINT8 AIDoctrineResponseLimit(SOLDIERTYPE *pSoldier)
 	if (ubAuthority >= 7 && pSoldier->aiData.bOrders == ONCALL)
 		ubLimit += 1;
 
-	if (ubDoctrine == AI_DOCTRINE_SECURITY && ubLimit > 3)
-		ubLimit = 3;
 
 	return __min((UINT8)8, ubLimit);
 }
@@ -3260,36 +3253,9 @@ INT8 AIDoctrineAnchorModifier(SOLDIERTYPE *pSoldier)
 	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
 		return 0;
 
-	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
-	switch (ubDoctrine)
-	{
-	case AI_DOCTRINE_SECURITY:
-		switch (pSoldier->aiData.bOrders)
-		{
-		case STATIONARY: return -6;
-		case ONGUARD: return -5;
-		case CLOSEPATROL:
-		case POINTPATROL:
-		case RNDPTPATROL: return -3;
-		default: return -1;
-		}
-
-	case AI_DOCTRINE_LINE:
-		if (pSoldier->aiData.bOrders == STATIONARY || pSoldier->aiData.bOrders == ONGUARD)
-			return -2;
-		if (pSoldier->aiData.bOrders == CLOSEPATROL)
-			return -1;
-		return 0;
-
-	case AI_DOCTRINE_VETERAN:
-		return (pSoldier->aiData.bOrders == STATIONARY) ? -1 : 0;
-
-	case AI_DOCTRINE_ELITE_GUARD:
-		return -3;
-
-	default:
-		return 0;
-	}
+	// Mission posture only: fixed/objective guard elements are anchored;
+	// mobile elite elements are not. This does not represent an intelligence tier.
+	return (AIGetDoctrineProfile(pSoldier) == AI_DOCTRINE_ELITE_GUARD) ? -3 : 0;
 }
 // Individual willingness to accept danger. Personality and current morale change
 // the threshold, but no ordinary attitude makes a soldier completely suicidal.
@@ -3672,8 +3638,9 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 	BOOLEAN fComplexDoctrine = AIAllowsComplexManeuver(pSoldier);
 	UINT8 ubEffectiveFire = AIFireteamEffectiveFireSupport(pSoldier, sTargetSpot);
 
-	// Lower-quality formations can still make sensible covered advances, but do not
-	// independently solve exposed manoeuvre problems like a professional fireteam.
+	// A mission-role-restricted command/guard element can still make a sensible covered
+	// advance, but should not abandon its assignment for exposed manoeuvre. Ordinary
+	// ENEMY_TEAM mobile elements always retain full professional manoeuvre reasoning.
 	if (AICombatTeam(pSoldier) && !fComplexDoctrine && iAdvanceDist + 2 < iCurrentDist)
 	{
 		if (ubDoctrine == AI_DOCTRINE_SECURITY &&
