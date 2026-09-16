@@ -616,6 +616,9 @@ struct AITACTICALDECISIONCONTEXT
 BOOLEAN AIBuildTacticalDecisionContext(SOLDIERTYPE *pSoldier, AITACTICALDECISIONCONTEXT *pContext);
 void AIBeginDecisionThreatSnapshot(SOLDIERTYPE *pSoldier);
 void AIEndDecisionThreatSnapshot(SOLDIERTYPE *pSoldier);
+UINT32 AIPlanningElapsedMs(SOLDIERTYPE *pSoldier);
+BOOLEAN AIPlanningSoftBudgetExceeded(SOLDIERTYPE *pSoldier);
+BOOLEAN AIPlanningHardBudgetExceeded(SOLDIERTYPE *pSoldier);
 void AIResetTacticalPlannerStateForLoad(void);
 INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);

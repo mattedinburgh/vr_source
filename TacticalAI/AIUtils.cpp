@@ -5800,6 +5800,8 @@ struct AIPLANNINGCONTACTSNAPSHOT
 };
 
 #define AI_DECISION_ROUTE_CACHE_SIZE 12
+#define AI_DECISION_SOFT_BUDGET_MS 50
+#define AI_DECISION_HARD_BUDGET_MS 125
 
 struct AIDECISIONROUTECACHEENTRY
 {
@@ -5835,6 +5837,7 @@ struct AIDECISIONTHREATSNAPSHOT
 	UINT32 uiPathCostReuses;
 	UINT32 uiRouteCacheHits;
 	UINT32 uiRouteCacheMisses;
+	UINT32 uiBudgetEarlyOuts;
 	UINT32 uiDetailedCandidateCount;
 	UINT32 uiLookaheadNodes;
 	UINT32 uiCacheHits;
@@ -5887,6 +5890,33 @@ static AIDECISIONTHREATSNAPSHOT *AIGetDecisionThreatSnapshot(SOLDIERTYPE *pSoldi
 	return pSnapshot;
 }
 
+UINT32 AIPlanningElapsedMs(SOLDIERTYPE *pSoldier)
+{
+	AIDECISIONTHREATSNAPSHOT *pSnapshot =
+		AIGetDecisionThreatSnapshot(pSoldier);
+	if (!pSnapshot)
+		return 0;
+	return GetJA2Clock() - pSnapshot->uiDecisionStartMs;
+}
+
+BOOLEAN AIPlanningSoftBudgetExceeded(SOLDIERTYPE *pSoldier)
+{
+	AIDECISIONTHREATSNAPSHOT *pSnapshot =
+		AIGetDecisionThreatSnapshot(pSoldier);
+	return pSnapshot &&
+		GetJA2Clock() - pSnapshot->uiDecisionStartMs >=
+			AI_DECISION_SOFT_BUDGET_MS;
+}
+
+BOOLEAN AIPlanningHardBudgetExceeded(SOLDIERTYPE *pSoldier)
+{
+	AIDECISIONTHREATSNAPSHOT *pSnapshot =
+		AIGetDecisionThreatSnapshot(pSoldier);
+	return pSnapshot &&
+		GetJA2Clock() - pSnapshot->uiDecisionStartMs >=
+			AI_DECISION_HARD_BUDGET_MS;
+}
+
 static AIDECISIONROUTECACHEENTRY *AIGetDecisionRoute(
 	SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMovementMode,
 	BOOLEAN *pfCacheHit)
@@ -5922,6 +5952,12 @@ static AIDECISIONROUTECACHEENTRY *AIGetDecisionRoute(
 	}
 
 	++pSnapshot->uiRouteCacheMisses;
+	if (AIPlanningSoftBudgetExceeded(pSoldier))
+	{
+		++pSnapshot->uiBudgetEarlyOuts;
+		return NULL;
+	}
+
 	UINT8 ubSlot = AI_DECISION_ROUTE_CACHE_SIZE;
 	for (UINT8 i = 0; i < AI_DECISION_ROUTE_CACHE_SIZE; ++i)
 	{
@@ -6161,7 +6197,7 @@ void AIEndDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
 	DebugAI(AI_MSG_INFO, pSoldier,
 		String("[AI-PERF] total_ms=%lu threat_build_ms=%lu pathfinding_ms=%lu exposure_ms=%lu reaction_ms=%lu geometry_ms=%lu "
 			"contacts=%u detailed_candidates=%lu path_searches=%lu path_reuses=%lu "
-			"route_hits=%lu route_misses=%lu "
+			"route_hits=%lu route_misses=%lu budget_earlyouts=%lu "
 			"exposure_calls=%lu reaction_calls=%lu cache_hits=%lu cache_misses=%lu "
 			"shared_contact_hits=%lu shared_contact_misses=%lu "
 			"geometry_hits=%lu geometry_misses=%lu lookahead_nodes=%lu",
@@ -6177,6 +6213,7 @@ void AIEndDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
 			(unsigned long)pSnapshot->uiPathCostReuses,
 			(unsigned long)pSnapshot->uiRouteCacheHits,
 			(unsigned long)pSnapshot->uiRouteCacheMisses,
+			(unsigned long)pSnapshot->uiBudgetEarlyOuts,
 			(unsigned long)pSnapshot->uiExposureCalls,
 			(unsigned long)pSnapshot->uiReactionCalls,
 			(unsigned long)pSnapshot->uiCacheHits,
@@ -6208,6 +6245,12 @@ BOOLEAN AIGetDecisionTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo
 		++pSnapshot->uiGeometryHits;
 		++pSnapshot->uiCacheHits;
 		return TRUE;
+	}
+
+	if (pSnapshot && AIPlanningSoftBudgetExceeded(pSoldier))
+	{
+		++pSnapshot->uiBudgetEarlyOuts;
+		return FALSE;
 	}
 
 	const UINT32 uiBuildStart = pSnapshot ? GetJA2Clock() : 0;
@@ -8927,6 +8970,8 @@ BOOLEAN AIKnownRouteExposureAcceptable(
 	}
 	else
 	{
+		if (AIGetDecisionThreatSnapshot(pSoldier))
+			return FALSE;
 		iPathSteps = FindBestPath(
 			pSoldier, sDestination, pSoldier->pathing.bLevel,
 			usMovementMode, NO_COPYROUTE, 0);
@@ -15978,7 +16023,14 @@ INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 	AIDECISIONTHREATSNAPSHOT *pDecisionSnapshot =
 		AIGetDecisionThreatSnapshot(pSoldier);
 	if (pDecisionSnapshot)
+	{
 		++pDecisionSnapshot->uiDetailedCandidateCount;
+		if (AIPlanningHardBudgetExceeded(pSoldier))
+		{
+			++pDecisionSnapshot->uiBudgetEarlyOuts;
+			return -10000;
+		}
+	}
 
 	if (TileIsOutOfBounds(sTargetSpot))
 		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
@@ -16041,6 +16093,12 @@ INT32 AIPathExposureCost(SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMov
 	}
 	else
 	{
+		if (AIGetDecisionThreatSnapshot(pSoldier))
+		{
+			gubNPCAPBudget = sOldAPBudget;
+			gubNPCDistLimit = ubOldDistLimit;
+			return 10000;
+		}
 		// Outside the unified planner there is no decision cache; retain the
 		// legacy non-copying path query exactly as before.
 		iPathSteps = FindBestPath(
