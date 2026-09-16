@@ -5353,15 +5353,13 @@ BOOLEAN AISharedFireteamContact(SOLDIERTYPE *pSoldier, INT32 *psGridNo,
 				continue;
 
 			INT8 bKnownLevel = KnownPersonalLevel(pFriend, (UINT8)uiOpponent);
-			iConfidence -= 8 * (INT32)ubCommHops[pFriend->ubID];
-			iConfidence -= __min((INT32)12,
-				PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) / 2);
-			if (bKnownLevel != pSoldier->pathing.bLevel)
-				iConfidence -= 8;
+			// Inside the valid local comm graph, evidence age and relay hops
+			// drive uncertainty. Receiver distance/floor do not distort a clear report.
+			iConfidence -= 4 * (INT32)ubCommHops[pFriend->ubID];
 			iConfidence = __max(1, __min(100, iConfidence));
 
 			INT32 iScore = iConfidence * 4 -
-				4 * (INT32)ubCommHops[pFriend->ubID];
+				2 * (INT32)ubCommHops[pFriend->ubID];
 			if (iScore > iBestScore)
 			{
 				iBestScore = iScore;
@@ -5462,15 +5460,13 @@ BOOLEAN AISharedFireteamOpponentContact(SOLDIERTYPE *pSoldier, UINT8 ubOpponentI
 			continue;
 		INT8 bKnownLevel = KnownPersonalLevel(pFriend, ubOpponentID);
 
-		iConfidence -= 8 * (INT32)ubCommHops[pFriend->ubID];
-		iConfidence -= __min((INT32)12,
-			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) / 2);
-		if (bKnownLevel != pSoldier->pathing.bLevel)
-			iConfidence -= 8;
+		// Inside the valid local comm graph, evidence age and relay hops
+		// drive uncertainty. Receiver distance/floor do not distort a clear report.
+		iConfidence -= 4 * (INT32)ubCommHops[pFriend->ubID];
 		iConfidence = __max(1, __min(100, iConfidence));
 
 		INT32 iScore = iConfidence * 4 -
-			4 * (INT32)ubCommHops[pFriend->ubID];
+			2 * (INT32)ubCommHops[pFriend->ubID];
 		if (iScore > iBestScore)
 		{
 			iBestScore = iScore;
