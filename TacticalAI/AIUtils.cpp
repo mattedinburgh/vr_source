@@ -5212,6 +5212,165 @@ BOOLEAN AISharedFireteamContact(SOLDIERTYPE *pSoldier, INT32 *psGridNo,
 	return TRUE;
 }
 
+BOOLEAN AISharedFireteamOpponentContact(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID,
+	INT32 *psGridNo, INT8 *pbLevel, UINT8 *pubConfidence, INT8 *pbKnowledge)
+{
+	if (psGridNo) *psGridNo = NOWHERE;
+	if (pbLevel) *pbLevel = 0;
+	if (pubConfidence) *pubConfidence = 0;
+	if (pbKnowledge) *pbKnowledge = NOT_HEARD_OR_SEEN;
+
+	if (!pSoldier || !AICombatTeam(pSoldier) ||
+		!pSoldier->bActive || !pSoldier->bInSector ||
+		pSoldier->ubID >= MAX_NUM_SOLDIERS ||
+		ubOpponentID >= TOTAL_SOLDIERS)
+	{
+		return FALSE;
+	}
+
+	SOLDIERTYPE *pOpponent = MercPtrs[ubOpponentID];
+	if (!pOpponent)
+		return FALSE;
+
+	const INT32 iCommRadius = __max(8, DAY_VISION_RANGE);
+	const UINT8 ubMaxRelayHops = 2;
+	UINT8 ubCommHops[MAX_NUM_SOLDIERS];
+	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
+		ubCommHops[i] = 255;
+	ubCommHops[pSoldier->ubID] = 0;
+
+	// Build exactly the same bounded local communication graph as the aggregate
+	// fireteam blackboard. This reports one named contact without creating a global
+	// public-opplist entry or changing attack legality.
+	for (UINT8 ubHop = 0; ubHop < ubMaxRelayHops; ++ubHop)
+	{
+		for (UINT8 ubCandidateID = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+			ubCandidateID <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++ubCandidateID)
+		{
+			SOLDIERTYPE *pCandidate = MercPtrs[ubCandidateID];
+			if (!pCandidate || pCandidate->ubID >= MAX_NUM_SOLDIERS ||
+				ubCommHops[pCandidate->ubID] != 255 ||
+				!pCandidate->bActive || !pCandidate->bInSector ||
+				pCandidate->stats.bLife < OKLIFE || pCandidate->bCollapsed ||
+				pCandidate->bBreathCollapsed ||
+				(pCandidate->usSoldierFlagMask & SOLDIER_POW) ||
+				(pCandidate->flags.uiStatusFlags & SOLDIER_COWERING) ||
+				AIDisengagementActive(pCandidate) || AIEscapeActive(pCandidate) ||
+				!AISameFireteam(pSoldier, pCandidate))
+			{
+				continue;
+			}
+
+			for (UINT8 ubRelayID = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+				ubRelayID <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++ubRelayID)
+			{
+				SOLDIERTYPE *pRelay = MercPtrs[ubRelayID];
+				if (!pRelay || pRelay->ubID >= MAX_NUM_SOLDIERS ||
+					ubCommHops[pRelay->ubID] != ubHop ||
+					!pRelay->bActive || !pRelay->bInSector ||
+					pRelay->stats.bLife < OKLIFE || pRelay->bCollapsed ||
+					pRelay->bBreathCollapsed ||
+					(pRelay->usSoldierFlagMask & SOLDIER_POW) ||
+					(pRelay->flags.uiStatusFlags & SOLDIER_COWERING) ||
+					!AISameFireteam(pSoldier, pRelay))
+				{
+					continue;
+				}
+
+				if (PythSpacesAway(pRelay->sGridNo, pCandidate->sGridNo) <= iCommRadius)
+				{
+					ubCommHops[pCandidate->ubID] = ubHop + 1;
+					break;
+				}
+			}
+		}
+	}
+
+	INT32 sBestGrid = NOWHERE;
+	INT8 bBestLevel = 0;
+	UINT8 ubBestConfidence = 0;
+	INT8 bBestKnowledge = NOT_HEARD_OR_SEEN;
+	INT32 iBestScore = -1000000;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend->ubID >= MAX_NUM_SOLDIERS ||
+			ubCommHops[pFriend->ubID] == 255 ||
+			ubCommHops[pFriend->ubID] > ubMaxRelayHops ||
+			!pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING))
+		{
+			continue;
+		}
+
+		INT8 bKnowledge = PersonalKnowledge(pFriend, ubOpponentID);
+		INT32 iConfidence = 0;
+		if (bKnowledge == SEEN_CURRENTLY)
+		{
+			// Current state may be validated only by the teammate actually seeing it.
+			if (!pOpponent->bActive || !pOpponent->bInSector ||
+				CONSIDERED_NEUTRAL(pFriend, pOpponent) ||
+				pFriend->bSide == pOpponent->bSide ||
+				LOS_Raised(pFriend, pOpponent, CALC_FROM_ALL_DIRS) <= 0)
+			{
+				continue;
+			}
+			iConfidence = 100;
+		}
+		else if (bKnowledge == SEEN_THIS_TURN)
+			iConfidence = 90;
+		else if (bKnowledge == SEEN_LAST_TURN)
+			iConfidence = 70;
+		else if (bKnowledge == SEEN_2_TURNS_AGO)
+			iConfidence = 50;
+		else if (bKnowledge == HEARD_THIS_TURN)
+			iConfidence = 55;
+		else if (bKnowledge == HEARD_LAST_TURN)
+			iConfidence = 38;
+		else if (bKnowledge == HEARD_2_TURNS_AGO)
+			iConfidence = 22;
+		else
+			continue;
+
+		INT32 sKnownGrid = KnownPersonalLocation(pFriend, ubOpponentID);
+		if (TileIsOutOfBounds(sKnownGrid))
+			continue;
+		INT8 bKnownLevel = KnownPersonalLevel(pFriend, ubOpponentID);
+
+		iConfidence -= 8 * (INT32)ubCommHops[pFriend->ubID];
+		iConfidence -= __min((INT32)12,
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) / 2);
+		if (bKnownLevel != pSoldier->pathing.bLevel)
+			iConfidence -= 8;
+		iConfidence = __max(1, __min(100, iConfidence));
+
+		INT32 iScore = iConfidence * 4 -
+			4 * (INT32)ubCommHops[pFriend->ubID];
+		if (iScore > iBestScore)
+		{
+			iBestScore = iScore;
+			sBestGrid = sKnownGrid;
+			bBestLevel = bKnownLevel;
+			ubBestConfidence = (UINT8)iConfidence;
+			bBestKnowledge = bKnowledge;
+		}
+	}
+
+	if (TileIsOutOfBounds(sBestGrid))
+		return FALSE;
+
+	if (psGridNo) *psGridNo = sBestGrid;
+	if (pbLevel) *pbLevel = bBestLevel;
+	if (pubConfidence) *pubConfidence = ubBestConfidence;
+	if (pbKnowledge) *pbKnowledge = bBestKnowledge;
+	return TRUE;
+}
+
 static BOOLEAN AIPersonallyConfirmedNonThreat(
 	SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent)
 {
