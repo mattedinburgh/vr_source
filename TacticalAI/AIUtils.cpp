@@ -2951,149 +2951,138 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 
 INT32 CalcManThreatValue( SOLDIERTYPE *pEnemy, INT32 sMyGrid, UINT8 ubReduceForCover, SOLDIERTYPE * pMe )
 {
-	INT32	iThreatValue = 0;
-	BOOLEAN fForCreature = CREATURE_OR_BLOODCAT( pMe );
+	if (!pEnemy)
+		return -999;
 
-	// If man is inactive, at base, on assignment, dead, unconscious
-	if (!pEnemy->bActive || !pEnemy->bInSector || !pEnemy->stats.bLife)
+	// Current combat state is legal only under direct personal observation. A stale
+	// contact must not reveal current AP, HP, weapon, armour, shock, breath, bleeding,
+	// assignment, stance or whether the merc secretly left the sector.
+	const BOOLEAN fPersonallyObservesThreatState =
+		pMe &&
+		PersonalKnowledge(pMe, pEnemy->ubID) == SEEN_CURRENTLY &&
+		LOS_Raised(pMe, pEnemy, CALC_FROM_ALL_DIRS) > 0;
+
+	const BOOLEAN fKnowledgeBoundEstimate =
+		pMe && AICombatTeam(pMe) && !fPersonallyObservesThreatState;
+
+	if (fKnowledgeBoundEstimate)
 	{
-		// he's no threat at all, return a negative number
-		iThreatValue = -999;
-		return(iThreatValue);
+		INT8 bKnowledge = Knowledge(pMe, pEnemy->ubID);
+		if (bKnowledge == NOT_HEARD_OR_SEEN)
+			return 1;
+
+		INT32 sKnownGrid = KnownLocation(pMe, pEnemy->ubID);
+		INT8 bKnownLevel = KnownLevel(pMe, pEnemy->ubID);
+		INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+
+		// Neutral competent-combatant prior. Confidence changes urgency; hidden live
+		// statistics never do. This intentionally errs on the side of respecting a
+		// stale threat rather than magically knowing that the target is wounded/down.
+		INT32 iThreatValue = 35 + (65 * iCertainty) / 100;
+
+		if (!TileIsOutOfBounds(sMyGrid) && !TileIsOutOfBounds(sKnownGrid))
+		{
+			INT32 iDistance = PythSpacesAway(sMyGrid, sKnownGrid);
+			iThreatValue = (iThreatValue * 18) / (18 + iDistance / 2);
+
+			if (ubReduceForCover)
+			{
+				BOOLEAN fBelievedLine =
+					LocationToLocationLineOfSightTest(
+						sKnownGrid, bKnownLevel,
+						sMyGrid, pMe->pathing.bLevel,
+						TRUE, MAX_VISION_RANGE);
+				if (!fBelievedLine)
+					iThreatValue = iThreatValue * 40 / 100;
+				else if (AnyCoverAtSpot(pMe, sMyGrid))
+					iThreatValue = iThreatValue * 75 / 100;
+			}
+		}
+
+		return __max(1, iThreatValue);
 	}
 
-	// in boxing mode, let only a boxer be considered a threat.
+	INT32 iThreatValue = 0;
+	BOOLEAN fForCreature = CREATURE_OR_BLOODCAT( pMe );
+
+	// Live-state branch: direct current sight (or legacy non-combat callers) may use
+	// the target's actual state.
+	if (!pEnemy->bActive || !pEnemy->bInSector || !pEnemy->stats.bLife)
+	{
+		return -999;
+	}
+
 	if ( (gTacticalStatus.bBoxingState == BOXING) && !(pEnemy->flags.uiStatusFlags & SOLDIER_BOXER) )
 	{
-		iThreatValue = -999;
-		return( iThreatValue );
+		return -999;
 	}
 
 	if (fForCreature)
 	{
-		// health (1-100)
 		iThreatValue += pEnemy->stats.bLife;
-		// bleeding (more attactive!) (1-100)
 		iThreatValue += pEnemy->bBleeding;
-		// decrease according to distance
 		iThreatValue = (iThreatValue * 10) / (10 + PythSpacesAway( sMyGrid, pEnemy->sGridNo ) );
-
 	}
 	else
 	{
-		// ADD twice the man's level (2-20)
-		iThreatValue += EffectiveExpLevel(pEnemy); // SANDRO - find precise effective exp level
-
-		// ADD man's total action points (10-35)
-		// sevenfm: r7810 fix
-		//iThreatValue += pEnemy->CalcActionPoints();
+		iThreatValue += EffectiveExpLevel(pEnemy);
 		iThreatValue += 25 * pEnemy->CalcActionPoints() / APBPConstants[AP_MAXIMUM];
-
-		// ADD 1/2 of man's current action points (4-17)
-		// sevenfm: r7810 fix
-		//iThreatValue += (pEnemy->bActionPoints / 2);
 		iThreatValue += 25 * pEnemy->bActionPoints / APBPConstants[AP_MAXIMUM] / 2;
-
-		// ADD 1/10 of man's current health (0-10)
 		iThreatValue += (pEnemy->stats.bLife / 10);
 
 		if (pEnemy->bAssignment < ON_DUTY )
 		{
-			// ADD 1/4 of man's protection percentage (0-25)
 			iThreatValue += ArmourPercent( pEnemy ) / 4;
-
-			// ADD 1/5 of man's marksmanship skill (0-20)
 			iThreatValue += (pEnemy->stats.bMarksmanship / 5);
-
 			if ( Item[ pEnemy->inv[HANDPOS].usItem ].usItemClass & IC_WEAPON )
-			{
-				// ADD the deadliness of the item(weapon) he's holding (0-50)
 				iThreatValue += Weapon[pEnemy->inv[HANDPOS].usItem].ubDeadliness;
-			}
 		}
 
-		// SUBTRACT 1/5 of man's bleeding (0-20)
 		iThreatValue -= (pEnemy->bBleeding / 5);
-
-		// SUBTRACT 1/10 of man's breath deficiency (0-10)
 		iThreatValue -= ((100 - pEnemy->bBreath) / 10);
-
-		// SUBTRACT man's current shock value
 		iThreatValue -= pEnemy->aiData.bShock;
 	}
-
-	// Facing and last-target direction are live visual cues, not team-radio knowledge.
-	// Only a soldier who personally sees this opponent may react to where the weapon
-	// is pointed / where that opponent has just fired. This prevents stale contacts
-	// from behaving as if they can read the player's current aim cone.
-	BOOLEAN fPersonallyObservesThreatState =
-		pMe && pEnemy &&
-		PersonalKnowledge(pMe, pEnemy->ubID) == SEEN_CURRENTLY &&
-		LOS_Raised(pMe, pEnemy, CALC_FROM_ALL_DIRS) > 0;
 
 	if (!TileIsOutOfBounds(sMyGrid) && fPersonallyObservesThreatState)
 	{
 		if (pEnemy->sLastTarget == sMyGrid)
-		{
 			iThreatValue += (iThreatValue / 10);
-		}
 		else if (pEnemy->ubDirection ==
 			atan8(CenterX(pEnemy->sGridNo), CenterY(pEnemy->sGridNo),
 				CenterX(sMyGrid), CenterY(sMyGrid)))
-		{
 			iThreatValue += (iThreatValue / 20);
-		}
 	}
 
-	// if this man is conscious
 	if (pEnemy->stats.bLife >= OKLIFE)
 	{
-		// and we were told to reduce threat for my cover		
 		if (ubReduceForCover && (!TileIsOutOfBounds(sMyGrid)))
 		{
-			// Reduce iThreatValue to same % as the chance HE has shoot through at ME
-			//iThreatValue = (iThreatValue * ChanceToGetThrough( pEnemy, myGrid, FAKE, ACTUAL, TESTWALLS, 9999, M9PISTOL, NOT_FOR_LOS)) / 100;
-			//iThreatValue = (iThreatValue * SoldierTo3DLocationChanceToGetThrough( pEnemy, myGrid, FAKE, ACTUAL, TESTWALLS, 9999, M9PISTOL, NOT_FOR_LOS)) / 100;
-			iThreatValue = (iThreatValue * SoldierToLocationChanceToGetThrough( pEnemy, sMyGrid, pMe->pathing.bLevel, 0, pMe->ubID ) ) / 100;
+			iThreatValue = (iThreatValue * SoldierToLocationChanceToGetThrough(
+				pEnemy, sMyGrid, pMe->pathing.bLevel, 0, pMe->ubID )) / 100;
 		}
 	}
-	else
+	else if (iThreatValue > 0)
 	{
-		// if he's still something of a threat
-		if (iThreatValue > 0)
-		{
-			// drastically reduce his threat value (divide by 5 to 18)
-			iThreatValue /= (4 + (OKLIFE - pEnemy->stats.bLife));
-		}
+		iThreatValue /= (4 + (OKLIFE - pEnemy->stats.bLife));
 	}
 
-	// threat value of any opponent can never drop below 1
 	if (iThreatValue < 1)
-	{
 		iThreatValue = 1;
-	}
 
-	//sprintf(tempstr,"%s's iThreatValue = ",pEnemy->name);
-	//NumMessage(tempstr,iThreatValue);
-
-#ifdef BETAVERSION	// unnecessary for real release
-	// NOTE: maximum is about 200 for a healthy Mike type with a mortar!
+#ifdef BETAVERSION
 	if (iThreatValue > 250)
 	{
 		sprintf(tempstr,"CalcManThreatValue: WARNING - %d has a very high threat value of %d",pEnemy->ubID,iThreatValue);
-
 #ifdef RECORDNET
-		fprintf(NetDebugFile,"\t%s\n",tempstr);
+		fprintf(NetDebugFile,"\\t%s\\n",tempstr);
 #endif
-
 #ifdef TESTVERSION
 		PopMessage(tempstr);
 #endif
-
 	}
 #endif
 
-	return(iThreatValue);
+	return iThreatValue;
 }
 
 // sevenfm: ONGUARD, POINTPATROL, RNDPTPATROL - max roaming if seen enemy recently or under fire
