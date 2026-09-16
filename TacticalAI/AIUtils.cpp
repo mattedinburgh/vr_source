@@ -14102,8 +14102,18 @@ void AIResetTacticalPlannerStateForLoad(void)
 	// Planner state is intentionally transient and is not serialized. Same-sector
 	// quickloads must not inherit intent/role decisions from the abandoned future.
 	AIResetTacticalReasoningStateForLoad();
+
+	// The legacy ENEMY_TEAM public opponent list is a sector-wide exact-contact
+	// channel. It is no longer authoritative for the local-hive-mind AI. Personal
+	// memories remain serialized/restored normally; only the forbidden shared copy
+	// is discarded so an old save cannot resurrect telepathic contact knowledge.
+	memset(gbPublicOpplist[ENEMY_TEAM], NOT_HEARD_OR_SEEN,
+		sizeof(gbPublicOpplist[ENEMY_TEAM]));
 	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
 	{
+		gsPublicLastKnownOppLoc[ENEMY_TEAM][i] = NOWHERE;
+		gbPublicLastKnownOppLevel[ENEMY_TEAM][i] = 0;
+
 		gbAITacticalIntentPlan[i] = AI_INTENT_HOLD;
 		gbAITacticalRolePlan[i] = AI_ROLE_RESERVE;
 		guiAITacticalPlanUntil[i] = 0;
