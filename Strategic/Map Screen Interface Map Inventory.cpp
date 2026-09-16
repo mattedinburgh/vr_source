@@ -447,7 +447,9 @@ void ToggleShowMoveItem()
 //   * pools all spare ammo carried by eligible mercs with reachable sector ammo;
 //   * fills carried guns first, preserving a partial load unless a strictly better
 //     penetrator can provide a complete replacement load;
-//   * then gives up to three spare magazines per carried weapon;
+//   * then gives every weapon/calibre demand up to three spare magazines;
+//     compatible duplicate same-calibre weapons may receive a fourth and fifth only
+//     after the normal fair-allocation waves;
 //   * ranks combat ammo from XML data by actual armour penetration, with damage
 //     and combat flags as tie-breakers; pure utility rounds are last;
 //   * requires a weapon-ready magazine/loose-round item; native larger-magazine
@@ -1184,9 +1186,10 @@ static void CollectSectorAmmoDemands( std::vector<SECTOR_LOADOUT_AMMO_DEMAND> &d
 		}
 	}
 
-	// Exactly three spare magazines per carried weapon.
+	// Three spares for a normal demand. If the merc carries multiple compatible
+	// weapons in the same calibre/magazine family, cap the shared reserve at five.
 	for ( UINT32 i = 0; i < demands.size(); ++i )
-		demands[i].ubMaxMags = (UINT8)( 3 * demands[i].ubWeaponCount );
+		demands[i].ubMaxMags = ( demands[i].ubWeaponCount > 1 ) ? 5 : 3;
 }
 static void RedistributeSectorAmmo3x()
 {
@@ -1207,10 +1210,10 @@ static void RedistributeSectorAmmo3x()
 	UINT32 uiMagazinesGiven = 0;
 	UINT32 uiRoundsGiven = 0;
 
-	// Fair pocket-aware allocation: spare #1 for every weapon before spare #2,
-	// then spare #3. If one demand cannot fit another magazine, only that demand
-	// is blocked and the remaining ammo stays available to the others.
-	for ( UINT8 ubWave = 0; ubWave < 3; ++ubWave )
+	// Fair pocket-aware allocation: every demand gets spare #1 before anyone gets
+	// spare #2, then #3. Only duplicate compatible same-calibre demands continue
+	// to #4 and #5, so basic combat readiness always beats surplus.
+	for ( UINT8 ubWave = 0; ubWave < 5; ++ubWave )
 	{
 		for ( UINT32 i = 0; i < demands.size(); ++i )
 		{
@@ -1219,7 +1222,7 @@ static void RedistributeSectorAmmo3x()
 				continue;
 
 			UINT8 ubWaveTarget = (UINT8)__min( (UINT32)demand.ubMaxMags,
-				(UINT32)( ubWave + 1 ) * demand.ubWeaponCount );
+				(UINT32)( ubWave + 1 ) );
 
 			while ( demand.ubMagsGiven < ubWaveTarget )
 			{
@@ -1259,7 +1262,7 @@ static void RedistributeSectorAmmo3x()
 	fCharacterInfoPanelDirty = TRUE;
 
 	ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
-		L"3x: armas cargadas (+%d balas); %d cargadores de reserva (%d balas) para %d armas de %d mercenarios.",
+		L"MAG: guns loaded (+%d rounds); %d spare magazines (%d rounds) for %d weapons across %d mercs.",
 		uiRoundsLoaded, uiMagazinesGiven, uiRoundsGiven, uiWeaponCount, uiMercCount );
 }
 
@@ -1339,7 +1342,7 @@ static void RedistributeSectorSmoke()
 	fCharacterInfoPanelDirty = TRUE;
 
 	ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
-		L"SMK: un humo por mercenario: %d de %d equipados.",
+		L"SMK: one hand smoke per merc: %d of %d equipped.",
 		uiEquipped, (UINT32)mercs.size() );
 }
 
@@ -1554,7 +1557,7 @@ static void RedistributeSectorGrenades()
 	fCharacterInfoPanelDirty = TRUE;
 
 	ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
-		L"GRN: Matt/Buns %d/%d con la granada mas potente; %d granadas repartidas entre %d mercenarios (max. 4).",
+		L"GRN: Matt/Buns %d/%d received the strongest grenade; %d grenades distributed across %d mercs (max 4).",
 		uiPriorityGiven, uiPriorityEligible, uiDistributed, (UINT32)mercs.size() );
 }
 
@@ -3105,21 +3108,21 @@ void CreateMapInventoryButtons( void )
 		BUTTON_USE_DEFAULT, sLoadoutButtonX, sLoadoutButtonY, sLoadoutButtonW, sLoadoutButtonH,
 		BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST, NULL, (GUI_CALLBACK)MapInventoryPoolAmmo3xBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[0],
-		L"3x: cargar armas primero y luego dar 3 cargadores por arma. Municion: penetracion XML primero; si no hay carga completa, se prioriza el cargador mas lleno. Municion utilitaria al final." );
+		L"MAG: load guns first, then allocate 3 spare magazines fairly. Duplicate compatible same-calibre weapons can receive a 4th and 5th only after everyone has their normal share. XML penetration priority; utility ammo last." );
 
-	guiMapInvenLoadoutButton[1] = CreateTextButton( L"HUMO", COMPFONT, FONT_MCOLOR_DKWHITE, FONT_BLACK,
+	guiMapInvenLoadoutButton[1] = CreateTextButton( L"SMK", COMPFONT, FONT_MCOLOR_DKWHITE, FONT_BLACK,
 		BUTTON_USE_DEFAULT, sLoadoutButtonX + sLoadoutButtonW + sLoadoutButtonGap, sLoadoutButtonY,
 		sLoadoutButtonW, sLoadoutButtonH, BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST,
 		NULL, (GUI_CALLBACK)MapInventoryPoolSmokeBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[1],
-		L"SMK: dar una granada de humo de mano a cada mercenario del sector." );
+		L"SMK: give one hand-thrown smoke grenade to each eligible merc in the sector." );
 
-	guiMapInvenLoadoutButton[2] = CreateTextButton( L"GRAN", COMPFONT, FONT_MCOLOR_DKWHITE, FONT_BLACK,
+	guiMapInvenLoadoutButton[2] = CreateTextButton( L"GRN", COMPFONT, FONT_MCOLOR_DKWHITE, FONT_BLACK,
 		BUTTON_USE_DEFAULT, sLoadoutButtonX + ( sLoadoutButtonW + sLoadoutButtonGap ) * 2, sLoadoutButtonY,
 		sLoadoutButtonW, sLoadoutButtonH, BUTTON_TOGGLE, MSYS_PRIORITY_HIGHEST,
 		NULL, (GUI_CALLBACK)MapInventoryPoolGrenadeBtn );
 	SetButtonFastHelpText( guiMapInvenLoadoutButton[2],
-		L"GRN: Matt y Buns reciben primero 1 granada cada uno, la de mayor dano; el resto se reparte por igual, max. 4 por mercenario. Humo separado." );
+		L"GRN: Matt and Buns get one strongest-damage hand grenade first; distribute the rest evenly, up to 4 per merc. Smoke is handled separately." );
 
 	// Match the sector-inventory chrome: muted text at rest, cold highlight on
 	// hover, brighter text while pressed. Generic JA2 button chrome and sounds
