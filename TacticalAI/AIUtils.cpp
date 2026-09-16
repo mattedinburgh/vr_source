@@ -5397,6 +5397,46 @@ BOOLEAN AISharedFireteamOpponentContact(SOLDIERTYPE *pSoldier, UINT8 ubOpponentI
 	return TRUE;
 }
 
+static BOOLEAN AIPlanningContactForOpponent(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID,
+	INT32 *psGridNo, INT8 *pbLevel, UINT8 *pubConfidence, INT8 *pbKnowledge)
+{
+	if (psGridNo) *psGridNo = NOWHERE;
+	if (pbLevel) *pbLevel = 0;
+	if (pubConfidence) *pubConfidence = 0;
+	if (pbKnowledge) *pbKnowledge = NOT_HEARD_OR_SEEN;
+
+	if (!pSoldier || ubOpponentID == NOBODY)
+		return FALSE;
+
+	if (pSoldier->bTeam == ENEMY_TEAM)
+	{
+		return AISharedFireteamOpponentContact(
+			pSoldier, ubOpponentID, psGridNo, pbLevel,
+			pubConfidence, pbKnowledge);
+	}
+
+	INT8 bKnowledge = Knowledge(pSoldier, ubOpponentID);
+	if (bKnowledge == NOT_HEARD_OR_SEEN)
+		return FALSE;
+
+	INT32 sKnownGrid = KnownLocation(pSoldier, ubOpponentID);
+	if (TileIsOutOfBounds(sKnownGrid))
+		return FALSE;
+
+	INT8 bKnownLevel = KnownLevel(pSoldier, ubOpponentID);
+	INT32 iKnowledgeIndex =
+		(INT32)bKnowledge - (INT32)OLDEST_HEARD_VALUE;
+	UINT8 ubConfidence =
+		(iKnowledgeIndex >= 0 && iKnowledgeIndex < 10) ?
+		(UINT8)__max(0, __min(100, ThreatPercent[iKnowledgeIndex])) : 0;
+
+	if (psGridNo) *psGridNo = sKnownGrid;
+	if (pbLevel) *pbLevel = bKnownLevel;
+	if (pubConfidence) *pubConfidence = ubConfidence;
+	if (pbKnowledge) *pbKnowledge = bKnowledge;
+	return TRUE;
+}
+
 static BOOLEAN AIPersonallyConfirmedNonThreat(
 	SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent)
 {
