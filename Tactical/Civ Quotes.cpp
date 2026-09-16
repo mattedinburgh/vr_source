@@ -3589,6 +3589,14 @@ BOOLEAN PlayVoiceTaunt(SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTa
 		 iTauntType == TAUNT_GOT_HIT_OBJECT ||
 		 iTauntType == TAUNT_GOT_HIT_THROWING_KNIFE);
 
+	// English-scream hotfix: generic enemy and militia pain reactions use the
+	// normal BATTLESNDS system instead of the Spanish Army/Militia taunt banks.
+	if ( fCriticalPainTaunt &&
+		(pCiv->bTeam == ENEMY_TEAM || pCiv->bTeam == MILITIA_TEAM) )
+	{
+		return FALSE;
+	}
+
 	if (pCiv->stats.bLife < CONSCIOUSNESS || pCiv->bCollapsed || pCiv->bBreathCollapsed ||
 		(pCiv->stats.bLife < OKLIFE && !fCriticalPainTaunt))
 	{
