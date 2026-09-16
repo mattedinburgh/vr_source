@@ -13504,7 +13504,6 @@ BOOLEAN AbortFinalSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bAction, INT32 s
 		return FALSE;
 	}	
 
-	INT32	sOpponentGridNo;
 	INT8	bOpponentLevel;
 	INT32	sClosestOpponent = AIPrimaryPlanningThreatSpot(pSoldier, &bOpponentLevel);
 
@@ -13616,7 +13615,6 @@ BOOLEAN AbortPath(SOLDIERTYPE *pSoldier, INT8 bAction, INT32 sClosestDisturbance
 		return FALSE;
 	}
 
-	INT32	sOpponentGridNo;
 	INT8	bOpponentLevel;
 	INT32	sClosestOpponent = AIPrimaryPlanningThreatSpot(pSoldier, &bOpponentLevel);
 
