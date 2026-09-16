@@ -616,6 +616,11 @@ BOOLEAN AISharedFireteamContact(SOLDIERTYPE *pSoldier, INT32 *psGridNo,
 BOOLEAN AISharedFireteamOpponentContact(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID,
 	INT32 *psGridNo, INT8 *pbLevel = NULL, UINT8 *pubConfidence = NULL,
 	INT8 *pbKnowledge = NULL);
+// Planning-only contact retrieval. For ENEMY_TEAM this resolves through the bounded
+// local fireteam report network; it must not be used as direct-fire authorization.
+BOOLEAN AIPlanningContactForOpponent(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID,
+	INT32 *psGridNo, INT8 *pbLevel = NULL, UINT8 *pubConfidence = NULL,
+	INT8 *pbKnowledge = NULL);
 BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, UINT8 ubResponseLimit);
 BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridNo);
 INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
