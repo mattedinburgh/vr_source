@@ -1500,6 +1500,11 @@ BOOLEAN VR_SelfPlayActive()
 	return gfVRSelfPlayConfigured && giVRSelfPlayState == VR_SELFPLAY_STATE_RUNNING;
 }
 
+BOOLEAN VR_SelfPlayArenaActive()
+{
+	return VR_SelfPlayActive() && gfVRArenaMode;
+}
+
 BOOLEAN VR_SelfPlayShouldAbortCurrentBattle()
 {
 	return gfVRSelfPlayConfigured && giVRSelfPlayState == VR_SELFPLAY_STATE_RELOAD_PENDING;
