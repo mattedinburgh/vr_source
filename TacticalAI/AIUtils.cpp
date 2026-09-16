@@ -5261,9 +5261,13 @@ BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridN
 			continue;
 		}
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pCandidate) ||
-			pSoldier->bSide == pCandidate->bSide ||
-			pCandidate->ubBodyType == CROW)
+		const BOOLEAN fCandidateDirect =
+			PersonalKnowledge(pSoldier, pCandidate->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pCandidate, CALC_FROM_ALL_DIRS) > 0;
+		if (fCandidateDirect &&
+			(CONSIDERED_NEUTRAL(pSoldier, pCandidate) ||
+			 pSoldier->bSide == pCandidate->bSide ||
+			 pCandidate->ubBodyType == CROW))
 		{
 			continue;
 		}
@@ -5331,9 +5335,13 @@ BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridN
 				continue;
 			}
 
-			if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-				pSoldier->bSide == pOpponent->bSide ||
-				pOpponent->ubBodyType == CROW)
+			const BOOLEAN fOpponentDirect =
+				PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+				LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+			if (fOpponentDirect &&
+				(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+				 pSoldier->bSide == pOpponent->bSide ||
+				 pOpponent->ubBodyType == CROW))
 			{
 				continue;
 			}
