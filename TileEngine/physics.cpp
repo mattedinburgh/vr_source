@@ -43,6 +43,7 @@
 #include "../VRAnalytics.h"
 
 #include "connect.h"
+#include "PATHAI.H"
 
 //forward declarations of common classes to eliminate includes
 class OBJECTTYPE;
@@ -81,7 +82,7 @@ static BOOLEAN PhysicsReferenceGridMatchesMapHeight( INT32 sGridNo )
 #define	GET_OBJECT_LEVEL( z )						( (INT8)( ( z + 10 ) / HEIGHT_UNITS ) )
 //#define	OBJECT_DETONATE_ON_IMPACT( object )	( ( object->Obj.usItem == MORTAR_SHELL ) ) // && ( object->ubActionCode == THROW_ARM_ITEM || pObject->fTestObject ) )
 // HEADROCK HAM 5: Enabled "Explode on Impact" flag for explosive items
-#define	OBJECT_DETONATE_ON_IMPACT( object )	( ( Item[object->Obj.usItem].usItemClass == IC_BOMB ) || ( Explosive[Item[object->Obj.usItem].ubClassIndex ].fExplodeOnImpact ) ) // && ( object->ubActionCode == THROW_ARM_ITEM || pObject->fTestObject ) )
+#define	OBJECT_DETONATE_ON_IMPACT( object )	( ( Item[object->Obj.usItem].usItemClass == IC_BOMB ) || ( ( Item[object->Obj.usItem].usItemClass & IC_EXPLOSV ) && Explosive[Item[object->Obj.usItem].ubClassIndex ].fExplodeOnImpact ) ) // && ( object->ubActionCode == THROW_ARM_ITEM || pObject->fTestObject ) )
 
 
 #define	MAX_INTEGRATIONS				8
