@@ -1183,14 +1183,12 @@ INT32 HandleItem( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel, UINT16 usHa
 				return( ITEM_HANDLE_REFUSAL );
 			}
 		}
-		// if we have a shovel in our hands, the targeted gridno must be a fortification (debris will do for this check)
+		// if we have a shovel in our hands, the targeted gridno must contain a player-removable fortification
 		else if ( HasItemFlag(usHandItem, (SHOVEL)) )
 		{
 			sAPCost = GetAPsForMultiTurnAction( pSoldier, MTA_REMOVE_FORTIFY );
 
-			STRUCTURE* pStruct = FindStructure(sGridNo, STRUCTURE_GENERIC);
-
-			if ( !pStruct )
+			if ( !IsRemovableFortificationAtGridNo( sGridNo ) )
 			{
 				return( ITEM_HANDLE_REFUSAL );
 			}
@@ -6862,17 +6860,13 @@ void SoldierStealItemFromSoldier( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pOpponent,
 	SetCustomizableTimerCallbackAndDelay( 1000, CheckForPickedOwnership, TRUE );
 }
 
-BOOLEAN BuildFortification( INT32 sGridNo, UINT32 flag )
+BOOLEAN BuildFortification( INT32 sGridNo, UINT32 flag, UINT8 ubDirection )
 {	
 	UINT32				fHeadType;
 	UINT16				usUseIndex;
 	UINT16				usUseObjIndex = 0;
 	INT32				iRandSelIndex = 1;
 	BOOLEAN				fOkayToAdd;
-	UINT8				ubDirection;
-
-	if ( gusSelectedSoldier == NOBODY )
-		return FALSE;
 
 	if( gbWorldSectorZ > 0 || gsInterfaceLevel > 0)
 	{
@@ -6891,8 +6885,6 @@ BOOLEAN BuildFortification( INT32 sGridNo, UINT32 flag )
 			
 	if ( sGridNo < 0x80000000 )
 	{
-		ubDirection = MercPtrs[ gusSelectedSoldier ]->ubDirection;
-
 		if ( (flag & CONCERTINA) != 0 )
 		{
 			// concertina wire
@@ -7026,57 +7018,95 @@ BOOLEAN BuildFortification( INT32 sGridNo, UINT32 flag )
 	return FALSE;
 }
 
-BOOLEAN RemoveFortification( INT32 sGridNo )
+static UINT32 GetFortificationFlagAtGridNo( INT32 sGridNo, STRUCTURE** ppStruct = NULL, LEVELNODE** ppNode = NULL )
 {
-	STRUCTURE* pStruct = FindStructure(sGridNo, STRUCTURE_GENERIC);
+	if ( ppStruct )
+		*ppStruct = NULL;
+	if ( ppNode )
+		*ppNode = NULL;
 
-	if ( pStruct != NULL )
+	STRUCTURE* pStruct = FindStructure( sGridNo, STRUCTURE_GENERIC );
+	while ( pStruct )
 	{
-		// Get LEVELNODE for struct and remove!
-		LEVELNODE* pNode = FindLevelNodeBasedOnStructure( pStruct->sGridNo, pStruct );
-
-		if ( pNode )
+		LEVELNODE* pLevelNode = FindLevelNodeBasedOnStructure( pStruct->sGridNo, pStruct );
+		if ( pLevelNode )
 		{
 			UINT32 uiTileType = 0;
-			if ( GetTileType( pNode->usIndex, &uiTileType ) )
+			if ( GetTileType( pLevelNode->usIndex, &uiTileType ) )
 			{
-				UINT16 usIndex = pNode->usIndex;
-
-				// Check if we are a sandbag
 				const char* pTileName = gTilesets[ giCurrentTilesetID ].TileSurfaceFilenames[ uiTileType ];
 				if ( !pTileName[0] )
 					pTileName = gTilesets[0].TileSurfaceFilenames[ uiTileType ];
-				if ( _strnicmp( pTileName, "sandbag.sti", 11) == 0 )
+
+				UINT32 uiFlag = 0;
+				if ( _strnicmp( pTileName, "sandbag.sti", 11 ) == 0 )
 				{
-					// Remove old graphic
-					ApplyMapChangesToMapTempFile( TRUE );
+					uiFlag = FULL_SANDBAG;
+				}
+				else if ( _strnicmp( pTileName, "spot_1.sti", 10 ) == 0 &&
+					pStruct->pDBStructureRef && pStruct->pDBStructureRef->pDBStructure &&
+					pStruct->pDBStructureRef->pDBStructure->usStructureNumber > 1 )
+				{
+					uiFlag = CONCERTINA;
+				}
 
-					RemoveStruct( sGridNo, pNode->usIndex );
-					if ( !GridNoIndoorsForShadows( sGridNo ) && gTileDatabase[ usIndex ].uiFlags & HAS_SHADOW_BUDDY && gTileDatabase[ usIndex ].sBuddyNum != -1 )
-					{
-						RemoveShadow( sGridNo, gTileDatabase[ usIndex ].sBuddyNum );
-					}
-
-					// Add mask if in long grass
-					UINT32 fHeadType = 0;
-					GetLandHeadType( sGridNo, &fHeadType );
-
-					RecompileLocalMovementCosts(sGridNo);
-
-					// Turn off permanent changes....
-					ApplyMapChangesToMapTempFile( FALSE );
-
-
-					InvalidateWorldRedundency( );
-					SetRenderFlags( RENDER_FLAG_FULL );
-
-					return TRUE;
+				if ( uiFlag )
+				{
+					if ( ppStruct )
+						*ppStruct = pStruct;
+					if ( ppNode )
+						*ppNode = pLevelNode;
+					return uiFlag;
 				}
 			}
 		}
+
+		pStruct = FindNextStructure( pStruct, STRUCTURE_GENERIC );
 	}
 
-	return FALSE;
+	return 0;
+}
+
+BOOLEAN IsRemovableFortificationAtGridNo( INT32 sGridNo )
+{
+	return GetFortificationFlagAtGridNo( sGridNo ) != 0;
+}
+
+BOOLEAN RemoveFortification( INT32 sGridNo, UINT32* pRemovedFlag )
+{
+	STRUCTURE* pStruct = NULL;
+	LEVELNODE* pNode = NULL;
+	UINT32 uiRemovedFlag = GetFortificationFlagAtGridNo( sGridNo, &pStruct, &pNode );
+
+	if ( !uiRemovedFlag || !pStruct || !pNode )
+		return FALSE;
+
+	const INT32 sStructGridNo = pStruct->sGridNo;
+	const UINT16 usIndex = pNode->usIndex;
+
+	ApplyMapChangesToMapTempFile( TRUE );
+
+	RemoveStruct( sStructGridNo, usIndex );
+	if ( !GridNoIndoorsForShadows( sStructGridNo ) &&
+		(gTileDatabase[ usIndex ].uiFlags & HAS_SHADOW_BUDDY) &&
+		gTileDatabase[ usIndex ].sBuddyNum != -1 )
+	{
+		RemoveShadow( sStructGridNo, gTileDatabase[ usIndex ].sBuddyNum );
+	}
+
+	UINT32 fHeadType = 0;
+	GetLandHeadType( sStructGridNo, &fHeadType );
+
+	RecompileLocalMovementCosts( sStructGridNo );
+	ApplyMapChangesToMapTempFile( FALSE );
+
+	InvalidateWorldRedundency();
+	SetRenderFlags( RENDER_FLAG_FULL );
+
+	if ( pRemovedFlag )
+		*pRemovedFlag = uiRemovedFlag;
+
+	return TRUE;
 }
 
 INT32 CheckBombDisarmChance(void)

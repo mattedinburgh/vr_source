@@ -2,6 +2,7 @@
 #ifdef PRECOMPILEDHEADERS
 #include "Tactical All.h"
 #else
+#include "Handle Items.h"
 #include "builddefines.h"
 #include <wchar.h>
 #include <stdio.h>
@@ -18706,6 +18707,8 @@ BOOLEAN	SOLDIERTYPE::UpdateMultiTurnAction()
 
 			if ( !HasItemFlag(this->inv[ HANDPOS ].usItem, (SHOVEL)) )
 				fActionStillValid = FALSE;
+			else if ( !IsRemovableFortificationAtGridNo( this->sMTActionGridNo ) )
+				fActionStillValid = FALSE;
 		}
 		break;
 
@@ -18772,7 +18775,7 @@ BOOLEAN	SOLDIERTYPE::UpdateMultiTurnAction()
 		case MTA_FORTIFY:
 			{
 				// Build the thing
-				if ( BuildFortification( this->sMTActionGridNo, Item[ pObj->usItem ].usItemFlag ) )
+				if ( BuildFortification( this->sMTActionGridNo, Item[ pObj->usItem ].usItemFlag, this->ubDirection ) )
 				{
                    UINT16 usItem = pObj->usItem;
 					// Erase 'material' item from our hand - we 'use' it to build the structure
@@ -18792,13 +18795,13 @@ BOOLEAN	SOLDIERTYPE::UpdateMultiTurnAction()
 
 		case MTA_REMOVE_FORTIFY:
 			{
-				if ( RemoveFortification( this->sMTActionGridNo ) )
+				UINT32 uiRemovedFlag = 0;
+				if ( RemoveFortification( this->sMTActionGridNo, &uiRemovedFlag ) )
 				{
-					// eventually search for the number of a sandbag item
-					if ( HasItemFlag(fullsandbagnr, FULL_SANDBAG) || GetFirstItemWithFlag(&fullsandbagnr, FULL_SANDBAG) )
+					UINT16 usRecoveredItem = 0;
+					if ( GetFirstItemWithFlag( &usRecoveredItem, uiRemovedFlag ) )
 					{
-						CreateItem( fullsandbagnr, 100, &gTempObject );
-
+						CreateItem( usRecoveredItem, 100, &gTempObject );
 						AddItemToPool( this->sMTActionGridNo, &gTempObject, 1, 0, 0, -1 );
 
 						// we gain a bit of experience...

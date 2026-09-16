@@ -1,6 +1,7 @@
 #ifdef PRECOMPILEDHEADERS
 	#include "Tactical All.h"
 #else
+	#include "Handle Items.h"
 	#include "items.h"
 	#include "weapons.h"
 	#include "Interface Cursors.h"
@@ -2244,9 +2245,7 @@ UINT8 HandleFortificationCursor( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT32 ui
 
 	if ( HasItemFlag( (&(pSoldier->inv[HANDPOS]))->usItem, (SHOVEL)) )
 	{
-		STRUCTURE* pStruct = FindStructure(sGridNo, STRUCTURE_GENERIC);
-
-		if ( pStruct )
+		if ( IsRemovableFortificationAtGridNo( sGridNo ) )
 		{
 			return( FORTIFICATION_GREY_UICURSOR );
 		}
