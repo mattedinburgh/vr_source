@@ -129,3 +129,14 @@ Any AI change should be evaluated on the same seed bank before and after the cha
 Implementation branch: `ai/selfplay-battle-lab-2026`
 
 Base: `install/all-2026-09-12` (canonical 2026-09-12 / Main / Super Master line).
+
+## Benchmark-side asymmetry
+
+Both OUR_TEAM and ENEMY_TEAM are handed to the shipped tactical AI planner/executor in self-play. However, legacy JA2 contains a small number of team/PC-specific helper semantics. For example, some roaming/climb helpers give SOLDIER_PC units unrestricted roaming rather than using map orders.
+
+Therefore:
+- do **not** target a 50/50 side-A/side-B win rate;
+- do **not** interpret one side being stronger as proof that its decision policy is better;
+- use side A as a stable benchmark adversary;
+- judge AI revisions primarily by paired baseline/candidate runs on the same fixture+seed bank, behavior metrics, stalls and regressions;
+- a future symmetric-lab mode may normalize selected team-identity helpers, but only after the current harness proves deterministic and useful.
