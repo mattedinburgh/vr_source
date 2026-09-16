@@ -8092,24 +8092,16 @@ BOOLEAN AIAllowsComplexManeuver(SOLDIERTYPE *pSoldier)
 {
 	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM) return TRUE;
 
-	// A living General commands while subordinates remain. He can still fight,
-	// move, seek cover and use ordinary attacks, but should not become the breach/
-	// utility specialist simply because the fireteam is small.
+	// Intelligence is universal. The only remaining restriction is an explicit
+	// mission role: a protected General commands while subordinates remain instead
+	// of becoming the breach/utility specialist himself.
 	if ((pSoldier->usSoldierFlagMask & SOLDIER_VIP) &&
 		AICombatTeamOperationalCount(pSoldier) > 1)
 	{
 		return FALSE;
 	}
 
-	// Basic tactical competence is universal when a force is down to a small team.
-	// Experience still controls the more elaborate choices inside those systems.
-	if (AISmallUnitTeamMode(pSoldier)) return TRUE;
-	switch (AIGetDoctrineProfile(pSoldier))
-	{
-	case AI_DOCTRINE_SECURITY: return FALSE;
-	case AI_DOCTRINE_LINE: return AIHasLocalCommandSupport(pSoldier);
-	default: return TRUE;
-	}
+	return TRUE;
 }
 
 static BOOLEAN AIHasOperationalGeneralInSector(void)
@@ -8150,12 +8142,6 @@ BOOLEAN AIAllowsIndependentFlank(SOLDIERTYPE *pSoldier)
 	{
 		return FALSE;
 	}
-	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
-	if (ubDoctrine == AI_DOCTRINE_SECURITY)
-		return AISmallUnitTeamMode(pSoldier) && AIFireteamCombatReadyCount(pSoldier) >= 3;
-	if (ubDoctrine == AI_DOCTRINE_LINE)
-		return AIHasLocalCommandSupport(pSoldier) ||
-			(AISmallUnitTeamMode(pSoldier) && AIFireteamCombatReadyCount(pSoldier) >= 3);
 	return TRUE;
 }
 
@@ -8163,12 +8149,8 @@ BOOLEAN AIAllowsProactiveSupport(SOLDIERTYPE *pSoldier)
 {
 	if (!pSoldier) return FALSE;
 	if (AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier)) return FALSE;
-	if (pSoldier->bTeam != ENEMY_TEAM) return TRUE;
-	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
-	if (ubDoctrine == AI_DOCTRINE_SECURITY)
-		return AISmallUnitTeamMode(pSoldier) && AIFireteamCombatReadyCount(pSoldier) >= 2;
-	if (ubDoctrine == AI_DOCTRINE_LINE)
-		return AIHasLocalCommandSupport(pSoldier) || AISmallUnitTeamMode(pSoldier);
+	// Every live enemy is trained to provide initiative-based local support.
+	// Weapon/AP/LOS/risk constraints still determine what support is physically legal.
 	return TRUE;
 }
 
@@ -8277,6 +8259,11 @@ INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier)
 		iTolerance += 5;
 
 	iTolerance += AIProfessionalismModifier(pSoldier);
+
+	// Enemy troops are universally brave and psychologically steady, but still
+	// respect catastrophic danger, suppression and organized disengagement logic.
+	if (pSoldier->bTeam == ENEMY_TEAM)
+		return __max(70, __min(88, iTolerance));
 
 	return __max(20, __min(85, iTolerance));
 }
@@ -9211,16 +9198,11 @@ BOOLEAN AIBasicFireteamManeuverReady(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	INT32 iApproachPressure = AISharedApproachPressure(pSoldier, sTargetSpot);
 	BOOLEAN fCommandSupport = AIHasLocalCommandSupport(pSoldier);
 
-	// Security troops without leadership do not improvise an offensive flank merely
-	// because geometry permits one. They can still exploit actual covering fire.
-	if (pSoldier->bTeam == ENEMY_TEAM &&
-		AIGetDoctrineProfile(pSoldier) == AI_DOCTRINE_SECURITY &&
-		!fCommandSupport && ubEffectiveFire == 0)
-	{
-		return FALSE;
-	}
-
-	return ubEffectiveFire > 0 || iApproachPressure >= 30 || fCommandSupport;
+	// Top-tier fireteams do not need a doctrine permission flag to understand
+	// fire-and-manoeuvre. Small elements still need a genuine enabling cue; larger
+	// elements can organically establish a base of fire and a manoeuvre element.
+	return ubEffectiveFire > 0 || iApproachPressure >= 20 || fCommandSupport ||
+		AIFireteamCombatReadyCount(pSoldier) >= 4;
 }
 
 // Check whether this target is directly threatening a nearby ally who needs
