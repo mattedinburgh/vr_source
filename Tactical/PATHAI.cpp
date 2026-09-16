@@ -2504,6 +2504,14 @@ INT32 FindBestPath(SOLDIERTYPE *s, INT32 sDestination, INT8 bLevel, INT16 usMove
 {
 	s->sPlotSrcGrid = s->sGridNo;
 
+	// Emergency tactical-AI guard: pathological enemy path searches must never
+	// monopolize the main thread.  Player pathing is deliberately unaffected.
+	// A failed bounded query simply lets the caller reject this candidate and
+	// continue with another tactical option.
+	const BOOLEAN fEnemyPathBudget = (s->bTeam == ENEMY_TEAM && gfTurnBasedAI);
+	const UINT32 uiEnemyPathStart = fEnemyPathBudget ? GetJA2Clock() : 0;
+	UINT32 uiEnemyPathNodes = 0;
+
 #ifdef USE_ASTAR_PATHS
 	//ddd
 	CHAR8 errorBuf[511]; UINT32 b,e;
@@ -2939,6 +2947,19 @@ INT32 FindBestPath(SOLDIERTYPE *s, INT32 sDestination, INT8 bLevel, INT16 usMove
 
 	do
 	{
+		// Emergency enemy-AI budget.  Time is the hard safety net; node count also
+		// catches pathological queue growth without requiring a wall-clock stall.
+		if (fEnemyPathBudget)
+		{
+			++uiEnemyPathNodes;
+			if (uiEnemyPathNodes > 6000 || GetJA2Clock() - uiEnemyPathStart > 25)
+			{
+				gubNPCAPBudget = 0;
+				gubNPCDistLimit = 0;
+				return 0;
+			}
+		}
+
 		//remove the first and best path so far from the que
 		pCurrPtr = pQueueHead->pNext[0];
 		curLoc = pCurrPtr->iLocation;
