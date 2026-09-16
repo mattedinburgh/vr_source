@@ -180,43 +180,57 @@ BOOLEAN AIBuildContactBelief(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID, AICONTAC
 		return FALSE;
 
 	SOLDIERTYPE *pOpponent = MercPtrs[ubOpponentID];
-	if (!pOpponent ||
-		CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-		pSoldier->bSide == pOpponent->bSide)
+	if (!pOpponent)
+		return FALSE;
+
+	INT32 sKnown = NOWHERE;
+	INT8 bKnownLevel = 0;
+	INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+	UINT8 ubConfidence = 0;
+	if (!AIPlanningContactForOpponent(
+		pSoldier, ubOpponentID, &sKnown, &bKnownLevel,
+		&ubConfidence, &bKnowledge))
 	{
 		return FALSE;
 	}
 
-	INT8 bKnowledge = Knowledge(pSoldier, ubOpponentID);
-	if (bKnowledge == NOT_HEARD_OR_SEEN)
-		return FALSE;
+	const BOOLEAN fDirectVisualContact =
+		PersonalKnowledge(pSoldier, ubOpponentID) == SEEN_CURRENTLY &&
+		LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
 
-	INT32 sKnown = KnownLocation(pSoldier, ubOpponentID);
+	// Current allegiance/body-state is legal only under direct sight. A teammate's
+	// report or stale memory remains a plausible hostile until personally disproved.
+	if (fDirectVisualContact &&
+		(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+		 pSoldier->bSide == pOpponent->bSide))
+	{
+		return FALSE;
+	}
+
 	if (TileIsOutOfBounds(sKnown))
 		return FALSE;
 
 	pBelief->ubOpponentID = ubOpponentID;
 	pBelief->sGridNo = sKnown;
-	pBelief->bLevel = KnownLevel(pSoldier, ubOpponentID);
+	pBelief->bLevel = bKnownLevel;
 	pBelief->bKnowledge = bKnowledge;
-	pBelief->ubSource = UsePersonalKnowledge(pSoldier, ubOpponentID) ?
+	pBelief->ubConfidence = ubConfidence;
+	pBelief->ubAgeTurns = AIKnowledgeAgeTurns(bKnowledge);
+	pBelief->fDirectlyVisible = fDirectVisualContact;
+
+	// "PUBLIC" here means shared non-personal planning evidence. For ENEMY_TEAM
+	// that is the bounded fireteam report, never the legacy sector-wide opplist.
+	INT8 bPersonal = PersonalKnowledge(pSoldier, ubOpponentID);
+	BOOLEAN fMatchesPersonal =
+		bPersonal != NOT_HEARD_OR_SEEN &&
+		KnownPersonalLocation(pSoldier, ubOpponentID) == sKnown &&
+		KnownPersonalLevel(pSoldier, ubOpponentID) == bKnownLevel;
+	pBelief->ubSource = fMatchesPersonal ?
 		AI_BELIEF_SOURCE_PERSONAL : AI_BELIEF_SOURCE_PUBLIC;
 
-	INT32 iKnowledgeIndex = (INT32)bKnowledge - (INT32)OLDEST_HEARD_VALUE;
-	if (iKnowledgeIndex >= 0 && iKnowledgeIndex < 10)
-		pBelief->ubConfidence = (UINT8)__max(0, __min(100, ThreatPercent[iKnowledgeIndex]));
-	else
-		pBelief->ubConfidence = 0;
-
-	pBelief->ubAgeTurns = AIKnowledgeAgeTurns(bKnowledge);
-	pBelief->fDirectlyVisible =
-		(PersonalKnowledge(pSoldier, ubOpponentID) == SEEN_CURRENTLY);
-
-	// Only visual knowledge refreshes exact contact memory. Heard information and
-	// generic noises may corroborate a remembered sector later, but they do not
-	// silently identify the unseen shooter.
-	if (pBelief->bKnowledge > NOT_HEARD_OR_SEEN)
-		AIRecordContactMemory(pSoldier, pBelief);
+	// Remember legitimate reports as well as direct observations. Memory remains a
+	// low-authority planning/search cue; it never authorizes a direct attack.
+	AIRecordContactMemory(pSoldier, pBelief);
 
 	return TRUE;
 }
@@ -375,44 +389,10 @@ static void AIRefreshThreatMemoryFromKnowledge(SOLDIERTYPE *pSoldier)
 
 	for (UINT16 i = 0; i < TOTAL_SOLDIERS && i < MAX_NUM_SOLDIERS; ++i)
 	{
-		SOLDIERTYPE *pOpponent = MercPtrs[i];
-		if (!pOpponent)
-			continue;
-
-		INT8 bKnowledge = Knowledge(pSoldier, (UINT8)i);
-		const BOOLEAN fDirectVisualContact =
-			PersonalKnowledge(pSoldier, (UINT8)i) == SEEN_CURRENTLY &&
-			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
-		if (fDirectVisualContact &&
-			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			 pSoldier->bSide == pOpponent->bSide))
-		{
-			continue;
-		}
-		if (bKnowledge <= NOT_HEARD_OR_SEEN)
-			continue;
-
-		INT32 sKnown = KnownLocation(pSoldier, (UINT8)i);
-		if (TileIsOutOfBounds(sKnown))
-			continue;
-
 		AICONTACTBELIEF Belief;
-		memset(&Belief, 0, sizeof(Belief));
-		Belief.ubOpponentID = (UINT8)i;
-		Belief.sGridNo = sKnown;
-		Belief.bLevel = KnownLevel(pSoldier, (UINT8)i);
-		Belief.bKnowledge = bKnowledge;
-		Belief.ubAgeTurns = AIKnowledgeAgeTurns(bKnowledge);
-		Belief.ubSource = UsePersonalKnowledge(pSoldier, (UINT8)i) ?
-			AI_BELIEF_SOURCE_PERSONAL : AI_BELIEF_SOURCE_PUBLIC;
-
-		INT32 iKnowledgeIndex =
-			(INT32)bKnowledge - (INT32)OLDEST_HEARD_VALUE;
-		if (iKnowledgeIndex >= 0 && iKnowledgeIndex < 10)
-			Belief.ubConfidence = (UINT8)__max(
-				0, __min(100, ThreatPercent[iKnowledgeIndex]));
-
-		AIRecordContactMemory(pSoldier, &Belief);
+		// AIBuildContactBelief records the strongest legitimate personal/local report
+		// into the transient contact memory.
+		AIBuildContactBelief(pSoldier, (UINT8)i, &Belief);
 	}
 }
 
