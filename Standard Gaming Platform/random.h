@@ -15,6 +15,7 @@
 extern UINT32 guiPreRandomIndex;
 extern UINT32 guiPreRandomNums[MAX_PREGENERATED_NUMS];
 extern void InitializeRandom(void);
+extern void SetRandomSeed(UINT32 seed);
 extern UINT32 GetRndNum(UINT32 maxnum);
 extern bool gfMPDebugOutputRandoms;
 
@@ -50,6 +51,7 @@ extern UINT32 guiPreRandomIndex;
 extern std::vector<UINT32> guiPreRandomNums;
 
 extern void InitializeRandom(void);
+extern void SetRandomSeed(UINT32 seed);
 
 
 // WDS 04/20/2009 -- Random functions were moved to inline functions here in the header file
