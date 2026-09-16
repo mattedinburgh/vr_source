@@ -1,28 +1,28 @@
 # Vengeance Reloaded — Project Control
 
-Updated: 2026-09-15
+Updated: 2026-09-16
 
 ## Canonical-version rule
 
 Vengeance is a **single playable product**. There is no supported alternative gameplay branch.
 
-Current cleanup state:
-- `install/all-2026-09-12` was the de-facto integration branch.
-- The temporary `reconcile/streamline-2026-09-15` cleanup branch has been retired after its content was folded into `install/all-2026-09-12`.
-- `install/all-2026-09-12` is now the single integration spine pending final `master` cutover; its pre-reconciliation tip is preserved at `archive/install-all-pre-reconcile-2026-09-15`.
-- **Target after validation: `master` becomes the only canonical playable branch** in both `vr_source` and `vr_gamedir`.
-- Temporary experimental branches are allowed only when unfinished work is unsafe to put in the playable build. They must have a named port/exit task and must not become alternative game versions.
+Current canonical rule:
+- `install/all-2026-09-12` is the one canonical integration/playtest branch. In project shorthand, **`2026 09 12` = main = Super Master = normal integration target**.
+- Do not create or revive a separate branch named "Super Master", "main", "final", or "integration" as an alternative integration spine.
+- Workstream and experimental branches remain isolated only while unfinished; selected changes are reconciled back into `install/all-2026-09-12`.
+- `master` is a repository/default-history branch, not the normal integration target for current project work.
+- The pre-reconciliation state remains preserved at `archive/install-all-pre-reconcile-2026-09-15`.
 
 ## Branch policy
 
-1. New normal work starts from `master`.
-2. Small features/fixes use a short-lived `feat/*` or `fix/*` branch only when necessary.
-3. Merge/port into `master` promptly; then retire the temporary branch.
-4. Never create parallel `final`, `integration`, `launch`, or second AI branches for the same subsystem.
+1. New normal work starts from the current `install/all-2026-09-12` head.
+2. Each active subsystem uses at most one current workstream branch when isolation is useful.
+3. Reconcile selected, validated changes back into `install/all-2026-09-12`; then retire the temporary workstream branch when appropriate.
+4. Never create parallel `final`, `integration`, `launch`, `main`, `Super Master`, or duplicate subsystem branches as competing integration spines.
 5. Before creating a branch, check whether an active branch already owns that subsystem.
 6. "Branch merged" does **not** mean "feature finished." Broken/incomplete behavior stays OPEN below until verified in-game.
 7. Do not delete any branch containing unique content until that content is either ported, explicitly rejected, or recorded with a recovery reference.
-8. Parallel development is encouraged across independent workstreams. One active workstream owns each subsystem/problem; do not create competing branches for the same implementation.
+8. Parallel development is encouraged across independent workstreams. One active workstream owns each subsystem/problem.
 9. Cross-cutting changes that touch another workstream's core files must be reconciled against the current canonical base before integration.
 
 ## Safety references
@@ -52,7 +52,7 @@ These snapshots preserve the pre-cleanup all-in-one baseline.
 | Maps / Latin visual overhaul | ACTIVE CURRENT-BASE WORKSTREAM | `maps/visual-overhaul-2026` is the current-base map lane. Map Factory docs/art direction/authoring tools are preserved there. Audit of the old `worlddef`/`MapUtility` implementation found automatic sector dressing/baking that conflicts with the graphics-only rule, so that methodology is rejected rather than merged. The safe forced-shade-cache guard was ported to the current map lane. Preserve map geometry/gameplay properties unless deliberately approved. |
 | Item icons | REJECTED PILOT / REDESIGN OPEN | Earlier 20-icon pilot is superseded by `save23`; bulk `art/all-inventory-icons-ai` is separate. None is accepted canonical art. Keep source material until redesign is complete. |
 | Cold UI | DORMANT / REDESIGN OPEN | Source-side harmonisation exists; pilot art remains non-final. Do not force old pilot visuals into canonical build. |
-| UI / UX — Tactical Combat Feedback / Unseen Fire Bearing | QUEUED / DESIGN-READY | Reuse existing gunfire/noise/bullet-direction/LOS plumbing. Show uncertainty-aware bearing cues for unseen incoming fire; never reveal exact hidden enemy grid, never move camera, aggregate bursts, support multiple shooters, respect suppressors/hearing/roof level. Prepared spec: `docs/UNSEEN_FIRE_BEARING.md`. No AI/NCTH behavior changes. |
+| Tactical UI / information | ACTIVE CURRENT-BASE WORKSTREAM | `ui/tactical-information-2026-09-16` is based on the current `2026 09 12` head. Enemy hover identities now preserve profile/configured names and use deterministic per-soldier fallback only when needed. Unseen-fire V1 shows a coarse non-sliding bearing without exposing the hidden source grid and clusters repeated same-direction burst/listener reports. Multi-bearing rendering, confidence/level cues and in-game validation remain open. See `docs/UNSEEN_FIRE_BEARING.md`. |
 | Spanish battle popups + screams | OPEN | Popups should be Spanish and allowed concurrently with screams. Verify implementation in live battle. |
 | Radio operator | VERIFY/FINISH | Confirm full trait/equipment/Bobby Ray's availability path in canonical game data and source. |
 | Rag bandages | OPEN DEFECT | Must actually work when used from hand/on body; acts as a much less efficient first-aid treatment that secures bleeding/yellow damage. |
@@ -97,5 +97,5 @@ Cleanup is complete when:
 3. experimental VHD work exists on only `exp/vhd`;
 4. map/icon work has a single surviving source-of-truth workstream or an explicit preservation task;
 5. both repositories validate;
-6. `master` is moved to the validated reconciliation state;
+6. selected workstream changes are reconciled into `install/all-2026-09-12` without creating a competing integration spine;
 7. old branches are retired/archived and no future work is committed to them.
