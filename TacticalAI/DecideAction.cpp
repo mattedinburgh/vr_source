@@ -3610,7 +3610,8 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 	if ( !bInGas && (gWorldSectorX == TIXA_SECTOR_X && gWorldSectorY == TIXA_SECTOR_Y) )
 	{
 		// only chance if we happen to be caught with our gas mask off
-		if ( PreRandom( 10 ) == 0 && WearGasMaskIfAvailable( pSoldier ) )
+		if ( (pSoldier->bTeam == ENEMY_TEAM || PreRandom(10) == 0) &&
+			 WearGasMaskIfAvailable(pSoldier) )
 		{
 			// reevaluate
 			bInGas = InGasOrSmoke( pSoldier, pSoldier->sGridNo );
@@ -6781,7 +6782,9 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			if (fBestShotTargetStateKnown &&
 				(Menptr[BestShot.ubOpponent].stats.bLife < OKLIFE) &&
 				!Menptr[BestShot.ubOpponent].bService &&
-				(pSoldier->aiData.bAttitude != AGGRESSIVE || Chance((100 - BestShot.ubChanceToReallyHit) / 2)))
+				(pSoldier->bTeam == ENEMY_TEAM ||
+				 pSoldier->aiData.bAttitude != AGGRESSIVE ||
+				 Chance((100 - BestShot.ubChanceToReallyHit) / 2)))
 			{
 				// get the location of the closest CONSCIOUS reachable opponent
 				sClosestDisturbance = ClosestReachableDisturbance(pSoldier, &fClimb);
@@ -7221,7 +7224,9 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		PythSpacesAway(pSoldier->sGridNo, sClosestThreat) < 3*(usRange/CELL_X_SIZE)/2 &&
 		usRange/CELL_X_SIZE > DAY_VISION_RANGE/2 &&
 		pSoldier->pathing.bLevel == 0 &&
-		PreRandom(100) > 100 / (1+BestAttack.bTargetLevel+CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE/4)) &&
+		(pSoldier->bTeam == ENEMY_TEAM ||
+		 PreRandom(100) > 100 / (1 + BestAttack.bTargetLevel +
+			CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4))) &&
 		CountNearbyFriendsOnRoof(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE/8) == 0 &&
 		//pSoldier->bActionPoints == pSoldier->bInitialActionPoints &&
 		pSoldier->bActionPoints > APBPConstants[AP_MINIMUM] &&
@@ -7252,7 +7257,11 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		RangeChangeDesire(pSoldier) >= 4 &&
 		!TileIsOutOfBounds(sClosestOpponent) &&
 		PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 4 &&
-		(ubBestAttackAction == AI_ACTION_NONE || ubBestAttackAction == AI_ACTION_FIRE_GUN && Random(25) > (UINT8)BestAttack.ubChanceToReallyHit) &&
+		(ubBestAttackAction == AI_ACTION_NONE ||
+		 (ubBestAttackAction == AI_ACTION_FIRE_GUN &&
+		  ((pSoldier->bTeam == ENEMY_TEAM && BestAttack.ubChanceToReallyHit < 25) ||
+		   (pSoldier->bTeam != ENEMY_TEAM &&
+			Random(25) > (UINT8)BestAttack.ubChanceToReallyHit)))) &&
 		(pSoldier->bTeam == ENEMY_TEAM ||
 		 Chance(15 + 15 * SoldierDifficultyLevel(pSoldier) +
 			10 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10))) &&
@@ -7321,7 +7330,8 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		RangeChangeDesire(pSoldier) < 4 &&
 		!AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) &&
 		BestAttack.ubChanceToReallyHit < 25 &&
-		Chance(100 - BestAttack.ubChanceToReallyHit) &&
+		(pSoldier->bTeam == ENEMY_TEAM ||
+		 Chance(100 - BestAttack.ubChanceToReallyHit)) &&
 		!TileIsOutOfBounds(sClosestOpponent) &&
 		PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 4)
 	{
