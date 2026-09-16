@@ -15082,8 +15082,9 @@ UINT32 SOLDIERTYPE::SoldierDressWound( SOLDIERTYPE *pVictim, INT16 sKitPts, INT1
 	}
 
 	bInitialBleeding = pVictim->bBleeding;
-	// Vengeance: item 1022 is the improvised cloth rag. It uses the normal
-	// first-aid wound path, but is intentionally far slower and more wasteful.
+	// Vengeance: improvised cloth rags use the normal first-aid wound path.
+	// Balance target: half the material efficiency of a first-aid kit and
+	// approximately 50% more AP/time for the same amount of wound treatment.
 	fImprovisedRag = (this->inv[ HANDPOS ].exists() && ItemIsImprovisedBandage( this->inv[ HANDPOS ].usItem ));
 
 	// in case he has multiple kits in hand, limit influence of kit status to 100%!
@@ -15155,11 +15156,11 @@ UINT32 SOLDIERTYPE::SoldierDressWound( SOLDIERTYPE *pVictim, INT16 sKitPts, INT1
 		uiPossible += ( uiPossible * gSkillTraitValues.ubDOBandagingSpeedPercent * NUM_SKILL_TRAITS( this, DOCTOR_NT ) + this->GetBackgroundValue(BG_PERC_BANDAGING) ) / 100;
 	}
 
-	// Improvised rags secure wounds exactly like a first-aid kit (bleeding/yellow
-	// becomes bandaged/pink), but only at 20% of the normal treatment rate.
+	// About 50% more AP/time than a first-aid kit means 2/3 normal treatment
+	// throughput for the same available APs.
 	if ( fImprovisedRag )
 	{
-		uiPossible = (uiPossible + 4) / 5;
+		uiPossible = (uiPossible * 2 + 2) / 3;
 	}
 
 	uiActual = uiPossible;		// start by assuming maximum possible
@@ -15220,15 +15221,15 @@ UINT32 SOLDIERTYPE::SoldierDressWound( SOLDIERTYPE *pVictim, INT16 sKitPts, INT1
 	{
 		if ( fImprovisedRag )
 		{
-			// A rag is a crude pressure dressing: five condition points are needed
-			// for every one point of actual wound treatment.
-			uiMedcost = uiActual * 5;
+			// Half the material efficiency of a first-aid kit: two rag condition
+			// points are required per one point of actual wound treatment.
+			uiMedcost = uiActual * 2;
 
 			if ( uiMedcost > (UINT32)sKitPts )
 			{
 				fRanOut = TRUE;
-				uiActual = (UINT32)sKitPts / 5;
-				uiMedcost = uiActual * 5;
+				uiActual = (UINT32)sKitPts / 2;
+				uiMedcost = uiActual * 2;
 			}
 		}
 		else
