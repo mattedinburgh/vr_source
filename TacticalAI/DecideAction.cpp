@@ -10331,11 +10331,14 @@ static void AIApplyTacticalPreferenceVariation(SOLDIERTYPE *pSoldier,
 
 		UINT8 ubReadyTeam = AIFireteamCombatReadyCount(pSoldier);
 		BOOLEAN fSmallTeam = ubReadyTeam >= 2 && ubReadyTeam <= 5;
+		BOOLEAN fCoordinatedRoleBias = fSmallTeam || pSoldier->bTeam == ENEMY_TEAM;
 
-		if (fSmallTeam)
+		if (fCoordinatedRoleBias)
 		{
-			// A small remnant must behave like one plan, not five unrelated random rolls.
-			// Assign a simple role from current weapon, mobility, wounds and stress.
+			// Enemy troops always derive their preference from the current fireteam role
+			// instead of injecting random tactical mistakes. Small militia remnants keep
+			// the same disciplined behavior so they do not fragment into solo decisions.
+			// Role selection still depends on weapon, mobility, wounds and stress.
 			INT32 sRoleTarget = ClosestKnownOpponent(pSoldier, NULL, NULL);
 			INT32 iSupportScore = AISupportRoleScore(pSoldier, sRoleTarget);
 			INT32 iManeuverScore = AIManeuverRoleScore(pSoldier, sRoleTarget);
@@ -10363,8 +10366,8 @@ static void AIApplyTacticalPreferenceVariation(SOLDIERTYPE *pSoldier,
 		}
 		else
 		{
-			// Larger formations retain bounded unpredictability so battles do not become
-			// scripted. Morale, orders, danger and hard safety checks remain dominant.
+			// Non-enemy larger formations retain bounded variation. Live enemy forces
+			// never manufacture inferior choices merely to appear less predictable.
 			switch (PreRandom(7))
 			{
 			case 0: gbAITacticalSeekBias[ubID] = 2; gbAITacticalHideBias[ubID] = -1; break;
