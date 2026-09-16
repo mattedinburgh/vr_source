@@ -4465,7 +4465,7 @@ BOOLEAN UIMouseOnValidAttackLocation( SOLDIERTYPE *pSoldier )
 			usMapPos = MercPtrs[ gusUIFullTargetID ]->sGridNo;
 		}
 
-		if ( pSoldier->pathing.bLevel == 0 )
+		if ( pSoldier->pathing.bLevel == 0 && gbWorldSectorZ == 0 )
 		{
 			if ( HasItemFlag( (&(pSoldier->inv[HANDPOS]))->usItem, (EMPTY_SANDBAG)) )
 			{
@@ -4483,9 +4483,7 @@ BOOLEAN UIMouseOnValidAttackLocation( SOLDIERTYPE *pSoldier )
 			}
 			else if ( HasItemFlag( (&(pSoldier->inv[HANDPOS]))->usItem, (SHOVEL)) )
 			{
-				STRUCTURE* pStruct = FindStructure(usMapPos, STRUCTURE_GENERIC);
-
-				if ( pStruct )
+				if ( IsRemovableFortificationAtGridNo( usMapPos ) )
 				{
 					return( TRUE );
 				}

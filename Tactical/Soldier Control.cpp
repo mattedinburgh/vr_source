@@ -22270,10 +22270,12 @@ void SOLDIERTYPE::EVENT_SoldierBuildStructure( INT32 sGridNo, UINT8 ubDirection 
 	{
 		if ( HasItemFlag(this->inv[ HANDPOS ].usItem, (FULL_SANDBAG|CONCERTINA)) )
 		{
-			// Build the thing
-			this->StartMultiTurnAction( MTA_FORTIFY );
-
-			fSuccess = TRUE;
+			if ( gbWorldSectorZ == 0 && this->pathing.bLevel == 0 && IsFortificationPossibleAtGridNo( sGridNo ) )
+			{
+				// Build the thing
+				this->StartMultiTurnAction( MTA_FORTIFY );
+				fSuccess = TRUE;
+			}
 		}
 		else if ( HasItemFlag(this->inv[ HANDPOS ].usItem, (EMPTY_SANDBAG)) )
 		{
@@ -22293,9 +22295,11 @@ void SOLDIERTYPE::EVENT_SoldierBuildStructure( INT32 sGridNo, UINT8 ubDirection 
 		}
 		else if ( HasItemFlag(this->inv[ HANDPOS ].usItem, (SHOVEL)) )
 		{
-			this->StartMultiTurnAction( MTA_REMOVE_FORTIFY );
-
-			fSuccess = TRUE;
+			if ( gbWorldSectorZ == 0 && this->pathing.bLevel == 0 && IsRemovableFortificationAtGridNo( sGridNo ) )
+			{
+				this->StartMultiTurnAction( MTA_REMOVE_FORTIFY );
+				fSuccess = TRUE;
+			}
 		}
 	}
 

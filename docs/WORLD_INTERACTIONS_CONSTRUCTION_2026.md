@@ -35,6 +35,9 @@ Priority order:
 - Concertina can now be dismantled with the construction shovel path.
 - Dismantling returns the correct material item type instead of always spawning a full sandbag.
 - New helper declarations are explicitly included for non-PCH compilation paths.
+- UI target validation, cursor validation, item handling, action start, and multi-turn completion now share the same removable-fortification predicate.
+- Fortification actions are rejected early on roofs and in underground sectors instead of beginning an action that the completion routine cannot finish.
+- Build/remove action start now validates the target before starting the multi-turn action.
 
 ## Validation completed (static)
 - Checked current VR construction implementation against available `upstream/master`; core fortification logic is materially the same.

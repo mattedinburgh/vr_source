@@ -2222,7 +2222,7 @@ UINT8 HandleFortificationCursor( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT32 ui
 	// DRAW PATH TO GUY
 	HandleUIMovementCursor( pSoldier, uiCursorFlags, sGridNo, MOVEUI_TARGET_FORTIFICATION );
 
-	if ( pSoldier->pathing.bLevel != 0 )
+	if ( pSoldier->pathing.bLevel != 0 || gbWorldSectorZ > 0 )
 		return( FORTIFICATION_RED_UICURSOR );
 
 	// if we have an empty sandbag in our hands, we also need to have a shovel in our second hand, otherwise we can't fill it

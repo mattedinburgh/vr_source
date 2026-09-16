@@ -1163,6 +1163,10 @@ INT32 HandleItem( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel, UINT16 usHa
 	// Flugente: sandbag stuff
 	if ( HasItemFlag(usHandItem, (EMPTY_SANDBAG|FULL_SANDBAG|SHOVEL|CONCERTINA)) )
 	{
+		// Fortification actions are ground-level, surface-sector interactions.
+		if ( gbWorldSectorZ > 0 || pSoldier->pathing.bLevel != 0 )
+			return( ITEM_HANDLE_REFUSAL );
+
 		// if we have an empty sandbag in our hands, we also need to have a shovel in our second hand, otherwise we can't fill it
 		if ( HasItemFlag(usHandItem, (EMPTY_SANDBAG)) )
 		{
@@ -1196,6 +1200,8 @@ INT32 HandleItem( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 bLevel, UINT16 usHa
 		else
 		{
 			sAPCost = GetAPsForMultiTurnAction( pSoldier, MTA_FORTIFY );
+			if ( !IsFortificationPossibleAtGridNo( sGridNo ) )
+				return( ITEM_HANDLE_REFUSAL );
 		}
 
 		sActionGridNo =	FindAdjacentGridEx( pSoldier, sGridNo, &ubDirection, &sAdjustedGridNo, TRUE, FALSE );
