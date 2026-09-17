@@ -967,11 +967,20 @@ static UINT16 BuildSectorAmmoObject( UINT8 ubCalibre, UINT16 usMagSize,
 	return (UINT16)(*pOut)[0]->data.objectStatus;
 }
 
+static BOOLEAN SectorLoadoutGunIsUsable( OBJECTTYPE *pGun, UINT8 ubSubObject )
+{
+	if ( pGun == NULL || !pGun->exists() || !( Item[pGun->usItem].usItemClass & IC_GUN ) ||
+		 ubSubObject >= pGun->ubNumberOfObjects )
+		return FALSE;
+
+	return ( (*pGun)[ubSubObject]->data.gun.bGunStatus >= USABLE );
+}
+
 // Loaded weapons have priority over spare magazines.  Partial magazines keep
 // their current ammo type; an empty gun uses the normal loadout ammo priority.
 static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject, UINT16 usMaxRoundsToAdd = 0 )
 {
-	if ( pGun == NULL || !pGun->exists() || !( Item[pGun->usItem].usItemClass & IC_GUN ) )
+	if ( !SectorLoadoutGunIsUsable( pGun, ubSubObject ) )
 		return 0;
 
 	UINT16 usMagSize = GetMagSize( pGun, ubSubObject );
@@ -1100,7 +1109,7 @@ static BOOLEAN SectorLoadoutMercHasLoadedGun( SOLDIERTYPE *pSoldier )
 
 		for ( UINT8 x = 0; x < pGun->ubNumberOfObjects; ++x )
 		{
-			if ( (*pGun)[x]->data.gun.ubGunShotsLeft > 0 )
+			if ( SectorLoadoutGunIsUsable( pGun, x ) && (*pGun)[x]->data.gun.ubGunShotsLeft > 0 )
 				return TRUE;
 		}
 	}
@@ -1128,6 +1137,9 @@ static UINT32 PrimeEmptySectorMercGuns()
 
 			for ( UINT8 x = 0; x < pGun->ubNumberOfObjects; ++x )
 			{
+				if ( !SectorLoadoutGunIsUsable( pGun, x ) )
+					continue;
+
 				if ( (*pGun)[x]->data.gun.ubGunShotsLeft > 0 )
 					continue;
 
@@ -1215,6 +1227,9 @@ static void CollectSectorAmmoDemands( std::vector<SECTOR_LOADOUT_AMMO_DEMAND> &d
 
 			for ( INT32 x = 0; x < pGun->ubNumberOfObjects; ++x )
 			{
+				if ( !SectorLoadoutGunIsUsable( pGun, (UINT8)x ) )
+					continue;
+
 				UINT16 usMagSize = GetMagSize( pGun, x );
 				if ( usMagSize == 0 )
 					continue;

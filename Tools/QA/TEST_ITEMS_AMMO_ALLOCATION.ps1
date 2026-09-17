@@ -139,6 +139,14 @@ $replacementBuilt = $typedPool.ap -ge $current.Capacity
 if ($replacementBuilt) { $typedPool.ap -= $current.Capacity; $typedPool.ball += $current.Rounds; $current.Type='ap'; $current.Rounds=$current.Capacity }
 Assert-True ($replacementBuilt -and $current.Type -eq 'ap' -and $current.Rounds -eq 30) 'strictly better full load replaces a partial weaker load'
 Assert-True (($current.Rounds + $typedPool.ball + $typedPool.ap) -eq $beforeReplacement) 'partial-magazine replacement conserves the returned old load'
+# A loaded but physically broken gun must not make a merc count as combat-ready,
+# and scarce ammo must prime the first usable empty gun instead.
+$guns = @([pscustomobject]@{Name='Broken'; Status=10; Loaded=20}, [pscustomobject]@{Name='Usable'; Status=80; Loaded=0})
+$usableThreshold = 15
+$hasUsableLoadedGun = ($guns | Where-Object { $_.Status -ge $usableThreshold -and $_.Loaded -gt 0 }).Count -gt 0
+$primeTarget = $guns | Where-Object { $_.Status -ge $usableThreshold -and $_.Loaded -eq 0 } | Select-Object -First 1
+Assert-True (-not $hasUsableLoadedGun) 'broken loaded gun does not count as a usable loaded weapon'
+Assert-True ($primeTarget.Name -eq 'Usable') 'priming skips broken gun and targets usable empty gun'
 if ($failures.Count -gt 0) {
     Write-Host ""
     Write-Host "ITEM_AMMO_ALLOCATION_FIXTURE_FAILED"

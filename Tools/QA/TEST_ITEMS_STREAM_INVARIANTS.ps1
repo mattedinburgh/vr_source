@@ -29,6 +29,8 @@ Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "PoolObjectForSe
 Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "SectorLoadoutAmmoTypeLess( (UINT8)sBestFullType, ubCurrentType )" "partial gun upgrades only to a strictly better ammo type"
 Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "CountSectorAmmoRounds( ubCalibre, (UINT8)sBestFullType ) >= usMagSize" "partial gun replacement requires a complete better load"
 Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "PoolObjectForSectorLoadout( &oldAmmo );" "successful ammo upgrade returns old partial load to pool"
+Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "bGunStatus >= USABLE" "ammo distribution excludes physically broken guns"
+Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "!SectorLoadoutGunIsUsable( pGun, (UINT8)x )" "broken guns do not create spare-ammo demand"
 
 $ammoFixture = Join-Path $PSScriptRoot "TEST_ITEMS_AMMO_ALLOCATION.ps1"
 & "$PSHOME\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File $ammoFixture
