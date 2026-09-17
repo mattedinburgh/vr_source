@@ -111,6 +111,9 @@ static UINT32 VRPlannerTraceBeginDecision(SOLDIERTYPE *pSoldier, const CHAR8 *pS
 			VRAnalyticsStateInt(uiDecision, "geometry_left_flank", Geometry.sLeftFlankOpportunity);
 			VRAnalyticsStateInt(uiDecision, "geometry_right_flank", Geometry.sRightFlankOpportunity);
 			VRAnalyticsStateInt(uiDecision, "geometry_rear_safety", Geometry.sRearSafety);
+			VRAnalyticsStateInt(uiDecision, "geometry_left_clearance", Geometry.ubLeftFlankClearance);
+			VRAnalyticsStateInt(uiDecision, "geometry_right_clearance", Geometry.ubRightFlankClearance);
+			VRAnalyticsStateInt(uiDecision, "geometry_rear_clearance", Geometry.ubRearClearance);
 			VRAnalyticsStateInt(uiDecision, "geometry_known_contacts", Geometry.ubKnownContacts);
 			VRAnalyticsStateInt(uiDecision, "geometry_visible_contacts", Geometry.ubVisibleContacts);
 			VRAnalyticsStateInt(uiDecision, "geometry_remembered_contacts", Geometry.ubRememberedContacts);

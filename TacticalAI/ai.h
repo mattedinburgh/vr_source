@@ -465,6 +465,9 @@ struct AITACTICALGEOMETRY
 	INT16 sLeftFlankOpportunity;
 	INT16 sRightFlankOpportunity;
 	INT16 sRearSafety;
+	UINT8 ubLeftFlankClearance;
+	UINT8 ubRightFlankClearance;
+	UINT8 ubRearClearance;
 	BOOLEAN fMultiAngleThreat;
 	BOOLEAN fEncirclementPressure;
 };

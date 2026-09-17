@@ -901,6 +901,33 @@ static INT32 AIGeometryDirectionalDanger(const AITACTICALGEOMETRY *pGeometry, UI
 		AIGeometryDirectionalSupport(pGeometry, ubDirection) / 3;
 }
 
+static UINT8 AIMapDirectionalClearance(INT32 sAnchorGridNo, UINT8 ubDirection)
+{
+	if (TileIsOutOfBounds(sAnchorGridNo) || ubDirection >= NUM_WORLD_DIRECTIONS)
+		return 0;
+
+	INT32 sCurrent = sAnchorGridNo;
+	UINT8 ubClearance = 0;
+	for (UINT8 i = 0; i < 8; ++i)
+	{
+		INT32 sNext = NewGridNo(sCurrent, DirectionInc(ubDirection));
+		if (sNext == sCurrent || TileIsOutOfBounds(sNext))
+			break;
+		++ubClearance;
+		sCurrent = sNext;
+	}
+	return ubClearance;
+}
+
+static INT32 AIMapEdgeManeuverPenalty(UINT8 ubClearance)
+{
+	if (ubClearance == 0) return 180;
+	if (ubClearance == 1) return 90;
+	if (ubClearance == 2) return 45;
+	if (ubClearance == 3) return 20;
+	return 0;
+}
+
 BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 	AITACTICALGEOMETRY *pGeometry)
 {
@@ -1208,7 +1235,9 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 	INT32 iLowestDanger = 0x7fffffff;
 	for (UINT8 ubDir = 0; ubDir < NUM_WORLD_DIRECTIONS; ++ubDir)
 	{
-		const INT32 iDanger = AIGeometryDirectionalDanger(pGeometry, ubDir);
+		const UINT8 ubClearance = AIMapDirectionalClearance(sAnchorGridNo, ubDir);
+		const INT32 iDanger = AIGeometryDirectionalDanger(pGeometry, ubDir) +
+			AIMapEdgeManeuverPenalty(ubClearance);
 		if (iDanger < iLowestDanger)
 		{
 			iLowestDanger = iDanger;
@@ -1231,8 +1260,10 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 		AIGeometryDirectionalThreat(pGeometry, ubOpposite);
 	const INT32 iRearSupport =
 		AIGeometryDirectionalSupport(pGeometry, ubOpposite);
+	pGeometry->ubRearClearance = AIMapDirectionalClearance(sAnchorGridNo, ubOpposite);
 	pGeometry->sRearSafety = (INT16)__max(-100, __min(100,
-		70 - iRearThreat / 5 + iRearSupport / 8));
+		70 - iRearThreat / 5 + iRearSupport / 8 -
+		AIMapEdgeManeuverPenalty(pGeometry->ubRearClearance) / 2));
 
 	UINT8 ubVisibleSectors = 0;
 	BOOLEAN fVisibleWideSeparation = FALSE;
@@ -1266,16 +1297,20 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 
 	const INT32 iLeftDanger = AIGeometryDirectionalDanger(pGeometry, ubLeft);
 	const INT32 iRightDanger = AIGeometryDirectionalDanger(pGeometry, ubRight);
+	pGeometry->ubLeftFlankClearance = AIMapDirectionalClearance(sAnchorGridNo, ubLeft);
+	pGeometry->ubRightFlankClearance = AIMapDirectionalClearance(sAnchorGridNo, ubRight);
 
 	pGeometry->sLeftFlankOpportunity = (INT16)__max(-100, __min(100,
 		55 + iPrimary / 8 -
 		iLeftDanger / 5 -
-		(INT32)pGeometry->usFriendlyPressure[ubLeft] / 4));
+		(INT32)pGeometry->usFriendlyPressure[ubLeft] / 4 -
+		AIMapEdgeManeuverPenalty(pGeometry->ubLeftFlankClearance)));
 
 	pGeometry->sRightFlankOpportunity = (INT16)__max(-100, __min(100,
 		55 + iPrimary / 8 -
 		iRightDanger / 5 -
-		(INT32)pGeometry->usFriendlyPressure[ubRight] / 4));
+		(INT32)pGeometry->usFriendlyPressure[ubRight] / 4 -
+		AIMapEdgeManeuverPenalty(pGeometry->ubRightFlankClearance)));
 
 	return TRUE;
 }
