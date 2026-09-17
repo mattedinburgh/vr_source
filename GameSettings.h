@@ -898,10 +898,10 @@ typedef struct
 	UINT8 ubMovementEffectiveness;
 	UINT16 ubCoverDisplayUpdateWait;//Moa: changed to UINT16 to allow values 500ms to 10000ms, see ini file and DisplayCover( BOOLEAN ), DisplayMines( BOOLEAN )
 
-
-
-
-
+	// 1.13 additional tile camouflage controls. Kept separate from the legacy
+	// terrain mapping so mods can disable detailed metadata safely.
+	BOOLEAN fAdditionalTileProperties;
+	BOOLEAN fAlternateMultiTerrainCamoCalculation;
 
 	// HEADROCK HAM B1: Global modifier for mine income (0 is automatically turned to 1 to avoid divide-by-zero.)
 	INT16 usMineIncomePercentage;
