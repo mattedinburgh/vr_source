@@ -244,7 +244,7 @@ try {
     Write-Host "SELFTEST_OK batch-contained-candidate-marker"
 
     $fixtureReleaseGate = Join-Path $policyRepo "Tools\QA\BUILD_RELEASE_INVENTORY.ps1"
-    foreach ($pair in @(@("canonical", "canonical"), @("ready-stream", "shared-a-child"), @("active-stream", "shared-b"), @("unknown-stream", "candidate"))) {
+    foreach ($pair in @(@("canonical", "canonical"), @("ready-stream", "shared-a-child"), @("subsumed-stream", "shared-a"), @("active-stream", "shared-b"), @("unknown-stream", "candidate"))) {
         $sha = (& $gitExe -C $policyRepo rev-parse $pair[1]).Trim()
         & $gitExe -C $policyRepo update-ref ("refs/remotes/origin/" + $pair[0]) $sha
     }
@@ -265,8 +265,13 @@ try {
     & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureReleaseGate -CanonicalRef canonical -RegistryPath $releaseRegistry -GateRelease *> $null
     Assert-ExitCode "release-omitted-ready-block" 61 $LASTEXITCODE
 
-    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureReleaseGate -CanonicalRef canonical -RegistryPath $releaseRegistry -CandidateRefs ready-stream -GateRelease *> $null
+    $releaseCompleteLog = Join-Path $tempRoot "release-complete.log"
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureReleaseGate -CanonicalRef canonical -RegistryPath $releaseRegistry -CandidateRefs ready-stream -GateRelease *> $releaseCompleteLog
     Assert-ExitCode "release-complete-ready-set" 0 $LASTEXITCODE
+    if (-not (Select-String -Path $releaseCompleteLog -SimpleMatch "SUBSUMED_UNREGISTERED_AHEAD subsumed-stream -> ready-stream" -Quiet)) {
+        throw "Release inventory did not report the contained unregistered ancestor as subsumed."
+    }
+    Write-Host "SELFTEST_OK release-subsumed-ancestor-marker"
 
     $releaseSnippet = "& '$fixtureReleaseGate' -CanonicalRef 'canonical' -RegistryPath '$releaseRegistry' -CandidateRefs @('ready-stream','active-stream') -GateRelease"
     $actual = Invoke-ChildSnippet "release-nonready" $releaseSnippet

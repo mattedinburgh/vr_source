@@ -99,12 +99,30 @@ foreach ($ref in $remoteRefs) {
         State = $state
         Stream = $stream
         Reason = $reason
+        SubsumedBy = ""
     }
 }
 
 $rows = @($rows | Sort-Object State, Relation, Branch)
+$aheadRows = @($rows | Where-Object { $_.Relation -eq "AHEAD" })
+foreach ($row in $aheadRows) {
+    if ($row.State -ne "unregistered") { continue }
+    foreach ($other in $aheadRows) {
+        if ($row.Branch -eq $other.Branch) { continue }
+        $ancestorResult = Invoke-Git @("merge-base", "--is-ancestor", "origin/$($row.Branch)", "origin/$($other.Branch)")
+        if ($ancestorResult.ExitCode -eq 0) {
+            $row.SubsumedBy = $other.Branch
+            break
+        }
+        if ($ancestorResult.ExitCode -ne 1) {
+            throw "Unable to test branch containment: $($row.Branch) -> $($other.Branch)"
+        }
+    }
+}
+
 $pendingRows = @($rows | Where-Object { $_.Relation -in @("AHEAD", "DIVERGED") })
-$unregisteredAhead = @($pendingRows | Where-Object { $_.State -eq "unregistered" -and $_.Relation -eq "AHEAD" })
+$unregisteredAhead = @($pendingRows | Where-Object { $_.State -eq "unregistered" -and $_.Relation -eq "AHEAD" -and -not $_.SubsumedBy })
+$subsumedUnregisteredAhead = @($pendingRows | Where-Object { $_.State -eq "unregistered" -and $_.Relation -eq "AHEAD" -and $_.SubsumedBy })
 $readyAhead = @($pendingRows | Where-Object { $_.State -eq "ready" -and $_.Relation -eq "AHEAD" })
 $readyDiverged = @($pendingRows | Where-Object { $_.State -eq "ready" -and $_.Relation -eq "DIVERGED" })
 $historicalDiverged = @($pendingRows | Where-Object { $_.State -eq "unregistered" -and $_.Relation -eq "DIVERGED" })
@@ -133,7 +151,7 @@ if ($displayPendingRows.Count -eq 0) {
     Write-Host "  none"
 }
 else {
-    $displayPendingRows | Select-Object Branch, Relation, Ahead, Behind, State, Stream, Reason | Format-Table -AutoSize
+    $displayPendingRows | Select-Object Branch, Relation, Ahead, Behind, State, SubsumedBy, Stream, Reason | Format-Table -AutoSize
 }
 if (-not $ShowUnregisteredDiverged -and $historicalDiverged.Count -gt 0) {
     Write-Host ("  Historical/unregistered DIVERGED refs hidden: " + $historicalDiverged.Count + " (use -ShowUnregisteredDiverged to list)")
@@ -144,6 +162,7 @@ Write-Host "Release-ready AHEAD streams: $($readyAhead.Count)"
 foreach ($row in $readyAhead) { Write-Host "  READY $($row.Branch) [$($row.Stream)]" }
 foreach ($row in $readyDiverged) { Write-Host "  BLOCKED_READY_DIVERGED $($row.Branch) [$($row.Stream)]" }
 foreach ($row in $unregisteredAhead) { Write-Host "  UNREGISTERED_AHEAD $($row.Branch)" }
+foreach ($row in $subsumedUnregisteredAhead) { Write-Host "  SUBSUMED_UNREGISTERED_AHEAD $($row.Branch) -> $($row.SubsumedBy)" }
 if ($JsonReport) {
     $report = [pscustomobject]@{
         canonical_ref = $CanonicalRef
@@ -152,6 +171,7 @@ if ($JsonReport) {
         ready_ahead = $readyAhead
         ready_diverged = $readyDiverged
         unregistered_ahead = $unregisteredAhead
+        subsumed_unregistered_ahead = $subsumedUnregisteredAhead
         historical_unregistered_diverged = $historicalDiverged
         requested_candidates = $candidateNames
         omitted_ready = $omittedReady
