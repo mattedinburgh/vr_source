@@ -1,13 +1,20 @@
 param(
     [int]$Workers = 12,
-    [switch]$Force
+    [switch]$Force,
+    [switch]$ConfigOnly,
+    [string]$GameRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version 2
 
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$GameRoot = Split-Path -Parent $ScriptRoot
+if ([string]::IsNullOrWhiteSpace($GameRoot)) {
+    $GameRoot = Split-Path -Parent $ScriptRoot
+}
+else {
+    $GameRoot = (Resolve-Path $GameRoot).Path
+}
 $DataRoot = Join-Path $GameRoot "Data-Vengeance"
 $TableRoot = Join-Path $DataRoot "TableData\LogicalBodyTypes"
 $PaletteRoot = Join-Path $DataRoot "Palettes"
@@ -404,7 +411,14 @@ function Expand-VengeanceEquipmentLayers {
         [Parameter(Mandatory=$true)][string[]]$UnsupportedAnimations
     )
 
-    $layersToAdd = @(
+    # Merge, rather than merely add, every equipment layer used by the
+    # hybrid renderer. Vengeance can ship an existing vest/helmet layer with
+    # empty or partial LayerProp entries (notably BGM Kevlar/Spectra/EOD).
+    # Keeping target surfaces and filling only missing animation states
+    # preserves VR-specific art while restoring complete 1.13 pose coverage.
+    $layersToMerge = @(
+        "vest",
+        "helmet",
         "legarmor",
         "facegear",
         "gasmask",
@@ -428,50 +442,79 @@ function Expand-VengeanceEquipmentLayers {
         [xml]$targetDoc = [System.IO.File]::ReadAllText($targetBodyPath)
 
         $addedLayers = 0
+        $addedProps = 0
+        $addedSurfaces = 0
         $prunedSurfaces = 0
 
-        foreach ($layerName in $layersToAdd) {
-            $alreadyPresent = $targetDoc.SelectSingleNode("/LogicalAnimationSurfaces/Layer[@name='$layerName']")
-            if ($null -ne $alreadyPresent) { continue }
-
+        foreach ($layerName in $layersToMerge) {
             $sourceLayer = $gearDoc.SelectSingleNode("/LogicalAnimationSurfaces/Layer[@name='$layerName']")
             if ($null -eq $sourceLayer) {
                 throw "Upstream $Key gear layer not found: $layerName"
             }
 
-            $clone = $targetDoc.ImportNode($sourceLayer, $true)
-
-            foreach ($surface in @($clone.SelectNodes(".//Surface"))) {
-                $animationName = ""
-
-                if ($surface.HasAttribute("animsurface")) {
-                    $animationName = $surface.GetAttribute("animsurface")
-                }
-                elseif ($surface.HasAttribute("animstate")) {
-                    $animationName = $surface.GetAttribute("animstate")
-                }
-
-                if ($animationName -and ($UnsupportedAnimations -contains $animationName)) {
-                    [void]$surface.ParentNode.RemoveChild($surface)
-                    $prunedSurfaces++
-                }
-            }
-
-            foreach ($prop in @($clone.SelectNodes("./LayerProp"))) {
-                if ($prop.SelectNodes("./Surface").Count -eq 0) {
-                    [void]$clone.RemoveChild($prop)
-                }
-            }
-
-            if ($clone.SelectNodes("./LayerProp").Count -gt 0) {
-                [void]$targetDoc.DocumentElement.AppendChild($clone)
+            $targetLayer = $targetDoc.SelectSingleNode("/LogicalAnimationSurfaces/Layer[@name='$layerName']")
+            if ($null -eq $targetLayer) {
+                $targetLayer = $targetDoc.CreateElement("Layer")
+                [void]$targetLayer.SetAttribute("name", $layerName)
+                [void]$targetDoc.DocumentElement.AppendChild($targetLayer)
                 $addedLayers++
+            }
+
+            foreach ($sourceProp in @($sourceLayer.SelectNodes("./LayerProp"))) {
+                $filterName = $sourceProp.GetAttribute("filter")
+                $targetProp = @($targetLayer.SelectNodes("./LayerProp")) |
+                    Where-Object { $_.GetAttribute("filter") -eq $filterName } |
+                    Select-Object -First 1
+
+                if ($null -eq $targetProp) {
+                    $targetProp = $targetDoc.CreateElement("LayerProp")
+                    foreach ($attribute in @($sourceProp.Attributes)) {
+                        [void]$targetProp.SetAttribute($attribute.Name, $attribute.Value)
+                    }
+                    [void]$targetLayer.AppendChild($targetProp)
+                    $addedProps++
+                }
+
+                $existingAnimationKeys = New-Object "System.Collections.Generic.HashSet[string]" ([System.StringComparer]::Ordinal)
+                foreach ($surface in @($targetProp.SelectNodes("./Surface"))) {
+                    if ($surface.HasAttribute("animsurface")) {
+                        [void]$existingAnimationKeys.Add("animsurface:" + $surface.GetAttribute("animsurface"))
+                    }
+                    elseif ($surface.HasAttribute("animstate")) {
+                        [void]$existingAnimationKeys.Add("animstate:" + $surface.GetAttribute("animstate"))
+                    }
+                }
+
+                foreach ($sourceSurface in @($sourceProp.SelectNodes("./Surface"))) {
+                    $animationKey = ""
+                    $animationName = ""
+                    if ($sourceSurface.HasAttribute("animsurface")) {
+                        $animationName = $sourceSurface.GetAttribute("animsurface")
+                        $animationKey = "animsurface:" + $animationName
+                    }
+                    elseif ($sourceSurface.HasAttribute("animstate")) {
+                        $animationName = $sourceSurface.GetAttribute("animstate")
+                        $animationKey = "animstate:" + $animationName
+                    }
+
+                    if ($animationName -and ($UnsupportedAnimations -contains $animationName)) {
+                        $prunedSurfaces++
+                        continue
+                    }
+                    if ($animationKey -and $existingAnimationKeys.Contains($animationKey)) {
+                        continue
+                    }
+
+                    [void]$targetProp.AppendChild($targetDoc.ImportNode($sourceSurface, $true))
+                    if ($animationKey) { [void]$existingAnimationKeys.Add($animationKey) }
+                    $addedSurfaces++
+                }
             }
         }
 
         $neededSurfaceNames = New-Object "System.Collections.Generic.HashSet[string]" ([System.StringComparer]::Ordinal)
 
-        foreach ($layerName in $layersToAdd) {
+        foreach ($layerName in $layersToMerge) {
             $layer = $targetDoc.SelectSingleNode("/LogicalAnimationSurfaces/Layer[@name='$layerName']")
             if ($null -eq $layer) { continue }
 
@@ -539,7 +582,7 @@ function Expand-VengeanceEquipmentLayers {
             [System.IO.File]::WriteAllText($targetCatalogPath, $targetCatalogText, (New-Object System.Text.UTF8Encoding($false)))
         }
 
-        Write-Host ("{0} equipment layers added    : {1} (surfaces +{2}, unsupported pruned {3})" -f $Key, $addedLayers, $append.Count, $prunedSurfaces)
+        Write-Host ("{0} equipment merge           : layers +{1}, props +{2}, surfaces +{3}, defs +{4}, unsupported pruned {5}" -f $Key, $addedLayers, $addedProps, $addedSurfaces, $append.Count, $prunedSurfaces)
     }
     finally {
         foreach ($tempFile in $tempFiles) {
@@ -974,6 +1017,11 @@ $paletteFiles = @(
 Write-Host "Refreshing 1.13 LOBOT palette tables..."
 foreach ($palette in $paletteFiles) {
     Get-UrlFile -Url "$UpstreamRaw/Palettes/$palette" -Destination (Join-Path $PaletteRoot $palette)
+}
+
+if ($ConfigOnly) {
+    Write-Host "Configuration-only deployment complete; graphics were not changed."
+    exit 0
 }
 
 $surfaceCatalogs = @(
