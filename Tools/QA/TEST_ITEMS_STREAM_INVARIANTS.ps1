@@ -57,6 +57,22 @@ Require-Text "Tactical\Keys.cpp" "UINT16 usDamage = Explosive[Item[pSoldier->inv
 Require-Text "Tactical\Keys.cpp" "LockTable[pDoor->ubLockID].ubSmashDifficulty != OPENING_NOT_POSSIBLE" "door charges respect impossible locks"
 Require-Text "Tactical\Keys.cpp" "pSoldier->bOverTerrainType, ubVolume, NOISE_EXPLOSION" "door charges generate explosion noise"
 
+$explosivesFixture = Join-Path $PSScriptRoot "TEST_ITEMS_EXPLOSIVES.ps1"
+& "$PSHOME\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File $explosivesFixture
+if ($LASTEXITCODE -ne 0) {
+    $failures.Add("deterministic explosives fixture failed")
+} else {
+    Write-Host "PASS: deterministic shaped-charge/explosives fixture"
+}
+
+$persistenceFixture = Join-Path $PSScriptRoot "TEST_ITEMS_PERSISTENCE.ps1"
+& "$PSHOME\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File $persistenceFixture
+if ($LASTEXITCODE -ne 0) {
+    $failures.Add("deterministic persistence fixture failed")
+} else {
+    Write-Host "PASS: deterministic inventory persistence fixture"
+}
+
 if ($failures.Count -gt 0) {
     Write-Host ""
     Write-Host "ITEM_STREAM_INVARIANTS_FAILED"
