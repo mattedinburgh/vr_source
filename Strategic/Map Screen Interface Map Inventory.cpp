@@ -969,7 +969,7 @@ static UINT16 BuildSectorAmmoObject( UINT8 ubCalibre, UINT16 usMagSize,
 
 // Loaded weapons have priority over spare magazines.  Partial magazines keep
 // their current ammo type; an empty gun uses the normal loadout ammo priority.
-static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject )
+static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject, UINT16 usMaxRoundsToAdd = 0 )
 {
 	if ( pGun == NULL || !pGun->exists() || !( Item[pGun->usItem].usItemClass & IC_GUN ) )
 		return 0;
@@ -1013,13 +1013,18 @@ static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject )
 	}
 	else
 	{
-		sAmmoType = FindSectorAmmoTypeForFill( ubCalibre, usMagSize, usMagSize );
+		UINT16 usInitialTarget = ( usMaxRoundsToAdd > 0 ) ?
+			(UINT16)__min( (UINT32)usMagSize, (UINT32)usMaxRoundsToAdd ) : usMagSize;
+		sAmmoType = FindSectorAmmoTypeForFill( ubCalibre, usMagSize, usInitialTarget );
 	}
 
 	if ( sAmmoType < 0 )
 		return 0;
 
 	UINT16 usWanted = fReplaceCurrent ? usMagSize : ( usMagSize - usCurrent );
+	if ( usMaxRoundsToAdd > 0 )
+		usWanted = (UINT16)__min( (UINT32)usWanted, (UINT32)usMaxRoundsToAdd );
+
 	UINT32 uiAvailable = CountSectorAmmoRounds( ubCalibre, (UINT8)sAmmoType );
 	usWanted = (UINT16)__min( (UINT32)usWanted, uiAvailable );
 	if ( usWanted == 0 )
@@ -1076,6 +1081,68 @@ static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject )
 	}
 
 	return usBuilt;
+}
+
+// Before normal full top-up, give each otherwise-unarmed eligible merc one
+// chamberable round where compatible supply exists.  This makes severe ammo
+// shortages degrade fairly: an early inventory slot cannot consume a full
+// magazine while a later merc is left completely unable to fire.
+static BOOLEAN SectorLoadoutMercHasLoadedGun( SOLDIERTYPE *pSoldier )
+{
+	if ( !IsSectorLoadoutMercEligible( pSoldier ) )
+		return FALSE;
+
+	for ( INT32 bSlot = 0; bSlot < NUM_INV_SLOTS; ++bSlot )
+	{
+		OBJECTTYPE *pGun = &( pSoldier->inv[bSlot] );
+		if ( !pGun->exists() || !( Item[pGun->usItem].usItemClass & IC_GUN ) )
+			continue;
+
+		for ( UINT8 x = 0; x < pGun->ubNumberOfObjects; ++x )
+		{
+			if ( (*pGun)[x]->data.gun.ubGunShotsLeft > 0 )
+				return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+static UINT32 PrimeEmptySectorMercGuns()
+{
+	UINT32 uiRoundsLoaded = 0;
+
+	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
+		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
+	{
+		SOLDIERTYPE *pSoldier = MercPtrs[id];
+		if ( !IsSectorLoadoutMercEligible( pSoldier ) || SectorLoadoutMercHasLoadedGun( pSoldier ) )
+			continue;
+
+		BOOLEAN fPrimed = FALSE;
+		for ( INT32 bSlot = 0; bSlot < NUM_INV_SLOTS && !fPrimed; ++bSlot )
+		{
+			OBJECTTYPE *pGun = &( pSoldier->inv[bSlot] );
+			if ( !pGun->exists() || !( Item[pGun->usItem].usItemClass & IC_GUN ) )
+				continue;
+
+			for ( UINT8 x = 0; x < pGun->ubNumberOfObjects; ++x )
+			{
+				if ( (*pGun)[x]->data.gun.ubGunShotsLeft > 0 )
+					continue;
+
+				UINT16 usBuilt = TopUpGunFromSector( pGun, x, 1 );
+				if ( usBuilt > 0 )
+				{
+					uiRoundsLoaded += usBuilt;
+					fPrimed = TRUE;
+					break;
+				}
+			}
+		}
+	}
+
+	return uiRoundsLoaded;
 }
 
 static UINT32 TopUpAllSectorMercGuns()
@@ -1199,8 +1266,10 @@ static void RedistributeSectorAmmo3x()
 
 	PoolSquadSpareAmmo();
 
-	// Weapon loading comes first because it costs no inventory slots.
-	UINT32 uiRoundsLoaded = TopUpAllSectorMercGuns();
+	// Shootability comes before fullness: under severe shortages, prime one gun
+	// for every otherwise-unarmed merc before normal sequential full top-up.
+	UINT32 uiRoundsLoaded = PrimeEmptySectorMercGuns();
+	uiRoundsLoaded += TopUpAllSectorMercGuns();
 
 	std::vector<SECTOR_LOADOUT_AMMO_DEMAND> demands;
 	UINT32 uiMercCount = 0;

@@ -20,6 +20,8 @@ Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "uiNumOfSlots = 
 Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "gWorldItems[ i ].usFlags |= WORLD_ITEM_GRIDNO_NOT_SET_USE_ENTRY_POINT;" "loaded-sector stash updates world items"
 Require-Text "Strategic\Map Screen Interface Map Inventory.h" "INT32 sGridNo=-1" "unknown stash placement uses minus-one sentinel"
 Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "for ( UINT8 ubWave = 0; ubWave < 5; ++ubWave )" "ammo distribution uses fair waves"
+Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "TopUpGunFromSector( pGun, x, 1 )" "ammo shortage primes one shootable gun per unarmed merc"
+Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "UINT32 uiRoundsLoaded = PrimeEmptySectorMercGuns();" "shootability is prioritized before full gun top-up"
 Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "ubWaveTarget = (UINT8)__min( (UINT32)demand.ubMaxMags," "ammo reserve target is per demand"
 Require-Text "Tactical\Rotting Corpses.cpp" "static void ReduceLootForMilitiaKill" "militia tactical kills use reduced loot"
 Require-Text "Tactical\Rotting Corpses.cpp" "EnemyItemMinimumDropWeight" "minimum loot respects category rates"
@@ -34,6 +36,10 @@ Require-Text "TileEngine\physics.cpp" "Smoke and gas grenades should simply be n
 Require-Text "TileEngine\physics.cpp" "Explosive[Item[pObject->Obj.usItem].ubClassIndex].ubType == EXPLOSV_FLASHBANG" "underwater delayed detonation includes flashbang"
 Require-Text "TileEngine\physics.cpp" "Water( sTargetSpot, ubTargetLevel )" "throw force is water-aware"
 Require-Text "TileEngine\Explosion Control.cpp" "!Water(sGridNo, bLevel)" "post-explosion smoke is blocked on water"
+Require-Text "Tactical\Items.cpp" "pSoldier->inv[bLoop][0]->data.objectStatus >= USABLE" "door breaching ignores unusable charges"
+Require-Text "Tactical\Keys.cpp" "UINT16 usDamage = Explosive[Item[pSoldier->inv[bSlot].usItem].ubClassIndex].ubDamage;" "door charge damage is saved before consumption"
+Require-Text "Tactical\Keys.cpp" "LockTable[pDoor->ubLockID].ubSmashDifficulty != OPENING_NOT_POSSIBLE" "door charges respect impossible locks"
+Require-Text "Tactical\Keys.cpp" "pSoldier->bOverTerrainType, ubVolume, NOISE_EXPLOSION" "door charges generate explosion noise"
 
 if ($failures.Count -gt 0) {
     Write-Host ""
