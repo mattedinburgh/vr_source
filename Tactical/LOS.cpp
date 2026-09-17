@@ -3330,6 +3330,13 @@ INT32 StructureResistanceIncreasedByRange( INT32 iImpactReduction, INT32 iGunRan
 }
 
 
+static INT32 ApplyGlobalPenetrationMultiplier( INT32 iImpactReduction )
+{
+	if ( iImpactReduction <= 0 ) return( iImpactReduction );
+	FLOAT fMultiplier = gGameExternalOptions.fGlobalPenetrationMultiplier;
+	if ( fMultiplier <= 0.0f ) fMultiplier = 1.0f;
+	return( max( 1, (INT32)( (FLOAT)iImpactReduction / fMultiplier + 0.5f ) ) );
+}
 INT32 HandleBulletStructureInteraction( BULLET * pBullet, STRUCTURE * pStructure, BOOLEAN * pfHit )
 {
 	DOOR		*pDoor;
@@ -3468,6 +3475,7 @@ INT32 HandleBulletStructureInteraction( BULLET * pBullet, STRUCTURE * pStructure
 		iImpactReduction = StructureResistanceIncreasedByRange( iImpactReduction, pBullet->iRange, pBullet->iLoop );
 
 		iImpactReduction = (INT32) (iImpactReduction * AmmoTypes[ubAmmoType].structureImpactReductionMultiplier / max(1,AmmoTypes[ubAmmoType].structureImpactReductionDivisor));
+		iImpactReduction = ApplyGlobalPenetrationMultiplier( iImpactReduction );
 
 		DebugMsg(TOPIC_JA2, DBG_LEVEL_3, String("VR_PEN contact bullet=%d grid=%d structure=%d material=%d density=%d ammo=%d impact=%d accumulatedBefore=%d appliedResistance=%d range=%d distance=%d", pBullet->iBullet, pStructure->sGridNo, pStructure->usStructureID, ubMaterial, ubDensity, ubAmmoType, iCurrImpact, pBullet->iImpactReduction, iImpactReduction, pBullet->iRange, pBullet->iLoop));
 
@@ -3560,6 +3568,7 @@ INT32 CTGTHandleBulletStructureInteraction( BULLET * pBullet, STRUCTURE * pStruc
 	iImpactReduction = StructureResistanceIncreasedByRange( iImpactReduction, pBullet->iRange, pBullet->iLoop );
 
 	iImpactReduction = (INT32)(iImpactReduction * AmmoTypes[pBullet->pFirer->inv[ pBullet->pFirer->ubAttackingHand ][0]->data.gun.ubGunAmmoType].structureImpactReductionMultiplier / max(1,AmmoTypes[pBullet->pFirer->inv[ pBullet->pFirer->ubAttackingHand ][0]->data.gun.ubGunAmmoType].structureImpactReductionDivisor));
+	iImpactReduction = ApplyGlobalPenetrationMultiplier( iImpactReduction );
 
 	//switch (pBullet->pFirer->inv[ pBullet->pFirer->ubAttackingHand ][0]->data.gun.ubGunAmmoType)
 	//{

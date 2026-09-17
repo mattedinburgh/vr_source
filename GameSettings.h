@@ -902,6 +902,8 @@ typedef struct
 	// terrain mapping so mods can disable detailed metadata safely.
 	BOOLEAN fAdditionalTileProperties;
 	BOOLEAN fAlternateMultiTerrainCamoCalculation;
+	// Global tuning: >1.0 penetrates more, <1.0 penetrates less; 1.0 preserves baseline.
+	FLOAT fGlobalPenetrationMultiplier;
 
 	// HEADROCK HAM B1: Global modifier for mine income (0 is automatically turned to 1 to avoid divide-by-zero.)
 	INT16 usMineIncomePercentage;
