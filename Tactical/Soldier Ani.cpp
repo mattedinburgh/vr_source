@@ -1194,7 +1194,7 @@ BOOLEAN AdjustToNextAnimationFrame( SOLDIERTYPE *pSoldier )
 								 pPlayer->stats.bLife > 0 &&
 								 !TileIsOutOfBounds( pPlayer->sGridNo ) )
 							{
-								const int iTargetOffset = PythSpacesAway( pSoldier->sTargetGridNo, pPlayer->sGridNo );
+								const int iTargetOffset = PythSpacesAway( pSoldier->pThrowParams->sOriginalTargetGridNo, pPlayer->sGridNo );
 								if ( iNearestPlayerId < 0 || iTargetOffset < iTargetOffsetToNearestPlayer )
 								{
 									iNearestPlayerId = iPlayer;
@@ -1216,8 +1216,8 @@ BOOLEAN AdjustToNextAnimationFrame( SOLDIERTYPE *pSoldier )
 							iRealObjectID,
 							usThrownItem,
 							pSoldier->sGridNo,
-							pSoldier->sTargetGridNo,
-							PythSpacesAway( pSoldier->sGridNo, pSoldier->sTargetGridNo ),
+							pSoldier->pThrowParams->sOriginalTargetGridNo,
+							PythSpacesAway( pSoldier->sGridNo, pSoldier->pThrowParams->sOriginalTargetGridNo ),
 							iNearestPlayerId,
 							iDistanceToNearestPlayer,
 							iTargetOffsetToNearestPlayer,
@@ -1227,7 +1227,15 @@ BOOLEAN AdjustToNextAnimationFrame( SOLDIERTYPE *pSoldier )
 							pSoldier->bBreathMax,
 							gAnimControl[ pSoldier->usAnimState ].ubEndHeight,
 							iThrowingTraits,
-							Item[usThrownItem].ubWeight );
+							Item[usThrownItem].ubWeight,
+							pSoldier->pThrowParams->ubThrowAimTime,
+							(int)pSoldier->pThrowParams->uiThrowHitChance,
+							pSoldier->pThrowParams->bMissRadiusCap,
+							pSoldier->pThrowParams->bMinMissRadius,
+							pSoldier->pThrowParams->bMaxMissRadius,
+							pSoldier->pThrowParams->sDispersedTargetGridNo,
+							pSoldier->pThrowParams->fGrenadeRolling ? true : false,
+							pSoldier->pThrowParams->fWaterTarget ? true : false );
 					}
 
 					// OJW - 20091002 - Explosives

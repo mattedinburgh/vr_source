@@ -2427,6 +2427,9 @@ typedef struct
 	FLOAT fDamageBreathModifierExplosive;
 	FLOAT fDamageHealthMoveModifierExplosive;	// applies when character moves through gas cloud without a gas mask
 	FLOAT fDamageBreathMoveModifierExplosive;	// applies when character moves through gas cloud without a gas mask
+	// Modern 1.13 CTH-driven projectile dispersion caps.
+	UINT8 usMissMaxRadiusGrenade;
+	UINT8 usMissMaxRadiusMortar;
 
 	// ------------ ENERGY MODIFIERS -----------------
 	// Flugente: energy consumption settings (energy-consumption of attached non-vanilla batteries)

@@ -1,0 +1,56 @@
+name: Items inventory loot compile
+
+on:
+  push:
+    branches:
+      - items/inventory-loot-2026
+    paths:
+      - 'Tactical/**/*.cpp'
+      - 'Tactical/**/*.h'
+      - 'Strategic/**/*.cpp'
+      - 'Strategic/**/*.h'
+      - 'TileEngine/**/*.cpp'
+      - 'TileEngine/**/*.h'
+      - 'Multiplayer/**/*.cpp'
+      - 'GameSettings.cpp'
+      - 'GameSettings.h'
+      - 'VRAnalytics.cpp'
+      - 'VRAnalytics.h'
+      - 'Tools/QA/TEST_ITEMS_STREAM_INVARIANTS.ps1'
+      - 'ja2_VS2013.vcxproj'
+      - 'ja2_VS2013.sln'
+      - 'GENERATE_VR_BUILD_INFO.ps1'
+      - '.github/workflows/items-inventory-loot-compile.yml'
+  workflow_dispatch:
+
+jobs:
+  hosted-compile:
+    runs-on: windows-2022
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out item stream source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Verify item-stream invariants
+        shell: powershell
+        run: |
+          & '.\\Tools\\QA\\TEST_ITEMS_STREAM_INVARIANTS.ps1'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Generate VR build info
+        shell: powershell
+        run: |
+          & '.\\GENERATE_VR_BUILD_INFO.ps1' -RepoRoot '.' -OutputPath '.\\.generated\\VRBuildInfo.generated.h' -Configuration 'Release' -Platform 'Win32' -TargetName 'JA2_EN_Release.exe'
+
+      - name: Compile item-stream translation units
+        shell: powershell
+        run: |
+          msbuild '.\\ja2_VS2013.vcxproj' /m /t:ClCompile /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

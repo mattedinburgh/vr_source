@@ -263,7 +263,15 @@ void VRAnalyticsTacticalGrenadeThrowLaunched(
 	int breathMax,
 	int stance,
 	int throwingTraits,
-	int itemWeight );
+	int itemWeight,
+	int aimTime,
+	int hitChance,
+	int missRadiusCap,
+	int minMissRadius,
+	int maxMissRadius,
+	long dispersedTargetGrid,
+	bool grenadeRolling,
+	bool waterTarget );
 
 void VRAnalyticsTacticalGrenadeThrowLanded(
 	unsigned int soldierId,

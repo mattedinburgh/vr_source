@@ -746,6 +746,7 @@ BOOLEAN AttemptToBlowUpLock( SOLDIERTYPE * pSoldier, DOOR * pDoor )
 	// inventory slot to calculate lock damage (and again on a failed skill check).
 	UINT16 usDamage = Explosive[Item[pSoldier->inv[bSlot].usItem].ubClassIndex].ubDamage;
 	UINT16 usItem = pSoldier->inv[bSlot].usItem;
+	UINT8 ubVolume = (UINT8)Explosive[Item[pSoldier->inv[bSlot].usItem].ubClassIndex].ubVolume;
 
 	// Consume the charge once, regardless of success/failure.
 	pSoldier->inv[bSlot].RemoveObjectsFromStack(1);
@@ -820,6 +821,11 @@ BOOLEAN AttemptToBlowUpLock( SOLDIERTYPE * pSoldier, DOOR * pDoor )
 
 			fSuccess = TRUE;
 		}
+
+		// Current 1.13 parity: a successfully placed shaped charge is an
+		// explosion noise source even when the lock itself survives.
+		MakeNoise( pSoldier->ubID, pSoldier->sGridNo, pSoldier->pathing.bLevel,
+			pSoldier->bOverTerrainType, ubVolume, NOISE_EXPLOSION );
 	}
 	else
 	{

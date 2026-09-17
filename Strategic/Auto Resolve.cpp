@@ -2644,23 +2644,13 @@ void RemoveAutoResolveInterface( BOOLEAN fDeleteForGood )
 	BOOLEAN fFirstGroup = TRUE;
 	BOOLEAN fMercVictoryLoot = FALSE;
 
-	// Capture this before cleanup nulls gpMercs[].pSoldier. A merc-won autoresolve
-	// means at least one living player merc remained on the battlefield at victory.
-	// Militia-only victories and battles where every merc retreated keep strategic
-	// abstract loot rates.
-	if ( fDeleteForGood && gpAR && gpAR->ubBattleStatus == BATTLE_VICTORY && gpAR->ubMercs > 0 )
-	{
-		for ( INT32 iMerc = 0; iMerc < gpAR->ubMercs; ++iMerc )
-		{
-			if ( gpMercs[iMerc].pSoldier &&
-				gpMercs[iMerc].pSoldier->stats.bLife > 0 &&
-				!(gpMercs[iMerc].uiFlags & (CELL_RETREATED | CELL_RETREATING)) )
-			{
-				fMercVictoryLoot = TRUE;
-				break;
-			}
-		}
-	}
+	// Capture autoresolve provenance before cleanup destroys the cells. If player
+	// mercs took part and the player's side won, allow reduced enemy loot. A
+	// militia-only autoresolve remains a no-loot abstraction. Do not require a
+	// surviving merc here: participation is the rule, not survival of a specific
+	// merc at cleanup time.
+	fMercVictoryLoot = ( fDeleteForGood && gpAR &&
+		gpAR->ubBattleStatus == BATTLE_VICTORY && gpAR->ubMercs > 0 );
 
 DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Autoresolve2");
 	//VtResumeSampling();
@@ -2868,6 +2858,8 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"Autoresolve2");
 				UINT32 uiCorpseFlags = ADD_DEAD_SOLDIER_TO_SWEETSPOT;
 				if ( fMercVictoryLoot )
 					uiCorpseFlags |= ADD_DEAD_SOLDIER_PLAYER_AUTORESOLVE_LOOT;
+				else
+					uiCorpseFlags |= ADD_DEAD_SOLDIER_NO_LOOT;
 				AddDeadSoldierToUnLoadedSector( gpAR->ubSectorX, gpAR->ubSectorY, 0,
 					gpEnemies[ i ].pSoldier, RandomGridNo(), uiCorpseFlags );
 			}

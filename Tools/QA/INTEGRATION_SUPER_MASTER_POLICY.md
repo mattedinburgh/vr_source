@@ -28,6 +28,12 @@ IDE retargeting, build outputs, or generated files. Use clean stream worktrees a
 7. A successful compile/build is still required before anything is called playtest-ready.
 8. Preserve a rollback anchor before broad or high-risk integration.
 
+## Project-wide release inventory
+
+Before any project-wide `release`, run `BUILD_RELEASE_INVENTORY.ps1` against the pinned canonical SHA. `RELEASE_STREAM_REGISTRY.json` is the explicit project-wide classification of current workstream tips as `ready`, `active`, `blocked`, `parked`, or `superseded`. A release gate must include every registry `ready` branch that is AHEAD of canonical. A `ready` branch that is DIVERGED must be forward-ported first; it cannot be silently skipped. Any unregistered AHEAD branch blocks release until it is classified, preventing newly completed streams from disappearing from the release set.
+
+Owning streams must update their registry entry when their checkpoint changes release state. Historical DIVERGED refs may remain visible in the inventory. Unregistered AHEAD refs that are strict ancestors of another AHEAD tip are reported as subsumed rather than treated as independent release blockers; if an ancestor is independently release-ready while its descendant is not, register that ancestor explicitly as `ready`. Only registered current stream tips plus independent unregistered AHEAD refs participate in the hard release gate. This avoids both partial releases and false blockers from nested/superseded branch history.
+
 A clean textual merge is necessary but not sufficient. Behavioural overlap in tactical AI, LOS, weapons,
 physics, rendering, inventory, audio, progression, and UI requires subsystem-specific regression checks.
 
@@ -37,7 +43,7 @@ physics, rendering, inventory, audio, progression, and UI requires subsystem-spe
 
 ## Donor-map integration gate
 
-Stream 4 owns sector dependency discovery and manifest generation. Integration/QA owns `VALIDATE_DONOR_SECTOR_MANIFEST.ps1`, which refuses to treat a donor sector as integration-ready unless required map/RPG/script/item/asset/provenance checks are explicitly evidenced and quest/NPC, item, entry/exit and save/load regressions pass. High/Protected sectors additionally require explicit manual approval.
+Stream 4 owns sector dependency discovery, native extraction, donor-vs-Vengeance parity comparison and promotion-manifest generation. Integration/QA consumes two distinct evidence levels. `VALIDATE_DONOR_DEPENDENCY_PARITY.ps1` validates the machine-generated donor comparison report and can gate a named sector with `-Sector <sector> -RequireParity`; `PARITY` means the extracted dependency components match, while `REBASE_REQUIRED` is an explicit stop for direct transplantation and identifies the components that must be preserved/rebased. This parity gate is discovery/pre-migration evidence, not final promotion approval. `VALIDATE_DONOR_SECTOR_MANIFEST.ps1` is the final promotion gate and refuses to treat a donor sector as integration-ready unless required map/RPG/script/item/asset/provenance checks are explicitly evidenced and quest/NPC, item, entry/exit and save/load regressions pass. High/Protected sectors additionally require explicit manual approval.
 
 ## Hard blockers
 
