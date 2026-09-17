@@ -1089,48 +1089,11 @@ static void RenderLogicalMercLayer8BPP(
 }
 
 // Render the logical body/equipment model over a native Vengeance underlay.
-// Only the four core body layers are mandatory. Optional equipment and weapon
-// layers are best-effort: if a single AIMNAS item has no 1.13 visual mapping,
-// the rest of the armour remains visible and the native underlay preserves the
-// soldier/weapon silhouette underneath.
-static BOOLEAN IsLogicalEquipmentOverlayLayer(
-	LogicalBodyTypes::Layers::LayerPropertiesVector::size_type layerIndex )
-{
-	// The Vengeance LOBOT catalog is intentionally overlay-only: the native
-	// Vengeance sprite remains the body/weapon source and these layers add worn
-	// equipment on top.  Do not require or render replacement body layers here.
-	const LogicalBodyTypes::Layers::LayerProperties &layer =
-		LogicalBodyTypes::Layers::Instance().GetLayerProperties( layerIndex );
-	if ( layer.identifier == NULL )
-		return FALSE;
-
-	static const char *equipmentLayers[] =
-	{
-		"legarmor",
-		"vest",
-		"legrig",
-		"legrig_left",
-		"knees",
-		"backpack",
-		"facegear",
-		"gasmask",
-		"ears",
-		"helmet"
-	};
-
-	for ( UINT32 i = 0; i < sizeof( equipmentLayers ) / sizeof( equipmentLayers[ 0 ] ); ++i )
-	{
-		if ( std::strcmp( layer.identifier, equipmentLayers[ i ] ) == 0 )
-			return TRUE;
-	}
-
-	return FALSE;
-}
-
-// Overlay-only renderer: draw the normal Vengeance merc exactly once, then add
-// each compatible equipment layer independently.  One missing item/animation
-// must never suppress unrelated armour or force the whole merc back through the
-// legacy path.
+// Standard animations use the matching 1.13 body and equipment layers together,
+// so armour is aligned to the body set it was authored for.  The native Vengeance
+// sprite remains underneath as a weapon/special-animation safety net.  If the
+// four core logical body layers are not coherent for this exact frame, the caller
+// falls back to the native renderer instead of drawing detached/misaligned armour.
 static BOOLEAN RenderHybridLogicalMercModel(
 	SOLDIERTYPE *pSoldier,
 	UINT8 *pDestBuf,
@@ -1159,19 +1122,46 @@ static BOOLEAN RenderHybridLogicalMercModel(
 	if ( pBodyType == NULL )
 		return FALSE;
 
-	// Native Vengeance is always the authoritative body/weapon sprite and owns
-	// the Z write.  Equipment surfaces below are transparent, Z-no-write overlays.
+	// Alignment gate: only use the layered body when every core body layer is
+	// available for this exact animation frame.  Equipment art is authored against
+	// these 1.13 body layers, so mixing it with an unrelated Vengeance frame is the
+	// source of the visible offset problem.  Unsupported/custom VR animations fall
+	// back cleanly to the native renderer.
+	const char *requiredBodyLayers[] = { "legs", "body", "head", "hands" };
+	for ( UINT32 i = 0; i < sizeof( requiredBodyLayers ) / sizeof( requiredBodyLayers[ 0 ] ); ++i )
+	{
+		if ( !LogicalMercSurfaceFrameUsable(
+			GetLogicalMercSurface( pBodyType, pSoldier, requiredBodyLayers[ i ] ),
+			usImageIndex ) )
+		{
+			return FALSE;
+		}
+	}
+
+	// Draw the original Vengeance merc once as the Z-writing safety underlay.
+	// Matching logical body/equipment layers are then composed over it without
+	// writing Z, preserving native weapon silhouettes when an optional gun layer
+	// is unavailable.
 	RenderLogicalMercLayer8BPP(
 		pDestBuf, uiDestPitchBYTES, sZLevel, sXPos, sYPos, usImageIndex,
 		hNativeObject, pDefaultShadeTable, fZBlitter, fZWrite,
 		fObscuredBlitter, FALSE );
 
+	// Compose the matching logical model in configured layer order.  Native
+	// Vengeance still owns shadow and blood/gore presentation, so those two
+	// logical layers stay disabled here.
 	Layers::LayerGraphIterator layerIter = Layers::Instance().GetIterator( pSoldier->bMovementDirection );
 	Layers::LayerGraphIterator layerEnd = Layers::Instance().GetIterationEnd( pSoldier->bMovementDirection );
+	std::string shadowLayerName( "shadow" );
+	std::string bloodLayerName( "blood" );
+	const Layers::LayerPropertiesVector::size_type shadowLayerIndex =
+		Layers::Instance().GetIndex( shadowLayerName );
+	const Layers::LayerPropertiesVector::size_type bloodLayerIndex =
+		Layers::Instance().GetIndex( bloodLayerName );
 
 	for ( ; layerIter != layerEnd; ++layerIter )
 	{
-		if ( !IsLogicalEquipmentOverlayLayer( layerIter->index ) )
+		if ( layerIter->index == shadowLayerIndex || layerIter->index == bloodLayerIndex )
 			continue;
 
 		const Layers::LayerProperties *pLayerProperties =
