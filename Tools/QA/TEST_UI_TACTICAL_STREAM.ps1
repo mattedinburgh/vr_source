@@ -15,6 +15,17 @@ $buttonPath = Join-Path $RepoRoot 'Standard Gaming Platform\Button System.cpp'
 $panels = [IO.File]::ReadAllText($panelsPath)
 $quotes = [IO.File]::ReadAllText($quotesPath)
 $buttons = [IO.File]::ReadAllText($buttonPath)
+$interfacePath = Join-Path $RepoRoot 'Tactical\Interface.cpp'
+$messagePath = Join-Path $RepoRoot 'Utils\message.cpp'
+$interface = [IO.File]::ReadAllText($interfacePath)
+$message = [IO.File]::ReadAllText($messagePath)
+
+# Enemy identity must remain display-only, deterministic per soldier instance,
+# wired to hover rendering and reused by tactical message/log presentation.
+Assert-Contains $interface 'UINT32 seed = pSoldier->uiUniqueSoldierIdValue;' 'Enemy display identity no longer uses the serialized unique soldier ID.'
+Assert-Contains $interface 'if ( gGameExternalOptions.fSoldierProfiles_Enemy && pSoldier->usSoldierProfile )' 'Authored enemy profile names are no longer preserved ahead of generated identities.'
+Assert-Contains $interface 'BuildTacticalSoldierDisplayName( pSoldier, NameStr );' 'Enemy hover label is not using the centralized tactical display identity.'
+Assert-Contains $message 'BuildTacticalSoldierDisplayName( MercPtrs[ubSoldierID], pName );' 'Tactical messages are not using the centralized tactical display identity.'
 
 # QuickButton renderer contract: disabled buttons do not honor CLICKED_ON, so the
 # active ATK/WDR command must remain enabled while its opposite is disabled.
@@ -37,6 +48,10 @@ $poolStart = $quotes.IndexOf('// VR battlefield communication ------------------
 $poolEnd = $quotes.IndexOf('enum AI_BATTLE_EMOTION', $poolStart)
 if ($poolStart -lt 0 -or $poolEnd -le $poolStart) { throw 'Could not locate contextual callout library boundaries.' }
 $poolBlock = $quotes.Substring($poolStart, $poolEnd - $poolStart)
+$poolLines = [regex]::Matches($poolBlock, 'L"\\"(?<text>.*?)\\""')
+if ($poolLines.Count -ne 230) { throw "Expected 230 contextual pool variants, found $($poolLines.Count)." }
+$distinctPoolLines = @($poolLines | ForEach-Object { $_.Groups['text'].Value } | Sort-Object -Unique)
+if ($distinctPoolLines.Count -lt 220) { throw "Contextual callout library collapsed to only $($distinctPoolLines.Count) distinct lines." }
 if ($poolBlock.Contains('\u00A1') -or $poolBlock.Contains('\u00F3') -or $poolBlock.Contains('\u00E9')) {
     throw 'Spanish escaped text remains in the live contextual callout library.'
 }
