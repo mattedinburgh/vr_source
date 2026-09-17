@@ -7,7 +7,7 @@
       "stream": "Integration / Super Master / QA / Tooling",
       "branch": "integration/qa-gates-2026-09-16",
       "state": "ready",
-      "reason": "Project-wide release inventory, exact overlap/strategic-path gates, performance comparator and donor-manifest validator pass deterministic QA and the pinned candidate gate."
+      "reason": "Project-wide release inventory, exact overlap/strategic-path gates, performance comparator, final donor-manifest validator and donor dependency-parity gate pass deterministic QA against current stream evidence."
     },
     {
       "stream": "Tactical AI + AI Engine / Performance",

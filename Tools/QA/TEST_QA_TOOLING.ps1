@@ -3,12 +3,13 @@ $ErrorActionPreference = "Stop"
 $childPowerShell = (Get-Command powershell.exe -ErrorAction Stop).Source
 $perfScript = Join-Path $PSScriptRoot "COMPARE_AI_PERFORMANCE.ps1"
 $donorScript = Join-Path $PSScriptRoot "VALIDATE_DONOR_SECTOR_MANIFEST.ps1"
+$donorParityScript = Join-Path $PSScriptRoot "VALIDATE_DONOR_DEPENDENCY_PARITY.ps1"
 $candidateScript = Join-Path $PSScriptRoot "TEST_INTEGRATION_CANDIDATE.ps1"
 $batchScript = Join-Path $PSScriptRoot "TEST_INTEGRATION_BATCH.ps1"
 $conflictScript = Join-Path $PSScriptRoot "CHECK_INTEGRATION_CONFLICTS.ps1"
 $releaseInventoryScript = Join-Path $PSScriptRoot "BUILD_RELEASE_INVENTORY.ps1"
 
-foreach ($requiredScript in @($perfScript, $donorScript, $candidateScript, $batchScript, $conflictScript, $releaseInventoryScript)) {
+foreach ($requiredScript in @($perfScript, $donorScript, $donorParityScript, $candidateScript, $batchScript, $conflictScript, $releaseInventoryScript)) {
     if (-not (Test-Path $requiredScript)) {
         throw "Required QA tool missing: $requiredScript"
     }
@@ -125,6 +126,49 @@ try {
     $manifest | ConvertTo-Json -Depth 8 | Set-Content -Path $invalidManifest -Encoding UTF8
     & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $donorScript -ManifestPath $invalidManifest *> $null
     Assert-ExitCode "donor-invalid" 51 $LASTEXITCODE
+
+    $parityReport = [pscustomobject]@{
+        selected = 2
+        parity = 1
+        rebase_required = 1
+        failed = 0
+        results = @(
+            [pscustomobject]@{
+                sector = "A6"
+                status = "PARITY"
+                donor_map = "A6.dat"
+                baseline_snapshot = "A6.baseline.json"
+                donor_snapshot = "A6.donor.json"
+                differing_components = @()
+                error = $null
+            },
+            [pscustomobject]@{
+                sector = "A7"
+                status = "REBASE_REQUIRED"
+                donor_map = "A7.dat"
+                baseline_snapshot = "A7.baseline.json"
+                donor_snapshot = "A7.donor.json"
+                differing_components = @("soldier_placements")
+                error = $null
+            }
+        )
+    }
+    $parityReportPath = Join-Path $tempRoot "donor-parity.json"
+    $parityReport | ConvertTo-Json -Depth 6 | Set-Content -Path $parityReportPath -Encoding UTF8
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $donorParityScript -ReportPath $parityReportPath *> $null
+    Assert-ExitCode "donor-parity-report-valid" 0 $LASTEXITCODE
+
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $donorParityScript -ReportPath $parityReportPath -Sector A6 -RequireParity *> $null
+    Assert-ExitCode "donor-parity-sector-safe" 0 $LASTEXITCODE
+
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $donorParityScript -ReportPath $parityReportPath -Sector A7 -RequireParity *> $null
+    Assert-ExitCode "donor-parity-rebase-block" 52 $LASTEXITCODE
+
+    $parityReport.parity = 2
+    $badParityReportPath = Join-Path $tempRoot "donor-parity-invalid.json"
+    $parityReport | ConvertTo-Json -Depth 6 | Set-Content -Path $badParityReportPath -Encoding UTF8
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $donorParityScript -ReportPath $badParityReportPath *> $null
+    Assert-ExitCode "donor-parity-count-integrity" 52 $LASTEXITCODE
 
     $policyRepo = Join-Path $tempRoot "candidate-policy-repo"
     New-Item -ItemType Directory -Force -Path (Join-Path $policyRepo "Tools\QA") | Out-Null

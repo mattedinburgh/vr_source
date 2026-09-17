@@ -43,7 +43,7 @@ physics, rendering, inventory, audio, progression, and UI requires subsystem-spe
 
 ## Donor-map integration gate
 
-Stream 4 owns sector dependency discovery and manifest generation. Integration/QA owns `VALIDATE_DONOR_SECTOR_MANIFEST.ps1`, which refuses to treat a donor sector as integration-ready unless required map/RPG/script/item/asset/provenance checks are explicitly evidenced and quest/NPC, item, entry/exit and save/load regressions pass. High/Protected sectors additionally require explicit manual approval.
+Stream 4 owns sector dependency discovery, native extraction, donor-vs-Vengeance parity comparison and promotion-manifest generation. Integration/QA consumes two distinct evidence levels. `VALIDATE_DONOR_DEPENDENCY_PARITY.ps1` validates the machine-generated donor comparison report and can gate a named sector with `-Sector <sector> -RequireParity`; `PARITY` means the extracted dependency components match, while `REBASE_REQUIRED` is an explicit stop for direct transplantation and identifies the components that must be preserved/rebased. This parity gate is discovery/pre-migration evidence, not final promotion approval. `VALIDATE_DONOR_SECTOR_MANIFEST.ps1` is the final promotion gate and refuses to treat a donor sector as integration-ready unless required map/RPG/script/item/asset/provenance checks are explicitly evidenced and quest/NPC, item, entry/exit and save/load regressions pass. High/Protected sectors additionally require explicit manual approval.
 
 ## Hard blockers
 
