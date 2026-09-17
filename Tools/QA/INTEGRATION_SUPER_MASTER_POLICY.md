@@ -42,7 +42,7 @@ Stream 4 owns sector dependency discovery and manifest generation. Integration/Q
 ## Hard blockers
 
 - Generated/build/IDE noise in a candidate delta.
-- Exact cross-stream shared-file overlap unless explicitly reviewed and allowed.
+- Exact cross-stream shared-file overlap unless explicitly reviewed and allowed. Prefer `-AllowedCrossStreamPaths` with exact reviewed paths; use the broad `-AllowCrossStreamFileOverlap` override only when every overlap in the batch has been deliberately reviewed.
 - Unresolved or committed merge markers.
 - PowerShell syntax errors in changed QA/deployment scripts.
 - Tactical-AI changes that fail the unified AI integrity audit.

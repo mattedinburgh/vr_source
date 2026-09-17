@@ -6,7 +6,8 @@ param(
     [switch]$Fetch,
     [switch]$AllowStrategicChanges,
     [string[]]$AllowedStrategicPaths = @(),
-    [switch]$AllowCrossStreamFileOverlap
+    [switch]$AllowCrossStreamFileOverlap,
+    [string[]]$AllowedCrossStreamPaths = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -96,10 +97,17 @@ $conflictGate = Join-Path $PSScriptRoot "CHECK_INTEGRATION_CONFLICTS.ps1"
 if (-not (Test-Path $conflictGate)) {
     throw "Cross-stream conflict gate is missing: $conflictGate"
 }
+if ($AllowCrossStreamFileOverlap -and $AllowedCrossStreamPaths.Count -gt 0) {
+    throw "Use either -AllowCrossStreamFileOverlap or -AllowedCrossStreamPaths, not both."
+}
+
 $conflictArgs = @{
     CandidateRefs = @($candidates | ForEach-Object { $_.Sha })
     CanonicalRef = $canonicalSha
     ExpectedCanonicalSha = $canonicalSha
+}
+if ($AllowedCrossStreamPaths.Count -gt 0) {
+    $conflictArgs["AllowedSharedPaths"] = $AllowedCrossStreamPaths
 }
 if (-not $AllowCrossStreamFileOverlap) {
     $conflictArgs["FailOnSharedFiles"] = $true

@@ -16,6 +16,17 @@ foreach ($requiredScript in @($perfScript, $donorScript, $candidateScript, $batc
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("vr-qa-tool-selftest-" + $PID)
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
 
+function Invoke-ChildSnippet {
+    param(
+        [string]$Name,
+        [string]$Snippet
+    )
+    $wrapperPath = Join-Path $tempRoot ("invoke-" + $Name + ".ps1")
+    ($Snippet + [Environment]::NewLine + 'exit $LASTEXITCODE') | Set-Content -Path $wrapperPath -Encoding UTF8
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $wrapperPath *> $null
+    return $LASTEXITCODE
+}
+
 function New-AIPerfLine {
     param(
         [int]$TotalMs,
@@ -134,6 +145,8 @@ try {
     "baseline" | Set-Content -Path (Join-Path $policyRepo "README.md") -Encoding ASCII
     New-Item -ItemType Directory -Force -Path (Join-Path $policyRepo "Strategic") | Out-Null
     "base" | Set-Content -Path (Join-Path $policyRepo "Strategic\Allowed.cpp") -Encoding ASCII
+    New-Item -ItemType Directory -Force -Path (Join-Path $policyRepo "Tactical") | Out-Null
+    (1..30 | ForEach-Object { "shared baseline line $_" }) | Set-Content -Path (Join-Path $policyRepo "Tactical\Shared.cpp") -Encoding ASCII
     & $gitExe -C $policyRepo add .
     & $gitExe -C $policyRepo commit -q -m "baseline"
     if ($LASTEXITCODE -ne 0) { throw "Unable to commit candidate-policy baseline." }
@@ -170,6 +183,46 @@ try {
 
     & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureBatchGate -CandidateRefs candidate -CanonicalRef canonical -ExpectedCanonicalSha $canonicalSha -AllowStrategicChanges *> $null
     Assert-ExitCode "batch-strategic-explicit-all" 0 $LASTEXITCODE
+
+    & $gitExe -C $policyRepo checkout -q canonical
+    & $gitExe -C $policyRepo checkout -q -b shared-a
+    $sharedPath = Join-Path $policyRepo "Tactical\Shared.cpp"
+    $sharedLines = Get-Content -Path $sharedPath
+    $sharedLines[1] = "shared A changed line 2"
+    $sharedLines | Set-Content -Path $sharedPath -Encoding ASCII
+    & $gitExe -C $policyRepo add Tactical/Shared.cpp
+    & $gitExe -C $policyRepo commit -q -m "shared fixture A"
+    if ($LASTEXITCODE -ne 0) { throw "Unable to commit shared fixture A." }
+
+    & $gitExe -C $policyRepo checkout -q canonical
+    & $gitExe -C $policyRepo checkout -q -b shared-b
+    $sharedLines = Get-Content -Path $sharedPath
+    $sharedLines[17] = "shared B changed line 18"
+    $sharedLines | Set-Content -Path $sharedPath -Encoding ASCII
+    & $gitExe -C $policyRepo add Tactical/Shared.cpp
+    & $gitExe -C $policyRepo commit -q -m "shared fixture B"
+    if ($LASTEXITCODE -ne 0) { throw "Unable to commit shared fixture B." }
+
+    $fixtureConflictGate = Join-Path $policyRepo "Tools\QA\CHECK_INTEGRATION_CONFLICTS.ps1"
+    $conflictBase = "& '$fixtureConflictGate' -CandidateRefs @('shared-a','shared-b') -CanonicalRef 'canonical' -ExpectedCanonicalSha '$canonicalSha' -FailOnSharedFiles"
+    $actual = Invoke-ChildSnippet "overlap-default" $conflictBase
+    Assert-ExitCode "overlap-default-block" 31 $actual
+
+    $actual = Invoke-ChildSnippet "overlap-wrong" ($conflictBase + " -AllowedSharedPaths 'Tactical/Wrong.cpp'")
+    Assert-ExitCode "overlap-wrong-allowlist-block" 31 $actual
+
+    $actual = Invoke-ChildSnippet "overlap-exact" ($conflictBase + " -AllowedSharedPaths '.\Tactical\Shared.cpp'")
+    Assert-ExitCode "overlap-exact-allowlist" 0 $actual
+
+    $batchBase = "& '$fixtureBatchGate' -CandidateRefs @('shared-a','shared-b') -CanonicalRef 'canonical' -ExpectedCanonicalSha '$canonicalSha'"
+    $actual = Invoke-ChildSnippet "batch-overlap-default" $batchBase
+    Assert-ExitCode "batch-overlap-default-block" 31 $actual
+
+    $actual = Invoke-ChildSnippet "batch-overlap-exact" ($batchBase + " -AllowedCrossStreamPaths '.\Tactical\Shared.cpp'")
+    Assert-ExitCode "batch-overlap-exact-allowlist" 0 $actual
+
+    $actual = Invoke-ChildSnippet "batch-overlap-all" ($batchBase + " -AllowCrossStreamFileOverlap")
+    Assert-ExitCode "batch-overlap-explicit-all" 0 $actual
 
     Write-Host "QA_TOOLING_SELF_TEST_OK"
 }
