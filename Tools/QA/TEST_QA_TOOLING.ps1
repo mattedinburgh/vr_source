@@ -4,8 +4,10 @@ $childPowerShell = (Get-Command powershell.exe -ErrorAction Stop).Source
 $perfScript = Join-Path $PSScriptRoot "COMPARE_AI_PERFORMANCE.ps1"
 $donorScript = Join-Path $PSScriptRoot "VALIDATE_DONOR_SECTOR_MANIFEST.ps1"
 $candidateScript = Join-Path $PSScriptRoot "TEST_INTEGRATION_CANDIDATE.ps1"
+$batchScript = Join-Path $PSScriptRoot "TEST_INTEGRATION_BATCH.ps1"
+$conflictScript = Join-Path $PSScriptRoot "CHECK_INTEGRATION_CONFLICTS.ps1"
 
-foreach ($requiredScript in @($perfScript, $donorScript, $candidateScript)) {
+foreach ($requiredScript in @($perfScript, $donorScript, $candidateScript, $batchScript, $conflictScript)) {
     if (-not (Test-Path $requiredScript)) {
         throw "Required QA tool missing: $requiredScript"
     }
@@ -115,6 +117,8 @@ try {
     $policyRepo = Join-Path $tempRoot "candidate-policy-repo"
     New-Item -ItemType Directory -Force -Path (Join-Path $policyRepo "Tools\QA") | Out-Null
     Copy-Item -Path $candidateScript -Destination (Join-Path $policyRepo "Tools\QA\TEST_INTEGRATION_CANDIDATE.ps1")
+    Copy-Item -Path $batchScript -Destination (Join-Path $policyRepo "Tools\QA\TEST_INTEGRATION_BATCH.ps1")
+    Copy-Item -Path $conflictScript -Destination (Join-Path $policyRepo "Tools\QA\CHECK_INTEGRATION_CONFLICTS.ps1")
 
     $gitExe = (Get-Command git.exe -ErrorAction SilentlyContinue).Source
     if (-not $gitExe) {
@@ -153,6 +157,19 @@ try {
 
     & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureGate -CandidateRef candidate -CanonicalRef canonical -ExpectedCanonicalSha $canonicalSha -AllowStrategicChanges *> $null
     Assert-ExitCode "strategic-explicit-all" 0 $LASTEXITCODE
+
+    $fixtureBatchGate = Join-Path $policyRepo "Tools\QA\TEST_INTEGRATION_BATCH.ps1"
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureBatchGate -CandidateRefs candidate -CanonicalRef canonical -ExpectedCanonicalSha $canonicalSha *> $null
+    Assert-ExitCode "batch-strategic-default-block" 23 $LASTEXITCODE
+
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureBatchGate -CandidateRefs candidate -CanonicalRef canonical -ExpectedCanonicalSha $canonicalSha -AllowedStrategicPaths "Strategic\Wrong.cpp" *> $null
+    Assert-ExitCode "batch-strategic-wrong-allowlist-block" 23 $LASTEXITCODE
+
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureBatchGate -CandidateRefs candidate -CanonicalRef canonical -ExpectedCanonicalSha $canonicalSha -AllowedStrategicPaths ".\Strategic\Allowed.cpp" *> $null
+    Assert-ExitCode "batch-strategic-exact-allowlist" 0 $LASTEXITCODE
+
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureBatchGate -CandidateRefs candidate -CanonicalRef canonical -ExpectedCanonicalSha $canonicalSha -AllowStrategicChanges *> $null
+    Assert-ExitCode "batch-strategic-explicit-all" 0 $LASTEXITCODE
 
     Write-Host "QA_TOOLING_SELF_TEST_OK"
 }

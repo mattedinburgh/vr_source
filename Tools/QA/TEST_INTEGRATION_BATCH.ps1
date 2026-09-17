@@ -5,6 +5,7 @@ param(
     [string]$ExpectedCanonicalSha = "",
     [switch]$Fetch,
     [switch]$AllowStrategicChanges,
+    [string[]]$AllowedStrategicPaths = @(),
     [switch]$AllowCrossStreamFileOverlap
 )
 
@@ -165,10 +166,24 @@ try {
     }
 
     $strategic = @($changedPaths | Where-Object { $_ -match '^Strategic/' })
+    if ($AllowStrategicChanges -and $AllowedStrategicPaths.Count -gt 0) {
+        throw "Use either -AllowStrategicChanges or -AllowedStrategicPaths, not both."
+    }
+
     if ($strategic.Count -gt 0 -and -not $AllowStrategicChanges) {
-        Write-Host "BATCH_STRATEGIC_LAYER_CHANGE_BLOCKED"
+        $normalizedAllowlist = @($AllowedStrategicPaths | ForEach-Object { $_.Replace('\', '/').TrimStart('.', '/') } | Where-Object { $_ })
+        $unexpectedStrategic = @($strategic | Where-Object { $normalizedAllowlist -notcontains $_ })
+        if ($unexpectedStrategic.Count -gt 0) {
+            Write-Host "BATCH_STRATEGIC_LAYER_CHANGE_BLOCKED"
+            $unexpectedStrategic | ForEach-Object { Write-Host "  $_" }
+            if ($normalizedAllowlist.Count -gt 0) {
+                Write-Host "Strategic allowlist:"
+                $normalizedAllowlist | ForEach-Object { Write-Host "  $_" }
+            }
+            exit 23
+        }
+        Write-Host "BATCH_STRATEGIC_LAYER_CHANGE_ALLOWLIST_OK"
         $strategic | ForEach-Object { Write-Host "  $_" }
-        exit 23
     }
     if ($changedPaths.Count -gt 0) {
         $markerArgs = @("grep", "-n", "-E", "^(<<<<<<< .+|=======|>>>>>>> .+)$", "--") + $changedPaths
