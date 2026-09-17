@@ -1734,6 +1734,52 @@ void DrawLocatorAboveGuy( UINT16 usSoldierID )
 	}
 }
 
+// Vengeance 2026: deterministic display-only identities for regular enemy soldiers.
+// uiUniqueSoldierIdValue is serialized with SOLDIERTYPE, so the same soldier keeps the
+// same identity across save/load without enabling the heavier soldier-profile system.
+static void BuildEnemyHoverIdentity( SOLDIERTYPE *pSoldier, CHAR16 *pOut )
+{
+	if ( pSoldier == NULL || pOut == NULL )
+		return;
+
+	static const wchar_t *maleNames[] =
+	{
+		L"Rafa", L"Diego", L"Marco", L"Tomas", L"Luis", L"Ivan", L"Nico", L"Jorge",
+		L"Mateo", L"Pablo", L"Carlos", L"Bruno", L"Victor", L"Raul", L"Emil", L"Leon"
+	};
+	static const wchar_t *femaleNames[] =
+	{
+		L"Ana", L"Rosa", L"Lucia", L"Mara", L"Sofia", L"Elena", L"Nina", L"Clara",
+		L"Vera", L"Lina", L"Inez", L"Paula", L"Alma", L"Eva", L"Rita", L"Isla"
+	};
+	static const wchar_t *surnames[] =
+	{
+		L"Cruz", L"Vega", L"Reyes", L"Silva", L"Rojas", L"Torres", L"Diaz", L"Mora",
+		L"Soto", L"Leon", L"Vidal", L"Luna", L"Ramos", L"Ortiz", L"Serra", L"Flores"
+	};
+	static const wchar_t *callsigns[] =
+	{
+		L"Fox", L"Rook", L"Wolf", L"Viper", L"Hawk", L"Ghost", L"Jackal", L"Raven"
+	};
+
+	UINT32 seed = pSoldier->uiUniqueSoldierIdValue;
+	if ( seed == 0 )
+		seed = (UINT32)pSoldier->ubID + 1;
+
+	seed ^= seed >> 16;
+	seed *= 0x7feb352d;
+	seed ^= seed >> 15;
+	seed *= 0x846ca68b;
+	seed ^= seed >> 16;
+
+	const wchar_t **names = ( pSoldier->ubBodyType == REGFEMALE ) ? femaleNames : maleNames;
+	const wchar_t *first = names[ seed & 15 ];
+	const wchar_t *last = surnames[ ( seed >> 8 ) & 15 ];
+	const wchar_t *call = callsigns[ ( seed >> 16 ) & 7 ];
+
+	swprintf( pOut, L"%s \"%s\" %s", first, call, last );
+}
+
 void DrawSelectedUIAboveGuy( UINT16 usSoldierID )
 {
 	SOLDIERTYPE		*pSoldier;
@@ -2341,40 +2387,17 @@ void DrawSelectedUIAboveGuy( UINT16 usSoldierID )
 			}
 			else if ( pSoldier->bTeam == ENEMY_TEAM )
 			{
-				// Flugente: soldier profiles
+				// Explicit profiles keep authored names. Regular enemy soldiers get a
+				// deterministic display identity from their saved unique soldier ID.
 				if ( gGameExternalOptions.fSoldierProfiles_Enemy && pSoldier->usSoldierProfile )
-				{
-					// get a proper chaos name							
-					swprintf(NameStr, pSoldier->GetName());
+					swprintf( NameStr, pSoldier->GetName() );
+				else
+					BuildEnemyHoverIdentity( pSoldier, NameStr );
 
-					SetFontForeground( FONT_YELLOW );
-
-					FindFontCenterCoordinates( sXPos, (INT16)( sYPos + 20 ), (INT16)(80 ), 1, NameStr, TINYFONT1, &sX, &sY );
-					gprintfdirty( sX, sY, NameStr );
-					mprintf( sX, sY, NameStr );	
-				}
-				else if (gGameExternalOptions.fEnemyNames == TRUE)
-				{
-					for( iCounter2 = 0; iCounter2 < 500; ++iCounter2 )
-					{
-						if (zEnemyName[iCounter2].Enabled == 1 )
-						{
-							if ( pSoldier->sSectorX == zEnemyName[iCounter2].SectorX && pSoldier->sSectorY == zEnemyName[iCounter2].SectorY )
-							{
-								swprintf(NameStr, zEnemyName[iCounter2].szCurGroup);
-
-								SetFontForeground( FONT_YELLOW );
-								
-								//legion2
-								FindFontCenterCoordinates( sXPos, (INT16)( sYPos + 20 ), (INT16)(80 ), 1, NameStr, TINYFONT1, &sX, &sY );
-								gprintfdirty( sX, sY, NameStr );
-								mprintf( sX, sY, NameStr );
-		
-								break;
-							}
-						}
-					}
-				}
+				SetFontForeground( FONT_YELLOW );
+				FindFontCenterCoordinates( sXPos, (INT16)( sYPos + 20 ), (INT16)(80), 1, NameStr, TINYFONT1, &sX, &sY );
+				gprintfdirty( sX, sY, NameStr );
+				mprintf( sX, sY, NameStr );
 
 				if (gGameExternalOptions.fEnemyRank == TRUE)
 				{
@@ -2388,12 +2411,8 @@ void DrawSelectedUIAboveGuy( UINT16 usSoldierID )
 
 								SetFontForeground( FONT_YELLOW );
 
-								// need to adjust sYPos because default position already occupied by the name
-								if ( gGameExternalOptions.fSoldierProfiles_Enemy && pSoldier->usSoldierProfile || gGameExternalOptions.fEnemyNames )
-									FindFontCenterCoordinates( sXPos, (INT16)( sYPos + 10 ), (INT16)(80 ), 1, NameStr, TINYFONT1, &sX, &sY );
-								// use default position for text
-								else
-									FindFontCenterCoordinates( sXPos, (INT16)( sYPos + 20 ), (INT16)(80 ), 1, NameStr, TINYFONT1, &sX, &sY );
+								// Identity always occupies the normal name row.
+								FindFontCenterCoordinates( sXPos, (INT16)( sYPos + 10 ), (INT16)(80 ), 1, NameStr, TINYFONT1, &sX, &sY );
 
 								//legion2
 								gprintfdirty( sX, sY, NameStr );

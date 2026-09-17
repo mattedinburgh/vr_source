@@ -6743,6 +6743,27 @@ void HearNoise(SOLDIERTYPE *pSoldier, UINT8 ubNoiseMaker, INT32 sGridNo, INT8 bL
     plan_lib->update_plan(pSoldier->bAIIndex, pSoldier, ai_input);
 }
 
+// Vengeance 2026: show a coarse bearing for unseen gunfire without revealing the
+// hidden shooter's exact grid. The marker sits a few tiles away from the listener
+// in the heard direction and therefore conveys only "fire came from over there".
+static INT32 GetUnseenFireBearingGrid( SOLDIERTYPE *pListener, UINT8 ubDirection )
+{
+	if ( pListener == NULL || ubDirection >= NUM_WORLD_DIRECTIONS )
+		return NOWHERE;
+
+	INT32 sBearingGridNo = pListener->sGridNo;
+	for ( UINT8 i = 0; i < 4; ++i )
+	{
+		INT32 sNext = NewGridNo( sBearingGridNo, DirectionInc( ubDirection ) );
+		if ( sNext == sBearingGridNo || TileIsOutOfBounds( sNext ) )
+			break;
+		sBearingGridNo = sNext;
+	}
+
+	return sBearingGridNo;
+}
+
+
 void TellPlayerAboutNoise( SOLDIERTYPE *pSoldier, UINT8 ubNoiseMaker, INT32 sGridNo, INT8 bLevel, UINT8 ubVolume, UINT8 ubNoiseType, UINT8 ubNoiseDir, STR16 zNoiseMessage )
 {
 	UINT8 ubVolumeIndex;
@@ -6884,13 +6905,20 @@ void TellPlayerAboutNoise( SOLDIERTYPE *pSoldier, UINT8 ubNoiseMaker, INT32 sGri
 		}
 	}
 
-	// sevenfm: show noise locator
+	// sevenfm/Vengeance: show noise locator
 	if(gGameExternalOptions.fShowNoiseLocator)
 	{
-		// sevenfm: show noise locator
 		if( ubVolumeIndex >= 2 || ubVolumeIndex >= 1 && FindHearingAid(pSoldier) )
 		{
-			if ( ubNoiseMaker < NOBODY )
+			// Unseen gunfire gives only a coarse bearing. Do not flash the hidden
+			// shooter or the exact source tile.
+			if ( ubNoiseType == NOISE_GUNFIRE && !fNoiseMakerSeen )
+			{
+				INT32 sBearingGridNo = GetUnseenFireBearingGrid( pSoldier, ubNoiseDir );
+				if ( !TileIsOutOfBounds( sBearingGridNo ) )
+					BeginMultiPurposeLocator( sBearingGridNo, pSoldier->pathing.bLevel, FALSE );
+			}
+			else if ( ubNoiseMaker < NOBODY )
 			{
 				ShowRadioLocator(ubNoiseMaker, SHOW_LOCATOR_NOISE );
 			}
