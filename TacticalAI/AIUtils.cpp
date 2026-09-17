@@ -5806,6 +5806,7 @@ struct AIPLANNINGCONTACTSNAPSHOT
 };
 
 #define AI_DECISION_ROUTE_CACHE_SIZE 12
+#define AI_DECISION_ESTIMATE_CACHE_SIZE 24
 #define AI_DECISION_SOFT_BUDGET_MS 150
 #define AI_DECISION_HARD_BUDGET_MS 500
 
@@ -5826,6 +5827,23 @@ struct AIDECISIONROUTECACHEENTRY
 	UINT32 *pPath;
 };
 
+struct AIDECISIONESTIMATECACHEENTRY
+{
+	BOOLEAN fValid;
+	INT32 sStartGrid;
+	INT8 bLevel;
+	UINT8 ubDirection;
+	INT16 sActionPoints;
+	INT32 sDestination;
+	UINT16 usMovementMode;
+	INT8 bStealth;
+	INT8 bReverse;
+	INT16 sAPBudget;
+	INT16 sNPCAPBudget;
+	UINT8 ubDistLimit;
+	INT32 iPathCost;
+};
+
 struct AIDECISIONTHREATSNAPSHOT
 {
 	BOOLEAN fActive;
@@ -5841,6 +5859,8 @@ struct AIDECISIONTHREATSNAPSHOT
 	UINT32 uiReactionCalls;
 	UINT32 uiPathSearchCount;
 	UINT32 uiPathCostReuses;
+	UINT32 uiEstimateCacheHits;
+	UINT32 uiEstimateCacheMisses;
 	UINT32 uiRouteCacheHits;
 	UINT32 uiRouteCacheMisses;
 	UINT32 uiBudgetEarlyOuts;
@@ -5857,7 +5877,9 @@ struct AIDECISIONTHREATSNAPSHOT
 	INT32 sGeometryAnchor;
 	AITACTICALGEOMETRY Geometry;
 	UINT8 ubRouteCacheNext;
+	UINT8 ubEstimateCacheNext;
 	AIDECISIONROUTECACHEENTRY RouteCache[AI_DECISION_ROUTE_CACHE_SIZE];
+	AIDECISIONESTIMATECACHEENTRY EstimateCache[AI_DECISION_ESTIMATE_CACHE_SIZE];
 	AIPLANNINGCONTACTSNAPSHOT Contact[MAX_NUM_SOLDIERS];
 };
 
@@ -5956,14 +5978,66 @@ INT32 AIPlanningEstimatePlotPath(SOLDIERTYPE *pSoldier, INT32 sDestination, INT8
 		return EstimatePlotPath(pSoldier, sDestination, bCopyRoute, bPlot, bStayOn,
 			usMovementMode, bStealth, bReverse, sAPBudget);
 
+	// Only memoize pure cost-estimate calls. Copy/plot/stay-on variants can
+	// intentionally publish route/pathing side effects and must always execute.
+	const BOOLEAN fCacheable = !bCopyRoute && !bPlot && !bStayOn;
+	if (fCacheable)
+	{
+		for (UINT8 i = 0; i < AI_DECISION_ESTIMATE_CACHE_SIZE; ++i)
+		{
+			AIDECISIONESTIMATECACHEENTRY *pEntry = &pSnapshot->EstimateCache[i];
+			if (!pEntry->fValid ||
+				pEntry->sStartGrid != pSoldier->sGridNo ||
+				pEntry->bLevel != pSoldier->pathing.bLevel ||
+				pEntry->ubDirection != pSoldier->ubDirection ||
+				pEntry->sActionPoints != pSoldier->bActionPoints ||
+				pEntry->sDestination != sDestination ||
+				pEntry->usMovementMode != usMovementMode ||
+				pEntry->bStealth != bStealth ||
+				pEntry->bReverse != bReverse ||
+				pEntry->sAPBudget != sAPBudget ||
+				pEntry->sNPCAPBudget != (INT16)gubNPCAPBudget ||
+				pEntry->ubDistLimit != gubNPCDistLimit)
+			{
+				continue;
+			}
+
+			++pSnapshot->uiEstimateCacheHits;
+			++pSnapshot->uiPathCostReuses;
+			return pEntry->iPathCost;
+		}
+		++pSnapshot->uiEstimateCacheMisses;
+	}
+
 	const UINT32 uiStart = GetJA2Clock();
 	const INT32 iResult = EstimatePlotPath(pSoldier, sDestination, bCopyRoute, bPlot, bStayOn,
 		usMovementMode, bStealth, bReverse, sAPBudget);
 	++pSnapshot->uiPathSearchCount;
 	pSnapshot->uiPathfindingMs += GetJA2Clock() - uiStart;
+
+	if (fCacheable)
+	{
+		AIDECISIONESTIMATECACHEENTRY *pEntry =
+			&pSnapshot->EstimateCache[pSnapshot->ubEstimateCacheNext];
+		pSnapshot->ubEstimateCacheNext = (UINT8)(
+			(pSnapshot->ubEstimateCacheNext + 1) % AI_DECISION_ESTIMATE_CACHE_SIZE);
+		pEntry->fValid = TRUE;
+		pEntry->sStartGrid = pSoldier->sGridNo;
+		pEntry->bLevel = pSoldier->pathing.bLevel;
+		pEntry->ubDirection = pSoldier->ubDirection;
+		pEntry->sActionPoints = pSoldier->bActionPoints;
+		pEntry->sDestination = sDestination;
+		pEntry->usMovementMode = usMovementMode;
+		pEntry->bStealth = bStealth;
+		pEntry->bReverse = bReverse;
+		pEntry->sAPBudget = sAPBudget;
+		pEntry->sNPCAPBudget = (INT16)gubNPCAPBudget;
+		pEntry->ubDistLimit = gubNPCDistLimit;
+		pEntry->iPathCost = iResult;
+	}
+
 	return iResult;
 }
-
 static AIDECISIONROUTECACHEENTRY *AIGetDecisionRoute(
 	SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMovementMode,
 	BOOLEAN *pfCacheHit)
@@ -6240,7 +6314,7 @@ void AIEndDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
 	CHAR8 szPerfLine[1024];
 	sprintf(szPerfLine,
 		"[AI-PERF] total_ms=%lu threat_build_ms=%lu pathfinding_ms=%lu exposure_ms=%lu reaction_ms=%lu geometry_ms=%lu "
-		"contacts=%u detailed_candidates=%lu path_searches=%lu path_reuses=%lu "
+		"contacts=%u detailed_candidates=%lu path_searches=%lu path_reuses=%lu estimate_hits=%lu estimate_misses=%lu "
 		"route_hits=%lu route_misses=%lu budget_earlyouts=%lu "
 		"exposure_calls=%lu reaction_calls=%lu cache_hits=%lu cache_misses=%lu "
 		"shared_contact_hits=%lu shared_contact_misses=%lu "
@@ -6255,6 +6329,8 @@ void AIEndDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
 		(unsigned long)pSnapshot->uiDetailedCandidateCount,
 		(unsigned long)pSnapshot->uiPathSearchCount,
 		(unsigned long)pSnapshot->uiPathCostReuses,
+		(unsigned long)pSnapshot->uiEstimateCacheHits,
+		(unsigned long)pSnapshot->uiEstimateCacheMisses,
 		(unsigned long)pSnapshot->uiRouteCacheHits,
 		(unsigned long)pSnapshot->uiRouteCacheMisses,
 		(unsigned long)pSnapshot->uiBudgetEarlyOuts,
