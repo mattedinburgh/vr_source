@@ -9,6 +9,14 @@ on:
       - 'Tactical/**/*.h'
       - 'Strategic/**/*.cpp'
       - 'Strategic/**/*.h'
+      - 'TileEngine/**/*.cpp'
+      - 'TileEngine/**/*.h'
+      - 'Multiplayer/**/*.cpp'
+      - 'GameSettings.cpp'
+      - 'GameSettings.h'
+      - 'VRAnalytics.cpp'
+      - 'VRAnalytics.h'
+      - 'Tools/QA/TEST_ITEMS_STREAM_INVARIANTS.ps1'
       - 'ja2_VS2013.vcxproj'
       - 'ja2_VS2013.sln'
       - 'GENERATE_VR_BUILD_INFO.ps1'
@@ -29,6 +37,12 @@ jobs:
 
       - name: Set up MSBuild
         uses: microsoft/setup-msbuild@v2
+
+      - name: Verify item-stream invariants
+        shell: powershell
+        run: |
+          & '.\\Tools\\QA\\TEST_ITEMS_STREAM_INVARIANTS.ps1'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Generate VR build info
         shell: powershell

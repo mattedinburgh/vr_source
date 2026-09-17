@@ -1,0 +1,47 @@
+$ErrorActionPreference = "Stop"
+$repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$failures = New-Object System.Collections.Generic.List[string]
+
+function Require-Text {
+    param([string]$RelativePath, [string]$Needle, [string]$Label)
+    $path = Join-Path $repo $RelativePath
+    if (-not (Test-Path $path)) {
+        $failures.Add("$Label - missing file: $RelativePath")
+        return
+    }
+    $text = [System.IO.File]::ReadAllText($path)
+    if (-not $text.Contains($Needle)) {
+        $failures.Add("$Label - invariant not found in $RelativePath")
+    } else {
+        Write-Host "PASS: $Label"
+    }
+}
+Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "uiNumOfSlots = pInventoryPoolList.size();" "sector stash saves full backing inventory"
+Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "gWorldItems[ i ].usFlags |= WORLD_ITEM_GRIDNO_NOT_SET_USE_ENTRY_POINT;" "loaded-sector stash updates world items"
+Require-Text "Strategic\Map Screen Interface Map Inventory.h" "INT32 sGridNo=-1" "unknown stash placement uses minus-one sentinel"
+Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "for ( UINT8 ubWave = 0; ubWave < 5; ++ubWave )" "ammo distribution uses fair waves"
+Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "ubWaveTarget = (UINT8)__min( (UINT32)demand.ubMaxMags," "ammo reserve target is per demand"
+Require-Text "Tactical\Rotting Corpses.cpp" "static void ReduceLootForMilitiaKill" "militia tactical kills use reduced loot"
+Require-Text "Tactical\Rotting Corpses.cpp" "EnemyItemMinimumDropWeight" "minimum loot respects category rates"
+Require-Text "Tactical\Tactical Save.h" "ADD_DEAD_SOLDIER_NO_LOOT" "non-player autoresolve supports explicit zero loot"
+Require-Text "Tactical\Tactical Save.h" "ADD_DEAD_SOLDIER_PLAYER_AUTORESOLVE_LOOT" "merc autoresolve supports reduced loot"
+Require-Text "Tactical\Soldier Control.cpp" "uiPossible = (uiPossible * 2 + 2) / 3;" "rag treatment uses two-thirds throughput"
+Require-Text "Tactical\Soldier Control.cpp" "uiMedcost = uiActual * 2;" "rag material efficiency is halved"
+Require-Text "Strategic\Auto Resolve.cpp" "uiPossible = (uiPossible * 2 + 2) / 3;" "autoresolve rag throughput matches tactical"
+Require-Text "Tactical\UI Cursors.cpp" "if ( pSoldier->aiData.bShownAimTime >= maxAimLevels )" "grenade aim selector clamps at maximum"
+Require-Text "Tactical\UI Cursors.cpp" "bFutureAim = __min( bFutureAim, maxAimLevels );" "grenade aim increment cannot wrap"
+Require-Text "TileEngine\physics.cpp" "Smoke and gas grenades should simply be neutralized by water." "water neutralizes smoke and gas throws"
+Require-Text "TileEngine\physics.cpp" "Explosive[Item[pObject->Obj.usItem].ubClassIndex].ubType == EXPLOSV_FLASHBANG" "underwater delayed detonation includes flashbang"
+Require-Text "TileEngine\physics.cpp" "Water( sTargetSpot, ubTargetLevel )" "throw force is water-aware"
+Require-Text "TileEngine\Explosion Control.cpp" "!Water(sGridNo, bLevel)" "post-explosion smoke is blocked on water"
+
+if ($failures.Count -gt 0) {
+    Write-Host ""
+    Write-Host "ITEM_STREAM_INVARIANTS_FAILED"
+    foreach ($failure in $failures) { Write-Host "FAIL: $failure" }
+    exit 61
+}
+
+Write-Host ""
+Write-Host "ITEM_STREAM_INVARIANTS_OK"
+exit 0
