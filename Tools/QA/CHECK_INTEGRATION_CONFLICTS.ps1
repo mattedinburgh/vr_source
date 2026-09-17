@@ -4,6 +4,7 @@ param(
     [string]$CanonicalRef = "origin/install/all-2026-09-12",
     [string]$ExpectedCanonicalSha = "",
     [switch]$FailOnSharedFiles,
+    [string[]]$AllowedSharedPaths = @(),
     [string]$JsonOutput = ""
 )
 
@@ -142,11 +143,16 @@ foreach ($entry in $areaOwners.GetEnumerator() | Sort-Object Key) {
     }
 }
 
+$normalizedAllowlist = @($AllowedSharedPaths | ForEach-Object { $_.Replace('\', '/').TrimStart('.', '/') } | Where-Object { $_ } | Sort-Object -Unique)
+$unexpectedSharedFiles = @($sharedFiles | Where-Object { $normalizedAllowlist -notcontains $_.Path })
+$reviewedSharedFiles = @($sharedFiles | Where-Object { $normalizedAllowlist -contains $_.Path })
+
 if ($sharedFiles.Count -gt 0) {
     Write-Host ""
     Write-Host "CROSS_STREAM_SHARED_FILE_OVERLAP"
     foreach ($item in $sharedFiles) {
-        Write-Host ("  {0} <- {1}" -f $item.Path, ($item.Candidates -join ", "))
+        $review = if ($normalizedAllowlist -contains $item.Path) { " [REVIEWED-ALLOWLIST]" } else { "" }
+        Write-Host ("  {0} <- {1}{2}" -f $item.Path, ($item.Candidates -join ", "), $review)
     }
 }
 else {
@@ -179,8 +185,14 @@ if ($JsonOutput) {
     Write-Host "CONFLICT_REPORT_JSON=$jsonPath"
 }
 
-if ($FailOnSharedFiles -and $sharedFiles.Count -gt 0) {
+if ($reviewedSharedFiles.Count -gt 0) {
+    Write-Host "CROSS_STREAM_FILE_OVERLAP_ALLOWLIST_OK"
+    $reviewedSharedFiles | ForEach-Object { Write-Host "  $($_.Path)" }
+}
+
+if ($FailOnSharedFiles -and $unexpectedSharedFiles.Count -gt 0) {
     Write-Host "CROSS_STREAM_FILE_OVERLAP_BLOCKED"
+    $unexpectedSharedFiles | ForEach-Object { Write-Host "  $($_.Path)" }
     exit 31
 }
 
