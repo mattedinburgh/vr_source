@@ -3834,8 +3834,13 @@ INT32 FindAdvanceSpot(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bAction, UI
 		return NOWHERE;
 	}
 
-	// check that location is reachable
-	iBestPathCost = EstimatePlotPath(pSoldier, sTargetSpot, FALSE, FALSE, FALSE, usMovementMode, pSoldier->bStealthMode, FALSE, 0);
+	// Check that the objective is reachable. Account this path query in the
+	// decision performance telemetry; historically these nested estimates were
+	// invisible beside the explicit route-cache searches.
+	UINT32 uiPathStart = GetJA2Clock();
+	iBestPathCost = EstimatePlotPath(pSoldier, sTargetSpot, FALSE, FALSE, FALSE,
+		usMovementMode, pSoldier->bStealthMode, FALSE, 0);
+	AIPlanningRecordPathSearch(pSoldier, GetJA2Clock() - uiPathStart);
 	if (iBestPathCost == 0)
 	{
 		return NOWHERE;
@@ -3843,6 +3848,8 @@ INT32 FindAdvanceSpot(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bAction, UI
 
 	iRoamRange = RoamingRange(pSoldier, &sOrigin);
 
+	const INT16 sOldAPBudget = gubNPCAPBudget;
+	const UINT8 ubOldDistLimit = gubNPCDistLimit;
 	// set AP limit
 	gubNPCAPBudget = pSoldier->bActionPoints - ubReserveAP;
 	// set the distance limit of the square region
@@ -3878,11 +3885,27 @@ INT32 FindAdvanceSpot(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bAction, UI
 		}
 	}
 
-	FindBestPath(pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, usMovementMode, COPYREACHABLE, 0);
+	uiPathStart = GetJA2Clock();
+	FindBestPath(pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, usMovementMode,
+		COPYREACHABLE_AND_APS, 0);
+	AIPlanningRecordPathSearch(pSoldier, GetJA2Clock() - uiPathStart);
 
 	// Turn off the "reachable" flag for his current location
 	// so we don't consider it
 	gpWorldLevelData[pSoldier->sGridNo].uiFlags &= ~(MAPELEMENT_REACHABLE);
+
+	// Do not run a second path search from every reachable tile. First retain a
+	// small set of geometrically promising advances, then exact-score only those.
+	// This preserves the legacy hard filters while bounding the expensive future-
+	// route query count. Eight finalists cap this phase well below the old 19x19 scan.
+	const UINT8 ubFinalistCount = 8;
+	INT32 sFinalist[ubFinalistCount];
+	INT32 iFinalistScore[ubFinalistCount];
+	for (UINT8 ubIndex = 0; ubIndex < ubFinalistCount; ++ubIndex)
+	{
+		sFinalist[ubIndex] = NOWHERE;
+		iFinalistScore[ubIndex] = -1000000;
+	}
 
 	for (sYOffset = -sMaxUp; sYOffset <= sMaxDown; sYOffset++)
 	{
@@ -4033,31 +4056,60 @@ INT32 FindAdvanceSpot(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bAction, UI
 				}*/
 			}
 
-			sRealGridNo = pSoldier->sGridNo;
-			pSoldier->sGridNo = sGridNo;
-			iPathCost = EstimatePlotPath(pSoldier, sTargetSpot, FALSE, FALSE, FALSE, usMovementMode, pSoldier->bStealthMode, FALSE, 0);
-			//iPathCost = PlotPath(pSoldier, sTargetSpot, FALSE, FALSE, FALSE, usMovementMode, pSoldier->bStealthMode, FALSE, 0);
-			//iPathCost = EstimatePathCostToLocation( pSoldier, sTargetSpot, pSoldier->pathing.bLevel, TRUE, &fClimbingNecessary, &sClimbGridNo );
-			pSoldier->sGridNo = sRealGridNo;
+			const INT32 iTargetDistance = PythSpacesAway(sGridNo, sTargetSpot);
+			const INT32 iMoveCost = gubAIPathCosts[
+				AI_PATHCOST_RADIUS + sXOffset][AI_PATHCOST_RADIUS + sYOffset];
+			// Straight-line progress is the lower-bound predictor of the old exact
+			// future-route cost. Current-move AP breaks ties without dominating it.
+			const INT32 iCheapScore = -24 * iTargetDistance - iMoveCost;
 
-			// skip location if no path to target spot
-			if (iPathCost == 0)
+			for (UINT8 ubIndex = 0; ubIndex < ubFinalistCount; ++ubIndex)
 			{
-				//ScreenMsg(FONT_ORANGE, MSG_INTERFACE, L"cannot find path to destination %d at %d", sTargetSpot, sGridNo);
-				continue;
-			}
+				if (iCheapScore <= iFinalistScore[ubIndex])
+					continue;
 
-			//if( sBestSpot == NOWHERE || iPathCost < iBestPathCost )
-			if (iPathCost < iBestPathCost)
-			{
-				sBestSpot = sGridNo;
-				iBestPathCost = iPathCost;
+				for (INT8 bShift = (INT8)ubFinalistCount - 1;
+					bShift > (INT8)ubIndex; --bShift)
+				{
+					iFinalistScore[bShift] = iFinalistScore[bShift - 1];
+					sFinalist[bShift] = sFinalist[bShift - 1];
+				}
+				iFinalistScore[ubIndex] = iCheapScore;
+				sFinalist[ubIndex] = sGridNo;
+				break;
 			}
 		}
 	}
 
-	gubNPCAPBudget = 0;
-	gubNPCDistLimit = 0;
+	UINT8 ubEvaluated = 0;
+	for (UINT8 ubIndex = 0; ubIndex < ubFinalistCount; ++ubIndex)
+	{
+		if (TileIsOutOfBounds(sFinalist[ubIndex]))
+			continue;
+		if (AIPlanningHardBudgetExceeded(pSoldier) ||
+			(ubEvaluated > 0 && AIPlanningSoftBudgetExceeded(pSoldier)))
+		{
+			break;
+		}
+
+		sRealGridNo = pSoldier->sGridNo;
+		pSoldier->sGridNo = sFinalist[ubIndex];
+		uiPathStart = GetJA2Clock();
+		iPathCost = EstimatePlotPath(pSoldier, sTargetSpot, FALSE, FALSE, FALSE,
+			usMovementMode, pSoldier->bStealthMode, FALSE, 0);
+		AIPlanningRecordPathSearch(pSoldier, GetJA2Clock() - uiPathStart);
+		pSoldier->sGridNo = sRealGridNo;
+		++ubEvaluated;
+
+		if (iPathCost > 0 && iPathCost < iBestPathCost)
+		{
+			sBestSpot = sFinalist[ubIndex];
+			iBestPathCost = iPathCost;
+		}
+	}
+
+	gubNPCAPBudget = sOldAPBudget;
+	gubNPCDistLimit = ubOldDistLimit;
 
 	return(sBestSpot);
 }

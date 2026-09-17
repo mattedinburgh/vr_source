@@ -5921,6 +5921,17 @@ BOOLEAN AIPlanningHardBudgetExceeded(SOLDIERTYPE *pSoldier)
 			AI_DECISION_HARD_BUDGET_MS;
 }
 
+void AIPlanningRecordPathSearch(SOLDIERTYPE *pSoldier, UINT32 uiElapsedMs)
+{
+	AIDECISIONTHREATSNAPSHOT *pSnapshot =
+		AIGetDecisionThreatSnapshot(pSoldier);
+	if (!pSnapshot)
+		return;
+
+	++pSnapshot->uiPathSearchCount;
+	pSnapshot->uiPathfindingMs += uiElapsedMs;
+}
+
 static AIDECISIONROUTECACHEENTRY *AIGetDecisionRoute(
 	SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMovementMode,
 	BOOLEAN *pfCacheHit)

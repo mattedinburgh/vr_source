@@ -624,6 +624,7 @@ void AIEndDecisionThreatSnapshot(SOLDIERTYPE *pSoldier);
 UINT32 AIPlanningElapsedMs(SOLDIERTYPE *pSoldier);
 BOOLEAN AIPlanningSoftBudgetExceeded(SOLDIERTYPE *pSoldier);
 BOOLEAN AIPlanningHardBudgetExceeded(SOLDIERTYPE *pSoldier);
+void AIPlanningRecordPathSearch(SOLDIERTYPE *pSoldier, UINT32 uiElapsedMs);
 void AIResetTacticalPlannerStateForLoad(void);
 INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
