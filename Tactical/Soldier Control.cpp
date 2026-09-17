@@ -101,7 +101,7 @@
 // Handle Items.h / worlddef.h include cycle.
 BOOLEAN BuildFortification( INT32 sGridNo, UINT32 flag, UINT8 ubDirection );
 BOOLEAN IsRemovableFortificationAtGridNo( INT32 sGridNo );
-BOOLEAN RemoveFortification( INT32 sGridNo, UINT32* pRemovedFlag );
+BOOLEAN RemoveFortification( INT32 sGridNo, UINT16* pRecoveredItem );
 #endif
 
 #include "ub_config.h"
@@ -18775,17 +18775,19 @@ BOOLEAN	SOLDIERTYPE::UpdateMultiTurnAction()
 	// if we can afford it, do it now
 	if ( bOverTurnAPS <= this->bActionPoints )
 	{
+		BOOLEAN fActionCompleted = FALSE;
+
 		switch( usMultiTurnAction )
 		{
 		case MTA_FORTIFY:
 			{
-				// Build the thing
+				// Build the thing. Only consume material and the final AP slice after the world mutation succeeds.
 				if ( BuildFortification( this->sMTActionGridNo, Item[ pObj->usItem ].usItemFlag, this->ubDirection ) )
 				{
-                   UINT16 usItem = pObj->usItem;
+					UINT16 usItem = pObj->usItem;
 					// Erase 'material' item from our hand - we 'use' it to build the structure
 					DeleteObj( &(this->inv[HANDPOS]) );
-                   // sevenfm: auto-taking of items
+					// sevenfm: auto-taking of items
 					if( !(gTacticalStatus.uiFlags & TURNBASED && gTacticalStatus.uiFlags & INCOMBAT) && gfShiftBombPlant )
 					{
 						TakeNewItemFromInventory( usItem );
@@ -18794,25 +18796,25 @@ BOOLEAN	SOLDIERTYPE::UpdateMultiTurnAction()
 					// we gain a bit of experience...
 					StatChange( this, STRAMT, 4, TRUE );
 					StatChange( this, HEALTHAMT, 2, TRUE );
+					fActionCompleted = TRUE;
 				}
 			}
 			break;
 
 		case MTA_REMOVE_FORTIFY:
 			{
-				UINT32 uiRemovedFlag = 0;
-				if ( RemoveFortification( this->sMTActionGridNo, &uiRemovedFlag ) )
+				UINT16 usRecoveredItem = 0;
+				if ( RemoveFortification( this->sMTActionGridNo, &usRecoveredItem ) )
 				{
-					UINT16 usRecoveredItem = 0;
-					if ( GetFirstItemWithFlag( &usRecoveredItem, uiRemovedFlag ) )
-					{
-						CreateItem( usRecoveredItem, 100, &gTempObject );
-						AddItemToPool( this->sMTActionGridNo, &gTempObject, 1, 0, 0, -1 );
+					// RemoveFortification resolves the recovery item before mutating the world,
+					// so a successful removal always has a material to return.
+					CreateItem( usRecoveredItem, 100, &gTempObject );
+					AddItemToPool( this->sMTActionGridNo, &gTempObject, 1, 0, 0, -1 );
 
-						// we gain a bit of experience...
-						StatChange( this, STRAMT, 3, TRUE );
-						StatChange( this, HEALTHAMT, 2, TRUE );
-					}
+					// we gain a bit of experience...
+					StatChange( this, STRAMT, 3, TRUE );
+					StatChange( this, HEALTHAMT, 2, TRUE );
+					fActionCompleted = TRUE;
 				}
 			}
 			break;
@@ -18821,9 +18823,9 @@ BOOLEAN	SOLDIERTYPE::UpdateMultiTurnAction()
 			{
 				// eventually search for the number of a sandbag item
 				if ( HasItemFlag(fullsandbagnr, FULL_SANDBAG) || GetFirstItemWithFlag(&fullsandbagnr, FULL_SANDBAG) )
-                                {                                       
+				{
 					INT8 bObjSlot = HANDPOS;
-                   UINT16 usItem = pObj->usItem;
+					UINT16 usItem = pObj->usItem;
 
 					CreateItem( fullsandbagnr, 100, &gTempObject );
 					if( !(gTacticalStatus.uiFlags & TURNBASED && gTacticalStatus.uiFlags & INCOMBAT) && gfShiftBombPlant )
@@ -18834,7 +18836,7 @@ BOOLEAN	SOLDIERTYPE::UpdateMultiTurnAction()
 					}
 					else
 					{
-					SwapObjs( this, bObjSlot, &gTempObject, TRUE );
+						SwapObjs( this, bObjSlot, &gTempObject, TRUE );
 					}
 					// sevenfm: added this to correctly update interface
 					DirtyMercPanelInterface( this, DIRTYLEVEL2 );
@@ -18842,16 +18844,24 @@ BOOLEAN	SOLDIERTYPE::UpdateMultiTurnAction()
 					// we gain a bit of experience...
 					StatChange( this, STRAMT, 1, TRUE );
 					StatChange( this, HEALTHAMT, 1, TRUE );
+					fActionCompleted = TRUE;
 				}
 			}
 			break;
+		}
+
+		if ( !fActionCompleted )
+		{
+			// A completion-time world/data failure must not consume the final AP/BP slice or be reported as success.
+			CancelMultiTurnAction(FALSE);
+			return FALSE;
 		}
 
 		if ( entireapcost > 0 )
 			DeductPoints( this, bOverTurnAPS, (INT32)(entirebpcost * this->bOverTurnAPS / entireapcost), 0);
 
 		// we're done here!
-		CancelMultiTurnAction(TRUE);		
+		CancelMultiTurnAction(TRUE);
 	}
 	// remove the costs as much as we can
 	else if ( this->bActionPoints > 0 )

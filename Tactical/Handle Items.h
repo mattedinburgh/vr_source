@@ -182,7 +182,7 @@ BOOLEAN MarblesExistAtLocation( INT32 sGridNo, UINT8 ubLevel, INT32 * piItemInde
 
 BOOLEAN BuildFortification( INT32 sGridNo, UINT32 flag, UINT8 ubDirection );	// Flugente: build a structure, return true if successful
 BOOLEAN IsRemovableFortificationAtGridNo( INT32 sGridNo );
-BOOLEAN RemoveFortification( INT32 sGridNo, UINT32* pRemovedFlag = NULL );
+BOOLEAN RemoveFortification( INT32 sGridNo, UINT16* pRecoveredItem = NULL );
 
 extern ITEM_POOL *gpItemPool;//dnl ch26 210909
 

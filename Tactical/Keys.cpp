@@ -253,6 +253,14 @@ BOOLEAN AttemptToUnlockDoor( SOLDIERTYPE * pSoldier, DOOR * pDoor )
 	UINT8 ubLoop;
 	UINT8		ubKeyID;
 
+	// Vengeance only loads lock/key definitions for IDs below NUM_LOCKS.
+	// Reject sentinel or custom out-of-range IDs instead of treating an undefined byte value as a usable key.
+	if ( pDoor == NULL || pDoor->ubLockID >= NUM_LOCKS )
+	{
+		PlayJA2Sample( KEY_FAILURE, RATE_11025, MIDVOLUME, 1, MIDDLEPAN );
+		return( FALSE );
+	}
+
 	for( ubLoop = 0; ubLoop < MAX_KEYS_PER_LOCK; ubLoop++)
 	{
 		ubKeyID = pDoor->ubLockID;
@@ -280,6 +288,11 @@ BOOLEAN AttemptToLockDoor( SOLDIERTYPE * pSoldier, DOOR * pDoor )
 {
 	UINT8 ubLoop;
 	UINT8		ubKeyID;
+
+	if ( pDoor == NULL || pDoor->ubLockID >= NUM_LOCKS )
+	{
+		return( FALSE );
+	}
 
 	for( ubLoop = 0; ubLoop < MAX_KEYS_PER_LOCK; ubLoop++)
 	{
@@ -332,9 +345,9 @@ BOOLEAN AttemptToCrowbarLock( SOLDIERTYPE * pSoldier, DOOR * pDoor )
 		return( TRUE );
 	}
 
-	if ( pDoor->ubLockID == LOCK_UNOPENABLE )
+	if ( pDoor->ubLockID == LOCK_UNOPENABLE || pDoor->ubLockID >= NUM_LOCKS )
 	{
-		// auto failure!
+		// auto failure: sentinel/unmapped lock IDs must never index LockTable.
 		return( FALSE );
 	}
 
@@ -420,9 +433,9 @@ BOOLEAN AttemptToSmashDoor( SOLDIERTYPE * pSoldier, DOOR * pDoor )
 		return( TRUE );
 	}
 
-	if ( pDoor->ubLockID == LOCK_UNOPENABLE )
+	if ( pDoor->ubLockID == LOCK_UNOPENABLE || pDoor->ubLockID >= NUM_LOCKS )
 	{
-		// auto failure!
+		// auto failure: sentinel/unmapped lock IDs must never index LockTable.
 		return( FALSE );
 	}
 
@@ -484,9 +497,9 @@ BOOLEAN AttemptToPickLock( SOLDIERTYPE * pSoldier, DOOR * pDoor )
 	INT8 bReason;
 	LOCK * pLock;
 
-	if ( pDoor->ubLockID == LOCK_UNOPENABLE )
+	if ( pDoor->ubLockID == LOCK_UNOPENABLE || pDoor->ubLockID >= NUM_LOCKS )
 	{
-		// auto failure!
+		// auto failure: sentinel/unmapped lock IDs must never index LockTable.
 		return( FALSE );
 	}
 
@@ -734,6 +747,13 @@ BOOLEAN AttemptToBlowUpLock( SOLDIERTYPE * pSoldier, DOOR * pDoor )
 	INT32	iResult;
 	INT8	bSlot = NO_SLOT;
 	BOOLEAN fSuccess = FALSE;
+
+	// Do not consume a breaching charge for sentinel or corrupt/custom lock IDs.
+	// Vengeance still has a 64-entry LockTable, unlike newer 1.13 data sets.
+	if ( pDoor == NULL || pDoor->ubLockID == LOCK_UNOPENABLE || pDoor->ubLockID >= NUM_LOCKS )
+	{
+		return fSuccess;
+	}
 
 	bSlot = FindLockBomb( pSoldier );
 	if (bSlot == NO_SLOT)

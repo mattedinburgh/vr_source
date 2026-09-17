@@ -7075,16 +7075,29 @@ static UINT32 GetFortificationFlagAtGridNo( INT32 sGridNo, STRUCTURE** ppStruct 
 
 BOOLEAN IsRemovableFortificationAtGridNo( INT32 sGridNo )
 {
-	return GetFortificationFlagAtGridNo( sGridNo ) != 0;
+	UINT32 uiFortificationFlag = GetFortificationFlagAtGridNo( sGridNo );
+	if ( !uiFortificationFlag )
+		return FALSE;
+
+	// UI/start/completion validity must agree with execution: only advertise dismantling
+	// when the matching construction material can actually be returned.
+	UINT16 usRecoveredItem = 0;
+	return GetFirstItemWithFlag( &usRecoveredItem, uiFortificationFlag );
 }
 
-BOOLEAN RemoveFortification( INT32 sGridNo, UINT32* pRemovedFlag )
+BOOLEAN RemoveFortification( INT32 sGridNo, UINT16* pRecoveredItem )
 {
 	STRUCTURE* pStruct = NULL;
 	LEVELNODE* pNode = NULL;
 	UINT32 uiRemovedFlag = GetFortificationFlagAtGridNo( sGridNo, &pStruct, &pNode );
 
 	if ( !uiRemovedFlag || !pStruct || !pNode )
+		return FALSE;
+
+	// Resolve the material before mutating the world. A broken/missing item definition
+	// must not silently destroy a fortification without returning its construction material.
+	UINT16 usRecoveredItem = 0;
+	if ( !GetFirstItemWithFlag( &usRecoveredItem, uiRemovedFlag ) )
 		return FALSE;
 
 	const INT32 sStructGridNo = pStruct->sGridNo;
@@ -7109,8 +7122,8 @@ BOOLEAN RemoveFortification( INT32 sGridNo, UINT32* pRemovedFlag )
 	InvalidateWorldRedundency();
 	SetRenderFlags( RENDER_FLAG_FULL );
 
-	if ( pRemovedFlag )
-		*pRemovedFlag = uiRemovedFlag;
+	if ( pRecoveredItem )
+		*pRecoveredItem = usRecoveredItem;
 
 	return TRUE;
 }
