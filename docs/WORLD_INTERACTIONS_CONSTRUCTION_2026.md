@@ -64,6 +64,12 @@ Priority order:
 - This is a Vengeance robustness adaptation for donor/custom map compatibility; it does not expand the trap enum or alter save/data capacities.
 
 
+### Tactical environment audit
+- Wire cutting is already at current 1.13 source parity: partner-structure swap is persisted and local movement costs/render state are refreshed after a successful cut.
+- Repairing a cut wire fence is primarily a partner-JSD/gamedir capability in modern 1.13; no source-only imitation was added in this worktree.
+- Window smashing and optional closed-window jumping are already present in canonical Vengeance, including map-temp persistence. Modern 1.13's generic blocked-window additional-tile-property hook is a broader engine/data feature and is not blindly ported here.
+- Restored current 1.13 tactical repair parity for the robot: IsRepairableStructAtGridNo() now returns repair type 1 for SOLDIER_ROBOT, allowing toolkit targeting to flow into the existing repair action.
+
 ### QA / CI
 - World-interactions source-invariant QA covers door-noise behavior, combat lock/open separation, non-PCH declarations, fortification orientation/removal validity, transactional completion, recovery preflight, and lock-ID bounds.
 - Hosted compile workflow trigger targets the actual `world/interactions-construction-2026-09-17` branch.
@@ -83,7 +89,7 @@ Priority order:
 3. Verify runtime pathfinding/AI reacts immediately to build/remove despite the statically correct movement-cost refresh.
 4. Verify map-temp persistence after sector exit/re-entry and save/reload for both sandbags and concertina.
 5. Runtime-smoke valid door traps (explosion/electric/alarm) plus malformed trap-ID sanitization; source-level bounds hardening is complete.
-6. Audit destructible tactical environment interactions that belong here (doors, windows, fences/objects), while leaving explosive damage/balance in the items/explosives stream.
+6. Continue destructible-object interaction audit beyond the now-verified door/window/wire-fence paths; leave explosive damage/balance in the items/explosives stream.
 7. Decide separately whether a compatibility-safe `NUM_LOCKS/NUM_KEYS` expansion is worthwhile; it requires map/save/keyring migration analysis and is not assumed safe.
 8. Add targeted runtime diagnostics only if playtesting exposes persistence or structure-database edge cases.
 

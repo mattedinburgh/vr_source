@@ -533,13 +533,16 @@ BOOLEAN IsRepairableStructAtGridNo( INT32 sGridNo, UINT8 *pubID )
 
 	if ( ubMerc != NOBODY )
 	{
-		if ( MercPtrs[ ubMerc ]->flags.uiStatusFlags & SOLDIER_VEHICLE )
+		// Current 1.13 parity: the tactical toolkit cursor can target the robot as well as vehicles.
+		if ( MercPtrs[ ubMerc ]->flags.uiStatusFlags & SOLDIER_ROBOT )
+		{
+			return( 1 );
+		}
+		else if ( MercPtrs[ ubMerc ]->flags.uiStatusFlags & SOLDIER_VEHICLE )
 		{
 			return( 2 );
 		}
 	}
-	// Then for over a robot....
-
 	// then for SAM site....
 	if ( DoesSAMExistHere( gWorldSectorX, gWorldSectorY, gbWorldSectorZ, sGridNo ) )
 	{

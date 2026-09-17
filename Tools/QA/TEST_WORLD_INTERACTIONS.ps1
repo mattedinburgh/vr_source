@@ -11,6 +11,8 @@ function Assert-NotContains([string]$Path,[string]$Needle,[string]$Message) {
 $doors = 'Tactical\Handle Doors.cpp'
 $keys = 'Tactical\Keys.cpp'
 $handleItems = 'Tactical\Handle Items.cpp'
+
+$structures = 'Tactical\Structure Wrap.cpp'
 $ani = 'Tactical\Soldier Ani.cpp'
 $soldier = 'Tactical\Soldier Control.cpp'
 $cursors = 'Tactical\UI Cursors.cpp'
@@ -37,4 +39,6 @@ Assert-Contains $soldier 'IsRemovableFortificationAtGridNo( this->sMTActionGridN
 Assert-Contains $soldier 'BOOLEAN fActionCompleted = FALSE;' 'Multi-turn completion is not transactional.'
 Assert-Contains $soldier 'if ( !fActionCompleted )' 'Failed world mutations can still be marked complete.'
 Assert-Contains $soldier 'CancelMultiTurnAction(FALSE);' 'Failed world mutations no longer cancel cleanly.'
+Assert-Contains $structures 'MercPtrs[ ubMerc ]->flags.uiStatusFlags & SOLDIER_ROBOT' 'Direct tactical toolkit interaction cannot recognize the robot as repairable.'
+Assert-Contains $structures 'return( 1 );' 'Robot repairability lost the current 1.13 return code.'
 Write-Host 'PASS: world interactions source invariants'
