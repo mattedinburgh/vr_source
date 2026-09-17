@@ -64,7 +64,18 @@ $knownFullPaths = New-Object 'System.Collections.Generic.HashSet[string]' ([Stri
 foreach ($item in $coverage | Where-Object present) {
     foreach ($path in ($item.resolved_path -split ';')) { if ($path) { [void]$knownFullPaths.Add($path) } }
 }
-$unmapped = @($allBankFiles | Where-Object { -not $knownFullPaths.Contains($_.FullName) })
+$sharedBankNames = @(
+    'call_for_backup.ogg','cover_me.ogg','fire_in_the_hole.ogg','get_down.ogg','go_go_go.ogg',
+    'hold.ogg','look_out.ogg','medic.ogg','reloading.ogg','rpg.ogg','sniper.ogg',
+    'suppressing_fire.ogg','target_destroyed.ogg','target_engaged.ogg','watch_my_back.ogg'
+)
+$sharedBankFiles = @($allBankFiles | Where-Object { $sharedBankNames -contains $_.Name })
+if ($sharedBankFiles.Count -ne 0 -and $sharedBankFiles.Count -ne 30) {
+    throw "Shared English battlefield bank is partial: expected 0 or 30 files, found $($sharedBankFiles.Count)."
+}
+$unmapped = @($allBankFiles | Where-Object {
+    -not $knownFullPaths.Contains($_.FullName) -and $sharedBankNames -notcontains $_.Name
+})
 Write-Host "Battle-callout recording coverage"
 Write-Host "Manifest rows: $($coverage.Count)"
 foreach ($priority in @('P0','P1','P2')) {
@@ -73,6 +84,7 @@ foreach ($priority in @('P0','P1','P2')) {
     Write-Host ("{0}: {1}/{2} present ({3:N1}%)" -f $priority,$present,$group.Count,(100.0 * $present / [Math]::Max(1,$group.Count)))
 }
 Write-Host "Battlefield-bank OGG files found: $($allBankFiles.Count)"
+Write-Host "Known shared-bank OGG files: $($sharedBankFiles.Count)"
 Write-Host "Manifest-unmapped battlefield OGG files: $($unmapped.Count)"
 
 if ($CoverageOutput) {
