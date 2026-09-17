@@ -967,11 +967,29 @@ static UINT16 BuildSectorAmmoObject( UINT8 ubCalibre, UINT16 usMagSize,
 	return (UINT16)(*pOut)[0]->data.objectStatus;
 }
 
+static BOOLEAN SectorLoadoutGunIsUsable( OBJECTTYPE *pGun, UINT8 ubSubObject )
+{
+	if ( pGun == NULL || !pGun->exists() || !( Item[pGun->usItem].usItemClass & IC_GUN ) ||
+		 ubSubObject >= pGun->ubNumberOfObjects )
+		return FALSE;
+
+	return ( (*pGun)[ubSubObject]->data.gun.bGunStatus >= USABLE );
+}
+
+// A jammed gun is physically serviceable and should still receive normal reserve
+// ammo after readiness is secured, but it must not satisfy the severe-shortage
+// can-fire-now check or consume the one-round priming pass.
+static BOOLEAN SectorLoadoutGunIsImmediatelyReady( OBJECTTYPE *pGun, UINT8 ubSubObject )
+{
+	return ( SectorLoadoutGunIsUsable( pGun, ubSubObject ) &&
+		 (*pGun)[ubSubObject]->data.gun.bGunAmmoStatus >= 0 );
+}
+
 // Loaded weapons have priority over spare magazines.  Partial magazines keep
 // their current ammo type; an empty gun uses the normal loadout ammo priority.
-static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject )
+static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject, UINT16 usMaxRoundsToAdd = 0 )
 {
-	if ( pGun == NULL || !pGun->exists() || !( Item[pGun->usItem].usItemClass & IC_GUN ) )
+	if ( !SectorLoadoutGunIsUsable( pGun, ubSubObject ) )
 		return 0;
 
 	UINT16 usMagSize = GetMagSize( pGun, ubSubObject );
@@ -1013,13 +1031,18 @@ static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject )
 	}
 	else
 	{
-		sAmmoType = FindSectorAmmoTypeForFill( ubCalibre, usMagSize, usMagSize );
+		UINT16 usInitialTarget = ( usMaxRoundsToAdd > 0 ) ?
+			(UINT16)__min( (UINT32)usMagSize, (UINT32)usMaxRoundsToAdd ) : usMagSize;
+		sAmmoType = FindSectorAmmoTypeForFill( ubCalibre, usMagSize, usInitialTarget );
 	}
 
 	if ( sAmmoType < 0 )
 		return 0;
 
 	UINT16 usWanted = fReplaceCurrent ? usMagSize : ( usMagSize - usCurrent );
+	if ( usMaxRoundsToAdd > 0 )
+		usWanted = (UINT16)__min( (UINT32)usWanted, (UINT32)usMaxRoundsToAdd );
+
 	UINT32 uiAvailable = CountSectorAmmoRounds( ubCalibre, (UINT8)sAmmoType );
 	usWanted = (UINT16)__min( (UINT32)usWanted, uiAvailable );
 	if ( usWanted == 0 )
@@ -1076,6 +1099,71 @@ static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject )
 	}
 
 	return usBuilt;
+}
+
+// Before normal full top-up, give each otherwise-unarmed eligible merc one
+// chamberable round where compatible supply exists.  This makes severe ammo
+// shortages degrade fairly: an early inventory slot cannot consume a full
+// magazine while a later merc is left completely unable to fire.
+static BOOLEAN SectorLoadoutMercHasLoadedGun( SOLDIERTYPE *pSoldier )
+{
+	if ( !IsSectorLoadoutMercEligible( pSoldier ) )
+		return FALSE;
+
+	for ( INT32 bSlot = 0; bSlot < NUM_INV_SLOTS; ++bSlot )
+	{
+		OBJECTTYPE *pGun = &( pSoldier->inv[bSlot] );
+		if ( !pGun->exists() || !( Item[pGun->usItem].usItemClass & IC_GUN ) )
+			continue;
+
+		for ( UINT8 x = 0; x < pGun->ubNumberOfObjects; ++x )
+		{
+			if ( SectorLoadoutGunIsImmediatelyReady( pGun, x ) && (*pGun)[x]->data.gun.ubGunShotsLeft > 0 )
+				return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+static UINT32 PrimeEmptySectorMercGuns()
+{
+	UINT32 uiRoundsLoaded = 0;
+
+	for ( UINT8 id = gTacticalStatus.Team[OUR_TEAM].bFirstID;
+		  id <= gTacticalStatus.Team[OUR_TEAM].bLastID; ++id )
+	{
+		SOLDIERTYPE *pSoldier = MercPtrs[id];
+		if ( !IsSectorLoadoutMercEligible( pSoldier ) || SectorLoadoutMercHasLoadedGun( pSoldier ) )
+			continue;
+
+		BOOLEAN fPrimed = FALSE;
+		for ( INT32 bSlot = 0; bSlot < NUM_INV_SLOTS && !fPrimed; ++bSlot )
+		{
+			OBJECTTYPE *pGun = &( pSoldier->inv[bSlot] );
+			if ( !pGun->exists() || !( Item[pGun->usItem].usItemClass & IC_GUN ) )
+				continue;
+
+			for ( UINT8 x = 0; x < pGun->ubNumberOfObjects; ++x )
+			{
+				if ( !SectorLoadoutGunIsImmediatelyReady( pGun, x ) )
+					continue;
+
+				if ( (*pGun)[x]->data.gun.ubGunShotsLeft > 0 )
+					continue;
+
+				UINT16 usBuilt = TopUpGunFromSector( pGun, x, 1 );
+				if ( usBuilt > 0 )
+				{
+					uiRoundsLoaded += usBuilt;
+					fPrimed = TRUE;
+					break;
+				}
+			}
+		}
+	}
+
+	return uiRoundsLoaded;
 }
 
 static UINT32 TopUpAllSectorMercGuns()
@@ -1148,6 +1236,9 @@ static void CollectSectorAmmoDemands( std::vector<SECTOR_LOADOUT_AMMO_DEMAND> &d
 
 			for ( INT32 x = 0; x < pGun->ubNumberOfObjects; ++x )
 			{
+				if ( !SectorLoadoutGunIsUsable( pGun, (UINT8)x ) )
+					continue;
+
 				UINT16 usMagSize = GetMagSize( pGun, x );
 				if ( usMagSize == 0 )
 					continue;
@@ -1199,8 +1290,10 @@ static void RedistributeSectorAmmo3x()
 
 	PoolSquadSpareAmmo();
 
-	// Weapon loading comes first because it costs no inventory slots.
-	UINT32 uiRoundsLoaded = TopUpAllSectorMercGuns();
+	// Shootability comes before fullness: under severe shortages, prime one gun
+	// for every otherwise-unarmed merc before normal sequential full top-up.
+	UINT32 uiRoundsLoaded = PrimeEmptySectorMercGuns();
+	uiRoundsLoaded += TopUpAllSectorMercGuns();
 
 	std::vector<SECTOR_LOADOUT_AMMO_DEMAND> demands;
 	UINT32 uiMercCount = 0;
@@ -2227,7 +2320,10 @@ void SaveSeenAndUnseenItems( void )
 	WORLDITEM *pipl;
 
 	// Idea of this change is avoiding resize and clear of pInventoryPool and pUnSeenItems and twice loading tempfile to increase inventory closing time
-	uiNumOfSlots = min(MAP_INVENTORY_POOL_SLOT_COUNT * ((UINT32)iLastInventoryPoolPage + 1), pInventoryPoolList.size());// Best guess without going into loop
+	// Persistence must follow the backing inventory, not the current UI page count.
+	// Page bookkeeping can legitimately lag after resize/autoplace/filter operations;
+	// truncating here would silently discard valid items beyond the displayed page.
+	uiNumOfSlots = pInventoryPoolList.size();
 	uiNumberOfSeenItems = 0;
 	uiTotalNumberOfVisibleItems = 0;
 	for(i=0; i<uiNumOfSlots; i++)// Calculate total number of objects and throw out empty item slots
@@ -3243,7 +3339,10 @@ void BuildStashForSelectedSector( INT16 sMapX, INT16 sMapY, INT16 sMapZ )
 				{
 					//set the flag
 #ifndef _DEBUG
-					pInventoryPoolList[ i ].usFlags |= WORLD_ITEM_GRIDNO_NOT_SET_USE_ENTRY_POINT;
+					// The stash vector was cleared above and this world item has not been
+					// pushed yet. Update the authoritative loaded-sector item before copying
+					// it; indexing pInventoryPoolList[i] here is an out-of-bounds write.
+					gWorldItems[ i ].usFlags |= WORLD_ITEM_GRIDNO_NOT_SET_USE_ENTRY_POINT;
 #endif
 					fNumFlagsSet++;
 				}
@@ -3832,16 +3931,17 @@ BOOLEAN AutoPlaceObjectInInventoryStash( OBJECTTYPE *pItemPtr, INT32 sGridNo, IN
 		else if(pInventorySlot->exists() == false)
 		{
 			pItemPtr->MoveThisObjectTo(*pInventorySlot);
-			if(sGridNo != 0)
-			{
-				pInventoryPoolList[cnt].sGridNo = sGridNo;
-				pInventoryPoolList[cnt].usFlags |= WORLD_ITEM_REACHABLE;
-				pInventoryPoolList[cnt].ubLevel = ubLevel;
-				pInventoryPoolList[cnt].bVisible = 1;
-				pInventoryPoolList[cnt].fExists = TRUE;
-			}
 
-			// r8690
+			// A non-empty stash slot must always be a valid WORLDITEM. Historically
+			// grid 0 doubled as "unspecified", leaving fExists/bVisible unset and
+			// allowing a real object to disappear when the sector inventory was saved.
+			pInventoryPoolList[cnt].sGridNo = sGridNo;
+			pInventoryPoolList[cnt].usFlags |= WORLD_ITEM_REACHABLE;
+			pInventoryPoolList[cnt].ubLevel = ubLevel;
+			pInventoryPoolList[cnt].bVisible = 1;
+			pInventoryPoolList[cnt].fExists = TRUE;
+
+			// -1 is the explicit unknown-grid sentinel; load it at sector entry.
 			if (sGridNo == -1)
 			{
 				pInventoryPoolList[cnt].usFlags |= WORLD_ITEM_GRIDNO_NOT_SET_USE_ENTRY_POINT;

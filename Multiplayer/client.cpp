@@ -2982,6 +2982,7 @@ void recieveGRENADE (RPCParameters *rpcParameters)
 					// not a mem leak
 					// will be freed in AdjustToNextAnimationFrame(SOLDIERTYPE*), case 461
 					pThrower->pThrowParams = (THROW_PARAMS*) malloc(sizeof(THROW_PARAMS));
+					memset(pThrower->pThrowParams, 0, sizeof(THROW_PARAMS));
 					pThrower->pThrowParams->dForceX = gren->dForceX;
 					pThrower->pThrowParams->dForceY = gren->dForceY;
 					pThrower->pThrowParams->dForceZ = gren->dForceZ;

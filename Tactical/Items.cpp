@@ -1643,7 +1643,12 @@ INT8 FindLockBomb( SOLDIERTYPE * pSoldier )
 	INT8 invsize = (INT8)pSoldier->inv.size();
 	for (INT8 bLoop = 0; bLoop < invsize; ++bLoop)
 	{
-		if (Item[pSoldier->inv[bLoop].usItem].lockbomb && pSoldier->inv[bLoop].exists() == true)
+		// Ignore empty or unusable charges.  Apart from avoiding an Item[] lookup
+		// through an empty object, this prevents a broken shaped charge from
+		// masking a usable charge later in the inventory.
+		if (pSoldier->inv[bLoop].exists() == true &&
+			Item[pSoldier->inv[bLoop].usItem].lockbomb &&
+			pSoldier->inv[bLoop][0]->data.objectStatus >= USABLE)
 		{
 			return( bLoop );
 		}
