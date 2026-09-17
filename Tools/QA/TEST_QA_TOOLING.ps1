@@ -3,8 +3,11 @@ $ErrorActionPreference = "Stop"
 $childPowerShell = (Get-Command powershell.exe -ErrorAction Stop).Source
 $perfScript = Join-Path $PSScriptRoot "COMPARE_AI_PERFORMANCE.ps1"
 $donorScript = Join-Path $PSScriptRoot "VALIDATE_DONOR_SECTOR_MANIFEST.ps1"
+$candidateScript = Join-Path $PSScriptRoot "TEST_INTEGRATION_CANDIDATE.ps1"
+$batchScript = Join-Path $PSScriptRoot "TEST_INTEGRATION_BATCH.ps1"
+$conflictScript = Join-Path $PSScriptRoot "CHECK_INTEGRATION_CONFLICTS.ps1"
 
-foreach ($requiredScript in @($perfScript, $donorScript)) {
+foreach ($requiredScript in @($perfScript, $donorScript, $candidateScript, $batchScript, $conflictScript)) {
     if (-not (Test-Path $requiredScript)) {
         throw "Required QA tool missing: $requiredScript"
     }
@@ -12,6 +15,17 @@ foreach ($requiredScript in @($perfScript, $donorScript)) {
 
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("vr-qa-tool-selftest-" + $PID)
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
+
+function Invoke-ChildSnippet {
+    param(
+        [string]$Name,
+        [string]$Snippet
+    )
+    $wrapperPath = Join-Path $tempRoot ("invoke-" + $Name + ".ps1")
+    ($Snippet + [Environment]::NewLine + 'exit $LASTEXITCODE') | Set-Content -Path $wrapperPath -Encoding UTF8
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $wrapperPath *> $null
+    return $LASTEXITCODE
+}
 
 function New-AIPerfLine {
     param(
@@ -110,6 +124,122 @@ try {
     $manifest | ConvertTo-Json -Depth 8 | Set-Content -Path $invalidManifest -Encoding UTF8
     & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $donorScript -ManifestPath $invalidManifest *> $null
     Assert-ExitCode "donor-invalid" 51 $LASTEXITCODE
+
+    $policyRepo = Join-Path $tempRoot "candidate-policy-repo"
+    New-Item -ItemType Directory -Force -Path (Join-Path $policyRepo "Tools\QA") | Out-Null
+    Copy-Item -Path $candidateScript -Destination (Join-Path $policyRepo "Tools\QA\TEST_INTEGRATION_CANDIDATE.ps1")
+    Copy-Item -Path $batchScript -Destination (Join-Path $policyRepo "Tools\QA\TEST_INTEGRATION_BATCH.ps1")
+    Copy-Item -Path $conflictScript -Destination (Join-Path $policyRepo "Tools\QA\CHECK_INTEGRATION_CONFLICTS.ps1")
+
+    $gitExe = (Get-Command git.exe -ErrorAction SilentlyContinue).Source
+    if (-not $gitExe) {
+        $desktopPattern = Join-Path $env:LOCALAPPDATA "GitHubDesktop\app-*\resources\app\git\cmd\git.exe"
+        $gitExe = (Get-Item $desktopPattern -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+    }
+    if (-not $gitExe) { throw "Git executable not found for candidate-policy self-test." }
+
+    & $gitExe -C $policyRepo init -q
+    if ($LASTEXITCODE -ne 0) { throw "Unable to initialize candidate-policy fixture repository." }
+    & $gitExe -C $policyRepo config user.email "qa-selftest@local.invalid"
+    & $gitExe -C $policyRepo config user.name "VR QA Self Test"
+    "baseline" | Set-Content -Path (Join-Path $policyRepo "README.md") -Encoding ASCII
+    New-Item -ItemType Directory -Force -Path (Join-Path $policyRepo "Strategic") | Out-Null
+    "base" | Set-Content -Path (Join-Path $policyRepo "Strategic\Allowed.cpp") -Encoding ASCII
+    New-Item -ItemType Directory -Force -Path (Join-Path $policyRepo "Tactical") | Out-Null
+    (1..30 | ForEach-Object { "shared baseline line $_" }) | Set-Content -Path (Join-Path $policyRepo "Tactical\Shared.cpp") -Encoding ASCII
+    & $gitExe -C $policyRepo add .
+    & $gitExe -C $policyRepo commit -q -m "baseline"
+    if ($LASTEXITCODE -ne 0) { throw "Unable to commit candidate-policy baseline." }
+    & $gitExe -C $policyRepo branch -M canonical
+    $canonicalSha = (& $gitExe -C $policyRepo rev-parse HEAD).Trim()
+    & $gitExe -C $policyRepo checkout -q -b candidate
+    "candidate" | Set-Content -Path (Join-Path $policyRepo "Strategic\Allowed.cpp") -Encoding ASCII
+    & $gitExe -C $policyRepo add Strategic/Allowed.cpp
+    & $gitExe -C $policyRepo commit -q -m "strategic fixture change"
+    if ($LASTEXITCODE -ne 0) { throw "Unable to commit candidate-policy fixture change." }
+
+    $fixtureGate = Join-Path $policyRepo "Tools\QA\TEST_INTEGRATION_CANDIDATE.ps1"
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureGate -CandidateRef candidate -CanonicalRef canonical -ExpectedCanonicalSha $canonicalSha *> $null
+    Assert-ExitCode "strategic-default-block" 7 $LASTEXITCODE
+
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureGate -CandidateRef candidate -CanonicalRef canonical -ExpectedCanonicalSha $canonicalSha -AllowedStrategicPaths "Strategic\Wrong.cpp" *> $null
+    Assert-ExitCode "strategic-wrong-allowlist-block" 7 $LASTEXITCODE
+
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureGate -CandidateRef candidate -CanonicalRef canonical -ExpectedCanonicalSha $canonicalSha -AllowedStrategicPaths ".\Strategic\Allowed.cpp" *> $null
+    Assert-ExitCode "strategic-exact-allowlist" 0 $LASTEXITCODE
+
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureGate -CandidateRef candidate -CanonicalRef canonical -ExpectedCanonicalSha $canonicalSha -AllowStrategicChanges *> $null
+    Assert-ExitCode "strategic-explicit-all" 0 $LASTEXITCODE
+
+    $fixtureBatchGate = Join-Path $policyRepo "Tools\QA\TEST_INTEGRATION_BATCH.ps1"
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureBatchGate -CandidateRefs candidate -CanonicalRef canonical -ExpectedCanonicalSha $canonicalSha *> $null
+    Assert-ExitCode "batch-strategic-default-block" 23 $LASTEXITCODE
+
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureBatchGate -CandidateRefs candidate -CanonicalRef canonical -ExpectedCanonicalSha $canonicalSha -AllowedStrategicPaths "Strategic\Wrong.cpp" *> $null
+    Assert-ExitCode "batch-strategic-wrong-allowlist-block" 23 $LASTEXITCODE
+
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureBatchGate -CandidateRefs candidate -CanonicalRef canonical -ExpectedCanonicalSha $canonicalSha -AllowedStrategicPaths ".\Strategic\Allowed.cpp" *> $null
+    Assert-ExitCode "batch-strategic-exact-allowlist" 0 $LASTEXITCODE
+
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureBatchGate -CandidateRefs candidate -CanonicalRef canonical -ExpectedCanonicalSha $canonicalSha -AllowStrategicChanges *> $null
+    Assert-ExitCode "batch-strategic-explicit-all" 0 $LASTEXITCODE
+
+    & $gitExe -C $policyRepo checkout -q canonical
+    & $gitExe -C $policyRepo checkout -q -b shared-a
+    $sharedPath = Join-Path $policyRepo "Tactical\Shared.cpp"
+    $sharedLines = Get-Content -Path $sharedPath
+    $sharedLines[1] = "shared A changed line 2"
+    $sharedLines | Set-Content -Path $sharedPath -Encoding ASCII
+    & $gitExe -C $policyRepo add Tactical/Shared.cpp
+    & $gitExe -C $policyRepo commit -q -m "shared fixture A"
+    if ($LASTEXITCODE -ne 0) { throw "Unable to commit shared fixture A." }
+
+    & $gitExe -C $policyRepo checkout -q -b shared-a-child
+    "descendant" | Set-Content -Path (Join-Path $policyRepo "README.md") -Encoding ASCII
+    & $gitExe -C $policyRepo add README.md
+    & $gitExe -C $policyRepo commit -q -m "shared fixture A descendant"
+    if ($LASTEXITCODE -ne 0) { throw "Unable to commit shared fixture A descendant." }
+
+    & $gitExe -C $policyRepo checkout -q canonical
+    & $gitExe -C $policyRepo checkout -q -b shared-b
+    $sharedLines = Get-Content -Path $sharedPath
+    $sharedLines[17] = "shared B changed line 18"
+    $sharedLines | Set-Content -Path $sharedPath -Encoding ASCII
+    & $gitExe -C $policyRepo add Tactical/Shared.cpp
+    & $gitExe -C $policyRepo commit -q -m "shared fixture B"
+    if ($LASTEXITCODE -ne 0) { throw "Unable to commit shared fixture B." }
+
+    $fixtureConflictGate = Join-Path $policyRepo "Tools\QA\CHECK_INTEGRATION_CONFLICTS.ps1"
+    $conflictBase = "& '$fixtureConflictGate' -CandidateRefs @('shared-a','shared-b') -CanonicalRef 'canonical' -ExpectedCanonicalSha '$canonicalSha' -FailOnSharedFiles"
+    $actual = Invoke-ChildSnippet "overlap-default" $conflictBase
+    Assert-ExitCode "overlap-default-block" 31 $actual
+
+    $actual = Invoke-ChildSnippet "overlap-wrong" ($conflictBase + " -AllowedSharedPaths 'Tactical/Wrong.cpp'")
+    Assert-ExitCode "overlap-wrong-allowlist-block" 31 $actual
+
+    $actual = Invoke-ChildSnippet "overlap-exact" ($conflictBase + " -AllowedSharedPaths '.\Tactical\Shared.cpp'")
+    Assert-ExitCode "overlap-exact-allowlist" 0 $actual
+
+    $batchBase = "& '$fixtureBatchGate' -CandidateRefs @('shared-a','shared-b') -CanonicalRef 'canonical' -ExpectedCanonicalSha '$canonicalSha'"
+    $actual = Invoke-ChildSnippet "batch-overlap-default" $batchBase
+    Assert-ExitCode "batch-overlap-default-block" 31 $actual
+
+    $actual = Invoke-ChildSnippet "batch-overlap-exact" ($batchBase + " -AllowedCrossStreamPaths '.\Tactical\Shared.cpp'")
+    Assert-ExitCode "batch-overlap-exact-allowlist" 0 $actual
+
+    $actual = Invoke-ChildSnippet "batch-overlap-all" ($batchBase + " -AllowCrossStreamFileOverlap")
+    Assert-ExitCode "batch-overlap-explicit-all" 0 $actual
+
+    $containedSnippet = "& '$fixtureBatchGate' -CandidateRefs @('shared-a','shared-a-child') -CanonicalRef 'canonical' -ExpectedCanonicalSha '$canonicalSha'"
+    $containedWrapper = Join-Path $tempRoot "invoke-batch-contained.ps1"
+    ($containedSnippet + [Environment]::NewLine + 'exit $LASTEXITCODE') | Set-Content -Path $containedWrapper -Encoding UTF8
+    $containedLog = Join-Path $tempRoot "batch-contained.log"
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $containedWrapper *> $containedLog
+    Assert-ExitCode "batch-contained-candidate-consolidation" 0 $LASTEXITCODE
+    if (-not (Select-String -Path $containedLog -SimpleMatch "REDUNDANT_CANDIDATE_CONTAINED:" -Quiet)) {
+        throw "Contained-candidate batch test passed without reporting redundant-candidate consolidation."
+    }
+    Write-Host "SELFTEST_OK batch-contained-candidate-marker"
 
     Write-Host "QA_TOOLING_SELF_TEST_OK"
 }
