@@ -54,6 +54,25 @@ BOOLEAN gfSetPerceivedDoorState = FALSE;
 
 BOOLEAN HandleDoorsOpenClose( SOLDIERTYPE *pSoldier, INT32 sGridNo, STRUCTURE * pStructure, BOOLEAN fNoAnimations );
 
+// Current 1.13 keeps lock manipulation separate from opening the door in turn-based combat.
+// This prevents a merc from spending the lock-action AP and then auto-opening the door with no
+// opportunity to reassess. Preserve legacy auto-open behavior outside combat and for non-key locks.
+static BOOLEAN ShouldAutoOpenDoorAfterLockManipulation( const DOOR *pDoor )
+{
+	if ( !(gTacticalStatus.uiFlags & TURNBASED) || !(gTacticalStatus.uiFlags & INCOMBAT) )
+	{
+		return TRUE;
+	}
+
+	// Malformed/custom door data should keep the old behavior rather than indexing LockTable out of range.
+	if ( pDoor == NULL || pDoor->ubLockID >= NUM_LOCKS )
+	{
+		return TRUE;
+	}
+
+	return ( LockTable[ pDoor->ubLockID ].usKeyItem == 0 );
+}
+
 #ifdef JA2UB
 void HandleForceingTheTunnelGate( UINT32 sGridNo ); //Ja25 UB
 #endif
@@ -794,7 +813,10 @@ BOOLEAN HandleOpenableStruct( SOLDIERTYPE *pSoldier, INT32 sGridNo, STRUCTURE *p
 							{
 								//pSoldier->DoMercBattleSound( BATTLE_SOUND_COOL1 );
 								//ScreenMsg( MSG_FONT_YELLOW, MSG_INTERFACE, TacticalStr[ DOOR_LOCK_DESTROYED_STR ] );
-								fHandleDoor = TRUE;
+								if ( ShouldAutoOpenDoorAfterLockManipulation( pDoor ) )
+								{
+									fHandleDoor = TRUE;
+								}
 							}
 							else
 							{
@@ -822,7 +844,10 @@ BOOLEAN HandleOpenableStruct( SOLDIERTYPE *pSoldier, INT32 sGridNo, STRUCTURE *p
 							{
 								pSoldier->DoMercBattleSound( BATTLE_SOUND_COOL1 );
 								//ScreenMsg( MSG_FONT_YELLOW, MSG_INTERFACE, TacticalStr[ DOOR_LOCK_HAS_BEEN_PICKED_STR ] );
-								fHandleDoor = TRUE;
+								if ( ShouldAutoOpenDoorAfterLockManipulation( pDoor ) )
+								{
+									fHandleDoor = TRUE;
+								}
 							}
 							else
 							{
@@ -911,7 +936,10 @@ BOOLEAN HandleOpenableStruct( SOLDIERTYPE *pSoldier, INT32 sGridNo, STRUCTURE *p
 								pSoldier->ChangeSoldierState( GetAnimStateForInteraction( pSoldier, fDoor, END_OPEN_DOOR ), 0, FALSE );
 								UpdateDoorPerceivedValue( pDoor );
 
-								fHandleDoor = TRUE;
+								if ( ShouldAutoOpenDoorAfterLockManipulation( pDoor ) )
+								{
+									fHandleDoor = TRUE;
+								}
 							}
 							else
 							{
