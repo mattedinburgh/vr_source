@@ -5,7 +5,9 @@ param(
     [string]$ExpectedCanonicalSha = "",
     [switch]$Fetch,
     [switch]$AllowStrategicChanges,
-    [switch]$AllowCrossStreamFileOverlap
+    [string[]]$AllowedStrategicPaths = @(),
+    [switch]$AllowCrossStreamFileOverlap,
+    [string[]]$AllowedCrossStreamPaths = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -88,6 +90,40 @@ foreach ($candidateRef in $CandidateRefs) {
     $candidates += [pscustomobject]@{ Name = $candidateRef; Sha = $candidateSha }
 }
 
+$redundantIndexes = @()
+for ($i = 0; $i -lt $candidates.Count; $i++) {
+    for ($j = 0; $j -lt $candidates.Count; $j++) {
+        if ($i -eq $j) { continue }
+
+        if ($candidates[$i].Sha -eq $candidates[$j].Sha) {
+            if ($i -gt $j) {
+                $redundantIndexes += $i
+                break
+            }
+            continue
+        }
+
+        $containedByCandidate = Invoke-Git @("merge-base", "--is-ancestor", $candidates[$i].Sha, $candidates[$j].Sha) $repo
+        if ($containedByCandidate.ExitCode -eq 0) {
+            Write-Host "REDUNDANT_CANDIDATE_CONTAINED: $($candidates[$i].Name) @ $($candidates[$i].Sha) is already contained by $($candidates[$j].Name) @ $($candidates[$j].Sha)"
+            $redundantIndexes += $i
+            break
+        }
+    }
+}
+
+if ($redundantIndexes.Count -gt 0) {
+    $redundantSet = @($redundantIndexes | Sort-Object -Unique)
+    $filtered = @()
+    for ($i = 0; $i -lt $candidates.Count; $i++) {
+        if ($redundantSet -notcontains $i) { $filtered += $candidates[$i] }
+    }
+    $candidates = $filtered
+}
+if ($candidates.Count -eq 0) {
+    throw "No independent candidate remains after redundant-candidate consolidation."
+}
+
 Write-Host "Batch candidates pinned in order:"
 $candidates | ForEach-Object { Write-Host "  $($_.Name) @ $($_.Sha)" }
 
@@ -95,10 +131,17 @@ $conflictGate = Join-Path $PSScriptRoot "CHECK_INTEGRATION_CONFLICTS.ps1"
 if (-not (Test-Path $conflictGate)) {
     throw "Cross-stream conflict gate is missing: $conflictGate"
 }
+if ($AllowCrossStreamFileOverlap -and $AllowedCrossStreamPaths.Count -gt 0) {
+    throw "Use either -AllowCrossStreamFileOverlap or -AllowedCrossStreamPaths, not both."
+}
+
 $conflictArgs = @{
     CandidateRefs = @($candidates | ForEach-Object { $_.Sha })
     CanonicalRef = $canonicalSha
     ExpectedCanonicalSha = $canonicalSha
+}
+if ($AllowedCrossStreamPaths.Count -gt 0) {
+    $conflictArgs["AllowedSharedPaths"] = $AllowedCrossStreamPaths
 }
 if (-not $AllowCrossStreamFileOverlap) {
     $conflictArgs["FailOnSharedFiles"] = $true
@@ -165,10 +208,24 @@ try {
     }
 
     $strategic = @($changedPaths | Where-Object { $_ -match '^Strategic/' })
+    if ($AllowStrategicChanges -and $AllowedStrategicPaths.Count -gt 0) {
+        throw "Use either -AllowStrategicChanges or -AllowedStrategicPaths, not both."
+    }
+
     if ($strategic.Count -gt 0 -and -not $AllowStrategicChanges) {
-        Write-Host "BATCH_STRATEGIC_LAYER_CHANGE_BLOCKED"
+        $normalizedAllowlist = @($AllowedStrategicPaths | ForEach-Object { $_.Replace('\', '/').TrimStart('.', '/') } | Where-Object { $_ })
+        $unexpectedStrategic = @($strategic | Where-Object { $normalizedAllowlist -notcontains $_ })
+        if ($unexpectedStrategic.Count -gt 0) {
+            Write-Host "BATCH_STRATEGIC_LAYER_CHANGE_BLOCKED"
+            $unexpectedStrategic | ForEach-Object { Write-Host "  $_" }
+            if ($normalizedAllowlist.Count -gt 0) {
+                Write-Host "Strategic allowlist:"
+                $normalizedAllowlist | ForEach-Object { Write-Host "  $_" }
+            }
+            exit 23
+        }
+        Write-Host "BATCH_STRATEGIC_LAYER_CHANGE_ALLOWLIST_OK"
         $strategic | ForEach-Object { Write-Host "  $_" }
-        exit 23
     }
     if ($changedPaths.Count -gt 0) {
         $markerArgs = @("grep", "-n", "-E", "^(<<<<<<< .+|=======|>>>>>>> .+)$", "--") + $changedPaths

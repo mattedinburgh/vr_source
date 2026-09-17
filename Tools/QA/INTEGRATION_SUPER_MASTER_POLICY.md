@@ -23,7 +23,7 @@ IDE retargeting, build outputs, or generated files. Use clean stream worktrees a
 2. DIVERGED streams must be forward-ported onto the pinned canonical baseline before integration.
 3. Run `TEST_INTEGRATION_CANDIDATE.ps1` on every AHEAD stream individually.
 4. Run `CHECK_INTEGRATION_CONFLICTS.ps1` (also invoked automatically by the batch gate) to detect exact shared-file ownership and shared subsystem areas across the intended merge set. Exact shared-file overlap blocks by default even when Git can merge it textually; override only after explicit compatibility review.
-5. Run `TEST_INTEGRATION_BATCH.ps1` on the exact intended merge set and merge order. The gate resolves every candidate ref to an immutable SHA before testing, runs the cross-stream conflict scan, and merges those SHAs, so parallel workstreams cannot move underneath the batch.
+5. Run `TEST_INTEGRATION_BATCH.ps1` on the exact intended merge set and merge order. The gate resolves every candidate ref to an immutable SHA before testing, removes any candidate that is wholly contained by another supplied candidate (while reporting it as redundant), runs the cross-stream conflict scan on the independent tips, and merges those SHAs, so parallel workstreams cannot move underneath the batch.
 6. Only after the static gates pass may the set be considered merge-eligible.
 7. A successful compile/build is still required before anything is called playtest-ready.
 8. Preserve a rollback anchor before broad or high-risk integration.
@@ -42,11 +42,11 @@ Stream 4 owns sector dependency discovery and manifest generation. Integration/Q
 ## Hard blockers
 
 - Generated/build/IDE noise in a candidate delta.
-- Exact cross-stream shared-file overlap unless explicitly reviewed and allowed.
+- Exact cross-stream shared-file overlap unless explicitly reviewed and allowed. Prefer `-AllowedCrossStreamPaths` with exact reviewed paths; use the broad `-AllowCrossStreamFileOverlap` override only when every overlap in the batch has been deliberately reviewed.
 - Unresolved or committed merge markers.
 - PowerShell syntax errors in changed QA/deployment scripts.
 - Tactical-AI changes that fail the unified AI integrity audit.
-- Strategic/campaign-layer changes unless Matt explicitly requested them.
+- Strategic/campaign-layer changes unless Matt explicitly requested them. Files physically under `Strategic/` that implement a reviewed non-campaign subsystem may use `-AllowedStrategicPaths` for exact paths only; this is not permission to alter campaign AI, force movement, reinforcements, garrisons, patrols, logistics, or force sizing. Prefer the exact-path allowlist over the broad `-AllowStrategicChanges` switch whenever the exception is file-scoped.
 - Candidate history that is not based on the pinned canonical tip.
 
 ## Ownership boundary
