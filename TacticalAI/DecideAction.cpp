@@ -4035,7 +4035,7 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 						if (OKFallDirection(pSoldier, sCheckGridNo, pSoldier->pathing.bLevel, gOppositeDirection[ubOpponentDir], pSoldier->usAnimState))
 						{
 							// sevenfm: check if we can reach this gridno
-							INT32 iPathCost = EstimatePlotPath(pSoldier, sCheckGridNo, FALSE, FALSE, FALSE, DetermineMovementMode(pSoldier, AI_ACTION_GET_CLOSER), pSoldier->bStealthMode, FALSE, 0);
+							INT32 iPathCost = AIPlanningEstimatePlotPath(pSoldier, sCheckGridNo, FALSE, FALSE, FALSE, DetermineMovementMode(pSoldier, AI_ACTION_GET_CLOSER), pSoldier->bStealthMode, FALSE, 0);
 							if (!AIShouldAvoidAdvance(pSoldier) &&
 								iPathCost != 0 &&
 								iPathCost + BestThrow.ubAPCost + GetAPsToLook(pSoldier) + GetAPsCrouch(pSoldier, FALSE) <= pSoldier->bActionPoints)
@@ -4846,7 +4846,7 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 			gubNPCDistLimit = 0;
 
 			// check path to closest disturbance and find the point where enemy will appear in sight						
-			if (FindBestPath(pSoldier, sClosestDisturbance, pSoldier->pathing.bLevel, RUNNING, COPYROUTE, PATH_IGNORE_PERSON_AT_DEST | PATH_THROUGH_PEOPLE))
+			if (AIPlanningFindBestPath(pSoldier, sClosestDisturbance, pSoldier->pathing.bLevel, RUNNING, COPYROUTE, PATH_IGNORE_PERSON_AT_DEST | PATH_THROUGH_PEOPLE))
 			{
 				INT16 sLoop;
 				INT32 sLastSeenSpot = NOWHERE;
@@ -6910,7 +6910,7 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 
 					// try behind us, see if there's room to move back and we have enough AP to move and fire
 					sCheckGridNo = NewGridNo(pSoldier->sGridNo, DirectionInc(gOppositeDirection[ubOpponentDir]));
-					INT32 iPathCost = EstimatePlotPath(pSoldier, sCheckGridNo, FALSE, FALSE, FALSE, DetermineMovementMode(pSoldier, AI_ACTION_GET_CLOSER), FALSE, FALSE, 0);
+					INT32 iPathCost = AIPlanningEstimatePlotPath(pSoldier, sCheckGridNo, FALSE, FALSE, FALSE, DetermineMovementMode(pSoldier, AI_ACTION_GET_CLOSER), FALSE, FALSE, 0);
 					if (AIShouldAvoidAdvance(pSoldier) ||
 						!OKFallDirection(pSoldier, sCheckGridNo, pSoldier->pathing.bLevel, gOppositeDirection[ubOpponentDir], pSoldier->usAnimState) ||
 						iPathCost == 0 ||
@@ -8250,7 +8250,7 @@ L_NEWAIM:
 					if (OKFallDirection(pSoldier, sCheckGridNo, pSoldier->pathing.bLevel, gOppositeDirection[ubOpponentDir], pSoldier->usAnimState))
 					{
 						// sevenfm: check if we can reach this gridno
-						INT32 iPathCost = EstimatePlotPath(pSoldier, sCheckGridNo, FALSE, FALSE, FALSE, DetermineMovementMode(pSoldier, AI_ACTION_GET_CLOSER), pSoldier->bStealthMode, FALSE, 0);
+						INT32 iPathCost = AIPlanningEstimatePlotPath(pSoldier, sCheckGridNo, FALSE, FALSE, FALSE, DetermineMovementMode(pSoldier, AI_ACTION_GET_CLOSER), pSoldier->bStealthMode, FALSE, 0);
 						if (!AIShouldAvoidAdvance(pSoldier) &&
 							iPathCost != 0 &&
 							iPathCost + BestAttack.ubAPCost + GetAPsToLook(pSoldier) + GetAPsCrouch(pSoldier, FALSE) <= pSoldier->bActionPoints)
@@ -11334,10 +11334,10 @@ INT8 DecideUseWirecutters(SOLDIERTYPE *pSoldier)
 				IsLocationSittable(sNextSpot, pSoldier->pathing.bLevel))
 			{
 				// check if cutting the fence improves situation
-				sPathCost = EstimatePlotPath(pSoldier, sClosestOpponent, FALSE, FALSE, FALSE, RUNNING, pSoldier->bStealthMode, FALSE, 0);
+				sPathCost = AIPlanningEstimatePlotPath(pSoldier, sClosestOpponent, FALSE, FALSE, FALSE, RUNNING, pSoldier->bStealthMode, FALSE, 0);
 				sOriginalGridNo = pSoldier->sGridNo;
 				pSoldier->sGridNo = sNewSpot;
-				sNewPathCost = EstimatePlotPath(pSoldier, sClosestOpponent, FALSE, FALSE, FALSE, RUNNING, pSoldier->bStealthMode, FALSE, 0);
+				sNewPathCost = AIPlanningEstimatePlotPath(pSoldier, sClosestOpponent, FALSE, FALSE, FALSE, RUNNING, pSoldier->bStealthMode, FALSE, 0);
 				pSoldier->sGridNo = sOriginalGridNo;
 
 				if (sNewPathCost > 0 && (sPathCost == 0 || sPathCost > sNewPathCost && sPathCost - sNewPathCost > APBPConstants[AP_MAXIMUM]))
@@ -11373,10 +11373,10 @@ INT8 DecideUseWirecutters(SOLDIERTYPE *pSoldier)
 				IsLocationSittable(sNextSpot, pSoldier->pathing.bLevel))
 			{
 				// check if cutting the fence improves situation
-				sPathCost = EstimatePlotPath(pSoldier, sClosestOpponent, FALSE, FALSE, FALSE, RUNNING, pSoldier->bStealthMode, FALSE, 0);
+				sPathCost = AIPlanningEstimatePlotPath(pSoldier, sClosestOpponent, FALSE, FALSE, FALSE, RUNNING, pSoldier->bStealthMode, FALSE, 0);
 				sOriginalGridNo = pSoldier->sGridNo;
 				pSoldier->sGridNo = sNewSpot;
-				sNewPathCost = EstimatePlotPath(pSoldier, sClosestOpponent, FALSE, FALSE, FALSE, RUNNING, pSoldier->bStealthMode, FALSE, 0);
+				sNewPathCost = AIPlanningEstimatePlotPath(pSoldier, sClosestOpponent, FALSE, FALSE, FALSE, RUNNING, pSoldier->bStealthMode, FALSE, 0);
 				pSoldier->sGridNo = sOriginalGridNo;
 
 				if (sNewPathCost > 0 && (sPathCost == 0 || sPathCost > sNewPathCost && sPathCost - sNewPathCost > APBPConstants[AP_MAXIMUM]))
@@ -11408,10 +11408,10 @@ INT8 DecideUseWirecutters(SOLDIERTYPE *pSoldier)
 				IsLocationSittable(sNextSpot, pSoldier->pathing.bLevel))
 			{
 				// check if cutting the fence improves situation
-				sPathCost = EstimatePlotPath(pSoldier, sClosestOpponent, FALSE, FALSE, FALSE, RUNNING, pSoldier->bStealthMode, FALSE, 0);
+				sPathCost = AIPlanningEstimatePlotPath(pSoldier, sClosestOpponent, FALSE, FALSE, FALSE, RUNNING, pSoldier->bStealthMode, FALSE, 0);
 				sOriginalGridNo = pSoldier->sGridNo;
 				pSoldier->sGridNo = sNewSpot;
-				sNewPathCost = EstimatePlotPath(pSoldier, sClosestOpponent, FALSE, FALSE, FALSE, RUNNING, pSoldier->bStealthMode, FALSE, 0);
+				sNewPathCost = AIPlanningEstimatePlotPath(pSoldier, sClosestOpponent, FALSE, FALSE, FALSE, RUNNING, pSoldier->bStealthMode, FALSE, 0);
 				pSoldier->sGridNo = sOriginalGridNo;
 
 				if (sNewPathCost > 0 && (sPathCost == 0 || sPathCost > sNewPathCost && sPathCost - sNewPathCost > APBPConstants[AP_MAXIMUM]))
@@ -11571,7 +11571,7 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 		BestThrow.ubPossible = FALSE;
 
 		// check path to closest disturbance
-		if (FindBestPath(pSoldier, sClosestDisturbance, pSoldier->pathing.bLevel, RUNNING, COPYROUTE, 0))
+		if (AIPlanningFindBestPath(pSoldier, sClosestDisturbance, pSoldier->pathing.bLevel, RUNNING, COPYROUTE, 0))
 		{
 			DebugAI(AI_MSG_INFO, pSoldier, String("found path to %d, path size %d ", sClosestDisturbance, pSoldier->pathing.usPathDataSize));
 
@@ -11952,7 +11952,7 @@ static BOOLEAN AIEvaluateEscapeRoute(SOLDIERTYPE *pSoldier, INT32 sTarget,
 	INT32 iPathSteps = 0;
 	if (sTarget != pSoldier->sGridNo)
 	{
-		iPathSteps = FindBestPath(pSoldier, sTarget, pSoldier->pathing.bLevel,
+		iPathSteps = AIPlanningFindBestPath(pSoldier, sTarget, pSoldier->pathing.bLevel,
 			RUNNING, NO_COPYROUTE, 0);
 		if (iPathSteps == 0)
 			return FALSE;

@@ -2094,7 +2094,7 @@ INT16 EstimatePathCostToLocation( SOLDIERTYPE * pSoldier, INT32 sDestGridNo, INT
 		if ( (pSoldier->pathing.bLevel == 0) || ( gubBuildingInfo[ pSoldier->sGridNo ] == gubBuildingInfo[ sDestGridNo ] ) )
 		{
 			// on ground or same building... normal!
-			sPathCost = EstimatePlotPath( pSoldier, sDestGridNo, FALSE, FALSE, FALSE, WALKING, FALSE, FALSE, 0);
+			sPathCost = AIPlanningEstimatePlotPath( pSoldier, sDestGridNo, FALSE, FALSE, FALSE, WALKING, FALSE, FALSE, 0);
 			if (pfClimbingNecessary)
 				*pfClimbingNecessary = FALSE;
 			if (psClimbGridNo)
@@ -5932,6 +5932,36 @@ void AIPlanningRecordPathSearch(SOLDIERTYPE *pSoldier, UINT32 uiElapsedMs)
 	pSnapshot->uiPathfindingMs += uiElapsedMs;
 }
 
+INT32 AIPlanningFindBestPath(SOLDIERTYPE *pSoldier, INT32 sDestination, INT8 bLevel,
+	INT16 usMovementMode, INT8 bCopy, UINT8 fFlags)
+{
+	AIDECISIONTHREATSNAPSHOT *pSnapshot = AIGetDecisionThreatSnapshot(pSoldier);
+	if (!pSnapshot)
+		return FindBestPath(pSoldier, sDestination, bLevel, usMovementMode, bCopy, fFlags);
+
+	const UINT32 uiStart = GetJA2Clock();
+	const INT32 iResult = FindBestPath(pSoldier, sDestination, bLevel, usMovementMode, bCopy, fFlags);
+	++pSnapshot->uiPathSearchCount;
+	pSnapshot->uiPathfindingMs += GetJA2Clock() - uiStart;
+	return iResult;
+}
+
+INT32 AIPlanningEstimatePlotPath(SOLDIERTYPE *pSoldier, INT32 sDestination, INT8 bCopyRoute,
+	INT8 bPlot, INT8 bStayOn, UINT16 usMovementMode, INT8 bStealth, INT8 bReverse, INT16 sAPBudget)
+{
+	AIDECISIONTHREATSNAPSHOT *pSnapshot = AIGetDecisionThreatSnapshot(pSoldier);
+	if (!pSnapshot)
+		return EstimatePlotPath(pSoldier, sDestination, bCopyRoute, bPlot, bStayOn,
+			usMovementMode, bStealth, bReverse, sAPBudget);
+
+	const UINT32 uiStart = GetJA2Clock();
+	const INT32 iResult = EstimatePlotPath(pSoldier, sDestination, bCopyRoute, bPlot, bStayOn,
+		usMovementMode, bStealth, bReverse, sAPBudget);
+	++pSnapshot->uiPathSearchCount;
+	pSnapshot->uiPathfindingMs += GetJA2Clock() - uiStart;
+	return iResult;
+}
+
 static AIDECISIONROUTECACHEENTRY *AIGetDecisionRoute(
 	SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMovementMode,
 	BOOLEAN *pfCacheHit)
@@ -6004,13 +6034,9 @@ static AIDECISIONROUTECACHEENTRY *AIGetDecisionRoute(
 	pEntry->sAPBudget = sAPBudget;
 	pEntry->ubDistLimit = ubDistLimit;
 
-	const UINT32 uiPathStart = GetJA2Clock();
-	INT32 iPathSteps = FindBestPath(
+	INT32 iPathSteps = AIPlanningFindBestPath(
 		pSoldier, sDestination, pSoldier->pathing.bLevel,
 		usMovementMode, NO_COPYROUTE, 0);
-	++pSnapshot->uiPathSearchCount;
-	pSnapshot->uiPathfindingMs += GetJA2Clock() - uiPathStart;
-
 	if (iPathSteps > 0 && guiPathingData)
 	{
 		const INT32 iCopySteps =
@@ -8991,7 +9017,7 @@ BOOLEAN AIKnownRouteExposureAcceptable(
 	{
 		if (AIGetDecisionThreatSnapshot(pSoldier))
 			return FALSE;
-		iPathSteps = FindBestPath(
+		iPathSteps = AIPlanningFindBestPath(
 			pSoldier, sDestination, pSoldier->pathing.bLevel,
 			usMovementMode, NO_COPYROUTE, 0);
 		pPathData = guiPathingData;
@@ -16140,7 +16166,7 @@ INT32 AIPathExposureCost(SOLDIERTYPE *pSoldier, INT32 sDestination, UINT16 usMov
 		}
 		// Outside the unified planner there is no decision cache; retain the
 		// legacy non-copying path query exactly as before.
-		iPathSteps = FindBestPath(
+		iPathSteps = AIPlanningFindBestPath(
 			pSoldier, sDestination, pSoldier->pathing.bLevel,
 			usMovementMode, NO_COPYROUTE, 0);
 		pPathData = guiPathingData;

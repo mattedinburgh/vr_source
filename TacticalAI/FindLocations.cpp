@@ -1108,7 +1108,7 @@ INT32 FindBestNearbyCover(SOLDIERTYPE *pSoldier, INT32 morale, INT32 *piPercentB
 		}
 	}
 
-	FindBestPath( pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, DetermineMovementMode( pSoldier, AI_ACTION_TAKE_COVER ), COPYREACHABLE_AND_APS, 0 );//dnl ch50 071009
+	AIPlanningFindBestPath( pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, DetermineMovementMode( pSoldier, AI_ACTION_TAKE_COVER ), COPYREACHABLE_AND_APS, 0 );//dnl ch50 071009
 
 	// Turn off the "reachable" flag for his current location
 	// so we don't consider it
@@ -1532,7 +1532,7 @@ INT32 FindSpotMaxDistFromOpponents(SOLDIERTYPE *pSoldier)
 		}
 	}
 
-	FindBestPath( pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, DetermineMovementMode( pSoldier, AI_ACTION_RUN_AWAY ), COPYREACHABLE, 0 );//dnl ch50 121009
+	AIPlanningFindBestPath( pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, DetermineMovementMode( pSoldier, AI_ACTION_RUN_AWAY ), COPYREACHABLE, 0 );//dnl ch50 121009
 
 	// Turn off the "reachable" flag for his current location
 	// so we don't consider it
@@ -1707,7 +1707,7 @@ INT32 FindNearestUngassedLand(SOLDIERTYPE *pSoldier)
 
 		gubNPCAPBudget = 0;
 		gubNPCDistLimit = (UINT8)iSearchRange;
-		FindBestPath( pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, DetermineMovementMode( pSoldier, AI_ACTION_LEAVE_WATER_GAS ), COPYREACHABLE, 0 );//dnl ch50 071009
+		AIPlanningFindBestPath( pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, DetermineMovementMode( pSoldier, AI_ACTION_LEAVE_WATER_GAS ), COPYREACHABLE, 0 );//dnl ch50 071009
 		gubNPCAPBudget = 0;
 		gubNPCDistLimit = 0;
 
@@ -1848,7 +1848,7 @@ INT16 FindNearbyDarkerSpot( SOLDIERTYPE *pSoldier )
 
 		gubNPCAPBudget = 0;
 		gubNPCDistLimit = (UINT8)iSearchRange;
-		FindBestPath( pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, DetermineMovementMode( pSoldier, AI_ACTION_LEAVE_WATER_GAS ), COPYREACHABLE, 0 );//dnl ch50 071009
+		AIPlanningFindBestPath( pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, DetermineMovementMode( pSoldier, AI_ACTION_LEAVE_WATER_GAS ), COPYREACHABLE, 0 );//dnl ch50 071009
 		gubNPCAPBudget = 0;
 		gubNPCDistLimit = 0;
 
@@ -2024,7 +2024,7 @@ INT8 SearchForItems( SOLDIERTYPE * pSoldier, INT8 bReason, UINT16 usItem )
 		}
 	}
 
-	FindBestPath( pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, DetermineMovementMode( pSoldier, AI_ACTION_PICKUP_ITEM ), COPYREACHABLE, 0 );//dnl ch50 071009
+	AIPlanningFindBestPath( pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, DetermineMovementMode( pSoldier, AI_ACTION_PICKUP_ITEM ), COPYREACHABLE, 0 );//dnl ch50 071009
 
 	// Flugente: if the soldier is 'dumb enough', he may pick up certain items... which can be used to lure the AI into traps
 	if ( pSoldier->stats.bWisdom < 70 )
@@ -2512,7 +2512,7 @@ INT32 FindNearbyPointOnEdgeOfMap( SOLDIERTYPE * pSoldier, INT8 * pbDirection )
 		}
 	}
 
-	FindBestPath( pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, WALKING, COPYREACHABLE, 0 );//dnl ch50 071009
+	AIPlanningFindBestPath( pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, WALKING, COPYREACHABLE, 0 );//dnl ch50 071009
 
 	// Turn off the "reachable" flag for his current location
 	// so we don't consider it
@@ -2560,7 +2560,7 @@ INT32 FindRouteBackOntoMap( SOLDIERTYPE * pSoldier, INT32 sDestGridNo )
 	// values
 
 	// well, let's TRY just taking a path to the place we're supposed to go...
-	if ( FindBestPath( pSoldier, sDestGridNo, pSoldier->pathing.bLevel, WALKING, COPYROUTE, 0 ) )
+	if ( AIPlanningFindBestPath( pSoldier, sDestGridNo, pSoldier->pathing.bLevel, WALKING, COPYROUTE, 0 ) )
 	{
 		pSoldier->pathing.bPathStored = TRUE;
 		return( sDestGridNo );
@@ -2738,7 +2738,7 @@ INT32 FindFlankingSpot(SOLDIERTYPE *pSoldier, INT32 sPos, INT8 bAction )
 		}
 	}
 
-	FindBestPath( pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, DetermineMovementMode( pSoldier, bAction ), COPYREACHABLE, 0 );//dnl ch50 071009
+	AIPlanningFindBestPath( pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, DetermineMovementMode( pSoldier, bAction ), COPYREACHABLE, 0 );//dnl ch50 071009
 
 	// Turn off the "reachable" flag for his current location
 	// so we don't consider it
@@ -3044,7 +3044,7 @@ INT32 FindGeometryBreakoutSpot(SOLDIERTYPE *pSoldier, INT32 sThreatSpot)
 		}
 	}
 
-	FindBestPath(
+	AIPlanningFindBestPath(
 		pSoldier, GRIDSIZE, pSoldier->pathing.bLevel,
 		DetermineMovementMode(pSoldier, AI_ACTION_WITHDRAW),
 		COPYREACHABLE, 0);
@@ -3669,7 +3669,7 @@ INT32 FindRetreatSpot(SOLDIERTYPE *pSoldier)
 		}
 	}
 
-	FindBestPath(pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, usMovementMode, COPYREACHABLE_AND_APS, 0);
+	AIPlanningFindBestPath(pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, usMovementMode, COPYREACHABLE_AND_APS, 0);
 	gpWorldLevelData[pSoldier->sGridNo].uiFlags &= ~MAPELEMENT_REACHABLE;
 
 	const INT32 iCurrentDistance = PythSpacesAway(pSoldier->sGridNo, sThreat);
@@ -3837,10 +3837,8 @@ INT32 FindAdvanceSpot(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bAction, UI
 	// Check that the objective is reachable. Account this path query in the
 	// decision performance telemetry; historically these nested estimates were
 	// invisible beside the explicit route-cache searches.
-	UINT32 uiPathStart = GetJA2Clock();
-	iBestPathCost = EstimatePlotPath(pSoldier, sTargetSpot, FALSE, FALSE, FALSE,
+	iBestPathCost = AIPlanningEstimatePlotPath(pSoldier, sTargetSpot, FALSE, FALSE, FALSE,
 		usMovementMode, pSoldier->bStealthMode, FALSE, 0);
-	AIPlanningRecordPathSearch(pSoldier, GetJA2Clock() - uiPathStart);
 	if (iBestPathCost == 0)
 	{
 		return NOWHERE;
@@ -3885,10 +3883,8 @@ INT32 FindAdvanceSpot(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bAction, UI
 		}
 	}
 
-	uiPathStart = GetJA2Clock();
-	FindBestPath(pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, usMovementMode,
+	AIPlanningFindBestPath(pSoldier, GRIDSIZE, pSoldier->pathing.bLevel, usMovementMode,
 		COPYREACHABLE_AND_APS, 0);
-	AIPlanningRecordPathSearch(pSoldier, GetJA2Clock() - uiPathStart);
 
 	// Turn off the "reachable" flag for his current location
 	// so we don't consider it
@@ -4094,10 +4090,8 @@ INT32 FindAdvanceSpot(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, INT8 bAction, UI
 
 		sRealGridNo = pSoldier->sGridNo;
 		pSoldier->sGridNo = sFinalist[ubIndex];
-		uiPathStart = GetJA2Clock();
-		iPathCost = EstimatePlotPath(pSoldier, sTargetSpot, FALSE, FALSE, FALSE,
+		iPathCost = AIPlanningEstimatePlotPath(pSoldier, sTargetSpot, FALSE, FALSE, FALSE,
 			usMovementMode, pSoldier->bStealthMode, FALSE, 0);
-		AIPlanningRecordPathSearch(pSoldier, GetJA2Clock() - uiPathStart);
 		pSoldier->sGridNo = sRealGridNo;
 		++ubEvaluated;
 

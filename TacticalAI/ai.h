@@ -628,6 +628,10 @@ UINT32 AIPlanningElapsedMs(SOLDIERTYPE *pSoldier);
 BOOLEAN AIPlanningSoftBudgetExceeded(SOLDIERTYPE *pSoldier);
 BOOLEAN AIPlanningHardBudgetExceeded(SOLDIERTYPE *pSoldier);
 void AIPlanningRecordPathSearch(SOLDIERTYPE *pSoldier, UINT32 uiElapsedMs);
+INT32 AIPlanningFindBestPath(SOLDIERTYPE *pSoldier, INT32 sDestination, INT8 bLevel,
+	INT16 usMovementMode, INT8 bCopy, UINT8 fFlags);
+INT32 AIPlanningEstimatePlotPath(SOLDIERTYPE *pSoldier, INT32 sDestination, INT8 bCopyRoute,
+	INT8 bPlot, INT8 bStayOn, UINT16 usMovementMode, INT8 bStealth, INT8 bReverse, INT16 sAPBudget);
 void AIResetTacticalPlannerStateForLoad(void);
 INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);
 INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot = NOWHERE);

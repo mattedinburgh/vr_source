@@ -106,7 +106,7 @@ BOOLEAN FullPatientCheck( SOLDIERTYPE * pPatient )
 				if ( pSoldier->pathing.bLevel == 0 )
 				{
 					// do a regular path check
-					if ( FindBestPath( pSoldier, pPatient->sGridNo, 0, WALKING, NO_COPYROUTE, PATH_THROUGH_PEOPLE ) )
+					if ( AIPlanningFindBestPath( pSoldier, pPatient->sGridNo, 0, WALKING, NO_COPYROUTE, PATH_THROUGH_PEOPLE ) )
 					{
 						return( TRUE );
 					}
@@ -588,7 +588,7 @@ INT8 DecideCombatCasualtyEvacuation( SOLDIERTYPE *pSoldier )
 		{
 			gubNPCAPBudget = 0;
 			gubNPCDistLimit = 0;
-			iPathSteps = FindBestPath( pSoldier, sApproachGrid, pSoldier->pathing.bLevel,
+			iPathSteps = AIPlanningFindBestPath( pSoldier, sApproachGrid, pSoldier->pathing.bLevel,
 				RUNNING, NO_COPYROUTE, PATH_THROUGH_PEOPLE );
 		}
 		if ( iPathSteps == 0 )
@@ -960,7 +960,7 @@ INT8 DecideCombatMedicRescue(SOLDIERTYPE *pSoldier)
 
 		gubNPCAPBudget = 0;
 		gubNPCDistLimit = 0;
-		INT32 iPathSteps = FindBestPath(pSoldier, sApproachGrid, pSoldier->pathing.bLevel,
+		INT32 iPathSteps = AIPlanningFindBestPath(pSoldier, sApproachGrid, pSoldier->pathing.bLevel,
 			RUNNING, NO_COPYROUTE, PATH_THROUGH_PEOPLE);
 		if (iPathSteps == 0)
 		{

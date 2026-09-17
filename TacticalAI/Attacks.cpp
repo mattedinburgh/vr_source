@@ -4726,10 +4726,10 @@ void CheckTossOpponentFence(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 				(FindConcertina(sFenceSpot) || IsCuttableWireFenceAtGridNo(sFenceSpot) || FindStruct(sFenceSpot, pSoldier->pathing.bLevel, BLUEFLAG_GRAPHIC)) &&
 				IsLocationSittable(sNextSpot, pSoldier->pathing.bLevel))
 			{
-				sPathCost = EstimatePlotPath(pSoldier, sClosestOpponent, FALSE, FALSE, FALSE, RUNNING, pSoldier->bStealthMode, FALSE, 0);
+				sPathCost = AIPlanningEstimatePlotPath(pSoldier, sClosestOpponent, FALSE, FALSE, FALSE, RUNNING, pSoldier->bStealthMode, FALSE, 0);
 				sOriginalGridNo = pSoldier->sGridNo;
 				pSoldier->sGridNo = sNextSpot;
-				sNewPathCost = EstimatePlotPath(pSoldier, sClosestOpponent, FALSE, FALSE, FALSE, RUNNING, pSoldier->bStealthMode, FALSE, 0);
+				sNewPathCost = AIPlanningEstimatePlotPath(pSoldier, sClosestOpponent, FALSE, FALSE, FALSE, RUNNING, pSoldier->bStealthMode, FALSE, 0);
 				pSoldier->sGridNo = sOriginalGridNo;
 
 				if (sNewPathCost > 0 && (sPathCost == 0 || sPathCost > sNewPathCost && sPathCost - sNewPathCost > APBPConstants[AP_MAXIMUM]))

@@ -98,7 +98,7 @@ int LegalNPCDestination(SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubPathMode, 
 			// for example), don't bother
 			case IGNORE_PATH	 :	return(TRUE);
 
-			case ENSURE_PATH	 :	if ( FindBestPath( pSoldier, sGridNo, pSoldier->pathing.bLevel, WALKING, COPYROUTE, fFlags ) )
+			case ENSURE_PATH	 :	if ( AIPlanningFindBestPath( pSoldier, sGridNo, pSoldier->pathing.bLevel, WALKING, COPYROUTE, fFlags ) )
 									{
 										return(TRUE);		// legal destination
 									}
