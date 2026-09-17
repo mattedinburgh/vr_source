@@ -30,6 +30,10 @@ Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "SectorLoadoutAm
 Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "CountSectorAmmoRounds( ubCalibre, (UINT8)sBestFullType ) >= usMagSize" "partial gun replacement requires a complete better load"
 Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "PoolObjectForSectorLoadout( &oldAmmo );" "successful ammo upgrade returns old partial load to pool"
 Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "bGunStatus >= USABLE" "ammo distribution excludes physically broken guns"
+Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "static BOOLEAN SectorLoadoutGunIsImmediatelyReady" "ammo distribution separates immediate readiness from physical usability"
+Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "bGunAmmoStatus >= 0" "immediate readiness rejects jammed guns"
+Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "SectorLoadoutGunIsImmediatelyReady( pGun, x ) &&" "loaded-gun readiness excludes jams"
+Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "!SectorLoadoutGunIsImmediatelyReady( pGun, x )" "shortage priming skips jammed guns"
 Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "!SectorLoadoutGunIsUsable( pGun, (UINT8)x )" "broken guns do not create spare-ammo demand"
 
 $ammoFixture = Join-Path $PSScriptRoot "TEST_ITEMS_AMMO_ALLOCATION.ps1"
@@ -46,6 +50,9 @@ Require-Text "Tactical\Tactical Save.h" "ADD_DEAD_SOLDIER_PLAYER_AUTORESOLVE_LOO
 Require-Text "Tactical\Soldier Control.cpp" "uiPossible = (uiPossible * 2 + 2) / 3;" "rag treatment uses two-thirds throughput"
 Require-Text "Tactical\Soldier Control.cpp" "uiMedcost = uiActual * 2;" "rag material efficiency is halved"
 Require-Text "Strategic\Auto Resolve.cpp" "uiPossible = (uiPossible * 2 + 2) / 3;" "autoresolve rag throughput matches tactical"
+Require-Text "Strategic\Auto Resolve.cpp" "uiMedcost = uiActual * 2;" "autoresolve rag material efficiency matches tactical"
+Require-Text "Strategic\Auto Resolve.cpp" "uiActual = (UINT32)sKitPts / 2;" "autoresolve rag shortage clamp preserves half efficiency"
+Require-Text "Tactical\UI Cursors.cpp" "if ( pSoldier->aiData.bShownAimTime < 0 )" "grenade aim selector clamps at minimum"
 Require-Text "Tactical\UI Cursors.cpp" "if ( pSoldier->aiData.bShownAimTime >= maxAimLevels )" "grenade aim selector clamps at maximum"
 Require-Text "Tactical\UI Cursors.cpp" "bFutureAim = __min( bFutureAim, maxAimLevels );" "grenade aim increment cannot wrap"
 Require-Text "TileEngine\physics.cpp" "Smoke and gas grenades should simply be neutralized by water." "water neutralizes smoke and gas throws"
@@ -56,6 +63,14 @@ Require-Text "Tactical\Items.cpp" "pSoldier->inv[bLoop][0]->data.objectStatus >=
 Require-Text "Tactical\Keys.cpp" "UINT16 usDamage = Explosive[Item[pSoldier->inv[bSlot].usItem].ubClassIndex].ubDamage;" "door charge damage is saved before consumption"
 Require-Text "Tactical\Keys.cpp" "LockTable[pDoor->ubLockID].ubSmashDifficulty != OPENING_NOT_POSSIBLE" "door charges respect impossible locks"
 Require-Text "Tactical\Keys.cpp" "pSoldier->bOverTerrainType, ubVolume, NOISE_EXPLOSION" "door charges generate explosion noise"
+
+$ragGrenadeFixture = Join-Path $PSScriptRoot "TEST_ITEMS_RAG_GRENADE.ps1"
+& "$PSHOME\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File $ragGrenadeFixture
+if ($LASTEXITCODE -ne 0) {
+    $failures.Add("deterministic rag/grenade fixture failed")
+} else {
+    Write-Host "PASS: deterministic rag/grenade boundary fixture"
+}
 
 $explosivesFixture = Join-Path $PSScriptRoot "TEST_ITEMS_EXPLOSIVES.ps1"
 & "$PSHOME\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File $explosivesFixture

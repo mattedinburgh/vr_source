@@ -976,6 +976,15 @@ static BOOLEAN SectorLoadoutGunIsUsable( OBJECTTYPE *pGun, UINT8 ubSubObject )
 	return ( (*pGun)[ubSubObject]->data.gun.bGunStatus >= USABLE );
 }
 
+// A jammed gun is physically serviceable and should still receive normal reserve
+// ammo after readiness is secured, but it must not satisfy the severe-shortage
+// can-fire-now check or consume the one-round priming pass.
+static BOOLEAN SectorLoadoutGunIsImmediatelyReady( OBJECTTYPE *pGun, UINT8 ubSubObject )
+{
+	return ( SectorLoadoutGunIsUsable( pGun, ubSubObject ) &&
+		 (*pGun)[ubSubObject]->data.gun.bGunAmmoStatus >= 0 );
+}
+
 // Loaded weapons have priority over spare magazines.  Partial magazines keep
 // their current ammo type; an empty gun uses the normal loadout ammo priority.
 static UINT16 TopUpGunFromSector( OBJECTTYPE *pGun, UINT8 ubSubObject, UINT16 usMaxRoundsToAdd = 0 )
@@ -1109,7 +1118,7 @@ static BOOLEAN SectorLoadoutMercHasLoadedGun( SOLDIERTYPE *pSoldier )
 
 		for ( UINT8 x = 0; x < pGun->ubNumberOfObjects; ++x )
 		{
-			if ( SectorLoadoutGunIsUsable( pGun, x ) && (*pGun)[x]->data.gun.ubGunShotsLeft > 0 )
+			if ( SectorLoadoutGunIsImmediatelyReady( pGun, x ) && (*pGun)[x]->data.gun.ubGunShotsLeft > 0 )
 				return TRUE;
 		}
 	}
@@ -1137,7 +1146,7 @@ static UINT32 PrimeEmptySectorMercGuns()
 
 			for ( UINT8 x = 0; x < pGun->ubNumberOfObjects; ++x )
 			{
-				if ( !SectorLoadoutGunIsUsable( pGun, x ) )
+				if ( !SectorLoadoutGunIsImmediatelyReady( pGun, x ) )
 					continue;
 
 				if ( (*pGun)[x]->data.gun.ubGunShotsLeft > 0 )
