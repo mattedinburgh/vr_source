@@ -1,10 +1,13 @@
 param(
     [string]$GameRoot = "",
     [switch]$Strict,
-    [switch]$SkipAssetCheck
+    [switch]$SkipAssetCheck,
+    [switch]$ActionMatrix,
+    [switch]$StrictActions
 )
 
 $ErrorActionPreference = "Stop"
+if ($StrictActions) { $ActionMatrix = $true }
 Set-StrictMode -Version 2
 
 $SourceRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
@@ -179,6 +182,13 @@ foreach ($bodySpec in $bodySpecs) {
             $stand = $false
             $crouch = $false
             $prone = $false
+            $standMove = $false
+            $standCombat = $false
+            $crouchCombat = $false
+            $proneCombat = $false
+            $hitStand = $false
+            $hitCrouch = $false
+            $hitProne = $false
             $missingSurface = $false
             $missingAsset = $false
 
@@ -189,6 +199,14 @@ foreach ($bodySpec in $bodySpecs) {
                         if ($anim -in @("$($bodySpec.Key)STANDING", "$($bodySpec.Key)NOTHING_STD")) { $stand = $true }
                         if ($anim -in @("$($bodySpec.Key)CROUCHING", "$($bodySpec.Key)NOTHING_CROUCH")) { $crouch = $true }
                         if ($anim -in @("$($bodySpec.Key)PRONE", "$($bodySpec.Key)HANDGUN_PRONE")) { $prone = $true }
+
+                        if ($anim -in @("$($bodySpec.Key)BASICWALKING", "$($bodySpec.Key)WALKING", "$($bodySpec.Key)NOTHING_WALK", "$($bodySpec.Key)RUNNING", "$($bodySpec.Key)NOTHING_RUN", "$($bodySpec.Key)WALK_R_RDY", "$($bodySpec.Key)PISTOL_RUN")) { $standMove = $true }
+                        if ($anim -in @("$($bodySpec.Key)STANDAIM", "$($bodySpec.Key)HANDGUN_S_SHOT", "$($bodySpec.Key)_HIP_AIM", "$($bodySpec.Key)_PFSHOT_AIM", "$($bodySpec.Key)STANDDWALAIM")) { $standCombat = $true }
+                        if ($anim -in @("$($bodySpec.Key)CROUCHAIM", "$($bodySpec.Key)HANDGUN_C_SHOT", "$($bodySpec.Key)SHOOT_LOW", "$($bodySpec.Key)PISTOLSHOOTLOW")) { $crouchCombat = $true }
+                        if ($anim -in @("$($bodySpec.Key)PRONE", "$($bodySpec.Key)HANDGUN_PRONE", "$($bodySpec.Key)DWPRONE")) { $proneCombat = $true }
+                        if ($anim -eq "$($bodySpec.Key)HITSTAND") { $hitStand = $true }
+                        if ($anim -eq "$($bodySpec.Key)HITCROUCH") { $hitCrouch = $true }
+                        if ($anim -eq "$($bodySpec.Key)HITPRONE") { $hitProne = $true }
 
                         $surfaceName = [string]$surface.name
                         if (-not $catalog.ContainsKey($surfaceName)) {
@@ -207,6 +225,7 @@ foreach ($bodySpec in $bodySpecs) {
             }
 
             $ok = (-not $mapped) -or ($stand -and $crouch -and $prone -and (-not $missingSurface) -and (-not $missingAsset))
+            $actionOK = (-not $mapped) -or ($standMove -and $standCombat -and $crouchCombat -and $proneCombat -and $hitStand -and $hitCrouch -and $hitProne)
             if ($mapped -and (-not $ok)) {
                 [void]$failures.Add("$($bodySpec.Key)/$($slot.Label) #$($item.Id) $($item.Name)")
             }
@@ -220,6 +239,14 @@ foreach ($bodySpec in $bodySpecs) {
                 Stand = $stand
                 Crouch = $crouch
                 Prone = $prone
+                StandMove = $standMove
+                StandCombat = $standCombat
+                CrouchCombat = $crouchCombat
+                ProneCombat = $proneCombat
+                HitStand = $hitStand
+                HitCrouch = $hitCrouch
+                HitProne = $hitProne
+                ActionOK = $actionOK
                 SurfaceDefs = -not $missingSurface
                 Assets = -not $missingAsset
                 OK = $ok
@@ -252,6 +279,37 @@ if ($failures.Count -gt 0) {
     Write-Host ""
     Write-Host "Mapped-item coverage gaps:" -ForegroundColor Yellow
     $rows | Where-Object { $_.Mapped -and (-not $_.OK) } | Format-Table Body,Slot,Id,Item,Stand,Crouch,Prone,SurfaceDefs,Assets -AutoSize
+}
+
+if ($ActionMatrix) {
+    Write-Host ""
+    Write-Host "Representative action-surface matrix (mapped armour only)"
+    $actionSummary = $rows | Group-Object Body,Slot | ForEach-Object {
+        $group = @($_.Group | Where-Object Mapped)
+        [pscustomobject]@{
+            BodySlot = $_.Name
+            Mapped = $group.Count
+            StandMove = @($group | Where-Object StandMove).Count
+            StandCombat = @($group | Where-Object StandCombat).Count
+            CrouchCombat = @($group | Where-Object CrouchCombat).Count
+            ProneCombat = @($group | Where-Object ProneCombat).Count
+            HitStand = @($group | Where-Object HitStand).Count
+            HitCrouch = @($group | Where-Object HitCrouch).Count
+            HitProne = @($group | Where-Object HitProne).Count
+            ActionOK = @($group | Where-Object ActionOK).Count
+            Gaps = @($group | Where-Object { -not $_.ActionOK }).Count
+        }
+    }
+    $actionSummary | Format-Table -AutoSize
+
+    $actionFailures = @($rows | Where-Object { $_.Mapped -and (-not $_.ActionOK) })
+    if ($actionFailures.Count -gt 0) {
+        Write-Host ""
+        Write-Host "Representative action-surface gaps:" -ForegroundColor Yellow
+        $actionFailures | Format-Table Body,Slot,Id,Item,StandMove,StandCombat,CrouchCombat,ProneCombat,HitStand,HitCrouch,HitProne -AutoSize
+    }
+    Write-Host ("Action result: {0} mapped-item action gap(s)" -f $actionFailures.Count)
+    if ($StrictActions -and $actionFailures.Count -gt 0) { exit 2 }
 }
 
 Write-Host ""
