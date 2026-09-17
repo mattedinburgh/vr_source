@@ -16,7 +16,10 @@ else {
     $GameRoot = (Resolve-Path $GameRoot).Path
 }
 $DataRoot = Join-Path $GameRoot "Data-Vengeance"
-$TableRoot = Join-Path $DataRoot "TableData\LogicalBodyTypes"
+$LiveTableRoot = Join-Path $DataRoot "TableData\LogicalBodyTypes"
+$ConfigStageRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("vr-visible-equipment-config-{0}" -f $PID)
+if (Test-Path $ConfigStageRoot) { Remove-Item $ConfigStageRoot -Recurse -Force }
+$TableRoot = $ConfigStageRoot
 $PaletteRoot = Join-Path $DataRoot "Palettes"
 $AnimRoot = Join-Path $DataRoot "Anims\LOBOT"
 $Marker = Join-Path $AnimRoot "VR_EQUIPMENT.READY"
@@ -43,6 +46,7 @@ if (-not (Test-Path $GameRoot -PathType Container)) {
     throw "Game root not found: $GameRoot"
 }
 
+New-Item -ItemType Directory -Force -Path $LiveTableRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $TableRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $PaletteRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $AnimRoot | Out-Null
@@ -98,6 +102,53 @@ $configFiles = @(
     "LBT_RGF/LogicalBodyType_RGF_VR_equipment.xml",
     "LBT_RGF/AnimationSurfaces_RGF_VR_equipment.xml"
 )
+
+function Publish-VisibleEquipmentConfiguration {
+    Write-Host "Publishing verified LOBOT configuration..."
+
+    # Preflight every destination before copying anything. This prevents a locked
+    # file from producing a half-published configuration set.
+    foreach ($relative in $configFiles) {
+        $source = Join-Path $TableRoot $relative
+        if (-not (Test-Path $source) -or (Get-Item $source).Length -eq 0) {
+            throw "Generated LOBOT configuration missing or empty: $source"
+        }
+
+        $destination = Join-Path $LiveTableRoot $relative
+        if (Test-Path $destination) {
+            $probe = $null
+            try {
+                # Require real write access, but do not reject benign readers that
+                # explicitly share the file for writing (e.g. tooling/indexers).
+                $probe = [System.IO.File]::Open(
+                    $destination,
+                    [System.IO.FileMode]::Open,
+                    [System.IO.FileAccess]::Write,
+                    [System.IO.FileShare]::ReadWrite
+                )
+            }
+            catch {
+                throw "Cannot publish visible-equipment configuration; destination is locked or unavailable: $destination"
+            }
+            finally {
+                if ($null -ne $probe) { $probe.Dispose() }
+            }
+        }
+    }
+
+    foreach ($relative in $configFiles) {
+        $source = Join-Path $TableRoot $relative
+        $destination = Join-Path $LiveTableRoot $relative
+        $parent = Split-Path -Parent $destination
+        if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+        Copy-Item $source $destination -Force
+    }
+
+    if (Test-Path $ConfigStageRoot) {
+        Remove-Item $ConfigStageRoot -Recurse -Force
+    }
+    Write-Host "Verified LOBOT configuration published."
+}
 
 function Get-UrlFile {
     param(
@@ -1020,6 +1071,7 @@ foreach ($palette in $paletteFiles) {
 }
 
 if ($ConfigOnly) {
+    Publish-VisibleEquipmentConfiguration
     Write-Host "Configuration-only deployment complete; graphics were not changed."
     exit 0
 }
@@ -1282,6 +1334,10 @@ foreach ($relative in $equipmentBodyFiles) {
         throw "Visible-equipment body catalog incomplete ($relative): missing $($missingLayers -join ', ')"
     }
 }
+
+# Publish configuration only after every generated layer and referenced asset
+# has passed validation. READY is created only after the verified publication succeeds.
+Publish-VisibleEquipmentConfiguration
 
 $markerText = @"
 Vengeance Reloaded visible tactical equipment
