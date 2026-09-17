@@ -1,6 +1,6 @@
 # Unseen Fire Bearing — Tactical Combat Feedback
 
-Status: **ACTIVE / PLAYTEST V2**  
+Status: **ACTIVE / PLAYTEST V2**
 Owner: **UI / UX — Tactical Combat Feedback**  
 Scope: player-facing combat information only; no AI/NCTH behavior changes.
 
