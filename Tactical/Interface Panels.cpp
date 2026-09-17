@@ -5324,7 +5324,14 @@ void UpdateAIPlayerCommandButtons(INT32 iAttackButton, INT32 iWithdrawButton, IN
 	const BOOLEAN fCommandActive = AIPlayerTeamCommandActive();
 	const UINT8 ubCommand = AIPlayerTeamCommand();
 
-	if (!fCommandActive && CanIssueAIPlayerTeamCommand())
+	if (fCommandActive)
+	{
+		// Disabled quick buttons do not render BUTTON_CLICKED_ON. Keep only the
+		// active command enabled so its native OnNormal image stays visibly depressed.
+		if (ubCommand == AI_PLAYER_COMMAND_ATTACK) EnableButton(iAttackButton); else DisableButton(iAttackButton);
+		if (ubCommand == AI_PLAYER_COMMAND_WITHDRAW) EnableButton(iWithdrawButton); else DisableButton(iWithdrawButton);
+	}
+	else if (CanIssueAIPlayerTeamCommand())
 	{
 		EnableButton(iAttackButton);
 		EnableButton(iWithdrawButton);
@@ -5360,7 +5367,9 @@ void BtnAIAttackTeamCallback(GUI_BUTTON *btn,INT32 reason)
 	else if (reason & MSYS_CALLBACK_REASON_LBUTTON_UP)
 	{
 		btn->uiFlags &= (~BUTTON_CLICKED_ON);
-		if (AIStartPlayerTeamCommand(AI_PLAYER_COMMAND_ATTACK))
+		if (!AIPlayerTeamCommandActive() && AIStartPlayerTeamCommand(AI_PLAYER_COMMAND_ATTACK))
+			btn->uiFlags |= BUTTON_CLICKED_ON;
+		else if (AIPlayerTeamCommandActive() && AIPlayerTeamCommand() == AI_PLAYER_COMMAND_ATTACK)
 			btn->uiFlags |= BUTTON_CLICKED_ON;
 		btn->uiFlags |= BUTTON_DIRTY;
 	}
@@ -5382,7 +5391,9 @@ void BtnAIWithdrawTeamCallback(GUI_BUTTON *btn,INT32 reason)
 	else if (reason & MSYS_CALLBACK_REASON_LBUTTON_UP)
 	{
 		btn->uiFlags &= (~BUTTON_CLICKED_ON);
-		if (AIStartPlayerTeamCommand(AI_PLAYER_COMMAND_WITHDRAW))
+		if (!AIPlayerTeamCommandActive() && AIStartPlayerTeamCommand(AI_PLAYER_COMMAND_WITHDRAW))
+			btn->uiFlags |= BUTTON_CLICKED_ON;
+		else if (AIPlayerTeamCommandActive() && AIPlayerTeamCommand() == AI_PLAYER_COMMAND_WITHDRAW)
 			btn->uiFlags |= BUTTON_CLICKED_ON;
 		btn->uiFlags |= BUTTON_DIRTY;
 	}
