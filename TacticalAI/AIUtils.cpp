@@ -39,6 +39,8 @@
 #include "VRAnalytics.h"
 
 #include <map>
+#include <stdio.h>
+#include <stdlib.h>
 
 //////////////////////////////////////////////////////////////////////////////
 // SANDRO - In this file, all APBPConstants[AP_CROUCH] and APBPConstants[AP_PRONE] were changed to GetAPsCrouch() and GetAPsProne()
@@ -6235,35 +6237,52 @@ void AIEndDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
 		return;
 
 	const UINT32 uiTotalMs = GetJA2Clock() - pSnapshot->uiDecisionStartMs;
-	DebugAI(AI_MSG_INFO, pSoldier,
-		String("[AI-PERF] total_ms=%lu threat_build_ms=%lu pathfinding_ms=%lu exposure_ms=%lu reaction_ms=%lu geometry_ms=%lu "
-			"contacts=%u detailed_candidates=%lu path_searches=%lu path_reuses=%lu "
-			"route_hits=%lu route_misses=%lu budget_earlyouts=%lu "
-			"exposure_calls=%lu reaction_calls=%lu cache_hits=%lu cache_misses=%lu "
-			"shared_contact_hits=%lu shared_contact_misses=%lu "
-			"geometry_hits=%lu geometry_misses=%lu lookahead_nodes=%lu",
-			(unsigned long)uiTotalMs,
-			(unsigned long)pSnapshot->uiBuildMs,
-			(unsigned long)pSnapshot->uiPathfindingMs,
-			(unsigned long)pSnapshot->uiExposureMs,
-			(unsigned long)pSnapshot->uiReactionMs,
-			(unsigned long)pSnapshot->uiGeometryBuildMs,
-			(unsigned int)pSnapshot->usContactCount,
-			(unsigned long)pSnapshot->uiDetailedCandidateCount,
-			(unsigned long)pSnapshot->uiPathSearchCount,
-			(unsigned long)pSnapshot->uiPathCostReuses,
-			(unsigned long)pSnapshot->uiRouteCacheHits,
-			(unsigned long)pSnapshot->uiRouteCacheMisses,
-			(unsigned long)pSnapshot->uiBudgetEarlyOuts,
-			(unsigned long)pSnapshot->uiExposureCalls,
-			(unsigned long)pSnapshot->uiReactionCalls,
-			(unsigned long)pSnapshot->uiCacheHits,
-			(unsigned long)pSnapshot->uiCacheMisses,
-			(unsigned long)pSnapshot->uiSharedContactHits,
-			(unsigned long)pSnapshot->uiSharedContactMisses,
-			(unsigned long)pSnapshot->uiGeometryHits,
-			(unsigned long)pSnapshot->uiGeometryMisses,
-			(unsigned long)pSnapshot->uiLookaheadNodes));
+	CHAR8 szPerfLine[1024];
+	sprintf(szPerfLine,
+		"[AI-PERF] total_ms=%lu threat_build_ms=%lu pathfinding_ms=%lu exposure_ms=%lu reaction_ms=%lu geometry_ms=%lu "
+		"contacts=%u detailed_candidates=%lu path_searches=%lu path_reuses=%lu "
+		"route_hits=%lu route_misses=%lu budget_earlyouts=%lu "
+		"exposure_calls=%lu reaction_calls=%lu cache_hits=%lu cache_misses=%lu "
+		"shared_contact_hits=%lu shared_contact_misses=%lu "
+		"geometry_hits=%lu geometry_misses=%lu lookahead_nodes=%lu",
+		(unsigned long)uiTotalMs,
+		(unsigned long)pSnapshot->uiBuildMs,
+		(unsigned long)pSnapshot->uiPathfindingMs,
+		(unsigned long)pSnapshot->uiExposureMs,
+		(unsigned long)pSnapshot->uiReactionMs,
+		(unsigned long)pSnapshot->uiGeometryBuildMs,
+		(unsigned int)pSnapshot->usContactCount,
+		(unsigned long)pSnapshot->uiDetailedCandidateCount,
+		(unsigned long)pSnapshot->uiPathSearchCount,
+		(unsigned long)pSnapshot->uiPathCostReuses,
+		(unsigned long)pSnapshot->uiRouteCacheHits,
+		(unsigned long)pSnapshot->uiRouteCacheMisses,
+		(unsigned long)pSnapshot->uiBudgetEarlyOuts,
+		(unsigned long)pSnapshot->uiExposureCalls,
+		(unsigned long)pSnapshot->uiReactionCalls,
+		(unsigned long)pSnapshot->uiCacheHits,
+		(unsigned long)pSnapshot->uiCacheMisses,
+		(unsigned long)pSnapshot->uiSharedContactHits,
+		(unsigned long)pSnapshot->uiSharedContactMisses,
+		(unsigned long)pSnapshot->uiGeometryHits,
+		(unsigned long)pSnapshot->uiGeometryMisses,
+		(unsigned long)pSnapshot->uiLookaheadNodes);
+
+	// Normal AI decision logging remains controlled by fAIDecisionInfo. For
+	// performance benchmarking, VR_AI_PERF_LOG enables only this compact line,
+	// avoiding the much heavier per-decision/per-soldier DebugAI file stream.
+	DebugAI(AI_MSG_INFO, pSoldier, szPerfLine);
+	const CHAR8 *pPerfLogEnabled = getenv("VR_AI_PERF_LOG");
+	if (pPerfLogEnabled && pPerfLogEnabled[0] && pPerfLogEnabled[0] != '0')
+	{
+		FILE *pPerfFile = fopen("Logs\\AI_Performance.txt", "a+t");
+		if (pPerfFile)
+		{
+			fputs(szPerfLine, pPerfFile);
+			fputs("\n", pPerfFile);
+			fclose(pPerfFile);
+		}
+	}
 
 	AIFreeDecisionRouteStorage(pSnapshot);
 	pSnapshot->fActive = FALSE;
