@@ -4,7 +4,8 @@ param(
     [string]$CanonicalRef = "origin/install/all-2026-09-12",
     [string]$ExpectedCanonicalSha = "",
     [switch]$Fetch,
-    [switch]$AllowStrategicChanges
+    [switch]$AllowStrategicChanges,
+    [string[]]$AllowedStrategicPaths = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -142,10 +143,24 @@ try {
     }
 
     $strategic = @($changedPaths | Where-Object { $_ -match '^Strategic/' })
+    if ($AllowStrategicChanges -and $AllowedStrategicPaths.Count -gt 0) {
+        throw "Use either -AllowStrategicChanges or -AllowedStrategicPaths, not both."
+    }
+
     if ($strategic.Count -gt 0 -and -not $AllowStrategicChanges) {
-        Write-Host "STRATEGIC_LAYER_CHANGE_BLOCKED"
+        $normalizedAllowlist = @($AllowedStrategicPaths | ForEach-Object { $_.Replace('\', '/').TrimStart('.', '/') } | Where-Object { $_ })
+        $unexpectedStrategic = @($strategic | Where-Object { $normalizedAllowlist -notcontains $_ })
+        if ($unexpectedStrategic.Count -gt 0) {
+            Write-Host "STRATEGIC_LAYER_CHANGE_BLOCKED"
+            $unexpectedStrategic | ForEach-Object { Write-Host "  $_" }
+            if ($normalizedAllowlist.Count -gt 0) {
+                Write-Host "Strategic allowlist:"
+                $normalizedAllowlist | ForEach-Object { Write-Host "  $_" }
+            }
+            exit 7
+        }
+        Write-Host "STRATEGIC_LAYER_CHANGE_ALLOWLIST_OK"
         $strategic | ForEach-Object { Write-Host "  $_" }
-        exit 7
     }
     $markerArgs = @("grep", "-n", "-E", "^(<<<<<<< .+|=======|>>>>>>> .+)$", "--") + $changedPaths
     if ($changedPaths.Count -gt 0) {
@@ -200,7 +215,7 @@ try {
     }
 
     if ($strategic.Count -gt 0 -and $AllowStrategicChanges) {
-        Write-Host "STRATEGIC_LAYER_CHANGE_EXPLICITLY_ALLOWED"
+        Write-Host "STRATEGIC_LAYER_CHANGE_EXPLICITLY_ALLOWED_ALL"
     }
 
     Write-Host "PREMERGE_STATIC_GATE_OK"
