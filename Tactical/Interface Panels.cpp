@@ -5303,12 +5303,28 @@ BOOLEAN CanIssueAIPlayerTeamCommand(void)
 	return FALSE;
 }
 
+static void SetAICommandButtonPressed(INT32 iButton, BOOLEAN fPressed)
+{
+	if (iButton < 0 || ButtonList[iButton] == NULL)
+		return;
+
+	if (fPressed)
+		ButtonList[iButton]->uiFlags |= BUTTON_CLICKED_ON;
+	else
+		ButtonList[iButton]->uiFlags &= ~BUTTON_CLICKED_ON;
+
+	ButtonList[iButton]->uiFlags |= BUTTON_DIRTY;
+}
+
 void UpdateAIPlayerCommandButtons(INT32 iAttackButton, INT32 iWithdrawButton, INT32 iSpeedButton)
 {
 	if (iAttackButton < 0 || iWithdrawButton < 0 || iSpeedButton < 0)
 		return;
 
-	if (CanIssueAIPlayerTeamCommand())
+	const BOOLEAN fCommandActive = AIPlayerTeamCommandActive();
+	const UINT8 ubCommand = AIPlayerTeamCommand();
+
+	if (!fCommandActive && CanIssueAIPlayerTeamCommand())
 	{
 		EnableButton(iAttackButton);
 		EnableButton(iWithdrawButton);
@@ -5324,11 +5340,14 @@ void UpdateAIPlayerCommandButtons(INT32 iAttackButton, INT32 iWithdrawButton, IN
 	else
 		DisableButton(iSpeedButton);
 
-	if (AIPlayerCommandFastForward())
-		ButtonList[iSpeedButton]->uiFlags |= BUTTON_CLICKED_ON;
-	else
-		ButtonList[iSpeedButton]->uiFlags &= ~BUTTON_CLICKED_ON;
-	ButtonList[iSpeedButton]->uiFlags |= BUTTON_DIRTY;
+	// Keep the command strip visually truthful.  ATK/WDR are momentary 3-D
+	// buttons while choosing a command, then the active command remains visibly
+	// depressed for the duration of AI control.  FAST is a persistent toggle.
+	SetAICommandButtonPressed(iAttackButton,
+		fCommandActive && ubCommand == AI_PLAYER_COMMAND_ATTACK);
+	SetAICommandButtonPressed(iWithdrawButton,
+		fCommandActive && ubCommand == AI_PLAYER_COMMAND_WITHDRAW);
+	SetAICommandButtonPressed(iSpeedButton, AIPlayerCommandFastForward());
 }
 
 void BtnAIAttackTeamCallback(GUI_BUTTON *btn,INT32 reason)
@@ -5336,15 +5355,20 @@ void BtnAIAttackTeamCallback(GUI_BUTTON *btn,INT32 reason)
 	if (reason & MSYS_CALLBACK_REASON_LBUTTON_DWN)
 	{
 		btn->uiFlags |= BUTTON_CLICKED_ON;
+		btn->uiFlags |= BUTTON_DIRTY;
 	}
 	else if (reason & MSYS_CALLBACK_REASON_LBUTTON_UP)
 	{
 		btn->uiFlags &= (~BUTTON_CLICKED_ON);
-		AIStartPlayerTeamCommand(AI_PLAYER_COMMAND_ATTACK);
+		if (AIStartPlayerTeamCommand(AI_PLAYER_COMMAND_ATTACK))
+			btn->uiFlags |= BUTTON_CLICKED_ON;
+		btn->uiFlags |= BUTTON_DIRTY;
 	}
 	else if (reason & MSYS_CALLBACK_REASON_LOST_MOUSE)
 	{
-		btn->uiFlags &= (~BUTTON_CLICKED_ON);
+		if (!(AIPlayerTeamCommandActive() && AIPlayerTeamCommand() == AI_PLAYER_COMMAND_ATTACK))
+			btn->uiFlags &= (~BUTTON_CLICKED_ON);
+		btn->uiFlags |= BUTTON_DIRTY;
 	}
 }
 
@@ -5353,23 +5377,41 @@ void BtnAIWithdrawTeamCallback(GUI_BUTTON *btn,INT32 reason)
 	if (reason & MSYS_CALLBACK_REASON_LBUTTON_DWN)
 	{
 		btn->uiFlags |= BUTTON_CLICKED_ON;
+		btn->uiFlags |= BUTTON_DIRTY;
 	}
 	else if (reason & MSYS_CALLBACK_REASON_LBUTTON_UP)
 	{
 		btn->uiFlags &= (~BUTTON_CLICKED_ON);
-		AIStartPlayerTeamCommand(AI_PLAYER_COMMAND_WITHDRAW);
+		if (AIStartPlayerTeamCommand(AI_PLAYER_COMMAND_WITHDRAW))
+			btn->uiFlags |= BUTTON_CLICKED_ON;
+		btn->uiFlags |= BUTTON_DIRTY;
 	}
 	else if (reason & MSYS_CALLBACK_REASON_LOST_MOUSE)
 	{
-		btn->uiFlags &= (~BUTTON_CLICKED_ON);
+		if (!(AIPlayerTeamCommandActive() && AIPlayerTeamCommand() == AI_PLAYER_COMMAND_WITHDRAW))
+			btn->uiFlags &= (~BUTTON_CLICKED_ON);
+		btn->uiFlags |= BUTTON_DIRTY;
 	}
 }
 
 void BtnAISpeedTeamCallback(GUI_BUTTON *btn,INT32 reason)
 {
-	if (reason & MSYS_CALLBACK_REASON_LBUTTON_UP)
+	if (reason & MSYS_CALLBACK_REASON_LBUTTON_DWN)
+	{
+		btn->uiFlags |= BUTTON_CLICKED_ON;
+		btn->uiFlags |= BUTTON_DIRTY;
+	}
+	else if (reason & MSYS_CALLBACK_REASON_LBUTTON_UP)
 	{
 		AITogglePlayerCommandFastForward();
+		if (AIPlayerCommandFastForward())
+			btn->uiFlags |= BUTTON_CLICKED_ON;
+		else
+			btn->uiFlags &= ~BUTTON_CLICKED_ON;
+		btn->uiFlags |= BUTTON_DIRTY;
+	}
+	else if (reason & MSYS_CALLBACK_REASON_LOST_MOUSE)
+	{
 		if (AIPlayerCommandFastForward())
 			btn->uiFlags |= BUTTON_CLICKED_ON;
 		else

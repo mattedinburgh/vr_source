@@ -3609,15 +3609,20 @@ BOOLEAN PlayVoiceTaunt(SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTa
 
 	strcpy(filename, "Voice");
 
-	// Do not let the old shared Battlefield bank override faction/lore language.
-	// Army, militia and civilian voices stay inside their authored voice folders.
-	// The helper remains available for any future explicitly non-local speaker.
-	if ( pCiv->bTeam != MILITIA_TEAM &&
-		pCiv->bTeam != ENEMY_TEAM &&
-		pCiv->bTeam != CIV_TEAM &&
-		PlaySharedBattlefieldReaction( pCiv, iTauntType ) )
+	// Final language policy: contextual combat shouts are English.  Prefer the
+	// shared English battlefield bank for every combatant instead of routing
+	// enemy/militia soldiers back into the superseded Spanish voice-taunt packs.
+	if ( PlaySharedBattlefieldReaction( pCiv, iTauntType ) )
 	{
 		return TRUE;
+	}
+
+	// Until the new English contextual recording batches are complete, silence is
+	// preferable to falling back to Spanish. Pain/scream events already return
+	// above and use the normal BATTLESNDS reaction path.
+	if ( pCiv->bTeam == ENEMY_TEAM || pCiv->bTeam == MILITIA_TEAM )
+	{
+		return FALSE;
 	}
 
 	if (pCiv->bTeam == MILITIA_TEAM)
