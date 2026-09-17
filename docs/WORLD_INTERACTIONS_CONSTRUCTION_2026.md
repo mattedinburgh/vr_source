@@ -57,6 +57,13 @@ Priority order:
 - Door breaching charges are not consumed when the lock ID is invalid/unsupported.
 - The existing 64-lock data/save model is intentionally retained for now; expanding it is a separate compatibility task, not a blind modern-1.13 port.
 
+### Door traps / malformed interaction data
+- Door trap helpers now reject null/no-trap/out-of-range trap state before skill checks or trap-table access.
+- Invalid donor/custom trap IDs are normalized to NO_TRAP inside the trap handler before legacy callers inspect DoorTrapTable, preventing out-of-bounds reads while preserving existing valid trap behavior.
+- A bogus NO_TRAP disarm request cannot run a disarm skill check or award trap-removal experience.
+- This is a Vengeance robustness adaptation for donor/custom map compatibility; it does not expand the trap enum or alter save/data capacities.
+
+
 ### QA / CI
 - World-interactions source-invariant QA covers door-noise behavior, combat lock/open separation, non-PCH declarations, fortification orientation/removal validity, transactional completion, recovery preflight, and lock-ID bounds.
 - Hosted compile workflow trigger targets the actual `world/interactions-construction-2026-09-17` branch.
@@ -75,10 +82,10 @@ Priority order:
 2. Confirm every concertina orientation and tileset fallback removes the intended structure and returns concertina.
 3. Verify runtime pathfinding/AI reacts immediately to build/remove despite the statically correct movement-cost refresh.
 4. Verify map-temp persistence after sector exit/re-entry and save/reload for both sandbags and concertina.
-5. Audit door trap/key edge cases and tactical-only interaction behavior for compatibility with Vengeance's 64-lock model.
+5. Runtime-smoke valid door traps (explosion/electric/alarm) plus malformed trap-ID sanitization; source-level bounds hardening is complete.
 6. Audit destructible tactical environment interactions that belong here (doors, windows, fences/objects), while leaving explosive damage/balance in the items/explosives stream.
 7. Decide separately whether a compatibility-safe `NUM_LOCKS/NUM_KEYS` expansion is worthwhile; it requires map/save/keyring migration analysis and is not assumed safe.
 8. Add targeted runtime diagnostics only if playtesting exposes persistence or structure-database edge cases.
 
 ## Precise next implementation action
-Audit the tactical door/key/trap interaction paths against current 1.13 for any additional **tactical-only** fixes that do not require changing Vengeance's save/data capacities, add deterministic regression invariants for any adopted fixes, then move directly into the fence/window/destructible-object interaction audit.
+Continue the fence/window/destructible-object interaction audit. First compare cut-wire-fence and window mutation/persistence/movement-cost paths against current 1.13; adopt only source-level tactical fixes that are independent of gamedir/JSD/map production, then add source invariants and compile-test them.

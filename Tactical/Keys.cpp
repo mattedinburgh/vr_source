@@ -566,6 +566,12 @@ BOOLEAN AttemptToUntrapDoor( SOLDIERTYPE * pSoldier, DOOR * pDoor )
 {
 	INT32		iResult;
 
+	// Malformed/custom map data must never reach trap tables or award free disarm XP.
+	if ( pSoldier == NULL || pDoor == NULL || pDoor->ubTrapID == NO_TRAP || pDoor->ubTrapID >= NUM_DOOR_TRAPS )
+	{
+		return( FALSE );
+	}
+
 	// See if we measure up to the task.
 	if ( pDoor->ubTrapID == EXPLOSION	)
 	{
@@ -612,6 +618,18 @@ BOOLEAN ExamineDoorForTraps( SOLDIERTYPE * pSoldier, DOOR * pDoor )
 	// Check to see if there is a trap or not on this door
 	INT16 bDetectLevel;
 
+	if ( pSoldier == NULL || pDoor == NULL )
+	{
+		return( FALSE );
+	}
+
+	if ( pDoor->ubTrapID >= NUM_DOOR_TRAPS )
+	{
+		// Invalid donor/custom trap IDs are treated as no usable trap rather than indexing trap tables.
+		pDoor->bPerceivedTrapped = DOOR_PERCEIVED_UNTRAPPED;
+		return( FALSE );
+	}
+
 	if (pDoor->ubTrapID == NO_TRAP)
 	{
 		// No trap!
@@ -647,6 +665,11 @@ BOOLEAN HasDoorTrapGoneOff( SOLDIERTYPE * pSoldier, DOOR * pDoor )
 	// Check to see if the soldier causes the trap to go off
 	INT16 bDetectLevel;
 
+	if ( pSoldier == NULL || pDoor == NULL || pDoor->ubTrapID >= NUM_DOOR_TRAPS )
+	{
+		return( FALSE );
+	}
+
 	if (pDoor->ubTrapID != NO_TRAP)
 	{
 		// one quick check to see if the guy sees the trap ahead of time!
@@ -663,6 +686,20 @@ BOOLEAN HasDoorTrapGoneOff( SOLDIERTYPE * pSoldier, DOOR * pDoor )
 
 void HandleDoorTrap( SOLDIERTYPE * pSoldier, DOOR * pDoor )
 {
+	if ( pSoldier == NULL || pDoor == NULL || pDoor->ubTrapID == NO_TRAP )
+	{
+		return;
+	}
+
+	if ( pDoor->ubTrapID >= NUM_DOOR_TRAPS )
+	{
+		// Sanitize corrupt/custom trap IDs because callers inspect DoorTrapTable immediately after this returns.
+		pDoor->ubTrapID = NO_TRAP;
+		pDoor->ubTrapLevel = 0;
+		pDoor->bPerceivedTrapped = DOOR_PERCEIVED_UNTRAPPED;
+		return;
+	}
+
 	if ( !( DoorTrapTable[ pDoor->ubTrapID ].fFlags & DOOR_TRAP_SILENT )	)
 	{
 		switch( pDoor->ubTrapID )
