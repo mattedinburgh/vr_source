@@ -20,11 +20,12 @@ this framework, never merged wholesale.
    - Beliefs represent uncertainty; they never reveal hidden live opponent state.
    - Surprise is created by genuinely new personal sight, not by omniscient prediction.
 
-3. **Competence / friction**
-   - Administrators and green militia use simpler/noisier reasoning.
-   - Regular army and militia use coordinated tactics inconsistently.
-   - Elites can reliably exploit deeper candidate evaluation.
-   - Competence changes reasoning and execution, never CTH/AP.
+3. **Universal enemy competence / non-enemy friction**
+   - Every ENEMY_TEAM combatant uses elite/top-end tactical reasoning.
+   - Enemy mission/doctrine labels may change posture, role or objective; they must not deliberately reduce reasoning quality.
+   - Enemy planning has no competence-failure roll and no artificial utility noise.
+   - Militia/non-enemy AI may still use BASIC / REGULAR / ELITE execution-friction tiers where appropriate.
+   - Competence never grants CTH/AP/damage/vision/perception bonuses.
 
 4. **Battle state**
    - casualties, perceived force balance, stress, risk, morale, isolation and rout pressure.
@@ -80,12 +81,25 @@ this framework, never merged wholesale.
     - setback state is transient, identity/sector-bound, reset on load/rewind, and never creates opponent knowledge.
 
 14. **Execution friction**
-    - lower-quality troops may fall back to a simpler legal action instead of executing
-      the mathematically best complex plan.
+    - ENEMY_TEAM does not receive artificial tactical mistakes or complexity failures to simulate lower training.
+    - stress, suppression, wounds, legal uncertainty and mission role can change the correct enemy decision, but do not make the enemy forget advanced tactics.
+    - militia/non-enemy combatants may still fall back to simpler legal actions according to their competence tier.
 
 15. **Outcome feedback**
     - Black Box records raw facts, candidate scores, setback penalties and selections; Companion reconstructs plans,
       reasons and outcomes.
+
+16. **Player tactical command mode**
+    - The player may explicitly hand the squad to the same tactical AI used by the unified planner for the duration of the tactical engagement.
+    - `ATTACK AS TEAM` fixes the team objective at PRESS while leaving emergency self-preservation/casualty logic authoritative.
+    - `WITHDRAW AS TEAM` fixes the team objective at FALLBACK and starts with the geometry-aware weakest-sector breakout search: normally away from the principal legally known threat, but lateral/diagonal when crossfire makes the nominal rear unsafe.
+    - Command mode persists across player/enemy/militia rounds until tactical combat resolves or the player explicitly reclaims control.
+    - `ESC` queues manual takeover at the next clean AI-soldier action boundary, preserving already-spent AP and the remainder of the current player turn.
+    - Player-team interrupts remain under AI command while takeover is active; reclaiming control during an interrupt returns that interrupt to the player.
+    - The player squad is treated as one coordinated element for roles/task deconfliction, but mercs receive no hidden opponent knowledge.
+    - Player command mode never invokes enemy strategic escape or campaign movement. Withdrawal remains inside the current tactical sector.
+    - A fresh player command resets only the commanded mercs' tactical-fallback allowance; enemy/militia anti-kiting state is unchanged.
+    - First implementation is turn-based single-player only and is disabled during boxing/scripted control states.
 
 ### Performance policy
 
@@ -165,3 +179,44 @@ answer:
 - Did the change improve behaviour across battles or only one anecdote?
 
 See `Diagnostics/AI_COMPANION_ANALYSIS_CONTRACT.md`.
+
+
+## Mandatory JA2+AI / sevenfm research gate
+
+Before a material Tactical AI behavior is implemented or materially retuned, consult
+`Tools/AI/JA2_PLUS_AI_PHD_2026-09-16.md`.
+
+Required questions:
+
+1. Is there a JA2+AI/sevenfm precedent and what practical problem was it solving?
+2. Was that behavior later changed, disabled or reverted after player testing?
+3. Is the behavior already inherited in Vengeance or modern 1.13?
+4. Does the unified planner supersede it, or should legacy sevenfm logic remain the execution layer?
+5. Could planner gating suppress a mature behavior that already works well?
+6. Does the change preserve the legal-information contract and local-fireteam boundary?
+7. Which historical JA2+AI failure mode becomes a regression test?
+
+JA2+AI is the primary historical external Tactical AI benchmark. Bear's Pit gameplay evidence is
+first-class evidence for behavior quality, especially for suppression, flanking, smoke, night
+combat, retreat, danger avoidance, pathing deadlocks and large-battle performance.
+
+Research completion does not increase implementation completion percentage.
+
+
+## Mandatory Upgrade Army AI doctrine gate
+
+Before a material Tactical AI behavior is implemented or retuned, consult
+`Tools/AI/UPGRADE_ARMY_AI_DOCTRINE_2026-09-16.md`.
+
+For ENEMY_TEAM this doctrine supersedes older heterogeneous-intelligence concepts:
+- every enemy reasons at elite/top-tier special-operations level;
+- equipment/resources/mission role may differ, intelligence quality does not;
+- local fireteams share bounded, confidence-decayed planning information without creating direct-fire authorization;
+- bravery means accepting useful risk, not ignoring self-preservation;
+- fireteam intent, complementary roles, reservations, bounding, rescue, covering withdrawal, remnant reattachment and staged response are first-class requirements;
+- strategic/campaign AI remains read-only.
+
+The JA2+AI dossier remains the primary historical external benchmark. The governing integration rule is:
+**unified planner for team cognition + mature Vengeance/sevenfm code for low-level legal execution**.
+
+Planner changes must be checked for accidental veto of strong mature behavior and exposed through Black Box / Companion telemetry.

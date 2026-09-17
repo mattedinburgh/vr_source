@@ -442,7 +442,7 @@ BOOLEAN AIResponderKnowsCasualty( SOLDIERTYPE *pResponder, SOLDIERTYPE *pPatient
 		return TRUE;
 
 	return AISameFireteam( pResponder, pPatient ) &&
-		iDistance <= DAY_VISION_RANGE / 2;
+		iDistance <= DAY_VISION_RANGE;
 }
 
 // Physical casualty extraction.  Medics retain the existing direct-treatment logic;

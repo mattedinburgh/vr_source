@@ -180,43 +180,57 @@ BOOLEAN AIBuildContactBelief(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID, AICONTAC
 		return FALSE;
 
 	SOLDIERTYPE *pOpponent = MercPtrs[ubOpponentID];
-	if (!pOpponent ||
-		CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-		pSoldier->bSide == pOpponent->bSide)
+	if (!pOpponent)
+		return FALSE;
+
+	INT32 sKnown = NOWHERE;
+	INT8 bKnownLevel = 0;
+	INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+	UINT8 ubConfidence = 0;
+	if (!AIPlanningContactForOpponent(
+		pSoldier, ubOpponentID, &sKnown, &bKnownLevel,
+		&ubConfidence, &bKnowledge))
 	{
 		return FALSE;
 	}
 
-	INT8 bKnowledge = Knowledge(pSoldier, ubOpponentID);
-	if (bKnowledge == NOT_HEARD_OR_SEEN)
-		return FALSE;
+	const BOOLEAN fDirectVisualContact =
+		PersonalKnowledge(pSoldier, ubOpponentID) == SEEN_CURRENTLY &&
+		LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
 
-	INT32 sKnown = KnownLocation(pSoldier, ubOpponentID);
+	// Current allegiance/body-state is legal only under direct sight. A teammate's
+	// report or stale memory remains a plausible hostile until personally disproved.
+	if (fDirectVisualContact &&
+		(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+		 pSoldier->bSide == pOpponent->bSide))
+	{
+		return FALSE;
+	}
+
 	if (TileIsOutOfBounds(sKnown))
 		return FALSE;
 
 	pBelief->ubOpponentID = ubOpponentID;
 	pBelief->sGridNo = sKnown;
-	pBelief->bLevel = KnownLevel(pSoldier, ubOpponentID);
+	pBelief->bLevel = bKnownLevel;
 	pBelief->bKnowledge = bKnowledge;
-	pBelief->ubSource = UsePersonalKnowledge(pSoldier, ubOpponentID) ?
+	pBelief->ubConfidence = ubConfidence;
+	pBelief->ubAgeTurns = AIKnowledgeAgeTurns(bKnowledge);
+	pBelief->fDirectlyVisible = fDirectVisualContact;
+
+	// "PUBLIC" here means shared non-personal planning evidence. For ENEMY_TEAM
+	// that is the bounded fireteam report, never the legacy sector-wide opplist.
+	INT8 bPersonal = PersonalKnowledge(pSoldier, ubOpponentID);
+	BOOLEAN fMatchesPersonal =
+		bPersonal != NOT_HEARD_OR_SEEN &&
+		KnownPersonalLocation(pSoldier, ubOpponentID) == sKnown &&
+		KnownPersonalLevel(pSoldier, ubOpponentID) == bKnownLevel;
+	pBelief->ubSource = fMatchesPersonal ?
 		AI_BELIEF_SOURCE_PERSONAL : AI_BELIEF_SOURCE_PUBLIC;
 
-	INT32 iKnowledgeIndex = (INT32)bKnowledge - (INT32)OLDEST_HEARD_VALUE;
-	if (iKnowledgeIndex >= 0 && iKnowledgeIndex < 10)
-		pBelief->ubConfidence = (UINT8)__max(0, __min(100, ThreatPercent[iKnowledgeIndex]));
-	else
-		pBelief->ubConfidence = 0;
-
-	pBelief->ubAgeTurns = AIKnowledgeAgeTurns(bKnowledge);
-	pBelief->fDirectlyVisible =
-		(PersonalKnowledge(pSoldier, ubOpponentID) == SEEN_CURRENTLY);
-
-	// Only visual knowledge refreshes exact contact memory. Heard information and
-	// generic noises may corroborate a remembered sector later, but they do not
-	// silently identify the unseen shooter.
-	if (pBelief->bKnowledge > NOT_HEARD_OR_SEEN)
-		AIRecordContactMemory(pSoldier, pBelief);
+	// Remember legitimate reports as well as direct observations. Memory remains a
+	// low-authority planning/search cue; it never authorizes a direct attack.
+	AIRecordContactMemory(pSoldier, pBelief);
 
 	return TRUE;
 }
@@ -375,39 +389,10 @@ static void AIRefreshThreatMemoryFromKnowledge(SOLDIERTYPE *pSoldier)
 
 	for (UINT16 i = 0; i < TOTAL_SOLDIERS && i < MAX_NUM_SOLDIERS; ++i)
 	{
-		SOLDIERTYPE *pOpponent = MercPtrs[i];
-		if (!pOpponent ||
-			CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide)
-		{
-			continue;
-		}
-
-		INT8 bKnowledge = Knowledge(pSoldier, (UINT8)i);
-		if (bKnowledge <= NOT_HEARD_OR_SEEN)
-			continue;
-
-		INT32 sKnown = KnownLocation(pSoldier, (UINT8)i);
-		if (TileIsOutOfBounds(sKnown))
-			continue;
-
 		AICONTACTBELIEF Belief;
-		memset(&Belief, 0, sizeof(Belief));
-		Belief.ubOpponentID = (UINT8)i;
-		Belief.sGridNo = sKnown;
-		Belief.bLevel = KnownLevel(pSoldier, (UINT8)i);
-		Belief.bKnowledge = bKnowledge;
-		Belief.ubAgeTurns = AIKnowledgeAgeTurns(bKnowledge);
-		Belief.ubSource = UsePersonalKnowledge(pSoldier, (UINT8)i) ?
-			AI_BELIEF_SOURCE_PERSONAL : AI_BELIEF_SOURCE_PUBLIC;
-
-		INT32 iKnowledgeIndex =
-			(INT32)bKnowledge - (INT32)OLDEST_HEARD_VALUE;
-		if (iKnowledgeIndex >= 0 && iKnowledgeIndex < 10)
-			Belief.ubConfidence = (UINT8)__max(
-				0, __min(100, ThreatPercent[iKnowledgeIndex]));
-
-		AIRecordContactMemory(pSoldier, &Belief);
+		// AIBuildContactBelief records the strongest legitimate personal/local report
+		// into the transient contact memory.
+		AIBuildContactBelief(pSoldier, (UINT8)i, &Belief);
 	}
 }
 
@@ -453,7 +438,7 @@ static BOOLEAN AIUsableContactMemory(
 	// reacquiring the opponent, sharply retire that hypothesis instead of pacing
 	// back to the same empty tile forever.
 	if (fApplyInspectionDecay &&
-		Knowledge(pSoldier, ubOpponentID) == NOT_HEARD_OR_SEEN &&
+		!AIPlanningContactForOpponent(pSoldier, ubOpponentID, NULL) &&
 		pSlot->bLevel == pSoldier->pathing.bLevel &&
 		PythSpacesAway(pSoldier->sGridNo, pSlot->sLastKnownGridNo) <= 4 &&
 		SoldierTo3DLocationLineOfSightTest(
@@ -541,7 +526,7 @@ BOOLEAN AIBuildThreatMemoryCue(
 	{
 		// Normal legal knowledge is stronger than memory and should be handled by
 		// the ordinary JA2 opponent/noise logic.
-		if (Knowledge(pSoldier, (UINT8)i) != NOT_HEARD_OR_SEEN)
+		if (AIPlanningContactForOpponent(pSoldier, (UINT8)i, NULL))
 			continue;
 
 		AICONTACTMEMORYSLOT *pSlot = NULL;
@@ -611,7 +596,7 @@ BOOLEAN AIBuildThreatMemoryCue(
 	{
 		// The supporting-memory count is a measure of unresolved old contacts,
 		// not a back door for fresh JA2 knowledge to inflate a stale hypothesis.
-		if (Knowledge(pSoldier, (UINT8)i) != NOT_HEARD_OR_SEEN)
+		if (AIPlanningContactForOpponent(pSoldier, (UINT8)i, NULL))
 			continue;
 
 		AICONTACTMEMORYSLOT *pSlot = NULL;
@@ -969,7 +954,7 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 	// caution/search/flank choice but is too weak to authorize an attack.
 	for (UINT16 i = 0; i < TOTAL_SOLDIERS && i < MAX_NUM_SOLDIERS; ++i)
 	{
-		if (Knowledge(pSoldier, (UINT8)i) != NOT_HEARD_OR_SEEN)
+		if (AIPlanningContactForOpponent(pSoldier, (UINT8)i, NULL))
 			continue;
 
 		AICONTACTMEMORYSLOT *pSlot = NULL;
@@ -1047,10 +1032,9 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 			++pGeometry->ubCorroboratedCues;
 	}
 
-	// Very-local fireteam callouts. A nearby teammate may communicate only a coarse
-	// direction ("contact right/front"), never an exact hidden grid. Personal visual
-	// knowledge remains owned by the observer; the receiver gets short-lived,
-	// smeared directional pressure for geometry/plan choice only.
+	// Elite local fireteam callouts. Teammates rapidly share a common directional
+	// picture, but the receiver still does not inherit opponent identity or attack
+	// authorization. This is planning geometry only, never a hidden-information shot.
 	INT32 iSharedContactPressure[NUM_WORLD_DIRECTIONS] = { 0 };
 	for (UINT8 ubFriendID = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 		ubFriendID <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++ubFriendID)
@@ -1066,7 +1050,7 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 		}
 
 		INT32 iFriendDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
-		if (iFriendDistance > __max(6, DAY_VISION_RANGE / 2))
+		if (iFriendDistance > __max(8, DAY_VISION_RANGE))
 			continue;
 
 		for (UINT16 uiOpponent = 0; uiOpponent < TOTAL_SOLDIERS; ++uiOpponent)
@@ -1081,11 +1065,11 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 			INT8 bFriendKnowledge = PersonalKnowledge(pFriend, (UINT8)uiOpponent);
 			INT32 iCalloutStrength = 0;
 			if (bFriendKnowledge == SEEN_CURRENTLY)
-				iCalloutStrength = 45;
+				iCalloutStrength = 60;
 			else if (bFriendKnowledge == SEEN_THIS_TURN)
-				iCalloutStrength = 34;
+				iCalloutStrength = 48;
 			else if (bFriendKnowledge == SEEN_LAST_TURN)
-				iCalloutStrength = 22;
+				iCalloutStrength = 32;
 			else
 				continue;
 
@@ -1097,10 +1081,11 @@ BOOLEAN AIBuildTacticalGeometry(SOLDIERTYPE *pSoldier, INT32 sAnchorGridNo,
 			if (ubDir >= NUM_WORLD_DIRECTIONS)
 				continue;
 
-			// Voice/gesture callouts lose precision with separation and across levels.
-			iCalloutStrength -= __min((INT32)18, iFriendDistance * 2);
+			// Local reports remain strong enough to coordinate the element, but
+			// separation and different elevation still degrade confidence.
+			iCalloutStrength -= __min((INT32)16, iFriendDistance);
 			if (KnownPersonalLevel(pFriend, (UINT8)uiOpponent) != pSoldier->pathing.bLevel)
-				iCalloutStrength /= 2;
+				iCalloutStrength = (3 * iCalloutStrength) / 4;
 			if (iCalloutStrength <= 0)
 				continue;
 
@@ -1958,6 +1943,17 @@ UINT8 AICountTacticalTaskReservations(SOLDIERTYPE *pSoldier, UINT8 ubTask,
 			++ubCount;
 	}
 	return ubCount;
+}
+
+BOOLEAN AIHasTacticalTaskReservation(SOLDIERTYPE *pSoldier, UINT8 ubTask,
+	INT32 sTargetGridNo, UINT8 ubTargetID)
+{
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS || ubTask == AI_TASK_NONE)
+		return FALSE;
+
+	const AITASKRESERVATIONSLOT *pMine = &gAITaskReservations[pSoldier->ubID];
+	return AIValidReservationOwner(pSoldier, pSoldier->ubID, pMine) &&
+		AISameTaskTarget(pMine, ubTask, sTargetGridNo, ubTargetID);
 }
 
 BOOLEAN AIReserveTacticalTask(SOLDIERTYPE *pSoldier, UINT8 ubTask, INT32 sTargetGridNo,

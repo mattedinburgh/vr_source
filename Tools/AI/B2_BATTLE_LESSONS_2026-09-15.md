@@ -4,6 +4,20 @@ Status: PHASE 2 IMPLEMENTED / STATIC QA PASSED ΓÇö REQUIRES BUILD + PLAYTEST
 
 Implementation now covers two B2 team-reasoning passes. Phase 1 added local directional contact callouts, effective-fire movement windows, shared attack-axis setback pressure, base-of-fire/mover role pairing, and a basic fireteam flank path that does not require the advanced-doctrine gate. Phase 2 adds a shared fireteam flank-axis preference so soldiers that agree on manoeuvre also tend to agree on left versus right, while exact tile choice and emergency self-preservation remain individual. Strategic/campaign movement remains untouched. Black Box remains the evidence source for the next playtest.
 
+## Upgrade Army AI reconciliation — 2026-09-16
+
+The old B2 finding that viable coordinated-flank candidates were rejected by a competence/doctrine gate is now **historical baseline evidence, not current doctrine**.
+
+Current ENEMY_TEAM rules:
+- every enemy uses elite tactical reasoning;
+- planner reliability is not randomly reduced for enemy competence;
+- enemy utility selection has no artificial competence noise;
+- coordinated plans are not rejected because an ordinary enemy is considered too poorly trained;
+- remaining enemy vetoes must be attributable to real tactical/mission causes such as route safety, insufficient support, duplicate reservation, emergency self-preservation, stale legal information, or explicit mission-role restriction.
+
+The next Black Box comparison should therefore track whether good mature Vengeance/sevenfm actions are being vetoed by the higher planner and whether the replacement action actually improves the outcome.
+
+
 ## Scope
 Black Box battle_id=3, B2, including reload/retry branches.
 Battle opened with 18 enemies versus 12 player mercs + 20 militia.
@@ -92,7 +106,7 @@ Before changing accuracy, add/inspect per-shot diagnostics for aim clicks, apert
 ## Priority conclusions for AI stream
 1. Highest priority: local fireteam cooperation and shared intent.
 2. High priority: attack-axis pressure memory and flank exploitation.
-3. High priority: stop competence friction from suppressing nearly every viable coordinated flank; investigate, do not blindly remove it.
+3. Historical issue resolved in doctrine: ENEMY_TEAM competence friction must not suppress viable coordinated flanks; validate that remaining mission/safety gates are justified.
 4. Preserve strong surprise, suppression and individual self-preservation behavior.
 5. Keep local information sharing bounded and plausible.
 6. Separate tactical AI conclusions from NCTH/throw conclusions; accuracy and grenade precision remain investigation items.

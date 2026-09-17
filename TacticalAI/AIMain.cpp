@@ -63,6 +63,7 @@
 #include "Strategic Movement.h"	// enemy retreat destination battles
 #include "Strategic Operational AI.h"	// persistent enemy retreat formations
 #include "VRAnalytics.h"
+#include "Handle UI.h"
 // needed to use the modularized tactical AI:
 #include "ModularizedTacticalAI/include/Plan.h"
 #include "ModularizedTacticalAI/include/PlanFactoryLibrary.h"
@@ -91,6 +92,190 @@ extern BOOLEAN gfWaitingForTriggerTimer;
 extern time_t gtTimeSinceMercAIStart;
 
 UINT8 gubAICounter;
+
+// Player-issued AI command state is transient and deliberately lives outside
+// SOLDIERTYPE/savegame layout. Once engaged it persists across tactical rounds
+// until combat resolves or the player explicitly requests control back.
+static UINT8 gubAIPlayerTeamCommand = AI_PLAYER_COMMAND_NONE;
+static BOOLEAN gfAIPlayerControlReturnRequested = FALSE;
+static BOOLEAN gfAIPlayerCommandFastForward = FALSE;
+
+BOOLEAN AIPlayerTeamCommandActive(void)
+{
+	return gubAIPlayerTeamCommand != AI_PLAYER_COMMAND_NONE;
+}
+
+UINT8 AIPlayerTeamCommand(void)
+{
+	return gubAIPlayerTeamCommand;
+}
+
+BOOLEAN AIPlayerControlReturnRequested(void)
+{
+	return gfAIPlayerControlReturnRequested;
+}
+
+BOOLEAN AIPlayerCommandFastForward(void)
+{
+	return gfAIPlayerCommandFastForward;
+}
+
+void AITogglePlayerCommandFastForward(void)
+{
+	gfAIPlayerCommandFastForward = !gfAIPlayerCommandFastForward;
+	if (AIPlayerTeamCommandActive())
+		SetFastForwardMode(gfAIPlayerCommandFastForward);
+}
+
+void AIRequestPlayerControl(void)
+{
+	if (!AIPlayerTeamCommandActive() || gfAIPlayerControlReturnRequested)
+		return;
+
+	gfAIPlayerControlReturnRequested = TRUE;
+	ScreenMsg(FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
+		L"Manual control requested - finishing current AI action...");
+}
+
+void AIResetPlayerTeamCommand(void)
+{
+	BOOLEAN fWasPlayerCommandActive =
+		gubAIPlayerTeamCommand != AI_PLAYER_COMMAND_NONE;
+	gubAIPlayerTeamCommand = AI_PLAYER_COMMAND_NONE;
+	gfAIPlayerControlReturnRequested = FALSE;
+
+	// Do not clear legacy/scripted PC-under-AI-control ownership unless this
+	// subsystem actually owned the player team.
+	if (!fWasPlayerCommandActive)
+		return;
+
+	gfAIPlayerCommandFastForward = FALSE;
+	SetFastForwardMode(FALSE);
+
+	for (INT32 bID = gTacticalStatus.Team[gbPlayerNum].bFirstID;
+		bID <= gTacticalStatus.Team[gbPlayerNum].bLastID; ++bID)
+	{
+		SOLDIERTYPE *pSoldier = MercPtrs[bID];
+		if (!pSoldier)
+			continue;
+
+		pSoldier->flags.uiStatusFlags &= ~SOLDIER_PCUNDERAICONTROL;
+		pSoldier->flags.uiStatusFlags &= ~SOLDIER_UNDERAICONTROL;
+		pSoldier->flags.fTurnInProgress = FALSE;
+	}
+}
+
+static BOOLEAN AIStartPlayerTeamCommandTurn(BOOLEAN fAnnounce)
+{
+	if (!AIPlayerTeamCommandActive() ||
+		is_networked ||
+		!(gTacticalStatus.uiFlags & TURNBASED) ||
+		!(gTacticalStatus.uiFlags & INCOMBAT) ||
+		gTacticalStatus.ubCurrentTeam != gbPlayerNum ||
+		gTacticalStatus.bBoxingState != NOT_BOXING ||
+		INTERRUPT_QUEUED ||
+		gTacticalStatus.ubAttackBusyCount > 0)
+	{
+		return FALSE;
+	}
+
+	BOOLEAN fHasLivingMerc = FALSE;
+	for (INT32 bID = gTacticalStatus.Team[gbPlayerNum].bFirstID;
+		bID <= gTacticalStatus.Team[gbPlayerNum].bLastID; ++bID)
+	{
+		SOLDIERTYPE *pSoldier = MercPtrs[bID];
+		if (!pSoldier || !pSoldier->bActive || !pSoldier->bInSector ||
+			pSoldier->stats.bLife <= 0 ||
+			(pSoldier->flags.uiStatusFlags & SOLDIER_VEHICLE))
+		{
+			continue;
+		}
+
+		fHasLivingMerc = TRUE;
+		pSoldier->flags.uiStatusFlags |= SOLDIER_PCUNDERAICONTROL;
+
+		// A player order is renewed every player round. Reset only these mercs'
+		// tactical-fallback allowance; enemy/militia anti-kiting memory is untouched.
+		AIClearTacticalFallbackState(pSoldier);
+	}
+
+	if (!fHasLivingMerc)
+	{
+		AIResetPlayerTeamCommand();
+		return FALSE;
+	}
+
+	if (fAnnounce)
+	{
+		ScreenMsg(FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
+			gubAIPlayerTeamCommand == AI_PLAYER_COMMAND_ATTACK ?
+			L"AI command active: ATTACK AS TEAM - press ESC to take control" :
+			L"AI command active: WITHDRAW AS TEAM - press ESC to take control");
+	}
+
+	FreezeInterfaceForEnemyTurn();
+	if (gfAIPlayerCommandFastForward)
+		SetFastForwardMode(TRUE);
+
+	// A fully spent, collapsed, or exhausted squad may legitimately have nobody in
+	// the AI list this round. Persistent takeover means we simply end the player
+	// turn and continue the command next round rather than silently returning control.
+	if (!BuildAIListForTeam(gbPlayerNum))
+	{
+		EndAITurn();
+		return TRUE;
+	}
+
+	UINT8 ubID = RemoveFirstAIListEntry();
+	if (ubID == NOBODY)
+	{
+		EndAITurn();
+		return TRUE;
+	}
+
+	StartNPCAI(MercPtrs[ubID]);
+	return TRUE;
+}
+
+BOOLEAN AIStartPlayerTeamCommand(UINT8 ubCommand)
+{
+	if (ubCommand != AI_PLAYER_COMMAND_ATTACK &&
+		ubCommand != AI_PLAYER_COMMAND_WITHDRAW)
+	{
+		return FALSE;
+	}
+
+	if (is_networked ||
+		!(gTacticalStatus.uiFlags & TURNBASED) ||
+		!(gTacticalStatus.uiFlags & INCOMBAT) ||
+		gTacticalStatus.ubCurrentTeam != gbPlayerNum ||
+		gTacticalStatus.bBoxingState != NOT_BOXING ||
+		INTERRUPT_QUEUED ||
+		gTacticalStatus.ubAttackBusyCount > 0)
+	{
+		return FALSE;
+	}
+
+	AIResetPlayerTeamCommand();
+	gubAIPlayerTeamCommand = ubCommand;
+	gfAIPlayerControlReturnRequested = FALSE;
+
+	if (!AIStartPlayerTeamCommandTurn(TRUE))
+	{
+		AIResetPlayerTeamCommand();
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+BOOLEAN AIContinuePlayerTeamCommand(void)
+{
+	if (!AIPlayerTeamCommandActive() || gfAIPlayerControlReturnRequested)
+		return FALSE;
+
+	return AIStartPlayerTeamCommandTurn(FALSE);
+}
 
 //
 // Commented out/ to fix:
@@ -367,9 +552,19 @@ void HandleSoldierAI( SOLDIERTYPE *pSoldier ) // FIXME - this function is named 
 
 	if (pSoldier->flags.uiStatusFlags & SOLDIER_PC)
 	{
-		// if we're in autobandage, or the AI control flag is set and the player has a quote record to perform, or is a boxer,
+		// Player mercs normally bypass combat AI. Explicit player-team command mode
+		// reuses the same temporary PC-under-AI-control flag as legacy scripted cases,
+		// but is gated by its own transient command state.
+		BOOLEAN fPlayerCommandAI =
+			AIPlayerTeamCommandActive() &&
+			pSoldier->bTeam == gbPlayerNum &&
+			(pSoldier->flags.uiStatusFlags & SOLDIER_PCUNDERAICONTROL);
+
+		// if we're in autobandage, a player command, or the legacy quote/boxer AI case,
 		// let AI process this merc; otherwise abort
-		if ( !(gTacticalStatus.fAutoBandageMode) && !(pSoldier->flags.uiStatusFlags & SOLDIER_PCUNDERAICONTROL && (pSoldier->ubQuoteRecord != 0 || pSoldier->flags.uiStatusFlags & SOLDIER_BOXER) ) )
+		if ( !(gTacticalStatus.fAutoBandageMode) && !fPlayerCommandAI &&
+			!(pSoldier->flags.uiStatusFlags & SOLDIER_PCUNDERAICONTROL &&
+			  (pSoldier->ubQuoteRecord != 0 || pSoldier->flags.uiStatusFlags & SOLDIER_BOXER) ) )
 		{
 			// patch...
 			if ( pSoldier->aiData.fAIFlags & AI_HANDLE_EVERY_FRAME )
@@ -631,10 +826,21 @@ void HandleSoldierAI( SOLDIERTYPE *pSoldier ) // FIXME - this function is named 
 
 	if (gfTurnBasedAI)
 	{
+		// ESC is the persistent command-mode escape hatch. Do not abort a live atomic
+		// action mid-animation; queue manual control and hand back at the next clean
+		// AI-soldier boundary with the current turn/AP state preserved.
+		if (AIPlayerTeamCommandActive() &&
+			!AIPlayerControlReturnRequested() &&
+			_KeyDown(ESC))
+		{
+			AIRequestPlayerControl();
+		}
+
 		const time_t tCurrentTime = time(0);
 		const UINT32 uiElapsedSeconds = (UINT32)(tCurrentTime - gtTimeSinceMercAIStart);
 		const UINT32 uiDeadlockDelay = (UINT32)gGameExternalOptions.gubDeadLockDelay;
-		const BOOLEAN fManualBreak = (uiElapsedSeconds > 10 && _KeyDown(ESC));
+		const BOOLEAN fManualBreak =
+			!AIPlayerTeamCommandActive() && uiElapsedSeconds > 10 && _KeyDown(ESC);
 
 		// Use wall-clock time: fast-forward changes the JA2 clock and previously could
 		// make a healthy AI action look deadlocked. Keep ESC as an early manual escape.
@@ -818,6 +1024,23 @@ void HandleSoldierAI( SOLDIERTYPE *pSoldier ) // FIXME - this function is named 
 
 #define NOSCORE 99
 
+static void AIRestoreManualPlayerControl(SOLDIERTYPE *pSoldier)
+{
+	ClearAIList();
+	AIResetPlayerTeamCommand();
+
+	if (pSoldier)
+		UnSetUIBusy(pSoldier->ubID);
+
+	fInterfacePanelDirty = DIRTYLEVEL2;
+	guiPendingOverrideEvent = LU_ENDUILOCK;
+	HandleTacticalUI();
+	InitPlayerUIBar(INTERRUPT_QUEUED ? TRUE : 2);
+
+	ScreenMsg(FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,
+		L"Manual control restored.");
+}
+
 void EndAIGuysTurn( SOLDIERTYPE *pSoldier )
 {
 	UINT8					ubID;
@@ -826,6 +1049,8 @@ void EndAIGuysTurn( SOLDIERTYPE *pSoldier )
 	{
 		if (gTacticalStatus.uiFlags & PLAYER_TEAM_DEAD)
 		{
+			if (AIPlayerTeamCommandActive())
+				AIResetPlayerTeamCommand();
 			EndAITurn();
 			return;
 		}
@@ -884,6 +1109,15 @@ void EndAIGuysTurn( SOLDIERTYPE *pSoldier )
 			DebugAI( String("Ending control for %d", pSoldier->ubID ) );
 #endif
 
+		// A manual reclaim request is honored only at a clean soldier-action boundary.
+		// This preserves the already-spent AP/action outcome and returns the remainder
+		// of the same player turn rather than generating a fresh turn.
+		if (pSoldier->bTeam == gbPlayerNum && AIPlayerControlReturnRequested())
+		{
+			AIRestoreManualPlayerControl(pSoldier);
+			return;
+		}
+
 		// find the next AI guy
 		ubID = RemoveFirstAIListEntry();
 		if (ubID != NOBODY)
@@ -892,7 +1126,9 @@ void EndAIGuysTurn( SOLDIERTYPE *pSoldier )
 			return;
 		}
 
-		// We are at the end, return control to next team
+		// Persistent player command mode stays active while the normal team sequencer
+		// advances through enemy/militia turns. It will resume automatically when the
+		// next player round begins.
 		DebugAI( String("Ending AI turn\n" ) );
 		EndAITurn();
 
@@ -2417,7 +2653,13 @@ INT8 ExecuteAction(SOLDIERTYPE *pSoldier)
             */
             DeductPoints(pSoldier,APBPConstants[AP_RADIO],APBPConstants[BP_RADIO], AFTERACTION_INTERRUPT); // pay for it!
             
-            RadioSightings(pSoldier,EVERYBODY,pSoldier->bTeam);      // about everybody
+            // Enemy contact knowledge is intentionally local. Raising a red alert may
+            // still put the sector on alert through HandleInitialRedAlert above, but
+            // exact sightings/noise are shared by the bounded fireteam blackboard
+            // (AISharedFireteamContact) rather than telepathically copied to every enemy.
+            // Preserve legacy public-radio behavior for militia and other non-enemy AI.
+            if (pSoldier->bTeam != ENEMY_TEAM)
+                RadioSightings(pSoldier,EVERYBODY,pSoldier->bTeam);      // about everybody
             // action completed immediately, cancel it right away
 
             // ATE: Change to an animation!
@@ -2577,10 +2819,10 @@ INT8 ExecuteAction(SOLDIERTYPE *pSoldier)
             pSoldier->SoldierReadyWeapon();
             HandleSight(pSoldier, SIGHT_LOOK | SIGHT_RADIO);
 
-            // The old sniper deadlock guard converted a repeated ready-weapon
-            // action directly into END_TURN. With the unified planner that turns
-            // a harmless duplicate setup choice into lost combat tempo. Preserve
-            // any meaningful queued follow-up and otherwise force a clean replan.
+            // Emergency no-progress guard. A repeated ready-weapon action can
+            // consume no AP and immediately send the soldier through the full planner
+            // again. Preserve a meaningful queued follow-up, but if there is none,
+            // terminate this soldier's turn instead of creating an expensive replan loop.
             if (pSoldier->aiData.bLastAction == AI_ACTION_RAISE_GUN)
             {
 				if (pSoldier->aiData.bNextAction == AI_ACTION_RAISE_GUN)
@@ -2590,9 +2832,10 @@ INT8 ExecuteAction(SOLDIERTYPE *pSoldier)
 				}
 				if (pSoldier->aiData.bNextAction == AI_ACTION_NONE)
 				{
-					pSoldier->aiData.bNewSituation = IS_NEW_SITUATION;
+					pSoldier->aiData.bNextAction = AI_ACTION_END_TURN;
+					pSoldier->aiData.usNextActionData = 0;
 				}
-				DebugAI(AI_MSG_INFO, pSoldier, String("repeated AI_ACTION_RAISE_GUN: replan without ending turn"));
+				DebugAI(AI_MSG_INFO, pSoldier, String("repeated AI_ACTION_RAISE_GUN: emergency end-turn guard"));
             }
 
             ActionDone( pSoldier );
@@ -3070,6 +3313,16 @@ extern FACETYPE	*gpCurrentTalkingFace;
 
 void UpdateFastForwardMode(SOLDIERTYPE* pSoldier, INT8 bAction)
 {
+	if (AIPlayerTeamCommandActive() && AIPlayerCommandFastForward() && pSoldier &&
+		pSoldier->bTeam == gbPlayerNum &&
+		(pSoldier->flags.uiStatusFlags & SOLDIER_PCUNDERAICONTROL) &&
+		gTacticalStatus.bBoxingState == NOT_BOXING &&
+		!(gTacticalStatus.uiFlags & ENGAGED_IN_CONV))
+	{
+		SetFastForwardMode(TRUE);
+		return;
+	}
+
 	BOOLEAN action = FALSE;
 
 	// check if fast forward mode disabled - do nothing

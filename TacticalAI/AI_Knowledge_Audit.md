@@ -17,7 +17,7 @@ Knowledge ages through:
 - SEEN_CURRENTLY, SEEN_THIS_TURN, SEEN_LAST_TURN, SEEN_2_TURNS_AGO, SEEN_3_TURNS_AGO
 - NOT_HEARD_OR_SEEN
 
-The public and personal lists decay automatically. Public knowledge is updated through existing radio/noise mechanisms.
+The personal/public lists still decay through the engine. For ENEMY_TEAM, however, tactical planning must not repopulate a sector-wide exact public-opponent picture: exact sightings/noise remain personal and are relayed only through the bounded local fireteam report network. Legacy public radio behavior may remain for non-enemy AI where appropriate.
 
 ## Required API for new tactical logic
 
@@ -28,6 +28,23 @@ Prefer:
 - `PersonalKnowledge(...)` / `PublicKnowledge(...)` only when the distinction itself matters
 
 `Knowledge` already selects the more useful/recent personal or public information using the engine's knowledge-value table. This matches current 1.13 behaviour.
+
+
+## Upgrade Army AI local-hive-mind contract
+
+For ENEMY_TEAM, nearby tactical cooperation uses a bounded local report network rather than a sector-wide hive mind.
+
+Rules:
+- share only information a local teammate legitimately observed/heard;
+- reports carry degraded confidence/age and approximate location, never hidden live target state;
+- relay is bounded to the local fireteam/connected local element and must decay with distance/time;
+- limited relay/two-hop communication may support planning, but must not become unlimited transitive propagation;
+- shared reports may affect movement, search, flank side, support, reserve response, smoke and casualty protection;
+- shared reports alone never authorize direct fire, grenades at exact hidden positions, or exact opponent-state reads;
+- enemy initial alarm may establish that combat exists, but must not copy exact opponent locations sector-wide;
+- leadership may improve local coordination radius/stability but never grants magical opponent information.
+
+The governing rule is: **exceptional inference from incomplete evidence is allowed; exceptional evidence is not.**
 
 ## Shared belief layer
 
