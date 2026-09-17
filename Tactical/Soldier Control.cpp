@@ -2,7 +2,6 @@
 #ifdef PRECOMPILEDHEADERS
 #include "Tactical All.h"
 #else
-#include "Handle Items.h"
 #include "builddefines.h"
 #include <wchar.h>
 #include <stdio.h>
@@ -97,6 +96,12 @@
 #include "Interface Panels.h"
 #include "ai.h"					// sevenfm
 #include "Queen Command.h" // sevenfm: for r8380
+
+// Fortification helpers are declared locally in non-PCH builds to avoid the legacy
+// Handle Items.h / worlddef.h include cycle.
+BOOLEAN BuildFortification( INT32 sGridNo, UINT32 flag, UINT8 ubDirection );
+BOOLEAN IsRemovableFortificationAtGridNo( INT32 sGridNo );
+BOOLEAN RemoveFortification( INT32 sGridNo, UINT32* pRemovedFlag );
 #endif
 
 #include "ub_config.h"
@@ -7242,7 +7247,7 @@ void SOLDIERTYPE::EVENT_SoldierGotHit( UINT16 usWeaponIndex, INT16 sDamage, INT1
 		}
 	}
 	// marke added one 'or' for explosive ammo. variation of: AmmoTypes[this->inv[this->ubAttackingHand ][0]->data.gun.ubGunAmmoType].explosionSize > 1
-	//  extracting attacker´s ammo type
+	//  extracting attacker??s ammo type
 	else if ( Item[ usWeaponIndex ].usItemClass & IC_EXPLOSV || AmmoTypes[MercPtrs[ubAttackerID]->inv[MercPtrs[ubAttackerID]->ubAttackingHand ][0]->data.gun.ubGunAmmoType].explosionSize > 1)
 	{
 		INT8 bDeafValue;

@@ -1,7 +1,6 @@
 #ifdef PRECOMPILEDHEADERS
 	#include "Tactical All.h"
 #else
-	#include "Handle Items.h"
 	#include "items.h"
 	#include "weapons.h"
 	#include "Interface Cursors.h"
@@ -33,6 +32,10 @@
 	#include "SkillCheck.h" // added by SANDRO
 	#include "message.H" //ddd
 	#include "english.h"		// added by Flugente
+
+	// Avoid pulling Handle Items.h into this non-PCH path: it participates in a legacy
+	// ITEM_POOL/worlddef include cycle. This cursor needs only the narrow predicate.
+	BOOLEAN IsRemovableFortificationAtGridNo( INT32 sGridNo );
 #endif
 
 //forward declarations of common classes to eliminate includes
