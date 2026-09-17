@@ -1495,11 +1495,11 @@ UINT32 VirtualSoldierDressWound( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pVictim, OB
 		uiPossible += ( uiPossible * gSkillTraitValues.ubDOBandagingSpeedPercent * NUM_SKILL_TRAITS( pSoldier, DOCTOR_NT ) + pSoldier->GetBackgroundValue(BG_PERC_BANDAGING) ) / 100;
 	}
 
-	// Improvised rags use the normal wound-stabilisation path, but at only
-	// 20% of normal first-aid treatment speed.
+	// Match tactical combat: improvised rags take about 50% more time/AP,
+	// which corresponds to 2/3 normal treatment throughput.
 	if ( fImprovisedRag )
 	{
-		uiPossible = (uiPossible + 4) / 5;
+		uiPossible = (uiPossible * 2 + 2) / 3;
 	}
 
 	uiActual = uiPossible;		// start by assuming maximum possible
@@ -1550,13 +1550,13 @@ UINT32 VirtualSoldierDressWound( SOLDIERTYPE *pSoldier, SOLDIERTYPE *pVictim, OB
 	{
 		if ( fImprovisedRag )
 		{
-			// Five rag condition points are required for each one point of actual
-			// wound treatment. A full rag therefore secures about 20 wound points.
-			uiMedcost = uiActual * 5;
+			// Match tactical combat: half the material efficiency of a first-aid
+			// kit, so two rag condition points buy one point of wound treatment.
+			uiMedcost = uiActual * 2;
 			if ( uiMedcost > (UINT32)sKitPts )
 			{
-				uiActual = (UINT32)sKitPts / 5;
-				uiMedcost = uiActual * 5;
+				uiActual = (UINT32)sKitPts / 2;
+				uiMedcost = uiActual * 2;
 			}
 		}
 		else

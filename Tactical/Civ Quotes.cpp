@@ -1703,82 +1703,135 @@ static const CHAR16 * const gAICombatLines_TARGET_DOWN[] =
 	L"\"\u00A1Enemigo herido y abatido!\""
 };
 
-static BOOLEAN BuildAICombatCalloutText( AI_BATTLE_CALLOUT ubCallout, STR16 zText )
+enum AI_BATTLE_EMOTION
+{
+	AI_BATTLE_EMOTION_CONTROLLED = 0,
+	AI_BATTLE_EMOTION_ANGRY,
+	AI_BATTLE_EMOTION_DISTRESSED,
+	AI_BATTLE_EMOTION_PANICKED,
+	AI_BATTLE_EMOTION_MAX
+};
+
+static AI_BATTLE_EMOTION AICombatEmotion( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout )
+{
+	if ( !pCiv )
+		return AI_BATTLE_EMOTION_CONTROLLED;
+
+	INT32 iLifePercent = 100;
+	if ( pCiv->stats.bLifeMax > 0 )
+		iLifePercent = (100 * pCiv->stats.bLife) / pCiv->stats.bLifeMax;
+	// Pain/help events deliberately bias toward distress; severity and morale
+	// determine whether that becomes outright panic.
+	if ( ubCallout == AI_BATTLE_CALL_CASUALTY || ubCallout == AI_BATTLE_CALL_MEDIC )
+	{
+		if ( iLifePercent <= 25 || pCiv->aiData.bAIMorale == MORALE_HOPELESS )
+			return AI_BATTLE_EMOTION_PANICKED;
+		if ( iLifePercent <= 60 || pCiv->bBleeding > 15 || pCiv->aiData.bAIMorale == MORALE_WORRIED )
+			return AI_BATTLE_EMOTION_DISTRESSED;
+		if ( pCiv->aiData.bAttitude == AGGRESSIVE )
+			return AI_BATTLE_EMOTION_ANGRY;
+		return AI_BATTLE_EMOTION_DISTRESSED;
+	}
+
+	if ( pCiv->aiData.bAIMorale == MORALE_HOPELESS &&
+		(ubCallout == AI_BATTLE_CALL_WITHDRAW || ubCallout == AI_BATTLE_CALL_INCOMING ||
+		 ubCallout == AI_BATTLE_CALL_OUT_OF_AMMO || ubCallout == AI_BATTLE_CALL_TAKE_COVER) )
+		return AI_BATTLE_EMOTION_PANICKED;
+
+	if ( pCiv->aiData.bAIMorale == MORALE_WORRIED &&
+		(ubCallout == AI_BATTLE_CALL_WITHDRAW || ubCallout == AI_BATTLE_CALL_INCOMING ||
+		 ubCallout == AI_BATTLE_CALL_OUT_OF_AMMO || ubCallout == AI_BATTLE_CALL_TAKE_COVER) )
+		return AI_BATTLE_EMOTION_DISTRESSED;
+
+	if ( pCiv->aiData.bAttitude == AGGRESSIVE )
+		return AI_BATTLE_EMOTION_ANGRY;
+
+	return AI_BATTLE_EMOTION_CONTROLLED;
+}
+static BOOLEAN BuildAICombatCalloutText( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout, STR16 zText )
 {
 	if ( zText == NULL )
 		return FALSE;
 
+	AI_BATTLE_EMOTION ubEmotion = AICombatEmotion( pCiv, ubCallout );
 	switch ( ubCallout )
 	{
 		case AI_BATTLE_CALL_CONTACT:
-			wcscpy( zText, gAICombatLines_CONTACT[ Random( sizeof(gAICombatLines_CONTACT) / sizeof(gAICombatLines_CONTACT[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, Random(2) ? L"\"Contact!\"" : L"\"Enemy spotted!\"" ); return TRUE;
 		case AI_BATTLE_CALL_ADVANCE:
-			wcscpy( zText, gAICombatLines_ADVANCE[ Random( sizeof(gAICombatLines_ADVANCE) / sizeof(gAICombatLines_ADVANCE[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, ubEmotion == AI_BATTLE_EMOTION_ANGRY ? L"\"Push them!\"" : L"\"Move up!\"" ); return TRUE;
 		case AI_BATTLE_CALL_TAKE_COVER:
-			wcscpy( zText, gAICombatLines_TAKE_COVER[ Random( sizeof(gAICombatLines_TAKE_COVER) / sizeof(gAICombatLines_TAKE_COVER[0]) ) ] );
+			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED ) wcscpy( zText, L"\"Get down!\"" );
+			else if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ) wcscpy( zText, L"\"We need cover!\"" );
+			else wcscpy( zText, L"\"Take cover!\"" );
 			return TRUE;
 		case AI_BATTLE_CALL_FLANK_LEFT:
-			wcscpy( zText, gAICombatLines_FLANK_LEFT[ Random( sizeof(gAICombatLines_FLANK_LEFT) / sizeof(gAICombatLines_FLANK_LEFT[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Flank left!\"" ); return TRUE;
 		case AI_BATTLE_CALL_FLANK_RIGHT:
-			wcscpy( zText, gAICombatLines_FLANK_RIGHT[ Random( sizeof(gAICombatLines_FLANK_RIGHT) / sizeof(gAICombatLines_FLANK_RIGHT[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Flank right!\"" ); return TRUE;
 		case AI_BATTLE_CALL_WITHDRAW:
-			wcscpy( zText, gAICombatLines_WITHDRAW[ Random( sizeof(gAICombatLines_WITHDRAW) / sizeof(gAICombatLines_WITHDRAW[0]) ) ] );
+			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED ) wcscpy( zText, Random(2) ? L"\"Get me out of here!\"" : L"\"We're being overrun!\"" );
+			else if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ) wcscpy( zText, L"\"Fall back, now!\"" );
+			else if ( ubEmotion == AI_BATTLE_EMOTION_ANGRY ) wcscpy( zText, L"\"Back! Move!\"" );
+			else wcscpy( zText, L"\"Fall back!\"" );
 			return TRUE;
 		case AI_BATTLE_CALL_REGROUP:
-			wcscpy( zText, gAICombatLines_REGROUP[ Random( sizeof(gAICombatLines_REGROUP) / sizeof(gAICombatLines_REGROUP[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Regroup!\"" ); return TRUE;
 		case AI_BATTLE_CALL_RALLY:
-			wcscpy( zText, gAICombatLines_RALLY[ Random( sizeof(gAICombatLines_RALLY) / sizeof(gAICombatLines_RALLY[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ? L"\"Stay with us!\"" : L"\"Keep it together!\"" ); return TRUE;
 		case AI_BATTLE_CALL_SUPPRESS:
-			wcscpy( zText, gAICombatLines_SUPPRESS[ Random( sizeof(gAICombatLines_SUPPRESS) / sizeof(gAICombatLines_SUPPRESS[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, ubEmotion == AI_BATTLE_EMOTION_ANGRY ? L"\"Keep their heads down!\"" : L"\"Suppressing fire!\"" ); return TRUE;
 		case AI_BATTLE_CALL_GRENADE:
-			wcscpy( zText, gAICombatLines_GRENADE[ Random( sizeof(gAICombatLines_GRENADE) / sizeof(gAICombatLines_GRENADE[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Grenade!\"" ); return TRUE;
 		case AI_BATTLE_CALL_SMOKE:
-			wcscpy( zText, gAICombatLines_SMOKE[ Random( sizeof(gAICombatLines_SMOKE) / sizeof(gAICombatLines_SMOKE[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Smoke out!\"" ); return TRUE;
 		case AI_BATTLE_CALL_HEAVY_WEAPON:
-			wcscpy( zText, gAICombatLines_HEAVY_WEAPON[ Random( sizeof(gAICombatLines_HEAVY_WEAPON) / sizeof(gAICombatLines_HEAVY_WEAPON[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, Random(2) ? L"\"Heavy weapon!\"" : L"\"Launcher!\"" ); return TRUE;
 		case AI_BATTLE_CALL_MEDIC:
-			wcscpy( zText, gAICombatLines_MEDIC[ Random( sizeof(gAICombatLines_MEDIC) / sizeof(gAICombatLines_MEDIC[0]) ) ] );
+			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED ) wcscpy( zText, Random(3) == 0 ? L"\"Please help me!\"" : (Random(2) ? L"\"Don't leave me!\"" : L"\"Medic! Please!\"" ) );
+			else if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ) wcscpy( zText, Random(2) ? L"\"Help me!\"" : L"\"I need a medic!\"" );
+			else if ( ubEmotion == AI_BATTLE_EMOTION_ANGRY ) wcscpy( zText, L"\"Medic, now!\"" );
+			else wcscpy( zText, L"\"Medic!\"" );
 			return TRUE;
 		case AI_BATTLE_CALL_RELOAD:
-			wcscpy( zText, gAICombatLines_RELOAD[ Random( sizeof(gAICombatLines_RELOAD) / sizeof(gAICombatLines_RELOAD[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Reloading!\"" ); return TRUE;
 		case AI_BATTLE_CALL_OUT_OF_AMMO:
-			wcscpy( zText, gAICombatLines_OUT_OF_AMMO[ Random( sizeof(gAICombatLines_OUT_OF_AMMO) / sizeof(gAICombatLines_OUT_OF_AMMO[0]) ) ] );
+			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED ) wcscpy( zText, L"\"I'm out! Cover me!\"" );
+			else wcscpy( zText, Random(2) ? L"\"Out of ammo!\"" : L"\"I'm dry!\"" );
 			return TRUE;
 		case AI_BATTLE_CALL_CASUALTY:
-			wcscpy( zText, gAICombatLines_CASUALTY[ Random( sizeof(gAICombatLines_CASUALTY) / sizeof(gAICombatLines_CASUALTY[0]) ) ] );
+			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED )
+			{
+				UINT8 ubPick = Random(4);
+				if ( ubPick == 0 ) wcscpy( zText, L"\"Oh God!\"" );
+				else if ( ubPick == 1 ) wcscpy( zText, L"\"Please help me!\"" );
+				else if ( ubPick == 2 ) wcscpy( zText, L"\"I don't want to die!\"" );
+				else wcscpy( zText, L"\"Mother!\"" );
+			}
+			else if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED )
+				wcscpy( zText, Random(2) ? L"\"I'm hit!\"" : L"\"Help me!\"" );
+			else if ( ubEmotion == AI_BATTLE_EMOTION_ANGRY )
+				wcscpy( zText, L"\"Damn it, I'm hit!\"" );
+			else
+				wcscpy( zText, L"\"I'm wounded!\"" );
 			return TRUE;
 		case AI_BATTLE_CALL_INCOMING:
-			wcscpy( zText, gAICombatLines_INCOMING[ Random( sizeof(gAICombatLines_INCOMING) / sizeof(gAICombatLines_INCOMING[0]) ) ] );
+			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED ) wcscpy( zText, L"\"They're all over us!\"" );
+			else if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ) wcscpy( zText, L"\"We're taking fire!\"" );
+			else wcscpy( zText, L"\"Incoming fire!\"" );
 			return TRUE;
 		case AI_BATTLE_CALL_SEARCH:
-			wcscpy( zText, gAICombatLines_SEARCH[ Random( sizeof(gAICombatLines_SEARCH) / sizeof(gAICombatLines_SEARCH[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Check that noise!\"" ); return TRUE;
 		case AI_BATTLE_CALL_REINFORCE:
-			wcscpy( zText, gAICombatLines_REINFORCE[ Random( sizeof(gAICombatLines_REINFORCE) / sizeof(gAICombatLines_REINFORCE[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Call for support!\"" ); return TRUE;
 		case AI_BATTLE_CALL_VEHICLE:
-			wcscpy( zText, gAICombatLines_VEHICLE[ Random( sizeof(gAICombatLines_VEHICLE) / sizeof(gAICombatLines_VEHICLE[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, Random(2) ? L"\"Armored vehicle!\"" : L"\"Vehicle!\"" ); return TRUE;
 		case AI_BATTLE_CALL_CIVILIAN:
-			wcscpy( zText, gAICombatLines_CIVILIAN[ Random( sizeof(gAICombatLines_CIVILIAN) / sizeof(gAICombatLines_CIVILIAN[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Civilian! Watch your fire!\"" ); return TRUE;
 		case AI_BATTLE_CALL_HOLD:
-			wcscpy( zText, gAICombatLines_HOLD[ Random( sizeof(gAICombatLines_HOLD) / sizeof(gAICombatLines_HOLD[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, L"\"Hold position!\"" ); return TRUE;
 		case AI_BATTLE_CALL_TARGET_DOWN:
-			wcscpy( zText, gAICombatLines_TARGET_DOWN[ Random( sizeof(gAICombatLines_TARGET_DOWN) / sizeof(gAICombatLines_TARGET_DOWN[0]) ) ] );
-			return TRUE;
+			wcscpy( zText, ubEmotion == AI_BATTLE_EMOTION_ANGRY ? L"\"Got one!\"" : L"\"Target down!\"" ); return TRUE;
 		default:
 			return FALSE;
 	}
@@ -1899,9 +1952,9 @@ static BOOLEAN AICombatCalloutSpeakerValid( SOLDIERTYPE *pCiv )
 {
 	return pCiv &&
 		pCiv->bActive && pCiv->bInSector &&
-		(pCiv->bTeam == ENEMY_TEAM || pCiv->bTeam == MILITIA_TEAM) &&
+		(pCiv->bTeam == ENEMY_TEAM || pCiv->bTeam == MILITIA_TEAM || pCiv->bTeam == gbPlayerNum) &&
 		pCiv->bVisible != -1 &&
-		pCiv->stats.bLife >= OKLIFE &&
+		pCiv->stats.bLife >= CONSCIOUSNESS &&
 		!pCiv->bCollapsed && !pCiv->bBreathCollapsed &&
 		!pCiv->IsZombie();
 }
@@ -1943,7 +1996,7 @@ static const CHAR8 * AICombatCalloutName( AI_BATTLE_CALLOUT ubCallout )
 static void ShowAICombatCalloutNow( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout )
 {
 	CHAR16 zText[320];
-	if ( !AICombatCalloutSpeakerValid( pCiv ) || !BuildAICombatCalloutText( ubCallout, zText ) )
+	if ( !AICombatCalloutSpeakerValid( pCiv ) || !BuildAICombatCalloutText( pCiv, ubCallout, zText ) )
 		return;
 
 	ShowTauntPopupBox( pCiv, zText );
@@ -1991,6 +2044,14 @@ void QueueAICombatCallout( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout )
 	UINT8 ubChance = AICombatCalloutChance( ubCallout );
 	if ( ubChance == 0 )
 		return;
+
+	// Player distress feedback is explicit UI information, not ambient AI chatter.
+	// If the event was important enough to request a medic/casualty popup, show it.
+	if ( pCiv->bTeam == gbPlayerNum &&
+		(ubCallout == AI_BATTLE_CALL_MEDIC || ubCallout == AI_BATTLE_CALL_CASUALTY) )
+	{
+		ubChance = 100;
+	}
 
 	// Orders are more often voiced by soldiers with command presence, while
 	// inexperienced troops still call urgent hazards at the normal rate.
@@ -3106,7 +3167,7 @@ STR VoiceTauntFileName[] =
 	// miss_xxx
 	"MISS",
 	"MISS_GUNFIRE",
-	"TAUNT_MISS_BLADE",
+	"MISS_BLADE",
 	"MISS_HTH",
 	"MISS_THROWING_KNIFE",
 
@@ -3336,15 +3397,161 @@ static BOOLEAN PlaySharedBattlefieldReaction( SOLDIERTYPE *pCiv, TAUNTTYPE iTaun
 	return TRUE;
 }
 
+
+// VR situational voice production contract:
+//   EVENT__controlled.ogg / EVENT__controlled N.ogg
+//   EVENT__angry.ogg      / EVENT__angry N.ogg
+//   EVENT__distressed.ogg / EVENT__distressed N.ogg
+//   EVENT__panicked.ogg   / EVENT__panicked N.ogg
+// If no state-specific recording exists, the original EVENT.ogg / EVENT N.ogg
+// library is used unchanged. This lets new recording batches deploy gradually.
+#define VR_MAX_SITUATIONAL_VOICE_VARIANTS 64
+
+static INT16 gsLastSituationalVoiceTauntType[TOTAL_SOLDIERS];
+static INT16 gsLastSituationalVoiceVariant[TOTAL_SOLDIERS];
+static BOOLEAN gfSituationalVoiceHistoryInitialized = FALSE;
+
+static void EnsureSituationalVoiceHistoryInitialized()
+{
+	if ( gfSituationalVoiceHistoryInitialized )
+		return;
+
+	for ( UINT16 usID = 0; usID < TOTAL_SOLDIERS; ++usID )
+	{
+		gsLastSituationalVoiceTauntType[usID] = -1;
+		gsLastSituationalVoiceVariant[usID] = -1;
+	}
+	gfSituationalVoiceHistoryInitialized = TRUE;
+}
+
+static AI_BATTLE_EMOTION VoiceEmotionForTaunt( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType )
+{
+	if ( !pCiv )
+		return AI_BATTLE_EMOTION_CONTROLLED;
+
+	INT32 iLifePercent = 100;
+	if ( pCiv->stats.bLifeMax > 0 )
+		iLifePercent = (100 * pCiv->stats.bLife) / pCiv->stats.bLifeMax;
+
+	const BOOLEAN fSeverePain =
+		(iTauntType == TAUNT_GOT_HIT_BLOODLOSS ||
+		 iTauntType == TAUNT_GOT_HIT_EXPLOSION ||
+		 iTauntType == TAUNT_GOT_HIT_STRUCTURE_EXPLOSION ||
+		 iTauntType == TAUNT_GOT_HIT_GUNFIRE ||
+		 iTauntType == TAUNT_GOT_HIT_BLADE ||
+		 iTauntType == TAUNT_GOT_HIT_THROWING_KNIFE);
+
+	const BOOLEAN fThreatStress =
+		(iTauntType == TAUNT_RUN_AWAY ||
+		 iTauntType == TAUNT_OUT_OF_AMMO ||
+		 iTauntType == TAUNT_NOTICED_UNSEEN ||
+		 iTauntType == TAUNT_ALERT);
+
+	if ( (fSeverePain && iLifePercent <= 30) ||
+		(fThreatStress && pCiv->aiData.bAIMorale == MORALE_HOPELESS) )
+	{
+		return AI_BATTLE_EMOTION_PANICKED;
+	}
+
+	if ( (fSeverePain && (iLifePercent <= 65 || pCiv->bBleeding > 15)) ||
+		(fThreatStress && pCiv->aiData.bAIMorale == MORALE_WORRIED) )
+	{
+		return AI_BATTLE_EMOTION_DISTRESSED;
+	}
+
+	if ( pCiv->aiData.bAttitude == AGGRESSIVE &&
+		(iTauntType == TAUNT_FIRE_GUN ||
+		 iTauntType == TAUNT_FIRE_LAUNCHER ||
+		 iTauntType == TAUNT_THROW_GRENADE ||
+		 iTauntType == TAUNT_HIT ||
+		 iTauntType == TAUNT_HIT_GUNFIRE ||
+		 iTauntType == TAUNT_KILL ||
+		 iTauntType == TAUNT_KILL_GUNFIRE ||
+		 iTauntType == TAUNT_HEAD_POP) )
+	{
+		return AI_BATTLE_EMOTION_ANGRY;
+	}
+
+	return AI_BATTLE_EMOTION_CONTROLLED;
+}
+
+static const CHAR8 * VoiceEmotionSuffix( AI_BATTLE_EMOTION ubEmotion )
+{
+	switch ( ubEmotion )
+	{
+		case AI_BATTLE_EMOTION_ANGRY: return "angry";
+		case AI_BATTLE_EMOTION_DISTRESSED: return "distressed";
+		case AI_BATTLE_EMOTION_PANICKED: return "panicked";
+		default: return "controlled";
+	}
+}
+
+static UINT8 CountSituationalVoiceVariants( const CHAR8 *zBaseName )
+{
+	CHAR8 zCandidate[1024];
+	UINT8 ubCount = 0;
+
+	sprintf( zCandidate, "%s.ogg", zBaseName );
+	if ( FileExists( zCandidate ) )
+		ubCount = 1;
+	else
+		return 0;
+
+	for ( UINT8 ubIndex = 0; ubIndex < VR_MAX_SITUATIONAL_VOICE_VARIANTS - 1; ++ubIndex )
+	{
+		sprintf( zCandidate, "%s %d.ogg", zBaseName, ubIndex );
+		if ( !FileExists( zCandidate ) )
+			break;
+		++ubCount;
+	}
+
+	return ubCount;
+}
+
+static void BuildSituationalVoiceFilename( const CHAR8 *zBaseName, INT16 sVariant, CHAR8 *zOutput )
+{
+	if ( sVariant <= 0 )
+		sprintf( zOutput, "%s.ogg", zBaseName );
+	else
+		sprintf( zOutput, "%s %d.ogg", zBaseName, sVariant - 1 );
+}
+
+static INT16 PickSituationalVoiceVariant( SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, UINT8 ubVariantCount )
+{
+	if ( ubVariantCount == 0 )
+		return -1;
+
+	EnsureSituationalVoiceHistoryInitialized();
+
+	INT16 sChosen = (INT16)Random( ubVariantCount );
+	if ( ubVariantCount > 1 &&
+		gsLastSituationalVoiceTauntType[pCiv->ubID] == (INT16)iTauntType &&
+		gsLastSituationalVoiceVariant[pCiv->ubID] == sChosen )
+	{
+		// Guaranteed different choice without reroll loops.
+		sChosen = (sChosen + 1 + (INT16)Random( ubVariantCount - 1 )) % ubVariantCount;
+	}
+
+	gsLastSituationalVoiceTauntType[pCiv->ubID] = (INT16)iTauntType;
+	gsLastSituationalVoiceVariant[pCiv->ubID] = sChosen;
+	return sChosen;
+}
+
 // sevenfm: voice taunts
 BOOLEAN PlayVoiceTaunt(SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTarget)
 {
 	CHAR8 filename[1024];
-	CHAR8 filenameExtra[1024];
+	CHAR8 zLegacyBase[1024];
+	CHAR8 zEmotionalBase[1024];
+	CHAR8 zSelectedBase[1024];
 	CHAR16 noise[1024];
 	CHAR8 buf[1024];
-	INT32 iRandomTaunt = 0;
-	UINT8 ubExtraTaunts = 0;
+	AI_BATTLE_EMOTION ubVoiceEmotion = AI_BATTLE_EMOTION_CONTROLLED;
+	const CHAR8 *zEmotionSuffix = "controlled";
+	const CHAR8 *zSelectedEmotionSuffix = "legacy";
+	UINT8 ubVariantCount = 0;
+	INT16 sVariant = -1;
+	BOOLEAN fEmotionSpecific = FALSE;
 
 	CHECKF(pCiv);
 
@@ -3359,18 +3566,6 @@ BOOLEAN PlayVoiceTaunt(SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTa
 		ScreenMsg(FONT_MCOLOR_LTGREEN, MSG_INTERFACE, L"Soldier [%d] TauntType %d", pCiv->ubID, iTauntType);
 	}
 
-	// cannot taunt when dead or collapsed
-	if (pCiv->stats.bLife < OKLIFE || pCiv->bCollapsed || pCiv->bBreathCollapsed)
-	{
-		if (gGameExternalOptions.fVoiceTauntsDebugInfo)
-		{
-			ScreenMsg(FONT_MCOLOR_LTGREEN, MSG_INTERFACE, L"Bad soldier state (dying or collapsed)");
-		}
-		return FALSE;
-	}
-
-	strcpy(filename, "Voice");
-
 	if (iTauntType < TAUNT_FIRE_GUN || iTauntType > TAUNT_RIPOSTE)
 	{
 		if (gGameExternalOptions.fVoiceTauntsDebugInfo)
@@ -3380,10 +3575,50 @@ BOOLEAN PlayVoiceTaunt(SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTa
 		return FALSE;
 	}
 
-	// About one event in several uses the shared military bank; otherwise the
-	// original Vengeance per-voice taunt system continues unchanged.
-	if ( PlaySharedBattlefieldReaction( pCiv, iTauntType ) )
+	// Dying-but-conscious soldiers may still produce pain/blood-loss reactions.
+	// Other tactical chatter still requires OKLIFE so critically wounded soldiers
+	// do not calmly reload, taunt or report contacts while collapsing.
+	const BOOLEAN fCriticalPainTaunt =
+		(iTauntType == TAUNT_GOT_HIT ||
+		 iTauntType == TAUNT_GOT_HIT_GUNFIRE ||
+		 iTauntType == TAUNT_GOT_HIT_BLADE ||
+		 iTauntType == TAUNT_GOT_HIT_HTH ||
+		 iTauntType == TAUNT_GOT_HIT_BLOODLOSS ||
+		 iTauntType == TAUNT_GOT_HIT_EXPLOSION ||
+		 iTauntType == TAUNT_GOT_HIT_STRUCTURE_EXPLOSION ||
+		 iTauntType == TAUNT_GOT_HIT_OBJECT ||
+		 iTauntType == TAUNT_GOT_HIT_THROWING_KNIFE);
+
+	// English-scream hotfix: generic enemy and militia pain reactions use the
+	// normal BATTLESNDS system instead of the Spanish Army/Militia taunt banks.
+	if ( fCriticalPainTaunt &&
+		(pCiv->bTeam == ENEMY_TEAM || pCiv->bTeam == MILITIA_TEAM) )
+	{
+		return FALSE;
+	}
+
+	if (pCiv->stats.bLife < CONSCIOUSNESS || pCiv->bCollapsed || pCiv->bBreathCollapsed ||
+		(pCiv->stats.bLife < OKLIFE && !fCriticalPainTaunt))
+	{
+		if (gGameExternalOptions.fVoiceTauntsDebugInfo)
+		{
+			ScreenMsg(FONT_MCOLOR_LTGREEN, MSG_INTERFACE, L"Bad soldier state for this taunt");
+		}
+		return FALSE;
+	}
+
+	strcpy(filename, "Voice");
+
+	// Do not let the old shared Battlefield bank override faction/lore language.
+	// Army, militia and civilian voices stay inside their authored voice folders.
+	// The helper remains available for any future explicitly non-local speaker.
+	if ( pCiv->bTeam != MILITIA_TEAM &&
+		pCiv->bTeam != ENEMY_TEAM &&
+		pCiv->bTeam != CIV_TEAM &&
+		PlaySharedBattlefieldReaction( pCiv, iTauntType ) )
+	{
 		return TRUE;
+	}
 
 	if (pCiv->bTeam == MILITIA_TEAM)
 	{
@@ -3521,31 +3756,68 @@ BOOLEAN PlayVoiceTaunt(SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTa
 
 	strcat(filename, VoiceTauntFileName[iTauntType]);
 
-	// count possible extra filenames
-	ubExtraTaunts = 0;
-	for (UINT8 ubCheck = 1; ubCheck <= 10; ubCheck++)
+	// Prefer a context-appropriate emotional recording when one exists.
+	// New packs can therefore be deployed incrementally without replacing the
+	// mature legacy library. If no emotional bank exists, the exact old naming
+	// convention remains the fallback.
+	strcpy( zLegacyBase, filename );
+	ubVoiceEmotion = VoiceEmotionForTaunt( pCiv, iTauntType );
+	zEmotionSuffix = VoiceEmotionSuffix( ubVoiceEmotion );
+	sprintf( zEmotionalBase, "%s__%s", zLegacyBase, zEmotionSuffix );
+
+	ubVariantCount = CountSituationalVoiceVariants( zEmotionalBase );
+	if ( ubVariantCount > 0 )
 	{
-		// check extra taunt file
-		strcpy(filenameExtra, filename);
-		sprintf(buf, " %d", ubExtraTaunts);
-		strcat(filenameExtra, buf);
-		strcat(filenameExtra, ".ogg");
-		if (!FileExists(filenameExtra))
+		strcpy( zSelectedBase, zEmotionalBase );
+		zSelectedEmotionSuffix = zEmotionSuffix;
+		fEmotionSpecific = TRUE;
+	}
+	else if ( ubVoiceEmotion == AI_BATTLE_EMOTION_PANICKED )
+	{
+		// A distressed performance is a safer fallback for panic than a neutral
+		// or aggressive line when a full panic batch has not been recorded yet.
+		sprintf( zEmotionalBase, "%s__distressed", zLegacyBase );
+		ubVariantCount = CountSituationalVoiceVariants( zEmotionalBase );
+		if ( ubVariantCount > 0 )
 		{
-			break;
+			strcpy( zSelectedBase, zEmotionalBase );
+			zSelectedEmotionSuffix = "distressed";
+			fEmotionSpecific = TRUE;
 		}
-		ubExtraTaunts = ubCheck;
 	}
 
-	// possibly use extra taunt
-	iRandomTaunt = Random(ubExtraTaunts + 1);
-	if (iRandomTaunt > 0)
+	if ( ubVariantCount == 0 && ubVoiceEmotion != AI_BATTLE_EMOTION_CONTROLLED )
 	{
-		sprintf(buf, " %d", iRandomTaunt - 1);
-		strcat(filename, buf);
+		sprintf( zEmotionalBase, "%s__controlled", zLegacyBase );
+		ubVariantCount = CountSituationalVoiceVariants( zEmotionalBase );
+		if ( ubVariantCount > 0 )
+		{
+			strcpy( zSelectedBase, zEmotionalBase );
+			zSelectedEmotionSuffix = "controlled";
+			fEmotionSpecific = TRUE;
+		}
 	}
 
-	strcat(filename, ".ogg");
+	if ( ubVariantCount == 0 )
+	{
+		strcpy( zSelectedBase, zLegacyBase );
+		ubVariantCount = CountSituationalVoiceVariants( zLegacyBase );
+		zSelectedEmotionSuffix = "legacy";
+		fEmotionSpecific = FALSE;
+	}
+
+	if ( ubVariantCount == 0 )
+	{
+		if (gGameExternalOptions.fVoiceTauntsDebugInfo)
+		{
+			mbstowcs(noise, zLegacyBase, strlen(zLegacyBase) + 1);
+			ScreenMsg(FONT_MCOLOR_LTRED, MSG_INTERFACE, L"Taunt: no legacy or emotional file %s", noise);
+		}
+		return FALSE;
+	}
+
+	sVariant = PickSituationalVoiceVariant( pCiv, iTauntType, ubVariantCount );
+	BuildSituationalVoiceFilename( zSelectedBase, sVariant, filename );
 
 	// log taunt file names
 	if (gGameExternalOptions.fVoiceTauntsDebugInfo)
@@ -3553,9 +3825,13 @@ BOOLEAN PlayVoiceTaunt(SOLDIERTYPE *pCiv, TAUNTTYPE iTauntType, SOLDIERTYPE *pTa
 		FILE	*OutFile;
 		if ((OutFile = fopen("VoiceTauntLog.txt", "a+t")) != NULL)
 		{
-			fprintf(OutFile, "Soldier [%d] TauntType %d %s\n",
+			fprintf(OutFile, "Soldier [%d] TauntType %d emotion=%s selected=%s emotional=%d variants=%d file=%s\n",
 				pCiv->ubID,
 				iTauntType,
+				zEmotionSuffix,
+				zSelectedEmotionSuffix,
+				fEmotionSpecific,
+				ubVariantCount,
 				filename);
 			fclose(OutFile);
 		}

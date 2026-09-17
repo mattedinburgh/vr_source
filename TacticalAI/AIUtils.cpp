@@ -63,6 +63,10 @@ extern BOOLEAN gfHaveSeenSomeone;
 extern UINT8 ubRealAmbientLightLevel;
 //end rain
 
+// Planning-only shared threat picture. This never changes firearm target legality.
+static INT32 AIPrimaryPlanningThreatSpot(
+	SOLDIERTYPE *pSoldier, INT8 *pbLevel = NULL, UINT8 *pubConfidence = NULL);
+
 UINT8 Urgency[NUM_STATUS_STATES][NUM_MORALE_STATES] =
 {
 	{URGENCY_LOW,  URGENCY_LOW,  URGENCY_LOW,  URGENCY_LOW,  URGENCY_LOW}, // green
@@ -156,9 +160,12 @@ BOOLEAN ConsiderProne( SOLDIERTYPE * pSoldier )
 	//INT8		bOpponentLevel;
 	//INT32		iRange;
 
-	// sevenfm: admins/green militia go prone only when wounded or under fire
-	if( pSoldier->ubSoldierClass == SOLDIER_CLASS_ADMINISTRATOR ||
-		pSoldier->ubSoldierClass == SOLDIER_CLASS_GREEN_MILITIA )
+	// Enemy equipment class no longer controls tactical understanding. An enemy
+	// administrator uses prone exactly as intelligently as an enemy elite; only
+	// non-enemy legacy formations retain the old class-specific restraint.
+	if( pSoldier->bTeam != ENEMY_TEAM &&
+		(pSoldier->ubSoldierClass == SOLDIER_CLASS_ADMINISTRATOR ||
+		 pSoldier->ubSoldierClass == SOLDIER_CLASS_GREEN_MILITIA) )
 	{
 		if( pSoldier->stats.bLife > 3*pSoldier->stats.bLifeMax/4 &&
 			!pSoldier->aiData.bUnderFire )
@@ -176,7 +183,7 @@ BOOLEAN ConsiderProne( SOLDIERTYPE * pSoldier )
 	}
 
 	// We don't want to go prone if there is a nearby enemy
-	sOpponentGridNo = ClosestKnownOpponent( pSoldier, NULL, NULL );
+	sOpponentGridNo = AIPrimaryPlanningThreatSpot( pSoldier );
 	if( !TileIsOutOfBounds(sOpponentGridNo) && 
 		PythSpacesAway( pSoldier->sGridNo, sOpponentGridNo ) < DAY_VISION_RANGE / 4 )
 	{
@@ -435,7 +442,7 @@ UINT16 DetermineMovementMode( SOLDIERTYPE * pSoldier, INT8 bAction )
 		else
 		{
 			// sevenfm: movement mode tweaks
-			INT32 sClosestThreat =	ClosestKnownOpponent( pSoldier, NULL, NULL );
+			INT32 sClosestThreat =	AIPrimaryPlanningThreatSpot( pSoldier );
 
 			// use walking mode if no enemy known
 			if (pSoldier->aiData.bAlertStatus < STATUS_RED &&
@@ -1284,14 +1291,16 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 		BOOLEAN fThreatStateKnown =
 			(*pbPersOL == SEEN_CURRENTLY) &&
 			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			(gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
-			pOpponent->ubBodyType == CROW)
-		{
-			continue;
-		}
-		if (fThreatStateKnown && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
+		// Current relation/existence is legal only while the contact is directly seen.
+		// A stale memory remains a plausible hostile at the last known location.
+		if (fThreatStateKnown &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 (gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
+			 pOpponent->ubBodyType == CROW ||
+			 !pOpponent->bActive || !pOpponent->bInSector ||
+			 pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
 		{
 			continue;
 		}
@@ -1513,6 +1522,75 @@ INT32 ClosestReachableDisturbance(SOLDIERTYPE *pSoldier, BOOLEAN * pfChangeLevel
 
 INT32 ClosestKnownOpponent(SOLDIERTYPE *pSoldier, INT32 * psGridNo, INT8 * pbLevel)
 {
+	// ENEMY_TEAM uses the bounded local planning picture. This function is a movement/
+	// orientation selector, not a firing-authority function, so teammate reports are
+	// legitimate here. Direct-fire legality remains governed by personal LOS/knowledge.
+	if (pSoldier && pSoldier->bTeam == ENEMY_TEAM)
+	{
+		INT32 sClosestReported = NOWHERE;
+		INT8 bClosestReportedLevel = -1;
+		INT32 iClosestReportedRange = 0x7FFFFFFF;
+
+		for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
+		{
+			SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
+			if (!pOpponent || pOpponent == pSoldier)
+				continue;
+
+			INT32 sReportedGrid = NOWHERE;
+			INT8 bReportedLevel = 0;
+			INT8 bReportedKnowledge = NOT_HEARD_OR_SEEN;
+			UINT8 ubReportedConfidence = 0;
+			if (!AIPlanningContactForOpponent(
+				pSoldier, pOpponent->ubID, &sReportedGrid, &bReportedLevel,
+				&ubReportedConfidence, &bReportedKnowledge))
+			{
+				continue;
+			}
+
+			const BOOLEAN fDirectVisualContact =
+				PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+				LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+			if (fDirectVisualContact &&
+				(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+				 pSoldier->bSide == pOpponent->bSide ||
+				 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+				 (gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
+				 pOpponent->ubBodyType == CROW ||
+				 !ValidOpponent(pSoldier, pOpponent)))
+			{
+				continue;
+			}
+
+			if (TileIsOutOfBounds(sReportedGrid) ||
+				sReportedGrid == pSoldier->sGridNo)
+			{
+				continue;
+			}
+
+			if (bReportedLevel != pSoldier->pathing.bLevel &&
+				SameBuilding(pSoldier->sGridNo, sReportedGrid))
+			{
+				continue;
+			}
+
+			INT32 iRange =
+				GetRangeInCellCoordsFromGridNoDiff(pSoldier->sGridNo, sReportedGrid);
+			if (iRange < iClosestReportedRange)
+			{
+				iClosestReportedRange = iRange;
+				sClosestReported = sReportedGrid;
+				bClosestReportedLevel = bReportedLevel;
+			}
+		}
+
+		if (psGridNo)
+			*psGridNo = sClosestReported;
+		if (pbLevel)
+			*pbLevel = bClosestReportedLevel;
+		return sClosestReported;
+	}
+
 	INT32 *psLastLoc, sGridNo, sClosestOpponent = NOWHERE;
 	UINT32 uiLoop;
 	INT32 iRange, iClosestRange = 1500;
@@ -1552,14 +1630,16 @@ INT32 ClosestKnownOpponent(SOLDIERTYPE *pSoldier, INT32 * psGridNo, INT8 * pbLev
 		BOOLEAN fThreatStateKnown =
 			(*pbPersOL == SEEN_CURRENTLY) &&
 			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			(gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
-			pOpponent->ubBodyType == CROW)
-		{
-			continue;
-		}
-		if (fThreatStateKnown && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
+		// Current relation/existence is legal only while the contact is directly seen.
+		// A stale memory remains a plausible hostile at the last known location.
+		if (fThreatStateKnown &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 (gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
+			 pOpponent->ubBodyType == CROW ||
+			 !pOpponent->bActive || !pOpponent->bInSector ||
+			 pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
 		{
 			continue;
 		}
@@ -2605,44 +2685,65 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 		pbPublOL = gbPublicOpplist[pSoldier->bTeam] + pOpponent->ubID;
 		pSeenOpp = (UINT8 *)gbSeenOpponents[pSoldier->ubID] + pOpponent->ubID;
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
-		{
-			continue;
-		}
-
 		BOOLEAN fThreatStateKnown =
 			(*pbPersOL == SEEN_CURRENTLY) &&
 			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
-		if (fThreatStateKnown && (!pOpponent->bActive || !pOpponent->bInSector || pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
+
+		// Current relation/existence may invalidate a threat only under personal LOS.
+		if (fThreatStateKnown &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW ||
+			 !pOpponent->bActive || !pOpponent->bInSector ||
+			 pOpponent->stats.bLife <= 0 || pOpponent->IsEmptyVehicle()))
 		{
 			continue;
 		}
 
-		// if this opponent is unknown to me personally AND unknown to my team, too
-		if ((*pbPersOL == NOT_HEARD_OR_SEEN) && (*pbPublOL == NOT_HEARD_OR_SEEN))
+		BOOLEAN fPlanningContact = FALSE;
+		UINT8 ubPlanningConfidence = 0;
+		INT8 bPlanningKnowledge = NOT_HEARD_OR_SEEN;
+		INT32 sPlanningContact = NOWHERE;
+
+		if (pSoldier->bTeam == ENEMY_TEAM)
 		{
-			// if I have never seen him before anywhere in this sector, either
+			fPlanningContact = AIPlanningContactForOpponent(
+				pSoldier, pOpponent->ubID, &sPlanningContact, NULL,
+				&ubPlanningConfidence, &bPlanningKnowledge);
+		}
+
+		if (fPlanningContact)
+		{
+			// Local reports influence threat awareness only through contact confidence.
+			// They do not reveal live HP/AP/weapon/stance to this soldier.
+			bMostRecentOpplistValue = bPlanningKnowledge;
+			iPercent = ubPlanningConfidence;
+		}
+		else if ((*pbPersOL == NOT_HEARD_OR_SEEN) && (*pbPublOL == NOT_HEARD_OR_SEEN))
+		{
 			if (!(*pSeenOpp))
-				continue;		// next merc
+				continue;
 
-			// have seen him in the past, so he remains something of a threat
-			bMostRecentOpplistValue = 0;		// uses the free slot for 0 opplist
+			bMostRecentOpplistValue = 0;
+			iPercent = ThreatPercent[bMostRecentOpplistValue - OLDEST_HEARD_VALUE];
 		}
-		else		 // decide which opplist is more current
+		else
 		{
-			// if personal knowledge is more up to date or at least equal
-			if ((gubKnowledgeValue[*pbPublOL - OLDEST_HEARD_VALUE][*pbPersOL - OLDEST_HEARD_VALUE] > 0) || (*pbPersOL == *pbPublOL))
-				bMostRecentOpplistValue = *pbPersOL;		// use personal
+			if ((gubKnowledgeValue[*pbPublOL - OLDEST_HEARD_VALUE][*pbPersOL - OLDEST_HEARD_VALUE] > 0) ||
+				(*pbPersOL == *pbPublOL))
+			{
+				bMostRecentOpplistValue = *pbPersOL;
+			}
 			else
-				bMostRecentOpplistValue = *pbPublOL;		// use public
+			{
+				bMostRecentOpplistValue = *pbPublOL;
+			}
+			iPercent = ThreatPercent[bMostRecentOpplistValue - OLDEST_HEARD_VALUE];
 		}
 
-		iPercent = ThreatPercent[bMostRecentOpplistValue - OLDEST_HEARD_VALUE];
-
-		// A stale contact contributes according to remembered certainty, not hidden
-		// current wounds/AP/weapon state. Current contacts keep the detailed threat model.
+		// Unseen/reported contacts use a neutral threat prior. Detailed live target
+		// state is consulted only when this soldier personally sees the opponent.
 		INT32 iOpponentThreat = fThreatStateKnown ?
 			CalcManThreatValue(pOpponent,pSoldier->sGridNo,FALSE,pSoldier) : 100;
 		if (iOpponentThreat < 1)
@@ -2948,149 +3049,138 @@ INT8 CalcMorale(SOLDIERTYPE *pSoldier)
 
 INT32 CalcManThreatValue( SOLDIERTYPE *pEnemy, INT32 sMyGrid, UINT8 ubReduceForCover, SOLDIERTYPE * pMe )
 {
-	INT32	iThreatValue = 0;
-	BOOLEAN fForCreature = CREATURE_OR_BLOODCAT( pMe );
+	if (!pEnemy)
+		return -999;
 
-	// If man is inactive, at base, on assignment, dead, unconscious
-	if (!pEnemy->bActive || !pEnemy->bInSector || !pEnemy->stats.bLife)
+	// Current combat state is legal only under direct personal observation. A stale
+	// contact must not reveal current AP, HP, weapon, armour, shock, breath, bleeding,
+	// assignment, stance or whether the merc secretly left the sector.
+	const BOOLEAN fPersonallyObservesThreatState =
+		pMe &&
+		PersonalKnowledge(pMe, pEnemy->ubID) == SEEN_CURRENTLY &&
+		LOS_Raised(pMe, pEnemy, CALC_FROM_ALL_DIRS) > 0;
+
+	const BOOLEAN fKnowledgeBoundEstimate =
+		pMe && AICombatTeam(pMe) && !fPersonallyObservesThreatState;
+
+	if (fKnowledgeBoundEstimate)
 	{
-		// he's no threat at all, return a negative number
-		iThreatValue = -999;
-		return(iThreatValue);
+		INT8 bKnowledge = Knowledge(pMe, pEnemy->ubID);
+		if (bKnowledge == NOT_HEARD_OR_SEEN)
+			return 1;
+
+		INT32 sKnownGrid = KnownLocation(pMe, pEnemy->ubID);
+		INT8 bKnownLevel = KnownLevel(pMe, pEnemy->ubID);
+		INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+
+		// Neutral competent-combatant prior. Confidence changes urgency; hidden live
+		// statistics never do. This intentionally errs on the side of respecting a
+		// stale threat rather than magically knowing that the target is wounded/down.
+		INT32 iThreatValue = 35 + (65 * iCertainty) / 100;
+
+		if (!TileIsOutOfBounds(sMyGrid) && !TileIsOutOfBounds(sKnownGrid))
+		{
+			INT32 iDistance = PythSpacesAway(sMyGrid, sKnownGrid);
+			iThreatValue = (iThreatValue * 18) / (18 + iDistance / 2);
+
+			if (ubReduceForCover)
+			{
+				BOOLEAN fBelievedLine =
+					LocationToLocationLineOfSightTest(
+						sKnownGrid, bKnownLevel,
+						sMyGrid, pMe->pathing.bLevel,
+						TRUE, MAX_VISION_RANGE);
+				if (!fBelievedLine)
+					iThreatValue = iThreatValue * 40 / 100;
+				else if (AnyCoverAtSpot(pMe, sMyGrid))
+					iThreatValue = iThreatValue * 75 / 100;
+			}
+		}
+
+		return __max(1, iThreatValue);
 	}
 
-	// in boxing mode, let only a boxer be considered a threat.
+	INT32 iThreatValue = 0;
+	BOOLEAN fForCreature = CREATURE_OR_BLOODCAT( pMe );
+
+	// Live-state branch: direct current sight (or legacy non-combat callers) may use
+	// the target's actual state.
+	if (!pEnemy->bActive || !pEnemy->bInSector || !pEnemy->stats.bLife)
+	{
+		return -999;
+	}
+
 	if ( (gTacticalStatus.bBoxingState == BOXING) && !(pEnemy->flags.uiStatusFlags & SOLDIER_BOXER) )
 	{
-		iThreatValue = -999;
-		return( iThreatValue );
+		return -999;
 	}
 
 	if (fForCreature)
 	{
-		// health (1-100)
 		iThreatValue += pEnemy->stats.bLife;
-		// bleeding (more attactive!) (1-100)
 		iThreatValue += pEnemy->bBleeding;
-		// decrease according to distance
 		iThreatValue = (iThreatValue * 10) / (10 + PythSpacesAway( sMyGrid, pEnemy->sGridNo ) );
-
 	}
 	else
 	{
-		// ADD twice the man's level (2-20)
-		iThreatValue += EffectiveExpLevel(pEnemy); // SANDRO - find precise effective exp level
-
-		// ADD man's total action points (10-35)
-		// sevenfm: r7810 fix
-		//iThreatValue += pEnemy->CalcActionPoints();
+		iThreatValue += EffectiveExpLevel(pEnemy);
 		iThreatValue += 25 * pEnemy->CalcActionPoints() / APBPConstants[AP_MAXIMUM];
-
-		// ADD 1/2 of man's current action points (4-17)
-		// sevenfm: r7810 fix
-		//iThreatValue += (pEnemy->bActionPoints / 2);
 		iThreatValue += 25 * pEnemy->bActionPoints / APBPConstants[AP_MAXIMUM] / 2;
-
-		// ADD 1/10 of man's current health (0-10)
 		iThreatValue += (pEnemy->stats.bLife / 10);
 
 		if (pEnemy->bAssignment < ON_DUTY )
 		{
-			// ADD 1/4 of man's protection percentage (0-25)
 			iThreatValue += ArmourPercent( pEnemy ) / 4;
-
-			// ADD 1/5 of man's marksmanship skill (0-20)
 			iThreatValue += (pEnemy->stats.bMarksmanship / 5);
-
 			if ( Item[ pEnemy->inv[HANDPOS].usItem ].usItemClass & IC_WEAPON )
-			{
-				// ADD the deadliness of the item(weapon) he's holding (0-50)
 				iThreatValue += Weapon[pEnemy->inv[HANDPOS].usItem].ubDeadliness;
-			}
 		}
 
-		// SUBTRACT 1/5 of man's bleeding (0-20)
 		iThreatValue -= (pEnemy->bBleeding / 5);
-
-		// SUBTRACT 1/10 of man's breath deficiency (0-10)
 		iThreatValue -= ((100 - pEnemy->bBreath) / 10);
-
-		// SUBTRACT man's current shock value
 		iThreatValue -= pEnemy->aiData.bShock;
 	}
-
-	// Facing and last-target direction are live visual cues, not team-radio knowledge.
-	// Only a soldier who personally sees this opponent may react to where the weapon
-	// is pointed / where that opponent has just fired. This prevents stale contacts
-	// from behaving as if they can read the player's current aim cone.
-	BOOLEAN fPersonallyObservesThreatState =
-		pMe && pEnemy &&
-		PersonalKnowledge(pMe, pEnemy->ubID) == SEEN_CURRENTLY &&
-		LOS_Raised(pMe, pEnemy, CALC_FROM_ALL_DIRS) > 0;
 
 	if (!TileIsOutOfBounds(sMyGrid) && fPersonallyObservesThreatState)
 	{
 		if (pEnemy->sLastTarget == sMyGrid)
-		{
 			iThreatValue += (iThreatValue / 10);
-		}
 		else if (pEnemy->ubDirection ==
 			atan8(CenterX(pEnemy->sGridNo), CenterY(pEnemy->sGridNo),
 				CenterX(sMyGrid), CenterY(sMyGrid)))
-		{
 			iThreatValue += (iThreatValue / 20);
-		}
 	}
 
-	// if this man is conscious
 	if (pEnemy->stats.bLife >= OKLIFE)
 	{
-		// and we were told to reduce threat for my cover		
 		if (ubReduceForCover && (!TileIsOutOfBounds(sMyGrid)))
 		{
-			// Reduce iThreatValue to same % as the chance HE has shoot through at ME
-			//iThreatValue = (iThreatValue * ChanceToGetThrough( pEnemy, myGrid, FAKE, ACTUAL, TESTWALLS, 9999, M9PISTOL, NOT_FOR_LOS)) / 100;
-			//iThreatValue = (iThreatValue * SoldierTo3DLocationChanceToGetThrough( pEnemy, myGrid, FAKE, ACTUAL, TESTWALLS, 9999, M9PISTOL, NOT_FOR_LOS)) / 100;
-			iThreatValue = (iThreatValue * SoldierToLocationChanceToGetThrough( pEnemy, sMyGrid, pMe->pathing.bLevel, 0, pMe->ubID ) ) / 100;
+			iThreatValue = (iThreatValue * SoldierToLocationChanceToGetThrough(
+				pEnemy, sMyGrid, pMe->pathing.bLevel, 0, pMe->ubID )) / 100;
 		}
 	}
-	else
+	else if (iThreatValue > 0)
 	{
-		// if he's still something of a threat
-		if (iThreatValue > 0)
-		{
-			// drastically reduce his threat value (divide by 5 to 18)
-			iThreatValue /= (4 + (OKLIFE - pEnemy->stats.bLife));
-		}
+		iThreatValue /= (4 + (OKLIFE - pEnemy->stats.bLife));
 	}
 
-	// threat value of any opponent can never drop below 1
 	if (iThreatValue < 1)
-	{
 		iThreatValue = 1;
-	}
 
-	//sprintf(tempstr,"%s's iThreatValue = ",pEnemy->name);
-	//NumMessage(tempstr,iThreatValue);
-
-#ifdef BETAVERSION	// unnecessary for real release
-	// NOTE: maximum is about 200 for a healthy Mike type with a mortar!
+#ifdef BETAVERSION
 	if (iThreatValue > 250)
 	{
 		sprintf(tempstr,"CalcManThreatValue: WARNING - %d has a very high threat value of %d",pEnemy->ubID,iThreatValue);
-
 #ifdef RECORDNET
-		fprintf(NetDebugFile,"\t%s\n",tempstr);
+		fprintf(NetDebugFile,"\\t%s\\n",tempstr);
 #endif
-
 #ifdef TESTVERSION
 		PopMessage(tempstr);
 #endif
-
 	}
 #endif
 
-	return(iThreatValue);
+	return iThreatValue;
 }
 
 // sevenfm: ONGUARD, POINTPATROL, RNDPTPATROL - max roaming if seen enemy recently or under fire
@@ -4126,7 +4216,7 @@ UINT8 CountFriendsBlack( SOLDIERTYPE *pSoldier, INT32 sClosestOpponent )
 	// by default, use closest known opponent
 	if( sClosestOpponent == NOWHERE )
 	{
-		sClosestOpponent = ClosestKnownOpponent( pSoldier, NULL, NULL );
+		sClosestOpponent = AIPrimaryPlanningThreatSpot( pSoldier );
 	}
 
 	if(TileIsOutOfBounds(sClosestOpponent))
@@ -4203,7 +4293,17 @@ UINT8 CountNearbyFriendsOnRoof( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDi
 
 BOOLEAN AICombatTeam(SOLDIERTYPE *pSoldier)
 {
-	return pSoldier && (pSoldier->bTeam == ENEMY_TEAM || pSoldier->bTeam == MILITIA_TEAM);
+	if (!pSoldier)
+		return FALSE;
+
+	if (pSoldier->bTeam == ENEMY_TEAM || pSoldier->bTeam == MILITIA_TEAM)
+		return TRUE;
+
+	// Player mercs participate in the unified tactical planner only while the
+	// player has explicitly handed the current turn to AI command mode.
+	return pSoldier->bTeam == gbPlayerNum &&
+		AIPlayerTeamCommandActive() &&
+		(pSoldier->flags.uiStatusFlags & SOLDIER_PCUNDERAICONTROL);
 }
 
 UINT8 AICountNearbyOperationalFriends(SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDistance)
@@ -5023,6 +5123,12 @@ UINT8 AIFireteamAliveCount(SOLDIERTYPE *pSoldier)
 UINT8 AIFireteamCombatReadyCount(SOLDIERTYPE *pSoldier)
 {
 	if (!AIEnemyFireteamEligible(pSoldier)) return 0;
+
+	// A player-issued command deliberately coordinates the whole current team rather
+	// than splitting the merc squad into enemy-style autonomous fireteams.
+	if (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive())
+		return AICombatTeamOperationalCount(pSoldier);
+
 	if (AISmallUnitTeamMode(pSoldier))
 		return AICombatTeamOperationalCount(pSoldier);
 	UINT8 ubFireteam = AIFireteamId(pSoldier);
@@ -5044,6 +5150,12 @@ UINT8 AIFireteamCombatReadyCount(SOLDIERTYPE *pSoldier)
 BOOLEAN AISameFireteam(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend)
 {
 	if (!pSoldier || !pFriend || pSoldier->bTeam != pFriend->bTeam) return FALSE;
+
+	// A player-issued team command treats the current squad as one coordinated
+	// element. This is command/role sharing only; opponent knowledge stays local.
+	if (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive())
+		return TRUE;
+
 	if (!AICombatTeam(pSoldier)) return TRUE;
 
 	// Two to five remaining fighters stop acting like unrelated mini-squads.
@@ -5056,6 +5168,417 @@ BOOLEAN AISameFireteam(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend)
 
 	UINT8 ubMine = AIFireteamId(pSoldier);
 	return ubMine != AI_FIRETEAM_NONE && ubMine == AIFireteamId(pFriend);
+}
+
+static UINT32 AILocalFireteamCommSignature(SOLDIERTYPE *pSoldier)
+{
+	if (!pSoldier || !AICombatTeam(pSoldier))
+		return 0;
+
+	UINT32 uiHash = 2166136261u;
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		uiHash ^= (UINT32)iCounter;
+		uiHash *= 16777619u;
+		if (!pFriend)
+			continue;
+
+		UINT32 uiState = 0;
+		if (pFriend->bActive) uiState |= 0x0001;
+		if (pFriend->bInSector) uiState |= 0x0002;
+		if (pFriend->stats.bLife >= OKLIFE) uiState |= 0x0004;
+		if (pFriend->bCollapsed) uiState |= 0x0008;
+		if (pFriend->bBreathCollapsed) uiState |= 0x0010;
+		if (pFriend->usSoldierFlagMask & SOLDIER_POW) uiState |= 0x0020;
+		if (pFriend->flags.uiStatusFlags & SOLDIER_COWERING) uiState |= 0x0040;
+		if (AIDisengagementActive(pFriend)) uiState |= 0x0080;
+		if (AIEscapeActive(pFriend)) uiState |= 0x0100;
+		if (AISameFireteam(pSoldier, pFriend)) uiState |= 0x0200;
+
+		uiHash ^= pFriend->uiUniqueSoldierIdValue;
+		uiHash *= 16777619u;
+		uiHash ^= (UINT32)pFriend->sGridNo;
+		uiHash *= 16777619u;
+		uiHash ^= ((UINT32)(UINT8)pFriend->pathing.bLevel << 24) ^ uiState;
+		uiHash *= 16777619u;
+	}
+	return uiHash;
+}
+
+static const UINT8 *AILocalFireteamCommHops(SOLDIERTYPE *pSoldier)
+{
+	static UINT8 ubCachedHops[MAX_NUM_SOLDIERS];
+	static UINT8 ubCachedObserver = NOBODY;
+	static UINT32 uiCachedObserverIdentity = 0;
+	static UINT32 uiCachedSignature = 0;
+	static INT16 sCachedSectorX = -1;
+	static INT16 sCachedSectorY = -1;
+	static INT8 bCachedSectorZ = -1;
+
+	if (!pSoldier || !AICombatTeam(pSoldier) ||
+		!pSoldier->bActive || !pSoldier->bInSector ||
+		pSoldier->ubID >= MAX_NUM_SOLDIERS)
+	{
+		return NULL;
+	}
+
+	UINT32 uiSignature = AILocalFireteamCommSignature(pSoldier);
+	if (ubCachedObserver == pSoldier->ubID &&
+		uiCachedObserverIdentity == pSoldier->uiUniqueSoldierIdValue &&
+		uiCachedSignature == uiSignature &&
+		sCachedSectorX == gWorldSectorX &&
+		sCachedSectorY == gWorldSectorY &&
+		bCachedSectorZ == gbWorldSectorZ)
+	{
+		return ubCachedHops;
+	}
+
+	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
+		ubCachedHops[i] = 255;
+	ubCachedHops[pSoldier->ubID] = 0;
+
+	const INT32 iCommRadius = __max(8, DAY_VISION_RANGE);
+	const UINT8 ubMaxRelayHops = 2;
+	for (UINT8 ubHop = 0; ubHop < ubMaxRelayHops; ++ubHop)
+	{
+		for (UINT8 ubCandidateID = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+			ubCandidateID <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++ubCandidateID)
+		{
+			SOLDIERTYPE *pCandidate = MercPtrs[ubCandidateID];
+			if (!pCandidate || pCandidate->ubID >= MAX_NUM_SOLDIERS ||
+				ubCachedHops[pCandidate->ubID] != 255 ||
+				!pCandidate->bActive || !pCandidate->bInSector ||
+				pCandidate->stats.bLife < OKLIFE || pCandidate->bCollapsed ||
+				pCandidate->bBreathCollapsed ||
+				(pCandidate->usSoldierFlagMask & SOLDIER_POW) ||
+				(pCandidate->flags.uiStatusFlags & SOLDIER_COWERING) ||
+				AIDisengagementActive(pCandidate) || AIEscapeActive(pCandidate) ||
+				!AISameFireteam(pSoldier, pCandidate))
+			{
+				continue;
+			}
+
+			for (UINT8 ubRelayID = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+				ubRelayID <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++ubRelayID)
+			{
+				SOLDIERTYPE *pRelay = MercPtrs[ubRelayID];
+				if (!pRelay || pRelay->ubID >= MAX_NUM_SOLDIERS ||
+					ubCachedHops[pRelay->ubID] != ubHop ||
+					!pRelay->bActive || !pRelay->bInSector ||
+					pRelay->stats.bLife < OKLIFE || pRelay->bCollapsed ||
+					pRelay->bBreathCollapsed ||
+					(pRelay->usSoldierFlagMask & SOLDIER_POW) ||
+					(pRelay->flags.uiStatusFlags & SOLDIER_COWERING) ||
+					!AISameFireteam(pSoldier, pRelay))
+				{
+					continue;
+				}
+
+				if (PythSpacesAway(pRelay->sGridNo, pCandidate->sGridNo) <= iCommRadius)
+				{
+					ubCachedHops[pCandidate->ubID] = ubHop + 1;
+					break;
+				}
+			}
+		}
+	}
+
+	ubCachedObserver = pSoldier->ubID;
+	uiCachedObserverIdentity = pSoldier->uiUniqueSoldierIdValue;
+	uiCachedSignature = uiSignature;
+	sCachedSectorX = gWorldSectorX;
+	sCachedSectorY = gWorldSectorY;
+	bCachedSectorZ = gbWorldSectorZ;
+	return ubCachedHops;
+}
+
+BOOLEAN AISharedFireteamContact(SOLDIERTYPE *pSoldier, INT32 *psGridNo,
+	INT8 *pbLevel, UINT8 *pubConfidence)
+{
+	if (psGridNo) *psGridNo = NOWHERE;
+	if (pbLevel) *pbLevel = 0;
+	if (pubConfidence) *pubConfidence = 0;
+
+	if (!pSoldier || !AICombatTeam(pSoldier) ||
+		!pSoldier->bActive || !pSoldier->bInSector ||
+		pSoldier->ubID >= MAX_NUM_SOLDIERS)
+	{
+		return FALSE;
+	}
+
+	const UINT8 ubMaxRelayHops = 2;
+	const UINT8 *ubCommHops = AILocalFireteamCommHops(pSoldier);
+	if (!ubCommHops)
+		return FALSE;
+
+	INT32 sBestGrid = NOWHERE;
+	INT8 bBestLevel = 0;
+	UINT8 ubBestConfidence = 0;
+	INT32 iBestScore = -1000000;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend->ubID >= MAX_NUM_SOLDIERS ||
+			ubCommHops[pFriend->ubID] == 255 ||
+			ubCommHops[pFriend->ubID] > ubMaxRelayHops ||
+			!pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING))
+		{
+			continue;
+		}
+
+		for (UINT16 uiOpponent = 0; uiOpponent < TOTAL_SOLDIERS; ++uiOpponent)
+		{
+			SOLDIERTYPE *pOpponent = MercPtrs[uiOpponent];
+			if (!pOpponent)
+				continue;
+
+			INT8 bKnowledge = PersonalKnowledge(pFriend, (UINT8)uiOpponent);
+			INT32 iConfidence = 0;
+			// Once contact is stale/heard, never inspect the target's current active,
+			// in-sector, neutral, side, health or action state. Those are hidden facts.
+			// For a genuinely current sighting the normal current relation is legal.
+			if (bKnowledge == SEEN_CURRENTLY)
+			{
+				if (!pOpponent->bActive || !pOpponent->bInSector ||
+					CONSIDERED_NEUTRAL(pFriend, pOpponent) ||
+					pFriend->bSide == pOpponent->bSide)
+				{
+					continue;
+				}
+				iConfidence = 100;
+			}
+			else if (bKnowledge == SEEN_THIS_TURN)
+				iConfidence = 90;
+			else if (bKnowledge == SEEN_LAST_TURN)
+				iConfidence = 70;
+			else if (bKnowledge == SEEN_2_TURNS_AGO)
+				iConfidence = 50;
+			else if (bKnowledge == HEARD_THIS_TURN)
+				iConfidence = 55;
+			else if (bKnowledge == HEARD_LAST_TURN)
+				iConfidence = 38;
+			else if (bKnowledge == HEARD_2_TURNS_AGO)
+				iConfidence = 22;
+			else
+				continue;
+
+			INT32 sKnownGrid = KnownPersonalLocation(pFriend, (UINT8)uiOpponent);
+			if (TileIsOutOfBounds(sKnownGrid))
+				continue;
+
+			INT8 bKnownLevel = KnownPersonalLevel(pFriend, (UINT8)uiOpponent);
+			// Inside the valid local comm graph, evidence age and relay hops
+			// drive uncertainty. Receiver distance/floor do not distort a clear report.
+			iConfidence -= 4 * (INT32)ubCommHops[pFriend->ubID];
+			iConfidence = __max(1, __min(100, iConfidence));
+
+			INT32 iScore = iConfidence * 4 -
+				2 * (INT32)ubCommHops[pFriend->ubID];
+			if (iScore > iBestScore)
+			{
+				iBestScore = iScore;
+				sBestGrid = sKnownGrid;
+				bBestLevel = bKnownLevel;
+				ubBestConfidence = (UINT8)iConfidence;
+			}
+		}
+	}
+
+	if (TileIsOutOfBounds(sBestGrid))
+		return FALSE;
+
+	if (psGridNo) *psGridNo = sBestGrid;
+	if (pbLevel) *pbLevel = bBestLevel;
+	if (pubConfidence) *pubConfidence = ubBestConfidence;
+	return TRUE;
+}
+
+BOOLEAN AISharedFireteamOpponentContact(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID,
+	INT32 *psGridNo, INT8 *pbLevel, UINT8 *pubConfidence, INT8 *pbKnowledge)
+{
+	if (psGridNo) *psGridNo = NOWHERE;
+	if (pbLevel) *pbLevel = 0;
+	if (pubConfidence) *pubConfidence = 0;
+	if (pbKnowledge) *pbKnowledge = NOT_HEARD_OR_SEEN;
+
+	if (!pSoldier || !AICombatTeam(pSoldier) ||
+		!pSoldier->bActive || !pSoldier->bInSector ||
+		pSoldier->ubID >= MAX_NUM_SOLDIERS ||
+		ubOpponentID >= TOTAL_SOLDIERS)
+	{
+		return FALSE;
+	}
+
+	SOLDIERTYPE *pOpponent = MercPtrs[ubOpponentID];
+	if (!pOpponent)
+		return FALSE;
+
+	const UINT8 ubMaxRelayHops = 2;
+	const UINT8 *ubCommHops = AILocalFireteamCommHops(pSoldier);
+	if (!ubCommHops)
+		return FALSE;
+
+	INT32 sBestGrid = NOWHERE;
+	INT8 bBestLevel = 0;
+	UINT8 ubBestConfidence = 0;
+	INT8 bBestKnowledge = NOT_HEARD_OR_SEEN;
+	INT32 iBestScore = -1000000;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pFriend = MercPtrs[iCounter];
+		if (!pFriend || pFriend->ubID >= MAX_NUM_SOLDIERS ||
+			ubCommHops[pFriend->ubID] == 255 ||
+			ubCommHops[pFriend->ubID] > ubMaxRelayHops ||
+			!pFriend->bActive || !pFriend->bInSector ||
+			pFriend->stats.bLife < OKLIFE || pFriend->bCollapsed ||
+			pFriend->bBreathCollapsed ||
+			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
+			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING))
+		{
+			continue;
+		}
+
+		INT8 bKnowledge = PersonalKnowledge(pFriend, ubOpponentID);
+		INT32 iConfidence = 0;
+		if (bKnowledge == SEEN_CURRENTLY)
+		{
+			// Current state may be validated only by the teammate actually seeing it.
+			if (!pOpponent->bActive || !pOpponent->bInSector ||
+				CONSIDERED_NEUTRAL(pFriend, pOpponent) ||
+				pFriend->bSide == pOpponent->bSide ||
+				LOS_Raised(pFriend, pOpponent, CALC_FROM_ALL_DIRS) <= 0)
+			{
+				continue;
+			}
+			iConfidence = 100;
+		}
+		else if (bKnowledge == SEEN_THIS_TURN)
+			iConfidence = 90;
+		else if (bKnowledge == SEEN_LAST_TURN)
+			iConfidence = 70;
+		else if (bKnowledge == SEEN_2_TURNS_AGO)
+			iConfidence = 50;
+		else if (bKnowledge == HEARD_THIS_TURN)
+			iConfidence = 55;
+		else if (bKnowledge == HEARD_LAST_TURN)
+			iConfidence = 38;
+		else if (bKnowledge == HEARD_2_TURNS_AGO)
+			iConfidence = 22;
+		else
+			continue;
+
+		INT32 sKnownGrid = KnownPersonalLocation(pFriend, ubOpponentID);
+		if (TileIsOutOfBounds(sKnownGrid))
+			continue;
+		INT8 bKnownLevel = KnownPersonalLevel(pFriend, ubOpponentID);
+
+		// Inside the valid local comm graph, evidence age and relay hops
+		// drive uncertainty. Receiver distance/floor do not distort a clear report.
+		iConfidence -= 4 * (INT32)ubCommHops[pFriend->ubID];
+		iConfidence = __max(1, __min(100, iConfidence));
+
+		INT32 iScore = iConfidence * 4 -
+			2 * (INT32)ubCommHops[pFriend->ubID];
+		if (iScore > iBestScore)
+		{
+			iBestScore = iScore;
+			sBestGrid = sKnownGrid;
+			bBestLevel = bKnownLevel;
+			ubBestConfidence = (UINT8)iConfidence;
+			bBestKnowledge = bKnowledge;
+		}
+	}
+
+	if (TileIsOutOfBounds(sBestGrid))
+		return FALSE;
+
+	if (psGridNo) *psGridNo = sBestGrid;
+	if (pbLevel) *pbLevel = bBestLevel;
+	if (pubConfidence) *pubConfidence = ubBestConfidence;
+	if (pbKnowledge) *pbKnowledge = bBestKnowledge;
+	return TRUE;
+}
+
+BOOLEAN AIPlanningContactForOpponent(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID,
+	INT32 *psGridNo, INT8 *pbLevel, UINT8 *pubConfidence, INT8 *pbKnowledge)
+{
+	if (psGridNo) *psGridNo = NOWHERE;
+	if (pbLevel) *pbLevel = 0;
+	if (pubConfidence) *pubConfidence = 0;
+	if (pbKnowledge) *pbKnowledge = NOT_HEARD_OR_SEEN;
+
+	if (!pSoldier || ubOpponentID == NOBODY)
+		return FALSE;
+
+	if (pSoldier->bTeam == ENEMY_TEAM)
+	{
+		return AISharedFireteamOpponentContact(
+			pSoldier, ubOpponentID, psGridNo, pbLevel,
+			pubConfidence, pbKnowledge);
+	}
+
+	INT8 bKnowledge = Knowledge(pSoldier, ubOpponentID);
+	if (bKnowledge == NOT_HEARD_OR_SEEN)
+		return FALSE;
+
+	INT32 sKnownGrid = KnownLocation(pSoldier, ubOpponentID);
+	if (TileIsOutOfBounds(sKnownGrid))
+		return FALSE;
+
+	INT8 bKnownLevel = KnownLevel(pSoldier, ubOpponentID);
+	INT32 iKnowledgeIndex =
+		(INT32)bKnowledge - (INT32)OLDEST_HEARD_VALUE;
+	UINT8 ubConfidence =
+		(iKnowledgeIndex >= 0 && iKnowledgeIndex < 10) ?
+		(UINT8)__max(0, __min(100, ThreatPercent[iKnowledgeIndex])) : 0;
+
+	if (psGridNo) *psGridNo = sKnownGrid;
+	if (pbLevel) *pbLevel = bKnownLevel;
+	if (pubConfidence) *pubConfidence = ubConfidence;
+	if (pbKnowledge) *pbKnowledge = bKnowledge;
+	return TRUE;
+}
+
+static INT32 AIPrimaryPlanningThreatSpot(
+	SOLDIERTYPE *pSoldier, INT8 *pbLevel, UINT8 *pubConfidence)
+{
+	if (pbLevel) *pbLevel = 0;
+	if (pubConfidence) *pubConfidence = 0;
+	if (!pSoldier)
+		return NOWHERE;
+
+	// Enemy planning follows the best bounded local fireteam report, including this
+	// soldier's own contact. This creates one shared tactical picture without writing
+	// anything into Knowledge()/the legacy public opplist.
+	if (pSoldier->bTeam == ENEMY_TEAM)
+	{
+		INT32 sShared = NOWHERE;
+		INT8 bSharedLevel = 0;
+		UINT8 ubSharedConfidence = 0;
+		if (AISharedFireteamContact(
+			pSoldier, &sShared, &bSharedLevel, &ubSharedConfidence) &&
+			!TileIsOutOfBounds(sShared))
+		{
+			if (pbLevel) *pbLevel = bSharedLevel;
+			if (pubConfidence) *pubConfidence = ubSharedConfidence;
+			return sShared;
+		}
+	}
+
+	INT8 bKnownLevel = 0;
+	INT32 sKnown = ClosestKnownOpponent(pSoldier, NULL, &bKnownLevel);
+	if (pbLevel) *pbLevel = bKnownLevel;
+	return sKnown;
 }
 
 static BOOLEAN AIPersonallyConfirmedNonThreat(
@@ -5099,30 +5622,34 @@ BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridN
 		if (!pCandidate || pCandidate == pSoldier)
 			continue;
 
-		INT8 bCandidateKnowledge = Knowledge(pSoldier, pCandidate->ubID);
-		if (bCandidateKnowledge != SEEN_CURRENTLY &&
-			bCandidateKnowledge != SEEN_THIS_TURN &&
-			bCandidateKnowledge != SEEN_LAST_TURN &&
-			bCandidateKnowledge != SEEN_2_TURNS_AGO &&
-			bCandidateKnowledge != HEARD_THIS_TURN &&
-			bCandidateKnowledge != HEARD_LAST_TURN &&
-			bCandidateKnowledge != HEARD_2_TURNS_AGO)
+		INT32 sCandidateSpot = NOWHERE;
+		INT8 bCandidateLevel = 0;
+		INT8 bCandidateKnowledge = NOT_HEARD_OR_SEEN;
+		UINT8 ubCandidateConfidence = 0;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pCandidate->ubID, &sCandidateSpot, &bCandidateLevel,
+			&ubCandidateConfidence, &bCandidateKnowledge))
 		{
 			continue;
 		}
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pCandidate) ||
-			pSoldier->bSide == pCandidate->bSide ||
-			pCandidate->ubBodyType == CROW)
+		// Do not spend scarce indirect fire on very weak/old single contact reports.
+		if (ubCandidateConfidence < 38 || TileIsOutOfBounds(sCandidateSpot))
+			continue;
+
+		const BOOLEAN fCandidateDirect =
+			PersonalKnowledge(pSoldier, pCandidate->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pCandidate, CALC_FROM_ALL_DIRS) > 0;
+
+		if (fCandidateDirect &&
+			(CONSIDERED_NEUTRAL(pSoldier, pCandidate) ||
+			 pSoldier->bSide == pCandidate->bSide ||
+			 pCandidate->ubBodyType == CROW))
 		{
 			continue;
 		}
 
 		if (AIPersonallyConfirmedNonThreat(pSoldier, pCandidate))
-			continue;
-
-		INT32 sCandidateSpot = KnownLocation(pSoldier, pCandidate->ubID);
-		if (TileIsOutOfBounds(sCandidateSpot))
 			continue;
 
 		BOOLEAN fFriendlyDanger = FALSE;
@@ -5132,7 +5659,8 @@ BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridN
 			if (!pFriend || !pFriend->bActive || !pFriend->bInSector ||
 				pFriend->stats.bLife <= 0 ||
 				pFriend->aiData.bNeutral ||
-				pFriend->bSide != pSoldier->bSide)
+				pFriend->bSide != pSoldier->bSide ||
+				(pSoldier->bTeam == ENEMY_TEAM && !AISameFireteam(pSoldier, pFriend)))
 			{
 				continue;
 			}
@@ -5143,9 +5671,6 @@ BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridN
 				break;
 			}
 
-			// Artillery is ordered against an area, not an instantaneous bullet path.
-			// Protect a friendly's already-committed movement destination as well as his
-			// current tile so support is not called onto an advancing/withdrawing element.
 			if (pFriend->aiData.bAction >= FIRST_MOVEMENT_ACTION &&
 				pFriend->aiData.bAction <= LAST_MOVEMENT_ACTION &&
 				!TileIsOutOfBounds(pFriend->aiData.usActionData) &&
@@ -5168,21 +5693,24 @@ BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridN
 			if (!pOpponent || pOpponent == pSoldier)
 				continue;
 
-			INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-			if (bKnowledge != SEEN_CURRENTLY &&
-				bKnowledge != SEEN_THIS_TURN &&
-				bKnowledge != SEEN_LAST_TURN &&
-				bKnowledge != SEEN_2_TURNS_AGO &&
-				bKnowledge != HEARD_THIS_TURN &&
-				bKnowledge != HEARD_LAST_TURN &&
-				bKnowledge != HEARD_2_TURNS_AGO)
+			INT32 sKnownSpot = NOWHERE;
+			INT8 bKnownLevel = 0;
+			INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+			UINT8 ubConfidence = 0;
+			if (!AIPlanningContactForOpponent(
+				pSoldier, pOpponent->ubID, &sKnownSpot, &bKnownLevel,
+				&ubConfidence, &bKnowledge))
 			{
 				continue;
 			}
 
-			if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-				pSoldier->bSide == pOpponent->bSide ||
-				pOpponent->ubBodyType == CROW)
+			const BOOLEAN fOpponentDirect =
+				PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+				LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+			if (fOpponentDirect &&
+				(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+				 pSoldier->bSide == pOpponent->bSide ||
+				 pOpponent->ubBodyType == CROW))
 			{
 				continue;
 			}
@@ -5190,26 +5718,23 @@ BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridN
 			if (AIPersonallyConfirmedNonThreat(pSoldier, pOpponent))
 				continue;
 
-			INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
 			if (TileIsOutOfBounds(sKnownSpot) ||
 				PythSpacesAway(sKnownSpot, sCandidateSpot) > iStrikeRadius)
 			{
 				continue;
 			}
 
-			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
-			iScore += iCertainty;
-			if (iCertainty >= 50)
+			iScore += ubConfidence;
+			if (ubConfidence >= 50)
 				++ubCredibleContacts;
 		}
 
-		// Artillery is a scarce area weapon: require at least two credible reported
-		// contacts, not one speculative/stale enemy location.
+		// Require a cluster: local spotters can call the strike, but one speculative
+		// remembered contact is not enough.
 		if (ubCredibleContacts < 2)
 			continue;
 
-		// Dense local terrain reduces expected effect, consistent with RedSmokeDanger().
-		iScore -= TerrainDensity(sCandidateSpot, 0, 2, FALSE);
+		iScore -= TerrainDensity(sCandidateSpot, bCandidateLevel, 2, FALSE);
 
 		if (iScore > iBestScore)
 		{
@@ -5782,36 +6307,39 @@ UINT16 AIPerceivedEnemyStrength(SOLDIERTYPE *pSoldier)
 		if (!pOpponent || pOpponent == pSoldier)
 			continue;
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		INT32 sKnownSpot = NOWHERE;
+		UINT8 ubContactConfidence = 0;
 
-		// Do not use ValidOpponent() here: it checks actual current life/sector state.
-		// Once a contact is known, relation filters are safe; hidden existence is not.
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sKnownSpot, NULL,
+			&ubContactConfidence, &bKnowledge))
 		{
 			continue;
 		}
 
-		INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW))
+		{
+			continue;
+		}
+
 		if (TileIsOutOfBounds(sKnownSpot) ||
 			PythSpacesAway(pSoldier->sGridNo, sKnownSpot) > TACTICAL_RANGE)
 		{
 			continue;
 		}
 
-		// ThreatPercent already encodes JA2's confidence in seen/heard information:
-		// current sight is strongest; stale contacts count progressively less.
-		UINT32 uiContactStrength = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
+		UINT32 uiContactStrength = ubContactConfidence;
 
-		// A personally observed incapacitated human is still a residual threat because
-		// he may recover or be revived, but he should not count like an active rifleman.
-		// Public/stale contacts keep their normal uncertainty weight.
-		if (PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
-			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0 &&
+		// Only personal current sight can reveal that the contact is incapacitated.
+		if (fDirectVisualContact &&
 			IS_MERC_BODY_TYPE(pOpponent) &&
 			!pOpponent->IsZombie() &&
 			(pOpponent->stats.bLife < OKLIFE ||
@@ -5879,7 +6407,13 @@ BOOLEAN AIBuildTacticalDecisionContext(SOLDIERTYPE *pSoldier, AITACTICALDECISION
 
 	// Build one knowledge-safe snapshot so higher-level reasoners do not independently
 	// rescan and reinterpret the same battlefield state during a single decision.
-	pContext->sPrimaryThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	UINT8 ubSharedPrimaryConfidence = 0;
+	pContext->sPrimaryThreat =
+		AIPrimaryPlanningThreatSpot(pSoldier, NULL, &ubSharedPrimaryConfidence);
+	BOOLEAN fSharedPrimary =
+		pSoldier->bTeam == ENEMY_TEAM &&
+		!TileIsOutOfBounds(pContext->sPrimaryThreat) &&
+		ubSharedPrimaryConfidence > 0;
 	pContext->usPerceivedFriendlyStrength = AIPerceivedFriendlyStrength(pSoldier);
 	pContext->usPerceivedEnemyStrength = AIPerceivedEnemyStrength(pSoldier);
 	pContext->ubFriendlyCasualtyPercent = AIFriendlyCasualtyPercent(pSoldier);
@@ -5902,6 +6436,21 @@ BOOLEAN AIBuildTacticalDecisionContext(SOLDIERTYPE *pSoldier, AITACTICALDECISION
 		pContext->ubPrimaryThreatAge = PrimaryBelief.ubAgeTurns;
 		pContext->fPrimaryThreatPersonal =
 			(PrimaryBelief.ubSource == AI_BELIEF_SOURCE_PERSONAL);
+	}
+	else if (fSharedPrimary && !TileIsOutOfBounds(pContext->sPrimaryThreat))
+	{
+		// Shared fireteam contact has no personal opponent identity here. Carry only
+		// the communication-degraded confidence into the high-level plan.
+		pContext->ubPrimaryThreatConfidence = ubSharedPrimaryConfidence;
+		pContext->fPrimaryThreatPersonal = FALSE;
+		if (ubSharedPrimaryConfidence >= 85)
+			pContext->ubPrimaryThreatAge = 0;
+		else if (ubSharedPrimaryConfidence >= 60)
+			pContext->ubPrimaryThreatAge = 1;
+		else if (ubSharedPrimaryConfidence >= 35)
+			pContext->ubPrimaryThreatAge = 2;
+		else
+			pContext->ubPrimaryThreatAge = 3;
 	}
 
 	pContext->fHasCover = AnyCoverAtSpot(pSoldier, pSoldier->sGridNo);
@@ -7005,6 +7554,17 @@ void AIRegisterTacticalFallback(SOLDIERTYPE *pSoldier)
 	gubAITacticalFallbackUsed[pSoldier->ubID] = 1;
 }
 
+void AIClearTacticalFallbackState(SOLDIERTYPE *pSoldier)
+{
+	AIMaintainDisengagementTimeline();
+
+	if (!pSoldier || pSoldier->ubID >= MAX_NUM_SOLDIERS)
+		return;
+
+	gubAITacticalFallbackUsed[pSoldier->ubID] = 0;
+	guiAITacticalFallbackIdentity[pSoldier->ubID] = pSoldier->uiUniqueSoldierIdValue;
+}
+
 static void AIMaintainCoverMoveMemory(void)
 {
 	UINT32 uiTurnStamp = guiTurnCnt + 1;
@@ -7585,31 +8145,41 @@ UINT16 AIKnownThreatExposure(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		if (!pOpponent || pOpponent == pSoldier)
 			continue;
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
+		INT32 sKnownSpot = NOWHERE;
+		INT8 bKnownLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		UINT8 ubConfidence = 0;
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sKnownSpot, &bKnownLevel,
+			&ubConfidence, &bKnowledge))
 		{
 			continue;
 		}
 
-		INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW))
+		{
+			continue;
+		}
+
 		if (TileIsOutOfBounds(sKnownSpot))
 			continue;
 
-		INT8 bKnownLevel = KnownLevel(pSoldier, pOpponent->ubID);
-		INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
-
-		// Stale/heard contacts still influence caution, but only if their last-known
-		// line could plausibly cover the position within the engine's vision scale.
+		// Reported/stale contacts influence movement only through believed geometry and
+		// confidence. No target weapon, AP, stance, wounds or current position is read.
 		if (PythSpacesAway(sKnownSpot, sSpot) <= MAX_VISION_RANGE &&
-			LocationToLocationLineOfSightTest(sKnownSpot, bKnownLevel, sSpot, bLevel, TRUE, MAX_VISION_RANGE))
+			LocationToLocationLineOfSightTest(
+				sKnownSpot, bKnownLevel, sSpot, bLevel,
+				TRUE, MAX_VISION_RANGE))
 		{
-			uiExposure += iCertainty;
+			uiExposure += ubConfidence;
 		}
 	}
 
@@ -7690,9 +8260,24 @@ BOOLEAN AIKnownRouteExposureAcceptable(
 
 BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier)
 {
+	BOOLEAN fPlayerWithdraw = pSoldier &&
+		pSoldier->bTeam == gbPlayerNum &&
+		AIPlayerTeamCommandActive() &&
+		AIPlayerTeamCommand() == AI_PLAYER_COMMAND_WITHDRAW;
+	BOOLEAN fPlayerAttack = pSoldier &&
+		pSoldier->bTeam == gbPlayerNum &&
+		AIPlayerTeamCommandActive() &&
+		AIPlayerTeamCommand() == AI_PLAYER_COMMAND_ATTACK;
+
+	// ATTACK should not be diluted by the ordinary discretionary fallback gate;
+	// true personal-danger/emergency layers still run earlier and may save the merc.
+	if (fPlayerAttack)
+		return FALSE;
+
 	if (!AICombatTeam(pSoldier) || pSoldier->IsZombie() ||
 		AIHasUsedTacticalFallback(pSoldier) ||
-		pSoldier->aiData.bOrders == STATIONARY || AIShouldAvoidAdvance(pSoldier))
+		(!fPlayerWithdraw &&
+		 (pSoldier->aiData.bOrders == STATIONARY || AIShouldAvoidAdvance(pSoldier))))
 	{
 		return FALSE;
 	}
@@ -7703,6 +8288,12 @@ BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier)
 	{
 		return FALSE;
 	}
+
+	// WITHDRAW is an explicit player order, not a morale vote. Once there is a
+	// legally known threat, let the movement solver evaluate the safest opposite/
+	// weakest-sector bound even if the current tile would otherwise be acceptable.
+	if (fPlayerWithdraw)
+		return TRUE;
 
 	// Do not shuffle a soldier who is currently succeeding from a sound position.
 	if (!Context.fUnderFire &&
@@ -7878,6 +8469,11 @@ static INT8 AIProfessionalismModifier(SOLDIERTYPE *pSoldier)
 	if (!pSoldier)
 		return 0;
 
+	// Enemy class no longer encodes training quality. Every live enemy combatant
+	// represents the same exceptionally drilled force; class only changes resources.
+	if (pSoldier->bTeam == ENEMY_TEAM)
+		return 12;
+
 	INT32 iModifier = 0;
 
 	switch (pSoldier->ubSoldierClass)
@@ -7905,35 +8501,23 @@ static INT8 AIProfessionalismModifier(SOLDIERTYPE *pSoldier)
 // initiative and coordination the soldier's formation plausibly possesses.
 UINT8 AIGetDoctrineProfile(SOLDIERTYPE *pSoldier)
 {
-	// Deidranna doctrine is an ENEMY_TEAM identity layer only. Militia shares the
-	// human-like tactical core, but must not inherit Deidranna command/initiative
-	// restrictions merely because AICombatTeam() also includes MILITIA_TEAM.
+	// Doctrine now describes the mission, not intelligence/training. Every ENEMY_TEAM
+	// combatant uses the same elite tactical brain. Fixed guards remain guard elements
+	// so map assignments still matter; mobile troops use the same elite mobile doctrine
+	// regardless of administrator/army/elite equipment class.
 	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
 		return AI_DOCTRINE_LINE;
 
-	switch (pSoldier->ubSoldierClass)
+	if ((pSoldier->usSoldierFlagMask & SOLDIER_VIP) ||
+		(pSoldier->usSoldierFlagMask & SOLDIER_BODYGUARD) ||
+		pSoldier->aiData.bOrders == STATIONARY ||
+		pSoldier->aiData.bOrders == ONGUARD ||
+		pSoldier->aiData.bOrders == SNIPER)
 	{
-	case SOLDIER_CLASS_ADMINISTRATOR:
-		return AI_DOCTRINE_SECURITY;
-
-	case SOLDIER_CLASS_ELITE:
-		if (pSoldier->aiData.bOrders == STATIONARY ||
-			pSoldier->aiData.bOrders == ONGUARD ||
-			pSoldier->aiData.bOrders == SNIPER)
-			return AI_DOCTRINE_ELITE_GUARD;
-		return AI_DOCTRINE_ELITE_MOBILE;
-
-	case SOLDIER_CLASS_ARMY:
-		// Training/doctrine must come from rank/experience, not a randomly assigned
-		// tactical personality. CUNNING still affects risk/decision style elsewhere,
-		// but it does not promote a line soldier into the veteran doctrine layer.
-		if (AICheckIsLeader(pSoldier) || pSoldier->stats.bExpLevel >= 6)
-			return AI_DOCTRINE_VETERAN;
-		return AI_DOCTRINE_LINE;
-
-	default:
-		return AI_DOCTRINE_LINE;
+		return AI_DOCTRINE_ELITE_GUARD;
 	}
+
+	return AI_DOCTRINE_ELITE_MOBILE;
 }
 
 BOOLEAN AIHasLocalCommandSupport(SOLDIERTYPE *pSoldier)
@@ -8004,24 +8588,16 @@ BOOLEAN AIAllowsComplexManeuver(SOLDIERTYPE *pSoldier)
 {
 	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM) return TRUE;
 
-	// A living General commands while subordinates remain. He can still fight,
-	// move, seek cover and use ordinary attacks, but should not become the breach/
-	// utility specialist simply because the fireteam is small.
+	// Intelligence is universal. The only remaining restriction is an explicit
+	// mission role: a protected General commands while subordinates remain instead
+	// of becoming the breach/utility specialist himself.
 	if ((pSoldier->usSoldierFlagMask & SOLDIER_VIP) &&
 		AICombatTeamOperationalCount(pSoldier) > 1)
 	{
 		return FALSE;
 	}
 
-	// Basic tactical competence is universal when a force is down to a small team.
-	// Experience still controls the more elaborate choices inside those systems.
-	if (AISmallUnitTeamMode(pSoldier)) return TRUE;
-	switch (AIGetDoctrineProfile(pSoldier))
-	{
-	case AI_DOCTRINE_SECURITY: return FALSE;
-	case AI_DOCTRINE_LINE: return AIHasLocalCommandSupport(pSoldier);
-	default: return TRUE;
-	}
+	return TRUE;
 }
 
 static BOOLEAN AIHasOperationalGeneralInSector(void)
@@ -8062,12 +8638,6 @@ BOOLEAN AIAllowsIndependentFlank(SOLDIERTYPE *pSoldier)
 	{
 		return FALSE;
 	}
-	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
-	if (ubDoctrine == AI_DOCTRINE_SECURITY)
-		return AISmallUnitTeamMode(pSoldier) && AIFireteamCombatReadyCount(pSoldier) >= 3;
-	if (ubDoctrine == AI_DOCTRINE_LINE)
-		return AIHasLocalCommandSupport(pSoldier) ||
-			(AISmallUnitTeamMode(pSoldier) && AIFireteamCombatReadyCount(pSoldier) >= 3);
 	return TRUE;
 }
 
@@ -8075,12 +8645,8 @@ BOOLEAN AIAllowsProactiveSupport(SOLDIERTYPE *pSoldier)
 {
 	if (!pSoldier) return FALSE;
 	if (AIDisengagementActive(pSoldier) || AIEscapeActive(pSoldier)) return FALSE;
-	if (pSoldier->bTeam != ENEMY_TEAM) return TRUE;
-	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
-	if (ubDoctrine == AI_DOCTRINE_SECURITY)
-		return AISmallUnitTeamMode(pSoldier) && AIFireteamCombatReadyCount(pSoldier) >= 2;
-	if (ubDoctrine == AI_DOCTRINE_LINE)
-		return AIHasLocalCommandSupport(pSoldier) || AISmallUnitTeamMode(pSoldier);
+	// Every live enemy is trained to provide initiative-based local support.
+	// Weapon/AP/LOS/risk constraints still determine what support is physically legal.
 	return TRUE;
 }
 
@@ -8090,15 +8656,10 @@ UINT8 AIDoctrineResponseLimit(SOLDIERTYPE *pSoldier)
 		return 4;
 
 	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
-	UINT8 ubLimit = 4;
-	switch (ubDoctrine)
-	{
-	case AI_DOCTRINE_SECURITY:     ubLimit = 2; break;
-	case AI_DOCTRINE_LINE:         ubLimit = 4; break;
-	case AI_DOCTRINE_VETERAN:      ubLimit = 5; break;
-	case AI_DOCTRINE_ELITE_MOBILE: ubLimit = 6; break;
-	case AI_DOCTRINE_ELITE_GUARD:  ubLimit = 4; break;
-	}
+	// ENEMY_TEAM doctrine has only two live tactical meanings now:
+	// mobile elite element or objective-bound elite guard/command element.
+	// Old SECURITY/LINE/VETERAN response limits represented obsolete competence tiers.
+	UINT8 ubLimit = (ubDoctrine == AI_DOCTRINE_ELITE_GUARD) ? 4 : 6;
 
 	// ONCALL is the natural QRF order. SEEKENEMY has more freedom, but does not
 	// empty a garrison as aggressively as a designated response element.
@@ -8115,8 +8676,6 @@ UINT8 AIDoctrineResponseLimit(SOLDIERTYPE *pSoldier)
 	if (ubAuthority >= 7 && pSoldier->aiData.bOrders == ONCALL)
 		ubLimit += 1;
 
-	if (ubDoctrine == AI_DOCTRINE_SECURITY && ubLimit > 3)
-		ubLimit = 3;
 
 	return __min((UINT8)8, ubLimit);
 }
@@ -8126,36 +8685,9 @@ INT8 AIDoctrineAnchorModifier(SOLDIERTYPE *pSoldier)
 	if (!pSoldier || pSoldier->bTeam != ENEMY_TEAM)
 		return 0;
 
-	UINT8 ubDoctrine = AIGetDoctrineProfile(pSoldier);
-	switch (ubDoctrine)
-	{
-	case AI_DOCTRINE_SECURITY:
-		switch (pSoldier->aiData.bOrders)
-		{
-		case STATIONARY: return -6;
-		case ONGUARD: return -5;
-		case CLOSEPATROL:
-		case POINTPATROL:
-		case RNDPTPATROL: return -3;
-		default: return -1;
-		}
-
-	case AI_DOCTRINE_LINE:
-		if (pSoldier->aiData.bOrders == STATIONARY || pSoldier->aiData.bOrders == ONGUARD)
-			return -2;
-		if (pSoldier->aiData.bOrders == CLOSEPATROL)
-			return -1;
-		return 0;
-
-	case AI_DOCTRINE_VETERAN:
-		return (pSoldier->aiData.bOrders == STATIONARY) ? -1 : 0;
-
-	case AI_DOCTRINE_ELITE_GUARD:
-		return -3;
-
-	default:
-		return 0;
-	}
+	// Mission posture only: fixed/objective guard elements are anchored;
+	// mobile elite elements are not. This does not represent an intelligence tier.
+	return (AIGetDoctrineProfile(pSoldier) == AI_DOCTRINE_ELITE_GUARD) ? -3 : 0;
 }
 // Individual willingness to accept danger. Personality and current morale change
 // the threshold, but no ordinary attitude makes a soldier completely suicidal.
@@ -8190,6 +8722,11 @@ INT32 AIPersonalRiskTolerance(SOLDIERTYPE *pSoldier)
 
 	iTolerance += AIProfessionalismModifier(pSoldier);
 
+	// Enemy troops are universally brave and psychologically steady, but still
+	// respect catastrophic danger, suppression and organized disengagement logic.
+	if (pSoldier->bTeam == ENEMY_TEAM)
+		return __max(70, __min(88, iTolerance));
+
 	return __max(20, __min(85, iTolerance));
 }
 
@@ -8209,7 +8746,7 @@ INT32 AISupportRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	}
 
 	if (TileIsOutOfBounds(sTargetSpot))
-		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 
 	INT32 iScore = 20;
 	INT32 iGunRange = __max(1, (INT32)AIGunRange(pSoldier) / CELL_X_SIZE);
@@ -8299,7 +8836,7 @@ INT32 AIManeuverRoleScore(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	}
 
 	if (TileIsOutOfBounds(sTargetSpot))
-		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 
 	INT32 iHealthPercent = pSoldier->stats.bLifeMax > 0 ?
 		(100 * pSoldier->stats.bLife) / pSoldier->stats.bLifeMax : 0;
@@ -8413,7 +8950,7 @@ INT32 AICrossfirePositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT3
 			continue;
 		}
 
-		INT32 sFriendThreat = ClosestKnownOpponent(pFriend, NULL, NULL);
+		INT32 sFriendThreat = AIPrimaryPlanningThreatSpot(pFriend);
 		if (TileIsOutOfBounds(sFriendThreat) || PythSpacesAway(sFriendThreat, sTargetSpot) > 3)
 			continue;
 
@@ -8456,7 +8993,7 @@ INT8 AIAdvanceSupportModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		return 0;
 
 	if (TileIsOutOfBounds(sTargetSpot))
-		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 
 	UINT8 ubNearbyFriends = 0;
 	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
@@ -8533,8 +9070,9 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 	BOOLEAN fComplexDoctrine = AIAllowsComplexManeuver(pSoldier);
 	UINT8 ubEffectiveFire = AIFireteamEffectiveFireSupport(pSoldier, sTargetSpot);
 
-	// Lower-quality formations can still make sensible covered advances, but do not
-	// independently solve exposed manoeuvre problems like a professional fireteam.
+	// A mission-role-restricted command/guard element can still make a sensible covered
+	// advance, but should not abandon its assignment for exposed manoeuvre. Ordinary
+	// ENEMY_TEAM mobile elements always retain full professional manoeuvre reasoning.
 	if (AICombatTeam(pSoldier) && !fComplexDoctrine && iAdvanceDist + 2 < iCurrentDist)
 	{
 		if (ubDoctrine == AI_DOCTRINE_SECURITY &&
@@ -8565,17 +9103,36 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 		BOOLEAN fSmallTeam = ubSmallTeamReady >= 2 && ubSmallTeamReady <= 5;
 		UINT8 ubMoverLimit = fSmallTeam ? (ubSmallTeamReady >= 4 ? 2 : 1) :
 			(fComplexDoctrine ? 2 : 1);
-		INT32 iMoverJitter = (fComplexDoctrine && !fSmallTeam) ? AIBoundedElementJitter(pSoldier,
-			(UINT32)(sTargetSpot + 101), 6) : 0;
 
-		// Professional/veteran fireteams vary their bound size. Uncommanded line and
-		// security elements use a simple one-mover-at-a-time rule instead.
-		if (fComplexDoctrine && !fSmallTeam && iMoverJitter <= -4)
-			ubMoverLimit = 1;
-		else if (fComplexDoctrine && !fSmallTeam && iMoverJitter >= 5 &&
-			AILocalStress(pSoldier) < 20 &&
-			AICheckWeOutnumberLocal(pSoldier, sTargetSpot))
-			ubMoverLimit = 3;
+		if (pSoldier->bTeam == ENEMY_TEAM && !fSmallTeam)
+		{
+			// Grandmaster-style bounding: the element size follows the board state,
+			// never a random competence roll. Weak/no covering fire means one mover;
+			// a protected local advantage can justify a three-man exploitation bound.
+			if (ubEffectiveFire == 0 &&
+				(!fAdvanceCover || usAdvanceExposure > usCurrentExposure + 40))
+			{
+				ubMoverLimit = 1;
+			}
+			else if (ubEffectiveFire >= 2 &&
+				fAdvanceCover &&
+				AILocalStress(pSoldier) < 20 &&
+				AICheckWeOutnumberLocal(pSoldier, sTargetSpot))
+			{
+				ubMoverLimit = 3;
+			}
+		}
+		else if (fComplexDoctrine && !fSmallTeam)
+		{
+			INT32 iMoverJitter = AIBoundedElementJitter(pSoldier,
+				(UINT32)(sTargetSpot + 101), 6);
+			if (iMoverJitter <= -4)
+				ubMoverLimit = 1;
+			else if (iMoverJitter >= 5 &&
+				AILocalStress(pSoldier) < 20 &&
+				AICheckWeOutnumberLocal(pSoldier, sTargetSpot))
+				ubMoverLimit = 3;
+		}
 
 		// Capability-aware bounding: if enough healthier/more mobile nearby soldiers
 		// are materially better maneuver candidates, this soldier remains part of the
@@ -8600,7 +9157,7 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 				continue;
 			}
 
-			INT32 sCandidateThreat = ClosestKnownOpponent(pCandidate, NULL, NULL);
+			INT32 sCandidateThreat = AIPrimaryPlanningThreatSpot(pCandidate);
 			if (TileIsOutOfBounds(sCandidateThreat) ||
 				PythSpacesAway(sCandidateThreat, sTargetSpot) > 3)
 			{
@@ -8640,7 +9197,7 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 				continue;
 			}
 
-			INT32 sFriendThreat = ClosestKnownOpponent(pFriend, NULL, NULL);
+			INT32 sFriendThreat = AIPrimaryPlanningThreatSpot(pFriend);
 			if (TileIsOutOfBounds(sFriendThreat) ||
 				PythSpacesAway(sFriendThreat, sTargetSpot) > 3)
 			{
@@ -8730,7 +9287,7 @@ BOOLEAN AIAdvanceHasMutualSupport(SOLDIERTYPE *pSoldier, INT32 sAdvanceSpot, INT
 
 		// The covering soldier must independently know about essentially the same
 		// contact. This prevents a hidden-information squad hive mind.
-		INT32 sFriendThreat = ClosestKnownOpponent(pFriend, NULL, NULL);
+		INT32 sFriendThreat = AIPrimaryPlanningThreatSpot(pFriend);
 		if (TileIsOutOfBounds(sFriendThreat) ||
 			PythSpacesAway(sFriendThreat, sTargetSpot) > 3)
 		{
@@ -8912,7 +9469,7 @@ INT8 AIEngagementRangeModifier(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		return 0;
 
 	if (TileIsOutOfBounds(sTargetSpot))
-		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 
 	if (TileIsOutOfBounds(sTargetSpot))
 		return 0;
@@ -9040,7 +9597,7 @@ UINT8 AIFireteamEffectiveFireSupport(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		return 0;
 
 	if (TileIsOutOfBounds(sTargetSpot))
-		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 	if (TileIsOutOfBounds(sTargetSpot))
 		return 0;
 
@@ -9055,7 +9612,7 @@ UINT8 AIFireteamEffectiveFireSupport(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
 			(pFriend->flags.uiStatusFlags & SOLDIER_COWERING) ||
 			AIDisengagementActive(pFriend) || AIEscapeActive(pFriend) ||
-			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > __max(6, DAY_VISION_RANGE / 2))
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > __max(8, DAY_VISION_RANGE))
 		{
 			continue;
 		}
@@ -9087,10 +9644,11 @@ UINT8 AIFireteamEffectiveFireSupport(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	return ubSupport;
 }
 
-// Basic fire-and-manoeuvre is ordinary unit behaviour, not an elite trick. The
-// sophisticated parts (deep flank, exposed improvisation, breach doctrine) remain
-// competence-gated; this helper only authorizes a local covered manoeuvre when the
-// fireteam has a credible reason to act together.
+// Basic fire-and-manoeuvre is ordinary enemy unit behaviour, not an elite-only trick.
+// Deep flank, exposed improvisation and breach actions may still be rejected by mission
+// role, route safety or missing support, but ENEMY_TEAM is never competence-gated.
+// This helper authorizes a local covered manoeuvre when the fireteam has a credible
+// reason to act together.
 BOOLEAN AIBasicFireteamManeuverReady(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 {
 	if (!pSoldier || !AICombatTeam(pSoldier) ||
@@ -9101,7 +9659,7 @@ BOOLEAN AIBasicFireteamManeuverReady(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	}
 
 	if (TileIsOutOfBounds(sTargetSpot))
-		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 	if (TileIsOutOfBounds(sTargetSpot))
 		return FALSE;
 
@@ -9123,16 +9681,11 @@ BOOLEAN AIBasicFireteamManeuverReady(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	INT32 iApproachPressure = AISharedApproachPressure(pSoldier, sTargetSpot);
 	BOOLEAN fCommandSupport = AIHasLocalCommandSupport(pSoldier);
 
-	// Security troops without leadership do not improvise an offensive flank merely
-	// because geometry permits one. They can still exploit actual covering fire.
-	if (pSoldier->bTeam == ENEMY_TEAM &&
-		AIGetDoctrineProfile(pSoldier) == AI_DOCTRINE_SECURITY &&
-		!fCommandSupport && ubEffectiveFire == 0)
-	{
-		return FALSE;
-	}
-
-	return ubEffectiveFire > 0 || iApproachPressure >= 30 || fCommandSupport;
+	// Top-tier fireteams do not need a doctrine permission flag to understand
+	// fire-and-manoeuvre. Small elements still need a genuine enabling cue; larger
+	// elements can organically establish a base of fire and a manoeuvre element.
+	return ubEffectiveFire > 0 || iApproachPressure >= 20 || fCommandSupport ||
+		AIFireteamCombatReadyCount(pSoldier) >= 4;
 }
 
 // Check whether this target is directly threatening a nearby ally who needs
@@ -9154,7 +9707,7 @@ for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
 			pFriend->bCollapsed ||
 			pFriend->bBreathCollapsed ||
 			(pFriend->usSoldierFlagMask & SOLDIER_POW) ||
-			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE / 2)
+			PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo) > DAY_VISION_RANGE)
 		{
 			continue;
 		}
@@ -9216,7 +9769,7 @@ static BOOLEAN AIEligibleWithdrawalCoverer(SOLDIERTYPE *pCandidate, SOLDIERTYPE 
 		return FALSE;
 	}
 
-	INT32 sThreat = ClosestKnownOpponent(pCandidate, NULL, NULL);
+	INT32 sThreat = AIPrimaryPlanningThreatSpot(pCandidate);
 	if (TileIsOutOfBounds(sThreat))
 		return FALSE;
 
@@ -9301,10 +9854,13 @@ static INT32 AIWithdrawalCoverScore(SOLDIERTYPE *pCandidate, SOLDIERTYPE *pRetre
 	iScore -= __min((INT32)20,
 		PythSpacesAway(pCandidate->sGridNo, pRetreating->sGridNo));
 
-	// Close candidates should not always resolve to the same rear guard. The
-	// jitter is stable for this tactical turn, so repeated AI checks do not thrash.
-	iScore += AIBoundedDecisionJitter(pCandidate,
-		pRetreating->uiUniqueSoldierIdValue + 17u, 6);
+	// Enemy rear guards are chosen by tactical merit, not by an artificial mistake
+	// roll. Non-enemy AI keeps bounded variation among otherwise close candidates.
+	if (pCandidate->bTeam != ENEMY_TEAM)
+	{
+		iScore += AIBoundedDecisionJitter(pCandidate,
+			pRetreating->uiUniqueSoldierIdValue + 17u, 6);
+	}
 
 	return iScore;
 }
@@ -9411,15 +9967,30 @@ BOOLEAN AIFriendWithdrawingNeedsCover(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID)
 		}
 
 		INT8 bKnowledge = PersonalKnowledge(pFriend, ubOpponentID);
-		if (bKnowledge != SEEN_CURRENTLY &&
-			bKnowledge != SEEN_THIS_TURN &&
-			bKnowledge != SEEN_LAST_TURN &&
-			bKnowledge != HEARD_THIS_TURN)
+		INT32 sThreat = NOWHERE;
+		if (bKnowledge == SEEN_CURRENTLY ||
+			bKnowledge == SEEN_THIS_TURN ||
+			bKnowledge == SEEN_LAST_TURN ||
+			bKnowledge == HEARD_THIS_TURN)
 		{
-			continue;
+			sThreat = KnownPersonalLocation(pFriend, ubOpponentID);
 		}
-
-		INT32 sThreat = KnownPersonalLocation(pFriend, ubOpponentID);
+		else if (pFriend->bTeam == ENEMY_TEAM)
+		{
+			// The withdrawing soldier may act on the fireteam's shared contact without
+			// learning an opponent identity. The covering shooter still needs its own
+			// legal knowledge of ubOpponentID before this helper can result in fire.
+			INT32 sSharedThreat = NOWHERE;
+			UINT8 ubSharedConfidence = 0;
+			INT32 sShooterThreat = KnownLocation(pSoldier, ubOpponentID);
+			if (AISharedFireteamContact(pFriend, &sSharedThreat, NULL, &ubSharedConfidence) &&
+				ubSharedConfidence >= 50 &&
+				!TileIsOutOfBounds(sShooterThreat) &&
+				PythSpacesAway(sSharedThreat, sShooterThreat) <= 3)
+			{
+				sThreat = sSharedThreat;
+			}
+		}
 		if (TileIsOutOfBounds(sThreat))
 			continue;
 
@@ -9480,19 +10051,30 @@ BOOLEAN AIFriendAdvancingNeedsCover(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID)
 			continue;
 		}
 
-		// Require recent personal knowledge of this exact opponent. The covering
-		// soldier can react to what his teammate is visibly doing, but the mover
-		// must have his own recent contact rather than borrowing omniscient sector data.
+		// The mover can use a local shared contact for coordination, but not for attack
+		// authorization. The covering shooter still owns the exact opponent identity.
 		INT8 bKnowledge = PersonalKnowledge(pFriend, ubOpponentID);
-		if (bKnowledge != SEEN_CURRENTLY &&
-			bKnowledge != SEEN_THIS_TURN &&
-			bKnowledge != SEEN_LAST_TURN &&
-			bKnowledge != HEARD_THIS_TURN)
+		INT32 sKnownThreat = NOWHERE;
+		if (bKnowledge == SEEN_CURRENTLY ||
+			bKnowledge == SEEN_THIS_TURN ||
+			bKnowledge == SEEN_LAST_TURN ||
+			bKnowledge == HEARD_THIS_TURN)
 		{
-			continue;
+			sKnownThreat = KnownPersonalLocation(pFriend, ubOpponentID);
 		}
-
-		INT32 sKnownThreat = KnownPersonalLocation(pFriend, ubOpponentID);
+		else if (pFriend->bTeam == ENEMY_TEAM)
+		{
+			INT32 sSharedThreat = NOWHERE;
+			UINT8 ubSharedConfidence = 0;
+			INT32 sShooterThreat = KnownLocation(pSoldier, ubOpponentID);
+			if (AISharedFireteamContact(pFriend, &sSharedThreat, NULL, &ubSharedConfidence) &&
+				ubSharedConfidence >= 50 &&
+				!TileIsOutOfBounds(sShooterThreat) &&
+				PythSpacesAway(sSharedThreat, sShooterThreat) <= 3)
+			{
+				sKnownThreat = sSharedThreat;
+			}
+		}
 		if (TileIsOutOfBounds(sKnownThreat))
 			continue;
 
@@ -9670,7 +10252,7 @@ UINT8 CountFriendsFlankSameSpot(SOLDIERTYPE *pSoldier, INT32 sSpot)
 
 	if (TileIsOutOfBounds(sSpot))
 	{
-		sSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		sSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 	}
 
 	if (TileIsOutOfBounds(sSpot))
@@ -9957,34 +10539,37 @@ static BOOLEAN AIKnownThreatHasSightToSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, B
 		if (!pOpponent)
 			continue;
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
-
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
+		INT32 sThreatLoc = NOWHERE;
+		INT8 bThreatLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		UINT8 ubConfidence = 0;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sThreatLoc, &bThreatLevel,
+			&ubConfidence, &bKnowledge))
 		{
 			continue;
 		}
 
 		const BOOLEAN fThreatStateKnown =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
-			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
 
-		if (fThreatStateKnown && !ValidOpponent(pSoldier, pOpponent))
+		if (fThreatStateKnown &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW ||
+			 !ValidOpponent(pSoldier, pOpponent)))
+		{
 			continue;
+		}
 
-		INT32 sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		INT8 bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
 		if (TileIsOutOfBounds(sThreatLoc))
 			continue;
 
 		UINT16 usAdjustedSight;
 		if (fThreatStateKnown)
 		{
-			// Personal sight can legitimately use the observer's actual vision state.
 			INT16 sSightAdjustment =
 				GetSightAdjustment(pOpponent, pSoldier, sSpot, pSoldier->pathing.bLevel, ubTargetStance);
 
@@ -9998,10 +10583,9 @@ static BOOLEAN AIKnownThreatHasSightToSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, B
 		}
 		else
 		{
-			// Stale/heard contacts have a believed firing/observation sector, not access
-			// to hidden current optics, stance, breath, wounds or weapon-ready state.
-			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
-			usAdjustedSight = (UINT16)max(1, (MAX_VISION_RANGE * iCertainty) / 100);
+			// Teammate reports and stale contacts use only reported confidence.
+			usAdjustedSight = (UINT16)max(1,
+				(MAX_VISION_RANGE * (INT32)ubConfidence) / 100);
 		}
 
 		if ((fUnlimited &&
@@ -10015,8 +10599,7 @@ static BOOLEAN AIKnownThreatHasSightToSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, B
 			return TRUE;
 		}
 
-		// Predict a one-tile reposition only for a currently observed opponent. Doing
-		// this for stale contacts lets hidden current movement/body state leak into cover.
+		// Predict movement only for an opponent this soldier personally sees.
 		if (fThreatStateKnown && gfTurnBasedAI)
 		{
 			for (UINT8 ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ++ubDirection)
@@ -10100,8 +10683,8 @@ UINT8 SpotDangerLevel(SOLDIERTYPE *pSoldier, INT32 sGridNo)
 	}
 
 	// Once alerted, stepping into illumination at night is a meaningful exposure cost.
-	if ((pSoldier->aiData.bAlertStatus >= STATUS_RED ||
-		 pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE ||
+	if ((pSoldier->bTeam == ENEMY_TEAM ||
+		 pSoldier->aiData.bAlertStatus >= STATUS_RED ||
 		 pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA) &&
 		(InLightAtNight(sGridNo, pSoldier->pathing.bLevel) ||
 		 FindNearbyExplosiveStructure(sGridNo, pSoldier->pathing.bLevel)))
@@ -10151,30 +10734,33 @@ BOOLEAN CheckDangerousDirection(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		if (!pOpponent)
 			continue;
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
-
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
+		INT32 sThreatLoc = NOWHERE;
+		INT8 bThreatLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		UINT8 ubConfidence = 0;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sThreatLoc, &bThreatLevel,
+			&ubConfidence, &bKnowledge))
 		{
 			continue;
 		}
 
 		const BOOLEAN fThreatStateKnown =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
-			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
 
 		if (fThreatStateKnown &&
-			(!ValidOpponent(pSoldier, pOpponent) || pOpponent->IsUnconscious() || pOpponent->IsEmptyVehicle()))
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW ||
+			 !ValidOpponent(pSoldier, pOpponent) ||
+			 pOpponent->IsUnconscious() ||
+			 pOpponent->IsEmptyVehicle()))
 		{
 			continue;
 		}
 
-		INT32 sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		INT8 bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
 		if (TileIsOutOfBounds(sThreatLoc))
 			continue;
 
@@ -10183,19 +10769,17 @@ BOOLEAN CheckDangerousDirection(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		{
 			INT16 sSightAdjustment =
 				GetSightAdjustment(pOpponent, pSoldier, sSpot, pSoldier->pathing.bLevel, ANIM_STAND);
-
 			gbForceWeaponNotReady = true;
 			UINT16 usSightLimit =
 				pOpponent->GetMaxDistanceVisible(sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
 			gbForceWeaponNotReady = false;
-
 			usAdjustedSight = max((UINT16)1,
 				(UINT16)(usSightLimit + usSightLimit * sSightAdjustment / 100));
 		}
 		else
 		{
-			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
-			usAdjustedSight = (UINT16)max(1, (MAX_VISION_RANGE * iCertainty) / 100);
+			usAdjustedSight = (UINT16)max(1,
+				(MAX_VISION_RANGE * (INT32)ubConfidence) / 100);
 		}
 
 		UINT8 ubDirection = AIDirection(sThreatLoc, sSpot);
@@ -10478,7 +11062,11 @@ UINT32 CountSuspicionValue( SOLDIERTYPE *pSoldier )
 			// -----------------------------------------------------------------------------------------------------
 			// calculate basic value 
 
-			uiValue = 1 + SoldierDifficultyLevel( pOpponent );
+			// Suspicion is reasoning over information already perceived, not a vision
+			// bonus. Every enemy therefore scrutinizes the same evidence at the top
+			// tactical level; non-enemy legacy AI keeps its configured difficulty tier.
+			uiValue = 1 + ((pOpponent->bTeam == ENEMY_TEAM) ?
+				4 : SoldierDifficultyLevel(pOpponent));
 			// Command personnel scrutinise suspicious behaviour more effectively.
 			if (HAS_SKILL_TRAIT( pOpponent, SQUADLEADER_NT ) )
 			{
@@ -10822,25 +11410,29 @@ BOOLEAN GuyKnowsEnemyPosition( SOLDIERTYPE * pSoldier )
 		if (!pOpponent)
 			continue;
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
-
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
+		INT32 sKnownSpot = NOWHERE;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sKnownSpot, NULL, NULL, &bKnowledge))
 		{
 			continue;
 		}
 
-		// Only a current contact may disappear because of its live engine state.
-		if (PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
-			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0 &&
-			!ValidOpponent(pSoldier, pOpponent))
-			continue;
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
 
-		if (!TileIsOutOfBounds(KnownLocation(pSoldier, pOpponent->ubID)))
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW ||
+			 !ValidOpponent(pSoldier, pOpponent)))
+		{
+			continue;
+		}
+
+		if (!TileIsOutOfBounds(sKnownSpot))
 			return TRUE;
 	}
 
@@ -11617,7 +12209,7 @@ BOOLEAN AICheckSuccessfulAttack(SOLDIERTYPE *pSoldier, BOOLEAN fGroup)
 		return TRUE;
 	}
 
-	INT32 sClosestOpponent = ClosestKnownOpponent(pSoldier, NULL, NULL);
+	INT32 sClosestOpponent = AIPrimaryPlanningThreatSpot(pSoldier);
 	if (fGroup &&
 		!TileIsOutOfBounds(sClosestOpponent) &&
 		CountFriendsLastAttackHit(pSoldier, sClosestOpponent, DAY_VISION_RANGE))
@@ -11635,17 +12227,17 @@ BOOLEAN AICheckWeOutnumberSector(SOLDIERTYPE *pSoldier)
 	UINT8 ubNumFriends = 0;
 	UINT8 ubNumOpponents = 0;
 
-	// Sector strength must reflect what this soldier/team can actually know.
-	// Friendly condition is legitimate team information; enemy condition is not.
 	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
 	{
 		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
 		if (!pOpponent)
 			continue;
 
-		if (pOpponent->bTeam == pSoldier->bTeam || pOpponent->bSide == pSoldier->bSide)
+		if (pOpponent->bTeam == pSoldier->bTeam ||
+			pOpponent->bSide == pSoldier->bSide)
 		{
-			if (pOpponent->bActive && pOpponent->bInSector && pOpponent->stats.bLife >= OKLIFE &&
+			if (pOpponent->bActive && pOpponent->bInSector &&
+				pOpponent->stats.bLife >= OKLIFE &&
 				!(pOpponent->usSoldierFlagMask & SOLDIER_POW))
 			{
 				++ubNumFriends;
@@ -11653,33 +12245,30 @@ BOOLEAN AICheckWeOutnumberSector(SOLDIERTYPE *pSoldier)
 			continue;
 		}
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
-
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
+		INT32 sKnownSpot = NOWHERE;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sKnownSpot, NULL, NULL, &bKnowledge))
 		{
 			continue;
 		}
 
 		const BOOLEAN fDirectVisualContact =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
-			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
 
-		// Only direct current observation can remove a known contact because of live
-		// casualty/capture/sector state. Stale contacts remain possible threats until
-		// knowledge itself expires.
 		if (fDirectVisualContact &&
-			(!ValidOpponent(pSoldier, pOpponent) ||
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW ||
+			 !ValidOpponent(pSoldier, pOpponent) ||
 			 pOpponent->IsUnconscious() ||
 			 (pOpponent->usSoldierFlagMask & SOLDIER_POW)))
 		{
 			continue;
 		}
 
-		if (TileIsOutOfBounds(KnownLocation(pSoldier, pOpponent->ubID)))
+		if (TileIsOutOfBounds(sKnownSpot))
 			continue;
 
 		++ubNumOpponents;
@@ -11794,15 +12383,61 @@ BOOLEAN AnyCoverAtSpot( SOLDIERTYPE *pSoldier, INT32 sSpot )
 	CHECKF(pSoldier);
 	CHECKF(!TileIsOutOfBounds(sSpot));
 
-	INT32 sOpponentSpot;
-	INT8 bOpponentLevel;
-	INT32 sClosestOpponent = ClosestKnownOpponent(pSoldier, &sOpponentSpot, &bOpponentLevel);
-	if (TileIsOutOfBounds(sClosestOpponent))
+	INT32 sClosestThreat = NOWHERE;
+	INT8 bClosestThreatLevel = 0;
+	INT32 iClosestRange = 0x7FFFFFFF;
+
+	// First establish the nearest believed threat using the same planning-only
+	// contact model used by the movement/risk system.
+	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
+	{
+		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
+		if (!pOpponent)
+			continue;
+
+		INT32 sThreatLoc = NOWHERE;
+		INT8 bThreatLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sThreatLoc, &bThreatLevel, NULL, &bKnowledge))
+		{
+			continue;
+		}
+
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW ||
+			 !ValidOpponent(pSoldier, pOpponent)))
+		{
+			continue;
+		}
+
+		if (TileIsOutOfBounds(sThreatLoc))
+			continue;
+
+		INT32 iRange = PythSpacesAway(sSpot, sThreatLoc);
+		if (iRange < iClosestRange)
+		{
+			iClosestRange = iRange;
+			sClosestThreat = sThreatLoc;
+			bClosestThreatLevel = bThreatLevel;
+		}
+	}
+
+	if (TileIsOutOfBounds(sClosestThreat))
 		return FALSE;
 
-	// There must at least be physical cover from the closest believed threat.
-	if (!AnyCoverFromSpot(sSpot, pSoldier->pathing.bLevel, sOpponentSpot, bOpponentLevel))
+	if (!AnyCoverFromSpot(
+		sSpot, pSoldier->pathing.bLevel,
+		sClosestThreat, bClosestThreatLevel))
+	{
 		return FALSE;
+	}
 
 	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
 	{
@@ -11810,67 +12445,82 @@ BOOLEAN AnyCoverAtSpot( SOLDIERTYPE *pSoldier, INT32 sSpot )
 		if (!pOpponent)
 			continue;
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
-
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
+		INT32 sThreatLoc = NOWHERE;
+		INT8 bThreatLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		UINT8 ubConfidence = 0;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sThreatLoc, &bThreatLevel,
+			&ubConfidence, &bKnowledge))
 		{
 			continue;
 		}
 
 		const BOOLEAN fThreatStateKnown =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
-			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
-		if (fThreatStateKnown && !ValidOpponent(pSoldier, pOpponent))
-			continue;
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
 
-		INT32 sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		INT8 bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
+		if (fThreatStateKnown &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW ||
+			 !ValidOpponent(pSoldier, pOpponent)))
+		{
+			continue;
+		}
+
 		if (TileIsOutOfBounds(sThreatLoc))
 			continue;
 
 		INT32 iVisibilityRange;
 		if (fThreatStateKnown)
 		{
-			iVisibilityRange = pOpponent->GetMaxDistanceVisible(sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
+			iVisibilityRange =
+				pOpponent->GetMaxDistanceVisible(
+					sSpot, pSoldier->pathing.bLevel, CALC_FROM_ALL_DIRS);
 		}
 		else
 		{
-			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
-			iVisibilityRange = max(1, (MAX_VISION_RANGE * iCertainty) / 100);
+			iVisibilityRange = max(1,
+				(MAX_VISION_RANGE * (INT32)ubConfidence) / 100);
 		}
 
-		if (!AnyCoverFromSpot(sSpot, pSoldier->pathing.bLevel, sThreatLoc, bThreatLevel) &&
+		if (!AnyCoverFromSpot(
+				sSpot, pSoldier->pathing.bLevel,
+				sThreatLoc, bThreatLevel) &&
 			PythSpacesAway(sSpot, sThreatLoc) <= iVisibilityRange &&
-			LocationToLocationLineOfSightTest(sThreatLoc, bThreatLevel, sSpot, pSoldier->pathing.bLevel,
+			LocationToLocationLineOfSightTest(
+				sThreatLoc, bThreatLevel, sSpot, pSoldier->pathing.bLevel,
 				TRUE, iVisibilityRange, STANDING_LOS_POS, PRONE_LOS_POS))
 		{
 			return FALSE;
 		}
 
-		// Only an actually observed opponent gets one-tile movement prediction.
+		// Predict one tile of movement only for an opponent personally observed now.
 		if (fThreatStateKnown && gfTurnBasedAI)
 		{
 			for (UINT8 ubDirection = 0; ubDirection < NUM_WORLD_DIRECTIONS; ++ubDirection)
 			{
-				INT32 sTempGridNo = NewGridNo(sThreatLoc, DirectionInc(ubDirection));
+				INT32 sTempGridNo =
+					NewGridNo(sThreatLoc, DirectionInc(ubDirection));
 				if (sTempGridNo == sThreatLoc)
 					continue;
 
-				UINT8 ubMovementCost = gubWorldMovementCosts[sTempGridNo][ubDirection][bThreatLevel];
+				UINT8 ubMovementCost =
+					gubWorldMovementCosts[sTempGridNo][ubDirection][bThreatLevel];
 				if (ubMovementCost >= TRAVELCOST_BLOCKED ||
 					!NewOKDestination(pOpponent, sTempGridNo, FALSE, bThreatLevel))
 				{
 					continue;
 				}
 
-				if (!AnyCoverFromSpot(sSpot, pSoldier->pathing.bLevel, sTempGridNo, bThreatLevel) &&
+				if (!AnyCoverFromSpot(
+						sSpot, pSoldier->pathing.bLevel,
+						sTempGridNo, bThreatLevel) &&
 					PythSpacesAway(sSpot, sTempGridNo) <= iVisibilityRange &&
-					LocationToLocationLineOfSightTest(sTempGridNo, bThreatLevel, sSpot, pSoldier->pathing.bLevel,
+					LocationToLocationLineOfSightTest(
+						sTempGridNo, bThreatLevel, sSpot, pSoldier->pathing.bLevel,
 						TRUE, iVisibilityRange, STANDING_LOS_POS, PRONE_LOS_POS))
 				{
 					return FALSE;
@@ -12024,27 +12674,31 @@ INT8 FindMaxEnemyInterruptLevel( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 blev
 		if (!pOpponent)
 			continue;
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide)
+		INT32 sThreatLoc = NOWHERE;
+		INT8 bThreatLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		UINT8 ubConfidence = 0;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sThreatLoc, &bThreatLevel,
+			&ubConfidence, &bKnowledge))
+		{
 			continue;
-
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
+		}
 
 		const BOOLEAN fDirectVisualContact =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
-			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
 
 		if (fDirectVisualContact &&
-			(!ValidOpponent(pSoldier, pOpponent) ||
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 !ValidOpponent(pSoldier, pOpponent) ||
 			 pOpponent->IsUnconscious() ||
 			 (pOpponent->usSoldierFlagMask & SOLDIER_POW)))
 		{
 			continue;
 		}
 
-		INT32 sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		INT8 bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
 		if (TileIsOutOfBounds(sThreatLoc) ||
 			PythSpacesAway(sThreatLoc, sGridNo) > ubDistance ||
 			bThreatLevel != blevel)
@@ -12055,15 +12709,14 @@ INT8 FindMaxEnemyInterruptLevel( SOLDIERTYPE *pSoldier, INT32 sGridNo, INT8 blev
 		INT8 bInterruptLevel;
 		if (fDirectVisualContact)
 		{
-			// Current direct observation permits the real combat-state estimate.
 			bInterruptLevel = AIEstimateInterruptLevel(pOpponent);
 		}
 		else
 		{
-			// An unseen contact must not reveal hidden experience, agility or shock.
-			// Use a neutral competent-soldier prior and reduce it as information ages.
-			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
-			bInterruptLevel = (INT8)__max(1, (6 * iCertainty + 50) / 100);
+			// Reported/stale threats use a neutral competent prior scaled only by
+			// communication/contact confidence.
+			bInterruptLevel = (INT8)__max(1,
+				(6 * (INT32)ubConfidence + 50) / 100);
 		}
 
 		if (bInterruptLevel > bMaxInterruptLevel)
@@ -12085,35 +12738,50 @@ UINT8 CountPublicKnownEnemies( SOLDIERTYPE *pSoldier, INT32 sGridNo, UINT8 ubDis
 		if (!pOpponent)
 			continue;
 
-		// Public enemy counts must be driven by public knowledge, not by the hidden
-		// current HP/capture/sector state of an opponent whose contact is stale.
-		INT8 bPublicKnowledge = gbPublicOpplist[pSoldier->bTeam][pOpponent->ubID];
-		if (bPublicKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
+		INT32 sThreatLoc = NOWHERE;
+		INT8 bReportedKnowledge = NOT_HEARD_OR_SEEN;
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide)
+		if (pSoldier->bTeam == ENEMY_TEAM)
 		{
-			continue;
+			// Enemy "public" counting is now fireteam-local. This restores coordinated
+			// force estimates without repopulating the legacy sector-wide public opplist.
+			if (!AISharedFireteamOpponentContact(
+				pSoldier, pOpponent->ubID, &sThreatLoc, NULL, NULL,
+				&bReportedKnowledge))
+			{
+				continue;
+			}
+		}
+		else
+		{
+			bReportedKnowledge =
+				gbPublicOpplist[pSoldier->bTeam][pOpponent->ubID];
+			if (bReportedKnowledge == NOT_HEARD_OR_SEEN)
+				continue;
+			sThreatLoc =
+				gsPublicLastKnownOppLoc[pSoldier->bTeam][pOpponent->ubID];
 		}
 
-		// If this soldier personally sees the target right now, live state is known
-		// and may invalidate the threat. Team-only knowledge does not grant that.
-		if (PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
-			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0 &&
-			(!ValidOpponent(pSoldier, pOpponent) ||
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+
+		// Current relation/casualty state is legal only under this soldier's own sight.
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 !ValidOpponent(pSoldier, pOpponent) ||
 			 pOpponent->IsUnconscious() ||
 			 (pOpponent->usSoldierFlagMask & SOLDIER_POW)))
 		{
 			continue;
 		}
 
-		INT32 sThreatLoc = gsPublicLastKnownOppLoc[pSoldier->bTeam][pOpponent->ubID];
-		if (TileIsOutOfBounds(sThreatLoc))
+		if (TileIsOutOfBounds(sThreatLoc) ||
+			PythSpacesAway(sThreatLoc, sGridNo) > ubDistance)
+		{
 			continue;
-
-		if (PythSpacesAway(sThreatLoc, sGridNo) > ubDistance)
-			continue;
+		}
 
 		++ubNum;
 	}
@@ -12355,64 +13023,53 @@ UINT8 CountKnownEnemiesInDirection(SOLDIERTYPE *pSoldier, UINT8 ubDirection, INT
 {
 	CHECKF(pSoldier);
 
-	UINT32		uiLoop;
-	SOLDIERTYPE *pOpponent;
+	UINT8 ubNum = 0;
 
-	INT32		sThreatLoc;
-	INT8		iThreatLevel;
-
-	UINT8		ubNum = 0;
-
-	// loop through all the enemies
-	for (uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
+	for (UINT32 uiLoop = 0; uiLoop < guiNumMercSlots; ++uiLoop)
 	{
-		pOpponent = MercSlots[uiLoop];
-
+		SOLDIERTYPE *pOpponent = MercSlots[uiLoop];
 		if (!pOpponent)
+			continue;
+
+		INT32 sThreatLoc = NOWHERE;
+		INT8 bThreatLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sThreatLoc, &bThreatLevel, NULL, &bKnowledge))
 		{
 			continue;
 		}
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW ||
+			 !ValidOpponent(pSoldier, pOpponent)))
 		{
 			continue;
 		}
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) || pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
+		if (TileIsOutOfBounds(sThreatLoc) ||
+			PythSpacesAway(pSoldier->sGridNo, sThreatLoc) > sDistance)
 		{
 			continue;
 		}
 
-		if (PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
-			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0 &&
-			!ValidOpponent(pSoldier, pOpponent))
+		UINT8 ubThreatDirection = AIDirection(pSoldier->sGridNo, sThreatLoc);
+		if (ubThreatDirection != ubDirection &&
+			(!fAdjacent ||
+			 (ubThreatDirection != gOneCDirection[ubDirection] &&
+			  ubThreatDirection != gOneCCDirection[ubDirection])))
 		{
 			continue;
 		}
 
-		sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		iThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
-
-		if (TileIsOutOfBounds(sThreatLoc))
-		{
-			continue;
-		}
-
-		if (PythSpacesAway(pSoldier->sGridNo, sThreatLoc) > sDistance)
-		{
-			continue;
-		}
-
-		if (AIDirection(pSoldier->sGridNo, sThreatLoc) != ubDirection &&
-			(!fAdjacent || AIDirection(pSoldier->sGridNo, sThreatLoc) != gOneCDirection[ubDirection] && AIDirection(pSoldier->sGridNo, sThreatLoc) != gOneCCDirection[ubDirection]))
-		{
-			continue;
-		}
-
-		ubNum++;
+		++ubNum;
 	}
 
 	return ubNum;
@@ -12910,9 +13567,8 @@ BOOLEAN AbortFinalSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bAction, INT32 s
 		return FALSE;
 	}	
 
-	INT32	sOpponentGridNo;
 	INT8	bOpponentLevel;
-	INT32	sClosestOpponent = ClosestKnownOpponent(pSoldier, &sOpponentGridNo, &bOpponentLevel);
+	INT32	sClosestOpponent = AIPrimaryPlanningThreatSpot(pSoldier, &bOpponentLevel);
 
 	if (TileIsOutOfBounds(sClosestDisturbance))
 	{
@@ -13022,9 +13678,8 @@ BOOLEAN AbortPath(SOLDIERTYPE *pSoldier, INT8 bAction, INT32 sClosestDisturbance
 		return FALSE;
 	}
 
-	INT32	sOpponentGridNo;
 	INT8	bOpponentLevel;
-	INT32	sClosestOpponent = ClosestKnownOpponent(pSoldier, &sOpponentGridNo, &bOpponentLevel);
+	INT32	sClosestOpponent = AIPrimaryPlanningThreatSpot(pSoldier, &bOpponentLevel);
 
 	if (TileIsOutOfBounds(sClosestDisturbance))
 	{
@@ -13383,6 +14038,10 @@ BOOLEAN UseSightCoverAdvance(SOLDIERTYPE *pSoldier)
 		return FALSE;
 	}
 
+	// Every enemy understands sight-cover movement regardless of soldier class.
+	if (pSoldier->bTeam == ENEMY_TEAM)
+		return TRUE;
+
 	switch (pSoldier->ubSoldierClass)
 	{
 	case SOLDIER_CLASS_ELITE:
@@ -13526,53 +14185,63 @@ BOOLEAN EnemyCanAttackSpot(SOLDIERTYPE *pSoldier, INT32 sSpot, INT8 bLevel)
 		if (!pOpponent)
 			continue;
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
-
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			pOpponent->ubBodyType == CROW)
+		INT32 sThreatLoc = NOWHERE;
+		INT8 bThreatLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		UINT8 ubConfidence = 0;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sThreatLoc, &bThreatLevel,
+			&ubConfidence, &bKnowledge))
 		{
 			continue;
 		}
 
-		INT32 sThreatLoc = KnownLocation(pSoldier, pOpponent->ubID);
-		INT8 bThreatLevel = KnownLevel(pSoldier, pOpponent->ubID);
+		const BOOLEAN fThreatStateKnown =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+
+		if (fThreatStateKnown &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 pOpponent->ubBodyType == CROW))
+		{
+			continue;
+		}
+
 		if (TileIsOutOfBounds(sThreatLoc))
 			continue;
-
-		const BOOLEAN fThreatStateKnown =
-			(PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY) &&
-			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
 
 		INT32 iAttackRange;
 		if (fThreatStateKnown)
 		{
-			if (!ValidOpponent(pSoldier, pOpponent) || pOpponent->IsUnconscious() || pOpponent->IsEmptyVehicle())
+			if (!ValidOpponent(pSoldier, pOpponent) ||
+				pOpponent->IsUnconscious() || pOpponent->IsEmptyVehicle() ||
+				!pOpponent->CanInterrupt())
+			{
 				continue;
+			}
 
-			if (!pOpponent->CanInterrupt())
+			if (!AICheckHasGun(pOpponent) &&
+				PythSpacesAway(sThreatLoc, sSpot) > DAY_VISION_RANGE / 2)
+			{
 				continue;
+			}
 
-			// For an observed opponent we legitimately know whether his current weapon
-			// can threaten the tile.
-			if (!AICheckHasGun(pOpponent) && PythSpacesAway(sThreatLoc, sSpot) > DAY_VISION_RANGE / 2)
-				continue;
-
-			iAttackRange = AICheckHasGun(pOpponent) ? AIGunRange(pOpponent) * 3 / 2 : DAY_VISION_RANGE / 2;
+			iAttackRange = AICheckHasGun(pOpponent) ?
+				AIGunRange(pOpponent) * 3 / 2 : DAY_VISION_RANGE / 2;
 		}
 		else
 		{
-			// For a stale contact, represent uncertainty through the knowledge age.
-			// Do not inspect hidden current weapon, AP, shock, stance or consciousness.
-			INT32 iCertainty = ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE];
-			iAttackRange = max(DAY_VISION_RANGE / 4, (MAX_VISION_RANGE * iCertainty) / 100);
+			// No hidden weapon/AP/consciousness reads for a reported or stale contact.
+			iAttackRange = max(DAY_VISION_RANGE / 4,
+				(MAX_VISION_RANGE * (INT32)ubConfidence) / 100);
 		}
 
 		if (PythSpacesAway(sThreatLoc, sSpot) <= iAttackRange &&
-			LocationToLocationLineOfSightTest(sThreatLoc, bThreatLevel, sSpot, bLevel, TRUE, MAX_VISION_RANGE))
+			LocationToLocationLineOfSightTest(
+				sThreatLoc, bThreatLevel, sSpot, bLevel,
+				TRUE, MAX_VISION_RANGE))
 		{
 			return TRUE;
 		}
@@ -13647,9 +14316,9 @@ BOOLEAN TerrainDark(INT32 sSpot, INT8 bLevel)
 	return FALSE;
 }
 
-// Unified competence/friction adapter. Doctrine remains the authoritative training
-// model; these helpers translate it into planner complexity/reliability without
-// granting AP, CTH or hidden-information bonuses.
+// Unified competence/friction adapter. ENEMY_TEAM reasoning is fixed at the elite
+// ceiling; competence tiers remain only for militia/non-enemy execution friction.
+// No tier grants AP, CTH, damage, vision or hidden-information bonuses.
 static UINT32 AIStableDecisionHash(SOLDIERTYPE *pSoldier, UINT32 uiSalt)
 {
 	if (!pSoldier)
@@ -13669,23 +14338,10 @@ INT8 AICompetenceTier(SOLDIERTYPE *pSoldier)
 	if (!pSoldier)
 		return AI_COMPETENCE_BASIC;
 
+	// Every live enemy uses the same top-end tactical reasoning. Unit identity is
+	// expressed by equipment/mission role, not by deliberately dumbing decisions down.
 	if (pSoldier->bTeam == ENEMY_TEAM)
-	{
-		switch (AIGetDoctrineProfile(pSoldier))
-		{
-		case AI_DOCTRINE_SECURITY:
-			return (AICheckIsCommander(pSoldier) || AICheckIsOfficer(pSoldier)) ?
-				AI_COMPETENCE_REGULAR : AI_COMPETENCE_BASIC;
-		case AI_DOCTRINE_LINE:
-			return AI_COMPETENCE_REGULAR;
-		case AI_DOCTRINE_VETERAN:
-		case AI_DOCTRINE_ELITE_MOBILE:
-		case AI_DOCTRINE_ELITE_GUARD:
-			return AI_COMPETENCE_ELITE;
-		default:
-			return AI_COMPETENCE_REGULAR;
-		}
-	}
+		return AI_COMPETENCE_ELITE;
 
 	switch (pSoldier->ubSoldierClass)
 	{
@@ -13705,22 +14361,17 @@ UINT8 AIPlannerReliability(SOLDIERTYPE *pSoldier)
 	if (!pSoldier)
 		return 50;
 
+	// Stress can change the correct decision, but it must not make enemy soldiers
+	// randomly fail to execute a legal plan they already selected.
+	if (pSoldier->bTeam == ENEMY_TEAM)
+		return 100;
+
 	INT32 iReliability = 76;
 	switch (AICompetenceTier(pSoldier))
 	{
 	case AI_COMPETENCE_BASIC:   iReliability = 52; break;
 	case AI_COMPETENCE_REGULAR: iReliability = 76; break;
 	case AI_COMPETENCE_ELITE:   iReliability = 93; break;
-	}
-
-	if (pSoldier->bTeam == ENEMY_TEAM)
-	{
-		switch (AIGetDoctrineProfile(pSoldier))
-		{
-		case AI_DOCTRINE_VETERAN: iReliability -= 5; break;
-		case AI_DOCTRINE_ELITE_GUARD: iReliability -= 2; break;
-		default: break;
-		}
 	}
 
 	if (pSoldier->aiData.bAIMorale == MORALE_HOPELESS)
@@ -13742,15 +14393,17 @@ BOOLEAN AIAllowsPlanComplexity(SOLDIERTYPE *pSoldier, INT8 bComplexity, UINT32 u
 	if (!pSoldier || bComplexity <= AI_PLAN_BASIC)
 		return TRUE;
 
+	if (pSoldier->bTeam == ENEMY_TEAM)
+	{
+		// Coordinated reasoning is universal. Only explicit mission-role restrictions
+		// may veto an advanced manoeuvre; there is no artificial failure roll.
+		if (bComplexity >= AI_PLAN_ADVANCED && !AIAllowsComplexManeuver(pSoldier))
+			return FALSE;
+		return TRUE;
+	}
+
 	INT8 bTier = AICompetenceTier(pSoldier);
 	INT32 iChance = AIPlannerReliability(pSoldier);
-
-	if (pSoldier->bTeam == ENEMY_TEAM && !AIAllowsComplexManeuver(pSoldier))
-	{
-		if (bComplexity >= AI_PLAN_ADVANCED)
-			return FALSE;
-		iChance = __min(iChance, 42);
-	}
 
 	if (bComplexity == AI_PLAN_COORDINATED)
 	{
@@ -13776,6 +14429,11 @@ BOOLEAN AIAllowsPlanComplexity(SOLDIERTYPE *pSoldier, INT8 bComplexity, UINT32 u
 INT32 AICompetenceUtilityNoise(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, UINT32 uiSalt)
 {
 	if (!pSoldier)
+		return 0;
+
+	// Grandmaster target: enemies do not select inferior positions because of an
+	// artificial competence-noise roll. Real uncertainty is represented elsewhere.
+	if (pSoldier->bTeam == ENEMY_TEAM)
 		return 0;
 
 	INT32 iAmplitude = 5;
@@ -13825,36 +14483,49 @@ INT32 AIInferredReactionRisk(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT8 b
 	for (UINT16 uiLoop = 0; uiLoop < MAX_NUM_SOLDIERS; ++uiLoop)
 	{
 		SOLDIERTYPE *pOpponent = MercPtrs[uiLoop];
-		if (!pOpponent || pOpponent == pSoldier ||
-			CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide)
+		if (!pOpponent || pOpponent == pSoldier)
+			continue;
+
+		INT32 sKnownSpot = NOWHERE;
+		INT8 bKnownLevel = 0;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		UINT8 ubConfidence = 0;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sKnownSpot, &bKnownLevel,
+			&ubConfidence, &bKnowledge))
 		{
 			continue;
 		}
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
+		const BOOLEAN fPersonallySeeingNow =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
 
-		INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
-		INT8 bKnownLevel = KnownLevel(pSoldier, pOpponent->ubID);
+		if (fPersonallySeeingNow &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide))
+		{
+			continue;
+		}
+
 		if (TileIsOutOfBounds(sKnownSpot) || bKnownLevel != bLevel)
 			continue;
 
 		if (PythSpacesAway(sKnownSpot, sCandidateSpot) > MAX_VISION_RANGE ||
-			!LocationToLocationLineOfSightTest(sKnownSpot, bKnownLevel,
-				sCandidateSpot, bLevel, TRUE, MAX_VISION_RANGE))
+			!LocationToLocationLineOfSightTest(
+				sKnownSpot, bKnownLevel, sCandidateSpot, bLevel,
+				TRUE, MAX_VISION_RANGE))
 		{
 			continue;
 		}
 
-		INT32 iContactRisk = 8 + ThreatPercent[bKnowledge - OLDEST_HEARD_VALUE] / 5;
-		if (bKnowledge == SEEN_CURRENTLY || bKnowledge == SEEN_THIS_TURN)
+		INT32 iContactRisk = 8 + (INT32)ubConfidence / 5;
+		if (ubConfidence >= 85)
 			iContactRisk += 12;
-		else if (bKnowledge == SEEN_LAST_TURN)
+		else if (ubConfidence >= 60)
 			iContactRisk += 6;
 
-		if ((bKnowledge == SEEN_CURRENTLY || bKnowledge == SEEN_THIS_TURN) &&
+		if (fPersonallySeeingNow &&
 			(pOpponent->aiData.bAction == AI_ACTION_FIRE_GUN ||
 			 pOpponent->aiData.bLastAction == AI_ACTION_FIRE_GUN))
 		{
@@ -13869,7 +14540,6 @@ INT32 AIInferredReactionRisk(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot, INT8 b
 
 	return __min((INT32)120, iRisk);
 }
-
 
 // -----------------------------------------------------------------------------
 // Layered squad tactical planner
@@ -13890,9 +14560,21 @@ void AIResetTacticalPlannerStateForLoad(void)
 {
 	// Planner state is intentionally transient and is not serialized. Same-sector
 	// quickloads must not inherit intent/role decisions from the abandoned future.
+	if (AIPlayerTeamCommandActive())
+		AIResetPlayerTeamCommand();
 	AIResetTacticalReasoningStateForLoad();
+
+	// The legacy ENEMY_TEAM public opponent list is a sector-wide exact-contact
+	// channel. It is no longer authoritative for the local-hive-mind AI. Personal
+	// memories remain serialized/restored normally; only the forbidden shared copy
+	// is discarded so an old save cannot resurrect telepathic contact knowledge.
+	memset(gbPublicOpplist[ENEMY_TEAM], NOT_HEARD_OR_SEEN,
+		sizeof(gbPublicOpplist[ENEMY_TEAM]));
 	for (UINT16 i = 0; i < MAX_NUM_SOLDIERS; ++i)
 	{
+		gsPublicLastKnownOppLoc[ENEMY_TEAM][i] = NOWHERE;
+		gbPublicLastKnownOppLevel[ENEMY_TEAM][i] = 0;
+
 		gbAITacticalIntentPlan[i] = AI_INTENT_HOLD;
 		gbAITacticalRolePlan[i] = AI_ROLE_RESERVE;
 		guiAITacticalPlanUntil[i] = 0;
@@ -13938,7 +14620,7 @@ static UINT8 AIActiveManeuverCount(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 		if (!TileIsOutOfBounds(sTargetSpot))
 		{
-			INT32 sFriendTarget = ClosestKnownOpponent(pFriend, NULL, NULL);
+			INT32 sFriendTarget = AIPrimaryPlanningThreatSpot(pFriend);
 			if (!TileIsOutOfBounds(sFriendTarget) && PythSpacesAway(sFriendTarget, sTargetSpot) > 5)
 				continue;
 		}
@@ -13990,8 +14672,10 @@ static INT8 AISharedIntentVote(SOLDIERTYPE *pSoldier, INT32 sTargetSpot, UINT32 
 		}
 	}
 
-	// A commander/officer carries two votes; otherwise at least two nearby soldiers
-	// must already agree before the blackboard overrides an individual's neutral plan.
+	// Enemy fireteams share intent almost immediately: one valid local plan is enough
+	// to seed the element. Militia retain the more conservative two-vote threshold.
+	if (pSoldier->bTeam == ENEMY_TEAM)
+		return ubBestVotes >= 1 ? bBestIntent : -1;
 	return ubBestVotes >= 2 ? bBestIntent : -1;
 }
 
@@ -14049,7 +14733,8 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	}
 
 	if (TileIsOutOfBounds(sTargetSpot))
-		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
+
 
 	UINT32 uiNow = guiTurnCnt + 1;
 	AITACTICALDECISIONCONTEXT Context;
@@ -14083,9 +14768,29 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		!pSoldier->aiData.bUnderFire && iRisk + 10 < iTolerance)
 		bEmergencyIntent = AI_INTENT_RESCUE;
 
+	// A player command fixes the team's operational objective while leaving local
+	// survival decisions to the normal AI. ATTACK therefore means PRESS unless an
+	// emergency requires fallback/disengagement/rescue. WITHDRAW means FALLBACK;
+	// an optional medic rescue must not pull the element back toward contact.
+	INT8 bPlayerCommandIntent = -1;
+	if (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive())
+	{
+		if (AIPlayerTeamCommand() == AI_PLAYER_COMMAND_ATTACK)
+			bPlayerCommandIntent = AI_INTENT_PRESS;
+		else if (AIPlayerTeamCommand() == AI_PLAYER_COMMAND_WITHDRAW)
+		{
+			bPlayerCommandIntent = AI_INTENT_FALLBACK;
+			if (bEmergencyIntent == AI_INTENT_RESCUE)
+				bEmergencyIntent = -1;
+		}
+
+		// The explicit command supersedes stale plans from manual/previous AI state.
+		AICancelShortPlan(pSoldier);
+	}
+
 	BOOLEAN fActiveCQBShortPlan = FALSE;
 
-	if (bEmergencyIntent < 0)
+	if (bEmergencyIntent < 0 && bPlayerCommandIntent < 0)
 	{
 		AISHORTPLANSTATE ShortPlan;
 		if (AIGetShortPlan(pSoldier, &ShortPlan))
@@ -14163,7 +14868,7 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		}
 	}
 
-	if (bEmergencyIntent < 0 &&
+	if (bEmergencyIntent < 0 && bPlayerCommandIntent < 0 &&
 		guiAITacticalPlanUntil[ubID] >= uiNow &&
 		!AITacticalTargetChanged(ubID, sTargetSpot))
 	{
@@ -14174,6 +14879,10 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	if (bEmergencyIntent >= 0)
 	{
 		bIntent = bEmergencyIntent;
+	}
+	else if (bPlayerCommandIntent >= 0)
+	{
+		bIntent = bPlayerCommandIntent;
 	}
 	else if (!TileIsOutOfBounds(sTargetSpot))
 	{
@@ -14187,9 +14896,9 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 		if (fCanPress && fLocalAdvantage)
 		{
-			BOOLEAN fCunning = pSoldier->aiData.bAttitude == CUNNINGSOLO ||
-				pSoldier->aiData.bAttitude == CUNNINGAID;
-			BOOLEAN fAdvancedFlank = fCunning &&
+			// Tactical intelligence is universal. Personality affects risk/tempo, not
+			// whether the soldier understands coordinated flanking.
+			BOOLEAN fAdvancedFlank =
 				AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED,
 					(UINT32)(sTargetSpot + 211));
 			BOOLEAN fBasicFlank = fBasicFireteamManeuver &&
@@ -14221,7 +14930,8 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	// Distributed squad blackboard: soldiers fighting the same contact bias toward
 	// a common plan, while personal danger can still veto an aggressive consensus.
 	INT8 bSharedIntent = AISharedIntentVote(pSoldier, sTargetSpot, uiNow);
-	if (bEmergencyIntent < 0 && bSharedIntent >= AI_INTENT_HOLD)
+	if (bEmergencyIntent < 0 && bPlayerCommandIntent < 0 &&
+		bSharedIntent >= AI_INTENT_HOLD)
 	{
 		if (bSharedIntent == AI_INTENT_FALLBACK || bSharedIntent == AI_INTENT_DISENGAGE)
 		{
@@ -14231,10 +14941,10 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		else if (bIntent != AI_INTENT_FALLBACK && bIntent != AI_INTENT_DISENGAGE &&
 			iRisk <= iTolerance + 5)
 		{
-			// Lower-quality troops do not automatically become a hive mind merely because
-			// nearby soldiers found a sophisticated plan. HOLD/PRESS remain simple; FLANK
-			// requires the competence layer to accept coordinated execution.
-			if (bSharedIntent != AI_INTENT_FLANK ||
+			// The local enemy fireteam deliberately behaves like a shared tactical brain.
+			// The shared target still came only from legal observation/communication.
+			if (pSoldier->bTeam == ENEMY_TEAM ||
+				bSharedIntent != AI_INTENT_FLANK ||
 				fBasicFireteamManeuver ||
 				AIAllowsPlanComplexity(pSoldier, AI_PLAN_COORDINATED, (UINT32)(sTargetSpot + 307)))
 			{
@@ -14278,6 +14988,61 @@ INT8 AITacticalIntent(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	return bIntent;
 }
 
+static BOOLEAN AIPreferredSuppressorCandidate(
+	SOLDIERTYPE *pSoldier, INT32 sTargetSpot, UINT8 ubSuppressorLimit)
+{
+	BOOLEAN fCoordinatedTeam = pSoldier &&
+		(pSoldier->bTeam == ENEMY_TEAM ||
+		 (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive()));
+	if (!fCoordinatedTeam ||
+		TileIsOutOfBounds(sTargetSpot) || ubSuppressorLimit == 0 ||
+		!AICheckHasGun(pSoldier) || !AIGunAutofireCapable(pSoldier) ||
+		AIGunAmmo(pSoldier) < gGameExternalOptions.ubAISuppressionMinimumAmmo)
+	{
+		return FALSE;
+	}
+
+	INT32 iMyScore = AISupportRoleScore(pSoldier, sTargetSpot);
+	UINT8 ubBetterCandidates = 0;
+
+	for (UINT8 iCounter = gTacticalStatus.Team[pSoldier->bTeam].bFirstID;
+		iCounter <= gTacticalStatus.Team[pSoldier->bTeam].bLastID; ++iCounter)
+	{
+		SOLDIERTYPE *pCandidate = MercPtrs[iCounter];
+		if (!pCandidate || pCandidate == pSoldier ||
+			!pCandidate->bActive || !pCandidate->bInSector ||
+			!AISameFireteam(pSoldier, pCandidate) ||
+			pCandidate->stats.bLife < OKLIFE ||
+			pCandidate->bCollapsed || pCandidate->bBreathCollapsed ||
+			(pCandidate->usSoldierFlagMask & SOLDIER_POW) ||
+			(pCandidate->flags.uiStatusFlags & SOLDIER_COWERING) ||
+			AIDisengagementActive(pCandidate) || AIEscapeActive(pCandidate) ||
+			!AICheckHasGun(pCandidate) || !AIGunAutofireCapable(pCandidate) ||
+			AIGunAmmo(pCandidate) < gGameExternalOptions.ubAISuppressionMinimumAmmo)
+		{
+			continue;
+		}
+
+		INT32 sCandidateTarget = AIPrimaryPlanningThreatSpot(pCandidate);
+		if (TileIsOutOfBounds(sCandidateTarget) ||
+			PythSpacesAway(sCandidateTarget, sTargetSpot) > 3)
+		{
+			continue;
+		}
+
+		INT32 iCandidateScore = AISupportRoleScore(pCandidate, sTargetSpot);
+		if (iCandidateScore > iMyScore ||
+			(iCandidateScore == iMyScore && pCandidate->ubID < pSoldier->ubID))
+		{
+			++ubBetterCandidates;
+			if (ubBetterCandidates >= ubSuppressorLimit)
+				return FALSE;
+		}
+	}
+
+	return TRUE;
+}
+
 INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 {
 	if (!AICombatTeam(pSoldier))
@@ -14285,7 +15050,7 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 
 	UINT8 ubID = pSoldier->ubID;
 	if (TileIsOutOfBounds(sTargetSpot))
-		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 
 	INT8 bIntent = AITacticalIntent(pSoldier, sTargetSpot);
 	INT32 iSupport = AISupportRoleScore(pSoldier, sTargetSpot);
@@ -14348,9 +15113,9 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		bRole = AI_ROLE_SUPPORT;
 	}
 
-	// Convert implicit role-count coordination into an explicit, fireteam-local task
-	// claim. This prevents independent sequential decisions from duplicating the same
-	// flank/maneuver/screen responsibility without creating a sector-wide hive mind.
+	// Convert implicit role-count coordination into explicit, fireteam-local task
+	// claims. Movers, flankers and screens cannot silently duplicate each other, while
+	// the best automatic-rifle/LMG support soldier owns the base-of-fire assignment.
 	BOOLEAN fTaskReserved = TRUE;
 	if (bRole == AI_ROLE_FLANKER)
 		fTaskReserved = AIReserveTacticalTask(
@@ -14361,6 +15126,28 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 	else if (bRole == AI_ROLE_SCREEN)
 		fTaskReserved = AIReserveTacticalTask(
 			pSoldier, AI_TASK_SCREEN, sTargetSpot, NOBODY, 2, 1);
+	else if (bRole == AI_ROLE_SUPPORT &&
+		(pSoldier->bTeam == ENEMY_TEAM ||
+		 (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive())) &&
+		(bIntent == AI_INTENT_PRESS || bIntent == AI_INTENT_FLANK) &&
+		!TileIsOutOfBounds(sTargetSpot) &&
+		AICheckHasGun(pSoldier) &&
+		AIGunAutofireCapable(pSoldier) &&
+		AIGunAmmo(pSoldier) >= gGameExternalOptions.ubAISuppressionMinimumAmmo)
+	{
+		UINT8 ubSuppressorLimit =
+			AIFireteamCombatReadyCount(pSoldier) >= 6 ? 2 : 1;
+		// Compare the whole local element before claiming the job. Sequential turn
+		// order must not let a mediocre rifleman steal the LMG's base-of-fire role.
+		if (!AIPreferredSuppressorCandidate(
+				pSoldier, sTargetSpot, ubSuppressorLimit) ||
+			!AIReserveTacticalTask(
+				pSoldier, AI_TASK_SUPPRESS, sTargetSpot, NOBODY,
+				ubSuppressorLimit, 1))
+		{
+			AIReleaseTacticalTask(pSoldier);
+		}
+	}
 	else
 		AIReleaseTacticalTask(pSoldier);
 
@@ -14370,6 +15157,25 @@ INT8 AITacticalRole(SOLDIERTYPE *pSoldier, INT32 sTargetSpot)
 		// to support rather than creating duplicate movers or rear guards.
 		bRole = AI_ROLE_SUPPORT;
 		AIReleaseTacticalTask(pSoldier);
+
+		if ((pSoldier->bTeam == ENEMY_TEAM ||
+			 (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive())) &&
+			(bIntent == AI_INTENT_PRESS || bIntent == AI_INTENT_FLANK) &&
+			!TileIsOutOfBounds(sTargetSpot) &&
+			AICheckHasGun(pSoldier) &&
+			AIGunAutofireCapable(pSoldier) &&
+			AIGunAmmo(pSoldier) >= gGameExternalOptions.ubAISuppressionMinimumAmmo)
+		{
+			UINT8 ubSuppressorLimit =
+				AIFireteamCombatReadyCount(pSoldier) >= 6 ? 2 : 1;
+			if (AIPreferredSuppressorCandidate(
+					pSoldier, sTargetSpot, ubSuppressorLimit))
+			{
+				AIReserveTacticalTask(
+					pSoldier, AI_TASK_SUPPRESS, sTargetSpot, NOBODY,
+					ubSuppressorLimit, 1);
+			}
+		}
 	}
 
 	gbAITacticalRolePlan[ubID] = bRole;
@@ -14384,7 +15190,7 @@ INT32 AIUtilityPositionScore(SOLDIERTYPE *pSoldier, INT32 sCandidateSpot,
 		return -10000;
 
 	if (TileIsOutOfBounds(sTargetSpot))
-		sTargetSpot = ClosestKnownOpponent(pSoldier, NULL, NULL);
+		sTargetSpot = AIPrimaryPlanningThreatSpot(pSoldier);
 	if (bIntent < AI_INTENT_HOLD || bIntent > AI_INTENT_RESCUE)
 		bIntent = AITacticalIntent(pSoldier, sTargetSpot);
 	if (bRole < AI_ROLE_SUPPORT || bRole > AI_ROLE_RESERVE)

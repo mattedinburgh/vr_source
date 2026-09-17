@@ -216,8 +216,15 @@ static BOOLEAN AIShouldAvoidFinishingDownedTarget(
 	if (!pSoldier || !pOpponent || !fCurrentContact || !AICombatTeam(pSoldier))
 		return FALSE;
 
-	// Current contact can come from personal sight or a current team report.
-	// Never re-authorize casualty state from stale cached opponent-list data.
+	// Enemy casualty state is legal only under the shooter's own current sight.
+	// Do not let any legacy/public CURRENT marker become a back door to hidden HP,
+	// collapse or POW state. Non-enemy AI preserves the legacy current-team-report rule.
+	if (pSoldier->bTeam == ENEMY_TEAM &&
+		(PersonalKnowledge(pSoldier, pOpponent->ubID) != SEEN_CURRENTLY ||
+		 LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) <= 0))
+	{
+		return FALSE;
+	}
 
 	// Preserve explicitly scripted killer behaviour and non-human threats.
 	if (pSoldier->aiData.bAttitude == ATTACKSLAYONLY ||
@@ -327,15 +334,18 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 			continue;
 
 		INT8 bThreatKnowledge = Knowledge(pSoldier, pThreat->ubID);
-		if (CONSIDERED_NEUTRAL(pSoldier, pThreat) ||
-			pSoldier->bSide == pThreat->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pThreat->ubProfile != SLAY) ||
-			(gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pThreat->IsBoxer()) ||
-			pThreat->ubBodyType == CROW)
+		BOOLEAN fThreatStateKnown =
+			PersonalKnowledge(pSoldier, pThreat->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pThreat, CALC_FROM_ALL_DIRS) > 0;
+		if (fThreatStateKnown &&
+			(CONSIDERED_NEUTRAL(pSoldier, pThreat) ||
+			 pSoldier->bSide == pThreat->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pThreat->ubProfile != SLAY) ||
+			 (gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pThreat->IsBoxer()) ||
+			 pThreat->ubBodyType == CROW))
 		{
 			continue;
 		}
-
 		BOOLEAN fRecentKnowledge =
 			bThreatKnowledge == SEEN_CURRENTLY ||
 			bThreatKnowledge == SEEN_THIS_TURN ||
@@ -350,9 +360,6 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		if (!fRecentKnowledge)
 			continue;
 
-		BOOLEAN fThreatStateKnown =
-			PersonalKnowledge(pSoldier, pThreat->ubID) == SEEN_CURRENTLY &&
-			LOS_Raised(pSoldier, pThreat, CALC_FROM_ALL_DIRS) > 0;
 		if (fThreatStateKnown &&
 			(!ValidOpponent(pSoldier, pThreat) ||
 			 IsBleedoutCasualty(pThreat) ||
@@ -385,18 +392,18 @@ void CalcBestShot(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestShot)
 		bPersonalKnowledge = PersonalKnowledge(pSoldier, pOpponent->ubID);
 		bPublicKnowledge = PublicKnowledge(pSoldier->bTeam, pOpponent->ubID);
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
-			(gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
-			pOpponent->ubBodyType == CROW)
-		{
-			continue;
-		}
-
 		const BOOLEAN fDirectVisualContact =
 			(bPersonalKnowledge == SEEN_CURRENTLY) &&
 			(LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0);
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pOpponent->ubProfile != SLAY) ||
+			 (gTacticalStatus.bBoxingState == BOXING && pSoldier->IsBoxer() && !pOpponent->IsBoxer()) ||
+			 pOpponent->ubBodyType == CROW))
+		{
+			continue;
+		}
 		const BOOLEAN fCurrentTeamReport = (bPublicKnowledge == SEEN_CURRENTLY);
 		const BOOLEAN fCurrentContact = fDirectVisualContact || fCurrentTeamReport;
 		if (fDirectVisualContact && !ValidOpponent(pSoldier, pOpponent))
@@ -1781,7 +1788,11 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 	// spare only when soldier is not under attack
 	// need 1/2 health for 0 difficulty, 5/6 health for max difficulty
 	// need 3 opponents for 0 difficulty, 1 opponent for max difficulty
-	if ( fSpare &&				
+	// Legacy difficulty used to decide whether a soldier was clever enough to
+	// consider spending a lethal grenade. Elite enemy reasoning always evaluates the
+	// legal throw and lets attack value, CTH, friendly safety and saturation decide.
+	if ( fSpare &&
+		pSoldier->bTeam != ENEMY_TEAM &&
 		ubOpponentCnt < 3 - ubDiff / 2 &&
 		!(pSoldier->aiData.bUnderFire &&
 			pSoldier->stats.bLife < (ubDiff + 1) * pSoldier->stats.bLifeMax / (ubDiff + 2) ) )
@@ -2072,7 +2083,8 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 				}
 
 				// JA2Gold
-				if( gGameOptions.ubDifficultyLevel == DIF_LEVEL_EASY )
+				if( gGameOptions.ubDifficultyLevel == DIF_LEVEL_EASY &&
+					pSoldier->bTeam != ENEMY_TEAM )
 				{
 					if (fSkipLocation)
 					{
@@ -2108,12 +2120,13 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 				{
 					ubChanceToGetThrough = AISoldierToLocationChanceToGetThrough( pSoldier, sGridNo, bOpponentLevel[ubLoop], 0 );
 					// anv: tanks shouldn't care about chance to get through - can't hit? At least we'll destroy their cover.
-					// sevenfm: elites use rocket launchers to blow up obstacles when shooting at soldiers in buildings
+					// Tactically trained rocket users may deliberately attack blocking cover. This
+					// changes planner willingness only; projectile physics/CTH remain untouched.
 					if( TANK(pSoldier) || 
 						( Item[usInHand].rocketlauncher &&
 						gpWorldLevelData[sOpponentTile[ubLoop]].ubTerrainID == FLAT_FLOOR &&
 						gpWorldLevelData[pSoldier->sGridNo].ubTerrainID != FLAT_FLOOR &&
-						(pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE ||
+						(pSoldier->bTeam == ENEMY_TEAM ||
 						 pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA) ) )
 					{
 						ubChanceToGetThrough = 100;
@@ -2324,9 +2337,10 @@ void CalcBestThrow(SOLDIERTYPE *pSoldier, ATTACKTYPE *pBestThrow)
 		}
 	}
 
-	// this is try to minimize enemies wasting their (limited) toss attacks:
-	// sevenfm 80-40% depending on soldier difficulty
-	UINT8 ubMinChanceToReallyHit = 80 - 10 * ubDiff;
+	// Every enemy uses the same disciplined throw threshold. Soldier class and
+	// campaign difficulty may change equipment/resources, never tactical understanding.
+	UINT8 ubMinChanceToReallyHit =
+		(pSoldier->bTeam == ENEMY_TEAM) ? 40 : (80 - 10 * ubDiff);
 	if( Item[usGrenade].flare )
 	{
 		ubMinChanceToReallyHit = 30;
@@ -4141,13 +4155,6 @@ BOOLEAN GetBestAoEGridNo(SOLDIERTYPE *pSoldier, INT32* pGridNo, INT16 aRadius, U
 			continue;
 		}
 
-		if (CONSIDERED_NEUTRAL(pSoldier, pFriend) ||
-			(pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pFriend->ubProfile != SLAY) ||
-			pFriend->ubBodyType == CROW)
-		{
-			continue;
-		}
-
 		bKnowledge = Knowledge(pSoldier, pFriend->ubID);
 		if (bKnowledge == NOT_HEARD_OR_SEEN)
 			continue;
@@ -4155,6 +4162,13 @@ BOOLEAN GetBestAoEGridNo(SOLDIERTYPE *pSoldier, INT32* pGridNo, INT16 aRadius, U
 		BOOLEAN fDirectVisualContact =
 			PersonalKnowledge(pSoldier, pFriend->ubID) == SEEN_CURRENTLY &&
 			LOS_Raised(pSoldier, pFriend, CALC_FROM_ALL_DIRS) > 0;
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pFriend) ||
+			 (pSoldier->aiData.bAttitude == ATTACKSLAYONLY && pFriend->ubProfile != SLAY) ||
+			 pFriend->ubBodyType == CROW))
+		{
+			continue;
+		}
 
 		if (fDirectVisualContact)
 		{

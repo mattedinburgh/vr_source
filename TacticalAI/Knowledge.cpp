@@ -200,37 +200,56 @@ INT32 MostImportantNoiseHeard( SOLDIERTYPE *pSoldier, INT32 *piRetValue, BOOLEAN
 	for (uiLoop = 0; uiLoop < guiNumMercSlots; uiLoop++)
 	{
 		pTemp = MercSlots[ uiLoop ];
-
-		// if this merc is inactive, at base, on assignment, or dead
-		if (!pTemp || !pTemp->stats.bLife)
-			continue;			// next merc
-
-		// if this merc is neutral/on same side, he's not an opponent
-		if ( CONSIDERED_NEUTRAL( pSoldier, pTemp ) || (pSoldier->bSide == pTemp->bSide))
-			continue;			// next merc
-
-		// Flugente: chance to ignore the noise if the creator is covert
-		if ( pTemp->usSoldierFlagMask & (SOLDIER_COVERT_CIV|SOLDIER_COVERT_SOLDIER) )
-		{
-			// A disguise changes how noise is interpreted; it does not make the spy silent.
-			// Green guards dismiss it, while yellow guards investigate half the time (current 1.13 behaviour).
-			if ( pSoldier->aiData.bAlertStatus == STATUS_GREEN ||
-				(pSoldier->aiData.bAlertStatus == STATUS_YELLOW && Random(2)) )
-			{
-				continue;			// next merc
-			}
-
-			// sevenfm: ignore noise if some friends already see opponent
-			if( CountTeamSeeSoldier(pSoldier->bTeam, pTemp) > sectordata )
-			{
-				continue;			// next merc
-			}
-		}
+		if (!pTemp)
+			continue;
 
 		pbPersOL = pSoldier->aiData.bOppList + pTemp->ubID;
 		pbPublOL = gbPublicOpplist[pSoldier->bTeam] + pTemp->ubID;
 		psLastLoc = gsLastKnownOppLoc[pSoldier->ubID] + pTemp->ubID;
 		pbLastLevel = gbLastKnownOppLevel[pSoldier->ubID] + pTemp->ubID;
+
+		// Enemy heard-contact memory is based on what was perceived at the time.
+		// Do not erase/invalidate it using the source's hidden current life, side,
+		// neutrality or disguise state. Other teams retain legacy semantics.
+		if (pSoldier->bTeam != ENEMY_TEAM)
+		{
+			if (!pTemp->stats.bLife)
+				continue;
+
+			if ( CONSIDERED_NEUTRAL( pSoldier, pTemp ) ||
+				(pSoldier->bSide == pTemp->bSide))
+			{
+				continue;
+			}
+
+			if ( pTemp->usSoldierFlagMask &
+				(SOLDIER_COVERT_CIV|SOLDIER_COVERT_SOLDIER) )
+			{
+				if ( pSoldier->aiData.bAlertStatus == STATUS_GREEN ||
+					(pSoldier->aiData.bAlertStatus == STATUS_YELLOW && Random(2)) )
+				{
+					continue;
+				}
+
+				if( CountTeamSeeSoldier(pSoldier->bTeam, pTemp) > sectordata )
+				{
+					continue;
+				}
+			}
+		}
+		else
+		{
+			const BOOLEAN fDirectVisualContact =
+				*pbPersOL == SEEN_CURRENTLY &&
+				LOS_Raised(pSoldier, pTemp, CALC_FROM_ALL_DIRS) > 0;
+			if (fDirectVisualContact &&
+				(!pTemp->bActive || !pTemp->bInSector || !pTemp->stats.bLife ||
+				 CONSIDERED_NEUTRAL(pSoldier, pTemp) ||
+				 pSoldier->bSide == pTemp->bSide))
+			{
+				continue;
+			}
+		}
 
 		// if this guy's been personally heard within last 3 turns
 		if (*pbPersOL < NOT_HEARD_OR_SEEN)
