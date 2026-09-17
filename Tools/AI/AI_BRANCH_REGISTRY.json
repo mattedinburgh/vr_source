@@ -204,6 +204,11 @@
       "classification": "active-workstream"
     },
     {
+      "name": "ai/performance-shared-brain-2026-09-17",
+      "pinned_sha": "moving-active-workstream",
+      "classification": "active-workstream"
+    },
+    {
       "name": "work/ai-stream-snapshot-2026-09-16",
       "pinned_sha": "moving-working-snapshot",
       "classification": "working-snapshot"
