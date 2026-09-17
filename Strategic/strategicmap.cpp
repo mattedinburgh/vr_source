@@ -3271,13 +3271,17 @@ extern void SetLastTimePlayerWasInSector();
 //Moa: 09/14/2013 this function modifies uiTimeCurrentSectorWasLastLoaded and the various decay of items in that sector as well
 // @calls HandleSectorCooldownFunctions
 // @calls SetLastTimePlayerWasInSector
-static BOOLEAN CitySectorHasGroundShovel()
+static BOOLEAN CitySectorHasAccessibleGroundShovel()
 {
 	for ( UINT32 uiIndex = 0; uiIndex < guiNumWorldItems; ++uiIndex )
 	{
-		if ( gWorldItems[ uiIndex ].fExists &&
-			 gWorldItems[ uiIndex ].object.exists() &&
-			 HasItemFlag( gWorldItems[ uiIndex ].object.usItem, SHOVEL ) )
+		const WORLDITEM& worldItem = gWorldItems[ uiIndex ];
+		if ( worldItem.fExists &&
+			 worldItem.object.exists() &&
+			 HasItemFlag( worldItem.object.usItem, SHOVEL ) &&
+			 worldItem.ubLevel == 0 &&
+			 worldItem.bVisible > 0 &&
+			 (worldItem.usFlags & WORLD_ITEM_REACHABLE) )
 		{
 			return TRUE;
 		}
@@ -3323,8 +3327,8 @@ static void SeedCityShovelIfNeeded( INT16 sSectorX, INT16 sSectorY, INT8 bSector
 	if ( GetSectorFlagStatus( sSectorX, sSectorY, bSectorZ, SF_CITY_SHOVEL_SEEDED ) )
 		return;
 
-	// Respect hand-authored maps that already contain a shovel.
-	if ( CitySectorHasGroundShovel() )
+	// Respect hand-authored maps only when the shovel is visible, reachable, and on ground level.
+	if ( CitySectorHasAccessibleGroundShovel() )
 	{
 		SetSectorFlag( sSectorX, sSectorY, bSectorZ, SF_CITY_SHOVEL_SEEDED );
 		return;
