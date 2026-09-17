@@ -2253,7 +2253,7 @@ BOOLEAN AdjustToNextAnimationFrame( SOLDIERTYPE *pSoldier )
 
 						InitOpplistForDoorOpening();
 
-						MakeNoise( pSoldier->ubID, pSoldier->sGridNo, pSoldier->pathing.bLevel, gpWorldLevelData[pSoldier->sGridNo].ubTerrainID, pSoldier->ubDoorOpeningNoise, NOISE_CREAKING );
+						// Door noise is emitted by HandleDoorsOpenClose at the interacted door grid.
 						//	gfDelayResolvingBestSighting = FALSE;
 
 						gubInterruptProvoker = pSoldier->ubID;

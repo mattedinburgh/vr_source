@@ -12,6 +12,7 @@
 	#include "structure.h"
 	#include "Animation Control.h"
 	#include "points.h"
+	#include "opplist.h"
 	#include "overhead.h"
 	#include "tile animation.h"
 	#include "Interactive Tiles.h"
@@ -1203,6 +1204,13 @@ BOOLEAN HandleDoorsOpenClose( SOLDIERTYPE *pSoldier, INT32 sGridNo, STRUCTURE * 
 	};
 
 
+	// Current 1.13 emits door noise from the interacted door tile when the world state changes.
+	if ( pSoldier && pSoldier->ubDoorOpeningNoise > 0 )
+	{
+		OurNoise( pSoldier->ubID, pSoldier->aiData.sPendingActionData2, pSoldier->pathing.bLevel,
+			gpWorldLevelData[pSoldier->sGridNo].ubTerrainID, pSoldier->ubDoorOpeningNoise, NOISE_CREAKING );
+	}
+
 	if ( !(pStructure->fFlags & STRUCTURE_OPEN) )
 	{
 		//ATE, the last parameter is the perceived value, I dont know what it is so could you please add the value?
@@ -1228,7 +1236,7 @@ BOOLEAN HandleDoorsOpenClose( SOLDIERTYPE *pSoldier, INT32 sGridNo, STRUCTURE * 
 			{
 				// If an AI guy... do LOS check first....
 				// If guy is visible... OR fading...
-				if ( pSoldier->bVisible == -1 && !AllMercsLookForDoor( sGridNo, FALSE ) && !( gTacticalStatus.uiFlags&SHOW_ALL_MERCS ) )
+				if ( !pSoldier->ubDoorOpeningNoise && pSoldier->bVisible == -1 && !AllMercsLookForDoor( sGridNo, FALSE ) && !( gTacticalStatus.uiFlags&SHOW_ALL_MERCS ) )
 				{
 					fDoAnimation = FALSE;
 				}
@@ -1348,7 +1356,7 @@ BOOLEAN HandleDoorsOpenClose( SOLDIERTYPE *pSoldier, INT32 sGridNo, STRUCTURE * 
 			{
 				// If an AI guy... do LOS check first....
 				// If guy is visible... OR fading...
-				if ( pSoldier->bVisible == -1 && !AllMercsLookForDoor( sGridNo, FALSE ) && !( gTacticalStatus.uiFlags&SHOW_ALL_MERCS ) )
+				if ( !pSoldier->ubDoorOpeningNoise && pSoldier->bVisible == -1 && !AllMercsLookForDoor( sGridNo, FALSE ) && !( gTacticalStatus.uiFlags&SHOW_ALL_MERCS ) )
 				{
 					fDoAnimation = FALSE;
 				}
@@ -1401,10 +1409,12 @@ BOOLEAN HandleDoorsOpenClose( SOLDIERTYPE *pSoldier, INT32 sGridNo, STRUCTURE * 
 				uiSoundID = METAL_DOOR_CLOSE;
 			}
 
-	 AniParams.uiKeyFrame1Code			= ANI_KEYFRAME_DO_SOUND;
-	 AniParams.uiUserData					= uiSoundID;
-	 AniParams.uiUserData3					= sGridNo;
-
+			if ( pSoldier && pSoldier->ubDoorOpeningNoise )
+			{
+				AniParams.uiKeyFrame1Code = ANI_KEYFRAME_DO_SOUND;
+				AniParams.uiUserData = uiSoundID;
+				AniParams.uiUserData3 = sGridNo;
+			}
 
 			if ( fOpenedGraphic )
 			{
