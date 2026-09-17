@@ -28,6 +28,12 @@ IDE retargeting, build outputs, or generated files. Use clean stream worktrees a
 7. A successful compile/build is still required before anything is called playtest-ready.
 8. Preserve a rollback anchor before broad or high-risk integration.
 
+## Project-wide release inventory
+
+Before any project-wide `release`, run `BUILD_RELEASE_INVENTORY.ps1` against the pinned canonical SHA. `RELEASE_STREAM_REGISTRY.json` is the explicit project-wide classification of current workstream tips as `ready`, `active`, `blocked`, `parked`, or `superseded`. A release gate must include every registry `ready` branch that is AHEAD of canonical. A `ready` branch that is DIVERGED must be forward-ported first; it cannot be silently skipped. Any unregistered AHEAD branch blocks release until it is classified, preventing newly completed streams from disappearing from the release set.
+
+Owning streams must update their registry entry when their checkpoint changes release state. Historical DIVERGED refs may remain visible in the inventory, but only registered current stream tips and any unregistered AHEAD refs participate in the hard release gate. This avoids both partial releases and false blockers from old superseded branch history.
+
 A clean textual merge is necessary but not sufficient. Behavioural overlap in tactical AI, LOS, weapons,
 physics, rendering, inventory, audio, progression, and UI requires subsystem-specific regression checks.
 

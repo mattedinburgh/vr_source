@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "canonical_ref": "origin/install/all-2026-09-12",
+  "updated": "2026-09-17",
+  "streams": [
+    {
+      "stream": "Tactical AI + AI Engine / Performance",
+      "branch": "ai/performance-shared-brain-2026-09-17",
+      "state": "blocked",
+      "reason": "Fresh branch is source-clean and TacticalAI builds pass, but release evidence still requires a real paired large-battle AI-PERF benchmark and final release validation."
+    },
+    {
+      "stream": "Maps / World / Tactical Geometry",
+      "branch": "maps/redux-integration-2026-09-17",
+      "state": "active",
+      "reason": "REDUX pilot integration is still in progress; donor dependency manifest and migration validation are not complete."
+    },
+    {
+      "stream": "Items / Inventory / Loot / Ammo / Grenades / Explosives",
+      "branch": "items/inventory-loot-2026",
+      "state": "ready",
+      "reason": "Consolidated invariants and affected native Release builds pass; branch is intentionally waiting for project-wide integration/release."
+    },
+    {
+      "stream": "UI / Tactical Information / Audio / Localization",
+      "branch": "ui/tactical-information-2026-09-17",
+      "state": "blocked",
+      "reason": "Full Release build passes, but runtime visual/audio acceptance is still required before ordinary integration/release."
+    }
+  ]
+}
