@@ -90,6 +90,40 @@ foreach ($candidateRef in $CandidateRefs) {
     $candidates += [pscustomobject]@{ Name = $candidateRef; Sha = $candidateSha }
 }
 
+$redundantIndexes = @()
+for ($i = 0; $i -lt $candidates.Count; $i++) {
+    for ($j = 0; $j -lt $candidates.Count; $j++) {
+        if ($i -eq $j) { continue }
+
+        if ($candidates[$i].Sha -eq $candidates[$j].Sha) {
+            if ($i -gt $j) {
+                $redundantIndexes += $i
+                break
+            }
+            continue
+        }
+
+        $containedByCandidate = Invoke-Git @("merge-base", "--is-ancestor", $candidates[$i].Sha, $candidates[$j].Sha) $repo
+        if ($containedByCandidate.ExitCode -eq 0) {
+            Write-Host "REDUNDANT_CANDIDATE_CONTAINED: $($candidates[$i].Name) @ $($candidates[$i].Sha) is already contained by $($candidates[$j].Name) @ $($candidates[$j].Sha)"
+            $redundantIndexes += $i
+            break
+        }
+    }
+}
+
+if ($redundantIndexes.Count -gt 0) {
+    $redundantSet = @($redundantIndexes | Sort-Object -Unique)
+    $filtered = @()
+    for ($i = 0; $i -lt $candidates.Count; $i++) {
+        if ($redundantSet -notcontains $i) { $filtered += $candidates[$i] }
+    }
+    $candidates = $filtered
+}
+if ($candidates.Count -eq 0) {
+    throw "No independent candidate remains after redundant-candidate consolidation."
+}
+
 Write-Host "Batch candidates pinned in order:"
 $candidates | ForEach-Object { Write-Host "  $($_.Name) @ $($_.Sha)" }
 

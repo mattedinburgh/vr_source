@@ -194,6 +194,12 @@ try {
     & $gitExe -C $policyRepo commit -q -m "shared fixture A"
     if ($LASTEXITCODE -ne 0) { throw "Unable to commit shared fixture A." }
 
+    & $gitExe -C $policyRepo checkout -q -b shared-a-child
+    "descendant" | Set-Content -Path (Join-Path $policyRepo "README.md") -Encoding ASCII
+    & $gitExe -C $policyRepo add README.md
+    & $gitExe -C $policyRepo commit -q -m "shared fixture A descendant"
+    if ($LASTEXITCODE -ne 0) { throw "Unable to commit shared fixture A descendant." }
+
     & $gitExe -C $policyRepo checkout -q canonical
     & $gitExe -C $policyRepo checkout -q -b shared-b
     $sharedLines = Get-Content -Path $sharedPath
@@ -223,6 +229,17 @@ try {
 
     $actual = Invoke-ChildSnippet "batch-overlap-all" ($batchBase + " -AllowCrossStreamFileOverlap")
     Assert-ExitCode "batch-overlap-explicit-all" 0 $actual
+
+    $containedSnippet = "& '$fixtureBatchGate' -CandidateRefs @('shared-a','shared-a-child') -CanonicalRef 'canonical' -ExpectedCanonicalSha '$canonicalSha'"
+    $containedWrapper = Join-Path $tempRoot "invoke-batch-contained.ps1"
+    ($containedSnippet + [Environment]::NewLine + 'exit $LASTEXITCODE') | Set-Content -Path $containedWrapper -Encoding UTF8
+    $containedLog = Join-Path $tempRoot "batch-contained.log"
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $containedWrapper *> $containedLog
+    Assert-ExitCode "batch-contained-candidate-consolidation" 0 $LASTEXITCODE
+    if (-not (Select-String -Path $containedLog -SimpleMatch "REDUNDANT_CANDIDATE_CONTAINED:" -Quiet)) {
+        throw "Contained-candidate batch test passed without reporting redundant-candidate consolidation."
+    }
+    Write-Host "SELFTEST_OK batch-contained-candidate-marker"
 
     Write-Host "QA_TOOLING_SELF_TEST_OK"
 }
