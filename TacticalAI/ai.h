@@ -248,6 +248,15 @@ void SetNewSituation( SOLDIERTYPE * pSoldier );
 UINT8 SoldierDifficultyLevel( SOLDIERTYPE * pSoldier );
 void SoldierTriesToContinueAlongPath(SOLDIERTYPE *pSoldier);
 void StartNPCAI(SOLDIERTYPE *pSoldier);
+BOOLEAN AIPlayerTeamCommandActive(void);
+UINT8 AIPlayerTeamCommand(void);
+BOOLEAN AIPlayerControlReturnRequested(void);
+BOOLEAN AIPlayerCommandFastForward(void);
+void AITogglePlayerCommandFastForward(void);
+BOOLEAN AIStartPlayerTeamCommand(UINT8 ubCommand);
+BOOLEAN AIContinuePlayerTeamCommand(void);
+void AIRequestPlayerControl(void);
+void AIResetPlayerTeamCommand(void);
 void TempHurt(SOLDIERTYPE *pVictim, SOLDIERTYPE *pAttacker);
 int TryToResumeMovement(SOLDIERTYPE *pSoldier, INT32 sGridNo);
 
@@ -305,7 +314,7 @@ enum
 	AI_BATTLE_CATASTROPHIC
 };
 
-// Enemy doctrine describes training/initiative, not hidden combat bonuses.
+// Legacy enemy doctrine labels describe mission/posture only. ENEMY_TEAM tactical\n// reasoning is universally elite; doctrine never grants hidden combat bonuses or lowers intelligence.
 enum
 {
 	AI_DOCTRINE_SECURITY = 0,
@@ -325,6 +334,15 @@ enum
 	AI_INTENT_FALLBACK,
 	AI_INTENT_DISENGAGE,
 	AI_INTENT_RESCUE
+};
+
+// Player-issued tactical command mode. This is transient turn-level control state;
+// it does not alter SOLDIERTYPE or the savegame layout.
+enum
+{
+	AI_PLAYER_COMMAND_NONE = 0,
+	AI_PLAYER_COMMAND_ATTACK,
+	AI_PLAYER_COMMAND_WITHDRAW
 };
 
 enum
@@ -514,6 +532,8 @@ BOOLEAN AIReserveTacticalTask(SOLDIERTYPE *pSoldier, UINT8 ubTask, INT32 sTarget
 	UINT8 ubTargetID, UINT8 ubMaxOwners, UINT8 ubTurns);
 UINT8 AICountTacticalTaskReservations(SOLDIERTYPE *pSoldier, UINT8 ubTask,
 	INT32 sTargetGridNo, UINT8 ubTargetID);
+BOOLEAN AIHasTacticalTaskReservation(SOLDIERTYPE *pSoldier, UINT8 ubTask,
+	INT32 sTargetGridNo, UINT8 ubTargetID);
 void AIReleaseTacticalTask(SOLDIERTYPE *pSoldier);
 BOOLEAN AIBeginShortPlan(SOLDIERTYPE *pSoldier, UINT8 ubPlanType, INT32 sTargetGridNo,
 	UINT8 ubTargetID, UINT8 ubTurns);
@@ -604,6 +624,21 @@ UINT8 AIFireteamId(SOLDIERTYPE *pSoldier);
 UINT8 AIFireteamAliveCount(SOLDIERTYPE *pSoldier);
 UINT8 AIFireteamCombatReadyCount(SOLDIERTYPE *pSoldier);
 BOOLEAN AISameFireteam(SOLDIERTYPE *pSoldier, SOLDIERTYPE *pFriend);
+// Local fireteam contact blackboard. It shares a recently seen contact location
+// for planning/coordination only; attack legality still uses each actor's JA2 knowledge.
+BOOLEAN AISharedFireteamContact(SOLDIERTYPE *pSoldier, INT32 *psGridNo,
+	INT8 *pbLevel = NULL, UINT8 *pubConfidence = NULL);
+// Opponent-specific local report for planning/risk evaluation. Unlike Knowledge(),
+// this never authorizes direct fire; it only exposes what a connected fireteam member
+// personally saw/heard, with bounded relay distance and confidence decay.
+BOOLEAN AISharedFireteamOpponentContact(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID,
+	INT32 *psGridNo, INT8 *pbLevel = NULL, UINT8 *pubConfidence = NULL,
+	INT8 *pbKnowledge = NULL);
+// Planning-only contact retrieval. For ENEMY_TEAM this resolves through the bounded
+// local fireteam report network; it must not be used as direct-fire authorization.
+BOOLEAN AIPlanningContactForOpponent(SOLDIERTYPE *pSoldier, UINT8 ubOpponentID,
+	INT32 *psGridNo, INT8 *pbLevel = NULL, UINT8 *pubConfidence = NULL,
+	INT8 *pbKnowledge = NULL);
 BOOLEAN AIFireteamShouldHoldReserve(SOLDIERTYPE *pSoldier, INT32 sContactSpot, UINT8 ubResponseLimit);
 BOOLEAN AISelectKnownArtilleryTarget(SOLDIERTYPE *pSoldier, INT32 *psTargetGridNo);
 INT8 DecideFireteamCohesionAction(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);
@@ -639,6 +674,7 @@ BOOLEAN AIKnownRouteExposureAcceptable(SOLDIERTYPE *pSoldier, INT32 sDestination
 BOOLEAN AIShouldConsiderTacticalFallback(SOLDIERTYPE *pSoldier);
 BOOLEAN AIHasUsedTacticalFallback(SOLDIERTYPE *pSoldier);
 void AIRegisterTacticalFallback(SOLDIERTYPE *pSoldier);
+void AIClearTacticalFallbackState(SOLDIERTYPE *pSoldier);
 void AIRegisterCoverMoveIntent(SOLDIERTYPE *pSoldier, INT32 sFromGrid, INT32 sToGrid);
 BOOLEAN AIShouldRejectCoverOscillation(SOLDIERTYPE *pSoldier, INT32 sCandidateGrid);
 INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove);

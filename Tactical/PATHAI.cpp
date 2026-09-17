@@ -2504,6 +2504,34 @@ INT32 FindBestPath(SOLDIERTYPE *s, INT32 sDestination, INT8 bLevel, INT16 usMove
 {
 	s->sPlotSrcGrid = s->sGridNo;
 
+	// Emergency tactical-AI guard: pathological computer-controlled combat
+	// path searches must never monopolize the main thread. Player pathing is
+	// deliberately unaffected. In addition to the per-query limit, keep a
+	// cumulative per-soldier allowance for the current tactical team turn so
+	// hundreds of individually bounded searches cannot still add up to seconds.
+	extern UINT32 guiTurnCnt;
+	static UINT32 guiAIPathBudgetStamp[MAX_NUM_SOLDIERS] = { 0 };
+	static UINT32 guiAIPathBudgetStart[MAX_NUM_SOLDIERS] = { 0 };
+	const BOOLEAN fAIPathBudget =
+		gfTurnBasedAI && (s->bTeam == ENEMY_TEAM || s->bTeam == MILITIA_TEAM) &&
+		s->ubID < MAX_NUM_SOLDIERS;
+	const UINT32 uiAIPathNow = fAIPathBudget ? GetJA2Clock() : 0;
+	const UINT32 uiAIPathStamp = (guiTurnCnt << 3) ^ (UINT32)gTacticalStatus.ubCurrentTeam;
+	if (fAIPathBudget &&
+		(guiAIPathBudgetStamp[s->ubID] != uiAIPathStamp || guiAIPathBudgetStart[s->ubID] == 0))
+	{
+		guiAIPathBudgetStamp[s->ubID] = uiAIPathStamp;
+		guiAIPathBudgetStart[s->ubID] = uiAIPathNow;
+	}
+	if (fAIPathBudget && uiAIPathNow - guiAIPathBudgetStart[s->ubID] > 120)
+	{
+		gubNPCAPBudget = 0;
+		gubNPCDistLimit = 0;
+		return 0;
+	}
+	const UINT32 uiAIPathStart = uiAIPathNow;
+	UINT32 uiAIPathNodes = 0;
+
 #ifdef USE_ASTAR_PATHS
 	//ddd
 	CHAR8 errorBuf[511]; UINT32 b,e;
@@ -2939,6 +2967,23 @@ INT32 FindBestPath(SOLDIERTYPE *s, INT32 sDestination, INT8 bLevel, INT16 usMove
 
 	do
 	{
+		// Emergency AI budget. Time is the hard safety net; node count catches
+		// pathological queue growth. The cumulative window also prevents many
+		// individually legal queries from producing an unplayably long turn.
+		if (fAIPathBudget)
+		{
+			++uiAIPathNodes;
+			const UINT32 uiNow = GetJA2Clock();
+			if (uiAIPathNodes > 6000 ||
+				uiNow - uiAIPathStart > 25 ||
+				uiNow - guiAIPathBudgetStart[s->ubID] > 120)
+			{
+				gubNPCAPBudget = 0;
+				gubNPCDistLimit = 0;
+				return 0;
+			}
+		}
+
 		//remove the first and best path so far from the que
 		pCurrPtr = pQueueHead->pNext[0];
 		curLoc = pCurrPtr->iLocation;

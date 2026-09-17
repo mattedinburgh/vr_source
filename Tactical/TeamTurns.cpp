@@ -240,9 +240,9 @@ void StartPlayerTeamTurn( BOOLEAN fDoBattleSnd, BOOLEAN fEnteringCombatMode )
 				{
 					SlideTo( NOWHERE, gusSelectedSoldier, NOBODY ,SETLOCATOR);
 
-					if ( fDoBattleSnd )
+					if ( fDoBattleSnd && !AIPlayerTeamCommandActive() )
 					{
-						// Say ATTENTION SOUND...
+						// Say ATTENTION SOUND only when manual control is actually returning.
 						MercPtrs[ gusSelectedSoldier ]->DoMercBattleSound( BATTLE_SOUND_ATTN1 );
 					}
 
@@ -266,6 +266,19 @@ void StartPlayerTeamTurn( BOOLEAN fDoBattleSnd, BOOLEAN fEnteringCombatMode )
 		if ( !fEnteringCombatMode )
 		{
 			CheckForEndOfCombatMode( TRUE );
+		}
+
+		// Persistent player AI command mode resumes automatically every player round.
+		// Combat resolution clears the mode in ExitCombatMode(); otherwise keep the UI
+		// locked and immediately hand the refreshed AP turn back to the AI planner.
+		if (AIPlayerTeamCommandActive() && (gTacticalStatus.uiFlags & INCOMBAT))
+		{
+			if (AIContinuePlayerTeamCommand())
+				return;
+
+			// If a script/special state prevents safe continuation, fail back to manual
+			// control rather than leaving a stale active-command flag behind.
+			AIResetPlayerTeamCommand();
 		}
 
 	}
@@ -1078,6 +1091,28 @@ void StartInterrupt( void )
 			}
 
 			ScreenMsg( FONT_MCOLOR_LTYELLOW, MSG_INTERFACE,	sTemp );
+
+			// Persistent player command mode also owns player interrupts. Only the
+			// interrupters have bMoved == FALSE here, so the normal AI list naturally
+			// contains exactly the mercs allowed to act during this interrupt.
+			if (AIPlayerTeamCommandActive())
+			{
+				gTacticalStatus.ubCurrentTeam = gbPlayerNum;
+				FreezeInterfaceForEnemyTurn();
+
+				if (BuildAIListForTeam(gbPlayerNum))
+				{
+					UINT8 ubAIInterrupter = RemoveFirstAIListEntry();
+					if (ubAIInterrupter != NOBODY)
+					{
+						StartNPCAI(MercPtrs[ubAIInterrupter]);
+						return;
+					}
+				}
+
+				EndInterrupt(TRUE);
+				return;
+			}
 
 			DebugMsg( TOPIC_JA2INTERRUPT, DBG_LEVEL_3, String("INTERRUPT: starting interrupt for %d", ubFirstInterrupter ) );
 			// gusSelectedSoldier should become the topmost guy on the interrupt list

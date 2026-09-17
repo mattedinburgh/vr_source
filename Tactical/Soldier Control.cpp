@@ -11791,13 +11791,17 @@ static void MaybePlayBattlefieldCasualtyAudio( SOLDIERTYPE *pCasualty, INT8 bOld
 	UINT32 uiNow = GetJA2Clock();
 	BOOLEAN fMedicCalled = FALSE;
 
-	// Named player characters keep their own recorded voice.
+	// Professional player mercs keep their profile voice in combat: normally
+	// English, with any established character-specific language mix preserved by
+	// that merc's own recorded assets.
 	if ( pCasualty->ubProfile != NO_PROFILE && pCasualty->bTeam == gbPlayerNum )
 	{
 		if ( pCasualty->stats.bLife >= CONSCIOUSNESS && !pCasualty->flags.fDyingComment )
 		{
-			TacticalCharacterDialogue( pCasualty, QUOTE_SERIOUSLY_WOUNDED );
+			fMedicCalled = TacticalCharacterDialogue( pCasualty, QUOTE_SERIOUSLY_WOUNDED );
 			pCasualty->flags.fDyingComment = TRUE;
+			if ( fMedicCalled )
+				guiLastBattlefieldMedicCall = uiNow;
 		}
 	}
 	else if ( pCasualty->ubProfile == NO_PROFILE &&
@@ -11805,10 +11809,10 @@ static void MaybePlayBattlefieldCasualtyAudio( SOLDIERTYPE *pCasualty, INT8 bOld
 		pCasualty->stats.bLife >= CONSCIOUSNESS &&
 		( uiNow - guiLastBattlefieldMedicCall ) > 6000 && Random( 100 ) < 55 )
 	{
-		// Shared English casualty callouts are allied-only. Enemy Army voices
-		// remain Spanish and use the Army voice-taunt bank. The same sector-wide
-		// cooldown is used whether the wounded soldier or a nearby teammate calls,
-		// so a burst hitting several allies cannot produce a stack of "Medic!" lines.
+		// Language follows the speaker: generic player-side professionals use the
+		// shared English call, while militia are intercepted below into their
+		// Spanish bank. Enemy Army remains on its separate Spanish taunt path.
+		// The sector-wide cooldown prevents a burst from stacking "Medic!" calls.
 		fMedicCalled = pCasualty->DoMercBattleSound( BATTLE_SOUND_MEDIC );
 		if ( fMedicCalled )
 			guiLastBattlefieldMedicCall = uiNow;
@@ -11831,7 +11835,7 @@ static void MaybePlayBattlefieldCasualtyAudio( SOLDIERTYPE *pCasualty, INT8 bOld
 	// Nonfatal agony reuses DYING/BADx_DIE but does not consume the real death cue.
 	// A short battlefield-wide spacing prevents several casualties from groaning on
 	// the exact same impact frame while retaining the much longer medic-call cooldown.
-	if ( ( uiNow - guiLastBattlefieldAgonyCall ) > 1500 && Random( 100 ) < 70 )
+	if ( !fMedicCalled && ( uiNow - guiLastBattlefieldAgonyCall ) > 1500 && Random( 100 ) < 70 )
 	{
 		if ( pCasualty->DoMercBattleSound( BATTLE_SOUND_AGONY ) )
 		{
@@ -12855,6 +12859,10 @@ BOOLEAN SOLDIERTYPE::InternalDoMercBattleSound( UINT8 ubBattleSoundID, INT8 bSpe
 		else
 			fSpeechSound = TRUE;
 	}
+
+	// Keep pain/death/agony/medic reactions on the normal BATTLESNDS path.
+	// This prevents militia combat screams from being forced through the
+	// Spanish situational-voice bank and restores the English/default reactions.
 
 	// Randomize between sounds, if appropriate
 	// anv: but only randomize between files that do exist!
@@ -15082,8 +15090,9 @@ UINT32 SOLDIERTYPE::SoldierDressWound( SOLDIERTYPE *pVictim, INT16 sKitPts, INT1
 	}
 
 	bInitialBleeding = pVictim->bBleeding;
-	// Vengeance: item 1022 is the improvised cloth rag. It uses the normal
-	// first-aid wound path, but is intentionally far slower and more wasteful.
+	// Vengeance: improvised cloth rags use the normal first-aid wound path.
+	// Balance target: half the material efficiency of a first-aid kit and
+	// approximately 50% more AP/time for the same amount of wound treatment.
 	fImprovisedRag = (this->inv[ HANDPOS ].exists() && ItemIsImprovisedBandage( this->inv[ HANDPOS ].usItem ));
 
 	// in case he has multiple kits in hand, limit influence of kit status to 100%!
@@ -15155,11 +15164,11 @@ UINT32 SOLDIERTYPE::SoldierDressWound( SOLDIERTYPE *pVictim, INT16 sKitPts, INT1
 		uiPossible += ( uiPossible * gSkillTraitValues.ubDOBandagingSpeedPercent * NUM_SKILL_TRAITS( this, DOCTOR_NT ) + this->GetBackgroundValue(BG_PERC_BANDAGING) ) / 100;
 	}
 
-	// Improvised rags secure wounds exactly like a first-aid kit (bleeding/yellow
-	// becomes bandaged/pink), but only at 20% of the normal treatment rate.
+	// About 50% more AP/time than a first-aid kit means 2/3 normal treatment
+	// throughput for the same available APs.
 	if ( fImprovisedRag )
 	{
-		uiPossible = (uiPossible + 4) / 5;
+		uiPossible = (uiPossible * 2 + 2) / 3;
 	}
 
 	uiActual = uiPossible;		// start by assuming maximum possible
@@ -15220,15 +15229,15 @@ UINT32 SOLDIERTYPE::SoldierDressWound( SOLDIERTYPE *pVictim, INT16 sKitPts, INT1
 	{
 		if ( fImprovisedRag )
 		{
-			// A rag is a crude pressure dressing: five condition points are needed
-			// for every one point of actual wound treatment.
-			uiMedcost = uiActual * 5;
+			// Half the material efficiency of a first-aid kit: two rag condition
+			// points are required per one point of actual wound treatment.
+			uiMedcost = uiActual * 2;
 
 			if ( uiMedcost > (UINT32)sKitPts )
 			{
 				fRanOut = TRUE;
-				uiActual = (UINT32)sKitPts / 5;
-				uiMedcost = uiActual * 5;
+				uiActual = (UINT32)sKitPts / 2;
+				uiMedcost = uiActual * 2;
 			}
 		}
 		else
@@ -21512,7 +21521,10 @@ INT32 CheckBleeding( SOLDIERTYPE *pSoldier )
 							 // if he's conscious, and he hasn't already, say his "dying quote"
 							 if ( ( pSoldier->stats.bLife >= CONSCIOUSNESS ) && !pSoldier->flags.fDyingComment )
 							 {
-								 TacticalCharacterDialogue( pSoldier, QUOTE_SERIOUSLY_WOUNDED );
+								 // Keep the merc's established profile voice here. This is
+							 // normally English; custom bilingual/native-language material,
+							 // if recorded for that character, remains intact.
+							 TacticalCharacterDialogue( pSoldier, QUOTE_SERIOUSLY_WOUNDED );
 
 								 pSoldier->flags.fDyingComment = TRUE;
 							 }

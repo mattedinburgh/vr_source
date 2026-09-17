@@ -1,10 +1,11 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string]$CandidateRef,
+    [string[]]$CandidateRefs,
     [string]$CanonicalRef = "origin/install/all-2026-09-12",
     [string]$ExpectedCanonicalSha = "",
     [switch]$Fetch,
-    [switch]$AllowStrategicChanges
+    [switch]$AllowStrategicChanges,
+    [switch]$AllowCrossStreamFileOverlap
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,8 +24,7 @@ function Resolve-GitExecutable {
 
     $desktopPattern = Join-Path $env:LOCALAPPDATA "GitHubDesktop\app-*\resources\app\git\cmd\git.exe"
     $desktopGit = Get-Item $desktopPattern -ErrorAction SilentlyContinue |
-        Sort-Object FullName -Descending |
-        Select-Object -First 1
+        Sort-Object FullName -Descending | Select-Object -First 1
     if ($desktopGit) { return $desktopGit.FullName }
 
     throw "Git executable not found. Install Git or GitHub Desktop."
@@ -32,7 +32,7 @@ function Resolve-GitExecutable {
 $script:GitExe = Resolve-GitExecutable
 
 function Invoke-Git {
-    param([string[]]$Arguments, [string]$WorkingDirectory = $PSScriptRoot)
+    param([string[]]$Arguments, [string]$WorkingDirectory)
     $savedErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
@@ -57,103 +57,126 @@ if ($Fetch) {
     Write-Host "FETCH_OK"
 }
 else {
-    Write-Host "FETCH_SKIPPED - using currently known refs. Matt performs the final GitHub Desktop fetch/pull."
+    Write-Host "FETCH_SKIPPED - using currently known refs."
 }
 $canonical = Invoke-Git @("rev-parse", "--verify", $CanonicalRef) $repo
 if ($canonical.ExitCode -ne 0) { throw "Canonical ref not found: $CanonicalRef" }
 $canonicalSha = ($canonical.Output | Select-Object -First 1).Trim()
 
 if ($ExpectedCanonicalSha -and $canonicalSha -ne $ExpectedCanonicalSha) {
-    throw "Canonical moved. Expected $ExpectedCanonicalSha but found $canonicalSha. Re-run the gate."
+    throw "Canonical moved. Expected $ExpectedCanonicalSha but found $canonicalSha."
 }
-
-$candidate = Invoke-Git @("rev-parse", "--verify", $CandidateRef) $repo
-if ($candidate.ExitCode -ne 0) { throw "Candidate ref not found: $CandidateRef" }
-$candidateSha = ($candidate.Output | Select-Object -First 1).Trim()
 
 Write-Host "Canonical: $CanonicalRef @ $canonicalSha"
-Write-Host "Candidate: $CandidateRef @ $candidateSha"
-if (-not $ExpectedCanonicalSha) {
-    Write-Host "PIN_THIS_CANONICAL_SHA=$canonicalSha"
+
+$candidates = @()
+foreach ($candidateRef in $CandidateRefs) {
+    $candidate = Invoke-Git @("rev-parse", "--verify", $candidateRef) $repo
+    if ($candidate.ExitCode -ne 0) { throw "Candidate ref not found: $candidateRef" }
+    $candidateSha = ($candidate.Output | Select-Object -First 1).Trim()
+
+    $contained = Invoke-Git @("merge-base", "--is-ancestor", $candidateSha, $canonicalSha) $repo
+    if ($contained.ExitCode -eq 0) {
+        throw "Candidate already contained by canonical: $candidateRef @ $candidateSha"
+    }
+
+    $forwardPorted = Invoke-Git @("merge-base", "--is-ancestor", $canonicalSha, $candidateSha) $repo
+    if ($forwardPorted.ExitCode -ne 0) {
+        throw "FORWARD_PORT_REQUIRED before batch gate: $candidateRef @ $candidateSha"
+    }
+
+    $candidates += [pscustomobject]@{ Name = $candidateRef; Sha = $candidateSha }
 }
 
-$counts = Invoke-Git @("rev-list", "--left-right", "--count", "$canonicalSha...$candidateSha") $repo
-if ($counts.ExitCode -ne 0) { throw "Unable to compare refs." }
-Write-Host "Left/right unique commits: $($counts.Output -join ' ')"
+Write-Host "Batch candidates pinned in order:"
+$candidates | ForEach-Object { Write-Host "  $($_.Name) @ $($_.Sha)" }
 
-if ($candidateSha -eq $canonicalSha) {
-    Write-Host "NO_CANDIDATE_DELTA"
-    exit 4
+$conflictGate = Join-Path $PSScriptRoot "CHECK_INTEGRATION_CONFLICTS.ps1"
+if (-not (Test-Path $conflictGate)) {
+    throw "Cross-stream conflict gate is missing: $conflictGate"
 }
-$alreadyIntegrated = Invoke-Git @("merge-base", "--is-ancestor", $candidateSha, $canonicalSha) $repo
-if ($alreadyIntegrated.ExitCode -eq 0) {
-    Write-Host "CANDIDATE_ALREADY_CONTAINED_IN_CANONICAL"
-    exit 4
+$conflictArgs = @{
+    CandidateRefs = @($candidates | ForEach-Object { $_.Sha })
+    CanonicalRef = $canonicalSha
+    ExpectedCanonicalSha = $canonicalSha
 }
+if (-not $AllowCrossStreamFileOverlap) {
+    $conflictArgs["FailOnSharedFiles"] = $true
+}
+& $conflictGate @conflictArgs
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "BATCH_CROSS_STREAM_CONFLICT_SCAN_FAILED"
+    exit $LASTEXITCODE
+}
+Write-Host "BATCH_CROSS_STREAM_CONFLICT_SCAN_OK"
 
-$forwardPorted = Invoke-Git @("merge-base", "--is-ancestor", $canonicalSha, $candidateSha) $repo
-if ($forwardPorted.ExitCode -ne 0) {
-    Write-Host "FORWARD_PORT_REQUIRED"
-    Write-Host "Candidate is not based on the pinned canonical tip. Rebase/merge the current canonical baseline into the stream first."
-    exit 5
-}
-
-$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("vr-integration-gate-" + $PID)
+$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("vr-integration-batch-" + $PID)
 if (Test-Path $tempRoot) { Remove-Item -Recurse -Force $tempRoot }
-
 $add = Invoke-Git @("worktree", "add", "--detach", $tempRoot, $canonicalSha) $repo
 if ($add.ExitCode -ne 0) {
     throw "Unable to create disposable worktree: $($add.Output -join [Environment]::NewLine)"
 }
 
 try {
-    $merge = Invoke-Git @("merge", "--no-commit", "--no-ff", $candidateSha) $tempRoot
-    $conflicts = Invoke-Git @("diff", "--name-only", "--diff-filter=U") $tempRoot
-    $conflictPaths = @($conflicts.Output | Where-Object { $_ -and $_ -notmatch '^warning:' })
+    [void](Invoke-Git @("config", "user.name", "VR Integration QA") $tempRoot)
+    [void](Invoke-Git @("config", "user.email", "qa@local.invalid") $tempRoot)
 
-    if ($merge.ExitCode -ne 0) {
-        Write-Host "MERGE_CONFLICT"
-        $conflictPaths | ForEach-Object { Write-Host "  $_" }
-        exit 2
+    foreach ($candidate in $candidates) {
+        $candidateRef = $candidate.Name
+        $candidateSha = $candidate.Sha
+        $before = Invoke-Git @("rev-parse", "HEAD") $tempRoot
+        $beforeSha = ($before.Output | Select-Object -First 1).Trim()
+
+        Write-Host "MERGING $candidateRef @ $candidateSha"
+        $merge = Invoke-Git @(
+            "merge", "--no-ff", "-m", "QA temporary merge: $candidateRef @ $candidateSha", $candidateSha
+        ) $tempRoot
+
+        if ($merge.ExitCode -ne 0) {
+            Write-Host "BATCH_MERGE_CONFLICT: $candidateRef @ $candidateSha"
+            $conflicts = Invoke-Git @("diff", "--name-only", "--diff-filter=U") $tempRoot
+            $conflicts.Output | Where-Object { $_ } | ForEach-Object { Write-Host "  $_" }
+            exit 20
+        }
+
+        $delta = Invoke-Git @("diff", "--name-only", "$beforeSha..HEAD") $tempRoot
+        $deltaPaths = @($delta.Output | Where-Object { $_ })
+        Write-Host "MERGED_OK: $candidateRef @ $candidateSha ($($deltaPaths.Count) files)"
     }
-    $check = Invoke-Git @("-c", "core.whitespace=cr-at-eol", "diff", "--check", $canonicalSha) $tempRoot
+    $check = Invoke-Git @("-c", "core.whitespace=cr-at-eol", "diff", "--check", "$canonicalSha..HEAD") $tempRoot
     if ($check.ExitCode -ne 0) {
-        Write-Host "DIFF_CHECK_FAILED"
+        Write-Host "BATCH_DIFF_CHECK_FAILED"
         $check.Output | ForEach-Object { Write-Host $_ }
-        exit 3
+        exit 21
     }
 
-    $changed = Invoke-Git @("diff", "--name-only", $canonicalSha) $tempRoot
-    if ($changed.ExitCode -ne 0) { throw "Unable to enumerate changed files." }
+    $changed = Invoke-Git @("diff", "--name-only", "$canonicalSha..HEAD") $tempRoot
+    if ($changed.ExitCode -ne 0) { throw "Unable to enumerate batch changes." }
     $changedPaths = @($changed.Output | Where-Object { $_ })
-
-    Write-Host "MERGE_CLEAN"
-    Write-Host "Changed files: $($changedPaths.Count)"
-    $changedPaths | ForEach-Object { Write-Host "  $_" }
 
     $noise = @($changedPaths | Where-Object {
         $_ -match '(^|/)(bin|build|Debug|Release|ipch|\.vs)(/|$)' -or
         $_ -match '(\.vcxproj\.user|\.suo|\.obj|\.pdb|\.ilk|\.tlog|\.log)$'
     })
     if ($noise.Count -gt 0) {
-        Write-Host "GENERATED_OR_IDE_NOISE_BLOCKED"
+        Write-Host "BATCH_GENERATED_OR_IDE_NOISE_BLOCKED"
         $noise | ForEach-Object { Write-Host "  $_" }
-        exit 6
+        exit 22
     }
 
     $strategic = @($changedPaths | Where-Object { $_ -match '^Strategic/' })
     if ($strategic.Count -gt 0 -and -not $AllowStrategicChanges) {
-        Write-Host "STRATEGIC_LAYER_CHANGE_BLOCKED"
+        Write-Host "BATCH_STRATEGIC_LAYER_CHANGE_BLOCKED"
         $strategic | ForEach-Object { Write-Host "  $_" }
-        exit 7
+        exit 23
     }
-    $markerArgs = @("grep", "-n", "-E", "^(<<<<<<< .+|=======|>>>>>>> .+)$", "--") + $changedPaths
     if ($changedPaths.Count -gt 0) {
+        $markerArgs = @("grep", "-n", "-E", "^(<<<<<<< .+|=======|>>>>>>> .+)$", "--") + $changedPaths
         $markers = Invoke-Git $markerArgs $tempRoot
         if ($markers.ExitCode -eq 0) {
-            Write-Host "MERGE_MARKERS_BLOCKED"
+            Write-Host "BATCH_MERGE_MARKERS_BLOCKED"
             $markers.Output | ForEach-Object { Write-Host $_ }
-            exit 8
+            exit 24
         }
         elseif ($markers.ExitCode -gt 1) {
             throw "git grep failed while checking merge markers."
@@ -169,18 +192,10 @@ try {
             $fullPath, [ref]$tokens, [ref]$errors
         )
         if ($errors.Count -gt 0) {
-            Write-Host "POWERSHELL_PARSE_FAILED: $relativePath"
+            Write-Host "BATCH_POWERSHELL_PARSE_FAILED: $relativePath"
             $errors | Format-List
-            exit 9
+            exit 25
         }
-    }
-
-    $hot = @($changedPaths | Where-Object {
-        $_ -match '^(TacticalAI|Tactical|Strategic|TileEngine|Laptop|Utils)/'
-    })
-    if ($hot.Count -gt 0) {
-        Write-Host "HOT_ZONE_REVIEW_REQUIRED"
-        $hot | ForEach-Object { Write-Host "  $_" }
     }
     $aiTouched = @($changedPaths | Where-Object {
         $_ -match '^(TacticalAI|ModularizedTacticalAI|Tools/AI)/'
@@ -193,17 +208,14 @@ try {
         }
         & $aiAudit -RepositoryRoot $tempRoot
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "AI_INTEGRITY_FAILED"
-            exit 10
+            Write-Host "BATCH_AI_INTEGRITY_FAILED"
+            exit 26
         }
-        Write-Host "AI_INTEGRITY_OK"
+        Write-Host "BATCH_AI_INTEGRITY_OK"
     }
 
-    if ($strategic.Count -gt 0 -and $AllowStrategicChanges) {
-        Write-Host "STRATEGIC_LAYER_CHANGE_EXPLICITLY_ALLOWED"
-    }
-
-    Write-Host "PREMERGE_STATIC_GATE_OK"
+    Write-Host "BATCH_STATIC_GATE_OK"
+    Write-Host "Combined changed files: $($changedPaths.Count)"
     Write-Host "BUILD_STILL_REQUIRED_BEFORE_PLAYTEST_READY"
     exit 0
 }

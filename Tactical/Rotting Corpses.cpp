@@ -797,6 +797,46 @@ BOOLEAN CreateCorpsePalette( ROTTING_CORPSE *pCorpse )
 }
 
 
+// Vengeance: tactical battles won with militia assistance should still leave
+// useful battlefield salvage, but less than direct merc kills. Keep this
+// modifier in the corpse/drop path so the externalized enemy drop tables remain
+// the single source of truth for baseline loot rates.
+static BOOLEAN EnemyWasKilledByMilitia( SOLDIERTYPE *pSoldier )
+{
+	if ( pSoldier == NULL || pSoldier->bTeam != ENEMY_TEAM || pSoldier->ubAttackerID == NOBODY )
+		return FALSE;
+
+	SOLDIERTYPE *pAttacker = MercPtrs[ pSoldier->ubAttackerID ];
+	return ( pAttacker != NULL && pAttacker->bActive && pAttacker->bTeam == MILITIA_TEAM );
+}
+
+static void ReduceLootForMilitiaKill( SOLDIERTYPE *pSoldier )
+{
+	if ( !EnemyWasKilledByMilitia( pSoldier ) )
+		return;
+
+	UINT32 invsize = pSoldier->inv.size();
+
+	for ( UINT32 uiLootSlot = 0; uiLootSlot < invsize; ++uiLootSlot )
+	{
+		OBJECTTYPE *pLootObj = &( pSoldier->inv[ uiLootSlot ] );
+
+		if ( pLootObj->exists() == false ||
+			Item[ pLootObj->usItem ].defaultundroppable ||
+			(pLootObj->fFlags & OBJECT_UNDROPPABLE) )
+		{
+			continue;
+		}
+
+		// Retain roughly half of the items that already passed the normal
+		// externalized enemy drop roll. EnsureMinimumEnemyLootDrop() below
+		// prevents this situational reduction from turning a tactical kill
+		// into a completely empty loot result.
+		if ( Random( 100 ) < 50 )
+			pLootObj->fFlags |= OBJECT_UNDROPPABLE;
+	}
+}
+
 // Vengeance: guarantee that a normal enemy does not leave an empty loot result
 // merely because every legitimate carried item failed its normal drop roll.
 // Quest/special items marked default-undroppable remain protected.
@@ -1023,6 +1063,7 @@ BOOLEAN TurnSoldierIntoCorpse( SOLDIERTYPE *pSoldier, BOOLEAN fRemoveMerc, BOOLE
 		// OK, Place what objects this guy was carrying on the ground!
 		UINT32 invsize = pSoldier->inv.size();
 
+		ReduceLootForMilitiaKill( pSoldier );
 		EnsureMinimumEnemyLootDrop( pSoldier );
 
 		for ( cnt = 0; cnt < invsize; ++cnt )

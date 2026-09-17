@@ -1447,6 +1447,15 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 			return bForcedRetreat;
 	}
 
+	if (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive() &&
+		AIPlayerTeamCommand() == AI_PLAYER_COMMAND_WITHDRAW)
+	{
+		INT8 bCommandWithdraw = DecideTacticalFallback(
+			pSoldier, pSoldier->bActionPoints >= MinPtsToMove(pSoldier));
+		if (bCommandWithdraw != AI_ACTION_NONE)
+			return bCommandWithdraw;
+	}
+
 	BOOLEAN fCivilian = (PTR_CIVILIAN && (pSoldier->ubCivilianGroup == NON_CIV_GROUP || pSoldier->aiData.bNeutral || (pSoldier->ubBodyType >= FATCIV && pSoldier->ubBodyType <= CRIPPLECIV) ) );
 	BOOLEAN fCivilianOrMilitia = PTR_CIV_OR_MILITIA;
 
@@ -1497,8 +1506,11 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 							{
 								pTeamSoldier=MercPtrs[bLoop]; 
 
-								if (pTeamSoldier->flags.uiStatusFlags & SOLDIER_PCUNDERAICONTROL)
+								if (!AIPlayerTeamCommandActive() &&
+									(pTeamSoldier->flags.uiStatusFlags & SOLDIER_PCUNDERAICONTROL))
+								{
 									pTeamSoldier->flags.uiStatusFlags &= (~SOLDIER_PCUNDERAICONTROL);
+								}
 
 								pTeamSoldier->DeleteBoxingFlag( );
 							}
@@ -1730,7 +1742,8 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 				  Random(100) < (MercPtrs[ubPerson]->SuspicionPercent() - 25) ) )
 			{
 				UINT8 ubFriendsNearby = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE/4);
-				UINT8 ubSoldierDifficulty = SoldierDifficultyLevel(pSoldier);				
+				// All enemy officers use the same top-end investigation discipline.
+				UINT8 ubSoldierDifficulty = 4;				
 
 				// come to investigate
 				pSoldier->aiData.usActionData = InternalGoAsFarAsPossibleTowards(pSoldier, MercPtrs[ubPerson]->sGridNo, 0, AI_ACTION_SEEK_NOISE, 0);
@@ -2120,9 +2133,15 @@ INT8 DecideActionGreen(SOLDIERTYPE *pSoldier)
 				 (pSoldier->bBreath > 30 || GetBPCostPer10APsForGunHolding( pSoldier, TRUE ) < 20) )
 			{
 				iChance = 25;
-				if ( pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA || pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE )
+				if (pSoldier->bTeam == ENEMY_TEAM)
+				{
+					// Equipment decides whether the soldier can scan through an optic;
+					// soldier class no longer decides whether he understands readiness.
+					iChance = 40;
+				}
+				else if ( pSoldier->ubSoldierClass == SOLDIER_CLASS_ELITE_MILITIA )
 					iChance += 15;
-				else if ( pSoldier->ubSoldierClass == SOLDIER_CLASS_GREEN_MILITIA || pSoldier->ubSoldierClass == SOLDIER_CLASS_ADMINISTRATOR )
+				else if ( pSoldier->ubSoldierClass == SOLDIER_CLASS_GREEN_MILITIA )
 					iChance -= 15;
 				if ( Random(100) < iChance ) 
 				{
@@ -2595,6 +2614,15 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 			return bForcedRetreat;
 	}
 
+	if (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive() &&
+		AIPlayerTeamCommand() == AI_PLAYER_COMMAND_WITHDRAW)
+	{
+		INT8 bCommandWithdraw = DecideTacticalFallback(
+			pSoldier, pSoldier->bActionPoints >= MinPtsToMove(pSoldier));
+		if (bCommandWithdraw != AI_ACTION_NONE)
+			return bCommandWithdraw;
+	}
+
 	bInWater = DeepWater( pSoldier->sGridNo, pSoldier->pathing.bLevel );
 	bInGas = InGas( pSoldier, pSoldier->sGridNo );
 
@@ -2806,7 +2834,8 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 				  Random(100) < (MercPtrs[ubPerson]->SuspicionPercent() - 25) ) )
 			{
 				UINT8 ubFriendsNearby = CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE/4);
-				UINT8 ubSoldierDifficulty = SoldierDifficultyLevel(pSoldier);				
+				// All enemy officers use the same top-end investigation discipline.
+				UINT8 ubSoldierDifficulty = 4;				
 
 				// come to investigate
 				pSoldier->aiData.usActionData = InternalGoAsFarAsPossibleTowards(pSoldier, MercPtrs[ubPerson]->sGridNo, 0, AI_ACTION_SEEK_NOISE, 0);
@@ -2923,7 +2952,10 @@ INT8 DecideActionYellow(SOLDIERTYPE *pSoldier)
 
 	// if we have the action points remaining to RADIO
 	// (we never want NPCs to choose to radio if they would have to wait a turn)
-	if ( !fCivilian && (pSoldier->bActionPoints >= APBPConstants[AP_RADIO]) &&
+	// Enemy heard-contact coordination is handled by the bounded local fireteam net.
+	// A legacy YELLOW radio would now spend AP without adding legitimate information.
+	if ( pSoldier->bTeam != ENEMY_TEAM &&
+		!fCivilian && (pSoldier->bActionPoints >= APBPConstants[AP_RADIO]) &&
 		(gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) )
 	{
 		// base chance depends on how much new info we have to radio to the others
@@ -3561,6 +3593,14 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 	// can this guy move to any of the neighbouring squares ? (sets TRUE/FALSE)
 	ubCanMove = (pSoldier->bActionPoints >= MinPtsToMove(pSoldier));
 
+	if (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive() &&
+		AIPlayerTeamCommand() == AI_PLAYER_COMMAND_WITHDRAW)
+	{
+		INT8 bCommandWithdraw = DecideTacticalFallback(pSoldier, ubCanMove);
+		if (bCommandWithdraw != AI_ACTION_NONE)
+			return bCommandWithdraw;
+	}
+
 	// if we're an alerted enemy, and there are panic bombs or a trigger around
 	if ( (!PTR_CIVILIAN || pSoldier->ubProfile == WARDEN) && ( ( gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition || (pSoldier->ubID == gTacticalStatus.ubTheChosenOne) || (pSoldier->ubProfile == WARDEN) ) &&
 		(gTacticalStatus.fPanicFlags & (PANIC_BOMBS_HERE | PANIC_TRIGGERS_HERE ) ) ) )
@@ -3607,7 +3647,8 @@ INT8 DecideActionRed(SOLDIERTYPE *pSoldier)
 	if ( !bInGas && (gWorldSectorX == TIXA_SECTOR_X && gWorldSectorY == TIXA_SECTOR_Y) )
 	{
 		// only chance if we happen to be caught with our gas mask off
-		if ( PreRandom( 10 ) == 0 && WearGasMaskIfAvailable( pSoldier ) )
+		if ( (pSoldier->bTeam == ENEMY_TEAM || PreRandom(10) == 0) &&
+			 WearGasMaskIfAvailable(pSoldier) )
 		{
 			// reevaluate
 			bInGas = InGasOrSmoke( pSoldier, pSoldier->sGridNo );
@@ -4127,6 +4168,21 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 			 AIFriendWithdrawingNeedsCover(pSoldier, BestShot.ubOpponent) ||
 			 AIFriendAdvancingNeedsCover(pSoldier, BestShot.ubOpponent));
 		BOOLEAN fDoctrineProactiveSupport = AIAllowsProactiveSupport(pSoldier);
+		BOOLEAN fAssignedFireteamSuppressor = FALSE;
+		if (pSoldier->bTeam == ENEMY_TEAM &&
+			BestShot.ubPossible &&
+			BestShot.bWeaponIn != NO_SLOT &&
+			!TileIsOutOfBounds(BestShot.sTarget) &&
+			IsGunAutofireCapable(&pSoldier->inv[BestShot.bWeaponIn]))
+		{
+			// Role evaluation owns the reservation; this read only asks whether this
+			// soldier is the fireteam's designated base-of-fire shooter for this contact.
+			INT8 bLocalRole = AITacticalRole(pSoldier, BestShot.sTarget);
+			fAssignedFireteamSuppressor =
+				bLocalRole == AI_ROLE_SUPPORT &&
+				AIHasTacticalTaskReservation(
+					pSoldier, AI_TASK_SUPPRESS, BestShot.sTarget, NOBODY);
+		}
 
 		// WarmSteel - Because of suppression fire, we need enough ammo to even consider suppressing
 		// This means we need to reload. Also reload if we're just plainly low on bullets.
@@ -4134,10 +4190,12 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 		if( BestShot.bWeaponIn != NO_SLOT &&
 			!TANK(pSoldier) &&
 			pSoldier->bActionPoints > APBPConstants[AP_MINIMUM] &&
-			(fCoveringFireSupport || fDoctrineProactiveSupport &&
-			 (!pSoldier->aiData.bUnderFire && !GuySawEnemy(pSoldier, SEEN_LAST_TURN) &&
-			  (TileIsOutOfBounds(sClosestOpponent) || PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 2) ||
-			  AICheckIsMachinegunner(pSoldier) && Chance(25) || Chance(10))) &&
+			(fCoveringFireSupport ||
+			 fAssignedFireteamSuppressor ||
+			 (pSoldier->bTeam != ENEMY_TEAM && fDoctrineProactiveSupport &&
+			  (!pSoldier->aiData.bUnderFire && !GuySawEnemy(pSoldier, SEEN_LAST_TURN) &&
+			   (TileIsOutOfBounds(sClosestOpponent) || PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 2) ||
+			   AICheckIsMachinegunner(pSoldier) && Chance(25) || Chance(10)))) &&
 			IsGunAutofireCapable(&pSoldier->inv[BestShot.bWeaponIn]) &&
 			Weapon[pSoldier->inv[BestShot.bWeaponIn].usItem].swapClips &&
 			pSoldier->inv[BestShot.bWeaponIn][0]->data.gun.ubGunShotsLeft < gGameExternalOptions.ubAISuppressionMinimumAmmo &&
@@ -4175,12 +4233,14 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 			}
 		}
 
-		// Security/ordinary line troops suppress reactively (direct contact, return fire,
-		// or a specific covering-fire task). Veterans/elites may establish fire proactively.
+		// Enemy proactive suppression is now an explicit fireteam responsibility.
+		// Unassigned soldiers still return fire or cover an exposed buddy, but they do
+		// not independently decide that everybody should become the base of fire.
 		BOOLEAN fDoctrineSuppressionTask = fCoveringFireSupport ||
+			fAssignedFireteamSuppressor ||
 			pSoldier->aiData.bUnderFire ||
 			GuySawEnemy(pSoldier, SEEN_LAST_TURN) ||
-			fDoctrineProactiveSupport;
+			(pSoldier->bTeam != ENEMY_TEAM && fDoctrineProactiveSupport);
 
 		//must have a small chance to hit and the opponent must be on the ground (can't suppress guys on the roof)
 		// HEADROCK HAM BETA2.4: Adjusted this for a random chance to suppress regardless of chance. This augments
@@ -4206,6 +4266,8 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 			// check cover
 			(AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||																				// safe position
 			fCoveringFireSupport ||																				// cover a nearby ally's movement/withdrawal
+			(fAssignedFireteamSuppressor &&
+			 AIPersonalRisk(pSoldier) <= AIPersonalRiskTolerance(pSoldier) + 5) ||
 			NightLight() && CountFriendsFlankSameSpot(pSoldier) && Chance(50) ||
 			TANK(pSoldier) ||																		// tanks don't need cover
 			pSoldier->aiData.bUnderFire && (pSoldier->ubPreviousAttackerID == BestShot.ubOpponent || pSoldier->ubNextToPreviousAttackerID == BestShot.ubOpponent) ||	// return fire
@@ -4214,6 +4276,9 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 			// reduce chance to shoot if target is beyond weapon range
 			(AICheckIsMachinegunner(pSoldier) ||
 			fCoveringFireSupport ||
+			(fAssignedFireteamSuppressor &&
+			 PythSpacesAway(pSoldier->sGridNo, BestShot.sTarget) <=
+			 (3 * __max(1, (INT32)(GunRange(&pSoldier->inv[BestShot.bWeaponIn], pSoldier) / CELL_X_SIZE))) / 2) ||
 			TANK(pSoldier) ||
 			AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) ||
 			pSoldier->aiData.bUnderFire && (pSoldier->ubPreviousAttackerID == BestShot.ubOpponent || pSoldier->ubNextToPreviousAttackerID == BestShot.ubOpponent) ||	// return fire
@@ -4261,7 +4326,7 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 
 			// Deliberate movement-support fire should be controlled, not a full
 			// magazine dump just because the shooter happens to be behind cover.
-			if (fCoveringFireSupport)
+			if (fCoveringFireSupport || fAssignedFireteamSuppressor)
 			{
 				ubMinAuto = AICheckIsMachinegunner(pSoldier) ? 7 : 5;
 			}
@@ -4510,15 +4575,27 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 
 	// if we're a computer merc, and we have the action points remaining to RADIO
 	// (we never want NPCs to choose to radio if they would have to wait a turn)
-	if ( !(pSoldier->usSoldierFlagMask & SOLDIER_RAISED_REDALERT) && !fCivilian && (pSoldier->bActionPoints >= APBPConstants[AP_RADIO]) && (gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) )
+	if ( !(pSoldier->usSoldierFlagMask & SOLDIER_RAISED_REDALERT) && !fCivilian &&
+		(pSoldier->bActionPoints >= APBPConstants[AP_RADIO]) &&
+		(gTacticalStatus.Team[pSoldier->bTeam].bMenInSector > 1) &&
+		(pSoldier->bTeam != ENEMY_TEAM ||
+		 !gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition ||
+		 NeedToRadioAboutPanicTrigger()) )
 	{
+
+		const BOOLEAN fEnemyInitialAlarm =
+			pSoldier->bTeam == ENEMY_TEAM &&
+			(!gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition ||
+			 NeedToRadioAboutPanicTrigger());
 
 		DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"decideactionred: checking to radio red alert");
 
 		// if there hasn't been an initial RED ALERT yet in this sector
 		if ( !(gTacticalStatus.Team[pSoldier->bTeam].bAwareOfOpposition) || NeedToRadioAboutPanicTrigger() )
-			// since I'm at STATUS RED, I obviously know we're being invaded!
-			iChance = gbDiff[DIFF_RADIO_RED_ALERT][ SoldierDifficultyLevel( pSoldier ) ];
+			// Initial enemy alarm discipline is universal; campaign difficulty does not
+			// decide whether a trained soldier understands the value of warning the force.
+			iChance = (pSoldier->bTeam == ENEMY_TEAM) ?
+				100 : gbDiff[DIFF_RADIO_RED_ALERT][SoldierDifficultyLevel(pSoldier)];
 		else // subsequent radioing (only to update enemy positions, request help)
 			// base chance depends on how much new info we have to radio to the others
 			iChance = 10 * WhatIKnowThatPublicDont(pSoldier,FALSE);  // use 10 * for RED alert
@@ -4569,7 +4646,9 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 				}
 			}
 
-			if ((INT16) PreRandom(100) < iChance)
+			if ((fEnemyInitialAlarm &&
+				 pSoldier->aiData.bAttitude != ATTACKSLAYONLY) ||
+				(INT16)PreRandom(100) < iChance)
 			{
 				DebugMsg (TOPIC_JA2,DBG_LEVEL_3,"decideactionred: decided to radio red alert");
 				return(AI_ACTION_RED_ALERT);
@@ -4800,7 +4879,9 @@ DebugMsg (TOPIC_JA2,DBG_LEVEL_3,String("decideactionred: is sniper shot possible
 			RangeChangeDesire(pSoldier) >= 4 &&
 			!TileIsOutOfBounds(sClosestOpponent) &&
 			PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 4 &&
-			(Chance(10 + SoldierDifficultyLevel(pSoldier) * 10) + Chance(20 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10))) &&
+			(pSoldier->bTeam == ENEMY_TEAM ||
+			 Chance(10 + SoldierDifficultyLevel(pSoldier) * 10) ||
+			 Chance(20 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10))) &&
 			pSoldier->bActionPoints >= APBPConstants[AP_MINIMUM] &&
 			FindFenceAroundSpot(pSoldier->sGridNo))
 		{
@@ -6117,6 +6198,14 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 	// can this guy move to any of the neighbouring squares ? (sets TRUE/FALSE)
 	ubCanMove = (pSoldier->bActionPoints >= MinPtsToMove(pSoldier));
 
+	if (pSoldier->bTeam == gbPlayerNum && AIPlayerTeamCommandActive() &&
+		AIPlayerTeamCommand() == AI_PLAYER_COMMAND_WITHDRAW)
+	{
+		INT8 bCommandWithdraw = DecideTacticalFallback(pSoldier, ubCanMove);
+		if (bCommandWithdraw != AI_ACTION_NONE)
+			return bCommandWithdraw;
+	}
+
 	if ( (pSoldier->bTeam == ENEMY_TEAM || pSoldier->ubProfile == WARDEN) && (gTacticalStatus.fPanicFlags & PANIC_TRIGGERS_HERE) && (gTacticalStatus.ubTheChosenOne == NOBODY) )
 	{
 		INT8 bPanicTrigger;
@@ -6738,7 +6827,9 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			if (fBestShotTargetStateKnown &&
 				(Menptr[BestShot.ubOpponent].stats.bLife < OKLIFE) &&
 				!Menptr[BestShot.ubOpponent].bService &&
-				(pSoldier->aiData.bAttitude != AGGRESSIVE || Chance((100 - BestShot.ubChanceToReallyHit) / 2)))
+				(pSoldier->bTeam == ENEMY_TEAM ||
+				 pSoldier->aiData.bAttitude != AGGRESSIVE ||
+				 Chance((100 - BestShot.ubChanceToReallyHit) / 2)))
 			{
 				// get the location of the closest CONSCIOUS reachable opponent
 				sClosestDisturbance = ClosestReachableDisturbance(pSoldier, &fClimb);
@@ -7178,7 +7269,9 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		PythSpacesAway(pSoldier->sGridNo, sClosestThreat) < 3*(usRange/CELL_X_SIZE)/2 &&
 		usRange/CELL_X_SIZE > DAY_VISION_RANGE/2 &&
 		pSoldier->pathing.bLevel == 0 &&
-		PreRandom(100) > 100 / (1+BestAttack.bTargetLevel+CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE/4)) &&
+		(pSoldier->bTeam == ENEMY_TEAM ||
+		 PreRandom(100) > 100 / (1 + BestAttack.bTargetLevel +
+			CountNearbyFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 4))) &&
 		CountNearbyFriendsOnRoof(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE/8) == 0 &&
 		//pSoldier->bActionPoints == pSoldier->bInitialActionPoints &&
 		pSoldier->bActionPoints > APBPConstants[AP_MINIMUM] &&
@@ -7209,8 +7302,14 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		RangeChangeDesire(pSoldier) >= 4 &&
 		!TileIsOutOfBounds(sClosestOpponent) &&
 		PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 4 &&
-		(ubBestAttackAction == AI_ACTION_NONE || ubBestAttackAction == AI_ACTION_FIRE_GUN && Random(25) > (UINT8)BestAttack.ubChanceToReallyHit) &&
-		(Chance(15 + 15 * SoldierDifficultyLevel(pSoldier) + 10 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10))) &&
+		(ubBestAttackAction == AI_ACTION_NONE ||
+		 (ubBestAttackAction == AI_ACTION_FIRE_GUN &&
+		  ((pSoldier->bTeam == ENEMY_TEAM && BestAttack.ubChanceToReallyHit < 25) ||
+		   (pSoldier->bTeam != ENEMY_TEAM &&
+			Random(25) > (UINT8)BestAttack.ubChanceToReallyHit)))) &&
+		(pSoldier->bTeam == ENEMY_TEAM ||
+		 Chance(15 + 15 * SoldierDifficultyLevel(pSoldier) +
+			10 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10))) &&
 		FindFenceAroundSpot(pSoldier->sGridNo))
 	{
 		CheckTossOpponentFence(pSoldier, &BestThrow);
@@ -7276,7 +7375,8 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 		RangeChangeDesire(pSoldier) < 4 &&
 		!AnyCoverAtSpot(pSoldier, pSoldier->sGridNo) &&
 		BestAttack.ubChanceToReallyHit < 25 &&
-		Chance(100 - BestAttack.ubChanceToReallyHit) &&
+		(pSoldier->bTeam == ENEMY_TEAM ||
+		 Chance(100 - BestAttack.ubChanceToReallyHit)) &&
 		!TileIsOutOfBounds(sClosestOpponent) &&
 		PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 4)
 	{
@@ -7563,8 +7663,24 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 			}
 
 			//////////////////////////////////////////////////////////////////////////
-			// IF ENOUGH APs TO BURST, RANDOM CHANCE OF DOING SO
+			// IF ENOUGH APs TO BURST, CHOOSE FIRE MODE FROM TACTICAL VALUE
 			//////////////////////////////////////////////////////////////////////////
+
+			// Enemy fire-mode selection is skill-neutral: every enemy evaluates the same
+			// range/CTH/ammo board. Soldier class/difficulty may change equipment and raw
+			// capabilities elsewhere, but never whether this soldier understands when a
+			// controlled burst or suppression assignment is appropriate.
+			const INT32 iTacticalFireDistance =
+				PythSpacesAway(pSoldier->sGridNo, BestAttack.sTarget);
+			BOOLEAN fEnemyAssignedSuppression = FALSE;
+			if (pSoldier->bTeam == ENEMY_TEAM && !TileIsOutOfBounds(BestAttack.sTarget))
+			{
+				INT8 bFireRole = AITacticalRole(pSoldier, BestAttack.sTarget);
+				fEnemyAssignedSuppression =
+					bFireRole == AI_ROLE_SUPPORT &&
+					AIHasTacticalTaskReservation(
+						pSoldier, AI_TASK_SUPPRESS, BestAttack.sTarget, NOBODY);
+			}
 
 			if (IsGunBurstCapable( &pSoldier->inv[BestAttack.bWeaponIn], FALSE, pSoldier ) &&
 				(!fBestAttackTargetStateKnown || !(Menptr[BestShot.ubOpponent].stats.bLife < OKLIFE)) && // only suppress visible downed targets
@@ -7607,7 +7723,8 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 							iChance += 20;
 
 						// increase chance based on proximity and difficulty of enemy
-						if ( PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) < 15 )
+						if ( pSoldier->bTeam != ENEMY_TEAM &&
+							 PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) < 15 )
 						{
 							DebugMsg(TOPIC_JA2AI,DBG_LEVEL_3,String("DecideActionBlack: check chance to burst"));
 							iChance += ( 15 - PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) ) * ( 1 + SoldierDifficultyLevel( pSoldier ) );
@@ -7621,7 +7738,8 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 						// Close range favours a controlled burst, but difficulty no longer
 						// forces one with a +100 override. Better troops get a bounded bonus
 						// and still respect aim quality, ammo state and the normal fire-mode roll.
-						if (PythSpacesAway(pSoldier->sGridNo, BestAttack.sTarget) < 10 &&
+						if (pSoldier->bTeam != ENEMY_TEAM &&
+							PythSpacesAway(pSoldier->sGridNo, BestAttack.sTarget) < 10 &&
 							gGameOptions.ubDifficultyLevel > DIF_LEVEL_EASY)
 						{
 							iChance += 15 + 5 * SoldierDifficultyLevel(pSoldier);
@@ -7633,7 +7751,18 @@ INT8 DecideActionBlack(SOLDIERTYPE *pSoldier)
 						}
 					}
 
-					if ( (INT32) PreRandom( 100 ) < iChance)
+					// A grandmaster enemy does not roll to decide whether it understands the
+					// fire mode. Use controlled bursts when expected hit quality and distance
+					// justify the extra rounds; designated suppressors preserve autofire for the
+					// suppression block below.
+					BOOLEAN fEnemyControlledBurst =
+						pSoldier->bTeam == ENEMY_TEAM &&
+						!fEnemyAssignedSuppression &&
+						((iTacticalFireDistance <= 10 && BestAttack.ubChanceToReallyHit >= 25) ||
+						 (iTacticalFireDistance <= 15 && BestAttack.ubChanceToReallyHit >= 40));
+					if (fEnemyControlledBurst ||
+						(pSoldier->bTeam != ENEMY_TEAM &&
+						 (INT32)PreRandom(100) < iChance))
 					{
 						BestAttack.ubAPCost += ubBurstAPs + sActualAimAP;//dnl ch58 130913
 						// check for spread burst possibilities
@@ -7733,7 +7862,8 @@ L_NEWAIM:
 								iChance += 50; //Madd: extra chance of going nuts and autofiring if stuck in gas
 
 							// increase chance based on proximity and difficulty of enemy
-							if ( PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) < 15 )
+							if ( pSoldier->bTeam != ENEMY_TEAM &&
+							 PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) < 15 )
 							{
 								DebugMsg(TOPIC_JA2AI,DBG_LEVEL_3,String("DecideActionBlack: check chance to autofire"));
 								iChance += ( 15 - PythSpacesAway( pSoldier->sGridNo, BestAttack.sTarget ) ) * ( 1 + SoldierDifficultyLevel( pSoldier ) );
@@ -7745,7 +7875,8 @@ L_NEWAIM:
 							}
 							// Close-range autofire is attractive, not mandatory. This keeps Elite
 							// troops aggressive without making difficulty synonymous with ammo waste.
-							if (PythSpacesAway(pSoldier->sGridNo, BestAttack.sTarget) < 10 &&
+							if (pSoldier->bTeam != ENEMY_TEAM &&
+								PythSpacesAway(pSoldier->sGridNo, BestAttack.sTarget) < 10 &&
 								gGameOptions.ubDifficultyLevel > DIF_LEVEL_EASY)
 							{
 								iChance += 15 + 5 * SoldierDifficultyLevel(pSoldier);
@@ -7757,7 +7888,14 @@ L_NEWAIM:
 							}
 						}
 
-						if ((INT32) PreRandom( 100 ) < iChance || Weapon[pSoldier->inv[BestAttack.bWeaponIn].usItem].NoSemiAuto)
+						BOOLEAN fEnemyUseAutofire =
+							pSoldier->bTeam == ENEMY_TEAM &&
+							(fEnemyAssignedSuppression ||
+							 (iTacticalFireDistance <= 8 && BestAttack.ubChanceToReallyHit >= 18) ||
+							 (iTacticalFireDistance <= 12 && BestAttack.ubChanceToReallyHit >= 30));
+						if (fEnemyUseAutofire ||
+							(pSoldier->bTeam != ENEMY_TEAM && (INT32)PreRandom(100) < iChance) ||
+							Weapon[pSoldier->inv[BestAttack.bWeaponIn].usItem].NoSemiAuto)
 						{
 							//dnl ch69 140913 return aiming for autofire with halfautofire fix
 							pSoldier->bDoBurst = 1;
@@ -7770,9 +7908,18 @@ L_NEWAIM:
 								if(Weapon[pSoldier->inv[BestAttack.bWeaponIn].usItem].NoSemiAuto)
 									iChance = 35;
 							}
-							if((INT32)PreRandom(100) < iChance && pSoldier->bActionPoints > (2 * BestAttack.ubAPCost + ubHalfBurstAPs + sActualAimAP))
+							BOOLEAN fEnemyShortAutofire =
+								pSoldier->bTeam == ENEMY_TEAM &&
+								!fEnemyAssignedSuppression &&
+								pSoldier->bDoAutofire > 4 &&
+								BestAttack.ubChanceToReallyHit >= 25;
+							if((fEnemyShortAutofire ||
+								(pSoldier->bTeam != ENEMY_TEAM && (INT32)PreRandom(100) < iChance)) &&
+								pSoldier->bActionPoints > (2 * BestAttack.ubAPCost + ubHalfBurstAPs + sActualAimAP))
 							{
-								// Try short autofire to enhance chance of hitting
+								// Precision fire uses a short, controlled string; the assigned
+								// suppressor deliberately keeps the longer affordable burst.
+
 								pSoldier->bDoAutofire = 4;
 								BestAttack.ubAPCost += ubHalfBurstAPs + sActualAimAP;
 //SendFmtMsg("HALF-Auto=%d ubAPCost=%d iChance=%d ubBurstAPs=%d,%d", pSoldier->bDoAutofire, BestAttack.ubAPCost, iChance, ubHalfBurstAPs, sActualAimTime);
@@ -7820,9 +7967,13 @@ L_NEWAIM:
 					pSoldier->aiData.bLastAttackHit ) &&
 				pSoldier->aiData.bOrders > ONGUARD &&
 				pSoldier->aiData.bOrders != SNIPER &&
-				// elites should not advance
-				RangeChangeDesire(pSoldier) >= 3 + SoldierDifficultyLevel( pSoldier ) / 2 &&
-				pSoldier->aiData.bOppCnt <= 5 - SoldierDifficultyLevel( pSoldier ) &&
+				// Enemy equipment class/difficulty never decides whether the soldier
+				// understands range closure. The tactical gates above/below (range quality,
+				// risk, support, route exposure and mutual support) own that decision.
+				(pSoldier->bTeam == ENEMY_TEAM ||
+				 RangeChangeDesire(pSoldier) >= 3 + SoldierDifficultyLevel(pSoldier) / 2) &&
+				(pSoldier->bTeam == ENEMY_TEAM ||
+				 pSoldier->aiData.bOppCnt <= 5 - SoldierDifficultyLevel(pSoldier)) &&
 				// only when standing
 				gAnimControl[ pSoldier->usAnimState ].ubEndHeight > ANIM_CROUCH &&
 				// only short range weapons
@@ -8229,7 +8380,11 @@ L_NEWAIM:
 	// (we never want NPCs to choose to radio if they would have to wait a turn)
 	// and we're not swimming in deep water, and somebody has called for spotters
 	// and we see the location of at least 2 opponents
-	if ( !(pSoldier->usSoldierFlagMask & SOLDIER_RAISED_REDALERT) &&
+	// Enemy spotter information is already present in the local shared-contact
+	// network; a legacy RED_ALERT here would spend AP without broadening legitimate
+	// knowledge. Preserve the old radio behavior only for non-enemy AI.
+	if ( pSoldier->bTeam != ENEMY_TEAM &&
+		!(pSoldier->usSoldierFlagMask & SOLDIER_RAISED_REDALERT) &&
 		!AIDisengagementActive(pSoldier) && !AIEscapeActive(pSoldier) &&
 		(gTacticalStatus.ubSpottersCalledForBy != NOBODY) &&
 		MercPtrs[gTacticalStatus.ubSpottersCalledForBy] &&
@@ -9964,7 +10119,7 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 			(UINT32)(sClosestDisturbance + 701)))
 	{
 		VRPlannerTraceReject(pSoldier, uiTraceDecision, "flank", AI_ACTION_NONE,
-			pSoldier->sGridNo, "competence/doctrine friction rejected coordinated flank");
+			pSoldier->sGridNo, "plan/mission gate rejected coordinated flank");
 		return -1;
 	}
 
@@ -9996,13 +10151,13 @@ INT8 DecideStartFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance, BOOLE
 	if (pSoldier->numFlanks == 0 &&
 		pSoldier->bActionPoints >= APBPConstants[AP_MINIMUM] &&
 		pSoldier->CheckInitialAP() &&
-		(pSoldier->aiData.bAttitude == CUNNINGAID || pSoldier->aiData.bAttitude == CUNNINGSOLO ||
+		(pSoldier->bTeam == ENEMY_TEAM ||
+		 pSoldier->aiData.bAttitude == CUNNINGAID || pSoldier->aiData.bAttitude == CUNNINGSOLO ||
 		((pSoldier->aiData.bAttitude == BRAVESOLO || pSoldier->aiData.bAttitude == BRAVEAID) && ubNearbyFireteamClose > 2) ||
 		fBasicFireteamManeuver) &&
 		AICombatTeam(pSoldier) &&
 		!AIShouldAvoidAdvance(pSoldier) &&
 		(fBasicFireteamManeuver || AIAllowsIndependentFlank(pSoldier)) &&
-		pSoldier->ubSoldierClass != SOLDIER_CLASS_ADMINISTRATOR &&
 		!AICheckSpecialRole(pSoldier) &&		
 		gAnimControl[pSoldier->usAnimState].ubHeight != ANIM_PRONE &&
 		(!pSoldier->aiData.bUnderFire ||
@@ -10331,11 +10486,14 @@ static void AIApplyTacticalPreferenceVariation(SOLDIERTYPE *pSoldier,
 
 		UINT8 ubReadyTeam = AIFireteamCombatReadyCount(pSoldier);
 		BOOLEAN fSmallTeam = ubReadyTeam >= 2 && ubReadyTeam <= 5;
+		BOOLEAN fCoordinatedRoleBias = fSmallTeam || pSoldier->bTeam == ENEMY_TEAM;
 
-		if (fSmallTeam)
+		if (fCoordinatedRoleBias)
 		{
-			// A small remnant must behave like one plan, not five unrelated random rolls.
-			// Assign a simple role from current weapon, mobility, wounds and stress.
+			// Enemy troops always derive their preference from the current fireteam role
+			// instead of injecting random tactical mistakes. Small militia remnants keep
+			// the same disciplined behavior so they do not fragment into solo decisions.
+			// Role selection still depends on weapon, mobility, wounds and stress.
 			INT32 sRoleTarget = ClosestKnownOpponent(pSoldier, NULL, NULL);
 			INT32 iSupportScore = AISupportRoleScore(pSoldier, sRoleTarget);
 			INT32 iManeuverScore = AIManeuverRoleScore(pSoldier, sRoleTarget);
@@ -10363,8 +10521,8 @@ static void AIApplyTacticalPreferenceVariation(SOLDIERTYPE *pSoldier,
 		}
 		else
 		{
-			// Larger formations retain bounded unpredictability so battles do not become
-			// scripted. Morale, orders, danger and hard safety checks remain dominant.
+			// Non-enemy larger formations retain bounded variation. Live enemy forces
+			// never manufacture inferior choices merely to appear less predictable.
 			switch (PreRandom(7))
 			{
 			case 0: gbAITacticalSeekBias[ubID] = 2; gbAITacticalHideBias[ubID] = -1; break;
@@ -10733,7 +10891,8 @@ INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 
 					if (pSoldier->aiData.bOrders == SEEKENEMY &&
 						//WeAttack(pSoldier->bTeam)) //&&
-						Chance(20 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10)))
+						(pSoldier->bTeam == ENEMY_TEAM ||
+						Chance(20 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10))))
 					{
 						CheckTossFlankFence(pSoldier, &BestThrow);
 
@@ -10938,7 +11097,8 @@ INT8 DecideContinueFlanking(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 
 					if (pSoldier->aiData.bOrders == SEEKENEMY &&
 						//WeAttack(pSoldier->bTeam)) &&
-						Chance(20 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10)))
+						(pSoldier->bTeam == ENEMY_TEAM ||
+						Chance(20 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10))))
 					{
 						CheckTossFlankFence(pSoldier, &BestThrow);
 
@@ -11112,7 +11272,8 @@ INT8 DecideUseWirecutters(SOLDIERTYPE *pSoldier)
 		pSoldier->aiData.bAIMorale >= MORALE_CONFIDENT &&
 		!TileIsOutOfBounds(sClosestOpponent) &&
 		PythSpacesAway(pSoldier->sGridNo, sClosestOpponent) > TACTICAL_RANGE / 4 &&
-		Chance(20 + SoldierDifficultyLevel(pSoldier) * 15) &&
+		(pSoldier->bTeam == ENEMY_TEAM ||
+		 Chance(20 + SoldierDifficultyLevel(pSoldier) * 15)) &&
 		pSoldier->bActionPoints >= GetAPsToCutFence(pSoldier) + GetAPsToLook(pSoldier) &&
 		FindFenceAroundSpot(pSoldier->sGridNo))
 	{
@@ -11254,11 +11415,13 @@ INT8 DecideUseGrenadeSpecial(SOLDIERTYPE *pSoldier)
 		pSoldier->bActionPoints == pSoldier->bInitialActionPoints &&
 		pSoldier->aiData.bOrders != STATIONARY &&
 		pSoldier->aiData.bAIMorale >= MORALE_CONFIDENT &&
-		Chance(15 + 15 * SoldierDifficultyLevel(pSoldier) + 10 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10)))
+		(pSoldier->bTeam == ENEMY_TEAM ||
+		 Chance(15 + 15 * SoldierDifficultyLevel(pSoldier) + 10 * CountThrowableGrenades(pSoldier, EXPLOSV_NORMAL, 10))))
 	{
 		CheckTossGrenadeSpecial(pSoldier, &BestThrow);
 
-		if (BestThrow.ubPossible  && Chance(BestThrow.iAttackValue))
+		if (BestThrow.ubPossible &&
+			(pSoldier->bTeam == ENEMY_TEAM || Chance(BestThrow.iAttackValue)))
 		{
 			// Final safety net for player-aligned AI: special obstacle-clearing throws
 			// must not bypass civilian protection. Enemy troops intentionally do not
@@ -11358,7 +11521,8 @@ INT8 DecideSmokeCoverMovement(SOLDIERTYPE *pSoldier, INT32 sClosestDisturbance)
 		CountSeenEnemiesLastTurn(pSoldier) > AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE / 2) ||
 		CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE) > CountFriendsLastAttackHit(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE) ||
 		CountCorpses(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE, TRUE, TRUE) > AICountNearbyOperationalFriends(pSoldier, pSoldier->sGridNo, DAY_VISION_RANGE)) &&
-		(InSmoke(pSoldier->sGridNo, pSoldier->pathing.bLevel) ||
+		(pSoldier->bTeam == ENEMY_TEAM ||
+		InSmoke(pSoldier->sGridNo, pSoldier->pathing.bLevel) ||
 		Chance(10 + SoldierDifficultyLevel(pSoldier) * 10) ||
 		Chance(AIFriendlyCasualtyPercent(pSoldier)) ||
 		Chance(10 * CountTeamUnderAttack(pSoldier->bTeam, pSoldier->sGridNo, DAY_VISION_RANGE)) ||
@@ -11483,13 +11647,13 @@ INT8 DecideEmergencyProtectionSmoke(SOLDIERTYPE *pSoldier)
 			continue;
 
 		INT32 iDistance = PythSpacesAway(pSoldier->sGridNo, pFriend->sGridNo);
-		if (iDistance > DAY_VISION_RANGE / 2)
-			continue;
-
 		BOOLEAN fSameElement = AISameFireteam(pSoldier, pFriend);
-		if (AICombatTeam(pSoldier) &&
-			!fSameElement &&
-			iDistance > DAY_VISION_RANGE / 4)
+		if (fSameElement)
+		{
+			if (iDistance > DAY_VISION_RANGE)
+				continue;
+		}
+		else if (AICombatTeam(pSoldier) && iDistance > DAY_VISION_RANGE / 4)
 		{
 			continue;
 		}
@@ -11651,18 +11815,27 @@ static INT32 AIClosestKnownThreatSpotForEscape(SOLDIERTYPE *pSoldier)
 		if (!pOpponent || pOpponent == pSoldier)
 			continue;
 
-		INT8 bKnowledge = Knowledge(pSoldier, pOpponent->ubID);
-		if (bKnowledge == NOT_HEARD_OR_SEEN)
-			continue;
-
-		if (CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
-			pSoldier->bSide == pOpponent->bSide ||
-			pOpponent->ubBodyType == CROW)
+		INT32 sKnownSpot = NOWHERE;
+		INT8 bKnowledge = NOT_HEARD_OR_SEEN;
+		if (!AIPlanningContactForOpponent(
+			pSoldier, pOpponent->ubID, &sKnownSpot, NULL, NULL, &bKnowledge))
 		{
 			continue;
 		}
 
-		INT32 sKnownSpot = KnownLocation(pSoldier, pOpponent->ubID);
+		const BOOLEAN fDirectVisualContact =
+			PersonalKnowledge(pSoldier, pOpponent->ubID) == SEEN_CURRENTLY &&
+			LOS_Raised(pSoldier, pOpponent, CALC_FROM_ALL_DIRS) > 0;
+
+		if (fDirectVisualContact &&
+			(CONSIDERED_NEUTRAL(pSoldier, pOpponent) ||
+			 pSoldier->bSide == pOpponent->bSide ||
+			 pOpponent->ubBodyType == CROW ||
+			 !ValidOpponent(pSoldier, pOpponent)))
+		{
+			continue;
+		}
+
 		if (TileIsOutOfBounds(sKnownSpot))
 			continue;
 
@@ -11676,7 +11849,6 @@ static INT32 AIClosestKnownThreatSpotForEscape(SOLDIERTYPE *pSoldier)
 
 	return sBestSpot;
 }
-
 static INT32 AINearestUsableOuterEdgepoint(SOLDIERTYPE *pSoldier, INT8 bDirection)
 {
 	INT32 *psEdgepoints = NULL;
@@ -12767,11 +12939,23 @@ INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 		return AI_ACTION_NONE;
 	}
 
+	BOOLEAN fPlayerWithdraw =
+		pSoldier->bTeam == gbPlayerNum &&
+		AIPlayerTeamCommandActive() &&
+		AIPlayerTeamCommand() == AI_PLAYER_COMMAND_WITHDRAW;
+
 	INT32 sThreat = ClosestKnownOpponent(pSoldier, NULL, NULL);
 	if (TileIsOutOfBounds(sThreat))
 		return AI_ACTION_NONE;
 
-	INT32 sFallback = FindRetreatSpot(pSoldier);
+	// An explicit team withdrawal starts with the geometry-aware breakout solver:
+	// move away from the principal known threat while preferring the safest/weakest
+	// pressure sector. Normal autonomous AI keeps its legacy retreat-first ordering.
+	INT32 sFallback = fPlayerWithdraw ?
+		FindGeometryBreakoutSpot(pSoldier, sThreat) :
+		FindRetreatSpot(pSoldier);
+	if (fPlayerWithdraw && TileIsOutOfBounds(sFallback))
+		sFallback = FindRetreatSpot(pSoldier);
 
 	AITACTICALGEOMETRY Geometry;
 	const BOOLEAN fHasGeometry =
@@ -12845,8 +13029,24 @@ INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (pSoldier->aiData.bOrders == SEEKENEMY && fCurrentCover)
 		iRequiredGain += 2;
 
-	if (iGain < iRequiredGain)
+	if (fPlayerWithdraw)
+	{
+		// The command itself supplies the reason to give ground. Still reject a move
+		// that neither increases separation nor improves exposure/cover/support:
+		// "withdraw" must be a real tactical improvement, not blind backwards motion.
+		BOOLEAN fWithdrawalProgress =
+			iFallbackDistance > iCurrentDistance ||
+			usFallbackExposure < usCurrentExposure ||
+			(fFallbackCover && !fCurrentCover) ||
+			(fFallbackSightCover && !fCurrentSightCover) ||
+			iFallbackSupport > iCurrentSupport;
+		if (!fWithdrawalProgress)
+			return AI_ACTION_NONE;
+	}
+	else if (iGain < iRequiredGain)
+	{
 		return AI_ACTION_NONE;
+	}
 
 	if (!AIKnownRouteExposureAcceptable(
 		pSoldier, sFallback, AI_ACTION_WITHDRAW, 180, 90, 115))
