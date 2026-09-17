@@ -65,6 +65,14 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "PASS: deterministic shaped-charge/explosives fixture"
 }
 
+$lootFixture = Join-Path $PSScriptRoot "TEST_ITEMS_LOOT_RULES.ps1"
+& "$PSHOME\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File $lootFixture
+if ($LASTEXITCODE -ne 0) {
+    $failures.Add("deterministic loot provenance fixture failed")
+} else {
+    Write-Host "PASS: deterministic tactical/autoresolve loot-rule matrix"
+}
+
 $persistenceFixture = Join-Path $PSScriptRoot "TEST_ITEMS_PERSISTENCE.ps1"
 & "$PSHOME\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File $persistenceFixture
 if ($LASTEXITCODE -ne 0) {
