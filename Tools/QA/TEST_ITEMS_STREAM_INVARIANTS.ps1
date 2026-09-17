@@ -23,6 +23,20 @@ Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "for ( UINT8 ubW
 Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "TopUpGunFromSector( pGun, x, 1 )" "ammo shortage primes one shootable gun per unarmed merc"
 Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "UINT32 uiRoundsLoaded = PrimeEmptySectorMercGuns();" "shootability is prioritized before full gun top-up"
 Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "ubWaveTarget = (UINT8)__min( (UINT32)demand.ubMaxMags," "ammo reserve target is per demand"
+Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "GetMagSize( pGun, x )" "ammo demand uses effective attachment-modified magazine capacity"
+Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "fallbackMag.ubMagType >= AMMO_BOX" "bulk ammo cannot become a ready replacement magazine"
+Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "PoolObjectForSectorLoadout( &newMag );" "failed spare-mag placement returns ammo to sector pool"
+Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "SectorLoadoutAmmoTypeLess( (UINT8)sBestFullType, ubCurrentType )" "partial gun upgrades only to a strictly better ammo type"
+Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "CountSectorAmmoRounds( ubCalibre, (UINT8)sBestFullType ) >= usMagSize" "partial gun replacement requires a complete better load"
+Require-Text "Strategic\Map Screen Interface Map Inventory.cpp" "PoolObjectForSectorLoadout( &oldAmmo );" "successful ammo upgrade returns old partial load to pool"
+
+$ammoFixture = Join-Path $PSScriptRoot "TEST_ITEMS_AMMO_ALLOCATION.ps1"
+& "$PSHOME\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File $ammoFixture
+if ($LASTEXITCODE -ne 0) {
+    $failures.Add("deterministic ammo allocation fixture failed")
+} else {
+    Write-Host "PASS: deterministic attachment/shortage ammo fixture"
+}
 Require-Text "Tactical\Rotting Corpses.cpp" "static void ReduceLootForMilitiaKill" "militia tactical kills use reduced loot"
 Require-Text "Tactical\Rotting Corpses.cpp" "EnemyItemMinimumDropWeight" "minimum loot respects category rates"
 Require-Text "Tactical\Tactical Save.h" "ADD_DEAD_SOLDIER_NO_LOOT" "non-player autoresolve supports explicit zero loot"
