@@ -186,4 +186,3 @@ if ($FailOnSharedFiles -and $sharedFiles.Count -gt 0) {
 
 Write-Host "CROSS_STREAM_CONFLICT_SCAN_OK"
 exit 0
-
