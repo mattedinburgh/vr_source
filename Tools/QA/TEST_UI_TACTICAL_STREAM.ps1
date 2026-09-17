@@ -40,7 +40,12 @@ $poolBlock = $quotes.Substring($poolStart, $poolEnd - $poolStart)
 if ($poolBlock.Contains('\u00A1') -or $poolBlock.Contains('\u00F3') -or $poolBlock.Contains('\u00E9')) {
     throw 'Spanish escaped text remains in the live contextual callout library.'
 }
-Assert-Contains $quotes 'const CHAR16 *zPoolLine = PickAICombatLineText( ubCallout );' 'Contextual line pools are declared but not wired into live popup selection.'
+Assert-Contains $quotes 'const CHAR16 *zPoolLine = PickAICombatLineText( ubCallout, &ubPick );' 'Contextual line pools are declared but not wired into live popup selection.'
 Assert-Contains $quotes 'if ( pCiv->bTeam == ENEMY_TEAM || pCiv->bTeam == MILITIA_TEAM )' 'English-only enemy/militia voice fallback guard missing.'
+Assert-Contains $quotes 'PlayAICombatCalloutVoice( pCiv, ubCallout, &selection );' 'Semantic callouts are not wired to contextual audio playback.'
+Assert-Contains $quotes 'Voice\\Battlefield\\%s\\%s__%s' 'Semantic voice filename contract is missing.'
+Assert-Contains $quotes 'pCiv->bTeam != ENEMY_TEAM && pCiv->bTeam != MILITIA_TEAM' 'Generic semantic voice must not overwrite authored player-merc personalities.'
+Assert-Contains $quotes '!pSelection->fEmotionSpecificLine' 'Exact subtitle/audio fallback guard is missing for emotion-specific rewritten lines.'
+Assert-Contains $quotes 'guiLastAICombatVoiceTime != 0 && (uiNow - guiLastAICombatVoiceTime) < 1800' 'Legacy/shared audio can overlap semantic callout audio.'
 
 Write-Host 'PASS: UI / Tactical Information / Audio / Localization source invariants.'

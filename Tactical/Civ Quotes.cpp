@@ -154,6 +154,7 @@ UINT32	uiTauntFinishTimes[ TOTAL_SOLDIERS ];
 // high-priority semantic callout keeps large sectors readable without silently
 // losing important grenade/medic/withdrawal warnings.
 static UINT32 guiLastAIActionPopupTime = 0;
+static UINT32 guiLastAICombatVoiceTime = 0;
 static UINT8 gubActiveAICombatCalloutPriority = 0;
 static UINT8 gubLastAICombatCalloutEvent[ TOTAL_SOLDIERS ];
 static UINT32 guiLastAICombatCalloutEventTime[ TOTAL_SOLDIERS ];
@@ -1110,6 +1111,7 @@ void InitCivQuoteSystem( )
 	gCivQuoteData.iVideoOverlay	= -1;
 	gCivQuoteData.iDialogueBox	= -1;
 	guiLastAIActionPopupTime = 0;
+	guiLastAICombatVoiceTime = 0;
 	gubActiveAICombatCalloutPriority = 0;
 	memset( &gubLastAICombatCalloutEvent, 0, sizeof(gubLastAICombatCalloutEvent) );
 	memset( &guiLastAICombatCalloutEventTime, 0, sizeof(guiLastAICombatCalloutEventTime) );
@@ -1140,6 +1142,7 @@ BOOLEAN LoadCivQuotesFromLoadGameFile( HWFILE hFile )
 	// anv: reset taunt timers after game is loaded (guiBaseJA2Clock can decrease)
 	memset( &uiTauntFinishTimes, 0, sizeof( uiTauntFinishTimes ) );
 	guiLastAIActionPopupTime = 0;
+	guiLastAICombatVoiceTime = 0;
 	gubActiveAICombatCalloutPriority = 0;
 	memset( &gubLastAICombatCalloutEvent, 0, sizeof(gubLastAICombatCalloutEvent) );
 	memset( &guiLastAICombatCalloutEventTime, 0, sizeof(guiLastAICombatCalloutEventTime) );
@@ -1706,7 +1709,7 @@ static const CHAR16 * const gAICombatLines_TARGET_DOWN[]
 
 #define AI_COMBAT_LINE_COUNT(a) (sizeof(a) / sizeof((a)[0]))
 
-static const CHAR16 * PickAICombatLineText( AI_BATTLE_CALLOUT ubCallout )
+static const CHAR16 * PickAICombatLineText( AI_BATTLE_CALLOUT ubCallout, UINT8 *pubVariant )
 {
 	const CHAR16 * const *pLines = NULL;
 	UINT32 uiCount = 0;
@@ -1741,7 +1744,10 @@ static const CHAR16 * PickAICombatLineText( AI_BATTLE_CALLOUT ubCallout )
 
 	if ( pLines == NULL || uiCount == 0 )
 		return NULL;
-	return pLines[Random( uiCount )];
+	UINT8 ubPick = (UINT8)Random( uiCount );
+	if ( pubVariant )
+		*pubVariant = ubPick;
+	return pLines[ubPick];
 }
 
 #undef AI_COMBAT_LINE_COUNT
@@ -1753,6 +1759,30 @@ enum AI_BATTLE_EMOTION
 	AI_BATTLE_EMOTION_PANICKED,
 	AI_BATTLE_EMOTION_MAX
 };
+typedef struct
+{
+	AI_BATTLE_EMOTION ubEmotion;
+	UINT8 ubVariant;
+	BOOLEAN fEmotionSpecificLine;
+} AI_BATTLE_CALLOUT_SELECTION;
+
+static const CHAR8 * VoiceEmotionSuffix( AI_BATTLE_EMOTION ubEmotion );
+
+static BOOLEAN SetAICombatCalloutSelection( STR16 zText, const CHAR16 *zLine,
+	AI_BATTLE_CALLOUT_SELECTION *pSelection, AI_BATTLE_EMOTION ubEmotion,
+	UINT8 ubVariant, BOOLEAN fEmotionSpecificLine )
+{
+	if ( zText == NULL || zLine == NULL )
+		return FALSE;
+	wcscpy( zText, zLine );
+	if ( pSelection )
+	{
+		pSelection->ubEmotion = ubEmotion;
+		pSelection->ubVariant = ubVariant;
+		pSelection->fEmotionSpecificLine = fEmotionSpecificLine;
+	}
+	return TRUE;
+}
 
 static AI_BATTLE_EMOTION AICombatEmotion( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout )
 {
@@ -1790,67 +1820,83 @@ static AI_BATTLE_EMOTION AICombatEmotion( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT u
 
 	return AI_BATTLE_EMOTION_CONTROLLED;
 }
-static BOOLEAN BuildAICombatCalloutText( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout, STR16 zText )
+static BOOLEAN BuildAICombatCalloutText( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout,
+	STR16 zText, AI_BATTLE_CALLOUT_SELECTION *pSelection )
 {
 	if ( zText == NULL )
 		return FALSE;
 
 	AI_BATTLE_EMOTION ubEmotion = AICombatEmotion( pCiv, ubCallout );
+	UINT8 ubPick = 0;
 	switch ( ubCallout )
 	{
 		case AI_BATTLE_CALL_TAKE_COVER:
-			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED ) { wcscpy( zText, L"\"Get down!\"" ); return TRUE; }
-			if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ) { wcscpy( zText, L"\"We need cover!\"" ); return TRUE; }
+			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED ) return SetAICombatCalloutSelection( zText, L"\"Get down!\"", pSelection, ubEmotion, 0, TRUE );
+			if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ) return SetAICombatCalloutSelection( zText, L"\"We need cover!\"", pSelection, ubEmotion, 0, TRUE );
 			break;
 		case AI_BATTLE_CALL_WITHDRAW:
-			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED ) { wcscpy( zText, Random(2) ? L"\"Get me out of here!\"" : L"\"We're being overrun!\"" ); return TRUE; }
-			if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ) { wcscpy( zText, L"\"Fall back, now!\"" ); return TRUE; }
-			if ( ubEmotion == AI_BATTLE_EMOTION_ANGRY ) { wcscpy( zText, L"\"Back! Move!\"" ); return TRUE; }
+			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED )
+			{
+				ubPick = (UINT8)Random(2);
+				return SetAICombatCalloutSelection( zText, ubPick == 0 ? L"\"Get me out of here!\"" : L"\"We're being overrun!\"", pSelection, ubEmotion, ubPick, TRUE );
+			}
+			if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ) return SetAICombatCalloutSelection( zText, L"\"Fall back, now!\"", pSelection, ubEmotion, 0, TRUE );
+			if ( ubEmotion == AI_BATTLE_EMOTION_ANGRY ) return SetAICombatCalloutSelection( zText, L"\"Back! Move!\"", pSelection, ubEmotion, 0, TRUE );
 			break;
 		case AI_BATTLE_CALL_RALLY:
-			if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ) { wcscpy( zText, L"\"Stay with us!\"" ); return TRUE; }
+			if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ) return SetAICombatCalloutSelection( zText, L"\"Stay with us!\"", pSelection, ubEmotion, 0, TRUE );
 			break;
 		case AI_BATTLE_CALL_SUPPRESS:
-			if ( ubEmotion == AI_BATTLE_EMOTION_ANGRY ) { wcscpy( zText, L"\"Keep their heads down!\"" ); return TRUE; }
+			if ( ubEmotion == AI_BATTLE_EMOTION_ANGRY ) return SetAICombatCalloutSelection( zText, L"\"Keep their heads down!\"", pSelection, ubEmotion, 0, TRUE );
 			break;
 		case AI_BATTLE_CALL_MEDIC:
-			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED ) wcscpy( zText, Random(3) == 0 ? L"\"Please help me!\"" : (Random(2) ? L"\"Don't leave me!\"" : L"\"Medic! Please!\"" ) );
-			else if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ) wcscpy( zText, Random(2) ? L"\"Help me!\"" : L"\"I need a medic!\"" );
-			else if ( ubEmotion == AI_BATTLE_EMOTION_ANGRY ) wcscpy( zText, L"\"Medic, now!\"" );
-			else break;
-			return TRUE;
+			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED )
+			{
+				ubPick = (UINT8)Random(3);
+				if ( ubPick == 0 ) return SetAICombatCalloutSelection( zText, L"\"Please help me!\"", pSelection, ubEmotion, ubPick, TRUE );
+				if ( ubPick == 1 ) return SetAICombatCalloutSelection( zText, L"\"Don't leave me!\"", pSelection, ubEmotion, ubPick, TRUE );
+				return SetAICombatCalloutSelection( zText, L"\"Medic! Please!\"", pSelection, ubEmotion, ubPick, TRUE );
+			}
+			if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED )
+			{
+				ubPick = (UINT8)Random(2);
+				return SetAICombatCalloutSelection( zText, ubPick == 0 ? L"\"Help me!\"" : L"\"I need a medic!\"", pSelection, ubEmotion, ubPick, TRUE );
+			}
+			if ( ubEmotion == AI_BATTLE_EMOTION_ANGRY ) return SetAICombatCalloutSelection( zText, L"\"Medic, now!\"", pSelection, ubEmotion, 0, TRUE );
+			break;
 		case AI_BATTLE_CALL_OUT_OF_AMMO:
-			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED ) { wcscpy( zText, L"\"I'm out! Cover me!\"" ); return TRUE; }
+			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED ) return SetAICombatCalloutSelection( zText, L"\"I'm out! Cover me!\"", pSelection, ubEmotion, 0, TRUE );
 			break;
 		case AI_BATTLE_CALL_CASUALTY:
 			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED )
 			{
-				UINT8 ubPick = Random(4);
-				if ( ubPick == 0 ) wcscpy( zText, L"\"Oh God!\"" );
-				else if ( ubPick == 1 ) wcscpy( zText, L"\"Please help me!\"" );
-				else if ( ubPick == 2 ) wcscpy( zText, L"\"I don't want to die!\"" );
-				else wcscpy( zText, L"\"Mother!\"" );
-				return TRUE;
+				ubPick = (UINT8)Random(4);
+				if ( ubPick == 0 ) return SetAICombatCalloutSelection( zText, L"\"Oh God!\"", pSelection, ubEmotion, ubPick, TRUE );
+				if ( ubPick == 1 ) return SetAICombatCalloutSelection( zText, L"\"Please help me!\"", pSelection, ubEmotion, ubPick, TRUE );
+				if ( ubPick == 2 ) return SetAICombatCalloutSelection( zText, L"\"I don't want to die!\"", pSelection, ubEmotion, ubPick, TRUE );
+				return SetAICombatCalloutSelection( zText, L"\"Mother!\"", pSelection, ubEmotion, ubPick, TRUE );
 			}
-			if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ) { wcscpy( zText, Random(2) ? L"\"I'm hit!\"" : L"\"Help me!\"" ); return TRUE; }
-			if ( ubEmotion == AI_BATTLE_EMOTION_ANGRY ) { wcscpy( zText, L"\"Damn it, I'm hit!\"" ); return TRUE; }
+			if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED )
+			{
+				ubPick = (UINT8)Random(2);
+				return SetAICombatCalloutSelection( zText, ubPick == 0 ? L"\"I'm hit!\"" : L"\"Help me!\"", pSelection, ubEmotion, ubPick, TRUE );
+			}
+			if ( ubEmotion == AI_BATTLE_EMOTION_ANGRY ) return SetAICombatCalloutSelection( zText, L"\"Damn it, I'm hit!\"", pSelection, ubEmotion, 0, TRUE );
 			break;
 		case AI_BATTLE_CALL_INCOMING:
-			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED ) { wcscpy( zText, L"\"They're all over us!\"" ); return TRUE; }
-			if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ) { wcscpy( zText, L"\"We're taking fire!\"" ); return TRUE; }
+			if ( ubEmotion == AI_BATTLE_EMOTION_PANICKED ) return SetAICombatCalloutSelection( zText, L"\"They're all over us!\"", pSelection, ubEmotion, 0, TRUE );
+			if ( ubEmotion == AI_BATTLE_EMOTION_DISTRESSED ) return SetAICombatCalloutSelection( zText, L"\"We're taking fire!\"", pSelection, ubEmotion, 0, TRUE );
 			break;
 		case AI_BATTLE_CALL_TARGET_DOWN:
-			if ( ubEmotion == AI_BATTLE_EMOTION_ANGRY ) { wcscpy( zText, L"\"Got one!\"" ); return TRUE; }
+			if ( ubEmotion == AI_BATTLE_EMOTION_ANGRY ) return SetAICombatCalloutSelection( zText, L"\"Got one!\"", pSelection, ubEmotion, 0, TRUE );
 			break;
 		default:
 			break;
 	}
-
-	const CHAR16 *zPoolLine = PickAICombatLineText( ubCallout );
+	const CHAR16 *zPoolLine = PickAICombatLineText( ubCallout, &ubPick );
 	if ( zPoolLine == NULL )
 		return FALSE;
-	wcscpy( zText, zPoolLine );
-	return TRUE;
+	return SetAICombatCalloutSelection( zText, zPoolLine, pSelection, ubEmotion, ubPick, FALSE );
 }
 
 static UINT8 AICombatCalloutPriority( AI_BATTLE_CALLOUT ubCallout )
@@ -2006,16 +2052,75 @@ static const CHAR8 * AICombatCalloutName( AI_BATTLE_CALLOUT ubCallout )
 	}
 }
 
+static void BuildAICombatVoiceFilename( const CHAR8 *zBaseName, UINT8 ubVariant, CHAR8 *zOutput )
+{
+	if ( ubVariant == 0 )
+		sprintf( zOutput, "%s.ogg", zBaseName );
+	else
+		sprintf( zOutput, "%s %d.ogg", zBaseName, ubVariant - 1 );
+}
+
+static BOOLEAN PlayAICombatCalloutVoice( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout,
+	const AI_BATTLE_CALLOUT_SELECTION *pSelection )
+{
+	if ( !pCiv || !pSelection || !gGameExternalOptions.fVoiceTaunts )
+		return FALSE;
+
+	// Generic contextual recordings are for army/militia. Player mercs retain
+	// their authored personality voices and must not get a second generic voice.
+	if ( pCiv->bTeam != ENEMY_TEAM && pCiv->bTeam != MILITIA_TEAM )
+		return FALSE;
+
+	const CHAR8 *zEvent = AICombatCalloutName( ubCallout );
+	const CHAR8 *zEmotion = VoiceEmotionSuffix( pSelection->ubEmotion );
+	const CHAR8 *zSex = (pCiv->ubBodyType == REGFEMALE) ? "Female" : "Male";
+	CHAR8 zBase[260];
+	CHAR8 zFilename[260];
+	CHAR16 zNoise[260];
+
+	sprintf( zBase, "Voice\\Battlefield\\%s\\%s__%s", zSex, zEvent, zEmotion );
+	BuildAICombatVoiceFilename( zBase, pSelection->ubVariant, zFilename );
+	if ( !FileExists( zFilename ) && !pSelection->fEmotionSpecificLine &&
+		pSelection->ubEmotion != AI_BATTLE_EMOTION_CONTROLLED )
+	{
+		// Pool text is identical across delivery states, so a controlled recording
+		// is a safe exact-subtitle fallback. Emotion-specific rewritten lines never
+		// fall back this way because that would make heard speech disagree with text.
+		sprintf( zBase, "Voice\\Battlefield\\%s\\%s__controlled", zSex, zEvent );
+		BuildAICombatVoiceFilename( zBase, pSelection->ubVariant, zFilename );
+	}
+
+	if ( !FileExists( zFilename ) )
+		return FALSE;
+
+	if ( gTauntsSettings.fTauntMakeNoise == TRUE )
+	{
+		mbstowcs( zNoise, zFilename, strlen( zFilename ) + 1 );
+		MakeNoise( pCiv->ubID, pCiv->sGridNo, pCiv->pathing.bLevel,
+			pCiv->bOverTerrainType, (UINT8)gTauntsSettings.sVolume, NOISE_VOICE, zNoise );
+	}
+	else if ( PlayJA2SampleFromFile( zFilename, RATE_11025,
+		SoundVolume( HIGHVOLUME, pCiv->sGridNo ), 1, SoundDir( pCiv->sGridNo ) ) == SOUND_ERROR )
+	{
+		return FALSE;
+	}
+
+	guiLastAICombatVoiceTime = GetJA2Clock();
+	return TRUE;
+}
 // Semantic callout timing is intentionally independent from uiTauntFinishTimes:
 // the latter throttles legacy/voice taunts and must not discard a queued grenade,
 // medic or withdrawal warning before the visual slot becomes available.
 static void ShowAICombatCalloutNow( SOLDIERTYPE *pCiv, AI_BATTLE_CALLOUT ubCallout )
 {
 	CHAR16 zText[320];
-	if ( !AICombatCalloutSpeakerValid( pCiv ) || !BuildAICombatCalloutText( pCiv, ubCallout, zText ) )
+	AI_BATTLE_CALLOUT_SELECTION selection;
+	if ( !AICombatCalloutSpeakerValid( pCiv ) ||
+		!BuildAICombatCalloutText( pCiv, ubCallout, zText, &selection ) )
 		return;
 
 	ShowTauntPopupBox( pCiv, zText );
+	PlayAICombatCalloutVoice( pCiv, ubCallout, &selection );
 	gubActiveAICombatCalloutPriority = AICombatCalloutPriority( ubCallout );
 	VRAnalyticsDiagnostic( VR_ANALYTICS_TACTICAL, "soldier", pCiv->ubID,
 		"battle_callout", AICombatCalloutName( ubCallout ) );
@@ -3375,7 +3480,8 @@ static BOOLEAN PlaySharedBattlefieldReaction( SOLDIERTYPE *pCiv, TAUNTTYPE iTaun
 
 	UINT32 uiNow = GetJA2Clock();
 	if ( ubChoiceCount == 0 || Random( 100 ) >= ubSharedChance ||
-		( uiNow - guiLastSharedBattlefieldReaction ) < 1800 )
+		( uiNow - guiLastSharedBattlefieldReaction ) < 1800 ||
+		( guiLastAICombatVoiceTime != 0 && (uiNow - guiLastAICombatVoiceTime) < 1800 ) )
 	{
 		return FALSE;
 	}
