@@ -6,8 +6,9 @@ $donorScript = Join-Path $PSScriptRoot "VALIDATE_DONOR_SECTOR_MANIFEST.ps1"
 $candidateScript = Join-Path $PSScriptRoot "TEST_INTEGRATION_CANDIDATE.ps1"
 $batchScript = Join-Path $PSScriptRoot "TEST_INTEGRATION_BATCH.ps1"
 $conflictScript = Join-Path $PSScriptRoot "CHECK_INTEGRATION_CONFLICTS.ps1"
+$releaseInventoryScript = Join-Path $PSScriptRoot "BUILD_RELEASE_INVENTORY.ps1"
 
-foreach ($requiredScript in @($perfScript, $donorScript, $candidateScript, $batchScript, $conflictScript)) {
+foreach ($requiredScript in @($perfScript, $donorScript, $candidateScript, $batchScript, $conflictScript, $releaseInventoryScript)) {
     if (-not (Test-Path $requiredScript)) {
         throw "Required QA tool missing: $requiredScript"
     }
@@ -130,6 +131,7 @@ try {
     Copy-Item -Path $candidateScript -Destination (Join-Path $policyRepo "Tools\QA\TEST_INTEGRATION_CANDIDATE.ps1")
     Copy-Item -Path $batchScript -Destination (Join-Path $policyRepo "Tools\QA\TEST_INTEGRATION_BATCH.ps1")
     Copy-Item -Path $conflictScript -Destination (Join-Path $policyRepo "Tools\QA\CHECK_INTEGRATION_CONFLICTS.ps1")
+    Copy-Item -Path $releaseInventoryScript -Destination (Join-Path $policyRepo "Tools\QA\BUILD_RELEASE_INVENTORY.ps1")
 
     $gitExe = (Get-Command git.exe -ErrorAction SilentlyContinue).Source
     if (-not $gitExe) {
@@ -240,6 +242,40 @@ try {
         throw "Contained-candidate batch test passed without reporting redundant-candidate consolidation."
     }
     Write-Host "SELFTEST_OK batch-contained-candidate-marker"
+
+    $fixtureReleaseGate = Join-Path $policyRepo "Tools\QA\BUILD_RELEASE_INVENTORY.ps1"
+    foreach ($pair in @(@("canonical", "canonical"), @("ready-stream", "shared-a-child"), @("subsumed-stream", "shared-a"), @("active-stream", "shared-b"), @("unknown-stream", "candidate"))) {
+        $sha = (& $gitExe -C $policyRepo rev-parse $pair[1]).Trim()
+        & $gitExe -C $policyRepo update-ref ("refs/remotes/origin/" + $pair[0]) $sha
+    }
+    $releaseRegistry = Join-Path $policyRepo "Tools\QA\release-fixture.json"
+    $releaseFixture = [pscustomobject]@{
+        schema_version = 1
+        streams = @(
+            [pscustomobject]@{ stream = "ready"; branch = "ready-stream"; state = "ready"; reason = "self-test ready" },
+            [pscustomobject]@{ stream = "active"; branch = "active-stream"; state = "active"; reason = "self-test active" }
+        )
+    }
+    $releaseFixture | ConvertTo-Json -Depth 6 | Set-Content -Path $releaseRegistry -Encoding UTF8
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureReleaseGate -CanonicalRef canonical -RegistryPath $releaseRegistry -CandidateRefs ready-stream -GateRelease *> $null
+    Assert-ExitCode "release-unregistered-ahead-block" 62 $LASTEXITCODE
+
+    $releaseFixture.streams += [pscustomobject]@{ stream = "unknown"; branch = "unknown-stream"; state = "active"; reason = "self-test classified" }
+    $releaseFixture | ConvertTo-Json -Depth 6 | Set-Content -Path $releaseRegistry -Encoding UTF8
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureReleaseGate -CanonicalRef canonical -RegistryPath $releaseRegistry -GateRelease *> $null
+    Assert-ExitCode "release-omitted-ready-block" 61 $LASTEXITCODE
+
+    $releaseCompleteLog = Join-Path $tempRoot "release-complete.log"
+    & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixtureReleaseGate -CanonicalRef canonical -RegistryPath $releaseRegistry -CandidateRefs ready-stream -GateRelease *> $releaseCompleteLog
+    Assert-ExitCode "release-complete-ready-set" 0 $LASTEXITCODE
+    if (-not (Select-String -Path $releaseCompleteLog -SimpleMatch "SUBSUMED_UNREGISTERED_AHEAD subsumed-stream -> ready-stream" -Quiet)) {
+        throw "Release inventory did not report the contained unregistered ancestor as subsumed."
+    }
+    Write-Host "SELFTEST_OK release-subsumed-ancestor-marker"
+
+    $releaseSnippet = "& '$fixtureReleaseGate' -CanonicalRef 'canonical' -RegistryPath '$releaseRegistry' -CandidateRefs @('ready-stream','active-stream') -GateRelease"
+    $actual = Invoke-ChildSnippet "release-nonready" $releaseSnippet
+    Assert-ExitCode "release-nonready-candidate-block" 63 $actual
 
     Write-Host "QA_TOOLING_SELF_TEST_OK"
 }
