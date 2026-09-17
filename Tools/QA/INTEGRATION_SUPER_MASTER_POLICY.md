@@ -22,17 +22,27 @@ IDE retargeting, build outputs, or generated files. Use clean stream worktrees a
 1. Run `AUDIT_INTEGRATION_BRANCHES.ps1` to classify streams as AHEAD, DIVERGED, ALIGNED, or CONTAINED.
 2. DIVERGED streams must be forward-ported onto the pinned canonical baseline before integration.
 3. Run `TEST_INTEGRATION_CANDIDATE.ps1` on every AHEAD stream individually.
-4. Run `TEST_INTEGRATION_BATCH.ps1` on the exact intended merge set and merge order. The gate resolves every candidate ref to an immutable SHA before testing and merges those SHAs, so parallel workstreams cannot move underneath the batch.
-5. Only after both static gates pass may the set be considered merge-eligible.
-6. A successful compile/build is still required before anything is called playtest-ready.
-7. Preserve a rollback anchor before broad or high-risk integration.
+4. Run `CHECK_INTEGRATION_CONFLICTS.ps1` (also invoked automatically by the batch gate) to detect exact shared-file ownership and shared subsystem areas across the intended merge set. Exact shared-file overlap blocks by default even when Git can merge it textually; override only after explicit compatibility review.
+5. Run `TEST_INTEGRATION_BATCH.ps1` on the exact intended merge set and merge order. The gate resolves every candidate ref to an immutable SHA before testing, runs the cross-stream conflict scan, and merges those SHAs, so parallel workstreams cannot move underneath the batch.
+6. Only after the static gates pass may the set be considered merge-eligible.
+7. A successful compile/build is still required before anything is called playtest-ready.
+8. Preserve a rollback anchor before broad or high-risk integration.
 
 A clean textual merge is necessary but not sufficient. Behavioural overlap in tactical AI, LOS, weapons,
 physics, rendering, inventory, audio, progression, and UI requires subsystem-specific regression checks.
 
+## Performance regression gate
+
+`COMPARE_AI_PERFORMANCE.ps1` consumes the AI stream's existing `[AI-PERF]` records and compares baseline vs candidate decision-time, pathfinding, search-count and cache metrics. Integration/QA owns the regression comparison; AI owns the instrumentation and tactical implementation. Use `-FailOnRegression` for release gating.
+
+## Donor-map integration gate
+
+Stream 4 owns sector dependency discovery and manifest generation. Integration/QA owns `VALIDATE_DONOR_SECTOR_MANIFEST.ps1`, which refuses to treat a donor sector as integration-ready unless required map/RPG/script/item/asset/provenance checks are explicitly evidenced and quest/NPC, item, entry/exit and save/load regressions pass. High/Protected sectors additionally require explicit manual approval.
+
 ## Hard blockers
 
 - Generated/build/IDE noise in a candidate delta.
+- Exact cross-stream shared-file overlap unless explicitly reviewed and allowed.
 - Unresolved or committed merge markers.
 - PowerShell syntax errors in changed QA/deployment scripts.
 - Tactical-AI changes that fail the unified AI integrity audit.

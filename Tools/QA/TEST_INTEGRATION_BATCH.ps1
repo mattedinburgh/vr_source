@@ -4,7 +4,8 @@ param(
     [string]$CanonicalRef = "origin/install/all-2026-09-12",
     [string]$ExpectedCanonicalSha = "",
     [switch]$Fetch,
-    [switch]$AllowStrategicChanges
+    [switch]$AllowStrategicChanges,
+    [switch]$AllowCrossStreamFileOverlap
 )
 
 $ErrorActionPreference = "Stop"
@@ -89,6 +90,25 @@ foreach ($candidateRef in $CandidateRefs) {
 
 Write-Host "Batch candidates pinned in order:"
 $candidates | ForEach-Object { Write-Host "  $($_.Name) @ $($_.Sha)" }
+
+$conflictGate = Join-Path $PSScriptRoot "CHECK_INTEGRATION_CONFLICTS.ps1"
+if (-not (Test-Path $conflictGate)) {
+    throw "Cross-stream conflict gate is missing: $conflictGate"
+}
+$conflictArgs = @{
+    CandidateRefs = @($candidates | ForEach-Object { $_.Sha })
+    CanonicalRef = $canonicalSha
+    ExpectedCanonicalSha = $canonicalSha
+}
+if (-not $AllowCrossStreamFileOverlap) {
+    $conflictArgs["FailOnSharedFiles"] = $true
+}
+& $conflictGate @conflictArgs
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "BATCH_CROSS_STREAM_CONFLICT_SCAN_FAILED"
+    exit $LASTEXITCODE
+}
+Write-Host "BATCH_CROSS_STREAM_CONFLICT_SCAN_OK"
 
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("vr-integration-batch-" + $PID)
 if (Test-Path $tempRoot) { Remove-Item -Recurse -Force $tempRoot }

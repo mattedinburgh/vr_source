@@ -39,6 +39,10 @@ jobs:
           }
           if ($errorsFound) { exit 1 }
 
+      - name: Run QA tooling self-tests
+        shell: pwsh
+        run: ./Tools/QA/TEST_QA_TOOLING.ps1
+
       - name: Audit integration branches
         shell: pwsh
         run: ./Tools/QA/AUDIT_INTEGRATION_BRANCHES.ps1 -RemoteRefs
