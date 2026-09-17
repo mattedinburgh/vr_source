@@ -12985,6 +12985,13 @@ INT8 DecideTacticalFallback(SOLDIERTYPE *pSoldier, BOOLEAN fCanMove)
 	if (TileIsOutOfBounds(sThreat))
 		return AI_ACTION_NONE;
 
+	// Sequential JA2 turns must not turn a coordinated fallback into a simultaneous
+	// rout. Once an earlier fireteam member has started his bound, the best safe
+	// local coverer holds this decision and remains available for ordinary fire /
+	// suppression. The helper is knowledge-limited and elects at most one coverer.
+	if (AIShouldHoldForWithdrawingFriend(pSoldier))
+		return AI_ACTION_NONE;
+
 	// An explicit team withdrawal starts with the geometry-aware breakout solver:
 	// move away from the principal known threat while preferring the safest/weakest
 	// pressure sector. Normal autonomous AI keeps its legacy retreat-first ordering.

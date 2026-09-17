@@ -39,6 +39,7 @@
 #include "VRAnalytics.h"
 
 #include <map>
+#include <direct.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -6313,12 +6314,18 @@ void AIEndDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
 	const UINT32 uiTotalMs = GetJA2Clock() - pSnapshot->uiDecisionStartMs;
 	CHAR8 szPerfLine[1024];
 	sprintf(szPerfLine,
-		"[AI-PERF] total_ms=%lu threat_build_ms=%lu pathfinding_ms=%lu exposure_ms=%lu reaction_ms=%lu geometry_ms=%lu "
+		"[AI-PERF] team=%d soldier=%u uid=%lu turn=%lu grid=%d "
+		"total_ms=%lu threat_build_ms=%lu pathfinding_ms=%lu exposure_ms=%lu reaction_ms=%lu geometry_ms=%lu "
 		"contacts=%u detailed_candidates=%lu path_searches=%lu path_reuses=%lu estimate_hits=%lu estimate_misses=%lu "
 		"route_hits=%lu route_misses=%lu budget_earlyouts=%lu "
 		"exposure_calls=%lu reaction_calls=%lu cache_hits=%lu cache_misses=%lu "
 		"shared_contact_hits=%lu shared_contact_misses=%lu "
 		"geometry_hits=%lu geometry_misses=%lu lookahead_nodes=%lu",
+		(int)pSoldier->bTeam,
+		(unsigned int)pSoldier->ubID,
+		(unsigned long)pSoldier->uiUniqueSoldierIdValue,
+		(unsigned long)(guiTurnCnt + 1),
+		(int)pSoldier->sGridNo,
 		(unsigned long)uiTotalMs,
 		(unsigned long)pSnapshot->uiBuildMs,
 		(unsigned long)pSnapshot->uiPathfindingMs,
@@ -6351,6 +6358,15 @@ void AIEndDecisionThreatSnapshot(SOLDIERTYPE *pSoldier)
 	const CHAR8 *pPerfLogEnabled = getenv("VR_AI_PERF_LOG");
 	if (pPerfLogEnabled && pPerfLogEnabled[0] && pPerfLogEnabled[0] != '0')
 	{
+		// A clean install/worktree may not have a Logs directory yet. Create it once
+		// on demand so the benchmark sink cannot silently disappear at fopen().
+		static BOOLEAN fPerfLogDirectoryReady = FALSE;
+		if (!fPerfLogDirectoryReady)
+		{
+			_mkdir("Logs");
+			fPerfLogDirectoryReady = TRUE;
+		}
+
 		FILE *pPerfFile = fopen("Logs\\AI_Performance.txt", "a+t");
 		if (pPerfFile)
 		{
@@ -10822,7 +10838,13 @@ BOOLEAN AIShouldHoldForWithdrawingFriend(SOLDIERTYPE *pSoldier)
 			continue;
 		}
 
+		BOOLEAN fExplicitTeamWithdraw =
+			pFriend->bTeam == gbPlayerNum &&
+			AIPlayerTeamCommandActive() &&
+			AIPlayerTeamCommand() == AI_PLAYER_COMMAND_WITHDRAW;
+
 		BOOLEAN fBreakingContact =
+			fExplicitTeamWithdraw ||
 			AIDisengagementActive(pFriend) ||
 			AIEscapeActive(pFriend) ||
 			pFriend->aiData.bUnderFire ||
