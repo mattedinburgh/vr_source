@@ -511,7 +511,8 @@ static ADDITIONAL_TILE_CAMO_VALUES GetTileCamoValuesForGrid(const INT32& sGridNo
 	ADDITIONAL_TILE_CAMO_VALUES values;
 	memset(&values, 0, sizeof(values));
 
-	if (sGridNo < 0 || sGridNo >= WORLD_MAX)
+	if (sGridNo < 0 || sGridNo >= WORLD_MAX ||
+		(bLevel != FIRST_LEVEL && bLevel != SECOND_LEVEL))
 		return values;
 
 	INT16 wood = 0, desert = 0, urban = 0, snow = 0, stance = 0;
@@ -640,10 +641,25 @@ static INT8 GetDetailedSightAdjustmentCamouflage(
 	scaler = effectiveness * scaler / 6;
 
 	INT16 result = 0;
-	result += GetJungleCamouflage(pSoldier) * scaler / 100 * values.bWoodCamoAffinity / 100;
-	result += GetDesertCamouflage(pSoldier) * scaler / 100 * values.bDesertCamoAffinity / 100;
-	result += GetUrbanCamouflage(pSoldier) * scaler / 100 * values.bUrbanCamoAffinity / 100;
-	result += GetSnowCamouflage(pSoldier) * scaler / 100 * values.bSnowCamoAffinity / 100;
+	if (gGameExternalOptions.fAlternateMultiTerrainCamoCalculation)
+	{
+		// Current 1.13 behaviour: affinity is a cap, not a multiplier. This lets
+		// mixed camouflage combine effectively on genuinely mixed terrain.
+		result += min(-GetJungleCamouflage(pSoldier) * scaler / 100, (INT16)values.bWoodCamoAffinity);
+		result += min(-GetDesertCamouflage(pSoldier) * scaler / 100, (INT16)values.bDesertCamoAffinity);
+		result += min(-GetUrbanCamouflage(pSoldier) * scaler / 100, (INT16)values.bUrbanCamoAffinity);
+		result += min(-GetSnowCamouflage(pSoldier) * scaler / 100, (INT16)values.bSnowCamoAffinity);
+		result = min(result, (INT16)100);
+		result = -result;
+	}
+	else
+	{
+		// Compatibility mode: original multiplicative affinity model.
+		result += GetJungleCamouflage(pSoldier) * scaler / 100 * values.bWoodCamoAffinity / 100;
+		result += GetDesertCamouflage(pSoldier) * scaler / 100 * values.bDesertCamoAffinity / 100;
+		result += GetUrbanCamouflage(pSoldier) * scaler / 100 * values.bUrbanCamoAffinity / 100;
+		result += GetSnowCamouflage(pSoldier) * scaler / 100 * values.bSnowCamoAffinity / 100;
+	}
 
 	return (INT8)max(-100, min(0, result));
 }
@@ -824,7 +840,7 @@ INT16 GetSightAdjustment(SOLDIERTYPE* pStartSoldier, SOLDIERTYPE* pEndSoldier, I
 	UINT8 ubTerrainType = GetTerrainTypeForGrid( sGridNo, bLevel );
 	UINT8 ubLightLevel = LightTrueLevel( sGridNo, bLevel );
 	ADDITIONAL_TILE_CAMO_VALUES tileCamo = GetTileCamoValuesForGrid(sGridNo, bLevel);
-	BOOLEAN fDetailedTileCamo = HasDetailedTileCamo(tileCamo);
+	BOOLEAN fDetailedTileCamo = gGameExternalOptions.fAdditionalTileProperties && HasDetailedTileCamo(tileCamo);
 
 	INT16 iSightAdjustment = 0;
 

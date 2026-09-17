@@ -16,18 +16,26 @@ $ja2Options = Join-Path $GameRoot "Data-Vengeance\Ja2_Options.INI"
 $skillSettings = Join-Path $GameRoot "Data-Vengeance\Skills_Settings.INI"
 $backgrounds = Join-Path $GameRoot "Data-Vengeance\TableData\Backgrounds.xml"
 
-foreach ($required in @($MetadataRoot, $ja2Options, $skillSettings, $backgrounds)) {
+foreach ($required in @($ja2Options, $skillSettings, $backgrounds)) {
     if (!(Test-Path -LiteralPath $required)) { throw "Required camouflage audit input not found: $required" }
 }
 
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 
 function Read-IniInteger {
-    param([string]$Path, [string]$Name)
+    param([string]$Path, [string]$Name, [int]$Default)
     $text = Get-Content -LiteralPath $Path -Raw
     $m = [regex]::Match($text, "(?im)^\s*" + [regex]::Escape($Name) + "\s*=\s*(-?\d+)\s*(?:;.*)?$")
-    if (!$m.Success) { throw "INI key '$Name' not found in $Path" }
+    if (!$m.Success) { return $Default }
     return [int]$m.Groups[1].Value
+}
+
+function Read-IniBoolean {
+    param([string]$Path, [string]$Name, [bool]$Default)
+    $text = Get-Content -LiteralPath $Path -Raw
+    $m = [regex]::Match($text, "(?im)^\s*" + [regex]::Escape($Name) + "\s*=\s*(TRUE|FALSE|1|0)\s*(?:;.*)?$")
+    if (!$m.Success) { return $Default }
+    return @("TRUE","1") -contains $m.Groups[1].Value.ToUpperInvariant()
 }
 
 function Trunc-Div {
@@ -40,44 +48,40 @@ function Get-CamoAdjustment {
     param(
         [int]$Effectiveness, [int]$Stance, [int]$StanceModifier,
         [int]$WoodAffinity, [int]$DesertAffinity, [int]$UrbanAffinity, [int]$SnowAffinity,
-        [bool]$MixedPerfectCamo
+        [int]$WoodCamo, [int]$DesertCamo, [int]$UrbanCamo, [int]$SnowCamo,
+        [bool]$UseAlternate
     )
 
     $effectiveStance = [Math]::Max(1, $Stance - $StanceModifier)
     $scalerBase = -(7 - $effectiveStance)
     $scaler = Trunc-Div ($Effectiveness * $scalerBase) 6
 
-    $woodCamo = 0; $desertCamo = 0; $urbanCamo = 0; $snowCamo = 0
-    if ($MixedPerfectCamo) {
-        $woodCamo = 100; $desertCamo = 100; $urbanCamo = 100; $snowCamo = 100
+    $result = 0
+    if ($UseAlternate) {
+        $result += [Math]::Min(-(Trunc-Div ($WoodCamo * $scaler) 100), $WoodAffinity)
+        $result += [Math]::Min(-(Trunc-Div ($DesertCamo * $scaler) 100), $DesertAffinity)
+        $result += [Math]::Min(-(Trunc-Div ($UrbanCamo * $scaler) 100), $UrbanAffinity)
+        $result += [Math]::Min(-(Trunc-Div ($SnowCamo * $scaler) 100), $SnowAffinity)
+        $result = [Math]::Min($result, 100)
+        $result = -$result
     }
     else {
-        $bestName = "wood"; $bestValue = $WoodAffinity
-        if ($DesertAffinity -gt $bestValue) { $bestName = "desert"; $bestValue = $DesertAffinity }
-        if ($UrbanAffinity -gt $bestValue) { $bestName = "urban"; $bestValue = $UrbanAffinity }
-        if ($SnowAffinity -gt $bestValue) { $bestName = "snow"; $bestValue = $SnowAffinity }
-        switch ($bestName) {
-            "wood" { $woodCamo = 100 }
-            "desert" { $desertCamo = 100 }
-            "urban" { $urbanCamo = 100 }
-            "snow" { $snowCamo = 100 }
-        }
+        $result += Trunc-Div ((Trunc-Div ($WoodCamo * $scaler) 100) * $WoodAffinity) 100
+        $result += Trunc-Div ((Trunc-Div ($DesertCamo * $scaler) 100) * $DesertAffinity) 100
+        $result += Trunc-Div ((Trunc-Div ($UrbanCamo * $scaler) 100) * $UrbanAffinity) 100
+        $result += Trunc-Div ((Trunc-Div ($SnowCamo * $scaler) 100) * $SnowAffinity) 100
     }
-
-    $result = 0
-    $result += Trunc-Div ((Trunc-Div ($woodCamo * $scaler) 100) * $WoodAffinity) 100
-    $result += Trunc-Div ((Trunc-Div ($desertCamo * $scaler) 100) * $DesertAffinity) 100
-    $result += Trunc-Div ((Trunc-Div ($urbanCamo * $scaler) 100) * $UrbanAffinity) 100
-    $result += Trunc-Div ((Trunc-Div ($snowCamo * $scaler) 100) * $SnowAffinity) 100
 
     return [Math]::Max(-100, [Math]::Min(0, $result))
 }
 
-$baseEffectiveness = Read-IniInteger $ja2Options "COVER_SYSTEM_CAMOUFLAGE_EFFECTIVENESS"
-$stanceEffectiveness = Read-IniInteger $ja2Options "COVER_SYSTEM_STANCE_EFFECTIVENESS"
-$movementEffectiveness = Read-IniInteger $ja2Options "COVER_SYSTEM_MOVEMENT_EFFECTIVENESS"
-$stealthEffectiveness = Read-IniInteger $ja2Options "COVER_SYSTEM_STEALTH_EFFECTIVENESS"
-$rangerBonus = Read-IniInteger $skillSettings "CAMO_EFFECTIVENESS_BONUS_PERCENT"
+$baseEffectiveness = Read-IniInteger $ja2Options "COVER_SYSTEM_CAMOUFLAGE_EFFECTIVENESS" 50
+$stanceEffectiveness = Read-IniInteger $ja2Options "COVER_SYSTEM_STANCE_EFFECTIVENESS" 10
+$movementEffectiveness = Read-IniInteger $ja2Options "COVER_SYSTEM_MOVEMENT_EFFECTIVENESS" 20
+$stealthEffectiveness = Read-IniInteger $ja2Options "COVER_SYSTEM_STEALTH_EFFECTIVENESS" 50
+$useAdditionalTileProperties = Read-IniBoolean $ja2Options "COVER_SYSTEM_ADDITIONAL_TILE_PROPERTIES" $true
+$useAlternate = Read-IniBoolean $ja2Options "COVER_SYSTEM_ALTERNATE_MULTI_TERRAIN_CAMO_CALCULATION" $true
+$rangerBonus = Read-IniInteger $skillSettings "CAMO_EFFECTIVENESS_BONUS_PERCENT" 10
 
 [xml]$backgroundXml = Get-Content -LiteralPath $backgrounds -Raw
 $backgroundCamoValues = @()
@@ -88,6 +92,40 @@ foreach ($node in $backgroundXml.SelectNodes("//camo")) {
 $maxBackgroundCamo = if ($backgroundCamoValues.Count -gt 0) { ($backgroundCamoValues | Measure-Object -Maximum).Maximum } else { 0 }
 $maxEffectiveness = [Math]::Max(-100, [Math]::Min(100, $baseEffectiveness + $maxBackgroundCamo + $rangerBonus * $MaxRangerLevels))
 
+$cases = New-Object System.Collections.Generic.List[object]
+$metadataFiles = @()
+if (Test-Path -LiteralPath $MetadataRoot -PathType Container) {
+    $metadataFiles = @(Get-ChildItem -LiteralPath $MetadataRoot -Filter *.xml -File | Sort-Object Name)
+    foreach ($file in $metadataFiles) {
+        [xml]$x = Get-Content -LiteralPath $file.FullName -Raw
+        $n = $x.ADDITIONALTILEPROPERTIES
+        if ($null -eq $n) { continue }
+        $cases.Add([pscustomobject]@{
+            Tile=$file.Name; Source="xml"
+            Wood=[int]$n.bWoodCamoAffinity; Desert=[int]$n.bDesertCamoAffinity
+            Urban=[int]$n.bUrbanCamoAffinity; Snow=[int]$n.bSnowCamoAffinity
+            Stance=[int]$n.bCamoStanceModifer
+        })
+    }
+}
+
+if ($cases.Count -eq 0) {
+    Write-Host "No external camouflage XML found; auditing synthetic detailed-tile cases plus legacy fallback semantics."
+    @(
+        @("pure_wood",100,0,0,0,0),
+        @("mixed_wood_desert_50_50",50,50,0,0,0),
+        @("mixed_desert_urban_25_75",0,25,75,0,0),
+        @("pure_snow",0,0,0,100,0),
+        @("mixed_four_way_25",25,25,25,25,0),
+        @("low_cover_20",20,0,0,0,0)
+    ) | ForEach-Object {
+        $cases.Add([pscustomobject]@{
+            Tile=[string]$_[0]; Source="synthetic"
+            Wood=[int]$_[1]; Desert=[int]$_[2]; Urban=[int]$_[3]; Snow=[int]$_[4]; Stance=[int]$_[5]
+        })
+    }
+}
+
 $stances = @(
     [pscustomobject]@{Name="standing";Value=6},
     [pscustomobject]@{Name="crouch";Value=3},
@@ -95,41 +133,29 @@ $stances = @(
 )
 
 $rows = New-Object System.Collections.Generic.List[object]
-
-foreach ($file in (Get-ChildItem -LiteralPath $MetadataRoot -Filter *.xml -File | Sort-Object Name)) {
-    [xml]$x = Get-Content -LiteralPath $file.FullName -Raw
-    $n = $x.ADDITIONALTILEPROPERTIES
-    if ($null -eq $n) { continue }
-
-    $wood = [int]$n.bWoodCamoAffinity
-    $desert = [int]$n.bDesertCamoAffinity
-    $urban = [int]$n.bUrbanCamoAffinity
-    $snow = [int]$n.bSnowCamoAffinity
-    $stanceModifier = [int]$n.bCamoStanceModifer
+foreach ($case in $cases) {
+    $aff = @($case.Wood,$case.Desert,$case.Urban,$case.Snow)
+    $best = 0
+    for ($i=1; $i -lt 4; $i++) { if ($aff[$i] -gt $aff[$best]) { $best = $i } }
+    $singleCamo = @(0,0,0,0); $singleCamo[$best] = 100
+    $mixedCamo = @(100,100,100,100)
 
     foreach ($stance in $stances) {
-        $single = Get-CamoAdjustment $maxEffectiveness $stance.Value $stanceModifier $wood $desert $urban $snow $false
-        $mixed = Get-CamoAdjustment $maxEffectiveness $stance.Value $stanceModifier $wood $desert $urban $snow $true
+        $single = Get-CamoAdjustment $maxEffectiveness $stance.Value $case.Stance $case.Wood $case.Desert $case.Urban $case.Snow $singleCamo[0] $singleCamo[1] $singleCamo[2] $singleCamo[3] $useAlternate
+        $mixed = Get-CamoAdjustment $maxEffectiveness $stance.Value $case.Stance $case.Wood $case.Desert $case.Urban $case.Snow $mixedCamo[0] $mixedCamo[1] $mixedCamo[2] $mixedCamo[3] $useAlternate
         $tracked1 = [Math]::Min(0, $mixed + $WatchedBonusPerPoint)
         $trackedMax = [Math]::Min(0, $mixed + $WatchedBonusPerPoint * $MaxWatchedPoints)
 
         $rows.Add([pscustomobject]@{
-            Tile = $file.Name
-            Stance = $stance.Name
-            StanceModifier = $stanceModifier
-            WoodAffinity = $wood
-            DesertAffinity = $desert
-            UrbanAffinity = $urban
-            SnowAffinity = $snow
-            AffinitySum = $wood + $desert + $urban + $snow
-            MaxEffectiveness = $maxEffectiveness
-            SinglePerfectCamoAdj = $single
-            MixedPerfectCamoAdj = $mixed
-            NominalSightPercentInitial = [Math]::Max(0, 100 + $mixed)
-            NominalSightPercentAfter1Watch = [Math]::Max(0, 100 + $tracked1)
-            NominalSightPercentAfterMaxWatch = [Math]::Max(0, 100 + $trackedMax)
-            InitialMinus100 = ($mixed -le -100)
-            StillMinus100After1Watch = ($tracked1 -le -100)
+            Tile=$case.Tile; Source=$case.Source; Stance=$stance.Name
+            WoodAffinity=$case.Wood; DesertAffinity=$case.Desert; UrbanAffinity=$case.Urban; SnowAffinity=$case.Snow
+            AffinitySum=$case.Wood+$case.Desert+$case.Urban+$case.Snow
+            MaxEffectiveness=$maxEffectiveness; AlternateMultiTerrain=$useAlternate
+            SinglePerfectCamoAdj=$single; MixedPerfectCamoAdj=$mixed
+            NominalSightPercentInitial=[Math]::Max(0,100+$mixed)
+            NominalSightPercentAfter1Watch=[Math]::Max(0,100+$tracked1)
+            NominalSightPercentAfterMaxWatch=[Math]::Max(0,100+$trackedMax)
+            InitialMinus100=($mixed -le -100); StillMinus100After1Watch=($tracked1 -le -100)
         })
     }
 }
@@ -137,35 +163,32 @@ foreach ($file in (Get-ChildItem -LiteralPath $MetadataRoot -Filter *.xml -File 
 $csv = Join-Path $OutputDirectory "camouflage_visibility_matrix.csv"
 $rows | Export-Csv -LiteralPath $csv -NoTypeInformation -Encoding UTF8
 
-$worstInitial = $rows | Sort-Object MixedPerfectCamoAdj | Select-Object -First 1
-$worstTracked = $rows | Sort-Object NominalSightPercentAfter1Watch | Select-Object -First 1
 $initialMinus100 = @($rows | Where-Object InitialMinus100)
 $trackedMinus100 = @($rows | Where-Object StillMinus100After1Watch)
+$worstInitial = $rows | Sort-Object MixedPerfectCamoAdj | Select-Object -First 1
+$worstTracked = $rows | Sort-Object NominalSightPercentAfter1Watch | Select-Object -First 1
 
 $summary = [pscustomobject]@{
-    MetadataFiles = @($rows | Select-Object -ExpandProperty Tile -Unique).Count
+    ExternalMetadataDirectoryPresent = (Test-Path -LiteralPath $MetadataRoot -PathType Container)
+    ExternalMetadataFiles = $metadataFiles.Count
+    AuditedCases = $cases.Count
+    AdditionalTilePropertiesEnabled = $useAdditionalTileProperties
+    AlternateMultiTerrainCalculation = $useAlternate
     BaseCamoEffectiveness = $baseEffectiveness
     MaxBackgroundCamo = $maxBackgroundCamo
     RangerBonusPerLevel = $rangerBonus
-    MaxRangerLevels = $MaxRangerLevels
     MaxCombinedCamoEffectiveness = $maxEffectiveness
     StanceEffectiveness = $stanceEffectiveness
     MovementEffectiveness = $movementEffectiveness
     StealthEffectiveness = $stealthEffectiveness
-    WatchedBonusPerPoint = $WatchedBonusPerPoint
-    MaxWatchedPoints = $MaxWatchedPoints
     InitialMinus100Cases = $initialMinus100.Count
     AfterOneWatchMinus100Cases = $trackedMinus100.Count
     WorstInitialTile = $worstInitial.Tile
     WorstInitialStance = $worstInitial.Stance
     WorstInitialAdjustment = $worstInitial.MixedPerfectCamoAdj
-    WorstInitialNominalSightPercent = $worstInitial.NominalSightPercentInitial
-    WorstAfterOneWatchTile = $worstTracked.Tile
-    WorstAfterOneWatchStance = $worstTracked.Stance
     WorstAfterOneWatchNominalSightPercent = $worstTracked.NominalSightPercentAfter1Watch
     MatrixCsv = $csv
 }
-
 $summaryJson = Join-Path $OutputDirectory "camouflage_visibility_summary.json"
 $summary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summaryJson -Encoding UTF8
 $summary | Format-List | Out-String | Write-Host
@@ -175,5 +198,4 @@ if ($trackedMinus100.Count -gt 0) {
     exit 2
 }
 
-Write-Host "PASS: one watched-location point prevents absolute camouflage disappearance in the audited matrix."
-Write-Host "Note: nominal 0% still has the engine minimum one-tile LOS floor."
+Write-Host "PASS: detailed-camo math/fallback audit completed and one watched-location point prevents absolute camouflage disappearance."

@@ -1589,6 +1589,8 @@ void LoadGameExternalOptions()
 	gGameExternalOptions.ubMovementEffectiveness	= iniReader.ReadInteger("Tactical Cover System Settings", "COVER_SYSTEM_MOVEMENT_EFFECTIVENESS", 20, 0, 100);
 	gGameExternalOptions.ubTreeCoverEffectiveness	= iniReader.ReadInteger("Tactical Cover System Settings", "COVER_SYSTEM_TREE_EFFECTIVENESS", 20, 0, 100);
 	gGameExternalOptions.ubCoverDisplayUpdateWait	= iniReader.ReadInteger("Tactical Cover System Settings", "COVER_SYSTEM_UPDATE_DELAY", 500, -1, 10000);
+	gGameExternalOptions.fAdditionalTileProperties	= iniReader.ReadBoolean("Tactical Cover System Settings", "COVER_SYSTEM_ADDITIONAL_TILE_PROPERTIES", TRUE);
+	gGameExternalOptions.fAlternateMultiTerrainCamoCalculation = iniReader.ReadBoolean("Tactical Cover System Settings", "COVER_SYSTEM_ALTERNATE_MULTI_TERRAIN_CAMO_CALCULATION", TRUE);
 
 	//################# Tactical Suppression Fire Settings ##################
 	// These settings control the behavior of Suppression Fire, its severity, and its side-effects.
