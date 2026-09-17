@@ -46,7 +46,7 @@ Stream 4 owns sector dependency discovery and manifest generation. Integration/Q
 - Unresolved or committed merge markers.
 - PowerShell syntax errors in changed QA/deployment scripts.
 - Tactical-AI changes that fail the unified AI integrity audit.
-- Strategic/campaign-layer changes unless Matt explicitly requested them.
+- Strategic/campaign-layer changes unless Matt explicitly requested them. Files physically under `Strategic/` that implement a reviewed non-campaign subsystem may use `-AllowedStrategicPaths` for exact paths only; this is not permission to alter campaign AI, force movement, reinforcements, garrisons, patrols, logistics, or force sizing. Prefer the exact-path allowlist over the broad `-AllowStrategicChanges` switch whenever the exception is file-scoped.
 - Candidate history that is not based on the pinned canonical tip.
 
 ## Ownership boundary
